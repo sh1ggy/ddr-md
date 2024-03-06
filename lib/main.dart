@@ -1,4 +1,5 @@
-import 'package:bpm_clicker/components/bpm.dart';
+import 'package:ddr_md/components/bpm.dart';
+import 'package:ddr_md/components/song.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -15,7 +16,7 @@ class App extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => MyAppState(),
       child: MaterialApp(
-        title: 'DDR MD',
+        title: 'ddr_bpm',
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
@@ -105,7 +106,7 @@ class _NavbarState extends State<Navbar> {
       body: <Widget>[
         /// Home page
         const BPMPage(),
-        const Placeholder(),
+        const SongPage(),
         const Placeholder(),
         const Placeholder(),
         const Placeholder(),
