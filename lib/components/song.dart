@@ -1,20 +1,15 @@
 import 'dart:convert';
 
-import 'package:ddr_md/main.dart';
+import 'package:ddr_md/components/songJson.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
-import 'package:provider/provider.dart';
 
-class SongInfo {
-  String name = "";
-  String version = "";
-  double song_length = 0;
-  SongInfo.fromJson(Map json) {
-    name = json['name'];
-    version = json['version'];
-    song_length = json['song_length'];
-  }
+formattedTime({required int timeInSecond}) {
+  int sec = timeInSecond % 60;
+  int min = (timeInSecond / 60).floor();
+  String minute = min.toString().length <= 1 ? "$min" : "$min";
+  String second = sec.toString().length <= 1 ? "0$sec" : "$sec";
+  return "$minute:$second";
 }
 
 class SongPage extends StatefulWidget {
@@ -25,42 +20,83 @@ class SongPage extends StatefulWidget {
 }
 
 class _SongPageState extends State<SongPage> {
+  SongInfo? songInfo;
+  Future<void> readSongJson() async {
+    final String response = await rootBundle.loadString('assets/50th.json');
+    final data = await json.decode(response);
+    setState(() {
+      songInfo = parseJson(response);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    late SongInfo? songInfo = null;
-
-    Future<void> readSongJson() async {
-      final String response = await rootBundle.loadString('assets/50th.json');
-      final data = await json.decode(response);
-      songInfo = new SongInfo.fromJson(data); // maybe remove this
+    if (mounted) {
+      readSongJson();
     }
-
-    var appState = context.watch<MyAppState>();
-
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
           textDirection: TextDirection.ltr,
           child: Scaffold(
-            body: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
+            body: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: MainAxisSize.max,
                 children: [
-                  songInfo == null
-                      ? Text("nothing here")
-                      : Column(
-                          children: [
-                            Text(songInfo!.name),
-                            Text(songInfo!.version),
-                            Text(songInfo!.song_length.toString()),
-                          ],
-                        ),
-                  ElevatedButton(
-                    child: const Text('Load Data'),
-                    onPressed: readSongJson,
+                  const Image(
+                    image: AssetImage('assets/background.png'),
+                    height: 100,
                   ),
-                  const Image(image: AssetImage('assets/background.png')),
+                  const SizedBox(width: 20),
+                  if (songInfo != null)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          songInfo!.name,
+                          softWrap: true,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        Text(
+                          songInfo!.version,
+                          style: const TextStyle(fontStyle: FontStyle.italic),
+                        ),
+                        Text((formattedTime(
+                                timeInSecond: songInfo!.songLength.toInt()) +
+                            " min")),
+                        Row(
+                          children: [
+                            Text(
+                              songInfo!.levels.single.beginner.toString(),
+                              style: const TextStyle(
+                                  color: Colors.cyan,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              songInfo!.levels.single.easy.toString(),
+                              style: const TextStyle(
+                                  color: Colors.orange,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              songInfo!.levels.single.medium.toString(),
+                              style: const TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            Text(songInfo!.levels.single.hard.toString(),
+                                style: const TextStyle(
+                                    color: Colors.purple,
+                                    fontWeight: FontWeight.bold)),
+                          ]
+                              .expand((x) => [const SizedBox(width: 10), x])
+                              .skip(1)
+                              .toList(),
+                        )
+                      ],
+                    ),
                 ]),
           ),
         );
@@ -68,39 +104,3 @@ class _SongPageState extends State<SongPage> {
     );
   }
 }
-
-// // Fetch content from the json file
-// class SongPage extends State<SongPage> {
-//   List _items = [];
-
-//   Future<void> readJson() async {
-//     final String response = await rootBundle.loadString('assets/sample.json');
-//     final data = await json.decode(response);
-//     setState(() {
-//       _items = data["items"];
-//     });
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     var appState = context.watch<MyAppState>();
-
-//     return SafeArea(
-//       child: LayoutBuilder(builder: (context, constraints) {
-//         return const Directionality(
-//           textDirection: TextDirection.ltr,
-//           child: Scaffold(
-//             body: Column(
-//                 crossAxisAlignment: CrossAxisAlignment.center,
-//                 mainAxisAlignment: MainAxisAlignment.center,
-//                 mainAxisSize: MainAxisSize.max,
-//                 children: [
-//                   Text("swaws"),
-//                   Image(image: AssetImage('assets/background.png'))
-//                 ]),
-//           ),
-//         );
-//       }),
-//     );
-//   }
-// }
