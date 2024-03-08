@@ -19,20 +19,18 @@
       "hard": 14
     }
   },
-  "chart": [
-    {
-      "dominant_bpm": 135,
-      "true_min": 135,
-      "true_max": 135,
-      "bpm_range": "135",
-      "bpms": [
-        {
-          "st": 0.0,
-          "ed": 124.444,
-          "val": 135
-        }
-      ],
-      "stops": []
-    }
-  ]
+  "chart": {
+    "dominant_bpm": 135,
+    "true_min": 135,
+    "true_max": 135,
+    "bpm_range": "135",
+    "bpms": [
+      {
+        "st": 0.0,
+        "ed": 124.444,
+        "val": 135
+      }
+    ],
+    "stops": []
+  }
 }
