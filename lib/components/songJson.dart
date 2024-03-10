@@ -117,49 +117,53 @@ class Bpm {
 }
 
 class Levels {
-  Double single;
-  Double levelsDouble;
+  Difficulty single;
+  Difficulty double;
 
   Levels({
     required this.single,
-    required this.levelsDouble,
+    required this.double,
   });
 
   factory Levels.fromJson(Map<String, dynamic> json) => Levels(
-        single: Double.fromJson(json["single"]),
-        levelsDouble: Double.fromJson(json["double"]),
+        single: Difficulty.fromJson(json["single"]),
+        double: Difficulty.fromJson(json["double"]),
       );
 
   Map<String, dynamic> toJson() => {
         "single": single.toJson(),
-        "double": levelsDouble.toJson(),
+        "double": double.toJson(),
       };
 }
 
-class Double {
-  int easy;
-  int medium;
-  int hard;
+class Difficulty {
   int? beginner;
-
-  Double({
-    required this.easy,
-    required this.medium,
-    required this.hard,
+  int? easy;
+  int? medium;
+  int? hard;
+  int? challenge;
+  
+  Difficulty({
     this.beginner,
+    this.easy,
+    this.medium,
+    this.hard,
+    this.challenge,
   });
 
-  factory Double.fromJson(Map<String, dynamic> json) => Double(
+  factory Difficulty.fromJson(Map<String, dynamic> json) => Difficulty(
+        beginner: json["beginner"],
         easy: json["easy"],
         medium: json["medium"],
         hard: json["hard"],
-        beginner: json["beginner"],
+        challenge: json["challenge"]
       );
 
   Map<String, dynamic> toJson() => {
+        "beginner": beginner,
         "easy": easy,
         "medium": medium,
         "hard": hard,
-        "beginner": beginner,
+        "challenge": challenge,
       };
 }
