@@ -27,9 +27,10 @@ class _SongPageState extends State<SongPage> {
   SongInfo? songInfo;
   double mod = 1.0;
   bool? isBpmChange;
+  int selectedItemIndex = 0;
 
   Future<void> readSongJson() async {
-    final String response = await rootBundle.loadString('assets/50th.json');
+    final String response = await rootBundle.loadString('assets/888.json');
     final data = await json.decode(response);
     setState(() {
       songInfo = parseJson(response);
@@ -120,9 +121,12 @@ class _SongPageState extends State<SongPage> {
                   Text(
                     songInfo!.levels.single.medium.toString(),
                     style: const TextStyle(
-                        color: Colors.green, fontWeight: FontWeight.bold),
+                        color: Colors.red, fontWeight: FontWeight.bold),
                   ),
                   Text(songInfo!.levels.single.hard.toString(),
+                      style: const TextStyle(
+                          color: Colors.green, fontWeight: FontWeight.bold)),
+                  Text(songInfo!.levels.single.challenge.toString(),
                       style: const TextStyle(
                           color: Colors.purple, fontWeight: FontWeight.bold)),
                 ]
@@ -184,29 +188,50 @@ class _SongPageState extends State<SongPage> {
           ),
           SizedBox(
               height: MediaQuery.of(context).size.height / 9,
-              child: ListWheelScrollView(
+              child: ListWheelScrollView.useDelegate(
+                onSelectedItemChanged: (index) {
+                  setState(() {
+                    selectedItemIndex = index;
+                  });
+                },
                 physics: const FixedExtentScrollPhysics(),
-                controller: FixedExtentScrollController(initialItem: appState.mods.indexOf(nearestSmaller)),
+                controller: FixedExtentScrollController(
+                    initialItem: appState.mods.indexOf(nearestSmaller)),
                 overAndUnderCenterOpacity: .5,
                 itemExtent: 22,
-                children: appState.mods.map<Widget>((e) {
-                  var avg = e * songInfo!.chart.dominantBpm;
-                  var min = e * songInfo!.chart.trueMin;
-                  var max = e * songInfo!.chart.trueMax;
-                  return Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(width: 50, child: Text('$avg')),
-                        if (isBpmChange!) ...[
-                          SizedBox(width: 50, child: Text('$min')),
-                          SizedBox(width: 50, child: Text('$max')),
-                        ],
-                        SizedBox(width: 50, child: Text('$e')),
-                      ]
-                          .expand((x) => [const SizedBox(width: 30), x])
-                          .skip(1)
-                          .toList());
-                }).toList(),
+                childDelegate: ListWheelChildListDelegate(
+                  children: appState.mods.map<Widget>((e) {
+                    var avg = e * songInfo!.chart.dominantBpm;
+                    var min = e * songInfo!.chart.trueMin;
+                    var max = e * songInfo!.chart.trueMax;
+                    return Container(
+                      decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(15),
+                          color: appState.mods.indexOf(nearestSmaller) ==
+                                  appState.mods.indexOf(e)
+                              ? Colors.amberAccent
+                              : Colors.white70),
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(width: 50, child: Text('$avg')),
+                            if (isBpmChange!) ...[
+                              SizedBox(width: 50, child: Text('$min')),
+                              SizedBox(width: 50, child: Text('$max')),
+                            ],
+                            SizedBox(
+                              width: 50,
+                              child: Text('$e',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ]
+                              .expand((x) => [const SizedBox(width: 30), x])
+                              .skip(1)
+                              .toList()),
+                    );
+                  }).toList(),
+                ),
               )),
         ],
       ),
