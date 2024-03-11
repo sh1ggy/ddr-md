@@ -38,7 +38,7 @@ class MyAppState extends ChangeNotifier {
   }
 
   // generate the list of mods programmatically
-  generateMods() {
+  List<double> generateMods() {
     double start = 0.25, end = 4.25; 
     // generating numbers from [0 to 4 in .25 inc.]
     var list = [for (var i = start; i < end; i += .25) i];

@@ -6,6 +6,7 @@ import 'package:ddr_md/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:ddr_md/constants.dart' as Constants;
 
 formattedTime({required int timeInSecond}) {
   int sec = timeInSecond % 60;
@@ -48,8 +49,8 @@ class _SongPageState extends State<SongPage> {
           child: Scaffold(
             body: Column(
               children: [
-                if (songInfo != null) songDetails(),
                 note(),
+                if (songInfo != null) songDetails(),
                 if (songInfo != null && isBpmChange != null) songBpm(),
               ].expand((x) => [const SizedBox(height: 20), x]).skip(1).toList(),
             ),
@@ -136,6 +137,13 @@ class _SongPageState extends State<SongPage> {
 
   Container songBpm() {
     var appState = context.watch<MyAppState>();
+    var avgBpm = songInfo!.chart.dominantBpm;
+    // TODO: find better way to do this
+    final nearestSmaller = appState.mods.reduce((a, b) =>
+        (a * avgBpm - Constants.chosen_bpm).abs() <=
+                (b * avgBpm - Constants.chosen_bpm).abs()
+            ? a
+            : b);
     return Container(
       padding: const EdgeInsets.all(7.0),
       child: Column(
@@ -177,6 +185,8 @@ class _SongPageState extends State<SongPage> {
           SizedBox(
               height: MediaQuery.of(context).size.height / 9,
               child: ListWheelScrollView(
+                physics: const FixedExtentScrollPhysics(),
+                controller: FixedExtentScrollController(initialItem: appState.mods.indexOf(nearestSmaller)),
                 overAndUnderCenterOpacity: .5,
                 itemExtent: 22,
                 children: appState.mods.map<Widget>((e) {
