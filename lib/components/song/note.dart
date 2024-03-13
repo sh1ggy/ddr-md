@@ -4,30 +4,22 @@ Container note() {
   return Container(
     padding: const EdgeInsets.all(7.0),
     decoration: BoxDecoration(
-        color: Color(int.parse("0xffeae8e9")),
+        color: Colors.white,
         // border: Border.all(
         //   color: Colors.amber,
         // ),
         boxShadow: const [
           BoxShadow(
-            offset: Offset(0, 2),
-            blurRadius: 5,
+            offset: Offset(0, .1),
+            blurRadius: 3,
             color: Colors.grey,
           ),
         ],
         borderRadius: BorderRadius.circular(5)),
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      mainAxisSize: MainAxisSize.max,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ElevatedButton.icon(
-          onPressed: () {
-            print('Add note');
-          },
-          icon: const Icon(Icons.add),
-          label: const Text('Note'),
-          style: const ButtonStyle(),
-        ),
         const Expanded(
           child: Column(
             children: [
@@ -54,8 +46,6 @@ Container note() {
 
 Column noteScore() {
   return const Column(
-    mainAxisAlignment: MainAxisAlignment.start,
-    mainAxisSize: MainAxisSize.max,
     children: [
       Text(
         "Recent Score:",

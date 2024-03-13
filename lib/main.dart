@@ -1,5 +1,7 @@
 import 'package:ddr_md/components/bpm.dart';
+import 'package:ddr_md/components/song/bpmChart.dart';
 import 'package:ddr_md/components/song/song.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +18,7 @@ class App extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => MyAppState(),
       child: MaterialApp(
+        debugShowCheckedModeBanner: false,
         title: 'ddr_bpm',
         theme: ThemeData(
           useMaterial3: true,

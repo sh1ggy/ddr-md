@@ -24,6 +24,7 @@ class SongPage extends StatefulWidget {
 }
 
 class _SongPageState extends State<SongPage> {
+  // songInfo should maybe be set on appState instead
   SongInfo? songInfo;
   double mod = 1.0;
   bool? isBpmChange;
@@ -40,6 +41,8 @@ class _SongPageState extends State<SongPage> {
 
   @override
   Widget build(BuildContext context) {
+    var appState = context.watch<MyAppState>();
+
     if (mounted) {
       readSongJson();
     }
@@ -48,12 +51,36 @@ class _SongPageState extends State<SongPage> {
         return Directionality(
           textDirection: TextDirection.ltr,
           child: Scaffold(
-            body: Column(
-              children: [
-                note(),
-                if (songInfo != null) songDetails(),
-                if (songInfo != null && isBpmChange != null) songBpm(),
-              ].expand((x) => [const SizedBox(height: 20), x]).skip(1).toList(),
+            appBar: AppBar(
+                title: const Text(
+                  'Song',
+                  style: TextStyle(fontSize: 15),
+                ),
+                actions: <Widget>[
+                  IconButton(
+                    icon: const Icon(Icons.format_list_numbered_rounded),
+                    tooltip: "Add score",
+                    onPressed: () {print('add score');}
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.note_add),
+                    tooltip: "Add note",
+                    onPressed: () {print('add note');}
+                  ),
+                ]),
+            body: Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  note(),
+                  if (songInfo != null) songDetails(),
+                  if (songInfo != null && isBpmChange != null)
+                    songBpm(appState),
+                ]
+                    .expand((x) => [const SizedBox(height: 20), x])
+                    .skip(1)
+                    .toList(),
+              ),
             ),
           ),
         );
@@ -139,15 +166,21 @@ class _SongPageState extends State<SongPage> {
         ]);
   }
 
-  Container songBpm() {
-    var appState = context.watch<MyAppState>();
-    var avgBpm = songInfo!.chart.dominantBpm;
-    // TODO: find better way to do this
-    final nearestSmaller = appState.mods.reduce((a, b) =>
-        (a * avgBpm - Constants.chosen_bpm).abs() <=
-                (b * avgBpm - Constants.chosen_bpm).abs()
-            ? a
-            : b);
+  Container songBpm(MyAppState appState) {
+    // These variables don't belong here
+    int nearestModIndex = 0;
+    if (mounted) {
+      double nearestMod = 0;
+      var avgBpm = songInfo!.chart.dominantBpm;
+      nearestMod = appState.mods.reduce((a, b) =>
+          (a * avgBpm - Constants.chosen_bpm).abs() <=
+                  (b * avgBpm - Constants.chosen_bpm).abs()
+              ? a
+              : b);
+      nearestModIndex = appState.mods.indexOf(nearestMod);
+      print('n');
+    }
+
     return Container(
       padding: const EdgeInsets.all(7.0),
       child: Column(
@@ -195,8 +228,8 @@ class _SongPageState extends State<SongPage> {
                   });
                 },
                 physics: const FixedExtentScrollPhysics(),
-                controller: FixedExtentScrollController(
-                    initialItem: appState.mods.indexOf(nearestSmaller)),
+                controller:
+                    FixedExtentScrollController(initialItem: nearestModIndex),
                 overAndUnderCenterOpacity: .5,
                 itemExtent: 22,
                 childDelegate: ListWheelChildListDelegate(
@@ -206,9 +239,8 @@ class _SongPageState extends State<SongPage> {
                     var max = e * songInfo!.chart.trueMax;
                     return Container(
                       decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(15),
-                          color: appState.mods.indexOf(nearestSmaller) ==
-                                  appState.mods.indexOf(e)
+                          borderRadius: BorderRadius.circular(7),
+                          color: nearestModIndex == appState.mods.indexOf(e)
                               ? Colors.amberAccent
                               : Colors.white70),
                       child: Row(
