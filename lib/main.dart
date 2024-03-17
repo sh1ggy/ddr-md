@@ -1,7 +1,5 @@
 import 'package:ddr_md/components/bpm.dart';
-import 'package:ddr_md/components/song/bpmChart.dart';
 import 'package:ddr_md/components/song/song.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';

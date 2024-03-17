@@ -4,6 +4,7 @@ import 'package:ddr_md/components/song/note.dart';
 import 'package:ddr_md/components/songJson.dart';
 import 'package:ddr_md/main.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:ddr_md/constants.dart' as Constants;
@@ -24,11 +25,11 @@ class SongPage extends StatefulWidget {
 }
 
 class _SongPageState extends State<SongPage> {
-  // songInfo should maybe be set on appState instead
   SongInfo? songInfo;
   double mod = 1.0;
   bool? isBpmChange;
   int selectedItemIndex = 0;
+  int nearestModIndex = 0;
 
   Future<void> readSongJson() async {
     final String response = await rootBundle.loadString('assets/888.json');
@@ -39,12 +40,34 @@ class _SongPageState extends State<SongPage> {
     });
   }
 
+  int findNearest(int avgBpm, List array) {
+    var nearest = 0;
+    array.asMap().entries.forEach((entry) {
+      var i = entry.key;
+      var a = array[i] * avgBpm;
+      if (array[i] * avgBpm <= Constants.chosen_bpm + Constants.buffer) {
+        nearest = i;
+      }
+    });
+    return nearest;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      readSongJson();
+    });
+    // SchedulerBinding.instance.addPostFrameCallback((_) {
+    //   print("SchedulerBinding");
+    // });
+  }
+
   @override
   Widget build(BuildContext context) {
     var appState = context.watch<MyAppState>();
-
-    if (mounted) {
-      readSongJson();
+    if (songInfo != null) {
+      nearestModIndex = findNearest(songInfo!.chart.dominantBpm, appState.mods);
     }
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
@@ -58,15 +81,17 @@ class _SongPageState extends State<SongPage> {
                 ),
                 actions: <Widget>[
                   IconButton(
-                    icon: const Icon(Icons.format_list_numbered_rounded),
-                    tooltip: "Add score",
-                    onPressed: () {print('add score');}
-                  ),
+                      icon: const Icon(Icons.format_list_numbered_rounded),
+                      tooltip: "Add score",
+                      onPressed: () {
+                        print('add score');
+                      }),
                   IconButton(
-                    icon: const Icon(Icons.note_add),
-                    tooltip: "Add note",
-                    onPressed: () {print('add note');}
-                  ),
+                      icon: const Icon(Icons.note_add),
+                      tooltip: "Add note",
+                      onPressed: () {
+                        print('add note');
+                      }),
                 ]),
             body: Container(
               padding: const EdgeInsets.all(20),
@@ -75,7 +100,7 @@ class _SongPageState extends State<SongPage> {
                   note(),
                   if (songInfo != null) songDetails(),
                   if (songInfo != null && isBpmChange != null)
-                    songBpm(appState),
+                    songBpm(appState, nearestModIndex),
                 ]
                     .expand((x) => [const SizedBox(height: 20), x])
                     .skip(1)
@@ -166,21 +191,7 @@ class _SongPageState extends State<SongPage> {
         ]);
   }
 
-  Container songBpm(MyAppState appState) {
-    // These variables don't belong here
-    int nearestModIndex = 0;
-    if (mounted) {
-      double nearestMod = 0;
-      var avgBpm = songInfo!.chart.dominantBpm;
-      nearestMod = appState.mods.reduce((a, b) =>
-          (a * avgBpm - Constants.chosen_bpm).abs() <=
-                  (b * avgBpm - Constants.chosen_bpm).abs()
-              ? a
-              : b);
-      nearestModIndex = appState.mods.indexOf(nearestMod);
-      print('n');
-    }
-
+  Container songBpm(MyAppState appState, int nearestModIndex) {
     return Container(
       padding: const EdgeInsets.all(7.0),
       child: Column(
