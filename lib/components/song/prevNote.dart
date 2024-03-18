@@ -1,49 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
+import 'package:ddr_md/constants.dart' as Constants;
 
-Container note(context) {
-  return Container(
-    padding: const EdgeInsets.all(7.0),
-    decoration: BoxDecoration(
-        color: Colors.white,
-        // border: Border.all(
-        //   color: Colors.amber,
-        // ),
-        boxShadow: const [
-          BoxShadow(
-            offset: Offset(0, .1),
-            blurRadius: 3,
-            color: Colors.grey,
+Card note(context) {
+  return Card(
+    child: Container(
+      padding: const EdgeInsets.all(15.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              children: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pushNamed(context, 'NotePage');
+                  },
+                  child: const Text("Previous Note",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center),
+                ),
+                const SizedBox(
+                  child: Text(
+                      Constants.note,
+                      softWrap: true,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
           ),
-        ],
-        borderRadius: BorderRadius.circular(5)),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            children: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, 'NotePage');
-                },
-                child: const Text("Previous Note",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center),
-              ),
-              const SizedBox(
-                child: Text(
-                    "The crossovers in this song are surprisingly hard, I keep leading with the wrong first foot in after the jumps. Song should be played with those in mind.",
-                    softWrap: true,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis),
-              ),
-            ],
-          ),
-        ),
-        noteScore(),
-      ].expand((x) => [const SizedBox(width: 20), x]).skip(1).toList(),
+          noteScore(),
+        ].expand((x) => [const SizedBox(width: 20), x]).skip(1).toList(),
+      ),
     ),
   );
 }

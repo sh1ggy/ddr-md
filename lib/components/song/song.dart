@@ -75,6 +75,7 @@ class _SongPageState extends State<SongPage> {
           textDirection: TextDirection.ltr,
           child: Scaffold(
             appBar: AppBar(
+              elevation: 1,
                 title: const Text(
                   'Song',
                   style: TextStyle(fontSize: 15),
@@ -92,7 +93,7 @@ class _SongPageState extends State<SongPage> {
                       onPressed: () => Navigator.pushNamed(context, 'NotePage')),
                 ]),
             body: Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(5, 10, 5, 0),
               child: Column(
                 children: [
                   note(context),
