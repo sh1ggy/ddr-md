@@ -1,4 +1,5 @@
 import 'package:ddr_md/components/bpm.dart';
+import 'package:ddr_md/components/song/note.dart';
 import 'package:ddr_md/components/song/song.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -107,10 +108,17 @@ class _NavbarState extends State<Navbar> {
       body: <Widget>[
         /// Home page
         const BPMPage(),
-        const SongPage(),
+        Navigator(
+        onGenerateRoute: (settings) {
+          Widget page = SongPage();
+          if (settings.name == 'NotePage') page = NotePage();
+          return MaterialPageRoute(builder: (_) => page);
+        },
+      ),
         const Placeholder(),
         const Placeholder(),
         const Placeholder(),
+        
       ][currentPageIndex],
     );
   }

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:ddr_md/components/song/note.dart';
+import 'package:ddr_md/components/song/prevNote.dart';
 import 'package:ddr_md/components/songJson.dart';
 import 'package:ddr_md/main.dart';
 import 'package:flutter/material.dart';
@@ -89,15 +89,13 @@ class _SongPageState extends State<SongPage> {
                   IconButton(
                       icon: const Icon(Icons.note_add),
                       tooltip: "Add note",
-                      onPressed: () {
-                        print('add note');
-                      }),
+                      onPressed: () => Navigator.pushNamed(context, 'NotePage')),
                 ]),
             body: Container(
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  note(),
+                  note(context),
                   if (songInfo != null) songDetails(),
                   if (songInfo != null && isBpmChange != null)
                     songBpm(appState, nearestModIndex),
