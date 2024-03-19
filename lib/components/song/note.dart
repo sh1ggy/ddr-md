@@ -26,7 +26,7 @@ class NotePage extends StatelessWidget {
             },
           ),
           body: Padding(
-            padding: const EdgeInsets.fromLTRB(0, 10, 0, 0),
+            padding: const EdgeInsets.fromLTRB(5, 10, 5, 0),
             child: Column(
               children: [
                 Expanded(
