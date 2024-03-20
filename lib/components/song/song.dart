@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:ddr_md/components/song/chart.dart';
 import 'package:ddr_md/components/song/prevNote.dart';
 import 'package:ddr_md/components/songJson.dart';
 import 'package:ddr_md/main.dart';
@@ -75,7 +76,7 @@ class _SongPageState extends State<SongPage> {
           textDirection: TextDirection.ltr,
           child: Scaffold(
             appBar: AppBar(
-              elevation: 1,
+                elevation: 1,
                 title: const Text(
                   'Song',
                   style: TextStyle(fontSize: 15),
@@ -90,25 +91,37 @@ class _SongPageState extends State<SongPage> {
                   IconButton(
                       icon: const Icon(Icons.note_add),
                       tooltip: "Add note",
-                      onPressed: () => Navigator.pushNamed(context, 'NotePage')),
+                      onPressed: () =>
+                          Navigator.pushNamed(context, 'NotePage')),
                 ]),
-            body: Container(
-              padding: const EdgeInsets.fromLTRB(5, 10, 5, 0),
-              child: Column(
-                children: [
-                  note(context),
-                  if (songInfo != null) songDetails(),
-                  if (songInfo != null && isBpmChange != null)
-                    songBpm(appState, nearestModIndex),
-                ]
-                    .expand((x) => [const SizedBox(height: 20), x])
-                    .skip(1)
-                    .toList(),
+            body: SingleChildScrollView(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(5, 10, 5, 0),
+                child: Column(
+                  children: [
+                    note(context),
+                    if (songInfo != null) songDetails(),
+                    if (songInfo != null && isBpmChange != null)
+                      songBpm(appState, nearestModIndex),
+                    songChart(),
+                  ]
+                      .expand((x) => [const SizedBox(height: 20), x])
+                      .skip(1)
+                      .toList(),
+                ),
               ),
             ),
           ),
         );
       }),
+    );
+  }
+
+  Container songChart() {
+    return Container(
+      padding: const EdgeInsets.all(1.0),
+      height: MediaQuery.of(context).size.height/3,
+      child: LineChartContent(),
     );
   }
 
@@ -194,6 +207,7 @@ class _SongPageState extends State<SongPage> {
     return Container(
       padding: const EdgeInsets.all(7.0),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.center,

@@ -1,4 +1,5 @@
 import 'package:ddr_md/components/bpm.dart';
+import 'package:ddr_md/components/song/chart.dart';
 import 'package:ddr_md/components/song/note.dart';
 import 'package:ddr_md/components/song/song.dart';
 import 'package:flutter/material.dart';
@@ -41,19 +42,19 @@ class MyAppState extends ChangeNotifier {
 
   // generate the list of mods programmatically
   List<double> generateMods() {
-    double start = 0.25, end = 4.25; 
+    double start = 0.25, end = 4.25;
     // generating numbers from [0 to 4 in .25 inc.]
     var list = [for (var i = start; i < end; i += .25) i];
     start = 4.5;
     end = 8.5;
     // generating numbers from [4 to 8 in .5 inc.]
-    [for (var i = start; i < end; i += .5) list.add(i)]; 
+    [for (var i = start; i < end; i += .5) list.add(i)];
     mods = list;
     return list;
   }
+
   late var mods = generateMods();
 }
-
 
 class Navbar extends StatefulWidget {
   const Navbar({super.key});
@@ -109,16 +110,15 @@ class _NavbarState extends State<Navbar> {
         /// Home page
         const BPMPage(),
         Navigator(
-        onGenerateRoute: (settings) {
-          Widget page = SongPage();
-          if (settings.name == 'NotePage') page = NotePage();
-          return MaterialPageRoute(builder: (_) => page);
-        },
-      ),
+          onGenerateRoute: (settings) {
+            Widget page = SongPage();
+            if (settings.name == 'NotePage') page = NotePage();
+            return MaterialPageRoute(builder: (_) => page);
+          },
+        ),
         const Placeholder(),
         const Placeholder(),
         const Placeholder(),
-        
       ][currentPageIndex],
     );
   }
