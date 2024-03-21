@@ -1,9 +1,8 @@
 import 'dart:convert';
-
-import 'package:ddr_md/components/song/chart.dart';
 import 'package:ddr_md/components/song/prevNote.dart';
 import 'package:ddr_md/components/songJson.dart';
 import 'package:ddr_md/main.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -31,9 +30,11 @@ class _SongPageState extends State<SongPage> {
   bool? isBpmChange;
   int selectedItemIndex = 0;
   int nearestModIndex = 0;
+  List<FlSpot> songSpots = [];
 
   Future<void> readSongJson() async {
-    final String response = await rootBundle.loadString('assets/888.json');
+    final String response =
+        await rootBundle.loadString('assets/max300supermaxme.json');
     final data = await json.decode(response);
     setState(() {
       songInfo = parseJson(response);
@@ -53,6 +54,16 @@ class _SongPageState extends State<SongPage> {
     return nearest;
   }
 
+  void genBpmPoints() {
+    List<Bpm> bpms = songInfo!.chart.bpms;
+    if (songSpots.isNotEmpty) return; // TODO: remove this
+
+    for (int i = 0; i < bpms.length; i++) {
+      songSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
+      songSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +80,7 @@ class _SongPageState extends State<SongPage> {
     var appState = context.watch<MyAppState>();
     if (songInfo != null) {
       nearestModIndex = findNearest(songInfo!.chart.dominantBpm, appState.mods);
+      genBpmPoints();
     }
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
@@ -101,9 +113,10 @@ class _SongPageState extends State<SongPage> {
                   children: [
                     note(context),
                     if (songInfo != null) songDetails(),
-                    if (songInfo != null && isBpmChange != null)
+                    if (songInfo != null && isBpmChange != null) ...[
                       songBpm(appState, nearestModIndex),
-                    songChart(),
+                      songChart(),
+                    ]
                   ]
                       .expand((x) => [const SizedBox(height: 20), x])
                       .skip(1)
@@ -118,10 +131,41 @@ class _SongPageState extends State<SongPage> {
   }
 
   Container songChart() {
+    Color lineColor = Colors.orangeAccent;
+    List<LineChartBarData> lineChartBarData = [
+      LineChartBarData(color: lineColor, isCurved: false, spots: songSpots)
+    ];
     return Container(
       padding: const EdgeInsets.all(1.0),
-      height: MediaQuery.of(context).size.height/3,
-      child: LineChartContent(),
+      height: MediaQuery.of(context).size.height / 3,
+      child: LineChart(
+        curve: Easing.standard,
+        LineChartData(
+          borderData:
+              FlBorderData(border: Border.all(color: Colors.black, width: 1)),
+          gridData: FlGridData(
+            show: true,
+            getDrawingHorizontalLine: (value) {
+              return const FlLine(
+                color: Colors.grey,
+                strokeWidth: 1,
+              );
+            },
+            drawVerticalLine: true,
+            getDrawingVerticalLine: (value) {
+              return const FlLine(
+                color: Colors.grey,
+                strokeWidth: 1,
+              );
+            },
+          ),
+          minX: 1,
+          minY: 0,
+          maxX: 105,
+          maxY: 450,
+          lineBarsData: lineChartBarData,
+        ),
+      ),
     );
   }
 
