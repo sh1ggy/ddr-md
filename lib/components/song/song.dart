@@ -61,7 +61,8 @@ class _SongPageState extends State<SongPage> {
 
   void genBpmPoints() {
     List<Bpm> bpms = chart!.bpms;
-    if (songSpots.isNotEmpty) return; // TODO: remove this when doing dynamic songData
+    if (songSpots.isNotEmpty)
+      return; // TODO: remove this when doing dynamic songData
 
     for (int i = 0; i < bpms.length; i++) {
       songSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
@@ -151,27 +152,39 @@ class _SongPageState extends State<SongPage> {
       child: LineChart(
         curve: Easing.standard,
         LineChartData(
-          titlesData: const FlTitlesData(
+          titlesData: FlTitlesData(
               bottomTitles: AxisTitles(
                 sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 26,
-                  interval: 10
-                ),
+                    showTitles: true,
+                    reservedSize: 26,
+                    interval: 10,
+                    getTitlesWidget: (value, meta) {
+                      Widget axisTitle = Text(value.floor().toString());
+                      // A workaround to hide the max value title as FLChart is overlapping it on top of previous
+                      if (value == meta.max) {
+                        final remainder = value % meta.appliedInterval;
+                        if (remainder != 0.0 &&
+                            remainder / meta.appliedInterval < 0.5) {
+                          axisTitle = const SizedBox.shrink();
+                        }
+                      }
+                      return SideTitleWidget(
+                          axisSide: meta.axisSide, child: axisTitle);
+                    }),
               ),
-              leftTitles: AxisTitles(
+              leftTitles: const AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
                   reservedSize: 38,
                   interval: 100,
                 ),
               ),
-              topTitles: AxisTitles(
+              topTitles: const AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: false,
                 ),
               ),
-              rightTitles: AxisTitles(
+              rightTitles: const AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: false,
                 ),
