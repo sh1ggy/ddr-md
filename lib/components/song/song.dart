@@ -4,7 +4,6 @@ import 'package:ddr_md/components/songJson.dart';
 import 'package:ddr_md/main.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:ddr_md/constants.dart' as Constants;
@@ -31,14 +30,20 @@ class _SongPageState extends State<SongPage> {
   int selectedItemIndex = 0;
   int nearestModIndex = 0;
   List<FlSpot> songSpots = [];
+  Chart? chart;
 
   Future<void> readSongJson() async {
     final String response =
-        await rootBundle.loadString('assets/max300supermaxme.json');
-    final data = await json.decode(response);
+        await rootBundle.loadString('assets/aceforaces.json');
     setState(() {
       songInfo = parseJson(response);
-      isBpmChange = songInfo!.chart.trueMax != songInfo!.chart.trueMin;
+      if (!songInfo!.perChart) {
+        chart = songInfo!.chart[0];
+      } else {
+        // TODO: better logic dependent on which difficulty is selected
+        chart = songInfo!.chart[songInfo!.chart.length - 1];
+      }
+      isBpmChange = chart!.trueMax != chart!.trueMin;
     });
   }
 
@@ -55,8 +60,8 @@ class _SongPageState extends State<SongPage> {
   }
 
   void genBpmPoints() {
-    List<Bpm> bpms = songInfo!.chart.bpms;
-    if (songSpots.isNotEmpty) return; // TODO: remove this
+    List<Bpm> bpms = chart!.bpms;
+    if (songSpots.isNotEmpty) return; // TODO: remove this when doing dynamic songData
 
     for (int i = 0; i < bpms.length; i++) {
       songSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
@@ -79,7 +84,7 @@ class _SongPageState extends State<SongPage> {
   Widget build(BuildContext context) {
     var appState = context.watch<MyAppState>();
     if (songInfo != null) {
-      nearestModIndex = findNearest(songInfo!.chart.dominantBpm, appState.mods);
+      nearestModIndex = findNearest(chart!.dominantBpm, appState.mods);
       genBpmPoints();
     }
     return SafeArea(
@@ -133,7 +138,12 @@ class _SongPageState extends State<SongPage> {
   Container songChart() {
     Color lineColor = Colors.orangeAccent;
     List<LineChartBarData> lineChartBarData = [
-      LineChartBarData(color: lineColor, isCurved: false, spots: songSpots)
+      LineChartBarData(
+          spots: songSpots,
+          barWidth: 1.25,
+          color: lineColor,
+          isCurved: false,
+          dotData: const FlDotData(show: false))
     ];
     return Container(
       padding: const EdgeInsets.all(1.0),
@@ -141,6 +151,37 @@ class _SongPageState extends State<SongPage> {
       child: LineChart(
         curve: Easing.standard,
         LineChartData(
+          titlesData: const FlTitlesData(
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 26,
+                  interval: 10
+                ),
+              ),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 38,
+                  interval: 100,
+                ),
+              ),
+              topTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: false,
+                ),
+              ),
+              rightTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: false,
+                ),
+              )),
+          lineTouchData: LineTouchData(
+              touchTooltipData: LineTouchTooltipData(
+                  tooltipBgColor: Colors.grey.shade900,
+                  tooltipPadding: const EdgeInsets.all(2),
+                  tooltipBorder: const BorderSide(color: Colors.black))),
+          clipData: const FlClipData.all(),
           borderData:
               FlBorderData(border: Border.all(color: Colors.black, width: 1)),
           gridData: FlGridData(
@@ -161,8 +202,8 @@ class _SongPageState extends State<SongPage> {
           ),
           minX: 1,
           minY: 0,
-          maxX: 105,
-          maxY: 450,
+          maxX: songInfo!.songLength,
+          maxY: chart!.trueMax.toDouble(),
           lineBarsData: lineChartBarData,
         ),
       ),
@@ -210,7 +251,7 @@ class _SongPageState extends State<SongPage> {
                     const TextSpan(
                         text: 'BPM: ',
                         style: TextStyle(fontWeight: FontWeight.bold)),
-                    TextSpan(text: songInfo!.chart.bpmRange),
+                    TextSpan(text: chart!.bpmRange),
                   ],
                 ),
               ),
@@ -302,9 +343,9 @@ class _SongPageState extends State<SongPage> {
                 itemExtent: 22,
                 childDelegate: ListWheelChildListDelegate(
                   children: appState.mods.map<Widget>((e) {
-                    var avg = e * songInfo!.chart.dominantBpm;
-                    var min = e * songInfo!.chart.trueMin;
-                    var max = e * songInfo!.chart.trueMax;
+                    var avg = e * chart!.dominantBpm;
+                    var min = e * chart!.trueMin;
+                    var max = e * chart!.trueMax;
                     return Container(
                       decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(7),
