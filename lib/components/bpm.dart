@@ -15,6 +15,20 @@ class BPMPage extends StatelessWidget {
         return Directionality(
           textDirection: TextDirection.ltr,
           child: Scaffold(
+            appBar: AppBar(
+              surfaceTintColor: Colors.black,
+              shadowColor: Colors.black,
+              elevation: 2,
+              title: const Text(
+                'BPM',
+                style: TextStyle(
+                  fontSize: 20,
+                  color: Colors.blueGrey,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              iconTheme: const IconThemeData(color: Colors.blueGrey),
+            ),
             body: Padding(
               padding: const EdgeInsets.all(8.0),
               child: Column(
@@ -22,10 +36,6 @@ class BPMPage extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'BPM Wheel',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-                  ),
                   TextField(
                     maxLength: 3,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -67,7 +77,7 @@ class BPMPage extends StatelessWidget {
                         child: ListWheelScrollView(
                           useMagnifier: true,
                           magnification: 1.1,
-                          diameterRatio: 1.25,
+                          diameterRatio: 1.5,
                           itemExtent: 22,
                           children: appState.mods.map<Widget>((e) {
                             var mod = e * appState.bpm;

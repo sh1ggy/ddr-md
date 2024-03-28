@@ -8,14 +8,18 @@ class NotePage extends StatelessWidget {
   Widget build(BuildContext context) => SafeArea(
         child: Scaffold(
           appBar: AppBar(
-            elevation: 5,
+            surfaceTintColor: Colors.black,
+            shadowColor: Colors.black,
+            elevation: 2,
             title: const Text(
               'Notes',
               style: TextStyle(fontSize: 15),
             ),
+            iconTheme: const IconThemeData(color: Colors.blueGrey),
           ),
           floatingActionButton: FloatingActionButton(
-            child: const Icon(Icons.edit),
+            backgroundColor: Colors.red,
+            child: const Icon(Icons.edit, color: Colors.white),
             onPressed: () {
               showModalBottomSheet<void>(
                 context: context,
@@ -26,13 +30,16 @@ class NotePage extends StatelessWidget {
             },
           ),
           body: Padding(
-            padding: const EdgeInsets.fromLTRB(5, 10, 5, 0),
+            padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
             child: Column(
               children: [
                 Expanded(
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
+                        const SizedBox(
+                          height: 10,
+                        ),
                         for (var i = 0; i < 10; i++)
                           GestureDetector(
                             onTap: () {
@@ -46,7 +53,8 @@ class NotePage extends StatelessWidget {
                             child: SizedBox(
                                 width: MediaQuery.of(context).size.width,
                                 child: const Card(
-                                  color: Colors.orangeAccent,
+                                  shadowColor: Colors.black,
+                                  elevation: 3,
                                   child: Padding(
                                     padding: EdgeInsets.all(20.0),
                                     child: Column(
@@ -83,16 +91,6 @@ class NewNoteField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.amber.shade100,
-        borderRadius: BorderRadius.circular(6),
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 10,
-            color: Colors.grey.shade600,
-          ),
-        ],
-      ),
       padding: const EdgeInsets.all(15),
       width: MediaQuery.of(context).size.width,
       child: SizedBox(
@@ -102,7 +100,7 @@ class NewNoteField extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const TextField(
+              TextField(
                 maxLines: 3,
                 keyboardType: TextInputType.text,
                 textAlign: TextAlign.center,
@@ -115,6 +113,7 @@ class NewNoteField extends StatelessWidget {
                   disabledBorder: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   hintText: 'Enter new note here...',
+                  hintStyle: TextStyle(color: Theme.of(context).textTheme.headlineMedium?.color)
                 ),
               ),
               IconButton(

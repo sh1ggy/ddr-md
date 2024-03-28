@@ -21,8 +21,13 @@ class App extends StatelessWidget {
         title: 'ddr_bpm',
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
+          colorScheme: ColorScheme.fromSeed(
+              seedColor: Color(0xff8cb2dd),
+              primary: const Color(0xff2f4d89),
+              secondary: const Color(0xffb6445b),
+              tertiary: Colors.grey.shade800),
         ),
+        // darkTheme: ThemeData.dark(useMaterial3: true),
         home: const Navbar(),
       ),
     );
@@ -70,36 +75,53 @@ class _NavbarState extends State<Navbar> {
     Theme.of(context);
     return Scaffold(
       bottomNavigationBar: NavigationBar(
+        elevation: 5,
+        surfaceTintColor: Colors.black,
         onDestinationSelected: (int index) {
           setState(() {
             currentPageIndex = index;
           });
         },
-        indicatorColor: Colors.amber,
+        indicatorColor: Colors.primaries.first,
         selectedIndex: currentPageIndex,
         destinations: const <Widget>[
           NavigationDestination(
-            selectedIcon: Icon(Icons.onetwothree),
+            selectedIcon: Icon(
+              Icons.onetwothree,
+              color: Colors.white,
+            ),
             icon: Icon(Icons.onetwothree),
             label: 'BPM',
           ),
           NavigationDestination(
-            selectedIcon: Icon(Icons.music_note),
+            selectedIcon: Icon(
+              Icons.music_note,
+              color: Colors.white,
+            ),
             icon: Icon(Icons.music_note),
             label: 'Songs',
           ),
           NavigationDestination(
-            selectedIcon: Icon(Icons.abc),
+            selectedIcon: Icon(
+              Icons.abc,
+              color: Colors.white,
+            ),
             icon: Icon(Icons.abc),
             label: 'Scores',
           ),
           NavigationDestination(
-            selectedIcon: Icon(Icons.people),
+            selectedIcon: Icon(
+              Icons.people,
+              color: Colors.white,
+            ),
             icon: Icon(Icons.people),
             label: 'Social',
           ),
           NavigationDestination(
-            selectedIcon: Icon(Icons.settings),
+            selectedIcon: Icon(
+              Icons.settings,
+              color: Colors.white,
+            ),
             icon: Icon(Icons.settings),
             label: 'Settings',
           ),

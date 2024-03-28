@@ -94,14 +94,23 @@ class _SongPageState extends State<SongPage> {
           textDirection: TextDirection.ltr,
           child: Scaffold(
             appBar: AppBar(
-                elevation: 1,
+                surfaceTintColor: Colors.black,
+                shadowColor: Colors.black,
+                elevation: 2,
+                centerTitle: true,
                 title: const Text(
-                  'Song',
-                  style: TextStyle(fontSize: 15),
+                  "Song",
+                  style: TextStyle(
+                      fontSize: 20,
+                      color: Colors.blueGrey,
+                      fontWeight: FontWeight.w600),
                 ),
+                iconTheme: const IconThemeData(color: Colors.blueGrey),
                 actions: <Widget>[
                   IconButton(
-                      icon: const Icon(Icons.format_list_numbered_rounded),
+                      icon: const Icon(
+                        Icons.format_list_numbered_rounded,
+                      ),
                       tooltip: "Add score",
                       onPressed: () {
                         print('add score');
@@ -114,7 +123,7 @@ class _SongPageState extends State<SongPage> {
                 ]),
             body: SingleChildScrollView(
               child: Container(
-                padding: const EdgeInsets.fromLTRB(5, 10, 5, 0),
+                padding: const EdgeInsets.fromLTRB(5, 10, 5, 10),
                 child: Column(
                   children: [
                     note(context),
@@ -137,7 +146,7 @@ class _SongPageState extends State<SongPage> {
   }
 
   Container songChart() {
-    Color lineColor = Colors.orangeAccent;
+    Color lineColor = Colors.redAccent.shade100;
     List<LineChartBarData> lineChartBarData = [
       LineChartBarData(
           spots: songSpots,
@@ -154,10 +163,14 @@ class _SongPageState extends State<SongPage> {
         LineChartData(
           titlesData: FlTitlesData(
               bottomTitles: AxisTitles(
+                axisNameWidget: const Text(
+                  'Time (s)',
+                  style: TextStyle(fontSize: 10),
+                ),
                 sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 26,
-                    interval: 10,
+                    interval: 15,
                     getTitlesWidget: (value, meta) {
                       Widget axisTitle = Text(value.floor().toString());
                       // A workaround to hide the max value title as FLChart is overlapping it on top of previous
@@ -172,11 +185,28 @@ class _SongPageState extends State<SongPage> {
                           axisSide: meta.axisSide, child: axisTitle);
                     }),
               ),
-              leftTitles: const AxisTitles(
+              leftTitles: AxisTitles(
+                axisNameWidget: const Text(
+                  'BPM',
+                  style: TextStyle(fontSize: 10),
+                ),
                 sideTitles: SideTitles(
                   showTitles: true,
                   reservedSize: 38,
                   interval: 100,
+                  getTitlesWidget: (value, meta) {
+                    Widget axisTitle = Text(value.floor().toString());
+                    // A workaround to hide the max value title as FLChart is overlapping it on top of previous
+                    if (value == meta.max) {
+                      final remainder = value % meta.appliedInterval;
+                      if (remainder != 0.0 &&
+                          remainder / meta.appliedInterval < 0.5) {
+                        axisTitle = const SizedBox.shrink();
+                      }
+                    }
+                    return SideTitleWidget(
+                        axisSide: meta.axisSide, child: axisTitle);
+                  },
                 ),
               ),
               topTitles: const AxisTitles(
@@ -195,28 +225,28 @@ class _SongPageState extends State<SongPage> {
                   tooltipPadding: const EdgeInsets.all(2),
                   tooltipBorder: const BorderSide(color: Colors.black))),
           clipData: const FlClipData.all(),
-          borderData:
-              FlBorderData(border: Border.all(color: Colors.black, width: 1)),
+          borderData: FlBorderData(
+              border: Border.all(color: Colors.grey.shade500, width: 1)),
           gridData: FlGridData(
             show: true,
             getDrawingHorizontalLine: (value) {
-              return const FlLine(
-                color: Colors.grey,
+              return FlLine(
+                color: Colors.grey.shade300,
                 strokeWidth: 1,
               );
             },
             drawVerticalLine: true,
             getDrawingVerticalLine: (value) {
-              return const FlLine(
-                color: Colors.grey,
+              return FlLine(
+                color: Colors.grey.shade300,
                 strokeWidth: 1,
               );
             },
           ),
-          minX: 1,
+          minX: 0,
           minY: 0,
           maxX: songInfo!.songLength,
-          maxY: chart!.trueMax.toDouble(),
+          maxY: chart!.trueMax.toDouble() + 10,
           lineBarsData: lineChartBarData,
         ),
       ),
@@ -249,10 +279,9 @@ class _SongPageState extends State<SongPage> {
               ),
               RichText(
                 text: TextSpan(
-                  style: const TextStyle(
-                    fontSize: 14.0,
-                    color: Colors.black,
-                  ),
+                  style: TextStyle(
+                      fontSize: 14.0,
+                      color: Theme.of(context).textTheme.bodyMedium?.color),
                   children: <TextSpan>[
                     const TextSpan(
                         text: 'Length: ',
@@ -363,22 +392,21 @@ class _SongPageState extends State<SongPage> {
                       decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(7),
                           color: nearestModIndex == appState.mods.indexOf(e)
-                              ? Colors.amberAccent
-                              : Colors.white70),
+                              ? Colors.redAccent.shade200
+                              : Colors.transparent),
                       child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            SizedBox(width: 50, child: Text('$avg')),
+                            songBpmTextItem(
+                                e, nearestModIndex, appState, avg.toString()),
                             if (isBpmChange!) ...[
-                              SizedBox(width: 50, child: Text('$min')),
-                              SizedBox(width: 50, child: Text('$max')),
+                              songBpmTextItem(
+                                  e, nearestModIndex, appState, min.toString()),
+                              songBpmTextItem(
+                                  e, nearestModIndex, appState, max.toString()),
+                              songBpmTextItem(
+                                  e, nearestModIndex, appState, e.toString()),
                             ],
-                            SizedBox(
-                              width: 50,
-                              child: Text('$e',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold)),
-                            ),
                           ]
                               .expand((x) => [const SizedBox(width: 30), x])
                               .skip(1)
@@ -389,6 +417,18 @@ class _SongPageState extends State<SongPage> {
               )),
         ],
       ),
+    );
+  }
+
+  SizedBox songBpmTextItem(
+      double e, int nearestModIndex, MyAppState appState, String text) {
+    return SizedBox(
+      width: 50,
+      child: Text(text,
+          style: TextStyle(
+              color: nearestModIndex == appState.mods.indexOf(e)
+                  ? Colors.white
+                  : Theme.of(context).textTheme.bodyMedium?.color)),
     );
   }
 }
