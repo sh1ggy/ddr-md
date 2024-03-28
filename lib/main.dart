@@ -27,7 +27,8 @@ class App extends StatelessWidget {
               secondary: const Color(0xffb6445b),
               tertiary: Colors.grey.shade800),
         ),
-        // darkTheme: ThemeData.dark(useMaterial3: true),
+        darkTheme: ThemeData.dark(useMaterial3: true),
+        themeMode: ThemeMode.system,
         home: const Navbar(),
       ),
     );
