@@ -1,14 +1,19 @@
-import 'dart:convert';
-import 'package:ddr_md/components/song/note.dart';
-import 'package:ddr_md/components/song/prevNote.dart';
-import 'package:ddr_md/components/songJson.dart';
+/// Name: SongPage
+/// Parent: Main
+/// Description: Page that displays selected song information
+library;
+
+import 'package:ddr_md/components/song/note_page.dart';
+import 'package:ddr_md/components/song/prev_note.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/main.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:ddr_md/constants.dart' as Constants;
+import 'package:ddr_md/constants.dart' as constants;
 
+// Method for formatting time from a given time (s)
 formattedTime({required int timeInSecond}) {
   int sec = timeInSecond % 60;
   int min = (timeInSecond / 60).floor();
@@ -53,7 +58,7 @@ class _SongPageState extends State<SongPage> {
     array.asMap().entries.forEach((entry) {
       var i = entry.key;
       var a = array[i] * avgBpm;
-      if (array[i] * avgBpm <= Constants.chosen_bpm + Constants.buffer) {
+      if (array[i] * avgBpm <= constants.chosen_bpm + constants.buffer) {
         nearest = i;
       }
     });
@@ -84,7 +89,7 @@ class _SongPageState extends State<SongPage> {
 
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<MyAppState>();
+    var appState = context.watch<AppState>();
     if (songInfo != null) {
       nearestModIndex = findNearest(chart!.dominantBpm, appState.mods);
       genBpmPoints();
@@ -123,14 +128,14 @@ class _SongPageState extends State<SongPage> {
                         context,
                         MaterialPageRoute(
                             builder: (context) => const NotePage())),
-                    )
+                  )
                 ]),
             body: SingleChildScrollView(
               child: Container(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 child: Column(
                   children: [
-                    prevNote(context),
+                    const PrevNote(),
                     if (songInfo != null) songDetails(),
                     if (songInfo != null && isBpmChange != null) ...[
                       songBpm(appState, nearestModIndex),
@@ -334,7 +339,7 @@ class _SongPageState extends State<SongPage> {
         ]);
   }
 
-  Container songBpm(MyAppState appState, int nearestModIndex) {
+  Container songBpm(AppState appState, int nearestModIndex) {
     return Container(
       padding: const EdgeInsets.all(7.0),
       child: Column(
@@ -425,7 +430,7 @@ class _SongPageState extends State<SongPage> {
   }
 
   SizedBox songBpmTextItem(
-      double e, int nearestModIndex, MyAppState appState, String text) {
+      double e, int nearestModIndex, AppState appState, String text) {
     return SizedBox(
       width: 50,
       child: Text(text,

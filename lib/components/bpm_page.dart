@@ -8,7 +8,7 @@ class BPMPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<MyAppState>();
+    var appState = context.watch<AppState>();
 
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {

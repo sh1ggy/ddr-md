@@ -1,8 +1,8 @@
-import 'package:ddr_md/components/bpm.dart';
-import 'package:ddr_md/components/song/note.dart';
-import 'package:ddr_md/components/song/song.dart';
+import 'package:ddr_md/components/bpm_page.dart';
+import 'package:ddr_md/components/song/song_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:ddr_md/constants.dart' as constants;
 
 void main() {
   runApp(const App());
@@ -14,7 +14,7 @@ class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (context) => MyAppState(),
+      create: (context) => AppState(),
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'ddr_bpm',
@@ -34,24 +34,24 @@ class App extends StatelessWidget {
   }
 }
 
-class MyAppState extends ChangeNotifier {
-  int bpm = 200; // bpm init
+class AppState extends ChangeNotifier {
+  int bpm = constants.chosen_bpm; // BPM init
 
-  // set BPM to new input
+  // Set BPM to new input
   void setBpm(newBpm) {
     if (newBpm == "") return;
     bpm = int.parse(newBpm);
     notifyListeners();
   }
 
-  // generate the list of mods programmatically
+  // Generate list of mods programmatically
   List<double> generateMods() {
     double start = 0.25, end = 4.25;
-    // generating numbers from [0 to 4 in .25 inc.]
+    // Generate numbers from [0 to 4 in .25 inc.]
     var list = [for (var i = start; i < end; i += .25) i];
     start = 4.5;
     end = 8.5;
-    // generating numbers from [4 to 8 in .5 inc.]
+    // Generate numbers from [4 to 8 in .5 inc.]
     [for (var i = start; i < end; i += .5) list.add(i)];
     mods = list;
     return list;

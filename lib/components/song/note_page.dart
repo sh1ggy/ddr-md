@@ -1,5 +1,13 @@
+/// Name: NotePage
+/// Parent: SongPage
+/// Description: Page that displays timeline of notes
+/// as well as allows you to make new ones. [NewNoteField]
+/// is the widget handling the new note action and is a child of 
+/// [NotePage]
+library;
+
 import 'package:flutter/material.dart';
-import 'package:ddr_md/constants.dart' as Constants;
+import 'package:ddr_md/constants.dart' as constants;
 
 class NotePage extends StatelessWidget {
   const NotePage({super.key});
@@ -15,9 +23,9 @@ class NotePage extends StatelessWidget {
             title: const Text(
               'Notes',
               style: TextStyle(
-                      fontSize: 20,
-                      color: Colors.blueGrey,
-                      fontWeight: FontWeight.w600),
+                  fontSize: 20,
+                  color: Colors.blueGrey,
+                  fontWeight: FontWeight.w600),
             ),
             iconTheme: const IconThemeData(color: Colors.blueGrey),
           ),
@@ -70,7 +78,7 @@ class NotePage extends StatelessWidget {
                                           style: TextStyle(
                                               fontWeight: FontWeight.bold),
                                         ),
-                                        Text(Constants.note),
+                                        Text(constants.note),
                                       ],
                                     ),
                                   ),
@@ -110,15 +118,16 @@ class NewNoteField extends StatelessWidget {
                 textAlign: TextAlign.center,
                 textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
-                  border: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  errorBorder: InputBorder.none,
-                  focusedErrorBorder: InputBorder.none,
-                  disabledBorder: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  hintText: 'Enter new note here...',
-                  hintStyle: TextStyle(color: Theme.of(context).textTheme.headlineMedium?.color)
-                ),
+                    border: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    hintText: 'Enter new note here...',
+                    hintStyle: TextStyle(
+                        color:
+                            Theme.of(context).textTheme.headlineMedium?.color)),
               ),
               IconButton(
                   icon: const Icon(Icons.save),
