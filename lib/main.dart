@@ -2,7 +2,6 @@ import 'package:ddr_md/components/bpm.dart';
 import 'package:ddr_md/components/song/note.dart';
 import 'package:ddr_md/components/song/song.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -22,7 +21,7 @@ class App extends StatelessWidget {
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
-              seedColor: Color(0xff8cb2dd),
+              seedColor: const Color(0xff8cb2dd),
               primary: const Color(0xff2f4d89),
               secondary: const Color(0xffb6445b),
               tertiary: Colors.grey.shade800),
@@ -132,15 +131,20 @@ class _NavbarState extends State<Navbar> {
         /// Home page
         const BPMPage(),
         Navigator(
+          key: const Key("Song"),
           onGenerateRoute: (settings) {
-            Widget page = SongPage();
-            if (settings.name == 'NotePage') page = NotePage();
+            Widget page = const SongPage();
             return MaterialPageRoute(builder: (_) => page);
           },
         ),
         // const Placeholder(),
         // const Placeholder(),
-        const Placeholder(),
+        Navigator(
+            key: const Key("Settings"),
+            onGenerateRoute: (settings) {
+              Widget page = const Placeholder();
+              return MaterialPageRoute(builder: (_) => page);
+            }),
       ][currentPageIndex],
     );
   }

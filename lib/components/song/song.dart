@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:ddr_md/components/song/note.dart';
 import 'package:ddr_md/components/song/prevNote.dart';
 import 'package:ddr_md/components/songJson.dart';
 import 'package:ddr_md/main.dart';
@@ -116,10 +117,13 @@ class _SongPageState extends State<SongPage> {
                         print('add score');
                       }),
                   IconButton(
-                      icon: const Icon(Icons.note_add),
-                      tooltip: "Add note",
-                      onPressed: () =>
-                          Navigator.pushNamed(context, 'NotePage')),
+                    icon: const Icon(Icons.note_add),
+                    tooltip: "Add note",
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const NotePage())),
+                    )
                 ]),
             body: SingleChildScrollView(
               child: Container(
