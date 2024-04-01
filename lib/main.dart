@@ -102,22 +102,22 @@ class _NavbarState extends State<Navbar> {
             icon: Icon(Icons.music_note),
             label: 'Songs',
           ),
-          NavigationDestination(
-            selectedIcon: Icon(
-              Icons.abc,
-              color: Colors.white,
-            ),
-            icon: Icon(Icons.abc),
-            label: 'Scores',
-          ),
-          NavigationDestination(
-            selectedIcon: Icon(
-              Icons.people,
-              color: Colors.white,
-            ),
-            icon: Icon(Icons.people),
-            label: 'Social',
-          ),
+          // NavigationDestination(
+          //   selectedIcon: Icon(
+          //     Icons.abc,
+          //     color: Colors.white,
+          //   ),
+          //   icon: Icon(Icons.abc),
+          //   label: 'Scores',
+          // ),
+          // NavigationDestination(
+          //   selectedIcon: Icon(
+          //     Icons.people,
+          //     color: Colors.white,
+          //   ),
+          //   icon: Icon(Icons.people),
+          //   label: 'Social',
+          // ),
           NavigationDestination(
             selectedIcon: Icon(
               Icons.settings,
@@ -138,8 +138,8 @@ class _NavbarState extends State<Navbar> {
             return MaterialPageRoute(builder: (_) => page);
           },
         ),
-        const Placeholder(),
-        const Placeholder(),
+        // const Placeholder(),
+        // const Placeholder(),
         const Placeholder(),
       ][currentPageIndex],
     );

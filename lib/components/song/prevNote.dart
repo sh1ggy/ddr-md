@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 import 'package:ddr_md/constants.dart' as Constants;
 
-Card note(context) {
+Card prevNote(context) {
   return Card(
     child: Container(
       padding: const EdgeInsets.all(15.0),

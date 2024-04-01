@@ -123,10 +123,10 @@ class _SongPageState extends State<SongPage> {
                 ]),
             body: SingleChildScrollView(
               child: Container(
-                padding: const EdgeInsets.fromLTRB(5, 10, 5, 10),
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 child: Column(
                   children: [
-                    note(context),
+                    prevNote(context),
                     if (songInfo != null) songDetails(),
                     if (songInfo != null && isBpmChange != null) ...[
                       songBpm(appState, nearestModIndex),
@@ -156,7 +156,7 @@ class _SongPageState extends State<SongPage> {
           dotData: const FlDotData(show: false))
     ];
     return Container(
-      padding: const EdgeInsets.all(1.0),
+      padding: const EdgeInsets.fromLTRB(10, 0, 25, 0),
       height: MediaQuery.of(context).size.height / 3,
       child: LineChart(
         curve: Easing.standard,
