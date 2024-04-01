@@ -11,9 +11,13 @@ class NotePage extends StatelessWidget {
             surfaceTintColor: Colors.black,
             shadowColor: Colors.black,
             elevation: 2,
+            centerTitle: true,
             title: const Text(
               'Notes',
-              style: TextStyle(fontSize: 15),
+              style: TextStyle(
+                      fontSize: 20,
+                      color: Colors.blueGrey,
+                      fontWeight: FontWeight.w600),
             ),
             iconTheme: const IconThemeData(color: Colors.blueGrey),
           ),
