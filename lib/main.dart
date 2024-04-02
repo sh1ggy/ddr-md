@@ -1,3 +1,8 @@
+/// Name: App
+/// Description: Main page that hosts the navigator & determines
+/// which page is getting rendered.
+library;
+
 import 'package:ddr_md/components/bpm_page.dart';
 import 'package:ddr_md/components/song/song_page.dart';
 import 'package:flutter/material.dart';
@@ -35,7 +40,7 @@ class App extends StatelessWidget {
 }
 
 class AppState extends ChangeNotifier {
-  int bpm = constants.chosen_bpm; // BPM init
+  int bpm = constants.chosenBpm; // BPM init
 
   // Set BPM to new input
   void setBpm(newBpm) {
