@@ -4,7 +4,7 @@
 /// as well as your most recent score.
 library;
 
-import 'package:ddr_md/components/song/note_page.dart';
+import 'package:ddr_md/components/song/notes/note_page.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 

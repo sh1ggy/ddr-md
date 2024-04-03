@@ -3,8 +3,8 @@
 /// Description: Page that displays selected song information
 library;
 
-import 'package:ddr_md/components/song/note_page.dart';
-import 'package:ddr_md/components/song/prev_note.dart';
+import 'package:ddr_md/components/song/notes/note_page.dart';
+import 'package:ddr_md/components/song/notes/prev_note.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
@@ -133,7 +133,7 @@ class _SongPageState extends State<SongPage> {
                     if (songInfo != null)
                       SongDetails(songInfo: songInfo!, chart: chart),
                     if (songInfo != null && isBpmChange != null) ...[
-                      songBpm(appState, nearestModIndex),
+                      SongBpm(nearestModIndex: nearestModIndex, isBpmChange: isBpmChange, chart: chart),
                       SongChart(
                           songSpots: songSpots,
                           context: context,
@@ -153,101 +153,5 @@ class _SongPageState extends State<SongPage> {
     );
   }
 
-  Container songBpm(AppState appState, int nearestModIndex) {
-    return Container(
-      padding: const EdgeInsets.all(7.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(
-                  width: 50,
-                  child: Text(
-                    'Avg',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  )),
-              const SizedBox(width: 30),
-              if (isBpmChange!) ...[
-                const SizedBox(
-                    width: 50,
-                    child: Text(
-                      'Min',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    )),
-                const SizedBox(width: 30),
-                const SizedBox(
-                    width: 50,
-                    child: Text(
-                      'Max',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    )),
-                const SizedBox(width: 30),
-              ],
-              const SizedBox(
-                  width: 50,
-                  child: Text(
-                    'Mod',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  )),
-            ],
-          ),
-          SizedBox(
-              height: MediaQuery.of(context).size.height / 9,
-              child: ListWheelScrollView.useDelegate(
-                onSelectedItemChanged: (index) {
-                  setState(() {
-                    selectedItemIndex = index;
-                  });
-                },
-                physics: const FixedExtentScrollPhysics(),
-                controller:
-                    FixedExtentScrollController(initialItem: nearestModIndex),
-                overAndUnderCenterOpacity: .5,
-                itemExtent: 22,
-                childDelegate: ListWheelChildListDelegate(
-                  children: appState.mods.map<Widget>((e) {
-                    var avg = e * chart!.dominantBpm;
-                    var min = e * chart!.trueMin;
-                    var max = e * chart!.trueMax;
-                    return Container(
-                      decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(7),
-                          color: nearestModIndex == appState.mods.indexOf(e)
-                              ? Colors.redAccent.shade200
-                              : Colors.transparent),
-                      child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SongBpmTextItem(
-                                text: avg.toString(),
-                                nearestModIndex: nearestModIndex,
-                                e: e),
-                            if (isBpmChange!) ...[
-                              SongBpmTextItem(
-                                  text: min.toString(),
-                                  nearestModIndex: nearestModIndex,
-                                  e: e),
-                              SongBpmTextItem(
-                                  text: max.toString(),
-                                  nearestModIndex: nearestModIndex,
-                                  e: e),
-                              SongBpmTextItem(
-                                  text: e.toString(),
-                                  nearestModIndex: nearestModIndex,
-                                  e: e),
-                            ],
-                          ]
-                              .expand((x) => [const SizedBox(width: 30), x])
-                              .skip(1)
-                              .toList()),
-                    );
-                  }).toList(),
-                ),
-              )),
-        ],
-      ),
-    );
-  }
+  
 }
