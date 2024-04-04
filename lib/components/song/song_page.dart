@@ -29,7 +29,8 @@ class _SongPageState extends State<SongPage> {
   bool? isBpmChange;
   int selectedItemIndex = 0;
   int nearestModIndex = 0;
-  List<FlSpot> songSpots = [];
+  List<FlSpot> songBpmSpots = [];
+  List<FlSpot> songStopSpots = [];
   Chart? chart;
 
   Future<void> readSongJson() async {
@@ -47,7 +48,7 @@ class _SongPageState extends State<SongPage> {
     });
   }
 
-  int findNearest(int avgBpm, List array) {
+  int findNearestBpm(int avgBpm, List array) {
     var nearest = 0;
     array.asMap().entries.forEach((entry) {
       var i = entry.key;
@@ -59,14 +60,33 @@ class _SongPageState extends State<SongPage> {
     return nearest;
   }
 
+  int findNearest(double st, List array) {
+    var nearest = 0;
+    array.asMap().entries.forEach((entry) {
+      var i = entry.key;
+      Bpm a = array[i];
+      if (a.st <= st) {
+        nearest = a.val;
+        return;
+      }
+    });
+    return nearest;
+  }
+
   void genBpmPoints() {
     List<Bpm> bpms = chart!.bpms;
-    if (songSpots.isNotEmpty)
+    if (songBpmSpots.isNotEmpty)
       return; // TODO: remove this when doing dynamic songData
 
     for (int i = 0; i < bpms.length; i++) {
-      songSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
-      songSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
+      songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
+      songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
+    }
+    for (int i = 0; i < chart!.stops.length; i++) {
+      double nearestBpm = findNearest(chart!.stops[i].st, bpms).toDouble();
+      print(nearestBpm);
+      print(chart!.stops[i].st);
+      songStopSpots.add(FlSpot(chart!.stops[i].st, nearestBpm));
     }
   }
 
@@ -85,7 +105,7 @@ class _SongPageState extends State<SongPage> {
   Widget build(BuildContext context) {
     var appState = context.watch<AppState>();
     if (songInfo != null) {
-      nearestModIndex = findNearest(chart!.dominantBpm, appState.mods);
+      nearestModIndex = findNearestBpm(chart!.dominantBpm, appState.mods);
       genBpmPoints();
     }
     return SafeArea(
@@ -135,7 +155,8 @@ class _SongPageState extends State<SongPage> {
                     if (songInfo != null && isBpmChange != null) ...[
                       SongBpm(nearestModIndex: nearestModIndex, isBpmChange: isBpmChange, chart: chart),
                       SongChart(
-                          songSpots: songSpots,
+                          songBpmSpots: songBpmSpots,
+                          songStopSpots: songStopSpots,
                           context: context,
                           songInfo: songInfo,
                           chart: chart),

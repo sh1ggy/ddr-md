@@ -1,3 +1,4 @@
+import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -5,13 +6,15 @@ import 'package:flutter/material.dart';
 class SongChart extends StatelessWidget {
   const SongChart({
     super.key,
-    required this.songSpots,
+    required this.songBpmSpots,
+    required this.songStopSpots,
     required this.context,
     required this.songInfo,
     required this.chart,
   });
 
-  final List<FlSpot> songSpots;
+  final List<FlSpot> songBpmSpots;
+  final List<FlSpot> songStopSpots;
   final BuildContext context;
   final SongInfo? songInfo;
   final Chart? chart;
@@ -21,11 +24,12 @@ class SongChart extends StatelessWidget {
     Color lineColor = Colors.redAccent.shade100;
     List<LineChartBarData> lineChartBarData = [
       LineChartBarData(
-          spots: songSpots,
+          spots: songBpmSpots,
           barWidth: 1.25,
           color: lineColor,
           isCurved: false,
-          dotData: const FlDotData(show: false))
+          dotData: const FlDotData(show: false)),
+      LineChartBarData(barWidth: 0, spots: songStopSpots)
     ];
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 0, 25, 0),
@@ -93,6 +97,22 @@ class SongChart extends StatelessWidget {
               )),
           lineTouchData: LineTouchData(
               touchTooltipData: LineTouchTooltipData(
+                  getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                    bool first = true;
+                    return touchedBarSpots.map((barSpot) {
+                      var stopTime =
+                          formattedTime(timeInSecond: barSpot.x.toInt()) + "s";
+                      var bpmY = barSpot.y;
+                      if (first) {
+                        first = false;
+                        return LineTooltipItem(
+                            ('BPM: $bpmY\nTIME: $stopTime'),
+                            const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold));
+                      }
+                    }).toList();
+                  },
                   tooltipBgColor: Colors.grey.shade900,
                   tooltipPadding: const EdgeInsets.all(2),
                   tooltipBorder: const BorderSide(color: Colors.black))),
@@ -125,4 +145,3 @@ class SongChart extends StatelessWidget {
     );
   }
 }
-
