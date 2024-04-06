@@ -21,15 +21,16 @@ class SongChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color lineColor = Colors.redAccent.shade100;
+    Color bpmLineColor = Colors.redAccent.shade100;
+    Color stopLineColor = Colors.lightBlueAccent.shade200;
     List<LineChartBarData> lineChartBarData = [
       LineChartBarData(
           spots: songBpmSpots,
           barWidth: 1.25,
-          color: lineColor,
+          color: bpmLineColor,
           isCurved: false,
           dotData: const FlDotData(show: false)),
-      LineChartBarData(barWidth: 0, spots: songStopSpots)
+      LineChartBarData(barWidth: 0, spots: songStopSpots, color: stopLineColor)
     ];
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 0, 25, 0),
@@ -85,8 +86,31 @@ class SongChart extends StatelessWidget {
                   },
                 ),
               ),
-              topTitles: const AxisTitles(
-                sideTitles: SideTitles(
+              topTitles: AxisTitles(
+                axisNameWidget: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle, color: bpmLineColor),
+                    ),
+                    const SizedBox(width: 5),
+                    const Text("BPM", style: TextStyle(fontSize: 10),),
+                    const SizedBox(width: 10),
+                    Container(
+                      width: 10,
+                      decoration: BoxDecoration(
+                          shape: BoxShape.circle, color: stopLineColor),
+                    ),
+                    const SizedBox(width: 5),
+                    const Text("Stops", style: TextStyle(fontSize: 10),),
+                  ],
+                ),
+                sideTitles: const SideTitles(
                   showTitles: false,
                 ),
               ),
@@ -118,19 +142,19 @@ class SongChart extends StatelessWidget {
                   tooltipBorder: const BorderSide(color: Colors.black))),
           clipData: const FlClipData.all(),
           borderData: FlBorderData(
-              border: Border.all(color: Colors.grey.shade500, width: 1)),
+              border: Border.all(color: Colors.grey.shade600, width: 1)),
           gridData: FlGridData(
             show: true,
             getDrawingHorizontalLine: (value) {
               return FlLine(
-                color: Colors.grey.shade300,
+                color: Colors.grey.shade400,
                 strokeWidth: 1,
               );
             },
             drawVerticalLine: true,
             getDrawingVerticalLine: (value) {
               return FlLine(
-                color: Colors.grey.shade300,
+                color: Colors.grey.shade400,
                 strokeWidth: 1,
               );
             },
