@@ -30,7 +30,10 @@ class SongChart extends StatelessWidget {
           color: bpmLineColor,
           isCurved: false,
           dotData: const FlDotData(show: false)),
-      LineChartBarData(barWidth: 0, spots: songStopSpots, color: stopLineColor)
+      LineChartBarData(
+          barWidth: 0,
+          spots: songStopSpots,
+          color: stopLineColor.withOpacity(.85))
     ];
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 0, 25, 0),
@@ -99,7 +102,10 @@ class SongChart extends StatelessWidget {
                           shape: BoxShape.circle, color: bpmLineColor),
                     ),
                     const SizedBox(width: 5),
-                    const Text("BPM", style: TextStyle(fontSize: 10),),
+                    const Text(
+                      "BPM",
+                      style: TextStyle(fontSize: 10),
+                    ),
                     const SizedBox(width: 10),
                     Container(
                       width: 10,
@@ -107,7 +113,10 @@ class SongChart extends StatelessWidget {
                           shape: BoxShape.circle, color: stopLineColor),
                     ),
                     const SizedBox(width: 5),
-                    const Text("Stops", style: TextStyle(fontSize: 10),),
+                    const Text(
+                      "Stops",
+                      style: TextStyle(fontSize: 10),
+                    ),
                   ],
                 ),
                 sideTitles: const SideTitles(
