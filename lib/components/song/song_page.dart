@@ -35,7 +35,7 @@ class _SongPageState extends State<SongPage> {
 
   Future<void> readSongJson() async {
     final String response =
-        await rootBundle.loadString('assets/aceforaces.json');
+        await rootBundle.loadString('assets/chaosterror.json');
     setState(() {
       songInfo = parseJson(response);
       if (!songInfo!.perChart) {
@@ -84,8 +84,6 @@ class _SongPageState extends State<SongPage> {
     }
     for (int i = 0; i < chart!.stops.length; i++) {
       double nearestBpm = findNearest(chart!.stops[i].st, bpms).toDouble();
-      print(nearestBpm);
-      print(chart!.stops[i].st);
       songStopSpots.add(FlSpot(chart!.stops[i].st, nearestBpm));
     }
   }

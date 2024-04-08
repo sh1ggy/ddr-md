@@ -29,11 +29,22 @@ class SongChart extends StatelessWidget {
           barWidth: 1.25,
           color: bpmLineColor,
           isCurved: false,
-          dotData: const FlDotData(show: false)),
+          dotData: const FlDotData(
+            show: false,
+          )),
       LineChartBarData(
           barWidth: 0,
           spots: songStopSpots,
-          color: stopLineColor.withOpacity(.85))
+          color: stopLineColor.withOpacity(.85),
+          dotData: FlDotData(
+            getDotPainter: (spot, percent, barData, index) =>
+                FlDotCirclePainter(
+              radius: 3,
+              color: stopLineColor,
+              strokeWidth: 1,
+              strokeColor: Colors.lightBlue.shade700
+            ),
+          ))
     ];
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 0, 25, 0),
