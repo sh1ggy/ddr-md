@@ -1,5 +1,5 @@
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/main.dart';
+import 'package:ddr_md/models/bpm_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -15,7 +15,7 @@ class SongBpm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<AppState>();
+    var bpmState = context.watch<BpmState>();
     return Container(
       padding: const EdgeInsets.all(7.0),
       child: Column(
@@ -70,14 +70,14 @@ class SongBpm extends StatelessWidget {
                 //   });
                 // },
                 childDelegate: ListWheelChildListDelegate(
-                  children: appState.mods.map<Widget>((e) {
+                  children: bpmState.mods.map<Widget>((e) {
                     var avg = e * chart!.dominantBpm;
                     var min = e * chart!.trueMin;
                     var max = e * chart!.trueMax;
                     return Container(
                       decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(7),
-                          color: nearestModIndex == appState.mods.indexOf(e)
+                          color: nearestModIndex == bpmState.mods.indexOf(e)
                               ? Colors.redAccent.shade200
                               : Colors.transparent),
                       child: Row(
@@ -128,12 +128,12 @@ class SongBpmTextItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<AppState>();
+    var bpmState = context.watch<BpmState>();
     return SizedBox(
       width: 50,
       child: Text(text,
           style: TextStyle(
-              color: nearestModIndex == appState.mods.indexOf(e)
+              color: nearestModIndex == bpmState.mods.indexOf(e)
                   ? Colors.white
                   : Theme.of(context).textTheme.bodyMedium?.color)),
     );

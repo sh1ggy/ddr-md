@@ -1,14 +1,13 @@
-import 'package:ddr_md/main.dart';
+import 'package:ddr_md/models/bpm_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-
 class BPMPage extends StatelessWidget {
   const BPMPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<AppState>();
+    var bpmState = context.watch<BpmState>();
 
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
@@ -41,7 +40,7 @@ class BPMPage extends StatelessWidget {
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
-                    onChanged: (value) => appState.setBpm(value),
+                    onChanged: (value) => bpmState.setBpm(value),
                     decoration: const InputDecoration(
                       border: InputBorder.none,
                       focusedBorder: InputBorder.none,
@@ -79,8 +78,8 @@ class BPMPage extends StatelessWidget {
                           magnification: 1.1,
                           diameterRatio: 1.5,
                           itemExtent: 22,
-                          children: appState.mods.map<Widget>((e) {
-                            var mod = e * appState.bpm;
+                          children: bpmState.mods.map<Widget>((e) {
+                            var mod = e * bpmState.bpm;
                             return Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [

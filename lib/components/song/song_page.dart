@@ -9,7 +9,7 @@ import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/main.dart';
+import 'package:ddr_md/models/bpm_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -101,9 +101,9 @@ class _SongPageState extends State<SongPage> {
 
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<AppState>();
+    var bpmState = context.watch<BpmState>();
     if (songInfo != null) {
-      nearestModIndex = findNearestBpm(chart!.dominantBpm, appState.mods);
+      nearestModIndex = findNearestBpm(chart!.dominantBpm, bpmState.mods);
       genBpmPoints();
     }
     return SafeArea(
