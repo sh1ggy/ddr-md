@@ -1,3 +1,8 @@
+/// Name: SongChart
+/// Parent: SongPage
+/// Description: Page that displays selected song chart information
+library;
+
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -22,7 +27,7 @@ class SongChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Color bpmLineColor = Colors.redAccent.shade100;
-    Color stopLineColor = Colors.lightBlueAccent.shade200;
+    MaterialAccentColor stopLineColor = Colors.lightBlueAccent;
     List<LineChartBarData> lineChartBarData = [
       LineChartBarData(
           spots: songBpmSpots,
@@ -42,7 +47,7 @@ class SongChart extends StatelessWidget {
               radius: 3,
               color: stopLineColor,
               strokeWidth: 1,
-              strokeColor: Colors.lightBlue.shade700
+              strokeColor: stopLineColor.shade700
             ),
           ))
     ];
@@ -121,7 +126,7 @@ class SongChart extends StatelessWidget {
                     Container(
                       width: 10,
                       decoration: BoxDecoration(
-                          shape: BoxShape.circle, color: stopLineColor),
+                          shape: BoxShape.circle, color: stopLineColor.shade200),
                     ),
                     const SizedBox(width: 5),
                     const Text(

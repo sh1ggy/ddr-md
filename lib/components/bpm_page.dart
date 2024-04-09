@@ -1,14 +1,20 @@
+/// Name: BpmPage
+/// Parent: Main
+/// Description: Page that displays BPM wheel selector
+library;
+
 import 'package:ddr_md/models/bpm_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:ddr_md/constants.dart' as constants;
+
 class BPMPage extends StatelessWidget {
   const BPMPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     var bpmState = context.watch<BpmState>();
-
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -78,7 +84,7 @@ class BPMPage extends StatelessWidget {
                           magnification: 1.1,
                           diameterRatio: 1.5,
                           itemExtent: 22,
-                          children: bpmState.mods.map<Widget>((e) {
+                          children: constants.mods.map<Widget>((e) {
                             var mod = e * bpmState.bpm;
                             return Row(
                                 mainAxisAlignment: MainAxisAlignment.center,

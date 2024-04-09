@@ -1,7 +1,11 @@
+/// Name: SongBpm
+/// Parent: SongPage
+/// Description: Widgets relating to the song's BPM & mods
+library;
+
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/models/bpm_model.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:ddr_md/constants.dart' as constants;
 
 class SongBpm extends StatelessWidget {
   const SongBpm(
@@ -15,7 +19,6 @@ class SongBpm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var bpmState = context.watch<BpmState>();
     return Container(
       padding: const EdgeInsets.all(7.0),
       child: Column(
@@ -70,14 +73,14 @@ class SongBpm extends StatelessWidget {
                 //   });
                 // },
                 childDelegate: ListWheelChildListDelegate(
-                  children: bpmState.mods.map<Widget>((e) {
+                  children: constants.mods.map<Widget>((e) {
                     var avg = e * chart!.dominantBpm;
                     var min = e * chart!.trueMin;
                     var max = e * chart!.trueMax;
                     return Container(
                       decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(7),
-                          color: nearestModIndex == bpmState.mods.indexOf(e)
+                          color: nearestModIndex == constants.mods.indexOf(e)
                               ? Colors.redAccent.shade200
                               : Colors.transparent),
                       child: Row(
@@ -96,11 +99,11 @@ class SongBpm extends StatelessWidget {
                                   text: max.toString(),
                                   nearestModIndex: nearestModIndex,
                                   e: e),
-                              SongBpmTextItem(
-                                  text: e.toString(),
-                                  nearestModIndex: nearestModIndex,
-                                  e: e),
                             ],
+                            SongBpmTextItem(
+                                text: e.toString(),
+                                nearestModIndex: nearestModIndex,
+                                e: e),
                           ]
                               .expand((x) => [const SizedBox(width: 30), x])
                               .skip(1)
@@ -128,12 +131,11 @@ class SongBpmTextItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var bpmState = context.watch<BpmState>();
     return SizedBox(
       width: 50,
       child: Text(text,
           style: TextStyle(
-              color: nearestModIndex == bpmState.mods.indexOf(e)
+              color: nearestModIndex == constants.mods.indexOf(e)
                   ? Colors.white
                   : Theme.of(context).textTheme.bodyMedium?.color)),
     );

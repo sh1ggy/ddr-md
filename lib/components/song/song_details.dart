@@ -1,7 +1,10 @@
+/// Name: SongDetails
+/// Parent: SongPage
+/// Description: Widgets that display base song information. 
+library;
+
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/main.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 // Method for formatting time from a given time (s)
 formattedTime({required int timeInSecond}) {

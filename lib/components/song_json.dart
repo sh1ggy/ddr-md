@@ -1,7 +1,11 @@
+/// Name: SongJson
+/// Description: JSON parsing for song & chart information 
+/// Reference: https://app.quicktype.io/
+library;
+
 import 'dart:convert';
 
 SongInfo parseJson(String str) => SongInfo.fromJson(json.decode(str));
-
 String welcomeToJson(SongInfo data) => json.encode(data.toJson());
 
 class SongInfo {
