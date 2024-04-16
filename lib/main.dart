@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/bpm_page.dart';
+import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/models/bpm_model.dart';
 import 'package:flutter/material.dart';
@@ -121,7 +122,7 @@ class _NavbarState extends State<Navbar> {
         Navigator(
             key: const Key("Settings"),
             onGenerateRoute: (settings) {
-              Widget page = const Placeholder();
+              Widget page = const SettingsPage();
               return MaterialPageRoute(builder: (_) => page);
             }),
       ][currentPageIndex],
