@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="bpm_clicker"
+        android:label="ddr_md
+
+"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
