@@ -27,8 +27,8 @@ class _SongPageState extends State<SongPage> {
   bool? isBpmChange;
   int selectedItemIndex = 0;
   int nearestModIndex = 0;
-  List<FlSpot> songBpmSpots = [];
-  List<FlSpot> songStopSpots = [];
+  final List<FlSpot> _songBpmSpots = [];
+  final List<FlSpot> _songStopSpots = [];
   Chart? chart;
 
   Future<void> readSongJson() async {
@@ -73,16 +73,16 @@ class _SongPageState extends State<SongPage> {
 
   void genBpmPoints() {
     List<Bpm> bpms = chart!.bpms;
-    if (songBpmSpots.isNotEmpty)
+    if (_songBpmSpots.isNotEmpty)
       return; // TODO: remove this when doing dynamic songData
 
     for (int i = 0; i < bpms.length; i++) {
-      songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
-      songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
+      _songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
+      _songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
     }
     for (int i = 0; i < chart!.stops.length; i++) {
       double nearestBpm = findNearest(chart!.stops[i].st, bpms).toDouble();
-      songStopSpots.add(FlSpot(chart!.stops[i].st, nearestBpm));
+      _songStopSpots.add(FlSpot(chart!.stops[i].st, nearestBpm));
     }
   }
 
@@ -150,8 +150,8 @@ class _SongPageState extends State<SongPage> {
                     if (songInfo != null && isBpmChange != null) ...[
                       SongBpm(nearestModIndex: nearestModIndex, isBpmChange: isBpmChange, chart: chart),
                       SongChart(
-                          songBpmSpots: songBpmSpots,
-                          songStopSpots: songStopSpots,
+                          songBpmSpots: _songBpmSpots,
+                          songStopSpots: _songStopSpots,
                           context: context,
                           songInfo: songInfo,
                           chart: chart),

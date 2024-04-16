@@ -1,19 +1,50 @@
-/// Name: BpmPage
+/// Name: SettingsPage
 /// Parent: Main
-/// Description: Page that displays BPM wheel selector
+/// Description: Settings page for use with shared_preferences
 library;
 
-import 'package:ddr_md/models/bpm_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ddr_md/constants.dart' as constants;
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  int _chosenBpm = 0;
+  int _textBpm = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBpm();
+  }
+
+  /// Load the initial counter value from persistent storage on start,
+  /// or fallback to constant BPM value if it doesn't exist.
+  Future<void> _loadBpm() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _chosenBpm = prefs.getInt('chosenBpm') ?? constants.chosenBpm;
+    });
+  }
+
+  /// After setting BPM preference, asynchronously save it
+  /// to persistent storage.
+  Future<void> _setBpm() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      prefs.setInt('chosenBpm', _textBpm);
+      _chosenBpm = prefs.getInt('chosenBpm') ?? constants.chosenBpm;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    var bpmState = context.watch<BpmState>();
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -56,8 +87,10 @@ class SettingsPage extends StatelessWidget {
                                 ],
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
-                                onChanged: (value) => bpmState.setBpm(value),
-                                decoration: const InputDecoration(
+                                onChanged: (value) => {
+                                  if (value != "") {_textBpm = int.parse(value)}
+                                },
+                                decoration: InputDecoration(
                                   counterText: "",
                                   border: InputBorder.none,
                                   focusedBorder: InputBorder.none,
@@ -65,7 +98,7 @@ class SettingsPage extends StatelessWidget {
                                   focusedErrorBorder: InputBorder.none,
                                   disabledBorder: InputBorder.none,
                                   enabledBorder: InputBorder.none,
-                                  hintText: '200',
+                                  hintText: _chosenBpm.toString(),
                                   labelText: 'BPM',
                                 ),
                               ),
@@ -76,7 +109,12 @@ class SettingsPage extends StatelessWidget {
                                 ),
                                 tooltip: "Save BPM",
                                 onPressed: () {
-                                  print('add score');
+                                  if (_textBpm == 0) {
+                                    _showToast(context, "Invalid BPM");
+                                    return;
+                                  }
+                                  _setBpm();
+                                  _showToast(context, "Saved BPM");
                                 }),
                           ],
                         ),
@@ -89,6 +127,16 @@ class SettingsPage extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+  
+  void _showToast(BuildContext context, String message) {
+    final scaffold = ScaffoldMessenger.of(context);
+    scaffold.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        action: SnackBarAction(label: 'DISMISS', onPressed: scaffold.hideCurrentSnackBar),
+      ),
     );
   }
 }
