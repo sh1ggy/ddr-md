@@ -9,8 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:ddr_md/constants.dart' as constants;
 
-class BPMPage extends StatelessWidget {
-  const BPMPage({super.key});
+class BpmPage extends StatelessWidget {
+  const BpmPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -47,14 +47,14 @@ class BPMPage extends StatelessWidget {
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
                     onChanged: (value) => bpmState.setBpm(value),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       border: InputBorder.none,
                       focusedBorder: InputBorder.none,
                       errorBorder: InputBorder.none,
                       focusedErrorBorder: InputBorder.none,
                       disabledBorder: InputBorder.none,
                       enabledBorder: InputBorder.none,
-                      hintText: '200',
+                      hintText: bpmState.bpm.toString(),
                     ),
                   ),
                   Column(

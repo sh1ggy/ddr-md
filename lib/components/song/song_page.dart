@@ -13,6 +13,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SongPage extends StatefulWidget {
   const SongPage({super.key});
@@ -28,6 +29,18 @@ class _SongPageState extends State<SongPage> {
   final List<FlSpot> _songBpmSpots = [];
   final List<FlSpot> _songStopSpots = [];
   Chart? _chart;
+
+  int _chosenReadSpeed = 0;
+
+  /// Load the initial counter value from persistent storage on start,
+  /// or fallback to constant BPM value if it doesn't exist.
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _chosenReadSpeed =
+          prefs.getInt('chosenReadSpeed') ?? constants.chosenReadSpeed;
+    });
+  }
 
   Future<void> readSongJson() async {
     final String response =
@@ -49,7 +62,7 @@ class _SongPageState extends State<SongPage> {
     array.asMap().entries.forEach((entry) {
       var i = entry.key;
       // var a = array[i] * avgBpm; // BPM
-      if (array[i] * avgBpm <= constants.chosenReadSpeed + constants.buffer) {
+      if (array[i] * avgBpm <= _chosenReadSpeed + constants.buffer) {
         nearest = i;
       }
     });
@@ -87,6 +100,7 @@ class _SongPageState extends State<SongPage> {
   @override
   void initState() {
     super.initState();
+    _loadPrefs();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       readSongJson();
     });

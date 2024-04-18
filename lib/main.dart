@@ -109,7 +109,7 @@ class _NavbarState extends State<Navbar> {
       ),
       body: <Widget>[
         /// Home page
-        const BPMPage(),
+        const BpmPage(),
         Navigator(
           key: const Key("Song"),
           onGenerateRoute: (settings) {
