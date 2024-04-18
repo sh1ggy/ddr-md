@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 
 class BpmState extends ChangeNotifier {
-  int bpm = constants.chosenBpm; // BPM init
+  int bpm = constants.chosenReadSpeed; // BPM init
 
   // Set BPM to new input
   void setBpm(newBpm) {

@@ -15,21 +15,24 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  int _chosenBpm = 0;
-  int _textBpm = 0;
+  int _chosenReadSpeed = 0;
+  int _rivalCode = 0;
+  int _textReadSpeed = 0;
+  int _textRivalCode = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadBpm();
+    _loadPrefs();
   }
 
   /// Load the initial counter value from persistent storage on start,
   /// or fallback to constant BPM value if it doesn't exist.
-  Future<void> _loadBpm() async {
+  Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _chosenBpm = prefs.getInt('chosenBpm') ?? constants.chosenBpm;
+      _chosenReadSpeed = prefs.getInt('chosenReadSpeed') ?? constants.chosenReadSpeed;
+      _rivalCode = prefs.getInt('rivalCode') ?? constants.rivalCode;
     });
   }
 
@@ -38,8 +41,18 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _setBpm() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      prefs.setInt('chosenBpm', _textBpm);
-      _chosenBpm = prefs.getInt('chosenBpm') ?? constants.chosenBpm;
+      prefs.setInt('chosenReadSpeed', _textReadSpeed);
+      _chosenReadSpeed = prefs.getInt('chosenReadSpeed') ?? constants.chosenReadSpeed;
+    });
+  }
+
+  /// After setting BPM preference, asynchronously save it
+  /// to persistent storage.
+  Future<void> _setRivalCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      prefs.setInt('rivalCode', _textRivalCode);
+      _rivalCode = prefs.getInt('rivalCode') ?? constants.rivalCode;
     });
   }
 
@@ -73,7 +86,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   Card(
                     child: ListTile(
-                      title: const Text('Preferred BPM'),
+                      title: const Text('Preferred Read Speed'),
                       trailing: SizedBox(
                         width: MediaQuery.of(context).size.width * 0.4,
                         child: Row(
@@ -88,7 +101,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
                                 onChanged: (value) => {
-                                  if (value != "") {_textBpm = int.parse(value)}
+                                  if (value != "") {_textReadSpeed = int.parse(value)}
                                 },
                                 decoration: InputDecoration(
                                   counterText: "",
@@ -98,8 +111,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                   focusedErrorBorder: InputBorder.none,
                                   disabledBorder: InputBorder.none,
                                   enabledBorder: InputBorder.none,
-                                  hintText: _chosenBpm.toString(),
-                                  labelText: 'BPM',
+                                  hintText: _chosenReadSpeed.toString(),
                                 ),
                               ),
                             ),
@@ -107,14 +119,62 @@ class _SettingsPageState extends State<SettingsPage> {
                                 icon: const Icon(
                                   Icons.save,
                                 ),
-                                tooltip: "Save BPM",
+                                tooltip: "Save Read Speed",
                                 onPressed: () {
-                                  if (_textBpm == 0) {
-                                    _showToast(context, "Invalid BPM");
+                                  if (_textReadSpeed == 0) {
+                                    _showToast(context, "Invalid Read Speed");
                                     return;
                                   }
                                   _setBpm();
-                                  _showToast(context, "Saved BPM");
+                                  _showToast(context, "Saved Read Speed to $_textReadSpeed");
+                                }),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Card(
+                    child: ListTile(
+                      title: const Text('DDR Rival Code'),
+                      trailing: SizedBox(
+                        width: MediaQuery.of(context).size.width * 0.4,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly
+                                ],
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                onChanged: (value) => {
+                                  if (value != "") {_textRivalCode = int.parse(value)}
+                                },
+                                decoration: InputDecoration(
+                                  counterText: "",
+                                  border: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  errorBorder: InputBorder.none,
+                                  focusedErrorBorder: InputBorder.none,
+                                  disabledBorder: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  hintText: _rivalCode.toString(),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                                icon: const Icon(
+                                  Icons.save,
+                                ),
+                                tooltip: "Save DDR Rival Code",
+                                onPressed: () {
+                                  if (_textRivalCode == 0) {
+                                    _showToast(context, "Invalid Rival Code");
+                                    return;
+                                  }
+                                  _setRivalCode();
+                                  _showToast(context, "Saved Rival Code to $_textRivalCode");
                                 }),
                           ],
                         ),
@@ -129,13 +189,14 @@ class _SettingsPageState extends State<SettingsPage> {
       }),
     );
   }
-  
+
   void _showToast(BuildContext context, String message) {
     final scaffold = ScaffoldMessenger.of(context);
     scaffold.showSnackBar(
       SnackBar(
         content: Text(message),
-        action: SnackBarAction(label: 'DISMISS', onPressed: scaffold.hideCurrentSnackBar),
+        action: SnackBarAction(
+            label: 'DISMISS', onPressed: scaffold.hideCurrentSnackBar),
       ),
     );
   }
