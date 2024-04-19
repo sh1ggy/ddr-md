@@ -9,9 +9,21 @@ import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/models/bpm_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:ddr_md/constants.dart' as constants;
 
-void main() {
-  runApp(const App());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final prefs = await SharedPreferences.getInstance();
+  final int readSpeed = prefs.getInt(BpmState.chosenReadSpeedSetting) ??
+      constants.chosenReadSpeed;
+  runApp(MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (context) => BpmState(readSpeed))
+    ],
+    child: const App(),
+  ));
 }
 
 class App extends StatelessWidget {
@@ -19,23 +31,20 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => BpmState(),
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'ddr_bpm',
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xff8cb2dd),
-              primary: const Color(0xff2f4d89),
-              secondary: const Color(0xffb6445b),
-              tertiary: Colors.grey.shade800),
-        ),
-        darkTheme: ThemeData.dark(useMaterial3: true),
-        themeMode: ThemeMode.system,
-        home: const Navbar(),
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'ddr_bpm',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xff8cb2dd),
+            primary: const Color(0xff2f4d89),
+            secondary: const Color(0xffb6445b),
+            tertiary: Colors.grey.shade800),
       ),
+      darkTheme: ThemeData.dark(useMaterial3: true),
+      themeMode: ThemeMode.system,
+      home: const Navbar(),
     );
   }
 }

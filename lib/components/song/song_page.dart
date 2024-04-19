@@ -84,8 +84,9 @@ class _SongPageState extends State<SongPage> {
 
   void genBpmPoints() {
     List<Bpm> bpms = _chart!.bpms;
-    if (_songBpmSpots.isNotEmpty)
-      return; // TODO: remove this when doing dynamic songData
+    if (_songBpmSpots.isNotEmpty) {
+      return;
+    } // TODO: remove this when doing dynamic songData
 
     for (int i = 0; i < bpms.length; i++) {
       _songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));

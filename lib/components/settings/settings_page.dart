@@ -38,7 +38,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// After setting BPM preference, asynchronously save it
   /// to persistent storage.
-  Future<void> _setBpm() async {
+  Future<void> _setReadSpeed() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       prefs.setInt('chosenReadSpeed', _textReadSpeed);
@@ -125,7 +125,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                     _showToast(context, "Invalid Read Speed");
                                     return;
                                   }
-                                  _setBpm();
+                                  _setReadSpeed();
                                   _showToast(context, "Saved Read Speed to $_textReadSpeed");
                                 }),
                           ],

@@ -29,6 +29,7 @@ const mods = [
   8.0
 ];
 const chosenReadSpeed = 600;
+const songBpm = 200; 
 const rivalCode = 0;
 const buffer = 50;
 const note =

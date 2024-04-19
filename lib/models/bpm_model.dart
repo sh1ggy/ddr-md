@@ -6,10 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 
 class BpmState extends ChangeNotifier {
-  int bpm = constants.chosenReadSpeed; // BPM init
+  static const chosenReadSpeedSetting = "chosenReadSpeed";
 
+  BpmState(int chosenReadSpeed) {
+    chosenReadSpeed = chosenReadSpeed;
+  }
+  int bpm = constants.songBpm; // BPM init
+  int chosenReadSpeed = constants.chosenReadSpeed; // Read speed init
   // Set BPM to new input
-  void setBpm(newBpm) {
+  void setBpm(String newBpm) {
     if (newBpm == "") return;
     bpm = int.parse(newBpm);
     notifyListeners();
