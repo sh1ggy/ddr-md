@@ -9,14 +9,8 @@ class BpmState extends ChangeNotifier {
   static const chosenReadSpeedSetting = "chosenReadSpeed";
 
   BpmState(int chosenReadSpeed) {
-    chosenReadSpeed = chosenReadSpeed;
+    _chosenReadSpeed = chosenReadSpeed;
   }
   int bpm = constants.songBpm; // BPM init
-  int chosenReadSpeed = constants.chosenReadSpeed; // Read speed init
-  // Set BPM to new input
-  void setBpm(String newBpm) {
-    if (newBpm == "") return;
-    bpm = int.parse(newBpm);
-    notifyListeners();
-  }
+  int _chosenReadSpeed = constants.chosenReadSpeed; // Read speed init
 }

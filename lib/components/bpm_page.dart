@@ -3,18 +3,56 @@
 /// Description: Page that displays BPM wheel selector
 library;
 
-import 'package:ddr_md/models/bpm_model.dart';
+import 'package:ddr_md/components/settings/settings_page.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:shared_preferences/shared_preferences.dart';
 
-class BpmPage extends StatelessWidget {
+class BpmPage extends StatefulWidget {
   const BpmPage({super.key});
 
   @override
+  State<BpmPage> createState() => _BpmPageState();
+}
+
+class _BpmPageState extends State<BpmPage> {
+  int bpm = constants.songBpm; // BPM init
+  int _chosenReadSpeed = constants.chosenReadSpeed; // Read speed init
+  int nearestModIndex = 0;
+
+  // Set BPM to new input & calc nearestReadSpeed
+  void setBpm(String newBpm) {
+    if (newBpm == "") return;
+    bpm = int.parse(newBpm);
+    setState(() {
+      nearestModIndex =
+          findNearestReadSpeed(bpm, constants.mods, _chosenReadSpeed);
+    });
+  }
+
+  /// Load the initial counter value from persistent storage on start,
+  /// or fallback to constant BPM value if it doesn't exist.
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _chosenReadSpeed =
+          prefs.getInt(SettingsPage.chosenReadSpeedSetting) ?? constants.chosenReadSpeed;
+      nearestModIndex =
+          findNearestReadSpeed(bpm, constants.mods, _chosenReadSpeed);
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    var bpmState = context.watch<BpmState>();
+    // var bpmState = context.watch<BpmState>();
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -46,7 +84,7 @@ class BpmPage extends StatelessWidget {
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     keyboardType: TextInputType.number,
                     textAlign: TextAlign.center,
-                    onChanged: (value) => bpmState.setBpm(value),
+                    onChanged: (value) => setBpm(value),
                     decoration: InputDecoration(
                       border: InputBorder.none,
                       focusedBorder: InputBorder.none,
@@ -54,7 +92,7 @@ class BpmPage extends StatelessWidget {
                       focusedErrorBorder: InputBorder.none,
                       disabledBorder: InputBorder.none,
                       enabledBorder: InputBorder.none,
-                      hintText: bpmState.bpm.toString(),
+                      hintText: bpm.toString(),
                     ),
                   ),
                   Column(
@@ -79,25 +117,39 @@ class BpmPage extends StatelessWidget {
                       ),
                       SizedBox(
                         height: MediaQuery.of(context).size.height / 2,
-                        child: ListWheelScrollView(
-                          useMagnifier: true,
-                          magnification: 1.1,
-                          diameterRatio: 1.5,
-                          itemExtent: 22,
-                          children: constants.mods.map<Widget>((e) {
-                            var mod = e * bpmState.bpm;
-                            return Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SizedBox(width: 50, child: Text('$e')),
-                                  SizedBox(width: 50, child: Text('$mod')),
-                                ]
-                                    .expand(
-                                        (x) => [const SizedBox(width: 30), x])
-                                    .skip(1)
-                                    .toList());
-                          }).toList(),
-                        ),
+                        child: ListWheelScrollView.useDelegate(
+                            useMagnifier: true,
+                            magnification: 1.1,
+                            diameterRatio: 1.5,
+                            itemExtent: 22,
+                            childDelegate: ListWheelChildListDelegate(
+                              children: constants.mods.map<Widget>((mod) {
+                                var readSpeed = mod * bpm;
+                                return Container(
+                                  decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(7),
+                                      color: nearestModIndex ==
+                                                  constants.mods.indexOf(mod) &&
+                                              nearestModIndex != 0
+                                          ? Colors.redAccent.shade200
+                                          : Colors.transparent),
+                                  child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        SizedBox(
+                                            width: 50, child: Text('$mod')),
+                                        SizedBox(
+                                            width: 50,
+                                            child: Text('$readSpeed')),
+                                      ]
+                                          .expand((x) =>
+                                              [const SizedBox(width: 30), x])
+                                          .skip(1)
+                                          .toList()),
+                                );
+                              }).toList(),
+                            )),
                       ),
                     ],
                   ),

@@ -3,12 +3,14 @@
 /// Description: Page that displays selected song information
 library;
 
+import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song/notes/note_page.dart';
 import 'package:ddr_md/components/song/notes/prev_note.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,6 +25,7 @@ class SongPage extends StatefulWidget {
 }
 
 class _SongPageState extends State<SongPage> {
+  // TODO: replace with a proper song page model
   SongInfo? _songInfo;
   bool? _isBpmChange;
   int _nearestModIndex = 0;
@@ -38,11 +41,11 @@ class _SongPageState extends State<SongPage> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _chosenReadSpeed =
-          prefs.getInt('chosenReadSpeed') ?? constants.chosenReadSpeed;
+          prefs.getInt(SettingsPage.chosenReadSpeedSetting) ?? constants.chosenReadSpeed;
     });
   }
 
-  Future<void> readSongJson() async {
+  Future<void> _readSongJson() async {
     final String response =
         await rootBundle.loadString('assets/chaosterror.json');
     setState(() {
@@ -57,19 +60,9 @@ class _SongPageState extends State<SongPage> {
     });
   }
 
-  int findNearestBpm(int avgBpm, List array) {
-    var nearest = 0;
-    array.asMap().entries.forEach((entry) {
-      var i = entry.key;
-      // var a = array[i] * avgBpm; // BPM
-      if (array[i] * avgBpm <= _chosenReadSpeed + constants.buffer) {
-        nearest = i;
-      }
-    });
-    return nearest;
-  }
-
-  int findNearest(double st, List array) {
+  /// Finds nearest BPM to the stop's [st]arting point
+  /// provided compared against the [array]
+  int _findNearestStop(double st, List array) {
     var nearest = 0;
     array.asMap().entries.forEach((entry) {
       var i = entry.key;
@@ -82,18 +75,21 @@ class _SongPageState extends State<SongPage> {
     return nearest;
   }
 
-  void genBpmPoints() {
+  void _genBpmPoints() {
     List<Bpm> bpms = _chart!.bpms;
     if (_songBpmSpots.isNotEmpty) {
       return;
     } // TODO: remove this when doing dynamic songData
 
+    // Adding a spot for each BPM change in the song
     for (int i = 0; i < bpms.length; i++) {
       _songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
       _songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
     }
+    // Adding a spot for each stop in the song
     for (int i = 0; i < _chart!.stops.length; i++) {
-      double nearestBpm = findNearest(_chart!.stops[i].st, bpms).toDouble();
+      // Finding nearest BPM to the stop
+      double nearestBpm = _findNearestStop(_chart!.stops[i].st, bpms).toDouble();
       _songStopSpots.add(FlSpot(_chart!.stops[i].st, nearestBpm));
     }
   }
@@ -103,18 +99,16 @@ class _SongPageState extends State<SongPage> {
     super.initState();
     _loadPrefs();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      readSongJson();
+      _readSongJson();
     });
-    // SchedulerBinding.instance.addPostFrameCallback((_) {
-    //   print("SchedulerBinding");
-    // });
   }
 
   @override
   Widget build(BuildContext context) {
     if (_songInfo != null) {
-      _nearestModIndex = findNearestBpm(_chart!.dominantBpm, constants.mods);
-      genBpmPoints();
+      _nearestModIndex = findNearestReadSpeed(
+          _chart!.dominantBpm, constants.mods, _chosenReadSpeed);
+      _genBpmPoints();
     }
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {

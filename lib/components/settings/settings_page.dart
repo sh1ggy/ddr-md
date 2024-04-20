@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ddr_md/constants.dart' as constants;
 
 class SettingsPage extends StatefulWidget {
+  static const chosenReadSpeedSetting = "chosenReadSpeed";
+  static const rivalCodeSpeedSetting = "rivalCode";
   const SettingsPage({super.key});
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -16,9 +18,9 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int _chosenReadSpeed = 0;
-  int _rivalCode = 0;
+  String _rivalCode = constants.rivalCode;
   int _textReadSpeed = 0;
-  int _textRivalCode = 0;
+  String _textRivalCode = constants.rivalCode;
 
   @override
   void initState() {
@@ -31,8 +33,10 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _chosenReadSpeed = prefs.getInt('chosenReadSpeed') ?? constants.chosenReadSpeed;
-      _rivalCode = prefs.getInt('rivalCode') ?? constants.rivalCode;
+      _chosenReadSpeed = prefs.getInt(SettingsPage.chosenReadSpeedSetting) ??
+          constants.chosenReadSpeed;
+      _rivalCode = prefs.getString(SettingsPage.rivalCodeSpeedSetting) ??
+          constants.rivalCode;
     });
   }
 
@@ -41,8 +45,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _setReadSpeed() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      prefs.setInt('chosenReadSpeed', _textReadSpeed);
-      _chosenReadSpeed = prefs.getInt('chosenReadSpeed') ?? constants.chosenReadSpeed;
+      prefs.setInt(SettingsPage.chosenReadSpeedSetting, _textReadSpeed);
+      _chosenReadSpeed = prefs.getInt(SettingsPage.chosenReadSpeedSetting) ??
+          constants.chosenReadSpeed;
     });
   }
 
@@ -51,8 +56,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _setRivalCode() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      prefs.setInt('rivalCode', _textRivalCode);
-      _rivalCode = prefs.getInt('rivalCode') ?? constants.rivalCode;
+      prefs.setString(SettingsPage.rivalCodeSpeedSetting, _textRivalCode);
+      _rivalCode = prefs.getString(SettingsPage.rivalCodeSpeedSetting) ??
+          constants.rivalCode;
     });
   }
 
@@ -101,7 +107,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
                                 onChanged: (value) => {
-                                  if (value != "") {_textReadSpeed = int.parse(value)}
+                                  if (value != "")
+                                    {_textReadSpeed = int.parse(value)}
                                 },
                                 decoration: InputDecoration(
                                   counterText: "",
@@ -126,7 +133,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                     return;
                                   }
                                   _setReadSpeed();
-                                  _showToast(context, "Saved Read Speed to $_textReadSpeed");
+                                  _showToast(context,
+                                      "Saved Read Speed to $_textReadSpeed");
                                 }),
                           ],
                         ),
@@ -143,13 +151,14 @@ class _SettingsPageState extends State<SettingsPage> {
                           children: [
                             Expanded(
                               child: TextField(
+                                maxLength: 8,
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly
                                 ],
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
                                 onChanged: (value) => {
-                                  if (value != "") {_textRivalCode = int.parse(value)}
+                                  if (value != "") {_textRivalCode = value}
                                 },
                                 decoration: InputDecoration(
                                   counterText: "",
@@ -159,7 +168,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                   focusedErrorBorder: InputBorder.none,
                                   disabledBorder: InputBorder.none,
                                   enabledBorder: InputBorder.none,
-                                  hintText: _rivalCode.toString(),
+                                  hintText: _rivalCode,
                                 ),
                               ),
                             ),
@@ -169,12 +178,15 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ),
                                 tooltip: "Save DDR Rival Code",
                                 onPressed: () {
-                                  if (_textRivalCode == 0) {
+                                  if (_textRivalCode == constants.rivalCode ||
+                                      _textRivalCode.length <
+                                          constants.rivalCodeLength) {
                                     _showToast(context, "Invalid Rival Code");
                                     return;
                                   }
                                   _setRivalCode();
-                                  _showToast(context, "Saved Rival Code to $_textRivalCode");
+                                  _showToast(context,
+                                      "Saved Rival Code to $_textRivalCode");
                                 }),
                           ],
                         ),
