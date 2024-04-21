@@ -7,20 +7,17 @@ import 'package:ddr_md/components/bpm_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/models/bpm_model.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:ddr_md/constants.dart' as constants;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Settings.init();
 
-  final prefs = await SharedPreferences.getInstance();
-  final int readSpeed = prefs.getInt(BpmState.chosenReadSpeedSetting) ??
-      constants.chosenReadSpeed;
   runApp(MultiProvider(
     providers: [
-      ChangeNotifierProvider(create: (context) => BpmState(readSpeed))
+      ChangeNotifierProvider(create: (context) => BpmState())
     ],
     child: const App(),
   ));

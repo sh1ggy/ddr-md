@@ -3,12 +3,11 @@
 /// Description: Page that displays BPM wheel selector
 library;
 
-import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ddr_md/constants.dart' as constants;
-import 'package:shared_preferences/shared_preferences.dart';
 
 class BpmPage extends StatefulWidget {
   const BpmPage({super.key});
@@ -22,32 +21,27 @@ class _BpmPageState extends State<BpmPage> {
   int _chosenReadSpeed = constants.chosenReadSpeed; // Read speed init
   int nearestModIndex = 0;
 
+  // Calculate the index of the nearest mod to the chosen
+  // read speed in shared_preferences
+  void calcIndex() {
+    _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
+    nearestModIndex =
+        findNearestReadSpeed(bpm, constants.mods, _chosenReadSpeed);
+  }
+
   // Set BPM to new input & calc nearestReadSpeed
   void setBpm(String newBpm) {
     if (newBpm == "") return;
     bpm = int.parse(newBpm);
     setState(() {
-      nearestModIndex =
-          findNearestReadSpeed(bpm, constants.mods, _chosenReadSpeed);
-    });
-  }
-
-  /// Load the initial counter value from persistent storage on start,
-  /// or fallback to constant BPM value if it doesn't exist.
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _chosenReadSpeed =
-          prefs.getInt(SettingsPage.chosenReadSpeedSetting) ?? constants.chosenReadSpeed;
-      nearestModIndex =
-          findNearestReadSpeed(bpm, constants.mods, _chosenReadSpeed);
+      calcIndex();
     });
   }
 
   @override
   void initState() {
     super.initState();
-    _loadPrefs();
+    calcIndex();
   }
 
   @override

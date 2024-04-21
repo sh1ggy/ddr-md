@@ -3,14 +3,12 @@
 /// Description: Settings page for use with shared_preferences
 library;
 
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ddr_md/constants.dart' as constants;
 
 class SettingsPage extends StatefulWidget {
-  static const chosenReadSpeedSetting = "chosenReadSpeed";
-  static const rivalCodeSpeedSetting = "rivalCode";
   const SettingsPage({super.key});
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -31,34 +29,27 @@ class _SettingsPageState extends State<SettingsPage> {
   /// Load the initial counter value from persistent storage on start,
   /// or fallback to constant BPM value if it doesn't exist.
   Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _chosenReadSpeed = prefs.getInt(SettingsPage.chosenReadSpeedSetting) ??
-          constants.chosenReadSpeed;
-      _rivalCode = prefs.getString(SettingsPage.rivalCodeSpeedSetting) ??
-          constants.rivalCode;
+      _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
+      _rivalCode = Settings.getString(Settings.rivalCodeSpeedKey);
     });
   }
 
   /// After setting BPM preference, asynchronously save it
   /// to persistent storage.
   Future<void> _setReadSpeed() async {
-    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      prefs.setInt(SettingsPage.chosenReadSpeedSetting, _textReadSpeed);
-      _chosenReadSpeed = prefs.getInt(SettingsPage.chosenReadSpeedSetting) ??
-          constants.chosenReadSpeed;
+      Settings.setInt(Settings.chosenReadSpeedKey, _textReadSpeed);
+      _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
     });
   }
 
   /// After setting BPM preference, asynchronously save it
   /// to persistent storage.
   Future<void> _setRivalCode() async {
-    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      prefs.setString(SettingsPage.rivalCodeSpeedSetting, _textRivalCode);
-      _rivalCode = prefs.getString(SettingsPage.rivalCodeSpeedSetting) ??
-          constants.rivalCode;
+      Settings.setString(Settings.rivalCodeSpeedKey, _textRivalCode);
+      _rivalCode = Settings.getString(Settings.rivalCodeSpeedKey);
     });
   }
 
@@ -178,15 +169,23 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ),
                                 tooltip: "Save DDR Rival Code",
                                 onPressed: () {
-                                  if (_textRivalCode == constants.rivalCode ||
-                                      _textRivalCode.length <
-                                          constants.rivalCodeLength) {
-                                    _showToast(context, "Invalid Rival Code");
+                                  String errMsg = "";
+                                  if (_textRivalCode == constants.rivalCode) {
+                                    errMsg = "Invalid rival code";
+                                  }
+                                  if (_textRivalCode.length <
+                                      constants.rivalCodeLength) {
+                                    errMsg =
+                                        "Invalid rival code, under 8 characters";
+                                  }
+                                  if (errMsg == "") {
+                                    _setRivalCode();
+                                    _showToast(context,
+                                        "Saved Rival Code to $_textRivalCode");
                                     return;
                                   }
-                                  _setRivalCode();
-                                  _showToast(context,
-                                      "Saved Rival Code to $_textRivalCode");
+                                  _showToast(context, errMsg);
+                                  return;
                                 }),
                           ],
                         ),

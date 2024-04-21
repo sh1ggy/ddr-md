@@ -3,7 +3,6 @@
 /// Description: Page that displays selected song information
 library;
 
-import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song/notes/note_page.dart';
 import 'package:ddr_md/components/song/notes/prev_note.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
@@ -11,11 +10,11 @@ import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ddr_md/constants.dart' as constants;
-import 'package:shared_preferences/shared_preferences.dart';
 
 class SongPage extends StatefulWidget {
   const SongPage({super.key});
@@ -34,16 +33,6 @@ class _SongPageState extends State<SongPage> {
   Chart? _chart;
 
   int _chosenReadSpeed = 0;
-
-  /// Load the initial counter value from persistent storage on start,
-  /// or fallback to constant BPM value if it doesn't exist.
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _chosenReadSpeed =
-          prefs.getInt(SettingsPage.chosenReadSpeedSetting) ?? constants.chosenReadSpeed;
-    });
-  }
 
   Future<void> _readSongJson() async {
     final String response =
@@ -97,7 +86,7 @@ class _SongPageState extends State<SongPage> {
   @override
   void initState() {
     super.initState();
-    _loadPrefs();
+    _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _readSongJson();
     });
