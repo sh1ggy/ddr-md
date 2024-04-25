@@ -21,6 +21,8 @@ dev_dependencies:
 flutter:
   assets:
     - assets/
+    - assets/jackets-lowres/
+    - assets/song-data/
   fonts:
     - family: Handel
       fonts: 
