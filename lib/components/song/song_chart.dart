@@ -88,7 +88,7 @@ class SongChart extends StatelessWidget {
                 ),
                 sideTitles: SideTitles(
                   showTitles: true,
-                  reservedSize: 38,
+                  reservedSize: 43,
                   interval: 100,
                   getTitlesWidget: (value, meta) {
                     Widget axisTitle = Text(value.floor().toString());

@@ -11,10 +11,11 @@ import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:provider/provider.dart';
 
 class SongPage extends StatefulWidget {
   const SongPage({super.key});
@@ -24,30 +25,12 @@ class SongPage extends StatefulWidget {
 }
 
 class _SongPageState extends State<SongPage> {
-  // TODO: replace with a proper song page model
-  SongInfo? _songInfo;
   bool? _isBpmChange;
   int _nearestModIndex = 0;
   final List<FlSpot> _songBpmSpots = [];
   final List<FlSpot> _songStopSpots = [];
   Chart? _chart;
-
   int _chosenReadSpeed = 0;
-
-  Future<void> _readSongJson() async {
-    final String response =
-        await rootBundle.loadString('assets/chaosterror.json');
-    setState(() {
-      _songInfo = parseJson(response);
-      if (!_songInfo!.perChart) {
-        _chart = _songInfo!.chart[0];
-      } else {
-        // TODO: better logic dependent on which difficulty is selected
-        _chart = _songInfo!.chart[_songInfo!.chart.length - 1];
-      }
-      _isBpmChange = _chart!.trueMax != _chart!.trueMin;
-    });
-  }
 
   /// Finds nearest BPM to the stop's [st]arting point
   /// provided compared against the [array]
@@ -64,22 +47,22 @@ class _SongPageState extends State<SongPage> {
     return nearest;
   }
 
-  void _genBpmPoints() {
-    List<Bpm> bpms = _chart!.bpms;
-    if (_songBpmSpots.isNotEmpty) {
-      return;
-    } // TODO: remove this when doing dynamic songData
+  void _genBpmPoints(Chart chart) {
+    List<Bpm> bpms = chart.bpms;
 
+    if (_songBpmSpots.isNotEmpty || _songBpmSpots.isNotEmpty) {
+      return;
+    }
     // Adding a spot for each BPM change in the song
     for (int i = 0; i < bpms.length; i++) {
       _songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
       _songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
     }
     // Adding a spot for each stop in the song
-    for (int i = 0; i < _chart!.stops.length; i++) {
+    for (int i = 0; i < chart.stops.length; i++) {
       // Finding nearest BPM to the stop
-      double nearestBpm = _findNearestStop(_chart!.stops[i].st, bpms).toDouble();
-      _songStopSpots.add(FlSpot(_chart!.stops[i].st, nearestBpm));
+      double nearestBpm = _findNearestStop(chart.stops[i].st, bpms).toDouble();
+      _songStopSpots.add(FlSpot(chart.stops[i].st, nearestBpm));
     }
   }
 
@@ -88,17 +71,35 @@ class _SongPageState extends State<SongPage> {
     super.initState();
     _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _readSongJson();
+      // _readSongJson();
     });
+  }
+
+  // Latching onto when this class dependencies change
+  @override
+  void didChangeDependencies() {
+    // No listen: false
+    SongInfo? songInfo = Provider.of<SongState>(context).songInfo;
+    if (songInfo != null) {
+      // Set variables based on state
+      if (!songInfo.perChart) {
+        _chart = songInfo.chart[0];
+      } else {
+        // TODO: better logic dependent on which difficulty is selected
+        _chart = songInfo.chart[songInfo.chart.length - 1];
+      }
+      _isBpmChange = _chart!.trueMax != _chart!.trueMin;
+      _nearestModIndex = findNearestReadSpeed(
+          _chart!.dominantBpm, constants.mods, _chosenReadSpeed);
+      _genBpmPoints(songInfo.chart[0]);
+    }
+    super.didChangeDependencies();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_songInfo != null) {
-      _nearestModIndex = findNearestReadSpeed(
-          _chart!.dominantBpm, constants.mods, _chosenReadSpeed);
-      _genBpmPoints();
-    }
+    var songState = context.watch<SongState>();
+
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -109,9 +110,9 @@ class _SongPageState extends State<SongPage> {
                 shadowColor: Colors.black,
                 elevation: 2,
                 centerTitle: true,
-                title: const Text(
-                  "Song",
-                  style: TextStyle(
+                title: Text(
+                  songState.songInfo!.name,
+                  style: const TextStyle(
                       fontSize: 20,
                       color: Colors.blueGrey,
                       fontWeight: FontWeight.w600),
@@ -140,20 +141,21 @@ class _SongPageState extends State<SongPage> {
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 child: Column(
                   children: [
-                    const PrevNote(),
-                    if (_songInfo != null)
-                      SongDetails(songInfo: _songInfo!, chart: _chart),
-                    if (_songInfo != null && _isBpmChange != null) ...[
+                    // const PrevNote(),
+                    if (songState.songInfo != null)
+                      SongDetails(songInfo: songState.songInfo!, chart: _chart),
+                    if (songState.songInfo != null && _isBpmChange != null) ...[
                       SongBpm(
                           nearestModIndex: _nearestModIndex,
                           isBpmChange: _isBpmChange,
                           chart: _chart),
-                      SongChart(
-                          songBpmSpots: _songBpmSpots,
-                          songStopSpots: _songStopSpots,
-                          context: context,
-                          songInfo: _songInfo,
-                          chart: _chart),
+                      if (_isBpmChange! && _songBpmSpots.isNotEmpty)
+                        SongChart(
+                            songBpmSpots: _songBpmSpots,
+                            songStopSpots: _songStopSpots,
+                            context: context,
+                            songInfo: songState.songInfo,
+                            chart: _chart),
                     ]
                   ]
                       .expand((x) => [const SizedBox(height: 20), x])

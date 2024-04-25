@@ -6,8 +6,8 @@ library;
 import 'package:ddr_md/components/bpm_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/songlist/songlist_page.dart';
-import 'package:ddr_md/models/bpm_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -17,7 +17,7 @@ void main() async {
 
   runApp(MultiProvider(
     providers: [
-      ChangeNotifierProvider(create: (context) => BpmState())
+      ChangeNotifierProvider(create: (context) => SongState())
     ],
     child: const App(),
   ));

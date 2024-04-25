@@ -139,4 +139,5 @@ app.*.symbols
 
 # assets
 /assets/jackets-lowres
+/assets/jackets
 /assets/song-data

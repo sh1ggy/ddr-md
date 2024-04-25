@@ -34,7 +34,7 @@ class SongBpm extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   )),
               const SizedBox(width: 30),
-              if (isBpmChange!) ...[
+              if (isBpmChange == true) ...[
                 const SizedBox(
                     width: 50,
                     child: Text(
