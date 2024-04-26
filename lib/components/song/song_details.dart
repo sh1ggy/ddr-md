@@ -33,10 +33,13 @@ class SongDetails extends StatelessWidget {
         mainAxisSize: MainAxisSize.max,
         children: [
           GestureDetector(
-            child: Image(
-              image: AssetImage(
-                  'assets/jackets-lowres/${songInfo.name}-jacket.png'),
-              height: 100,
+            child: Hero(
+              tag: "imgZoom",
+              child: Image(
+                image: AssetImage(
+                    'assets/jackets-lowres/${songInfo.name}-jacket.png'),
+                height: 100,
+              ),
             ),
             // Zooming image onTap
             onTap: () {
@@ -49,8 +52,8 @@ class SongDetails extends StatelessWidget {
                     return GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: Hero(
+                        tag: "imgZoom",
                         transitionOnUserGestures: true,
-                        tag: "zoom",
                         child: Image(
                           height: MediaQuery.of(context).size.height * .7,
                           image: AssetImage(
