@@ -62,9 +62,8 @@ class _SonglistPageState extends State<SonglistPage> {
         .toList();
 
     for (int i = 0; i < songDataPaths.length; i++) {
-      // TODO: ADDRESS THIS
-      songInfo =
-          parseJson(await rootBundle.loadString('${songDataPaths[i]}.json'));
+      var response = await rootBundle.loadString('${songDataPaths[i]}.json');
+      songInfo = parseJson(response);
 
       for (var difficulty in difficulties) {
         if (songInfo.levels.single
@@ -84,9 +83,9 @@ class _SonglistPageState extends State<SonglistPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _songItemsPromise = Future<List<Difficulty>>(() => generateSongItems());
-    });
+    // WidgetsBinding.instance.addPostFrameCallback((_) async {
+    // });
   }
 
   @override
