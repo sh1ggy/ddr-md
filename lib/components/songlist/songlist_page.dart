@@ -21,12 +21,10 @@ class SonglistPage extends StatefulWidget {
 class SongEntry {
   SongEntry({
     required this.expandedValue,
-    required this.imagePath,
     required this.songInfo,
   });
 
   String expandedValue;
-  String imagePath;
   SongInfo songInfo;
 }
 
@@ -57,12 +55,6 @@ class _SonglistPageState extends State<SonglistPage> {
     AssetBundle bundle = DefaultAssetBundle.of(context);
     AssetManifest asset = await AssetManifest.loadFromAssetBundle(bundle);
     List<String> assets = asset.listAssets();
-    // TODO: NOT IDEAL
-    List<String> songImagePaths = assets
-        .where((string) => string.startsWith("assets/jackets-lowres/"))
-        .where((string) => string.endsWith(".png"))
-        .map((e) => e.substring(0, e.length - 11))
-        .toList();
     List<String> songDataPaths = assets
         .where((string) => string.startsWith("assets/song-data/"))
         .where((string) => string.endsWith(".json"))
@@ -80,7 +72,6 @@ class _SonglistPageState extends State<SonglistPage> {
             .containsValue(difficulty.value.toDouble())) {
           difficulty.songList.add((SongEntry(
             expandedValue: 'This is item number $i',
-            imagePath: '${songImagePaths[i]}-jacket.png',
             songInfo: songInfo,
           )));
         }
@@ -159,7 +150,8 @@ class _SonglistPageState extends State<SonglistPage> {
                                             .map<Widget>((SongEntry item) {
                                       return ListTile(
                                         leading: Image(
-                                          image: AssetImage(item.imagePath),
+                                          image: AssetImage(
+                                              'assets/jackets-lowres/${item.songInfo.name}-jacket.png'),
                                           height: 100,
                                         ),
                                         title: Text(item.songInfo.title),
