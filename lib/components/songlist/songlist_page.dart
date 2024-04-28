@@ -83,9 +83,7 @@ class _SonglistPageState extends State<SonglistPage> {
   @override
   void initState() {
     super.initState();
-      _songItemsPromise = Future<List<Difficulty>>(() => generateSongItems());
-    // WidgetsBinding.instance.addPostFrameCallback((_) async {
-    // });
+    _songItemsPromise = Future<List<Difficulty>>(() => generateSongItems());
   }
 
   @override

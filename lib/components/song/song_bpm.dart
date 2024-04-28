@@ -24,6 +24,42 @@ class SongBpm extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Text(
+            "${chart!.dominantBpm} BPM",
+            style: const TextStyle(
+                fontSize: 16,
+                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(
+            height: 10,
+          ),
+          if (chart!.trueMin != chart!.trueMax)
+            // Only show BPM range if there is one
+            RichText(
+              text: TextSpan(
+                style: TextStyle(
+                    fontSize: 15.0,
+                    color: Theme.of(context).textTheme.bodyMedium?.color),
+                children: <TextSpan>[
+                  if (chart!.trueMin != chart!.trueMax)
+                    TextSpan(
+                        text: ' (${chart!.trueMin.toString()}~) ',
+                        style: const TextStyle(color: Colors.grey)),
+                  TextSpan(
+                      text: chart!.bpmRange,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  if (chart!.trueMin != chart!.trueMax)
+                    TextSpan(
+                      text: ' (~${chart!.trueMax.toString()}) ',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                ],
+              ),
+            ),
+          const SizedBox(
+            height: 20,
+          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

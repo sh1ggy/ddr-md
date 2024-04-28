@@ -44,7 +44,7 @@ class SongChart extends StatelessWidget {
           dotData: FlDotData(
             getDotPainter: (spot, percent, barData, index) =>
                 FlDotCirclePainter(
-              radius: 3,
+              radius: 2.5,
               color: stopLineColor,
               strokeWidth: 1,
               strokeColor: stopLineColor.shade700

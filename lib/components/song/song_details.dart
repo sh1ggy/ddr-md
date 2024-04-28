@@ -74,79 +74,51 @@ class SongDetails extends StatelessWidget {
                       fontSize: 14.0,
                       color: Theme.of(context).textTheme.bodyMedium?.color),
                   children: <TextSpan>[
-                    const TextSpan(
-                        text: 'Version: ',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    TextSpan(text: songInfo.version),
-                  ],
-                ),
-              ),
-              RichText(
-                text: TextSpan(
-                  style: TextStyle(
-                      fontSize: 14.0,
-                      color: Theme.of(context).textTheme.bodyMedium?.color),
-                  children: <TextSpan>[
-                    const TextSpan(
-                        text: 'Length: ',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
                     TextSpan(
-                        text: (formattedTime(
-                                timeInSecond: songInfo.songLength.toInt()) +
-                            " min, ")),
-                    const TextSpan(
-                        text: 'BPM: ',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    TextSpan(text: chart!.dominantBpm.toString()),
+                      text: (formattedTime(
+                              timeInSecond: songInfo.songLength.toInt()) +
+                          " min"),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ],
                 ),
               ),
-              // Only show BPM range if there is one
-              RichText(
-                text: TextSpan(
-                  style: TextStyle(
-                      fontSize: 14.0,
-                      color: Theme.of(context).textTheme.bodyMedium?.color),
-                  children: <TextSpan>[
-                    const TextSpan(
-                        text: 'BPM: ',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    if (chart!.trueMin != chart!.trueMax)
-                      TextSpan(text: '(${chart!.trueMin.toString()})'),
-                    TextSpan(text: chart!.bpmRange),
-                    if (chart!.trueMin != chart!.trueMax)
-                      TextSpan(text: '(${chart!.trueMax.toString()})'),
-                  ],
-                ),
+              Text(
+                songInfo.version,
+                style:
+                    const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
               ),
-              Row(
-                children: [
-                  Text(
-                    songInfo.levels.single.beginner.toString(),
-                    style: const TextStyle(
-                        color: Colors.cyan, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    songInfo.levels.single.easy.toString(),
-                    style: const TextStyle(
-                        color: Colors.orange, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    songInfo.levels.single.medium.toString(),
-                    style: const TextStyle(
-                        color: Colors.red, fontWeight: FontWeight.bold),
-                  ),
-                  Text(songInfo.levels.single.hard.toString(),
+              Align(
+                alignment: AlignmentDirectional.bottomCenter,
+                child: Row(
+                  children: [
+                    Text(
+                      songInfo.levels.single.beginner.toString(),
                       style: const TextStyle(
-                          color: Colors.green, fontWeight: FontWeight.bold)),
-                  if (songInfo.levels.single.challenge != null)
-                    Text(songInfo.levels.single.challenge.toString(),
+                          color: Colors.cyan, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      songInfo.levels.single.easy.toString(),
+                      style: const TextStyle(
+                          color: Colors.orange, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      songInfo.levels.single.medium.toString(),
+                      style: const TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.bold),
+                    ),
+                    Text(songInfo.levels.single.hard.toString(),
                         style: const TextStyle(
-                            color: Colors.purple, fontWeight: FontWeight.bold)),
-                ]
-                    .expand((x) => [const SizedBox(width: 10), x])
-                    .skip(1)
-                    .toList(),
+                            color: Colors.green, fontWeight: FontWeight.bold)),
+                    if (songInfo.levels.single.challenge != null)
+                      Text(songInfo.levels.single.challenge.toString(),
+                          style: const TextStyle(
+                              color: Colors.purple, fontWeight: FontWeight.bold)),
+                  ]
+                      .expand((x) => [const SizedBox(width: 10), x])
+                      .skip(1)
+                      .toList(),
+                ),
               ),
             ],
           ),
