@@ -3,8 +3,8 @@
 /// Description: Settings page for use with shared_preferences
 library;
 
-import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -134,128 +134,34 @@ class _SonglistPageState extends State<SonglistPage> {
                                 children: snapshot.data!.map<ExpansionPanel>(
                                     (Difficulty difficulty) {
                                   return ExpansionPanel(
-                                    canTapOnHeader: true,
-                                    headerBuilder: (BuildContext context,
-                                        bool isExpanded) {
-                                      return ListTile(
-                                        title: Text(
-                                            "Level ${difficulty.value}: ${difficulty.songList.length} songs"),
-                                      );
-                                    },
-                                    body: Column(
-                                        children: difficulty.songList
-                                            .map<Widget>((SongEntry item) {
-                                      return ListTile(
-                                        leading: Image(
-                                          image: AssetImage(
-                                              'assets/jackets-lowres/${item.songInfo.name}-jacket.png'),
-                                          height: 100,
-                                        ),
-                                        title: Text(item.songInfo.title),
-                                        subtitle: Row(
-                                          children: [
-                                            Text(
-                                              item.songInfo.levels.single
-                                                          .beginner !=
-                                                      null
-                                                  ? item.songInfo.levels.single
-                                                      .beginner
-                                                      .toString()
-                                                  : "",
-                                              style: const TextStyle(
-                                                  color: Colors.cyan,
-                                                  fontWeight: FontWeight.bold),
-                                            ),
-                                            Text(
-                                              item.songInfo.levels.single
-                                                          .easy !=
-                                                      null
-                                                  ? item.songInfo.levels.single
-                                                      .easy
-                                                      .toString()
-                                                  : "",
-                                              style: const TextStyle(
-                                                  color: Colors.orange,
-                                                  fontWeight: FontWeight.bold),
-                                            ),
-                                            Text(
-                                              item.songInfo.levels.single
-                                                          .medium !=
-                                                      null
-                                                  ? item.songInfo.levels.single
-                                                      .medium
-                                                      .toString()
-                                                  : "",
-                                              style: const TextStyle(
-                                                  color: Colors.red,
-                                                  fontWeight: FontWeight.bold),
-                                            ),
-                                            if (item.songInfo.levels.single
-                                                    .hard !=
-                                                null)
-                                              Text(
-                                                item.songInfo.levels.single.hard
-                                                    .toString(),
-                                                style: const TextStyle(
-                                                    color: Colors.green,
-                                                    fontWeight:
-                                                        FontWeight.bold),
-                                              ),
-                                            if (item.songInfo.levels.single
-                                                    .expert !=
-                                                null)
-                                              Text(
-                                                  item.songInfo.levels.single
-                                                      .expert
-                                                      .toString(),
-                                                  style: const TextStyle(
-                                                      color: Colors.green,
-                                                      fontWeight:
-                                                          FontWeight.bold)),
-                                            Text(
-                                                item.songInfo.levels.single
-                                                            .challenge !=
-                                                        null
-                                                    ? item.songInfo.levels
-                                                        .single.challenge
-                                                        .toString()
-                                                    : "",
-                                                style: const TextStyle(
-                                                    color: Colors.purple,
-                                                    fontWeight:
-                                                        FontWeight.bold)),
-                                          ]
-                                              .expand((x) => [
-                                                    const SizedBox(width: 10),
-                                                    x
-                                                  ])
-                                              .skip(1)
-                                              .toList(),
-                                        ),
-                                        trailing: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children: [
-                                            Text(item.songInfo.version),
-                                            Text(item
-                                                .songInfo.chart[0].dominantBpm
-                                                .toString()),
-                                          ],
-                                        ),
-                                        onTap: () => {
-                                          songState.setSongInfo(item.songInfo),
-                                          Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                  builder: (context) =>
-                                                      const SongPage()))
-                                        },
-                                      );
-                                    }).toList()),
-                                    isExpanded: difficulty.isExpanded,
-                                  );
+                                      canTapOnHeader: true,
+                                      headerBuilder: (BuildContext context,
+                                          bool isExpanded) {
+                                        return ListTile(
+                                          title: Text(
+                                              "Level ${difficulty.value}: ${difficulty.songList.length} songs"),
+                                        );
+                                      },
+                                      isExpanded: difficulty.isExpanded,
+                                      body: SizedBox(
+                                        height:
+                                            MediaQuery.of(context).size.height /
+                                                2,
+                                        child: ListView.builder(
+                                            physics: const ScrollPhysics(),
+                                            scrollDirection: Axis.vertical,
+                                            itemCount:
+                                                difficulty.songList.length,
+                                            prototypeItem: SongListItem(
+                                                songInfo: difficulty
+                                                    .songList.first.songInfo),
+                                            itemBuilder: (context, index) {
+                                              return SongListItem(
+                                                  songInfo: difficulty
+                                                      .songList[index]
+                                                      .songInfo);
+                                            }),
+                                      ));
                                 }).toList(),
                               ),
                             ];
