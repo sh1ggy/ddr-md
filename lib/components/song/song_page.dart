@@ -9,6 +9,8 @@ import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,43 +24,34 @@ class SongPage extends StatefulWidget {
 }
 
 class _SongPageState extends State<SongPage> {
-  SongInfo? songInfo;
-  double mod = 1.0;
-  bool? isBpmChange;
-  int selectedItemIndex = 0;
-  int nearestModIndex = 0;
-  List<FlSpot> songBpmSpots = [];
-  List<FlSpot> songStopSpots = [];
-  Chart? chart;
+  // TODO: replace with a proper song page model
+  SongInfo? _songInfo;
+  bool? _isBpmChange;
+  int _nearestModIndex = 0;
+  final List<FlSpot> _songBpmSpots = [];
+  final List<FlSpot> _songStopSpots = [];
+  Chart? _chart;
 
-  Future<void> readSongJson() async {
+  int _chosenReadSpeed = 0;
+
+  Future<void> _readSongJson() async {
     final String response =
         await rootBundle.loadString('assets/chaosterror.json');
     setState(() {
-      songInfo = parseJson(response);
-      if (!songInfo!.perChart) {
-        chart = songInfo!.chart[0];
+      _songInfo = parseJson(response);
+      if (!_songInfo!.perChart) {
+        _chart = _songInfo!.chart[0];
       } else {
         // TODO: better logic dependent on which difficulty is selected
-        chart = songInfo!.chart[songInfo!.chart.length - 1];
+        _chart = _songInfo!.chart[_songInfo!.chart.length - 1];
       }
-      isBpmChange = chart!.trueMax != chart!.trueMin;
+      _isBpmChange = _chart!.trueMax != _chart!.trueMin;
     });
   }
 
-  int findNearestBpm(int avgBpm, List array) {
-    var nearest = 0;
-    array.asMap().entries.forEach((entry) {
-      var i = entry.key;
-      var a = array[i] * avgBpm;
-      if (array[i] * avgBpm <= constants.chosenBpm + constants.buffer) {
-        nearest = i;
-      }
-    });
-    return nearest;
-  }
-
-  int findNearest(double st, List array) {
+  /// Finds nearest BPM to the stop's [st]arting point
+  /// provided compared against the [array]
+  int _findNearestStop(double st, List array) {
     var nearest = 0;
     array.asMap().entries.forEach((entry) {
       var i = entry.key;
@@ -71,37 +64,40 @@ class _SongPageState extends State<SongPage> {
     return nearest;
   }
 
-  void genBpmPoints() {
-    List<Bpm> bpms = chart!.bpms;
-    if (songBpmSpots.isNotEmpty)
-      return; // TODO: remove this when doing dynamic songData
+  void _genBpmPoints() {
+    List<Bpm> bpms = _chart!.bpms;
+    if (_songBpmSpots.isNotEmpty) {
+      return;
+    } // TODO: remove this when doing dynamic songData
 
+    // Adding a spot for each BPM change in the song
     for (int i = 0; i < bpms.length; i++) {
-      songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
-      songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
+      _songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
+      _songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
     }
-    for (int i = 0; i < chart!.stops.length; i++) {
-      double nearestBpm = findNearest(chart!.stops[i].st, bpms).toDouble();
-      songStopSpots.add(FlSpot(chart!.stops[i].st, nearestBpm));
+    // Adding a spot for each stop in the song
+    for (int i = 0; i < _chart!.stops.length; i++) {
+      // Finding nearest BPM to the stop
+      double nearestBpm = _findNearestStop(_chart!.stops[i].st, bpms).toDouble();
+      _songStopSpots.add(FlSpot(_chart!.stops[i].st, nearestBpm));
     }
   }
 
   @override
   void initState() {
     super.initState();
+    _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      readSongJson();
+      _readSongJson();
     });
-    // SchedulerBinding.instance.addPostFrameCallback((_) {
-    //   print("SchedulerBinding");
-    // });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (songInfo != null) {
-      nearestModIndex = findNearestBpm(chart!.dominantBpm, constants.mods);
-      genBpmPoints();
+    if (_songInfo != null) {
+      _nearestModIndex = findNearestReadSpeed(
+          _chart!.dominantBpm, constants.mods, _chosenReadSpeed);
+      _genBpmPoints();
     }
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
@@ -145,16 +141,19 @@ class _SongPageState extends State<SongPage> {
                 child: Column(
                   children: [
                     const PrevNote(),
-                    if (songInfo != null)
-                      SongDetails(songInfo: songInfo!, chart: chart),
-                    if (songInfo != null && isBpmChange != null) ...[
-                      SongBpm(nearestModIndex: nearestModIndex, isBpmChange: isBpmChange, chart: chart),
+                    if (_songInfo != null)
+                      SongDetails(songInfo: _songInfo!, chart: _chart),
+                    if (_songInfo != null && _isBpmChange != null) ...[
+                      SongBpm(
+                          nearestModIndex: _nearestModIndex,
+                          isBpmChange: _isBpmChange,
+                          chart: _chart),
                       SongChart(
-                          songBpmSpots: songBpmSpots,
-                          songStopSpots: songStopSpots,
+                          songBpmSpots: _songBpmSpots,
+                          songStopSpots: _songStopSpots,
                           context: context,
-                          songInfo: songInfo,
-                          chart: chart),
+                          songInfo: _songInfo,
+                          chart: _chart),
                     ]
                   ]
                       .expand((x) => [const SizedBox(height: 20), x])
@@ -168,6 +167,4 @@ class _SongPageState extends State<SongPage> {
       }),
     );
   }
-
-  
 }

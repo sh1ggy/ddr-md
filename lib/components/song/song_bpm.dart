@@ -73,14 +73,14 @@ class SongBpm extends StatelessWidget {
                 //   });
                 // },
                 childDelegate: ListWheelChildListDelegate(
-                  children: constants.mods.map<Widget>((e) {
-                    var avg = e * chart!.dominantBpm;
-                    var min = e * chart!.trueMin;
-                    var max = e * chart!.trueMax;
+                  children: constants.mods.map<Widget>((mod) {
+                    var avg = mod * chart!.dominantBpm;
+                    var min = mod * chart!.trueMin;
+                    var max = mod * chart!.trueMax;
                     return Container(
                       decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(7),
-                          color: nearestModIndex == constants.mods.indexOf(e)
+                          color: nearestModIndex == constants.mods.indexOf(mod)
                               ? Colors.redAccent.shade200
                               : Colors.transparent),
                       child: Row(
@@ -89,21 +89,21 @@ class SongBpm extends StatelessWidget {
                             SongBpmTextItem(
                                 text: avg.toString(),
                                 nearestModIndex: nearestModIndex,
-                                e: e),
+                                mod: mod),
                             if (isBpmChange!) ...[
                               SongBpmTextItem(
                                   text: min.toString(),
                                   nearestModIndex: nearestModIndex,
-                                  e: e),
+                                  mod: mod),
                               SongBpmTextItem(
                                   text: max.toString(),
                                   nearestModIndex: nearestModIndex,
-                                  e: e),
+                                  mod: mod),
                             ],
                             SongBpmTextItem(
-                                text: e.toString(),
+                                text: mod.toString(),
                                 nearestModIndex: nearestModIndex,
-                                e: e),
+                                mod: mod),
                           ]
                               .expand((x) => [const SizedBox(width: 30), x])
                               .skip(1)
@@ -123,11 +123,11 @@ class SongBpmTextItem extends StatelessWidget {
       {super.key,
       required this.text,
       required this.nearestModIndex,
-      required this.e});
+      required this.mod});
 
   final String text;
   final int nearestModIndex;
-  final double e;
+  final double mod;
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +135,7 @@ class SongBpmTextItem extends StatelessWidget {
       width: 50,
       child: Text(text,
           style: TextStyle(
-              color: nearestModIndex == constants.mods.indexOf(e)
+              color: nearestModIndex == constants.mods.indexOf(mod)
                   ? Colors.white
                   : Theme.of(context).textTheme.bodyMedium?.color)),
     );

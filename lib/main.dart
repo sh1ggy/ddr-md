@@ -4,13 +4,23 @@
 library;
 
 import 'package:ddr_md/components/bpm_page.dart';
+import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/models/bpm_model.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-void main() {
-  runApp(const App());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Settings.init();
+
+  runApp(MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (context) => BpmState())
+    ],
+    child: const App(),
+  ));
 }
 
 class App extends StatelessWidget {
@@ -18,23 +28,20 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => BpmState(),
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'ddr_bpm',
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xff8cb2dd),
-              primary: const Color(0xff2f4d89),
-              secondary: const Color(0xffb6445b),
-              tertiary: Colors.grey.shade800),
-        ),
-        darkTheme: ThemeData.dark(useMaterial3: true),
-        themeMode: ThemeMode.system,
-        home: const Navbar(),
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'ddr_bpm',
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xff8cb2dd),
+            primary: const Color(0xff2f4d89),
+            secondary: const Color(0xffb6445b),
+            tertiary: Colors.grey.shade800),
       ),
+      darkTheme: ThemeData.dark(useMaterial3: true),
+      themeMode: ThemeMode.system,
+      home: const Navbar(),
     );
   }
 }
@@ -108,7 +115,7 @@ class _NavbarState extends State<Navbar> {
       ),
       body: <Widget>[
         /// Home page
-        const BPMPage(),
+        const BpmPage(),
         Navigator(
           key: const Key("Song"),
           onGenerateRoute: (settings) {
@@ -121,7 +128,7 @@ class _NavbarState extends State<Navbar> {
         Navigator(
             key: const Key("Settings"),
             onGenerateRoute: (settings) {
-              Widget page = const Placeholder();
+              Widget page = const SettingsPage();
               return MaterialPageRoute(builder: (_) => page);
             }),
       ][currentPageIndex],

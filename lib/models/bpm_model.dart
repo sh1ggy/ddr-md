@@ -5,13 +5,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 
+// TODO: remove this model when the SongPage has its own ChangeNotifier
 class BpmState extends ChangeNotifier {
-  int bpm = constants.chosenBpm; // BPM init
+  static const chosenReadSpeedSetting = "chosenReadSpeed";
 
-  // Set BPM to new input
-  void setBpm(newBpm) {
-    if (newBpm == "") return;
-    bpm = int.parse(newBpm);
-    notifyListeners();
-  }
+  int bpm = constants.songBpm; // BPM init
+  int _chosenReadSpeed = constants.chosenReadSpeed; // Read speed init
 }
