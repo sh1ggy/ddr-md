@@ -72,7 +72,7 @@ class SongDetails extends StatelessWidget {
                 text: TextSpan(
                   style: TextStyle(
                       fontSize: 14.0,
-                      color: Theme.of(context).textTheme.bodyMedium?.color),
+                      color: DefaultTextStyle.of(context).style.color),
                   children: <TextSpan>[
                     TextSpan(
                       text: (formattedTime(

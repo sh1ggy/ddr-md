@@ -94,7 +94,6 @@ class _SonglistPageState extends State<SonglistPage> {
             appBar: AppBar(
               surfaceTintColor: Colors.black,
               shadowColor: Colors.black,
-              elevation: 2,
               title: const Text(
                 'Songlist',
                 style: TextStyle(
@@ -109,7 +108,7 @@ class _SonglistPageState extends State<SonglistPage> {
               slivers: <Widget>[
                 SliverAppBar(
                   floating: true,
-                  elevation: 0,
+                  
                   backgroundColor: Colors.transparent,
                   flexibleSpace: SearchBar(
                     hintText: "Search song...",
@@ -126,10 +125,6 @@ class _SonglistPageState extends State<SonglistPage> {
                     leading: const Icon(Icons.search),
                   ),
                 ),
-                SliverPersistentHeader(
-                  delegate: _PinnedHeaderDelegate(),
-                  pinned: true,
-                ),
                 SliverList(
                     delegate: SliverChildListDelegate([
                   FutureBuilder(
@@ -137,45 +132,29 @@ class _SonglistPageState extends State<SonglistPage> {
                     builder: (context, snapshot) {
                       List<Widget> children;
                       if (snapshot.hasData) {
-                        children = <Widget>[
-                          ExpansionPanelList.radio(
-                            expansionCallback: (int index, bool isExpanded) {
-                              setState(() {
-                                difficulties[index].isExpanded = isExpanded;
-                              });
+                        children = snapshot.data!
+                            .map<ListTile>((Difficulty difficulty) {
+                          return ListTile(
+                            title: RichText(
+                              text: TextSpan(
+                                text: 'Level ${difficulty.value}: ',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                                children: <TextSpan>[
+                                  TextSpan(
+                                      text:
+                                          '${difficulty.songList.length} songs',
+                                      style: TextStyle(fontWeight: FontWeight.normal,
+                                           fontSize: 16, color: Colors.grey.shade400)),
+                                ],
+                              ),
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => {
+                              Navigator.push(
+                                  context, difficultyList(difficulty))
                             },
-                            children: snapshot.data!.map<ExpansionPanelRadio>(
-                                (Difficulty difficulty) {
-                              return ExpansionPanelRadio(
-                                  value: difficulty.value,
-                                  canTapOnHeader: true,
-                                  headerBuilder:
-                                      (BuildContext context, bool isExpanded) {
-                                    return ListTile(
-                                      title: Text(
-                                          "Level ${difficulty.value}: ${difficulty.songList.length} songs"),
-                                    );
-                                  },
-                                  // isExpanded: difficulty.isExpanded,
-                                  body: SizedBox(
-                                    height: MediaQuery.of(context).size.height,
-                                    child: ListView.builder(
-                                        physics:
-                                            const NeverScrollableScrollPhysics(),
-                                        scrollDirection: Axis.vertical,
-                                        itemCount: difficulty.songList.length,
-                                        prototypeItem: SongListItem(
-                                            songInfo: difficulty
-                                                .songList.first.songInfo),
-                                        itemBuilder: (context, index) {
-                                          return SongListItem(
-                                              songInfo: difficulty
-                                                  .songList[index].songInfo);
-                                        }),
-                                  ));
-                            }).toList(),
-                          ),
-                        ];
+                          );
+                        }).toList();
                       } else {
                         children = <Widget>[const Text('Loading...')];
                       }
@@ -196,6 +175,37 @@ class _SonglistPageState extends State<SonglistPage> {
     );
   }
 
+  MaterialPageRoute<dynamic> difficultyList(Difficulty difficulty) {
+    return MaterialPageRoute(
+      builder: (context) => SafeArea(
+          child: Scaffold(
+        appBar: AppBar(
+          surfaceTintColor: Colors.black,
+          shadowColor: Colors.black,
+          elevation: 2,
+          centerTitle: true,
+          title: Text(
+            "Level ${difficulty.value}",
+            style: const TextStyle(
+                fontSize: 20,
+                color: Colors.blueGrey,
+                fontWeight: FontWeight.w600),
+          ),
+          iconTheme: const IconThemeData(color: Colors.blueGrey),
+        ),
+        body: ListView.builder(
+            scrollDirection: Axis.vertical,
+            itemCount: difficulty.songList.length,
+            prototypeItem:
+                SongListItem(songInfo: difficulty.songList.first.songInfo),
+            itemBuilder: (context, index) {
+              return SongListItem(
+                  songInfo: difficulty.songList[index].songInfo);
+            }),
+      )),
+    );
+  }
+
   void showToast(BuildContext context, String message) {
     final scaffold = ScaffoldMessenger.of(context);
     scaffold.showSnackBar(
@@ -207,27 +217,3 @@ class _SonglistPageState extends State<SonglistPage> {
     );
   }
 }
-
-class _PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
-  @override
-  Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      height: 50,
-      color: Colors.grey,
-      child: Center(child: Text('Pinned Widget')),
-    );
-  }
-
-  @override
-  double get maxExtent => 50; // Height of the pinned widget
-
-  @override
-  double get minExtent => 50; // Height of the pinned widget
-
-  @override
-  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
-    return false;
-  }
-}
-

@@ -40,7 +40,7 @@ class SongBpm extends StatelessWidget {
               text: TextSpan(
                 style: TextStyle(
                     fontSize: 15.0,
-                    color: Theme.of(context).textTheme.bodyMedium?.color),
+                    color: DefaultTextStyle.of(context).style.color),
                 children: <TextSpan>[
                   if (chart!.trueMin != chart!.trueMax)
                     TextSpan(
@@ -95,7 +95,9 @@ class SongBpm extends StatelessWidget {
             ],
           ),
           SizedBox(
-              height: isBpmChange ? MediaQuery.of(context).size.height / 9 : MediaQuery.of(context).size.height / 6,
+              height: isBpmChange
+                  ? MediaQuery.of(context).size.height / 9
+                  : MediaQuery.of(context).size.height / 6,
               child: ListWheelScrollView.useDelegate(
                 physics: const FixedExtentScrollPhysics(),
                 controller:
@@ -167,7 +169,7 @@ class SongBpmTextItem extends StatelessWidget {
           style: TextStyle(
               color: nearestModIndex == constants.mods.indexOf(mod)
                   ? Colors.white
-                  : Theme.of(context).textTheme.bodyMedium?.color)),
+                  : DefaultTextStyle.of(context).style.color)),
     );
   }
 }
