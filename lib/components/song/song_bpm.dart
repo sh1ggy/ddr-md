@@ -14,7 +14,7 @@ class SongBpm extends StatelessWidget {
       required this.isBpmChange,
       required this.chart});
   final int nearestModIndex;
-  final bool? isBpmChange;
+  final bool isBpmChange;
   final Chart? chart;
 
   @override
@@ -95,19 +95,13 @@ class SongBpm extends StatelessWidget {
             ],
           ),
           SizedBox(
-              height: MediaQuery.of(context).size.height / 9,
+              height: isBpmChange ? MediaQuery.of(context).size.height / 9 : MediaQuery.of(context).size.height / 6,
               child: ListWheelScrollView.useDelegate(
                 physics: const FixedExtentScrollPhysics(),
                 controller:
                     FixedExtentScrollController(initialItem: nearestModIndex),
                 overAndUnderCenterOpacity: .5,
                 itemExtent: 22,
-                // -- If you wanna use this, refactor Widget to be Stateful
-                // onSelectedItemChanged: (index) {
-                //   setState(() {
-                //     selectedItemIndex = index;
-                //   });
-                // },
                 childDelegate: ListWheelChildListDelegate(
                   children: constants.mods.map<Widget>((mod) {
                     var avg = mod * chart!.dominantBpm;

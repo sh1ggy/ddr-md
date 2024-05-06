@@ -12,11 +12,15 @@ class SongListItem extends StatelessWidget {
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
     return ListTile(
+      visualDensity: VisualDensity.adaptivePlatformDensity,
+      isThreeLine: true,
       leading: Image(
         image: AssetImage('assets/jackets-lowres/${songInfo.name}-jacket.png'),
-        height: 100,
       ),
-      title: Text(songInfo.title),
+      title: Text(
+        songInfo.title,
+        style: const TextStyle(overflow: TextOverflow.ellipsis),
+      ),
       subtitle: Row(
         children: [
           Text(
@@ -37,8 +41,8 @@ class SongListItem extends StatelessWidget {
             songInfo.levels.single.medium != null
                 ? songInfo.levels.single.medium.toString()
                 : "",
-            style:
-                const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+                color: Colors.red, fontWeight: FontWeight.bold),
           ),
           if (songInfo.levels.single.hard != null)
             Text(

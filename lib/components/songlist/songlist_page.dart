@@ -5,11 +5,9 @@ library;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
-import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ddr_md/constants.dart' as constants;
-import 'package:provider/provider.dart';
 
 class SonglistPage extends StatefulWidget {
   const SonglistPage({super.key});
@@ -88,7 +86,6 @@ class _SonglistPageState extends State<SonglistPage> {
 
   @override
   Widget build(BuildContext context) {
-    var songState = context.watch<SongState>();
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -108,78 +105,90 @@ class _SonglistPageState extends State<SonglistPage> {
               ),
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
-            body: SingleChildScrollView(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      FutureBuilder(
-                        future: _songItemsPromise,
-                        builder: (context, snapshot) {
-                          List<Widget> children;
-                          if (snapshot.hasData) {
-                            children = <Widget>[
-                              ExpansionPanelList(
-                                expansionCallback:
-                                    (int index, bool isExpanded) {
-                                  setState(() {
-                                    difficulties[index].isExpanded = isExpanded;
-                                  });
-                                },
-                                children: snapshot.data!.map<ExpansionPanel>(
-                                    (Difficulty difficulty) {
-                                  return ExpansionPanel(
-                                      canTapOnHeader: true,
-                                      headerBuilder: (BuildContext context,
-                                          bool isExpanded) {
-                                        return ListTile(
-                                          title: Text(
-                                              "Level ${difficulty.value}: ${difficulty.songList.length} songs"),
-                                        );
-                                      },
-                                      isExpanded: difficulty.isExpanded,
-                                      body: SizedBox(
-                                        height:
-                                            MediaQuery.of(context).size.height /
-                                                2,
-                                        child: ListView.builder(
-                                            physics: const ScrollPhysics(),
-                                            scrollDirection: Axis.vertical,
-                                            itemCount:
-                                                difficulty.songList.length,
-                                            prototypeItem: SongListItem(
-                                                songInfo: difficulty
-                                                    .songList.first.songInfo),
-                                            itemBuilder: (context, index) {
-                                              return SongListItem(
-                                                  songInfo: difficulty
-                                                      .songList[index]
-                                                      .songInfo);
-                                            }),
-                                      ));
-                                }).toList(),
-                              ),
-                            ];
-                          } else {
-                            children = <Widget>[const Text('Loading...')];
-                          }
-                          return Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: children,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+            body: CustomScrollView(
+              slivers: <Widget>[
+                SliverAppBar(
+                  floating: true,
+                  elevation: 0,
+                  backgroundColor: Colors.transparent,
+                  flexibleSpace: SearchBar(
+                    hintText: "Search song...",
+                    constraints: const BoxConstraints(
+                        minWidth: 360.0, maxWidth: 800.0, minHeight: 56.0),
+                    shape:
+                        MaterialStateProperty.all(const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.zero,
+                    )),
+                    padding: MaterialStateProperty.all(
+                      const EdgeInsets.symmetric(
+                          vertical: 5.0, horizontal: 20.0),
+                    ),
+                    leading: const Icon(Icons.search),
                   ),
                 ),
-              ),
+                SliverPersistentHeader(
+                  delegate: _PinnedHeaderDelegate(),
+                  pinned: true,
+                ),
+                SliverList(
+                    delegate: SliverChildListDelegate([
+                  FutureBuilder(
+                    future: _songItemsPromise,
+                    builder: (context, snapshot) {
+                      List<Widget> children;
+                      if (snapshot.hasData) {
+                        children = <Widget>[
+                          ExpansionPanelList.radio(
+                            expansionCallback: (int index, bool isExpanded) {
+                              setState(() {
+                                difficulties[index].isExpanded = isExpanded;
+                              });
+                            },
+                            children: snapshot.data!.map<ExpansionPanelRadio>(
+                                (Difficulty difficulty) {
+                              return ExpansionPanelRadio(
+                                  value: difficulty.value,
+                                  canTapOnHeader: true,
+                                  headerBuilder:
+                                      (BuildContext context, bool isExpanded) {
+                                    return ListTile(
+                                      title: Text(
+                                          "Level ${difficulty.value}: ${difficulty.songList.length} songs"),
+                                    );
+                                  },
+                                  // isExpanded: difficulty.isExpanded,
+                                  body: SizedBox(
+                                    height: MediaQuery.of(context).size.height,
+                                    child: ListView.builder(
+                                        physics:
+                                            const NeverScrollableScrollPhysics(),
+                                        scrollDirection: Axis.vertical,
+                                        itemCount: difficulty.songList.length,
+                                        prototypeItem: SongListItem(
+                                            songInfo: difficulty
+                                                .songList.first.songInfo),
+                                        itemBuilder: (context, index) {
+                                          return SongListItem(
+                                              songInfo: difficulty
+                                                  .songList[index].songInfo);
+                                        }),
+                                  ));
+                            }).toList(),
+                          ),
+                        ];
+                      } else {
+                        children = <Widget>[const Text('Loading...')];
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.max,
+                        children: children,
+                      );
+                    },
+                  ),
+                ]))
+              ],
             ),
           ),
         );
@@ -198,3 +207,27 @@ class _SonglistPageState extends State<SonglistPage> {
     );
   }
 }
+
+class _PinnedHeaderDelegate extends SliverPersistentHeaderDelegate {
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      height: 50,
+      color: Colors.grey,
+      child: Center(child: Text('Pinned Widget')),
+    );
+  }
+
+  @override
+  double get maxExtent => 50; // Height of the pinned widget
+
+  @override
+  double get minExtent => 50; // Height of the pinned widget
+
+  @override
+  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
+    return false;
+  }
+}
+

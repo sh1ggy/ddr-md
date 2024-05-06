@@ -141,13 +141,12 @@ class _SongPageState extends State<SongPage> {
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 child: Column(
                   children: [
-                    // const PrevNote(),
                     if (songState.songInfo != null)
                       SongDetails(songInfo: songState.songInfo!, chart: _chart),
                     if (songState.songInfo != null && _isBpmChange != null) ...[
                       SongBpm(
                           nearestModIndex: _nearestModIndex,
-                          isBpmChange: _isBpmChange,
+                          isBpmChange: _isBpmChange!,
                           chart: _chart),
                       if (_isBpmChange! && _songBpmSpots.isNotEmpty)
                         SongChart(
@@ -156,6 +155,7 @@ class _SongPageState extends State<SongPage> {
                             context: context,
                             songInfo: songState.songInfo,
                             chart: _chart),
+                    const PrevNote(),
                     ]
                   ]
                       .expand((x) => [const SizedBox(height: 20), x])
