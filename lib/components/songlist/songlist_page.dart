@@ -5,25 +5,14 @@ library;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:ddr_md/constants.dart' as constants;
 
 class SonglistPage extends StatefulWidget {
   const SonglistPage({super.key});
   @override
   State<SonglistPage> createState() => _SonglistPageState();
-}
-
-// stores ExpansionPanel state information
-class SongEntry {
-  SongEntry({
-    required this.expandedValue,
-    required this.songInfo,
-  });
-
-  String expandedValue;
-  SongInfo songInfo;
 }
 
 class Difficulty {
@@ -34,7 +23,7 @@ class Difficulty {
   });
   int value;
   bool isExpanded;
-  List<SongEntry> songList = [];
+  List<SongInfo> songList = [];
 }
 
 class _SonglistPageState extends State<SonglistPage> {
@@ -48,33 +37,15 @@ class _SonglistPageState extends State<SonglistPage> {
   );
 
   Future<List<Difficulty>> generateSongItems() async {
-    SongInfo? songInfo;
-
-    AssetBundle bundle = DefaultAssetBundle.of(context);
-    AssetManifest asset = await AssetManifest.loadFromAssetBundle(bundle);
-    List<String> assets = asset.listAssets();
-    List<String> songDataPaths = assets
-        .where((string) => string.startsWith("assets/song-data/"))
-        .where((string) => string.endsWith(".json"))
-        .map((e) => e.substring(0, e.length - 5))
-        .toList();
-
-    for (int i = 0; i < songDataPaths.length; i++) {
-      var response = await rootBundle.loadString('${songDataPaths[i]}.json');
-      songInfo = parseJson(response);
-
+    for (int i = 0; i < Songs.list.length; i++) {
       for (var difficulty in difficulties) {
-        if (songInfo.levels.single
+        if (Songs.list[i].levels.single
             .toJson()
             .containsValue(difficulty.value.toDouble())) {
-          difficulty.songList.add((SongEntry(
-            expandedValue: 'This is item number $i',
-            songInfo: songInfo,
-          )));
+          difficulty.songList.add(Songs.list[i]);
         }
       }
     }
-
     return difficulties;
   }
 
@@ -108,22 +79,49 @@ class _SonglistPageState extends State<SonglistPage> {
               slivers: <Widget>[
                 SliverAppBar(
                   floating: true,
-                  
                   backgroundColor: Colors.transparent,
-                  flexibleSpace: SearchBar(
-                    hintText: "Search song...",
-                    constraints: const BoxConstraints(
-                        minWidth: 360.0, maxWidth: 800.0, minHeight: 56.0),
-                    shape:
-                        MaterialStateProperty.all(const RoundedRectangleBorder(
-                      borderRadius: BorderRadius.zero,
-                    )),
-                    padding: MaterialStateProperty.all(
-                      const EdgeInsets.symmetric(
-                          vertical: 5.0, horizontal: 20.0),
-                    ),
-                    leading: const Icon(Icons.search),
-                  ),
+                  flexibleSpace: SearchAnchor(
+                      isFullScreen: true,
+                      builder:
+                          (BuildContext context, SearchController controller) {
+                        return SearchBar(
+                          controller: controller,
+                          onTap: () {
+                            controller.openView();
+                          },
+                          onChanged: (_) {
+                            controller.openView();
+                          },
+                          hintText: "Search song...",
+                          constraints: const BoxConstraints(
+                              minWidth: 360.0,
+                              maxWidth: 800.0,
+                              minHeight: 56.0),
+                          shape: MaterialStateProperty.all(
+                              const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.zero,
+                          )),
+                          padding: MaterialStateProperty.all(
+                            const EdgeInsets.symmetric(
+                                vertical: 5.0, horizontal: 20.0),
+                          ),
+                          leading: const Icon(Icons.search),
+                        );
+                      },
+                      suggestionsBuilder:
+                          (BuildContext context, SearchController controller) {
+                        return List<ListTile>.generate(1000, (int index) {
+                          final String item = 'item $index';
+                          return ListTile(
+                            title: Text(item),
+                            onTap: () {
+                              setState(() {
+                                controller.closeView(item);
+                              });
+                            },
+                          );
+                        });
+                      }),
                 ),
                 SliverList(
                     delegate: SliverChildListDelegate([
@@ -138,13 +136,16 @@ class _SonglistPageState extends State<SonglistPage> {
                             title: RichText(
                               text: TextSpan(
                                 text: 'Level ${difficulty.value}: ',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 18),
                                 children: <TextSpan>[
                                   TextSpan(
                                       text:
                                           '${difficulty.songList.length} songs',
-                                      style: TextStyle(fontWeight: FontWeight.normal,
-                                           fontSize: 16, color: Colors.grey.shade400)),
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.normal,
+                                          fontSize: 16,
+                                          color: Colors.grey.shade400)),
                                 ],
                               ),
                             ),
@@ -196,11 +197,9 @@ class _SonglistPageState extends State<SonglistPage> {
         body: ListView.builder(
             scrollDirection: Axis.vertical,
             itemCount: difficulty.songList.length,
-            prototypeItem:
-                SongListItem(songInfo: difficulty.songList.first.songInfo),
+            prototypeItem: SongListItem(songInfo: difficulty.songList.first),
             itemBuilder: (context, index) {
-              return SongListItem(
-                  songInfo: difficulty.songList[index].songInfo);
+              return SongListItem(songInfo: difficulty.songList[index]);
             }),
       )),
     );

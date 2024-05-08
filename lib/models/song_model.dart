@@ -14,3 +14,8 @@ class SongState extends ChangeNotifier {
     notifyListeners();
   }
 }
+
+class Songs {
+  static List<String> assets = [];
+  static List<SongInfo> list = [];
+}

@@ -222,7 +222,7 @@ class SongChartState extends State<SongChart> {
               isShowingStops = !isShowingStops;
             });
           },
-          controlAffinity: ListTileControlAffinity.leading,
+          controlAffinity: ListTileControlAffinity.trailing,
         ),
       ],
     );
