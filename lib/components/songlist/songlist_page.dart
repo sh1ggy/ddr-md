@@ -49,6 +49,30 @@ class _SonglistPageState extends State<SonglistPage> {
     return difficulties;
   }
 
+  final List<SongListItem> _searchResultWidgets = [];
+
+  void getMatch(String value) {
+    setState(() {
+      value = value.toLowerCase().trim();
+      if (value == "") {
+        print(_searchResultWidgets.isEmpty);
+        _searchResultWidgets.clear();
+        return;
+      }
+
+      _searchResultWidgets.clear();
+      List<SongInfo> filteredSongList = Songs.list
+          .where((SongInfo song) =>
+              song.title.toLowerCase().contains(value) ||
+              song.titletranslit.toLowerCase().contains(value))
+          .toList();
+      for (SongInfo song in filteredSongList) {
+        _searchResultWidgets.add(SongListItem(songInfo: song));
+      }
+      return;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -76,103 +100,93 @@ class _SonglistPageState extends State<SonglistPage> {
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
             body: CustomScrollView(
-              slivers: <Widget>[
-                SliverAppBar(
-                  floating: true,
-                  backgroundColor: Colors.transparent,
-                  flexibleSpace: SearchAnchor(
-                      isFullScreen: true,
-                      builder:
-                          (BuildContext context, SearchController controller) {
-                        return SearchBar(
-                          controller: controller,
-                          onTap: () {
-                            controller.openView();
-                          },
-                          onChanged: (_) {
-                            controller.openView();
-                          },
-                          hintText: "Search song...",
-                          constraints: const BoxConstraints(
-                              minWidth: 360.0,
-                              maxWidth: 800.0,
-                              minHeight: 56.0),
-                          shape: MaterialStateProperty.all(
-                              const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.zero,
-                          )),
-                          padding: MaterialStateProperty.all(
-                            const EdgeInsets.symmetric(
-                                vertical: 5.0, horizontal: 20.0),
-                          ),
-                          leading: const Icon(Icons.search),
-                        );
-                      },
-                      suggestionsBuilder:
-                          (BuildContext context, SearchController controller) {
-                        return List<ListTile>.generate(1000, (int index) {
-                          final String item = 'item $index';
-                          return ListTile(
-                            title: Text(item),
-                            onTap: () {
-                              setState(() {
-                                controller.closeView(item);
-                              });
-                            },
-                          );
-                        });
-                      }),
-                ),
-                SliverList(
-                    delegate: SliverChildListDelegate([
-                  FutureBuilder(
-                    future: _songItemsPromise,
-                    builder: (context, snapshot) {
-                      List<Widget> children;
-                      if (snapshot.hasData) {
-                        children = snapshot.data!
-                            .map<ListTile>((Difficulty difficulty) {
-                          return ListTile(
-                            title: RichText(
-                              text: TextSpan(
-                                text: 'Level ${difficulty.value}: ',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 18),
-                                children: <TextSpan>[
-                                  TextSpan(
-                                      text:
-                                          '${difficulty.songList.length} songs',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.normal,
-                                          fontSize: 16,
-                                          color: Colors.grey.shade400)),
-                                ],
-                              ),
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => {
-                              Navigator.push(
-                                  context, difficultyList(difficulty))
-                            },
-                          );
-                        }).toList();
-                      } else {
-                        children = <Widget>[const Text('Loading...')];
-                      }
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.max,
-                        children: children,
-                      );
-                    },
-                  ),
-                ]))
-              ],
+              slivers: <Widget>[songSearchBar(), songList()],
             ),
           ),
         );
       }),
+    );
+  }
+
+  SliverList songList() {
+    return SliverList(
+        delegate: SliverChildListDelegate([
+      FutureBuilder(
+        future: _songItemsPromise,
+        builder: (context, snapshot) {
+          List<Widget> children;
+          if (snapshot.hasData) {
+            children = snapshot.data!.map<ListTile>((Difficulty difficulty) {
+              return ListTile(
+                title: RichText(
+                  text: TextSpan(
+                    text: 'Level ${difficulty.value}: ',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 18),
+                    children: <TextSpan>[
+                      TextSpan(
+                          text: '${difficulty.songList.length} songs',
+                          style: TextStyle(
+                              fontWeight: FontWeight.normal,
+                              fontSize: 16,
+                              color: Colors.grey.shade400)),
+                    ],
+                  ),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () =>
+                    {Navigator.push(context, difficultyList(difficulty))},
+              );
+            }).toList();
+          } else {
+            children = <Widget>[const Text('Loading...')];
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.max,
+            children: children,
+          );
+        },
+      ),
+    ]));
+  }
+
+  SliverAppBar songSearchBar() {
+    return SliverAppBar(
+      floating: true,
+      backgroundColor: Colors.transparent,
+      flexibleSpace: SearchAnchor(
+          isFullScreen: true,
+          viewOnChanged: (value) => getMatch(value),
+          viewHintText: "Search song...",
+          builder: (BuildContext context, SearchController controller) {
+            return SearchBar(
+              controller: controller,
+              onTap: () {
+                controller.openView();
+              },
+              onChanged: (_) {
+                controller.openView();
+              },
+              hintText: "Search song...",
+              constraints: const BoxConstraints(
+                  minWidth: 360.0, maxWidth: 800.0, minHeight: 56.0),
+              shape: MaterialStateProperty.all(const RoundedRectangleBorder(
+                borderRadius: BorderRadius.zero,
+              )),
+              padding: MaterialStateProperty.all(
+                const EdgeInsets.symmetric(vertical: 5.0, horizontal: 20.0),
+              ),
+              leading: const Icon(Icons.search),
+            );
+          },
+          suggestionsBuilder:
+              (BuildContext context, SearchController controller) {
+            if (_searchResultWidgets.isEmpty || controller.text == "")
+              return List.empty();
+            return _searchResultWidgets;
+          }),
     );
   }
 

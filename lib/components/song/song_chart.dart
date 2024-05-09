@@ -5,10 +5,8 @@ library;
 
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/models/song_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 class SongChart extends StatefulWidget {
   const SongChart({
@@ -41,7 +39,6 @@ class SongChartState extends State<SongChart> {
 
   @override
   Widget build(BuildContext context) {
-    var songState = context.watch<SongState>();
     Color bpmLineColor = Colors.redAccent.shade100;
     MaterialAccentColor stopLineColor = Colors.lightBlueAccent;
     List<LineChartBarData> lineChartBarData = [

@@ -13,7 +13,6 @@ class SongListItem extends StatelessWidget {
     var songState = context.watch<SongState>();
     return ListTile(
       visualDensity: VisualDensity.adaptivePlatformDensity,
-      isThreeLine: true,
       leading: Image(
         image: AssetImage('assets/jackets-lowres/${songInfo.name}-jacket.png'),
       ),
