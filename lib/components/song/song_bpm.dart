@@ -31,9 +31,6 @@ class SongBpm extends StatelessWidget {
                 fontStyle: FontStyle.italic,
                 fontWeight: FontWeight.bold),
           ),
-          const SizedBox(
-            height: 10,
-          ),
           if (chart!.trueMin != chart!.trueMax)
             // Only show BPM range if there is one
             RichText(
@@ -58,7 +55,7 @@ class SongBpm extends StatelessWidget {
               ),
             ),
           const SizedBox(
-            height: 20,
+            height: 15,
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,

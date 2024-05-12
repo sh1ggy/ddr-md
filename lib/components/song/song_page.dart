@@ -110,9 +110,9 @@ class _SongPageState extends State<SongPage> {
                 shadowColor: Colors.black,
                 elevation: 2,
                 centerTitle: true,
-                title: Text(
-                  songState.songInfo!.name,
-                  style: const TextStyle(
+                title: const Text(
+                  "Song",
+                  style: TextStyle(
                       fontSize: 20,
                       color: Colors.blueGrey,
                       fontWeight: FontWeight.w600),
@@ -141,6 +141,14 @@ class _SongPageState extends State<SongPage> {
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 child: Column(
                   children: [
+                    Text(
+                      songState.songInfo!.title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                     if (songState.songInfo != null)
                       SongDetails(songInfo: songState.songInfo!, chart: _chart),
                     if (songState.songInfo != null && _isBpmChange != null) ...[
@@ -155,10 +163,10 @@ class _SongPageState extends State<SongPage> {
                             context: context,
                             songInfo: songState.songInfo,
                             chart: _chart),
-                    const PrevNote(),
+                      const PrevNote(),
                     ]
                   ]
-                      .expand((x) => [const SizedBox(height: 20), x])
+                      .expand((x) => [const SizedBox(height: 10), x])
                       .skip(1)
                       .toList(),
                 ),

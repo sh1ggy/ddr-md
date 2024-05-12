@@ -28,7 +28,35 @@ class Difficulty {
 
 class _SonglistPageState extends State<SonglistPage> {
   Future<List<Difficulty>>? _songItemsPromise;
+  final List<SongListItem> _searchResultWidgets = [];
 
+  // Search result handler
+  void getMatch(String value) {
+    value = value.toLowerCase().trim();
+    if (value == "") {
+      setState(() {
+        _searchResultWidgets.clear();
+      });
+      return;
+    }
+    _searchResultWidgets.clear();
+    List<SongInfo> filteredSongList = Songs.list
+        .where((SongInfo song) =>
+            song.title.toLowerCase().contains(value) ||
+            song.titletranslit.toLowerCase().contains(value))
+        .toList();
+    for (SongInfo song in filteredSongList) {
+      setState(() {
+        _searchResultWidgets.add(SongListItem(
+          songInfo: song,
+          isSearch: true,
+        ));
+      });
+    }
+    return;
+  }
+
+  // Generate difficulty list to 19.
   final List<Difficulty> difficulties = List<Difficulty>.generate(
     constants.maxDifficulty,
     (index) {
@@ -36,9 +64,12 @@ class _SonglistPageState extends State<SonglistPage> {
     },
   );
 
+  // Populate difficulty folders
+  // TODO: switch between doubles
   Future<List<Difficulty>> generateSongItems() async {
     for (int i = 0; i < Songs.list.length; i++) {
       for (var difficulty in difficulties) {
+        // Map<String,dynamic> difficulties = Songs.list[i].mode.singles.toJson();
         if (Songs.list[i].levels.single
             .toJson()
             .containsValue(difficulty.value.toDouble())) {
@@ -47,30 +78,6 @@ class _SonglistPageState extends State<SonglistPage> {
       }
     }
     return difficulties;
-  }
-
-  final List<SongListItem> _searchResultWidgets = [];
-
-  void getMatch(String value) {
-    setState(() {
-      value = value.toLowerCase().trim();
-      if (value == "") {
-        print(_searchResultWidgets.isEmpty);
-        _searchResultWidgets.clear();
-        return;
-      }
-
-      _searchResultWidgets.clear();
-      List<SongInfo> filteredSongList = Songs.list
-          .where((SongInfo song) =>
-              song.title.toLowerCase().contains(value) ||
-              song.titletranslit.toLowerCase().contains(value))
-          .toList();
-      for (SongInfo song in filteredSongList) {
-        _searchResultWidgets.add(SongListItem(songInfo: song));
-      }
-      return;
-    });
   }
 
   @override
@@ -97,6 +104,52 @@ class _SonglistPageState extends State<SonglistPage> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              actions: <Widget>[
+                PopupMenuButton(
+                  initialValue: 0,
+                  tooltip: "Sort",
+                  icon: const Icon(Icons.sort),
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry>[
+                    const PopupMenuItem(
+                      child: ListTile(
+                        leading: Icon(Icons.sort_by_alpha),
+                        title: Text('Alphabetical'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      child: ListTile(
+                        leading: Icon(Icons.sports_esports_rounded),
+                        title: Text('Version'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      child: ListTile(
+                        leading: Icon(Icons.not_interested_rounded),
+                        title: Text('None'),
+                      ),
+                    ),
+                  ],
+                ),
+                PopupMenuButton(
+                  initialValue: 0,
+                  tooltip: "Chart Type",
+                  icon: const Icon(Icons.swap_vert),
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry>[
+                    const PopupMenuItem(
+                      child: ListTile(
+                        leading: Icon(Icons.looks_one_rounded),
+                        title: Text('Singles'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      child: ListTile(
+                        leading: Icon(Icons.looks_two_rounded),
+                        title: Text('Doubles'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
             body: CustomScrollView(
@@ -183,8 +236,9 @@ class _SonglistPageState extends State<SonglistPage> {
           },
           suggestionsBuilder:
               (BuildContext context, SearchController controller) {
-            if (_searchResultWidgets.isEmpty || controller.text == "")
+            if (_searchResultWidgets.isEmpty || controller.text == "") {
               return List.empty();
+            }
             return _searchResultWidgets;
           }),
     );
@@ -211,9 +265,15 @@ class _SonglistPageState extends State<SonglistPage> {
         body: ListView.builder(
             scrollDirection: Axis.vertical,
             itemCount: difficulty.songList.length,
-            prototypeItem: SongListItem(songInfo: difficulty.songList.first),
+            prototypeItem: SongListItem(
+              songInfo: difficulty.songList.first,
+              isSearch: false,
+            ),
             itemBuilder: (context, index) {
-              return SongListItem(songInfo: difficulty.songList[index]);
+              return SongListItem(
+                songInfo: difficulty.songList[index],
+                isSearch: false,
+              );
             }),
       )),
     );

@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 class SongListItem extends StatelessWidget {
-  const SongListItem({super.key, required this.songInfo});
+  const SongListItem(
+      {super.key, required this.songInfo, required this.isSearch});
   final SongInfo songInfo;
+  final bool isSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +20,9 @@ class SongListItem extends StatelessWidget {
       ),
       title: Text(
         songInfo.title,
-        style: const TextStyle(overflow: TextOverflow.ellipsis),
+        style: TextStyle(
+            fontSize: 15,
+            overflow: isSearch ? TextOverflow.visible : TextOverflow.ellipsis),
       ),
       subtitle: Row(
         children: [
@@ -40,8 +44,8 @@ class SongListItem extends StatelessWidget {
             songInfo.levels.single.medium != null
                 ? songInfo.levels.single.medium.toString()
                 : "",
-            style: const TextStyle(
-                color: Colors.red, fontWeight: FontWeight.bold),
+            style:
+                const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
           ),
           if (songInfo.levels.single.hard != null)
             Text(
