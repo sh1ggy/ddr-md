@@ -3,6 +3,7 @@
 /// Description: Widgets that display base song information.
 library;
 
+import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:flutter/material.dart';
 
@@ -90,35 +91,7 @@ class SongDetails extends StatelessWidget {
               ),
               Align(
                 alignment: AlignmentDirectional.bottomCenter,
-                child: Row(
-                  children: [
-                    Text(
-                      songInfo.levels.single.beginner.toString(),
-                      style: const TextStyle(
-                          color: Colors.cyan, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      songInfo.levels.single.easy.toString(),
-                      style: const TextStyle(
-                          color: Colors.orange, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      songInfo.levels.single.medium.toString(),
-                      style: const TextStyle(
-                          color: Colors.red, fontWeight: FontWeight.bold),
-                    ),
-                    Text(songInfo.levels.single.hard.toString(),
-                        style: const TextStyle(
-                            color: Colors.green, fontWeight: FontWeight.bold)),
-                    if (songInfo.levels.single.challenge != null)
-                      Text(songInfo.levels.single.challenge.toString(),
-                          style: const TextStyle(
-                              color: Colors.purple, fontWeight: FontWeight.bold)),
-                  ]
-                      .expand((x) => [const SizedBox(width: 10), x])
-                      .skip(1)
-                      .toList(),
-                ),
+                child: SongDifficulty(difficulty: songInfo.levels.single)
               ),
             ],
           ),

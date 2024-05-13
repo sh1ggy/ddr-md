@@ -1,3 +1,4 @@
+import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -24,47 +25,7 @@ class SongListItem extends StatelessWidget {
             fontSize: 15,
             overflow: isSearch ? TextOverflow.visible : TextOverflow.ellipsis),
       ),
-      subtitle: Row(
-        children: [
-          Text(
-            songInfo.levels.single.beginner != null
-                ? songInfo.levels.single.beginner.toString()
-                : "",
-            style: const TextStyle(
-                color: Colors.cyan, fontWeight: FontWeight.bold),
-          ),
-          Text(
-            songInfo.levels.single.easy != null
-                ? songInfo.levels.single.easy.toString()
-                : "",
-            style: const TextStyle(
-                color: Colors.orange, fontWeight: FontWeight.bold),
-          ),
-          Text(
-            songInfo.levels.single.medium != null
-                ? songInfo.levels.single.medium.toString()
-                : "",
-            style:
-                const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-          ),
-          if (songInfo.levels.single.hard != null)
-            Text(
-              songInfo.levels.single.hard.toString(),
-              style: const TextStyle(
-                  color: Colors.green, fontWeight: FontWeight.bold),
-            ),
-          if (songInfo.levels.single.expert != null)
-            Text(songInfo.levels.single.expert.toString(),
-                style: const TextStyle(
-                    color: Colors.green, fontWeight: FontWeight.bold)),
-          Text(
-              songInfo.levels.single.challenge != null
-                  ? songInfo.levels.single.challenge.toString()
-                  : "",
-              style: const TextStyle(
-                  color: Colors.purple, fontWeight: FontWeight.bold)),
-        ].expand((x) => [const SizedBox(width: 10), x]).skip(1).toList(),
-      ),
+      subtitle: SongDifficulty(difficulty: songInfo.levels.single),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
