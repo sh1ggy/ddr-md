@@ -20,39 +20,41 @@ class SongDifficulty extends StatelessWidget {
       RichText(
         text: TextSpan(
           style: DefaultTextStyle.of(context).style,
-          children: <InlineSpan>[
-            TextSpan(
-                text:
-                    difficulty.beginner != null ? "${difficulty.easy} \t" : "",
-                style: const TextStyle(
-                    color: Colors.cyan, fontWeight: FontWeight.bold)),
-            TextSpan(
-                text: difficulty.easy != null ? "${difficulty.easy} \t" : "",
-                style: const TextStyle(
-                    color: Colors.orange, fontWeight: FontWeight.bold)),
-            TextSpan(
-                text:
-                    difficulty.medium != null ? "${difficulty.medium} \t" : "",
-                style: const TextStyle(
-                    color: Colors.red, fontWeight: FontWeight.bold)),
-            TextSpan(
-                text: difficulty.hard != null ? "${difficulty.hard} \t" : "",
-                style: const TextStyle(
-                    color: Colors.green, fontWeight: FontWeight.bold)),
-            TextSpan(
-                text:
-                    difficulty.expert != null ? "${difficulty.expert} \t" : "",
-                style: const TextStyle(
-                    color: Colors.green, fontWeight: FontWeight.bold)),
-            TextSpan(
-                text: difficulty.challenge != null
-                    ? "${difficulty.challenge} \t"
-                    : "",
-                style: const TextStyle(
-                    color: Colors.purple, fontWeight: FontWeight.bold)),
-          ],
+          children: buildDiffList(difficulty),
         ),
       ),
     ]);
+  }
+
+  TextSpan diffTextSpan({required String text, required Color color}) {
+    return TextSpan(
+        text: text,
+        style: TextStyle(color: color, fontWeight: FontWeight.bold));
+  }
+
+  List<TextSpan> buildDiffList(Double difficulty) {
+    Map<String, dynamic> json = difficulty.toJson();
+    List<TextSpan> widgets = [];
+    if (difficulty.beginner != null) {
+      widgets.add(
+          diffTextSpan(text: "${difficulty.beginner} \t", color: Colors.cyan));
+    }
+    if (difficulty.easy != null) {
+      widgets.add(
+          diffTextSpan(text: "${difficulty.easy} \t", color: Colors.orange));
+    }
+    if (difficulty.medium != null) {
+      widgets.add(
+          diffTextSpan(text: "${difficulty.medium} \t", color: Colors.red));
+    }
+    if (difficulty.hard != null) {
+      widgets.add(
+          diffTextSpan(text: "${difficulty.hard} \t", color: Colors.green));
+    }
+    if (difficulty.challenge != null) {
+      widgets.add(diffTextSpan(
+          text: "${difficulty.challenge} \t", color: Colors.purple));
+    }
+    return widgets;
   }
 }

@@ -165,7 +165,6 @@ class Double {
     int? beginner;
     int? medium;
     int? hard;
-    int? expert;
     int? challenge;
 
     Double({
@@ -173,7 +172,6 @@ class Double {
         this.beginner,
         this.medium,
         this.hard,
-        this.expert,
         this.challenge,
     });
 
@@ -182,7 +180,6 @@ class Double {
         beginner: json["beginner"],
         medium: json["medium"],
         hard: json["hard"],
-        expert: json["expert"],
         challenge: json["challenge"],
     );
 
@@ -191,7 +188,6 @@ class Double {
         "beginner": beginner,
         "medium": medium,
         "hard": hard,
-        "expert": expert,
         "challenge": challenge,
     };
 }
