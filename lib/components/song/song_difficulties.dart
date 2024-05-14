@@ -36,7 +36,6 @@ class SongDifficulty extends StatelessWidget {
   List<TextSpan> buildDiffList(Double difficulty) {
     List<TextSpan> widgets = []; // Widgets list for difficulty TextSpans
     // Loop through entries in difficulty object and add accordingly
-    print(difficulty.toJson());
     for (var diff in difficulty.toJson().entries) {
       if (diff.value == null) {
         continue;
