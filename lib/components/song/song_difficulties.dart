@@ -1,6 +1,5 @@
-/// Name: SongDetails
-/// Parent: SongPage
-/// Description: Widgets that display base song information.
+/// Name: SongDifficulties
+/// Description: Widgets that display song difficulties.
 library;
 
 import 'package:ddr_md/components/song_json.dart';
@@ -26,34 +25,44 @@ class SongDifficulty extends StatelessWidget {
     ]);
   }
 
+  // Standard TextSpan component to render
   TextSpan diffTextSpan({required String text, required Color color}) {
     return TextSpan(
         text: text,
         style: TextStyle(color: color, fontWeight: FontWeight.bold));
   }
 
+  // Build out a list of TextSpan widgets to render as part of the difficulty list
   List<TextSpan> buildDiffList(Double difficulty) {
-    Map<String, dynamic> json = difficulty.toJson();
-    List<TextSpan> widgets = [];
-    if (difficulty.beginner != null) {
-      widgets.add(
-          diffTextSpan(text: "${difficulty.beginner} \t", color: Colors.cyan));
-    }
-    if (difficulty.easy != null) {
-      widgets.add(
-          diffTextSpan(text: "${difficulty.easy} \t", color: Colors.orange));
-    }
-    if (difficulty.medium != null) {
-      widgets.add(
-          diffTextSpan(text: "${difficulty.medium} \t", color: Colors.red));
-    }
-    if (difficulty.hard != null) {
-      widgets.add(
-          diffTextSpan(text: "${difficulty.hard} \t", color: Colors.green));
-    }
-    if (difficulty.challenge != null) {
-      widgets.add(diffTextSpan(
-          text: "${difficulty.challenge} \t", color: Colors.purple));
+    List<TextSpan> widgets = []; // Widgets list for difficulty TextSpans
+    // Loop through entries in difficulty object and add accordingly
+    for (var diff in difficulty.toJson().entries) {
+      if (diff.value == null) {
+        break;
+      }
+      switch (diff.key) {
+        case ("beginner"):
+          widgets.add(diffTextSpan(
+              text: "${difficulty.beginner} \t", color: Colors.cyan));
+          break;
+        case ("easy"):
+          widgets.add(diffTextSpan(
+              text: "${difficulty.easy} \t", color: Colors.orange));
+          break;
+        case ("medium"):
+          widgets.add(
+              diffTextSpan(text: "${difficulty.medium} \t", color: Colors.red));
+          break;
+        case ("hard"):
+          widgets.add(
+              diffTextSpan(text: "${difficulty.hard} \t", color: Colors.green));
+          break;
+        case ("challenge"):
+          widgets.add(diffTextSpan(
+              text: "${difficulty.challenge} \t", color: Colors.purple));
+          break;
+        default: break;
+      }
     }
     return widgets;
   }
