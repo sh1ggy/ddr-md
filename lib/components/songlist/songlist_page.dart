@@ -57,7 +57,7 @@ class _SonglistPageState extends State<SonglistPage> {
   }
 
   // Generate difficulty list to 19.
-  final List<Difficulty> difficulties = List<Difficulty>.generate(
+  List<Difficulty> difficulties = List<Difficulty>.generate(
     constants.maxDifficulty,
     (index) {
       return (Difficulty(value: 1 + index, songList: []));
@@ -66,6 +66,7 @@ class _SonglistPageState extends State<SonglistPage> {
 
   // Populate difficulty folders
   Future<List<Difficulty>> generateSongItems(Modes mode) async {
+    List<Difficulty> newDiffList = difficulties;
     if (difficulties.first.songList.isNotEmpty) {
       for (var difficulty in difficulties) {
         difficulty.songList.clear();
@@ -73,13 +74,11 @@ class _SonglistPageState extends State<SonglistPage> {
     }
     for (int i = 0; i < Songs.list.length; i++) {
       if (mode == Modes.singles) {
-        for (var difficulty in difficulties) {
+        for (var difficulty in newDiffList) {
           if (Songs.list[i].modes.singles
               .toJson()
               .containsValue(difficulty.value.toDouble())) {
-            setState(() {
-              difficulty.songList.add(Songs.list[i]);
-            });
+            difficulty.songList.add(Songs.list[i]);
           }
         }
       } else {
@@ -87,13 +86,14 @@ class _SonglistPageState extends State<SonglistPage> {
           if (Songs.list[i].modes.doubles
               .toJson()
               .containsValue(difficulty.value.toDouble())) {
-            setState(() {
-              difficulty.songList.add(Songs.list[i]);
-            });
+            difficulty.songList.add(Songs.list[i]);
           }
         }
       }
     }
+    setState(() {
+      difficulties = newDiffList;
+    });
     return difficulties;
   }
 
