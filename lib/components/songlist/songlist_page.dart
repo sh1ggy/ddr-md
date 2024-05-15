@@ -41,19 +41,18 @@ class _SonglistPageState extends State<SonglistPage> {
       return;
     }
     _searchResultWidgets.clear();
-    List<SongInfo> filteredSongList = Songs.list
+    var songListItems = Songs.list
         .where((SongInfo song) =>
             song.title.toLowerCase().contains(value) ||
             song.titletranslit.toLowerCase().contains(value))
-        .toList();
-    for (SongInfo song in filteredSongList) {
-      setState(() {
-        _searchResultWidgets.add(SongListItem(
-          songInfo: song,
-          isSearch: true,
-        ));
-      });
-    }
+        .map((e) => SongListItem(
+              songInfo: e,
+              isSearch: true,
+            ));
+    setState(() {
+      _searchResultWidgets.addAll(songListItems);
+    });
+
     return;
   }
 
