@@ -140,9 +140,14 @@ class Stop {
     };
 }
 
+enum Modes {
+  singles,
+  doubles,
+}
+
 class Mode {
-    Difficulties singles;
-    Difficulties doubles;
+    Difficulty singles;
+    Difficulty doubles;
 
     Mode({
         required this.singles,
@@ -150,8 +155,8 @@ class Mode {
     });
 
     factory Mode.fromJson(Map<String, dynamic> json) => Mode(
-        singles: Difficulties.fromJson(json["single"]),
-        doubles: Difficulties.fromJson(json["double"]),
+        singles: Difficulty.fromJson(json["single"]),
+        doubles: Difficulty.fromJson(json["double"]),
     );
 
     Map<String, dynamic> toJson() => {
@@ -160,19 +165,22 @@ class Mode {
     };
 }
 
-enum Modes {
-  singles,
-  doubles,
+enum Difficulties {
+  easy,
+  beginner,
+  medium,
+  hard,
+  challenge,
 }
 
-class Difficulties {
+class Difficulty {
     int? easy;
     int? beginner;
     int? medium;
     int? hard;
     int? challenge;
 
-    Difficulties({
+    Difficulty({
         this.easy,
         this.beginner,
         this.medium,
@@ -180,7 +188,7 @@ class Difficulties {
         this.challenge,
     });
 
-    factory Difficulties.fromJson(Map<String, dynamic> json) => Difficulties(
+    factory Difficulty.fromJson(Map<String, dynamic> json) => Difficulty(
         easy: json["easy"],
         beginner: json["beginner"],
         medium: json["medium"],

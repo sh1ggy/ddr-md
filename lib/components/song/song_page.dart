@@ -78,8 +78,9 @@ class _SongPageState extends State<SongPage> {
   // Latching onto when this class dependencies change
   @override
   void didChangeDependencies() {
-    // No listen: false
-    SongInfo? songInfo = Provider.of<SongState>(context).songInfo;
+    SongState songState =Provider.of<SongState>(context);
+    SongInfo? songInfo = songState.songInfo;
+
     if (songInfo != null) {
       // Set variables based on state
       if (!songInfo.perChart) {
