@@ -159,10 +159,12 @@ class _SonglistPageState extends State<SonglistPage> {
                   icon: const Icon(Icons.swap_vert),
                   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
                     PopupMenuItem(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
                       child: ListTile(
                         onTap: () {
                           songState.setMode(Modes.singles);
                           generateSongItems(Modes.singles);
+                          showToast(context, "Set mode to singles");
                           Navigator.pop(context);
                           return;
                         },
@@ -171,10 +173,12 @@ class _SonglistPageState extends State<SonglistPage> {
                       ),
                     ),
                     PopupMenuItem(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
                       child: ListTile(
                         onTap: () {
                           songState.setMode(Modes.doubles);
                           generateSongItems(Modes.doubles);
+                          showToast(context, "Set mode to doubles");
                           Navigator.pop(context);
                           return;
                         },
@@ -227,7 +231,7 @@ class _SonglistPageState extends State<SonglistPage> {
               );
             }).toList();
           } else {
-            children = <Widget>[const Text('Loading...')];
+            children = [];
           }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
