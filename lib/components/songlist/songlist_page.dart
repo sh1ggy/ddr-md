@@ -56,7 +56,7 @@ class _SonglistPageState extends State<SonglistPage> {
   }
 
   // Generate difficulty list to 19.
-  final List<Difficulty> difficulties = List<Difficulty>.generate(
+  List<Difficulty> difficulties = List<Difficulty>.generate(
     constants.maxDifficulty,
     (index) {
       return (Difficulty(value: 1 + index, songList: []));
@@ -66,8 +66,9 @@ class _SonglistPageState extends State<SonglistPage> {
   // Populate difficulty folders
   // TODO: switch between doubles
   Future<List<Difficulty>> generateSongItems() async {
+    List<Difficulty> newDiffList = difficulties;
     for (int i = 0; i < Songs.list.length; i++) {
-      for (var difficulty in difficulties) {
+      for (var difficulty in newDiffList) {
         // Map<String,dynamic> difficulties = Songs.list[i].mode.singles.toJson();
         if (Songs.list[i].levels.single
             .toJson()
@@ -76,6 +77,9 @@ class _SonglistPageState extends State<SonglistPage> {
         }
       }
     }
+    setState(() {
+      difficulties = newDiffList;
+    });
     return difficulties;
   }
 
