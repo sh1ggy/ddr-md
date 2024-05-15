@@ -11,7 +11,7 @@ class SongDifficulty extends StatelessWidget {
     required this.difficulty,
   });
 
-  final Double difficulty;
+  final Difficulties difficulty;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +33,7 @@ class SongDifficulty extends StatelessWidget {
   }
 
   // Build out a list of TextSpan widgets to render as part of the difficulty list
-  List<TextSpan> buildDiffList(Double difficulty) {
+  List<TextSpan> buildDiffList(Difficulties difficulty) {
     List<TextSpan> widgets = []; // Widgets list for difficulty TextSpans
     // Loop through entries in difficulty object and add accordingly
     for (var diff in difficulty.toJson().entries) {

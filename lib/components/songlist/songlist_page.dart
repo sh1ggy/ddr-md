@@ -8,6 +8,7 @@ import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:provider/provider.dart';
 
 class SonglistPage extends StatefulWidget {
   const SonglistPage({super.key});
@@ -65,15 +66,32 @@ class _SonglistPageState extends State<SonglistPage> {
   );
 
   // Populate difficulty folders
-  // TODO: switch between doubles
-  Future<List<Difficulty>> generateSongItems() async {
-    for (int i = 0; i < Songs.list.length; i++) {
+  Future<List<Difficulty>> generateSongItems(Modes mode) async {
+    if (difficulties.first.songList.isNotEmpty) {
       for (var difficulty in difficulties) {
-        // Map<String,dynamic> difficulties = Songs.list[i].mode.singles.toJson();
-        if (Songs.list[i].levels.single
-            .toJson()
-            .containsValue(difficulty.value.toDouble())) {
-          difficulty.songList.add(Songs.list[i]);
+        difficulty.songList.clear();
+      }
+    }
+    for (int i = 0; i < Songs.list.length; i++) {
+      if (mode == Modes.singles) {
+        for (var difficulty in difficulties) {
+          if (Songs.list[i].modes.singles
+              .toJson()
+              .containsValue(difficulty.value.toDouble())) {
+            setState(() {
+              difficulty.songList.add(Songs.list[i]);
+            });
+          }
+        }
+      } else {
+        for (var difficulty in difficulties) {
+          if (Songs.list[i].modes.doubles
+              .toJson()
+              .containsValue(difficulty.value.toDouble())) {
+            setState(() {
+              difficulty.songList.add(Songs.list[i]);
+            });
+          }
         }
       }
     }
@@ -83,11 +101,17 @@ class _SonglistPageState extends State<SonglistPage> {
   @override
   void initState() {
     super.initState();
-    _songItemsPromise = Future<List<Difficulty>>(() => generateSongItems());
+    SongState? songState;
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      songState = Provider.of<SongState>(context, listen: false);
+    });
+    _songItemsPromise =
+        Future<List<Difficulty>>(() => generateSongItems(songState!.modes));
   }
 
   @override
   Widget build(BuildContext context) {
+    var songState = context.watch<SongState>();
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -135,16 +159,28 @@ class _SonglistPageState extends State<SonglistPage> {
                   tooltip: "Chart Type",
                   icon: const Icon(Icons.swap_vert),
                   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       child: ListTile(
-                        leading: Icon(Icons.looks_one_rounded),
-                        title: Text('Singles'),
+                        onTap: () {
+                          songState.setMode(Modes.singles);
+                          generateSongItems(Modes.singles);
+                          Navigator.pop(context);
+                          return;
+                        },
+                        leading: const Icon(Icons.looks_one_rounded),
+                        title: const Text('Singles'),
                       ),
                     ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       child: ListTile(
-                        leading: Icon(Icons.looks_two_rounded),
-                        title: Text('Doubles'),
+                        onTap: () {
+                          songState.setMode(Modes.doubles);
+                          generateSongItems(Modes.doubles);
+                          Navigator.pop(context);
+                          return;
+                        },
+                        leading: const Icon(Icons.looks_two_rounded),
+                        title: const Text('Doubles'),
                       ),
                     ),
                   ],

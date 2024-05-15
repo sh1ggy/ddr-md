@@ -16,7 +16,7 @@ class SongInfo {
     String titletranslit;
     double songLength;
     bool perChart;
-    Levels levels;
+    Mode modes;
     List<Chart> chart;
 
     SongInfo({
@@ -27,7 +27,7 @@ class SongInfo {
         required this.titletranslit,
         required this.songLength,
         required this.perChart,
-        required this.levels,
+        required this.modes,
         required this.chart,
     });
 
@@ -39,7 +39,7 @@ class SongInfo {
         titletranslit: json["titletranslit"],
         songLength: json["song_length"]?.toDouble(),
         perChart: json["per_chart"],
-        levels: Levels.fromJson(json["levels"]),
+        modes: Mode.fromJson(json["levels"]),
         chart: List<Chart>.from(json["chart"].map((x) => Chart.fromJson(x))),
     );
 
@@ -51,7 +51,7 @@ class SongInfo {
         "titletranslit": titletranslit,
         "song_length": songLength,
         "per_chart": perChart,
-        "levels": levels.toJson(),
+        "levels": modes.toJson(),
         "chart": List<dynamic>.from(chart.map((x) => x.toJson())),
     };
 }
@@ -140,34 +140,39 @@ class Stop {
     };
 }
 
-class Levels {
-    Double single;
-    Double levelsDouble;
+class Mode {
+    Difficulties singles;
+    Difficulties doubles;
 
-    Levels({
-        required this.single,
-        required this.levelsDouble,
+    Mode({
+        required this.singles,
+        required this.doubles,
     });
 
-    factory Levels.fromJson(Map<String, dynamic> json) => Levels(
-        single: Double.fromJson(json["single"]),
-        levelsDouble: Double.fromJson(json["double"]),
+    factory Mode.fromJson(Map<String, dynamic> json) => Mode(
+        singles: Difficulties.fromJson(json["single"]),
+        doubles: Difficulties.fromJson(json["double"]),
     );
 
     Map<String, dynamic> toJson() => {
-        "single": single.toJson(),
-        "double": levelsDouble.toJson(),
+        "single": singles.toJson(),
+        "double": doubles.toJson(),
     };
 }
 
-class Double {
+enum Modes {
+  singles,
+  doubles,
+}
+
+class Difficulties {
     int? easy;
     int? beginner;
     int? medium;
     int? hard;
     int? challenge;
 
-    Double({
+    Difficulties({
         this.easy,
         this.beginner,
         this.medium,
@@ -175,7 +180,7 @@ class Double {
         this.challenge,
     });
 
-    factory Double.fromJson(Map<String, dynamic> json) => Double(
+    factory Difficulties.fromJson(Map<String, dynamic> json) => Difficulties(
         easy: json["easy"],
         beginner: json["beginner"],
         medium: json["medium"],

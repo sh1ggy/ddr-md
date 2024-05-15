@@ -25,7 +25,10 @@ class SongListItem extends StatelessWidget {
             fontSize: 15,
             overflow: isSearch ? TextOverflow.visible : TextOverflow.ellipsis),
       ),
-      subtitle: SongDifficulty(difficulty: songInfo.levels.single),
+      subtitle: SongDifficulty(
+          difficulty: songState.modes == Modes.singles
+              ? songInfo.modes.singles
+              : songInfo.modes.doubles),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
