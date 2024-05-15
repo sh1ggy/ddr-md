@@ -195,7 +195,7 @@ class _SonglistPageState extends State<SonglistPage> {
               );
             }).toList();
           } else {
-            children = <Widget>[const Text('Loading...')];
+            children = [];
           }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
