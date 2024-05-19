@@ -70,9 +70,6 @@ class _SongPageState extends State<SongPage> {
   void initState() {
     super.initState();
     _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // _readSongJson();
-    });
   }
 
   // Latching onto when this class dependencies change
