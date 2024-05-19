@@ -5,20 +5,39 @@ library;
 
 import 'package:ddr_md/components/bpm_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
-import 'package:ddr_md/components/song/song_page.dart';
-import 'package:ddr_md/models/bpm_model.dart';
+import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/songlist_page.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+// Function to load song list JSONs from asset bundle into static class for global use
+void loadSongList() async {
+  AssetManifest asset = await AssetManifest.loadFromAssetBundle(rootBundle);
+  Songs.assets = asset.listAssets();
+
+  List<String> songDataPaths = Songs.assets
+      .where((string) => string.startsWith("assets/song-data/"))
+      .where((string) => string.endsWith(".json"))
+      .map((e) => e.substring(0, e.length - 5))
+      .toList();
+
+  for (int i = 0; i < songDataPaths.length; i++) {
+    var response = await rootBundle.loadString('${songDataPaths[i]}.json');
+    SongInfo songInfo = parseJson(response);
+    Songs.list.add(songInfo);
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Settings.init();
+  loadSongList();
 
   runApp(MultiProvider(
-    providers: [
-      ChangeNotifierProvider(create: (context) => BpmState())
-    ],
+    providers: [ChangeNotifierProvider(create: (context) => SongState())],
     child: const App(),
   ));
 }
@@ -119,7 +138,7 @@ class _NavbarState extends State<Navbar> {
         Navigator(
           key: const Key("Song"),
           onGenerateRoute: (settings) {
-            Widget page = const SongPage();
+            Widget page = const SonglistPage();
             return MaterialPageRoute(builder: (_) => page);
           },
         ),

@@ -1,8 +1,9 @@
 /// Name: SongDetails
 /// Parent: SongPage
-/// Description: Widgets that display base song information. 
+/// Description: Widgets that display base song information.
 library;
 
+import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:flutter/material.dart';
 
@@ -28,74 +29,72 @@ class SongDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.max,
-      children: [
-        const Image(
-          image: AssetImage('assets/background.png'),
-          height: 100,
-        ),
-        const SizedBox(width: 20),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              songInfo.name,
-              softWrap: true,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-            ),
-            Text(
-              songInfo.version,
-              style: const TextStyle(fontStyle: FontStyle.italic),
-            ),
-            RichText(
-              text: TextSpan(
-                style: TextStyle(
-                    fontSize: 14.0,
-                    color: Theme.of(context).textTheme.bodyMedium?.color),
-                children: <TextSpan>[
-                  const TextSpan(
-                      text: 'Length: ',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  TextSpan(
-                      text: (formattedTime(
-                              timeInSecond: songInfo.songLength.toInt()) +
-                          " min, ")),
-                  const TextSpan(
-                      text: 'BPM: ',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  TextSpan(text: chart!.bpmRange),
-                ],
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          GestureDetector(
+            child: Hero(
+              tag: "imgZoom",
+              child: Image(
+                image: AssetImage(
+                    'assets/jackets-lowres/${songInfo.name}-jacket.png'),
+                height: 100,
               ),
             ),
-            Row(
-              children: [
-                Text(
-                  songInfo.levels.single.beginner.toString(),
-                  style: const TextStyle(
-                      color: Colors.cyan, fontWeight: FontWeight.bold),
+            // Zooming image onTap
+            onTap: () {
+              Navigator.of(context).push(PageRouteBuilder(
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                  opaque: true,
+                  barrierDismissible: true,
+                  pageBuilder: (BuildContext context, _, __) {
+                    return GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Hero(
+                        tag: "imgZoom",
+                        transitionOnUserGestures: true,
+                        child: Image(
+                          height: MediaQuery.of(context).size.height * .7,
+                          image: AssetImage(
+                              'assets/jackets/${songInfo.name}-jacket.png'),
+                        ),
+                      ),
+                    );
+                  }));
+            },
+          ),
+          const SizedBox(width: 20),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RichText(
+                text: TextSpan(
+                  style: TextStyle(
+                      fontSize: 14.0,
+                      color: DefaultTextStyle.of(context).style.color),
+                  children: <TextSpan>[
+                    TextSpan(
+                      text: (formattedTime(
+                              timeInSecond: songInfo.songLength.toInt()) +
+                          " min"),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
-                Text(
-                  songInfo.levels.single.easy.toString(),
-                  style: const TextStyle(
-                      color: Colors.orange, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  songInfo.levels.single.medium.toString(),
-                  style: const TextStyle(
-                      color: Colors.red, fontWeight: FontWeight.bold),
-                ),
-                Text(songInfo.levels.single.hard.toString(),
-                    style: const TextStyle(
-                        color: Colors.green, fontWeight: FontWeight.bold)),
-                Text(songInfo.levels.single.challenge.toString(),
-                    style: const TextStyle(
-                        color: Colors.purple, fontWeight: FontWeight.bold)),
-              ].expand((x) => [const SizedBox(width: 10), x]).skip(1).toList(),
-            ),
-          ],
-        ),
-      ]);
+              ),
+              Text(
+                songInfo.version,
+                style:
+                    const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+              ),
+              Align(
+                alignment: AlignmentDirectional.bottomCenter,
+                child: SongDifficulty(difficulty: songInfo.levels.single)
+              ),
+            ],
+          ),
+        ]);
   }
 }

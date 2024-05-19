@@ -14,7 +14,7 @@ class SongBpm extends StatelessWidget {
       required this.isBpmChange,
       required this.chart});
   final int nearestModIndex;
-  final bool? isBpmChange;
+  final bool isBpmChange;
   final Chart? chart;
 
   @override
@@ -24,6 +24,39 @@ class SongBpm extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Text(
+            "${chart!.dominantBpm} BPM",
+            style: const TextStyle(
+                fontSize: 16,
+                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.bold),
+          ),
+          if (chart!.trueMin != chart!.trueMax)
+            // Only show BPM range if there is one
+            RichText(
+              text: TextSpan(
+                style: TextStyle(
+                    fontSize: 15.0,
+                    color: DefaultTextStyle.of(context).style.color),
+                children: <TextSpan>[
+                  if (chart!.trueMin != chart!.trueMax)
+                    TextSpan(
+                        text: ' (${chart!.trueMin.toString()}~) ',
+                        style: const TextStyle(color: Colors.grey)),
+                  TextSpan(
+                      text: chart!.bpmRange,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  if (chart!.trueMin != chart!.trueMax)
+                    TextSpan(
+                      text: ' (~${chart!.trueMax.toString()}) ',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                ],
+              ),
+            ),
+          const SizedBox(
+            height: 15,
+          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -34,7 +67,7 @@ class SongBpm extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   )),
               const SizedBox(width: 30),
-              if (isBpmChange!) ...[
+              if (isBpmChange == true) ...[
                 const SizedBox(
                     width: 50,
                     child: Text(
@@ -59,19 +92,15 @@ class SongBpm extends StatelessWidget {
             ],
           ),
           SizedBox(
-              height: MediaQuery.of(context).size.height / 9,
+              height: isBpmChange
+                  ? MediaQuery.of(context).size.height / 9
+                  : MediaQuery.of(context).size.height / 6,
               child: ListWheelScrollView.useDelegate(
                 physics: const FixedExtentScrollPhysics(),
                 controller:
                     FixedExtentScrollController(initialItem: nearestModIndex),
                 overAndUnderCenterOpacity: .5,
                 itemExtent: 22,
-                // -- If you wanna use this, refactor Widget to be Stateful
-                // onSelectedItemChanged: (index) {
-                //   setState(() {
-                //     selectedItemIndex = index;
-                //   });
-                // },
                 childDelegate: ListWheelChildListDelegate(
                   children: constants.mods.map<Widget>((mod) {
                     var avg = mod * chart!.dominantBpm;
@@ -137,7 +166,7 @@ class SongBpmTextItem extends StatelessWidget {
           style: TextStyle(
               color: nearestModIndex == constants.mods.indexOf(mod)
                   ? Colors.white
-                  : Theme.of(context).textTheme.bodyMedium?.color)),
+                  : DefaultTextStyle.of(context).style.color)),
     );
   }
 }
