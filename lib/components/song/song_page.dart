@@ -80,19 +80,21 @@ class _SongPageState extends State<SongPage> {
   void didChangeDependencies() {
     SongState songState =Provider.of<SongState>(context);
     SongInfo? songInfo = songState.songInfo;
+    Difficulties? chosenDifficulty = songState.chosenDifficulty;
 
-    if (songInfo != null) {
+    if (songInfo != null && chosenDifficulty != null) {
       // Set variables based on state
       if (!songInfo.perChart) {
         _chart = songInfo.chart[0];
       } else {
         // TODO: better logic dependent on which difficulty is selected
-        _chart = songInfo.chart[songInfo.chart.length - 1];
+        print(chosenDifficulty.index);
+        _chart = songInfo.chart[chosenDifficulty.index];
       }
       _isBpmChange = _chart!.trueMax != _chart!.trueMin;
       _nearestModIndex = findNearestReadSpeed(
           _chart!.dominantBpm, constants.mods, _chosenReadSpeed);
-      _genBpmPoints(songInfo.chart[0]);
+      _genBpmPoints(_chart!);
     }
     super.didChangeDependencies();
   }

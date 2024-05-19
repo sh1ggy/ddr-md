@@ -12,8 +12,8 @@ class SongState extends ChangeNotifier {
   Modes _mode = Modes.singles;
   Modes get modes => _mode;
 
-  Difficulties? _chosenDifficulty;
-  Difficulties? get chosenDifficulty => _chosenDifficulty;
+  Difficulties _chosenDifficulty = Difficulties.beginner;
+  Difficulties get chosenDifficulty => _chosenDifficulty;
 
   void setSongInfo(SongInfo selectedSongInfo) {
     _songInfo = selectedSongInfo;

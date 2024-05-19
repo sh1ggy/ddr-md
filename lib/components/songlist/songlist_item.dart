@@ -43,6 +43,7 @@ class SongListItem extends StatelessWidget {
       ),
       onTap: () => {
         songState.setSongInfo(songInfo),
+        // TODO: Change this
         songState.setChosenDifficulty(Difficulties.beginner),
         Navigator.push(
             context, MaterialPageRoute(builder: (context) => const SongPage()))

@@ -16,19 +16,25 @@ class SonglistPage extends StatefulWidget {
   State<SonglistPage> createState() => _SonglistPageState();
 }
 
-class Difficulty {
-  Difficulty({
+class ListDifficulty {
+  ListDifficulty({
     required this.value,
     this.isExpanded = false,
     required this.songList,
   });
   int value;
   bool isExpanded;
-  List<SongInfo> songList = [];
+  List<SongInfoItem> songList = [];
+}
+
+class SongInfoItem {
+  SongInfoItem({required this.songInfo, required this.difficulty});
+  SongInfo songInfo;
+  Difficulties difficulty;
 }
 
 class _SonglistPageState extends State<SonglistPage> {
-  Future<List<Difficulty>>? _songItemsPromise;
+  Future<List<ListDifficulty>>? _songItemsPromise;
   final List<SongListItem> _searchResultWidgets = [];
 
   // Search result handler
@@ -57,40 +63,40 @@ class _SonglistPageState extends State<SonglistPage> {
   }
 
   // Generate difficulty list to 19.
-  List<Difficulty> difficulties = List<Difficulty>.generate(
+  List<ListDifficulty> difficulties = List<ListDifficulty>.generate(
     constants.maxDifficulty,
     (index) {
-      return (Difficulty(value: 1 + index, songList: []));
+      return (ListDifficulty(value: 1 + index, songList: []));
     },
   );
 
   // Populate difficulty folders
-  Future<List<Difficulty>> generateSongItems(Modes mode) async {
-    List<Difficulty> newDiffList = difficulties;
+  Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
+    List<ListDifficulty> newDiffList = difficulties;
+
+    // Clear list and regenerate if already exists
     if (difficulties.first.songList.isNotEmpty) {
       for (var difficulty in difficulties) {
         difficulty.songList.clear();
       }
     }
+
+    // Generate song list. 
     for (int i = 0; i < Songs.list.length; i++) {
-      if (mode == Modes.singles) {
-        for (var difficulty in newDiffList) {
-          if (Songs.list[i].modes.singles
-              .toJson()
-              .containsValue(difficulty.value.toDouble())) {
-            difficulty.songList.add(Songs.list[i]);
-          }
-        }
-      } else {
-        for (var difficulty in difficulties) {
-          if (Songs.list[i].modes.doubles
-              .toJson()
-              .containsValue(difficulty.value.toDouble())) {
-            difficulty.songList.add(Songs.list[i]);
-          }
+      SongInfo song = Songs.list[i];
+      Difficulty songDifficulty =
+          mode == Modes.singles ? song.modes.singles : song.modes.doubles;
+
+      for (var difficulty in newDiffList) {
+        if (songDifficulty
+            .toJson()
+            .containsValue(difficulty.value.toDouble())) {
+          difficulty.songList.add(SongInfoItem(
+              songInfo: Songs.list[i], difficulty: Difficulties.beginner));
         }
       }
     }
+
     setState(() {
       difficulties = newDiffList;
     });
@@ -105,7 +111,7 @@ class _SonglistPageState extends State<SonglistPage> {
       songState = Provider.of<SongState>(context, listen: false);
     });
     _songItemsPromise =
-        Future<List<Difficulty>>(() => generateSongItems(songState!.modes));
+        Future<List<ListDifficulty>>(() => generateSongItems(songState!.modes));
   }
 
   @override
@@ -159,8 +165,8 @@ class _SonglistPageState extends State<SonglistPage> {
                   icon: const Icon(Icons.swap_vert),
                   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
                     PopupMenuItem(
-                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
                       child: ListTile(
+                        hoverColor: Colors.transparent,
                         onTap: () {
                           songState.setMode(Modes.singles);
                           generateSongItems(Modes.singles);
@@ -173,8 +179,8 @@ class _SonglistPageState extends State<SonglistPage> {
                       ),
                     ),
                     PopupMenuItem(
-                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
                       child: ListTile(
+                        hoverColor: Colors.transparent,
                         onTap: () {
                           songState.setMode(Modes.doubles);
                           generateSongItems(Modes.doubles);
@@ -208,7 +214,8 @@ class _SonglistPageState extends State<SonglistPage> {
         builder: (context, snapshot) {
           List<Widget> children;
           if (snapshot.hasData) {
-            children = snapshot.data!.map<ListTile>((Difficulty difficulty) {
+            children =
+                snapshot.data!.map<ListTile>((ListDifficulty difficulty) {
               return ListTile(
                 title: RichText(
                   text: TextSpan(
@@ -283,7 +290,7 @@ class _SonglistPageState extends State<SonglistPage> {
     );
   }
 
-  MaterialPageRoute<dynamic> difficultyList(Difficulty difficulty) {
+  MaterialPageRoute<dynamic> difficultyList(ListDifficulty difficulty) {
     return MaterialPageRoute(
       builder: (context) => SafeArea(
           child: Scaffold(
@@ -305,12 +312,12 @@ class _SonglistPageState extends State<SonglistPage> {
             scrollDirection: Axis.vertical,
             itemCount: difficulty.songList.length,
             prototypeItem: SongListItem(
-              songInfo: difficulty.songList.first,
+              songInfo: difficulty.songList.first.songInfo,
               isSearch: false,
             ),
             itemBuilder: (context, index) {
               return SongListItem(
-                songInfo: difficulty.songList[index],
+                songInfo: difficulty.songList[index].songInfo,
                 isSearch: false,
               );
             }),
