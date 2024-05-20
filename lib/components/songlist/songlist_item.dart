@@ -7,13 +7,9 @@ import 'package:provider/provider.dart';
 
 class SongListItem extends StatelessWidget {
   const SongListItem(
-      {super.key,
-      required this.songInfo,
-      required this.isSearch,
-      this.difficulty});
+      {super.key, required this.songInfo, required this.isSearch});
   final SongInfo songInfo;
   final bool isSearch;
-  final Difficulties? difficulty;
 
   @override
   Widget build(BuildContext context) {
@@ -43,8 +39,7 @@ class SongListItem extends StatelessWidget {
       ),
       onTap: () => {
         songState.setSongInfo(songInfo),
-        // TODO: Change this
-        songState.setChosenDifficulty(Difficulties.beginner),
+        songState.setChosenDifficulty(0),
         Navigator.push(
             context, MaterialPageRoute(builder: (context) => const SongPage()))
       },

@@ -165,40 +165,32 @@ class Mode {
     };
 }
 
-enum Difficulties {
-  easy,
-  beginner,
-  medium,
-  hard,
-  challenge,
-}
-
 class Difficulty {
-    int? easy;
     int? beginner;
+    int? easy;
     int? medium;
     int? hard;
     int? challenge;
 
     Difficulty({
-        this.easy,
         this.beginner,
+        this.easy,
         this.medium,
         this.hard,
         this.challenge,
     });
 
     factory Difficulty.fromJson(Map<String, dynamic> json) => Difficulty(
-        easy: json["easy"],
         beginner: json["beginner"],
+        easy: json["easy"],
         medium: json["medium"],
         hard: json["hard"],
         challenge: json["challenge"],
     );
 
     Map<String, dynamic> toJson() => {
-        "easy": easy,
         "beginner": beginner,
+        "easy": easy,
         "medium": medium,
         "hard": hard,
         "challenge": challenge,

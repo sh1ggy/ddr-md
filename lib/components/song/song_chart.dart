@@ -29,11 +29,14 @@ class SongChart extends StatefulWidget {
 }
 
 class SongChartState extends State<SongChart> {
-  late bool isShowingStops;
+  late bool hasStops; // if chart has stops at all
+  late bool isShowingStops; // handler for toggling stops
 
+  // Initialise variables
   @override
   void initState() {
     super.initState();
+    hasStops = widget.chart!.stops.isNotEmpty;
     isShowingStops = true;
   }
 
@@ -51,7 +54,7 @@ class SongChartState extends State<SongChart> {
             show: false,
           )),
       LineChartBarData(
-          show: isShowingStops,
+          show: isShowingStops && hasStops,
           barWidth: 0,
           spots: widget.songStopSpots,
           color: stopLineColor.withOpacity(.85),
@@ -138,7 +141,7 @@ class SongChartState extends State<SongChart> {
                           style: TextStyle(fontSize: 10),
                         ),
                         const SizedBox(width: 10),
-                        if (isShowingStops) ...<Widget>[
+                        if (isShowingStops && hasStops) ...<Widget>[
                           Container(
                             width: 10,
                             decoration: BoxDecoration(
@@ -211,16 +214,18 @@ class SongChartState extends State<SongChart> {
             ),
           ),
         ),
-        CheckboxListTile(
-          title: const Text("Toggle Stops"),
-          value: isShowingStops,
-          onChanged: (value) {
-            setState(() {
-              isShowingStops = !isShowingStops;
-            });
-          },
-          controlAffinity: ListTileControlAffinity.trailing,
-        ),
+        if (hasStops) ...[
+          CheckboxListTile(
+            title: const Text("Toggle Stops"),
+            value: isShowingStops,
+            onChanged: (value) {
+              setState(() {
+                isShowingStops = !isShowingStops;
+              });
+            },
+            controlAffinity: ListTileControlAffinity.trailing,
+          ),
+        ],
       ],
     );
   }

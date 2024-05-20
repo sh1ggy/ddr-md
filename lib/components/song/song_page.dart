@@ -70,39 +70,40 @@ class _SongPageState extends State<SongPage> {
   void initState() {
     super.initState();
     _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // _readSongJson();
-    });
   }
 
-  // Latching onto when this class dependencies change
+  // Latching onto when this class's dependencies change
   @override
   void didChangeDependencies() {
-    SongState songState =Provider.of<SongState>(context);
-    SongInfo? songInfo = songState.songInfo;
-    Difficulties? chosenDifficulty = songState.chosenDifficulty;
-
-    if (songInfo != null && chosenDifficulty != null) {
-      // Set variables based on state
-      if (!songInfo.perChart) {
-        _chart = songInfo.chart[0];
-      } else {
-        // TODO: better logic dependent on which difficulty is selected
-        print(chosenDifficulty.index);
-        _chart = songInfo.chart[chosenDifficulty.index];
-      }
-      _isBpmChange = _chart!.trueMax != _chart!.trueMin;
-      _nearestModIndex = findNearestReadSpeed(
-          _chart!.dominantBpm, constants.mods, _chosenReadSpeed);
-      _genBpmPoints(_chart!);
-    }
     super.didChangeDependencies();
+    SongState songState = Provider.of<SongState>(context);
+    SongInfo? songInfo = songState.songInfo;
+    int chosenDifficulty = songState.chosenDifficulty;
+
+    if (songInfo != null) {
+      // Set variables based on state
+      if (songInfo.perChart) {
+        setState(() {
+          _chart = songInfo.chart[chosenDifficulty];
+        });
+      } else {
+        setState(() {
+          // First index because no individual chart information
+          _chart = songInfo.chart.first;
+        });
+      }
+      setState(() {
+        _isBpmChange = _chart!.trueMax != _chart!.trueMin;
+        _nearestModIndex = findNearestReadSpeed(
+            _chart!.dominantBpm, constants.mods, _chosenReadSpeed);
+        _genBpmPoints(_chart!);
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    var songState = context.watch<SongState>();
-
+    var songState = context.watch<SongState>(); 
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -159,6 +160,7 @@ class _SongPageState extends State<SongPage> {
                           nearestModIndex: _nearestModIndex,
                           isBpmChange: _isBpmChange!,
                           chart: _chart),
+                      // if 
                       if (_isBpmChange! && _songBpmSpots.isNotEmpty)
                         SongChart(
                             songBpmSpots: _songBpmSpots,

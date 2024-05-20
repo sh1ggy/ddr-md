@@ -24,13 +24,7 @@ class ListDifficulty {
   });
   int value;
   bool isExpanded;
-  List<SongInfoItem> songList = [];
-}
-
-class SongInfoItem {
-  SongInfoItem({required this.songInfo, required this.difficulty});
-  SongInfo songInfo;
-  Difficulties difficulty;
+  List<SongInfo> songList = [];
 }
 
 class _SonglistPageState extends State<SonglistPage> {
@@ -81,7 +75,7 @@ class _SonglistPageState extends State<SonglistPage> {
       }
     }
 
-    // Generate song list. 
+    // Generate song list.
     for (int i = 0; i < Songs.list.length; i++) {
       SongInfo song = Songs.list[i];
       Difficulty songDifficulty =
@@ -91,8 +85,7 @@ class _SonglistPageState extends State<SonglistPage> {
         if (songDifficulty
             .toJson()
             .containsValue(difficulty.value.toDouble())) {
-          difficulty.songList.add(SongInfoItem(
-              songInfo: Songs.list[i], difficulty: Difficulties.beginner));
+          difficulty.songList.add(Songs.list[i]);
         }
       }
     }
@@ -165,7 +158,10 @@ class _SonglistPageState extends State<SonglistPage> {
                   icon: const Icon(Icons.swap_vert),
                   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
                     PopupMenuItem(
+                      padding: const EdgeInsets.all(0),
                       child: ListTile(
+                        contentPadding:
+                            const EdgeInsets.only(left: 8, right: 8),
                         hoverColor: Colors.transparent,
                         onTap: () {
                           songState.setMode(Modes.singles);
@@ -179,8 +175,11 @@ class _SonglistPageState extends State<SonglistPage> {
                       ),
                     ),
                     PopupMenuItem(
+                      padding: const EdgeInsets.all(0),
                       child: ListTile(
                         hoverColor: Colors.transparent,
+                        contentPadding:
+                            const EdgeInsets.only(left: 8, right: 8),
                         onTap: () {
                           songState.setMode(Modes.doubles);
                           generateSongItems(Modes.doubles);
@@ -312,12 +311,12 @@ class _SonglistPageState extends State<SonglistPage> {
             scrollDirection: Axis.vertical,
             itemCount: difficulty.songList.length,
             prototypeItem: SongListItem(
-              songInfo: difficulty.songList.first.songInfo,
+              songInfo: difficulty.songList.first,
               isSearch: false,
             ),
             itemBuilder: (context, index) {
               return SongListItem(
-                songInfo: difficulty.songList[index].songInfo,
+                songInfo: difficulty.songList[index],
                 isSearch: false,
               );
             }),

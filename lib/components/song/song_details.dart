@@ -3,6 +3,7 @@
 /// Description: Widgets that display base song information.
 library;
 
+import 'package:ddr_md/components/song/song_diff_picker.dart';
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -95,10 +96,15 @@ class SongDetails extends StatelessWidget {
               ),
               Align(
                   alignment: AlignmentDirectional.bottomCenter,
-                  child: SongDifficulty(
-                      difficulty: songState.modes == Modes.singles
-                          ? songInfo.modes.singles
-                          : songInfo.modes.doubles)),
+                  child: () {
+                    Difficulty songDifficulty = songState.modes == Modes.singles
+                        ? songInfo.modes.singles
+                        : songInfo.modes.doubles;
+                    if (songInfo.perChart) {
+                      return SongDifficultyPicker(difficulty: songDifficulty);
+                    }
+                    return SongDifficulty(difficulty: songDifficulty);
+                  }()),
             ],
           ),
         ]);
