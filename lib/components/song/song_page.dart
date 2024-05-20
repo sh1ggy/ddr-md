@@ -1,5 +1,5 @@
 /// Name: SongPage
-/// Parent: Main
+/// Parent: SongListPage
 /// Description: Page that displays selected song information
 library;
 
@@ -12,7 +12,6 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:provider/provider.dart';
@@ -25,46 +24,13 @@ class SongPage extends StatefulWidget {
 }
 
 class _SongPageState extends State<SongPage> {
-  bool? _isBpmChange;
-  int _nearestModIndex = 0;
-  final List<FlSpot> _songBpmSpots = [];
-  final List<FlSpot> _songStopSpots = [];
-  Chart? _chart;
+
+
+  // Late initialisation of chart-related data
+  late bool _isBpmChange;
+  late Chart _chart;
   int _chosenReadSpeed = 0;
-
-  /// Finds nearest BPM to the stop's [st]arting point
-  /// provided compared against the [array]
-  int _findNearestStop(double st, List array) {
-    var nearest = 0;
-    array.asMap().entries.forEach((entry) {
-      var i = entry.key;
-      Bpm a = array[i];
-      if (a.st <= st) {
-        nearest = a.val;
-        return;
-      }
-    });
-    return nearest;
-  }
-
-  void _genBpmPoints(Chart chart) {
-    List<Bpm> bpms = chart.bpms;
-
-    if (_songBpmSpots.isNotEmpty || _songBpmSpots.isNotEmpty) {
-      return;
-    }
-    // Adding a spot for each BPM change in the song
-    for (int i = 0; i < bpms.length; i++) {
-      _songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
-      _songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
-    }
-    // Adding a spot for each stop in the song
-    for (int i = 0; i < chart.stops.length; i++) {
-      // Finding nearest BPM to the stop
-      double nearestBpm = _findNearestStop(chart.stops[i].st, bpms).toDouble();
-      _songStopSpots.add(FlSpot(chart.stops[i].st, nearestBpm));
-    }
-  }
+  int _nearestModIndex = 0;
 
   @override
   void initState() {
@@ -93,17 +59,16 @@ class _SongPageState extends State<SongPage> {
         });
       }
       setState(() {
-        _isBpmChange = _chart!.trueMax != _chart!.trueMin;
+        _isBpmChange = _chart.trueMax != _chart.trueMin;
         _nearestModIndex = findNearestReadSpeed(
-            _chart!.dominantBpm, constants.mods, _chosenReadSpeed);
-        _genBpmPoints(_chart!);
+            _chart.dominantBpm, constants.mods, _chosenReadSpeed);
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    var songState = context.watch<SongState>(); 
+    var songState = context.watch<SongState>();
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -148,28 +113,22 @@ class _SongPageState extends State<SongPage> {
                     Text(
                       songState.songInfo!.title,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    if (songState.songInfo != null)
-                      SongDetails(songInfo: songState.songInfo!, chart: _chart),
-                    if (songState.songInfo != null && _isBpmChange != null) ...[
-                      SongBpm(
-                          nearestModIndex: _nearestModIndex,
-                          isBpmChange: _isBpmChange!,
+                    SongDetails(songInfo: songState.songInfo!, chart: _chart),
+                    SongBpm(
+                        nearestModIndex: _nearestModIndex,
+                        isBpmChange: _isBpmChange,
+                        chart: _chart),
+                    if (_isBpmChange)
+                      SongChart(
+                          context: context,
+                          songInfo: songState.songInfo,
                           chart: _chart),
-                      // if 
-                      if (_isBpmChange! && _songBpmSpots.isNotEmpty)
-                        SongChart(
-                            songBpmSpots: _songBpmSpots,
-                            songStopSpots: _songStopSpots,
-                            context: context,
-                            songInfo: songState.songInfo,
-                            chart: _chart),
-                      const PrevNote(),
-                    ]
+                    const PrevNote(),
                   ]
                       .expand((x) => [const SizedBox(height: 10), x])
                       .skip(1)

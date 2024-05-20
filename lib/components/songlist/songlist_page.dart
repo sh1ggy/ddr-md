@@ -99,12 +99,12 @@ class _SonglistPageState extends State<SonglistPage> {
   @override
   void initState() {
     super.initState();
-    SongState? songState;
+    late SongState songState;
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
       songState = Provider.of<SongState>(context, listen: false);
     });
     _songItemsPromise =
-        Future<List<ListDifficulty>>(() => generateSongItems(songState!.modes));
+        Future<List<ListDifficulty>>(() => generateSongItems(songState.modes));
   }
 
   @override

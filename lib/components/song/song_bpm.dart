@@ -15,7 +15,7 @@ class SongBpm extends StatelessWidget {
       required this.chart});
   final int nearestModIndex;
   final bool isBpmChange;
-  final Chart? chart;
+  final Chart chart;
 
   @override
   Widget build(BuildContext context) {
@@ -25,13 +25,13 @@ class SongBpm extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            "${chart!.dominantBpm} BPM",
+            "${chart.dominantBpm} BPM",
             style: const TextStyle(
                 fontSize: 16,
                 fontStyle: FontStyle.italic,
                 fontWeight: FontWeight.bold),
           ),
-          if (chart!.trueMin != chart!.trueMax)
+          if (isBpmChange)
             // Only show BPM range if there is one
             RichText(
               text: TextSpan(
@@ -39,14 +39,14 @@ class SongBpm extends StatelessWidget {
                     fontSize: 15.0,
                     color: DefaultTextStyle.of(context).style.color),
                 children: <TextSpan>[
-                  if (chart!.trueMin != chart!.trueMax)
+                  if (!chart.bpmRange.contains(chart.trueMin.toString()))
                     TextSpan(
-                        text: ' (${chart!.trueMin.toString()}~) ',
+                        text: ' (${chart.trueMin.toString()}~) ',
                         style: const TextStyle(color: Colors.grey)),
                   TextSpan(
-                      text: chart!.bpmRange,
+                      text: chart.bpmRange,
                       style: const TextStyle(fontWeight: FontWeight.bold)),
-                  if (chart!.trueMin != chart!.trueMax)
+                  if (!chart.bpmRange.contains(chart.trueMax.toString()))
                     TextSpan(
                       text: ' (~${chart!.trueMax.toString()}) ',
                       style: const TextStyle(color: Colors.grey),
