@@ -73,11 +73,12 @@ class SongDetails extends StatelessWidget {
           const SizedBox(width: 20),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               RichText(
                 text: TextSpan(
                   style: TextStyle(
-                      fontSize: 14.0,
+                      fontSize: 16.0,
                       color: DefaultTextStyle.of(context).style.color),
                   children: <TextSpan>[
                     TextSpan(
@@ -92,7 +93,9 @@ class SongDetails extends StatelessWidget {
               Text(
                 songInfo.version,
                 style: const TextStyle(
-                    color: Colors.grey, fontStyle: FontStyle.italic),
+                    fontSize: 15.5,
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic),
               ),
               Align(
                   alignment: AlignmentDirectional.bottomCenter,

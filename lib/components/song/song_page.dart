@@ -24,14 +24,13 @@ class SongPage extends StatefulWidget {
 }
 
 class _SongPageState extends State<SongPage> {
-
-
   // Late initialisation of chart-related data
   late bool _isBpmChange;
   late Chart _chart;
-  int _chosenReadSpeed = 0;
-  int _nearestModIndex = 0;
+  late int _chosenReadSpeed;
+  late int _nearestModIndex;
 
+  // Initialise chosen read speed. 
   @override
   void initState() {
     super.initState();
@@ -123,7 +122,7 @@ class _SongPageState extends State<SongPage> {
                         nearestModIndex: _nearestModIndex,
                         isBpmChange: _isBpmChange,
                         chart: _chart),
-                    if (_isBpmChange)
+                    if (_isBpmChange || _chart.stops.isNotEmpty)
                       SongChart(
                           context: context,
                           songInfo: songState.songInfo,

@@ -29,7 +29,7 @@ class SongDifficulty extends StatelessWidget {
   TextSpan diffTextSpan({required String text, required Color color}) {
     return TextSpan(
         text: text,
-        style: TextStyle(color: color, fontWeight: FontWeight.bold));
+        style: TextStyle(fontSize: 15, color: color, fontWeight: FontWeight.bold));
   }
 
   // Build out a list of TextSpan widgets to render as part of the difficulty list
