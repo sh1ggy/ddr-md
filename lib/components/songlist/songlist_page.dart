@@ -196,8 +196,13 @@ class _SonglistPageState extends State<SonglistPage> {
               ],
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
-            body: CustomScrollView(
-              slivers: <Widget>[songSearchBar(), songList()],
+            body: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) {
+                return <Widget>[
+                  songSearchBar(),
+                ];
+              },
+              body: CustomScrollView(slivers: <Widget>[songList()]),
             ),
           ),
         );
@@ -253,6 +258,7 @@ class _SonglistPageState extends State<SonglistPage> {
   SliverAppBar songSearchBar() {
     return SliverAppBar(
       floating: true,
+      pinned: true,
       backgroundColor: Colors.transparent,
       flexibleSpace: SearchAnchor(
           isFullScreen: true,
