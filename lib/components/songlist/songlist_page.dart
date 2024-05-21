@@ -270,8 +270,9 @@ class _SonglistPageState extends State<SonglistPage> {
               onTap: () {
                 controller.openView();
               },
-              onChanged: (_) {
+              onChanged: (value) {
                 controller.openView();
+                getMatch(value);
               },
               hintText: "Search song...",
               constraints: const BoxConstraints(
