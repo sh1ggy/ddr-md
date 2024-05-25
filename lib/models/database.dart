@@ -16,18 +16,25 @@ class DatabaseProvider {
     String path = join(await getDatabasesPath(), "ddr_database.db");
     return await openDatabase(path, version: 1, onCreate: (db, version) {
       return db.execute(
-        'CREATE TABLE notes(date DATETIME PRIMARY KEY, contents TEXT)',
+        'CREATE TABLE notes(date string PRIMARY KEY, contents TEXT)',
       );
     });
   }
 
-  addNote(Note note) async {
+  static addNote(Note note) async {
     final db = await _instance;
     var raw = await db.insert(
-      "Note",
+      "notes",
       note.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     return raw;
+  }
+
+  static Future<List<Note>> getAllNotes() async {
+    final db = await _instance;
+    var response = await db.query("notes");
+    List<Note> list = response.map((c) => Note.fromMap(c)).toList();
+    return list;
   }
 }

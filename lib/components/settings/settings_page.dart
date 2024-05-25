@@ -3,6 +3,7 @@
 /// Description: Settings page for use with shared_preferences
 library;
 
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -120,11 +121,11 @@ class _SettingsPageState extends State<SettingsPage> {
                                 tooltip: "Save Read Speed",
                                 onPressed: () {
                                   if (_textReadSpeed == 0) {
-                                    _showToast(context, "Invalid Read Speed");
+                                    showToast(context, "Invalid Read Speed");
                                     return;
                                   }
                                   _setReadSpeed();
-                                  _showToast(context,
+                                  showToast(context,
                                       "Saved Read Speed to $_textReadSpeed");
                                 }),
                           ],
@@ -180,11 +181,11 @@ class _SettingsPageState extends State<SettingsPage> {
                                   }
                                   if (errMsg == "") {
                                     _setRivalCode();
-                                    _showToast(context,
+                                    showToast(context,
                                         "Saved Rival Code to $_textRivalCode");
                                     return;
                                   }
-                                  _showToast(context, errMsg);
+                                  showToast(context, errMsg);
                                   return;
                                 }),
                           ],
@@ -198,17 +199,6 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         );
       }),
-    );
-  }
-
-  void _showToast(BuildContext context, String message) {
-    final scaffold = ScaffoldMessenger.of(context);
-    scaffold.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        action: SnackBarAction(
-            label: 'DISMISS', onPressed: scaffold.hideCurrentSnackBar),
-      ),
     );
   }
 }

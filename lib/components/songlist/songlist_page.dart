@@ -5,6 +5,7 @@ library;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
@@ -328,17 +329,6 @@ class _SonglistPageState extends State<SonglistPage> {
               );
             }),
       )),
-    );
-  }
-
-  void showToast(BuildContext context, String message) {
-    final scaffold = ScaffoldMessenger.of(context);
-    scaffold.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        action: SnackBarAction(
-            label: 'DISMISS', onPressed: scaffold.hideCurrentSnackBar),
-      ),
     );
   }
 }

@@ -1,5 +1,5 @@
 class Note {
-  final DateTime date;
+  final String date;
   final String contents;
 
   const Note({
@@ -14,9 +14,13 @@ class Note {
     };
   }
 
+  factory Note.fromMap(Map<String, dynamic> json) => Note(
+        date: json["date"],
+        contents: json["contents"],
+      );
+
   @override
   String toString() {
-    return 'Note{id: ${date.toIso8601String()}, contents: $contents}';
+    return 'Note{date: $date, contents: $contents}';
   }
 }
-
