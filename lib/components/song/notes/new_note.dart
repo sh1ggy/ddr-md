@@ -102,9 +102,10 @@ class NewNoteFieldState extends State<NewNoteField> {
                           contents: _contents,
                           songTitle: songState.songInfo!.titletranslit));
                     }
-                    if (!context.mounted) return;
-                    Navigator.pop(context);
-                    showToast(context, "Note saved.");
+                    if (context.mounted) {
+                      Navigator.pop(context, true);
+                      showToast(context, "Note saved.");
+                    }
                   },
                 ),
               ]),

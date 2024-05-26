@@ -7,7 +7,7 @@
 library;
 
 import 'package:ddr_md/components/song/notes/new_note.dart';
-import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/components/song/notes/note_card.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -27,32 +27,43 @@ class NotePageState extends State<NotePage> {
   Future<List<Note>>? _notesPromise;
   final List<NoteCard> _noteWidgets = [];
 
-  Future<List<Note>> getNotes(
-      SongState songState, String songTitleTranslit) async {
+  // Function to get notes by song in DB
+  void getNotes(String songTitleTranslit) async {
+    // Variable initialisation
     List<Note> notesBySong;
     notesBySong = await DatabaseProvider.getAllNotesBySong(songTitleTranslit);
 
+    // Early return if notes list is empty
+    if (notesBySong.isEmpty) {
+      setState(() {
+        _notesPromise = Future(() => notesBySong);
+      });
+      return;
+    }
+
+    // Loop through all relevant notes and create a list of widgets from them.
     for (var note in notesBySong) {
       setState(() {
         _noteWidgets.add(NoteCard(
           contents: note.contents,
           date: note.date,
+          getNotes: getNotes,
         ));
       });
     }
-    return notesBySong;
+
+    _notesPromise = Future(() => notesBySong);
   }
 
   @override
   void initState() {
     super.initState();
-    late SongState songState;
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      late SongState songState;
       songState = Provider.of<SongState>(context, listen: false);
-    });
-    setState(() {
-      _notesPromise = Future<List<Note>>(
-          () => getNotes(songState, songState.songInfo!.titletranslit));
+      setState(() {
+        getNotes(songState.songInfo!.titletranslit);
+      });
     });
   }
 
@@ -78,13 +89,20 @@ class NotePageState extends State<NotePage> {
         floatingActionButton: FloatingActionButton(
           backgroundColor: Colors.red,
           child: const Icon(Icons.edit, color: Colors.white),
-          onPressed: () {
-            showModalBottomSheet<void>(
+          onPressed: () async {
+            // Wait for return from modalBottomSheet
+            final result = await showModalBottomSheet<bool>(
               context: context,
               builder: (BuildContext context) {
                 return const NewNoteField();
               },
             );
+            // If return is the expected value, execute getNotes and re-render
+            if (result == true) {
+              setState(() {
+                getNotes(songState.songInfo!.titletranslit);
+              });
+            }
           },
         ),
         body: Padding(
@@ -105,18 +123,25 @@ class NotePageState extends State<NotePage> {
                               return SizedBox(
                                   height:
                                       MediaQuery.of(context).size.height / 1.5,
-                                  child: const Center(
-                                      child: Text('No notes...')));
+                                  child:
+                                      const Center(child: Text('No notes...')));
                             }
                             children =
                                 snapshot.data!.map<NoteCard>((Note note) {
                               return NoteCard(
                                 contents: note.contents,
                                 date: note.date,
+                                getNotes: getNotes,
                               );
                             }).toList();
                           } else {
-                            children = [];
+                            children = [
+                              SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height / 1.5,
+                                  child:
+                                      const Center(child: Text('Loading...'))),
+                            ];
                           }
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.center,
@@ -134,67 +159,6 @@ class NotePageState extends State<NotePage> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class NoteCard extends StatelessWidget {
-  const NoteCard({
-    super.key,
-    required this.contents,
-    required this.date,
-  });
-
-  final String contents;
-  final String date;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        showModalBottomSheet<void>(
-          context: context,
-          builder: (BuildContext context) {
-            return NewNoteField(
-              contentsInit: contents,
-              date: date,
-            );
-          },
-        );
-      },
-      child: SizedBox(
-          width: MediaQuery.of(context).size.width,
-          child: Card(
-            shadowColor: Colors.black,
-            elevation: 3,
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        date,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(contents),
-                    ],
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever),
-                    tooltip: "Delete note",
-                    onPressed: () async {
-                      await DatabaseProvider.deleteNote(date);
-                      if (!context.mounted) return;
-                      showToast(context, "Note deleted.");
-                    },
-                  )
-                ],
-              ),
-            ),
-          )),
     );
   }
 }
