@@ -6,167 +6,195 @@
 /// [NotePage]
 library;
 
+import 'package:ddr_md/components/song/notes/new_note.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
-import 'package:ddr_md/constants.dart' as constants;
+import 'package:provider/provider.dart';
 
-class NotePage extends StatelessWidget {
-  const NotePage({super.key});
-
-  @override
-  Widget build(BuildContext context) => SafeArea(
-        child: Scaffold(
-          appBar: AppBar(
-            surfaceTintColor: Colors.black,
-            shadowColor: Colors.black,
-            elevation: 2,
-            centerTitle: true,
-            title: const Text(
-              'Notes',
-              style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.w600),
-            ),
-            iconTheme: const IconThemeData(color: Colors.blueGrey),
-          ),
-          floatingActionButton: FloatingActionButton(
-            backgroundColor: Colors.red,
-            child: const Icon(Icons.edit, color: Colors.white),
-            onPressed: () {
-              showModalBottomSheet<void>(
-                context: context,
-                builder: (BuildContext context) {
-                  return const NewNoteField();
-                },
-              );
-            },
-          ),
-          body: Padding(
-            padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
-            child: Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.abc),
-                          tooltip: "test",
-                          onPressed: () async {
-                            print(await DatabaseProvider.getAllNotes());
-                          },
-                        ),
-                        const SizedBox(
-                          height: 10,
-                        ),
-                        // Notes list
-                        for (var i = 0; i < 10; i++)
-                          GestureDetector(
-                            onTap: () {
-                              showModalBottomSheet<void>(
-                                context: context,
-                                builder: (BuildContext context) {
-                                  return const NewNoteField();
-                                },
-                              );
-                            },
-                            child: SizedBox(
-                                width: MediaQuery.of(context).size.width,
-                                child: const Card(
-                                  shadowColor: Colors.black,
-                                  elevation: 3,
-                                  child: Padding(
-                                    padding: EdgeInsets.all(20.0),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          '24/05/2021',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                        Text(constants.note),
-                                      ],
-                                    ),
-                                  ),
-                                )),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-}
-
-class NewNoteField extends StatefulWidget {
-  const NewNoteField({
+class NotePage extends StatefulWidget {
+  const NotePage({
     super.key,
   });
 
   @override
-  State<NewNoteField> createState() => _NewNoteFieldState();
+  State<NotePage> createState() => NotePageState();
 }
 
-class _NewNoteFieldState extends State<NewNoteField> {
-  String contents = "";
+class NotePageState extends State<NotePage> {
+  Future<List<Note>>? _notesPromise;
+  final List<NoteCard> _noteWidgets = [];
+
+  Future<List<Note>> getNotes(
+      SongState songState, String songTitleTranslit) async {
+    List<Note> notesBySong;
+    notesBySong = await DatabaseProvider.getAllNotesBySong(songTitleTranslit);
+
+    for (var note in notesBySong) {
+      setState(() {
+        _noteWidgets.add(NoteCard(
+          contents: note.contents,
+          date: note.date,
+        ));
+      });
+    }
+    return notesBySong;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    late SongState songState;
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      songState = Provider.of<SongState>(context, listen: false);
+    });
+    setState(() {
+      _notesPromise = Future<List<Note>>(
+          () => getNotes(songState, songState.songInfo!.titletranslit));
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      width: MediaQuery.of(context).size.width,
-      child: SizedBox(
-        height: 200,
-        child: Center(
+    var songState = context.watch<SongState>();
+    return SafeArea(
+      child: Scaffold(
+        appBar: AppBar(
+          surfaceTintColor: Colors.black,
+          shadowColor: Colors.black,
+          elevation: 2,
+          centerTitle: true,
+          title: const Text(
+            'Notes',
+            style: TextStyle(
+                fontSize: 20,
+                color: Colors.blueGrey,
+                fontWeight: FontWeight.w600),
+          ),
+          iconTheme: const IconThemeData(color: Colors.blueGrey),
+        ),
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: Colors.red,
+          child: const Icon(Icons.edit, color: Colors.white),
+          onPressed: () {
+            showModalBottomSheet<void>(
+              context: context,
+              builder: (BuildContext context) {
+                return const NewNoteField();
+              },
+            );
+          },
+        ),
+        body: Padding(
+          padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              TextField(
-                onChanged: (value) {
-                  setState(() {
-                    contents = value;
-                  });
-                },
-                maxLines: 3,
-                keyboardType: TextInputType.text,
-                textAlign: TextAlign.center,
-                textAlignVertical: TextAlignVertical.center,
-                decoration: InputDecoration(
-                    border: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    errorBorder: InputBorder.none,
-                    focusedErrorBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    hintText: 'Enter new note here...',
-                    hintStyle: TextStyle(
-                        color:
-                            Theme.of(context).textTheme.headlineMedium?.color)),
-              ),
-              IconButton(
-                icon: const Icon(Icons.save),
-                tooltip: "Save note",
-                onPressed: () async {
-                  await DatabaseProvider.addNote(
-                      Note(date: DateTime.now().toIso8601String(), contents: contents));
-                  if (!context.mounted) return;
-                  Navigator.pop(context);
-                  showToast(context, "Note saved!");
-                },
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      // NOTES LIST
+                      FutureBuilder(
+                        future: _notesPromise,
+                        builder: (context, snapshot) {
+                          List<Widget> children;
+                          if (snapshot.hasData) {
+                            if (snapshot.data!.isEmpty) {
+                              return SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height / 1.5,
+                                  child: const Center(
+                                      child: Text('No notes...')));
+                            }
+                            children =
+                                snapshot.data!.map<NoteCard>((Note note) {
+                              return NoteCard(
+                                contents: note.contents,
+                                date: note.date,
+                              );
+                            }).toList();
+                          } else {
+                            children = [];
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.max,
+                            children: children,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class NoteCard extends StatelessWidget {
+  const NoteCard({
+    super.key,
+    required this.contents,
+    required this.date,
+  });
+
+  final String contents;
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        showModalBottomSheet<void>(
+          context: context,
+          builder: (BuildContext context) {
+            return NewNoteField(
+              contentsInit: contents,
+              date: date,
+            );
+          },
+        );
+      },
+      child: SizedBox(
+          width: MediaQuery.of(context).size.width,
+          child: Card(
+            shadowColor: Colors.black,
+            elevation: 3,
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        date,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(contents),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_forever),
+                    tooltip: "Delete note",
+                    onPressed: () async {
+                      await DatabaseProvider.deleteNote(date);
+                      if (!context.mounted) return;
+                      showToast(context, "Note deleted.");
+                    },
+                  )
+                ],
+              ),
+            ),
+          )),
     );
   }
 }

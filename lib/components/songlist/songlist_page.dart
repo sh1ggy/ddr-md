@@ -30,7 +30,7 @@ class ListDifficulty {
 
 class _SonglistPageState extends State<SonglistPage> {
   Future<List<ListDifficulty>>? _songItemsPromise;
-  final List<SongListItem> _searchResultWidgets = [];
+  late final List<SongListItem> _searchResultWidgets;
 
   // Search result handler
   void getMatch(String value) {
