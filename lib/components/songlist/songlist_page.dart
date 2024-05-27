@@ -76,22 +76,19 @@ class _SonglistPageState extends State<SonglistPage> {
     return;
   }
 
-  // Generate difficulty list to 19.
-  List<ListDifficulty> difficulties = List<ListDifficulty>.generate(
+  // Populate difficulty folders
+  Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
+    List<ListDifficulty> difficultyList = List<ListDifficulty>.generate(
     constants.maxDifficulty,
     (index) {
       return (ListDifficulty(value: 1 + index, songList: []));
     },
-  );
-
-  // Populate difficulty folders
-  Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
-    List<ListDifficulty> newDiffList = difficulties;
+  );;
     List<Favorite> favList = await DatabaseProvider.getAllFavorites();
 
     // Clear list and regenerate if already exists
-    if (difficulties.first.songList.isNotEmpty) {
-      for (var difficulty in difficulties) {
+    if (difficultyList.first.songList.isNotEmpty) {
+      for (var difficulty in difficultyList) {
         difficulty.songList.clear();
       }
     }
@@ -102,7 +99,7 @@ class _SonglistPageState extends State<SonglistPage> {
       Difficulty songDifficulty =
           mode == Modes.singles ? song.modes.singles : song.modes.doubles;
 
-      for (var difficulty in newDiffList) {
+      for (var difficulty in difficultyList) {
         if (songDifficulty
             .toJson()
             .containsValue(difficulty.value.toDouble())) {
@@ -115,10 +112,7 @@ class _SonglistPageState extends State<SonglistPage> {
       }
     }
 
-    setState(() {
-      difficulties = newDiffList;
-    });
-    return difficulties;
+    return difficultyList;
   }
 
   @override
