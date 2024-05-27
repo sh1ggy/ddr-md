@@ -17,13 +17,15 @@ class SongListItem extends StatelessWidget {
     return ListTile(
       visualDensity: VisualDensity.adaptivePlatformDensity,
       leading: Image(
-        image: AssetImage('assets/jackets-lowres/${songInfo.name}-jacket.png'),
+        image:
+            AssetImage('assets/jackets-lowres/${songInfo.name}-jacket.png'),
       ),
       title: Text(
         songInfo.title,
         style: TextStyle(
             fontSize: 15,
-            overflow: isSearch ? TextOverflow.visible : TextOverflow.ellipsis),
+            overflow:
+                isSearch ? TextOverflow.visible : TextOverflow.ellipsis),
       ),
       subtitle: SongDifficulty(
           difficulty: songState.modes == Modes.singles
@@ -40,8 +42,8 @@ class SongListItem extends StatelessWidget {
       onTap: () => {
         songState.setSongInfo(songInfo),
         songState.setChosenDifficulty(0),
-        Navigator.push(
-            context, MaterialPageRoute(builder: (context) => const SongPage()))
+        Navigator.push(context,
+            MaterialPageRoute(builder: (context) => const SongPage()))
       },
     );
   }
