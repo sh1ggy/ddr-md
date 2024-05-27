@@ -53,7 +53,7 @@ class NewNoteFieldState extends State<NewNoteField> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 if (widget.date != null)
-                  Text(widget.date.toString(),
+                  Text(formatDate(DateTime.parse(widget.date!)),
                       style:
                           TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                 Padding(

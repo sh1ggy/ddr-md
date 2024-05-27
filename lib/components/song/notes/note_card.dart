@@ -1,6 +1,6 @@
 /// Name: NoteCard
 /// Parent: NotePage
-/// Description: Card to display note information from DB, with 
+/// Description: Card to display note information from DB, with
 /// differing action based on the params
 library;
 
@@ -54,7 +54,7 @@ class NoteCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        date,
+                        formatDate(DateTime.parse(date)),
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(contents),
