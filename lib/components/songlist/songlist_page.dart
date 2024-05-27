@@ -6,6 +6,8 @@ library;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
@@ -25,12 +27,27 @@ class ListDifficulty {
   });
   int value;
   bool isExpanded;
-  List<SongInfo> songList = [];
+  List<SongItem> songList = [];
+}
+
+class SongItem {
+  SongItem({
+    required this.songInfo,
+    required this.isFav,
+  });
+
+  SongInfo songInfo;
+  bool isFav;
 }
 
 class _SonglistPageState extends State<SonglistPage> {
   Future<List<ListDifficulty>>? _songItemsPromise;
-  late final List<SongListItem> _searchResultWidgets;
+  final List<SongListItem> _searchResultWidgets = [];
+
+  void reInitSongs() async {
+    SongState songState = Provider.of<SongState>(context, listen: false);
+    await generateSongItems(songState.modes);
+  }
 
   // Search result handler
   void getMatch(String value) {
@@ -48,7 +65,9 @@ class _SonglistPageState extends State<SonglistPage> {
             song.titletranslit.toLowerCase().contains(value))
         .map((e) => SongListItem(
               songInfo: e,
+              isFav: false,
               isSearch: true,
+              generateSongItems: reInitSongs,
             ));
     setState(() {
       _searchResultWidgets.addAll(songListItems);
@@ -68,6 +87,7 @@ class _SonglistPageState extends State<SonglistPage> {
   // Populate difficulty folders
   Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
     List<ListDifficulty> newDiffList = difficulties;
+    List<Favorite> favList = await DatabaseProvider.getAllFavorites();
 
     // Clear list and regenerate if already exists
     if (difficulties.first.songList.isNotEmpty) {
@@ -86,7 +106,11 @@ class _SonglistPageState extends State<SonglistPage> {
         if (songDifficulty
             .toJson()
             .containsValue(difficulty.value.toDouble())) {
-          difficulty.songList.add(Songs.list[i]);
+          difficulty.songList.add(SongItem(
+              songInfo: song,
+              // isFav: false,
+              isFav: favList
+                  .any((Favorite fav) => fav.songTitle == song.titletranslit && fav.isFav)));
         }
       }
     }
@@ -203,7 +227,7 @@ class _SonglistPageState extends State<SonglistPage> {
                   songSearchBar(),
                 ];
               },
-              body: CustomScrollView(slivers: <Widget>[songList()]),
+              body: CustomScrollView(slivers: <Widget>[songList(songState)]),
             ),
           ),
         );
@@ -211,15 +235,15 @@ class _SonglistPageState extends State<SonglistPage> {
     );
   }
 
-  SliverList songList() {
+  SliverList songList(SongState songState) {
     return SliverList(
         delegate: SliverChildListDelegate([
       FutureBuilder(
         future: _songItemsPromise,
         builder: (context, snapshot) {
-          List<Widget> children;
+          List<Widget> diffFolders;
           if (snapshot.hasData) {
-            children =
+            diffFolders =
                 snapshot.data!.map<ListTile>((ListDifficulty difficulty) {
               return ListTile(
                 title: RichText(
@@ -238,18 +262,27 @@ class _SonglistPageState extends State<SonglistPage> {
                   ),
                 ),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () =>
-                    {Navigator.push(context, difficultyList(difficulty))},
+                onTap: () async {
+                  await Navigator.push(context, difficultyList(difficulty));
+                  generateSongItems(songState.modes);
+                },
               );
             }).toList();
           } else {
-            children = [];
+            diffFolders = [];
           }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.max,
-            children: children,
+            children: [
+              IconButton(
+                  onPressed: () async {
+                    var test = await DatabaseProvider.getAllFavorites();
+                  },
+                  icon: const Icon(Icons.abc)),
+              ...diffFolders
+            ],
           );
         },
       ),
@@ -319,13 +352,17 @@ class _SonglistPageState extends State<SonglistPage> {
             scrollDirection: Axis.vertical,
             itemCount: difficulty.songList.length,
             prototypeItem: SongListItem(
-              songInfo: difficulty.songList.first,
+              songInfo: difficulty.songList.first.songInfo,
+              isFav: difficulty.songList.first.isFav,
               isSearch: false,
+              generateSongItems: reInitSongs,
             ),
             itemBuilder: (context, index) {
               return SongListItem(
-                songInfo: difficulty.songList[index],
+                songInfo: difficulty.songList[index].songInfo,
+                isFav: difficulty.songList[index].isFav,
                 isSearch: false,
+                generateSongItems: reInitSongs,
               );
             }),
       )),

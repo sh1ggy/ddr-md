@@ -8,20 +8,61 @@ class DatabaseProvider {
   static Database? _database;
 
   static Future<Database?> init() async {
-    databaseFactory.deleteDatabase(await getDatabasesPath());
     _database = await _instance;
     return _database;
   }
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 1, onCreate: (db, version) {
-      return db.execute(
-        'CREATE TABLE notes(date TEXT PRIMARY KEY, contents TEXT, songTitle TEXT)',
+    return await openDatabase(path, version: 2, onCreate: (db, version) async {
+      print('test');
+      await db.execute(
+        'CREATE TABLE IF NOT EXISTS notes(date TEXT PRIMARY KEY, contents TEXT, songTitle TEXT)',
       );
+      print('test22');
+      await db.execute(
+          'CREATE TABLE IF NOT EXISTS favorites(id INTEGER PRIMARY KEY, isFav INT, songTitle TEXT)');
     });
   }
 
+  // -- FAVS FUNCTIONS
+  static addFavorite(Favorite favorite) async {
+    final db = await _instance;
+    var raw = await db.insert(
+      "favorites",
+      favorite.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    return raw;
+  }
+
+  static Future<List<Favorite>> getAllFavorites() async {
+    final db = await _instance;
+    var response = await db.query("favorites");
+    List<Favorite> list = response.map((c) => Favorite.fromMap(c)).toList();
+    return list;
+  }
+
+  static updateFavorite(Favorite oldFav) async {
+    final db = await _instance;
+    Favorite updatedFavorite = Favorite(
+        id: oldFav.id, isFav: !oldFav.isFav, songTitle: oldFav.songTitle);
+    var raw = await db.update("favorites", updatedFavorite.toMap(),
+        where: "id = ?",
+        whereArgs: [oldFav.id],
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    return updatedFavorite;
+  }
+
+  static Future<Favorite?> getFavoriteBySong(String songTitleTranslit) async {
+    final db = await _instance;
+    var response = await db.query("favorites",
+        where: "songTitle = ?", whereArgs: [songTitleTranslit]);
+    var list = response.map((c) => Favorite.fromMap(c)).firstOrNull;
+    return list;
+  }
+
+  // --- NOTES FUNCTIONS
   static addNote(Note note) async {
     final db = await _instance;
     var raw = await db.insert(

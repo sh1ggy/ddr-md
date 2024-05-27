@@ -10,6 +10,8 @@ import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +32,17 @@ class _SongPageState extends State<SongPage> {
   late int _chosenReadSpeed;
   late int _nearestModIndex;
 
-  // Initialise chosen read speed. 
+  Favorite? favorite;
+
+  void initFav(String songTitleTranslit) async {
+    Favorite? initFav =
+        await DatabaseProvider.getFavoriteBySong(songTitleTranslit);
+    setState(() {
+      favorite = initFav;
+    });
+  }
+
+  // Initialise chosen read speed.
   @override
   void initState() {
     super.initState();
@@ -46,6 +58,7 @@ class _SongPageState extends State<SongPage> {
     int chosenDifficulty = songState.chosenDifficulty;
 
     if (songInfo != null) {
+      initFav(songInfo.titletranslit);
       // Set variables based on state
       if (songInfo.perChart) {
         setState(() {
@@ -88,12 +101,36 @@ class _SongPageState extends State<SongPage> {
                 iconTheme: const IconThemeData(color: Colors.blueGrey),
                 actions: <Widget>[
                   IconButton(
-                      icon: const Icon(
-                        Icons.format_list_numbered_rounded,
+                      icon: Icon(
+                        favorite != null && favorite!.isFav
+                            ? Icons.star
+                            : Icons.star_border,
                       ),
-                      tooltip: "Add score",
-                      onPressed: () {
-                        print('add score');
+                      tooltip: "Add favourite",
+                      onPressed: () async {
+                        SongInfo? songStateInfo = songState.songInfo;
+                        if (songStateInfo == null) {
+                          return;
+                        }
+                        if (favorite == null) {
+                          Favorite fav = Favorite(
+                              id: 0,
+                              isFav: true,
+                              songTitle: songStateInfo.titletranslit);
+                          await DatabaseProvider.addFavorite(fav);
+                          setState(() {
+                            favorite = fav;
+                          });
+                        } else {
+                          Favorite newFav =
+                              await DatabaseProvider.updateFavorite(favorite!);
+                          setState(() {
+                            favorite = newFav;
+                          });
+                        }
+                        if (context.mounted) {
+                          showToast(context, "Favourite updated");
+                        }
                       }),
                   IconButton(
                     icon: const Icon(Icons.note_add),
