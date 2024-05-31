@@ -6,7 +6,7 @@ library;
 import 'package:ddr_md/components/bpm_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/songlist/songlist_page.dart';
+import 'package:ddr_md/components/songlist/difflist_page.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -143,7 +143,7 @@ class _NavbarState extends State<Navbar> {
         Navigator(
           key: const Key("Song"),
           onGenerateRoute: (settings) {
-            Widget page = const SonglistPage();
+            Widget page = const DifficultyListPage();
             return MaterialPageRoute(builder: (_) => page);
           },
         ),

@@ -1,6 +1,7 @@
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/difflist_page.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -11,13 +12,12 @@ class SongListItem extends StatefulWidget {
       {super.key,
       required this.songInfo,
       required this.isFav,
-      required this.isSearch, 
-      required this.generateSongItems
-      });
+      required this.isSearch,
+      this.regenFavs});
   final SongInfo songInfo;
   final bool isFav;
   final bool isSearch;
-  final void Function() generateSongItems;
+  final void Function()? regenFavs;
 
   @override
   State<SongListItem> createState() => _SongListItemState();
@@ -67,7 +67,7 @@ class _SongListItemState extends State<SongListItem>
             image: AssetImage(
                 'assets/jackets-lowres/${widget.songInfo.name}-jacket.png'),
           ),
-           Positioned(
+          Positioned(
             top: 0,
             left: 0,
             height: 5,
@@ -102,9 +102,13 @@ class _SongListItemState extends State<SongListItem>
       onTap: () async {
         songState.setSongInfo(widget.songInfo);
         songState.setChosenDifficulty(0);
-        await Navigator.push(
-            context, MaterialPageRoute(builder: (context) => const SongPage()));
-        widget.generateSongItems();
+        await Navigator.push(context,
+                MaterialPageRoute(builder: (context) => const SongPage()))
+            .then((_) {
+          if (widget.regenFavs != null) {
+            widget.regenFavs!();
+          }
+        });
       },
     );
   }
