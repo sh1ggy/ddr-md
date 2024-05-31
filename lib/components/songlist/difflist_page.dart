@@ -1,9 +1,11 @@
-/// Name: SettingsPage
+/// Name: DifficultyListPage
 /// Parent: Main
-/// Description: Settings page for use with shared_preferences
+/// Description: Rendering out difficulty folders and preparing
+/// song list and favourites list to pass to children widgets.
 library;
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/favlist_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/songlist_page.dart';
 import 'package:ddr_md/helpers.dart';
@@ -44,12 +46,7 @@ class DifficultyListPage extends StatefulWidget {
 class _DifficultyListPageState extends State<DifficultyListPage> {
   Future<List<ListDifficulty>>? _songItemsPromise;
   final List<SongListItem> _searchResultWidgets = [];
-
-  void reInitSongs() async {
-    SongState songState = Provider.of<SongState>(context, listen: false);
-    _songItemsPromise =
-        Future<List<ListDifficulty>>(() => generateSongItems(songState.modes));
-  }
+  int favCount = 0;
 
   // Search result handler
   void getMatch(String value) {
@@ -88,6 +85,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
     List<ListDifficulty> newDiffList = difficultyList;
     List<Favorite> favList = await DatabaseProvider.getAllFavorites();
+    int tempFavCount = 0;
+    for (Favorite fav in favList) {
+      if (fav.isFav) tempFavCount++;
+    }
+    setState(() {
+      favCount = tempFavCount;
+    });
 
     // Clear list and regenerate if already exists
     if (newDiffList.first.songList.isNotEmpty) {
@@ -108,9 +112,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             .containsValue(difficulty.value.toDouble())) {
           difficulty.songList.add(SongItem(
               songInfo: song,
-              // isFav: false,
-              isFav: favList.any((Favorite fav) =>
-                  fav.songTitle == song.titletranslit && fav.isFav)));
+              isFav: favList.any((Favorite fav) {
+                final isFav = fav.songTitle == song.titletranslit && fav.isFav;
+                return isFav;
+              })));
         }
       }
     }
@@ -262,7 +267,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                       MaterialPageRoute(
                           builder: (context) => SongListPage(
                                 difficulty: difficulty,
-                                generateSongItems: generateSongItems,
                               )));
                 },
               );
@@ -275,12 +279,30 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.max,
             children: [
-              IconButton(
-                  onPressed: () async {
-                    var test = await DatabaseProvider.getAllFavorites();
-                    generateSongItems(songState.modes);
-                  },
-                  icon: const Icon(Icons.abc)),
+              ListTile(
+                title: RichText(
+                  text: TextSpan(
+                    text: 'Favourites: ',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 18),
+                    children: <TextSpan>[
+                      TextSpan(
+                          text: '$favCount songs',
+                          style: TextStyle(
+                              fontWeight: FontWeight.normal,
+                              fontSize: 16,
+                              color: Colors.grey.shade400)),
+                    ],
+                  ),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const FavoriteListPage()));
+                },
+              ),
               ...diffFolders
             ],
           );

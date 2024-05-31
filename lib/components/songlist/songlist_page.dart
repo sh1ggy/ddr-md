@@ -1,4 +1,9 @@
-import 'package:ddr_md/components/song_json.dart';
+/// Name: SongListPage
+/// Parent: DifficultyListPage
+/// Description: Rendering out the song list page based on the
+/// larger [difficulty] attribute from
+library;
+
 import 'package:ddr_md/components/songlist/difflist_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/models/database.dart';
@@ -6,11 +11,9 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:flutter/material.dart';
 
 class SongListPage extends StatefulWidget {
-  const SongListPage(
-      {super.key, required this.difficulty, required this.generateSongItems});
+  const SongListPage({super.key, required this.difficulty});
 
   final ListDifficulty difficulty;
-  final Future<List<ListDifficulty>> Function(Modes) generateSongItems;
 
   @override
   State<SongListPage> createState() => _SongListPageState();
@@ -61,14 +64,14 @@ class _SongListPageState extends State<SongListPage> {
             songInfo: songItems.first.songInfo,
             isFav: songItems.first.isFav,
             isSearch: false,
-            regenFavs: regenFavs,
+            sideEffect: regenFavs,
           ),
           itemBuilder: (context, index) {
             return SongListItem(
               songInfo: songItems[index].songInfo,
               isFav: songItems[index].isFav,
               isSearch: false,
-              regenFavs: regenFavs,
+              sideEffect: regenFavs,
             );
           }),
     ));

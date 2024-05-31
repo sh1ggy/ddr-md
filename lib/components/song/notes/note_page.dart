@@ -117,7 +117,7 @@ class NotePageState extends State<NotePage> {
                       FutureBuilder(
                         future: _notesPromise,
                         builder: (context, snapshot) {
-                          List<Widget> children;
+                          List<Widget> noteWidgets;
                           if (snapshot.hasData) {
                             if (snapshot.data!.isEmpty) {
                               return SizedBox(
@@ -126,7 +126,7 @@ class NotePageState extends State<NotePage> {
                                   child:
                                       const Center(child: Text('No notes...')));
                             }
-                            children =
+                            noteWidgets =
                                 snapshot.data!.map<NoteCard>((Note note) {
                               return NoteCard(
                                 contents: note.contents,
@@ -135,7 +135,7 @@ class NotePageState extends State<NotePage> {
                               );
                             }).toList();
                           } else {
-                            children = [
+                            noteWidgets = [
                               SizedBox(
                                   height:
                                       MediaQuery.of(context).size.height / 1.5,
@@ -147,7 +147,7 @@ class NotePageState extends State<NotePage> {
                             crossAxisAlignment: CrossAxisAlignment.center,
                             mainAxisAlignment: MainAxisAlignment.center,
                             mainAxisSize: MainAxisSize.max,
-                            children: children,
+                            children: noteWidgets,
                           );
                         },
                       ),

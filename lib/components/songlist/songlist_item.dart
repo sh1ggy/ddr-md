@@ -1,7 +1,11 @@
+/// Name: SongListItem
+/// Parent: SongListPage, FavoriteListPage
+/// Description: Rendering out the song item itself.
+library;
+
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/songlist/difflist_page.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -13,11 +17,11 @@ class SongListItem extends StatefulWidget {
       required this.songInfo,
       required this.isFav,
       required this.isSearch,
-      this.regenFavs});
+      this.sideEffect});
   final SongInfo songInfo;
   final bool isFav;
   final bool isSearch;
-  final void Function()? regenFavs;
+  final void Function()? sideEffect; // side effect function for navigator
 
   @override
   State<SongListItem> createState() => _SongListItemState();
@@ -30,35 +34,6 @@ class _SongListItemState extends State<SongListItem>
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
-    // TODO: ideally this would be like Spotify queue
-    // https://github.com/letsar/flutter_slidable/issues/273
-    // return Slidable(
-    //   key: UniqueKey(),
-    //   closeOnScroll: true,
-    //   endActionPane: ActionPane(
-    //     motion: const ScrollMotion(),
-    //     dragDismissible: true,
-    //     children: [
-    //       SlidableAction(
-    //         flex: 2,
-    //         onPressed: (_) async {
-    //           controller.close();
-    //           SongInfo? songStateInfo = songState.songInfo;
-    //           if (songStateInfo != null) {
-    //             await DatabaseProvider.addFavorite(Favorite(
-    //                 id: 0,
-    //                 isFav: true,
-    //                 songTitle: songStateInfo.titletranslit));
-    //           }
-    //         },
-    //         autoClose: true,
-    //         backgroundColor: Colors.yellow,
-    //         foregroundColor: Colors.black,
-    //         icon: Icons.star,
-    //         label: 'Favourite',
-    //       ),
-    //     ],
-    //   ),
     return ListTile(
       visualDensity: VisualDensity.adaptivePlatformDensity,
       leading: Stack(
@@ -105,8 +80,8 @@ class _SongListItemState extends State<SongListItem>
         await Navigator.push(context,
                 MaterialPageRoute(builder: (context) => const SongPage()))
             .then((_) {
-          if (widget.regenFavs != null) {
-            widget.regenFavs!();
+          if (widget.sideEffect != null) {
+            widget.sideEffect!();
           }
         });
       },
