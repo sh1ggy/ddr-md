@@ -5,36 +5,85 @@ library;
 
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class SongChart extends StatefulWidget {
   const SongChart({
     super.key,
-    required this.songBpmSpots,
-    required this.songStopSpots,
     required this.context,
     required this.songInfo,
     required this.chart,
   });
-
-  final List<FlSpot> songBpmSpots;
-  final List<FlSpot> songStopSpots;
   final BuildContext context;
   final SongInfo? songInfo;
-  final Chart? chart;
+  final Chart chart;
 
   @override
   State<StatefulWidget> createState() => SongChartState();
 }
 
 class SongChartState extends State<SongChart> {
-  late bool isShowingStops;
+  // fl_chart spot arrays
+  final List<FlSpot> _songBpmSpots = [];
+  final List<FlSpot> _songStopSpots = [];
+  
+  // Late initialisations
+  late bool hasStops; // if chart has stops at all
+  late bool isShowingStops; // handler for toggling stops
 
+  /// Finds nearest BPM to the stop's [st]arting point
+  /// provided compared against the [array]
+  int findNearestStop(double st, List array) {
+    var nearest = 0;
+    array.asMap().entries.forEach((entry) {
+      var i = entry.key;
+      Bpm a = array[i];
+      if (a.st <= st) {
+        nearest = a.val;
+        return;
+      }
+    });
+    return nearest;
+  }
+
+  // Generate BPM points from song chart
+  void genBpmPoints(Chart chart) {
+    List<Bpm> bpms = chart.bpms;
+
+    if (_songBpmSpots.isNotEmpty || _songStopSpots.isNotEmpty) {
+      _songBpmSpots.clear();
+      _songStopSpots.clear();
+    }
+    // Adding a spot for each BPM change in the song
+    for (int i = 0; i < bpms.length; i++) {
+      _songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
+      _songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
+    }
+    // Adding a spot for each stop in the song
+    for (int i = 0; i < chart.stops.length; i++) {
+      // Finding nearest BPM to the stop
+      double nearestBpm = findNearestStop(chart.stops[i].st, bpms).toDouble();
+      _songStopSpots.add(FlSpot(chart.stops[i].st, nearestBpm));
+    }
+  }
+
+  // Initialise variables
   @override
   void initState() {
     super.initState();
+    hasStops = widget.chart.stops.isNotEmpty;
     isShowingStops = true;
+  }
+
+  // Ensure that we're watching the songInfo.chart for any changes
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    late SongState songState = Provider.of<SongState>(context);
+    genBpmPoints(songState.songInfo!.chart[songState.chosenDifficulty]);
   }
 
   @override
@@ -43,7 +92,7 @@ class SongChartState extends State<SongChart> {
     MaterialAccentColor stopLineColor = Colors.lightBlueAccent;
     List<LineChartBarData> lineChartBarData = [
       LineChartBarData(
-          spots: widget.songBpmSpots,
+          spots: _songBpmSpots,
           barWidth: 1.25,
           color: bpmLineColor,
           isCurved: false,
@@ -51,9 +100,9 @@ class SongChartState extends State<SongChart> {
             show: false,
           )),
       LineChartBarData(
-          show: isShowingStops,
+          show: isShowingStops && hasStops,
           barWidth: 0,
-          spots: widget.songStopSpots,
+          spots: _songStopSpots,
           color: stopLineColor.withOpacity(.85),
           dotData: FlDotData(
             getDotPainter: (spot, percent, barData, index) =>
@@ -138,7 +187,7 @@ class SongChartState extends State<SongChart> {
                           style: TextStyle(fontSize: 10),
                         ),
                         const SizedBox(width: 10),
-                        if (isShowingStops) ...<Widget>[
+                        if (isShowingStops && hasStops) ...<Widget>[
                           Container(
                             width: 10,
                             decoration: BoxDecoration(
@@ -206,21 +255,23 @@ class SongChartState extends State<SongChart> {
               minX: 0,
               minY: 0,
               maxX: widget.songInfo!.songLength,
-              maxY: widget.chart!.trueMax.toDouble() + 10,
+              maxY: widget.chart.trueMax.toDouble() + 10,
               lineBarsData: lineChartBarData,
             ),
           ),
         ),
-        CheckboxListTile(
-          title: const Text("Toggle Stops"),
-          value: isShowingStops,
-          onChanged: (value) {
-            setState(() {
-              isShowingStops = !isShowingStops;
-            });
-          },
-          controlAffinity: ListTileControlAffinity.trailing,
-        ),
+        if (hasStops) ...[
+          CheckboxListTile(
+            title: const Text("Toggle Stops"),
+            value: isShowingStops,
+            onChanged: (value) {
+              setState(() {
+                isShowingStops = !isShowingStops;
+              });
+            },
+            controlAffinity: ListTileControlAffinity.trailing,
+          ),
+        ],
       ],
     );
   }

@@ -3,9 +3,12 @@
 /// Description: Widgets that display base song information.
 library;
 
+import 'package:ddr_md/components/song/song_diff_picker.dart';
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 // Method for formatting time from a given time (s)
 formattedTime({required int timeInSecond}) {
@@ -28,6 +31,8 @@ class SongDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    var songState = context.watch<SongState>();
+
     return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
@@ -68,11 +73,12 @@ class SongDetails extends StatelessWidget {
           const SizedBox(width: 20),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               RichText(
                 text: TextSpan(
                   style: TextStyle(
-                      fontSize: 14.0,
+                      fontSize: 16.0,
                       color: DefaultTextStyle.of(context).style.color),
                   children: <TextSpan>[
                     TextSpan(
@@ -86,13 +92,22 @@ class SongDetails extends StatelessWidget {
               ),
               Text(
                 songInfo.version,
-                style:
-                    const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+                style: const TextStyle(
+                    fontSize: 15.5,
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic),
               ),
               Align(
-                alignment: AlignmentDirectional.bottomCenter,
-                child: SongDifficulty(difficulty: songInfo.levels.single)
-              ),
+                  alignment: AlignmentDirectional.bottomCenter,
+                  child: () {
+                    Difficulty songDifficulty = songState.modes == Modes.singles
+                        ? songInfo.modes.singles
+                        : songInfo.modes.doubles;
+                    if (songInfo.perChart) {
+                      return SongDifficultyPicker(difficulty: songDifficulty);
+                    }
+                    return SongDifficulty(difficulty: songDifficulty);
+                  }()),
             ],
           ),
         ]);

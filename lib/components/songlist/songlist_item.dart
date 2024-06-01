@@ -25,7 +25,10 @@ class SongListItem extends StatelessWidget {
             fontSize: 15,
             overflow: isSearch ? TextOverflow.visible : TextOverflow.ellipsis),
       ),
-      subtitle: SongDifficulty(difficulty: songInfo.levels.single),
+      subtitle: SongDifficulty(
+          difficulty: songState.modes == Modes.singles
+              ? songInfo.modes.singles
+              : songInfo.modes.doubles),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -36,6 +39,7 @@ class SongListItem extends StatelessWidget {
       ),
       onTap: () => {
         songState.setSongInfo(songInfo),
+        songState.setChosenDifficulty(0),
         Navigator.push(
             context, MaterialPageRoute(builder: (context) => const SongPage()))
       },

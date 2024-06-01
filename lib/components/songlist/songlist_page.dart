@@ -8,6 +8,7 @@ import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:provider/provider.dart';
 
 class SonglistPage extends StatefulWidget {
   const SonglistPage({super.key});
@@ -15,8 +16,8 @@ class SonglistPage extends StatefulWidget {
   State<SonglistPage> createState() => _SonglistPageState();
 }
 
-class Difficulty {
-  Difficulty({
+class ListDifficulty {
+  ListDifficulty({
     required this.value,
     this.isExpanded = false,
     required this.songList,
@@ -27,7 +28,7 @@ class Difficulty {
 }
 
 class _SonglistPageState extends State<SonglistPage> {
-  Future<List<Difficulty>>? _songItemsPromise;
+  Future<List<ListDifficulty>>? _songItemsPromise;
   final List<SongListItem> _searchResultWidgets = [];
 
   // Search result handler
@@ -56,27 +57,39 @@ class _SonglistPageState extends State<SonglistPage> {
   }
 
   // Generate difficulty list to 19.
-  List<Difficulty> difficulties = List<Difficulty>.generate(
+  List<ListDifficulty> difficulties = List<ListDifficulty>.generate(
     constants.maxDifficulty,
     (index) {
-      return (Difficulty(value: 1 + index, songList: []));
+      return (ListDifficulty(value: 1 + index, songList: []));
     },
   );
 
   // Populate difficulty folders
-  // TODO: switch between doubles
-  Future<List<Difficulty>> generateSongItems() async {
-    List<Difficulty> newDiffList = difficulties;
+  Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
+    List<ListDifficulty> newDiffList = difficulties;
+
+    // Clear list and regenerate if already exists
+    if (difficulties.first.songList.isNotEmpty) {
+      for (var difficulty in difficulties) {
+        difficulty.songList.clear();
+      }
+    }
+
+    // Generate song list.
     for (int i = 0; i < Songs.list.length; i++) {
+      SongInfo song = Songs.list[i];
+      Difficulty songDifficulty =
+          mode == Modes.singles ? song.modes.singles : song.modes.doubles;
+
       for (var difficulty in newDiffList) {
-        // Map<String,dynamic> difficulties = Songs.list[i].mode.singles.toJson();
-        if (Songs.list[i].levels.single
+        if (songDifficulty
             .toJson()
             .containsValue(difficulty.value.toDouble())) {
           difficulty.songList.add(Songs.list[i]);
         }
       }
     }
+
     setState(() {
       difficulties = newDiffList;
     });
@@ -86,11 +99,17 @@ class _SonglistPageState extends State<SonglistPage> {
   @override
   void initState() {
     super.initState();
-    _songItemsPromise = Future<List<Difficulty>>(() => generateSongItems());
+    late SongState songState;
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      songState = Provider.of<SongState>(context, listen: false);
+    });
+    _songItemsPromise =
+        Future<List<ListDifficulty>>(() => generateSongItems(songState.modes));
   }
 
   @override
   Widget build(BuildContext context) {
+    var songState = context.watch<SongState>();
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -138,16 +157,38 @@ class _SonglistPageState extends State<SonglistPage> {
                   tooltip: "Chart Type",
                   icon: const Icon(Icons.swap_vert),
                   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-                    const PopupMenuItem(
+                    PopupMenuItem(
+                      padding: const EdgeInsets.all(0),
                       child: ListTile(
-                        leading: Icon(Icons.looks_one_rounded),
-                        title: Text('Singles'),
+                        contentPadding:
+                            const EdgeInsets.only(left: 8, right: 8),
+                        hoverColor: Colors.transparent,
+                        onTap: () {
+                          songState.setMode(Modes.singles);
+                          generateSongItems(Modes.singles);
+                          showToast(context, "Set mode to singles");
+                          Navigator.pop(context);
+                          return;
+                        },
+                        leading: const Icon(Icons.looks_one_rounded),
+                        title: const Text('Singles'),
                       ),
                     ),
-                    const PopupMenuItem(
+                    PopupMenuItem(
+                      padding: const EdgeInsets.all(0),
                       child: ListTile(
-                        leading: Icon(Icons.looks_two_rounded),
-                        title: Text('Doubles'),
+                        hoverColor: Colors.transparent,
+                        contentPadding:
+                            const EdgeInsets.only(left: 8, right: 8),
+                        onTap: () {
+                          songState.setMode(Modes.doubles);
+                          generateSongItems(Modes.doubles);
+                          showToast(context, "Set mode to doubles");
+                          Navigator.pop(context);
+                          return;
+                        },
+                        leading: const Icon(Icons.looks_two_rounded),
+                        title: const Text('Doubles'),
                       ),
                     ),
                   ],
@@ -155,8 +196,13 @@ class _SonglistPageState extends State<SonglistPage> {
               ],
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
-            body: CustomScrollView(
-              slivers: <Widget>[songSearchBar(), songList()],
+            body: NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) {
+                return <Widget>[
+                  songSearchBar(),
+                ];
+              },
+              body: CustomScrollView(slivers: <Widget>[songList()]),
             ),
           ),
         );
@@ -172,7 +218,8 @@ class _SonglistPageState extends State<SonglistPage> {
         builder: (context, snapshot) {
           List<Widget> children;
           if (snapshot.hasData) {
-            children = snapshot.data!.map<ListTile>((Difficulty difficulty) {
+            children =
+                snapshot.data!.map<ListTile>((ListDifficulty difficulty) {
               return ListTile(
                 title: RichText(
                   text: TextSpan(
@@ -211,6 +258,7 @@ class _SonglistPageState extends State<SonglistPage> {
   SliverAppBar songSearchBar() {
     return SliverAppBar(
       floating: true,
+      pinned: true,
       backgroundColor: Colors.transparent,
       flexibleSpace: SearchAnchor(
           isFullScreen: true,
@@ -222,8 +270,9 @@ class _SonglistPageState extends State<SonglistPage> {
               onTap: () {
                 controller.openView();
               },
-              onChanged: (_) {
+              onChanged: (value) {
                 controller.openView();
+                getMatch(value);
               },
               hintText: "Search song...",
               constraints: const BoxConstraints(
@@ -247,7 +296,7 @@ class _SonglistPageState extends State<SonglistPage> {
     );
   }
 
-  MaterialPageRoute<dynamic> difficultyList(Difficulty difficulty) {
+  MaterialPageRoute<dynamic> difficultyList(ListDifficulty difficulty) {
     return MaterialPageRoute(
       builder: (context) => SafeArea(
           child: Scaffold(
