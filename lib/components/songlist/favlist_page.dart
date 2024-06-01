@@ -29,7 +29,6 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
 
     List<SongInfo> tempFavoriteSongList = [];
     for (Favorite fav in favorites) {
-      if (!fav.isFav) continue;
       tempFavoriteSongList.add(Songs.list.firstWhere(
           (SongInfo songInfo) => fav.songTitle == songInfo.titletranslit));
     }

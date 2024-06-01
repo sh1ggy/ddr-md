@@ -27,7 +27,7 @@ class _SongListPageState extends State<SongListPage> {
     for (SongItem songItem in songItems) {
       setState(() {
         songItem.isFav = favList.any((Favorite fav) =>
-            fav.songTitle == songItem.songInfo.titletranslit && fav.isFav);
+            fav.songTitle == songItem.songInfo.titletranslit);
       });
     }
   }

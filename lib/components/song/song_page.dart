@@ -122,10 +122,10 @@ class _SongPageState extends State<SongPage> {
                             favorite = fav;
                           });
                         } else {
-                          Favorite newFav =
-                              await DatabaseProvider.updateFavorite(favorite!);
+                          Favorite deletedFav =
+                              await DatabaseProvider.deleteFavorite(favorite!);
                           setState(() {
-                            favorite = newFav;
+                            favorite = deletedFav;
                           });
                         }
                         if (context.mounted) {

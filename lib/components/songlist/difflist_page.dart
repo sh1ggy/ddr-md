@@ -85,12 +85,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
     List<ListDifficulty> newDiffList = difficultyList;
     List<Favorite> favList = await DatabaseProvider.getAllFavorites();
-    int tempFavCount = 0;
-    for (Favorite fav in favList) {
-      if (fav.isFav) tempFavCount++;
-    }
     setState(() {
-      favCount = tempFavCount;
+      favCount = favList.length;
     });
 
     // Clear list and regenerate if already exists
@@ -113,7 +109,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           difficulty.songList.add(SongItem(
               songInfo: song,
               isFav: favList.any((Favorite fav) {
-                final isFav = fav.songTitle == song.titletranslit && fav.isFav;
+                final isFav = fav.songTitle == song.titletranslit;
                 return isFav;
               })));
         }
@@ -262,12 +258,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
-                  Navigator.push(
+                  await Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (context) => SongListPage(
                                 difficulty: difficulty,
                               )));
+                  generateSongItems(songState.modes);
                 },
               );
             }).toList();
@@ -297,10 +294,11 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
-                  Navigator.push(
+                  await Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (context) => const FavoriteListPage()));
+                  generateSongItems(songState.modes);
                 },
               ),
               ...diffFolders

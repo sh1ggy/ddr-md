@@ -15,11 +15,9 @@ class DatabaseProvider {
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
     return await openDatabase(path, version: 2, onCreate: (db, version) async {
-      print('test');
       await db.execute(
         'CREATE TABLE IF NOT EXISTS notes(date TEXT PRIMARY KEY, contents TEXT, songTitle TEXT)',
       );
-      print('test22');
       await db.execute(
           'CREATE TABLE IF NOT EXISTS favorites(id INTEGER PRIMARY KEY, isFav INT, songTitle TEXT)');
     });
@@ -43,15 +41,13 @@ class DatabaseProvider {
     return list;
   }
 
-  static updateFavorite(Favorite oldFav) async {
+  static deleteFavorite(Favorite fav) async {
     final db = await _instance;
-    Favorite updatedFavorite = Favorite(
-        id: oldFav.id, isFav: !oldFav.isFav, songTitle: oldFav.songTitle);
-    var raw = await db.update("favorites", updatedFavorite.toMap(),
-        where: "id = ?",
-        whereArgs: [oldFav.id],
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    return updatedFavorite;
+    Favorite deletedFav =
+        Favorite(id: fav.id, isFav: false, songTitle: fav.songTitle);
+    var raw =
+        await db.delete("favorites", where: "id = ?", whereArgs: [fav.id]);
+    return deletedFav;
   }
 
   static Future<Favorite?> getFavoriteBySong(String songTitleTranslit) async {

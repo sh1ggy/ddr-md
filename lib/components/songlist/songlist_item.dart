@@ -38,17 +38,18 @@ class _SongListItemState extends State<SongListItem> {
             image: AssetImage(
                 'assets/jackets-lowres/${widget.songInfo.name}-jacket.png'),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            height: 5,
-            width: 5,
-            child: Icon(
-              widget.isFav ? Icons.star : Icons.star_border,
-              color: Colors.yellow,
-              size: 15,
+          if (!widget.isSearch)
+            Positioned(
+              top: 0,
+              left: 0,
+              height: 5,
+              width: 5,
+              child: Icon(
+                widget.isFav ? Icons.star : Icons.star_border,
+                color: Colors.yellow,
+                size: 15,
+              ),
             ),
-          ),
         ],
       ),
       title: Text(
