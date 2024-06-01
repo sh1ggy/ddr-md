@@ -1,5 +1,5 @@
-/// Name: SongDifficulties
-/// Description: Widgets that display song difficulties.
+/// Name: SongDifficultyPicker
+/// Description: Picker for difficulty.
 library;
 
 import 'package:ddr_md/components/song_json.dart';

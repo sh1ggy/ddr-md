@@ -3,7 +3,7 @@
 /// Description: Widgets that display base song information.
 library;
 
-import 'package:ddr_md/components/song/song_diff_picker.dart';
+import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/song_model.dart';

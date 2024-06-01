@@ -16,11 +16,11 @@ class SongListItem extends StatefulWidget {
       required this.songInfo,
       required this.isFav,
       required this.isSearch,
-      this.sideEffect});
+      this.regenFavsCallback});
   final SongInfo songInfo;
   final bool isFav;
   final bool isSearch;
-  final void Function()? sideEffect; // side effect function for navigator
+  final void Function()? regenFavsCallback; // callback function for navigator
 
   @override
   State<SongListItem> createState() => _SongListItemState();
@@ -76,8 +76,8 @@ class _SongListItemState extends State<SongListItem> {
         await Navigator.push(context,
                 MaterialPageRoute(builder: (context) => const SongPage()))
             .then((_) {
-          if (widget.sideEffect != null) {
-            widget.sideEffect!();
+          if (widget.regenFavsCallback != null) {
+            widget.regenFavsCallback!();
           }
         });
       },

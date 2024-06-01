@@ -21,7 +21,7 @@ class FavoriteListPage extends StatefulWidget {
 
 class _FavoriteListPageState extends State<FavoriteListPage> {
   List<Favorite>? favorites;
-  Future<List<SongInfo>>? promise;
+  Future<List<SongInfo>>? songInfoLoadingPromise;
 
   // Generate the list of favourite items and set the promise accordingly.
   void generateFavItems() async {
@@ -34,7 +34,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
           (SongInfo songInfo) => fav.songTitle == songInfo.titletranslit));
     }
     setState(() {
-      promise = Future(() => tempFavoriteSongList);
+      songInfoLoadingPromise = Future(() => tempFavoriteSongList);
     });
   }
 
@@ -64,7 +64,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
             ),
             body: SingleChildScrollView(
               child: FutureBuilder(
-                future: promise,
+                future: songInfoLoadingPromise,
                 builder: (context, snapshot) {
                   List<Widget> children;
                   if (snapshot.hasData) {
@@ -79,7 +79,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                         songInfo: songInfo,
                         isFav: true,
                         isSearch: false,
-                        sideEffect: generateFavItems,
+                        regenFavsCallback: generateFavItems,
                       );
                     }).toList();
                   } else {

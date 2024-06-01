@@ -64,14 +64,14 @@ class _SongListPageState extends State<SongListPage> {
             songInfo: songItems.first.songInfo,
             isFav: songItems.first.isFav,
             isSearch: false,
-            sideEffect: regenFavs,
+            regenFavsCallback: regenFavs,
           ),
           itemBuilder: (context, index) {
             return SongListItem(
               songInfo: songItems[index].songInfo,
               isFav: songItems[index].isFav,
               isSearch: false,
-              sideEffect: regenFavs,
+              regenFavsCallback: regenFavs,
             );
           }),
     ));
