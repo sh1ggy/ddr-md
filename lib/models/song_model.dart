@@ -3,7 +3,6 @@
 library;
 
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/songlist/difflist_page.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:flutter/material.dart';
 

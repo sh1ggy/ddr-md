@@ -6,7 +6,7 @@ library;
 import 'package:ddr_md/components/bpm_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/songlist/difflist_page.dart';
+import 'package:ddr_md/components/songlist/difficultylist_page.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';

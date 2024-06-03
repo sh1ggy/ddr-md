@@ -4,7 +4,7 @@
 /// larger [difficulty] attribute from
 library;
 
-import 'package:ddr_md/components/songlist/difflist_page.dart';
+import 'package:ddr_md/components/songlist/difficultylist_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -20,22 +20,23 @@ class SongListPage extends StatefulWidget {
 }
 
 class _SongListPageState extends State<SongListPage> {
-  late List<SongItem> songItems = [];
   void regenFavs() async {
     List<Favorite> favList = await DatabaseProvider.getAllFavorites();
-    // Generate song list.
-    for (SongItem songItem in songItems) {
-      setState(() {
-        songItem.isFav = favList.any((Favorite fav) =>
-            fav.songTitle == songItem.songInfo.titletranslit);
-      });
+    // Initialise temp value
+    List<SongItem> newSongItems = widget.difficulty.songItemList;
+    for (SongItem songItem in newSongItems) {
+      songItem.isFav = favList.any(
+          (Favorite fav) => fav.songTitle == songItem.songInfo.titletranslit);
     }
+    // Updating parent state passed from props
+    setState(() {
+      widget.difficulty.songItemList = newSongItems;
+    });
   }
 
   @override
   void initState() {
     super.initState();
-    songItems = widget.difficulty.songList;
     regenFavs();
   }
 
@@ -59,17 +60,17 @@ class _SongListPageState extends State<SongListPage> {
       ),
       body: ListView.builder(
           scrollDirection: Axis.vertical,
-          itemCount: widget.difficulty.songList.length,
+          itemCount: widget.difficulty.songItemList.length,
           prototypeItem: SongListItem(
-            songInfo: songItems.first.songInfo,
-            isFav: songItems.first.isFav,
+            songInfo: widget.difficulty.songItemList.first.songInfo,
+            isFav: widget.difficulty.songItemList.first.isFav,
             isSearch: false,
             regenFavsCallback: regenFavs,
           ),
           itemBuilder: (context, index) {
             return SongListItem(
-              songInfo: songItems[index].songInfo,
-              isFav: songItems[index].isFav,
+              songInfo: widget.difficulty.songItemList[index].songInfo,
+              isFav: widget.difficulty.songItemList[index].isFav,
               isSearch: false,
               regenFavsCallback: regenFavs,
             );

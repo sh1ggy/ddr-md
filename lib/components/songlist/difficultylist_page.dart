@@ -20,11 +20,11 @@ class ListDifficulty {
   ListDifficulty({
     required this.value,
     this.isExpanded = false,
-    required this.songList,
+    required this.songItemList,
   });
   int value;
   bool isExpanded;
-  List<SongItem> songList = [];
+  List<SongItem> songItemList = [];
 }
 
 class SongItem {
@@ -78,7 +78,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   List<ListDifficulty> difficultyList = List<ListDifficulty>.generate(
     constants.maxDifficulty,
     (index) {
-      return (ListDifficulty(value: 1 + index, songList: []));
+      return (ListDifficulty(value: 1 + index, songItemList: []));
     },
   );
 
@@ -90,9 +90,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     });
 
     // Clear list and regenerate if already exists
-    if (newDiffList.first.songList.isNotEmpty) {
+    if (newDiffList.first.songItemList.isNotEmpty) {
       for (var difficulty in newDiffList) {
-        difficulty.songList.clear();
+        difficulty.songItemList.clear();
       }
     }
 
@@ -106,7 +106,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         if (songDifficulty
             .toJson()
             .containsValue(difficulty.value.toDouble())) {
-          difficulty.songList.add(SongItem(
+          difficulty.songItemList.add(SongItem(
               songInfo: song,
               isFav: favList.any((Favorite fav) {
                 final isFav = fav.songTitle == song.titletranslit;
@@ -236,9 +236,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       FutureBuilder(
         future: _songItemsPromise,
         builder: (context, snapshot) {
-          List<Widget> diffFolders;
+          List<Widget> difficultyFolders;
           if (snapshot.hasData) {
-            diffFolders =
+            difficultyFolders =
                 snapshot.data!.map<ListTile>((ListDifficulty difficulty) {
               return ListTile(
                 title: RichText(
@@ -248,7 +248,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                         fontWeight: FontWeight.bold, fontSize: 18),
                     children: <TextSpan>[
                       TextSpan(
-                          text: '${difficulty.songList.length} songs',
+                          text: '${difficulty.songItemList.length} songs',
                           style: TextStyle(
                               fontWeight: FontWeight.normal,
                               fontSize: 16,
@@ -269,7 +269,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               );
             }).toList();
           } else {
-            diffFolders = [];
+            difficultyFolders = [];
           }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -301,7 +301,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   generateSongItems(songState.modes);
                 },
               ),
-              ...diffFolders
+              ...difficultyFolders
             ],
           );
         },
