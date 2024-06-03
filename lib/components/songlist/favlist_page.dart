@@ -23,8 +23,8 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
   List<Favorite>? favorites;
   Future<List<SongInfo>>? songInfoLoadingPromise;
 
-  // Generate the list of favourite items and set the promise accordingly.
-  void generateFavItems() async {
+  // Getting favourite items & returning future for list of SongInfo
+  Future<List<SongInfo>> getFavSongInfoList() async {
     List<Favorite>? favorites = await DatabaseProvider.getAllFavorites();
 
     List<SongInfo> tempFavoriteSongList = [];
@@ -32,15 +32,20 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
       tempFavoriteSongList.add(Songs.list.firstWhere(
           (SongInfo songInfo) => fav.songTitle == songInfo.titletranslit));
     }
+    return tempFavoriteSongList;
+  }
+
+  // Setting songInfo list promise.
+  void genSongInfoList() async {
     setState(() {
-      songInfoLoadingPromise = Future(() => tempFavoriteSongList);
+      songInfoLoadingPromise = getFavSongInfoList();
     });
   }
 
   @override
   void initState() {
     super.initState();
-    generateFavItems(); // initialise favourite items
+    genSongInfoList(); // initialise favourite items
   }
 
   @override
@@ -78,7 +83,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                         songInfo: songInfo,
                         isFav: true,
                         isSearch: false,
-                        regenFavsCallback: generateFavItems,
+                        regenFavsCallback: genSongInfoList,
                       );
                     }).toList();
                   } else {
