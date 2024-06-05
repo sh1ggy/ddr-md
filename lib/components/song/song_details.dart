@@ -62,9 +62,8 @@ class SongDetails extends StatelessWidget {
                         transitionOnUserGestures: true,
                         child: Image(
                           height: MediaQuery.of(context).size.height * .7,
-                          // TODO: change this back to jackets-fullres once generated
                           image: AssetImage(
-                              'assets/jackets-lowres/${songInfo.name}.png'),
+                              'assets/jackets/${songInfo.name}-jacket.png'),
                         ),
                       ),
                     );
