@@ -100,7 +100,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     for (int i = 0; i < Songs.list.length; i++) {
       SongInfo song = Songs.list[i];
       Difficulty songDifficulty =
-          mode == Modes.singles ? song.modes.singles : song.modes.doubles;
+          mode == Modes.singles ? song.singles : song.doubles;
 
       for (var difficulty in newDiffList) {
         if (songDifficulty

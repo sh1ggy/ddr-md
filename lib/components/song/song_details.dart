@@ -43,7 +43,7 @@ class SongDetails extends StatelessWidget {
               tag: "imgZoom",
               child: Image(
                 image: AssetImage(
-                    'assets/jackets-lowres/${songInfo.name}-jacket.png'),
+                    'assets/jackets-lowres/${songInfo.name}.png'),
                 height: 100,
               ),
             ),
@@ -62,8 +62,9 @@ class SongDetails extends StatelessWidget {
                         transitionOnUserGestures: true,
                         child: Image(
                           height: MediaQuery.of(context).size.height * .7,
+                          // TODO: change this back to jackets-fullres once generated
                           image: AssetImage(
-                              'assets/jackets/${songInfo.name}-jacket.png'),
+                              'assets/jackets-lowres/${songInfo.name}.png'),
                         ),
                       ),
                     );
@@ -101,8 +102,8 @@ class SongDetails extends StatelessWidget {
                   alignment: AlignmentDirectional.bottomCenter,
                   child: () {
                     Difficulty songDifficulty = songState.modes == Modes.singles
-                        ? songInfo.modes.singles
-                        : songInfo.modes.doubles;
+                        ? songInfo.singles
+                        : songInfo.doubles;
                     if (songInfo.perChart) {
                       return SongDifficultyPicker(difficulty: songDifficulty);
                     }

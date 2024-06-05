@@ -62,12 +62,12 @@ class _SongPageState extends State<SongPage> {
       // Set variables based on state
       if (songInfo.perChart) {
         setState(() {
-          _chart = songInfo.chart[chosenDifficulty];
+          _chart = songInfo.charts[chosenDifficulty];
         });
       } else {
         setState(() {
           // First index because no individual chart information
-          _chart = songInfo.chart.first;
+          _chart = songInfo.charts.first;
         });
       }
       setState(() {

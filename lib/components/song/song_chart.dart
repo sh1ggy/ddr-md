@@ -83,7 +83,7 @@ class SongChartState extends State<SongChart> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     late SongState songState = Provider.of<SongState>(context);
-    genBpmPoints(songState.songInfo!.chart[songState.chosenDifficulty]);
+    genBpmPoints(songState.songInfo!.charts[songState.chosenDifficulty]);
   }
 
   @override
