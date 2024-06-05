@@ -46,7 +46,6 @@ class _BpmPageState extends State<BpmPage> {
 
   @override
   Widget build(BuildContext context) {
-    // var bpmState = context.watch<BpmState>();
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
