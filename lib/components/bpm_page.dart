@@ -94,14 +94,14 @@ class _BpmPageState extends State<BpmPage> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           SizedBox(
-                              width: 50,
+                              width: 60,
                               child: Text(
                                 'Mod',
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               )),
                           SizedBox(width: 30),
                           SizedBox(
-                              width: 50,
+                              width: 60,
                               child: Text(
                                 'Speed',
                                 style: TextStyle(fontWeight: FontWeight.bold),

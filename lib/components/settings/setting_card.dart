@@ -77,6 +77,7 @@ class _SettingCardState<T> extends State<SettingCard> {
                     }
                     widget.setValue(textValue);
                     showToast(context, "Saved ${widget.field} to $textValue");
+                    FocusManager.instance.primaryFocus?.unfocus();
                   }),
             ],
           ),

@@ -154,31 +154,32 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
               ),
               actions: <Widget>[
-                PopupMenuButton(
-                  initialValue: 0,
-                  tooltip: "Sort",
-                  icon: const Icon(Icons.sort),
-                  itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-                    const PopupMenuItem(
-                      child: ListTile(
-                        leading: Icon(Icons.sort_by_alpha),
-                        title: Text('Alphabetical'),
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      child: ListTile(
-                        leading: Icon(Icons.sports_esports_rounded),
-                        title: Text('Version'),
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      child: ListTile(
-                        leading: Icon(Icons.not_interested_rounded),
-                        title: Text('None'),
-                      ),
-                    ),
-                  ],
-                ),
+                // TODO: Uncomment when sorting exists.
+                // PopupMenuButton(
+                //   initialValue: 0,
+                //   tooltip: "Sort",
+                //   icon: const Icon(Icons.sort),
+                //   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
+                //     const PopupMenuItem(
+                //       child: ListTile(
+                //         leading: Icon(Icons.sort_by_alpha),
+                //         title: Text('Alphabetical'),
+                //       ),
+                //     ),
+                //     const PopupMenuItem(
+                //       child: ListTile(
+                //         leading: Icon(Icons.sports_esports_rounded),
+                //         title: Text('Version'),
+                //       ),
+                //     ),
+                //     const PopupMenuItem(
+                //       child: ListTile(
+                //         leading: Icon(Icons.not_interested_rounded),
+                //         title: Text('None'),
+                //       ),
+                //     ),
+                //   ],
+                // ),
                 PopupMenuButton(
                   initialValue: 0,
                   tooltip: "Chart Type",
@@ -260,7 +261,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                       TextSpan(
                           text: '${difficulty.songItemList.length} songs',
                           style: TextStyle(
-                              fontWeight: FontWeight.normal,
+                              fontWeight: FontWeight.bold,
                               fontSize: 16,
                               color: Colors.grey.shade500)),
                     ],
@@ -298,7 +299,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                       TextSpan(
                           text: '$favCount songs',
                           style: TextStyle(
-                              fontWeight: FontWeight.normal,
+                              fontWeight: FontWeight.bold,
                               fontSize: 16,
                               color: Colors.grey.shade500)),
                     ],
