@@ -66,6 +66,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               songInfo: e,
               isFav: false,
               isSearch: true,
+              regenFavsCallback: regenFavCount,
             ));
     setState(() {
       _searchResultWidgets.addAll(songListItems);
@@ -81,6 +82,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       return (ListDifficulty(value: 1 + index, songItemList: []));
     },
   );
+
+  void regenFavCount() async {
+    List<Favorite> favList = await DatabaseProvider.getAllFavorites();
+    setState(() {
+      favCount = favList.length;
+    });
+  }
 
   Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
     List<ListDifficulty> newDiffList = difficultyList;
