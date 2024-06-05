@@ -144,8 +144,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           textDirection: TextDirection.ltr,
           child: Scaffold(
             appBar: AppBar(
-              surfaceTintColor: Colors.black,
-              shadowColor: Colors.black,
+              elevation: 2,
               title: const Text(
                 'Songlist',
                 style: TextStyle(
@@ -230,7 +229,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   songSearchBar(),
                 ];
               },
-              body: CustomScrollView(slivers: <Widget>[songList(songState)]),
+              body: CustomScrollView(
+                  slivers: <Widget>[songList(songState, context)]),
             ),
           ),
         );
@@ -238,7 +238,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
-  SliverList songList(SongState songState) {
+  SliverList songList(SongState songState, BuildContext context) {
     return SliverList(
         delegate: SliverChildListDelegate([
       FutureBuilder(
@@ -252,15 +252,17 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 title: RichText(
                   text: TextSpan(
                     text: 'Level ${difficulty.value}: ',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 18),
+                    style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge!.color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18),
                     children: <TextSpan>[
                       TextSpan(
                           text: '${difficulty.songItemList.length} songs',
                           style: TextStyle(
                               fontWeight: FontWeight.normal,
                               fontSize: 16,
-                              color: Colors.grey.shade400)),
+                              color: Colors.grey.shade500)),
                     ],
                   ),
                 ),
@@ -288,15 +290,17 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 title: RichText(
                   text: TextSpan(
                     text: 'Favourites: ',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 18),
+                    style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge!.color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18),
                     children: <TextSpan>[
                       TextSpan(
                           text: '$favCount songs',
                           style: TextStyle(
                               fontWeight: FontWeight.normal,
                               fontSize: 16,
-                              color: Colors.grey.shade400)),
+                              color: Colors.grey.shade500)),
                     ],
                   ),
                 ),

@@ -163,7 +163,8 @@ class _SongPageState extends State<SongPage> {
                           context: context,
                           songInfo: songState.songInfo,
                           chart: _chart),
-                    const PrevNote(),
+                    // TODO: integrate
+                    // const PrevNote(),
                   ]
                       .expand((x) => [const SizedBox(height: 10), x])
                       .skip(1)
