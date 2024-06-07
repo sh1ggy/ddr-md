@@ -7,6 +7,8 @@ import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:simple_icons/simple_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -76,8 +78,8 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.all(8.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.start,
+                mainAxisSize: MainAxisSize.max,
                 children: [
                   SettingCard<int>(
                     setValue: _setReadSpeed,
@@ -91,6 +93,28 @@ class _SettingsPageState extends State<SettingsPage> {
                     field: "Rival Code",
                     maxLength: 8,
                   ),
+                  Expanded(
+                    child: Align(
+                      alignment: FractionalOffset.bottomCenter,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                              onPressed: () =>
+                                  _launchUrl(constants.github),
+                              icon: const Icon(SimpleIcons.github, color: SimpleIconColors.github)),
+                          IconButton(
+                              onPressed: () =>
+                                  _launchUrl(constants.linkedin),
+                              icon: const Icon(SimpleIcons.linkedin, color: SimpleIconColors.linkedin,)),
+                          IconButton(
+                              onPressed: () =>
+                                  _launchUrl(constants.paypalDono),
+                              icon: const Icon(SimpleIcons.paypal, color: SimpleIconColors.paypal)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -98,5 +122,11 @@ class _SettingsPageState extends State<SettingsPage> {
         );
       }),
     );
+  }
+
+  Future<void> _launchUrl(String urlString) async {
+    if (!await launchUrl(Uri.parse(urlString), mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch ${Uri.parse(urlString)}');
+    }
   }
 }

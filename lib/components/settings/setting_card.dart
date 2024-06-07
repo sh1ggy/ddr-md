@@ -36,7 +36,7 @@ class _SettingCardState<T> extends State<SettingCard> {
   Widget build(BuildContext context) {
     return Card(
       child: ListTile(
-        title: Text(widget.field),
+        title: Text(widget.field, style: const TextStyle(fontWeight: FontWeight.w600),),
         trailing: SizedBox(
           width: MediaQuery.of(context).size.width * 0.4,
           child: Row(
@@ -47,7 +47,7 @@ class _SettingCardState<T> extends State<SettingCard> {
                   maxLength: widget.maxLength,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.left,
                   onChanged: (value) => {
                     if (value != "") {setState(() {
                       textValue = value;
