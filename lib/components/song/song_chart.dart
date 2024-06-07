@@ -29,7 +29,7 @@ class SongChartState extends State<SongChart> {
   // fl_chart spot arrays
   final List<FlSpot> _songBpmSpots = [];
   final List<FlSpot> _songStopSpots = [];
-  
+
   // Late initialisations
   late bool hasStops; // if chart has stops at all
   late bool isShowingStops; // handler for toggling stops
@@ -213,6 +213,7 @@ class SongChartState extends State<SongChart> {
                   )),
               lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
+                      fitInsideHorizontally: true,
                       getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
                         bool first = true;
                         return touchedBarSpots.map((barSpot) {
@@ -262,7 +263,7 @@ class SongChartState extends State<SongChart> {
         ),
         if (hasStops) ...[
           CheckboxListTile(
-            title: const Text("Toggle Stops"),
+            title: const Text("Toggle Stops", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             value: isShowingStops,
             onChanged: (value) {
               setState(() {

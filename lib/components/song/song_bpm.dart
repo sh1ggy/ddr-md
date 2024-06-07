@@ -27,8 +27,7 @@ class SongBpm extends StatelessWidget {
           Text(
             "${chart.dominantBpm} BPM",
             style: const TextStyle(
-                fontSize: 16,
-                fontStyle: FontStyle.italic,
+                fontSize: 18,
                 fontWeight: FontWeight.bold),
           ),
           if (isBpmChange)
@@ -36,7 +35,7 @@ class SongBpm extends StatelessWidget {
             RichText(
               text: TextSpan(
                 style: TextStyle(
-                    fontSize: 15.0,
+                    fontSize: 18.0,
                     color: DefaultTextStyle.of(context).style.color),
                 children: <TextSpan>[
                   if (!chart.bpmRange.contains(chart.trueMin.toString()))
@@ -48,7 +47,7 @@ class SongBpm extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.bold)),
                   if (!chart.bpmRange.contains(chart.trueMax.toString()))
                     TextSpan(
-                      text: ' (~${chart!.trueMax.toString()}) ',
+                      text: ' (~${chart.trueMax.toString()}) ',
                       style: const TextStyle(color: Colors.grey),
                     ),
                 ],
@@ -61,7 +60,7 @@ class SongBpm extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const SizedBox(
-                  width: 50,
+                  width: 60,
                   child: Text(
                     'Avg',
                     style: TextStyle(fontWeight: FontWeight.bold),
@@ -69,14 +68,14 @@ class SongBpm extends StatelessWidget {
               const SizedBox(width: 30),
               if (isBpmChange == true) ...[
                 const SizedBox(
-                    width: 50,
+                    width: 60,
                     child: Text(
                       'Min',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     )),
                 const SizedBox(width: 30),
                 const SizedBox(
-                    width: 50,
+                    width: 60,
                     child: Text(
                       'Max',
                       style: TextStyle(fontWeight: FontWeight.bold),
@@ -84,7 +83,7 @@ class SongBpm extends StatelessWidget {
                 const SizedBox(width: 30),
               ],
               const SizedBox(
-                  width: 50,
+                  width: 60,
                   child: Text(
                     'Mod',
                     style: TextStyle(fontWeight: FontWeight.bold),
@@ -94,18 +93,18 @@ class SongBpm extends StatelessWidget {
           SizedBox(
               height: isBpmChange
                   ? MediaQuery.of(context).size.height / 9
-                  : MediaQuery.of(context).size.height / 6,
+                  : MediaQuery.of(context).size.height / 4,
               child: ListWheelScrollView.useDelegate(
                 physics: const FixedExtentScrollPhysics(),
                 controller:
                     FixedExtentScrollController(initialItem: nearestModIndex),
                 overAndUnderCenterOpacity: .5,
-                itemExtent: 22,
+                itemExtent: 25,
                 childDelegate: ListWheelChildListDelegate(
                   children: constants.mods.map<Widget>((mod) {
-                    var avg = mod * chart!.dominantBpm;
-                    var min = mod * chart!.trueMin;
-                    var max = mod * chart!.trueMax;
+                    var avg = mod * chart.dominantBpm;
+                    var min = mod * chart.trueMin;
+                    var max = mod * chart.trueMax;
                     return Container(
                       decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(7),
@@ -119,7 +118,7 @@ class SongBpm extends StatelessWidget {
                                 text: avg.toString(),
                                 nearestModIndex: nearestModIndex,
                                 mod: mod),
-                            if (isBpmChange!) ...[
+                            if (isBpmChange) ...[
                               SongBpmTextItem(
                                   text: min.toString(),
                                   nearestModIndex: nearestModIndex,
@@ -161,9 +160,13 @@ class SongBpmTextItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 50,
+      width: 60,
       child: Text(text,
           style: TextStyle(
+              fontSize: 15,
+              fontWeight: nearestModIndex == constants.mods.indexOf(mod)
+                  ? FontWeight.bold
+                  : FontWeight.normal,
               color: nearestModIndex == constants.mods.indexOf(mod)
                   ? Colors.white
                   : DefaultTextStyle.of(context).style.color)),

@@ -55,7 +55,8 @@ class _SongListItemState extends State<SongListItem> {
       title: Text(
         widget.songInfo.title,
         style: TextStyle(
-            fontSize: 15,
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
             overflow:
                 widget.isSearch ? TextOverflow.visible : TextOverflow.ellipsis),
       ),
@@ -68,7 +69,7 @@ class _SongListItemState extends State<SongListItem> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(widget.songInfo.version),
-          Text(widget.songInfo.charts[0].dominantBpm.toString()),
+          Text(widget.songInfo.charts[0].bpmRange),
         ],
       ),
       onTap: () async {

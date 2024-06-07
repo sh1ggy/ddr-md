@@ -256,13 +256,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                     style: TextStyle(
                         color: Theme.of(context).textTheme.bodyLarge!.color,
                         fontWeight: FontWeight.bold,
-                        fontSize: 18),
+                        fontSize: 22),
                     children: <TextSpan>[
                       TextSpan(
                           text: '${difficulty.songItemList.length} songs',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                              fontSize: 19,
                               color: Colors.grey.shade500)),
                     ],
                   ),
@@ -294,13 +294,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                     style: TextStyle(
                         color: Theme.of(context).textTheme.bodyLarge!.color,
                         fontWeight: FontWeight.bold,
-                        fontSize: 18),
+                        fontSize: 22),
                     children: <TextSpan>[
                       TextSpan(
                           text: '$favCount songs',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                              fontSize: 19,
                               color: Colors.grey.shade500)),
                     ],
                   ),

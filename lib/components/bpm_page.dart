@@ -3,6 +3,7 @@
 /// Description: Page that displays BPM wheel selector
 library;
 
+import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
@@ -114,7 +115,7 @@ class _BpmPageState extends State<BpmPage> {
                             useMagnifier: true,
                             magnification: 1.1,
                             diameterRatio: 1.5,
-                            itemExtent: 22,
+                            itemExtent: 25,
                             childDelegate: ListWheelChildListDelegate(
                               children: constants.mods.map<Widget>((mod) {
                                 var readSpeed = mod * bpm;
@@ -130,11 +131,14 @@ class _BpmPageState extends State<BpmPage> {
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
                                       children: [
-                                        SizedBox(
-                                            width: 50, child: Text('$mod')),
-                                        SizedBox(
-                                            width: 50,
-                                            child: Text('$readSpeed')),
+                                        SongBpmTextItem(
+                                            text: mod.toString(),
+                                            nearestModIndex: nearestModIndex,
+                                            mod: mod),
+                                        SongBpmTextItem(
+                                            text: readSpeed.toString(),
+                                            nearestModIndex: nearestModIndex,
+                                            mod: mod),
                                       ]
                                           .expand((x) =>
                                               [const SizedBox(width: 30), x])
