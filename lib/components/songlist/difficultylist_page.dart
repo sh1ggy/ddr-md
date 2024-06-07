@@ -329,6 +329,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       backgroundColor: Colors.transparent,
       flexibleSpace: SearchAnchor(
           isFullScreen: true,
+          viewOnSubmitted: (value) {
+            FocusScope.of(context).unfocus();
+          },
           viewOnChanged: (value) => getMatch(value),
           viewHintText: "Search song...",
           builder: (BuildContext context, SearchController controller) {

@@ -66,91 +66,100 @@ class _BpmPageState extends State<BpmPage> {
               ),
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
-            body: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    maxLength: 3,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    onChanged: (value) => setBpm(value),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      errorBorder: InputBorder.none,
-                      focusedErrorBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      hintText: bpm.toString(),
+            body: GestureDetector(
+              onTap: () {
+                FocusScope.of(context).unfocus();
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      maxLength: 3,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      textAlign: TextAlign.center,
+                      onChanged: (value) => setBpm(value),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        errorBorder: InputBorder.none,
+                        focusedErrorBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        hintText: bpm.toString(),
+                      ),
                     ),
-                  ),
-                  Column(
-                    children: [
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                              width: 60,
-                              child: Text(
-                                'Mod',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                    Column(
+                      children: [
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                                width: 60,
+                                child: Text(
+                                  'Mod',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                )),
+                            SizedBox(width: 30),
+                            SizedBox(
+                                width: 60,
+                                child: Text(
+                                  'Speed',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                )),
+                          ],
+                        ),
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height / 2,
+                          child: ListWheelScrollView.useDelegate(
+                              controller: FixedExtentScrollController(
+                                  initialItem: nearestModIndex),
+                              useMagnifier: true,
+                              magnification: 1.1,
+                              diameterRatio: 1.5,
+                              itemExtent: 25,
+                              childDelegate: ListWheelChildListDelegate(
+                                children: constants.mods.map<Widget>((mod) {
+                                  var readSpeed = mod * bpm;
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(7),
+                                        color: nearestModIndex ==
+                                                    constants.mods
+                                                        .indexOf(mod) &&
+                                                nearestModIndex != 0
+                                            ? Colors.redAccent.shade200
+                                            : Colors.transparent),
+                                    child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          SongBpmTextItem(
+                                              text: mod.toString(),
+                                              nearestModIndex: nearestModIndex,
+                                              mod: mod),
+                                          SongBpmTextItem(
+                                              text: readSpeed.toString(),
+                                              nearestModIndex: nearestModIndex,
+                                              mod: mod),
+                                        ]
+                                            .expand((x) =>
+                                                [const SizedBox(width: 30), x])
+                                            .skip(1)
+                                            .toList()),
+                                  );
+                                }).toList(),
                               )),
-                          SizedBox(width: 30),
-                          SizedBox(
-                              width: 60,
-                              child: Text(
-                                'Speed',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              )),
-                        ],
-                      ),
-                      SizedBox(
-                        height: MediaQuery.of(context).size.height / 2,
-                        child: ListWheelScrollView.useDelegate(
-                            useMagnifier: true,
-                            magnification: 1.1,
-                            diameterRatio: 1.5,
-                            itemExtent: 25,
-                            childDelegate: ListWheelChildListDelegate(
-                              children: constants.mods.map<Widget>((mod) {
-                                var readSpeed = mod * bpm;
-                                return Container(
-                                  decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(7),
-                                      color: nearestModIndex ==
-                                                  constants.mods.indexOf(mod) &&
-                                              nearestModIndex != 0
-                                          ? Colors.redAccent.shade200
-                                          : Colors.transparent),
-                                  child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        SongBpmTextItem(
-                                            text: mod.toString(),
-                                            nearestModIndex: nearestModIndex,
-                                            mod: mod),
-                                        SongBpmTextItem(
-                                            text: readSpeed.toString(),
-                                            nearestModIndex: nearestModIndex,
-                                            mod: mod),
-                                      ]
-                                          .expand((x) =>
-                                              [const SizedBox(width: 30), x])
-                                          .skip(1)
-                                          .toList()),
-                                );
-                              }).toList(),
-                            )),
-                      ),
-                    ],
-                  ),
-                ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

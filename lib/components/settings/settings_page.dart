@@ -98,19 +98,27 @@ class _SettingsPageState extends State<SettingsPage> {
                       alignment: FractionalOffset.bottomCenter,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.max,
                         children: [
+                          const Expanded(child: Padding(
+                            padding: EdgeInsets.only(left: 8.0),
+                            child: Text(constants.appVer),
+                          )),
                           IconButton(
-                              onPressed: () =>
-                                  _launchUrl(constants.github),
-                              icon: const Icon(SimpleIcons.github, color: SimpleIconColors.github)),
+                              onPressed: () => _launchUrl(constants.github),
+                              icon: const Icon(Icons.bug_report, size: 25)),
                           IconButton(
-                              onPressed: () =>
-                                  _launchUrl(constants.linkedin),
-                              icon: const Icon(SimpleIcons.linkedin, color: SimpleIconColors.linkedin,)),
+                              onPressed: () => _launchUrl(constants.github),
+                              icon: const Icon(SimpleIcons.github,
+                                  color: SimpleIconColors.github, size: 20)),
                           IconButton(
-                              onPressed: () =>
-                                  _launchUrl(constants.paypalDono),
-                              icon: const Icon(SimpleIcons.paypal, color: SimpleIconColors.paypal)),
+                              onPressed: () => _launchUrl(constants.linkedin),
+                              icon: const Icon(SimpleIcons.linkedin,
+                                  color: SimpleIconColors.linkedin, size: 20)),
+                          IconButton(
+                              onPressed: () => _launchUrl(constants.paypalDono),
+                              icon: const Icon(SimpleIcons.paypal,
+                                  color: SimpleIconColors.paypal, size: 20)),
                         ],
                       ),
                     ),
@@ -125,7 +133,8 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _launchUrl(String urlString) async {
-    if (!await launchUrl(Uri.parse(urlString), mode: LaunchMode.externalApplication)) {
+    if (!await launchUrl(Uri.parse(urlString),
+        mode: LaunchMode.externalApplication)) {
       throw Exception('Could not launch ${Uri.parse(urlString)}');
     }
   }
