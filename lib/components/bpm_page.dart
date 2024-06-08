@@ -32,11 +32,19 @@ class _BpmPageState extends State<BpmPage> {
 
   // Set BPM to new input & calc nearestReadSpeed
   void setBpm(String newBpm) {
-    if (newBpm == "") return;
-    bpm = int.parse(newBpm);
+    if (newBpm == "") {
+      setState(() {
+        bpm = constants.songBpm;
+      });
+    } else {
+      setState(() {
+        bpm = int.parse(newBpm);
+      });
+    }
     setState(() {
       calcIndex();
     });
+    return;
   }
 
   @override
@@ -79,6 +87,7 @@ class _BpmPageState extends State<BpmPage> {
                   children: [
                     TextField(
                       maxLength: 3,
+                      style: const TextStyle(fontSize: 25),
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       keyboardType: TextInputType.number,
                       textInputAction: TextInputAction.done,
@@ -92,6 +101,7 @@ class _BpmPageState extends State<BpmPage> {
                         disabledBorder: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         hintText: bpm.toString(),
+                        hintStyle: const TextStyle(fontSize: 25),
                       ),
                     ),
                     Column(
@@ -103,6 +113,7 @@ class _BpmPageState extends State<BpmPage> {
                                 width: 60,
                                 child: Text(
                                   'Mod',
+                                  textAlign: TextAlign.left,
                                   style: TextStyle(fontWeight: FontWeight.bold),
                                 )),
                             SizedBox(width: 30),
@@ -110,6 +121,7 @@ class _BpmPageState extends State<BpmPage> {
                                 width: 60,
                                 child: Text(
                                   'Speed',
+                                  textAlign: TextAlign.left,
                                   style: TextStyle(fontWeight: FontWeight.bold),
                                 )),
                           ],

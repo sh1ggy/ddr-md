@@ -30,5 +30,5 @@ void showToast(BuildContext context, String message) {
 
 // Helper function to format date
 String formatDate(DateTime date) {
-  return "${date.year}-${date.month}-${date.day} ${date.hour}:${date.minute.toString().length == 1 ? "0${date.minute}" : date.minute}";
+  return "${date.year}-${date.month}-${date.day} (${date.hour}:${date.minute.toString().length == 1 ? "0${date.minute}" : date.minute})";
 }

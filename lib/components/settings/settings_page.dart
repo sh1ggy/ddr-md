@@ -105,20 +105,17 @@ class _SettingsPageState extends State<SettingsPage> {
                             child: Text(constants.appVer),
                           )),
                           IconButton(
-                              onPressed: () => _launchUrl(constants.github),
+                              onPressed: () => _launchUrl(constants.bug),
                               icon: const Icon(Icons.bug_report, size: 25)),
                           IconButton(
                               onPressed: () => _launchUrl(constants.github),
-                              icon: const Icon(SimpleIcons.github,
-                                  color: SimpleIconColors.github, size: 20)),
+                              icon: const Icon(SimpleIcons.github, size: 20)),
                           IconButton(
                               onPressed: () => _launchUrl(constants.linkedin),
-                              icon: const Icon(SimpleIcons.linkedin,
-                                  color: SimpleIconColors.linkedin, size: 20)),
+                              icon: const Icon(SimpleIcons.linkedin, size: 20)),
                           IconButton(
                               onPressed: () => _launchUrl(constants.paypalDono),
-                              icon: const Icon(SimpleIcons.paypal,
-                                  color: SimpleIconColors.paypal, size: 20)),
+                              icon: const Icon(SimpleIcons.paypal, size: 20)),
                         ],
                       ),
                     ),
