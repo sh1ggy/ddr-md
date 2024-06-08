@@ -62,12 +62,12 @@ class _SongPageState extends State<SongPage> {
       // Set variables based on state
       if (songInfo.perChart) {
         setState(() {
-          _chart = songInfo.chart[chosenDifficulty];
+          _chart = songInfo.charts[chosenDifficulty];
         });
       } else {
         setState(() {
           // First index because no individual chart information
-          _chart = songInfo.chart.first;
+          _chart = songInfo.charts.first;
         });
       }
       setState(() {
@@ -122,10 +122,9 @@ class _SongPageState extends State<SongPage> {
                             favorite = fav;
                           });
                         } else {
-                          Favorite deletedFav =
-                              await DatabaseProvider.deleteFavorite(favorite!);
+                          await DatabaseProvider.deleteFavorite(favorite!);
                           setState(() {
-                            favorite = deletedFav;
+                            favorite = null;
                           });
                         }
                         if (context.mounted) {
@@ -164,7 +163,8 @@ class _SongPageState extends State<SongPage> {
                           context: context,
                           songInfo: songState.songInfo,
                           chart: _chart),
-                    const PrevNote(),
+                    // TODO: integrate
+                    // const PrevNote(),
                   ]
                       .expand((x) => [const SizedBox(height: 10), x])
                       .skip(1)

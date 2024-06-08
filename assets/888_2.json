@@ -1,27 +1,25 @@
 {
   "ssc": false,
-  "version": "DDR X2",
+  "version": "X2",
   "name": "888",
   "title": "888",
   "titletranslit": "888",
   "song_length": 91.351,
   "per_chart": false,
-  "levels": {
-    "single": {
-      "beginner": 3,
-      "easy": 6,
-      "medium": 13,
-      "hard": 14,
-      "challenge": 18
-    },
-    "double": {
-      "easy": 7,
-      "medium": 12,
-      "hard": 15,
-      "challenge": 18
-    }
+  "sp": {
+    "beginner": 3,
+    "easy": 6,
+    "medium": 13,
+    "hard": 14,
+    "challenge": 18
   },
-  "chart": [
+  "dp": {
+    "easy": 7,
+    "medium": 12,
+    "hard": 15,
+    "challenge": 18
+  },
+  "charts": [
     {
       "dominant_bpm": 222,
       "true_min": 111,

@@ -66,6 +66,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               songInfo: e,
               isFav: false,
               isSearch: true,
+              regenFavsCallback: regenFavCount,
             ));
     setState(() {
       _searchResultWidgets.addAll(songListItems);
@@ -81,6 +82,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       return (ListDifficulty(value: 1 + index, songItemList: []));
     },
   );
+
+  void regenFavCount() async {
+    List<Favorite> favList = await DatabaseProvider.getAllFavorites();
+    setState(() {
+      favCount = favList.length;
+    });
+  }
 
   Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
     List<ListDifficulty> newDiffList = difficultyList;
@@ -100,7 +108,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     for (int i = 0; i < Songs.list.length; i++) {
       SongInfo song = Songs.list[i];
       Difficulty songDifficulty =
-          mode == Modes.singles ? song.modes.singles : song.modes.doubles;
+          mode == Modes.singles ? song.singles : song.doubles;
 
       for (var difficulty in newDiffList) {
         if (songDifficulty
@@ -136,8 +144,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           textDirection: TextDirection.ltr,
           child: Scaffold(
             appBar: AppBar(
-              surfaceTintColor: Colors.black,
-              shadowColor: Colors.black,
+              elevation: 2,
               title: const Text(
                 'Songlist',
                 style: TextStyle(
@@ -147,31 +154,32 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
               ),
               actions: <Widget>[
-                PopupMenuButton(
-                  initialValue: 0,
-                  tooltip: "Sort",
-                  icon: const Icon(Icons.sort),
-                  itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-                    const PopupMenuItem(
-                      child: ListTile(
-                        leading: Icon(Icons.sort_by_alpha),
-                        title: Text('Alphabetical'),
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      child: ListTile(
-                        leading: Icon(Icons.sports_esports_rounded),
-                        title: Text('Version'),
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      child: ListTile(
-                        leading: Icon(Icons.not_interested_rounded),
-                        title: Text('None'),
-                      ),
-                    ),
-                  ],
-                ),
+                // TODO: Uncomment when sorting exists.
+                // PopupMenuButton(
+                //   initialValue: 0,
+                //   tooltip: "Sort",
+                //   icon: const Icon(Icons.sort),
+                //   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
+                //     const PopupMenuItem(
+                //       child: ListTile(
+                //         leading: Icon(Icons.sort_by_alpha),
+                //         title: Text('Alphabetical'),
+                //       ),
+                //     ),
+                //     const PopupMenuItem(
+                //       child: ListTile(
+                //         leading: Icon(Icons.sports_esports_rounded),
+                //         title: Text('Version'),
+                //       ),
+                //     ),
+                //     const PopupMenuItem(
+                //       child: ListTile(
+                //         leading: Icon(Icons.not_interested_rounded),
+                //         title: Text('None'),
+                //       ),
+                //     ),
+                //   ],
+                // ),
                 PopupMenuButton(
                   initialValue: 0,
                   tooltip: "Chart Type",
@@ -222,7 +230,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   songSearchBar(),
                 ];
               },
-              body: CustomScrollView(slivers: <Widget>[songList(songState)]),
+              body: CustomScrollView(
+                  slivers: <Widget>[songList(songState, context)]),
             ),
           ),
         );
@@ -230,7 +239,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
-  SliverList songList(SongState songState) {
+  SliverList songList(SongState songState, BuildContext context) {
     return SliverList(
         delegate: SliverChildListDelegate([
       FutureBuilder(
@@ -244,15 +253,17 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 title: RichText(
                   text: TextSpan(
                     text: 'Level ${difficulty.value}: ',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 18),
+                    style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge!.color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 22),
                     children: <TextSpan>[
                       TextSpan(
                           text: '${difficulty.songItemList.length} songs',
                           style: TextStyle(
-                              fontWeight: FontWeight.normal,
-                              fontSize: 16,
-                              color: Colors.grey.shade400)),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 19,
+                              color: Colors.grey.shade500)),
                     ],
                   ),
                 ),
@@ -280,15 +291,17 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 title: RichText(
                   text: TextSpan(
                     text: 'Favourites: ',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 18),
+                    style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge!.color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 22),
                     children: <TextSpan>[
                       TextSpan(
                           text: '$favCount songs',
                           style: TextStyle(
-                              fontWeight: FontWeight.normal,
-                              fontSize: 16,
-                              color: Colors.grey.shade400)),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 19,
+                              color: Colors.grey.shade500)),
                     ],
                   ),
                 ),
@@ -316,6 +329,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       backgroundColor: Colors.transparent,
       flexibleSpace: SearchAnchor(
           isFullScreen: true,
+          viewOnSubmitted: (value) {
+            FocusScope.of(context).unfocus();
+          },
           viewOnChanged: (value) => getMatch(value),
           viewHintText: "Search song...",
           builder: (BuildContext context, SearchController controller) {
