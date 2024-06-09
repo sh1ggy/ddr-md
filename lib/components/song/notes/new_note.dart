@@ -28,7 +28,7 @@ class NewNoteField extends StatefulWidget {
 }
 
 class NewNoteFieldState extends State<NewNoteField> {
-  var txt = TextEditingController();
+  var noteTextController = TextEditingController();
 
   String _contents = "";
 
@@ -37,7 +37,7 @@ class NewNoteFieldState extends State<NewNoteField> {
     super.initState();
     if (widget.contentsInit != null) {
       _contents = widget.contentsInit!;
-      txt.text = _contents;
+      noteTextController.text = _contents;
       return;
     }
     _contents = "";
@@ -48,10 +48,10 @@ class NewNoteFieldState extends State<NewNoteField> {
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(12),
       width: MediaQuery.of(context).size.width,
       child: SizedBox(
-        height: 200,
+        height: 300,
         child: Center(
           child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -64,14 +64,14 @@ class NewNoteFieldState extends State<NewNoteField> {
                 Padding(
                   padding: const EdgeInsets.only(top: 20),
                   child: TextField(
-                    controller: txt,
+                    controller: noteTextController,
                     onChanged: (value) {
                       setState(() {
                         _contents = value;
                       });
                     },
-                    maxLines: 4,
-                    keyboardType: TextInputType.text,
+                    maxLines: 5,
+                    keyboardType: TextInputType.multiline,
                     textAlign: TextAlign.center,
                     textAlignVertical: TextAlignVertical.center,
                     decoration: InputDecoration(

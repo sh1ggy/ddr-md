@@ -174,27 +174,25 @@ class _SongPageState extends State<SongPage> {
                           songInfo: songState.songInfo,
                           chart: _chart),
                     if (prevNote != null)
-                      Container(
-                          decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest,
-                              borderRadius:
-                                  const BorderRadius.all(Radius.circular(10))),
-                          padding: const EdgeInsets.all(15.0),
-                          child: GestureDetector(
-                            onTap: () async {
-                              await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (context) => const NotePage()));
-                              initNote(songState.songInfo!.titletranslit);
-                            },
-                            child: Column(
+                      GestureDetector(
+                        onTap: () async {
+                          await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => const NotePage()));
+                          initNote(songState.songInfo!.titletranslit);
+                        },
+                        child: Card(
+                          child: ListTile(
+                            title: Column(
                               children: [
                                 Text(
                                   "Previous Note",
-                                  style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary),
                                 ),
                                 Text(
                                   prevNote!.contents,
@@ -202,18 +200,21 @@ class _SongPageState extends State<SongPage> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
-                                  formatDate(DateTime.parse(prevNote!.date)),
+                                  formatDate(
+                                      DateTime.parse(prevNote!.date)),
                                   style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500),
                                 ),
                               ]
-                                  .expand(
-                                      (x) => [const SizedBox(height: 10), x])
+                                  .expand((x) =>
+                                      [const SizedBox(height: 10), x])
                                   .skip(1)
                                   .toList(),
                             ),
-                          )),
+                          ),
+                        ),
+                      ),
                   ]
                       .expand((x) => [const SizedBox(height: 10), x])
                       .skip(1)
