@@ -32,7 +32,11 @@ class NoteCard extends StatelessWidget {
         final result = await showModalBottomSheet<bool>(
           context: context,
           builder: (BuildContext context) {
-            return NewNoteField(contentsInit: contents, date: date);
+            return NewNoteField(
+              contentsInit: contents,
+              date: date,
+              getNotes: getNotes,
+            );
           },
         );
         // If return is the expected value, execute getNotes and re-render
@@ -40,40 +44,23 @@ class NoteCard extends StatelessWidget {
           getNotes(songState.songInfo!.titletranslit);
         }
       },
-      child: SizedBox(
-          width: MediaQuery.of(context).size.width,
-          child: Card(
-            shadowColor: Colors.black,
-            elevation: 3,
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        formatDate(DateTime.parse(date)),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(contents),
-                    ],
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever),
-                    tooltip: "Delete note",
-                    onPressed: () async {
-                      await DatabaseProvider.deleteNote(date);
-                      if (!context.mounted) return;
-                      getNotes(songState.songInfo!.titletranslit);
-                      showToast(context, "Note deleted.");
-                    },
-                  )
-                ],
+      child: Card(
+        child: ListTile(
+          title: Column(
+            children: [
+              Text(formatDate(DateTime.parse(date)),
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary)),
+              Text(
+                contents,
+                style: const TextStyle(fontSize: 14),
               ),
-            ),
-          )),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

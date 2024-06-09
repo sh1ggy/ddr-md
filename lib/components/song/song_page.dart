@@ -4,7 +4,6 @@
 library;
 
 import 'package:ddr_md/components/song/notes/note_page.dart';
-import 'package:ddr_md/components/song/notes/prev_note.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
@@ -33,12 +32,21 @@ class _SongPageState extends State<SongPage> {
   late int _nearestModIndex;
 
   Favorite? favorite;
+  Note? prevNote;
 
   void initFav(String songTitleTranslit) async {
     Favorite? initFav =
         await DatabaseProvider.getFavoriteBySong(songTitleTranslit);
     setState(() {
       favorite = initFav;
+    });
+  }
+
+  void initNote(String songTitleTranslit) async {
+    Note? initNote =
+        await DatabaseProvider.getPrevNoteBySong(songTitleTranslit);
+    setState(() {
+      prevNote = initNote;
     });
   }
 
@@ -59,6 +67,7 @@ class _SongPageState extends State<SongPage> {
 
     if (songInfo != null) {
       initFav(songInfo.titletranslit);
+      initNote(songInfo.titletranslit);
       // Set variables based on state
       if (songInfo.perChart) {
         setState(() {
@@ -102,9 +111,7 @@ class _SongPageState extends State<SongPage> {
                 actions: <Widget>[
                   IconButton(
                       icon: Icon(
-                        favorite != null && favorite!.isFav
-                            ? Icons.star
-                            : Icons.star_border,
+                        favorite != null ? Icons.star : Icons.star_border,
                       ),
                       tooltip: "Add favourite",
                       onPressed: () async {
@@ -134,10 +141,13 @@ class _SongPageState extends State<SongPage> {
                   IconButton(
                     icon: const Icon(Icons.note_add),
                     tooltip: "Add note",
-                    onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const NotePage())),
+                    onPressed: () async {
+                      await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const NotePage()));
+                      initNote(songState.songInfo!.titletranslit);
+                    },
                   )
                 ]),
             body: SingleChildScrollView(
@@ -163,8 +173,47 @@ class _SongPageState extends State<SongPage> {
                           context: context,
                           songInfo: songState.songInfo,
                           chart: _chart),
-                    // TODO: integrate
-                    // const PrevNote(),
+                    if (prevNote != null)
+                      Container(
+                          decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
+                              borderRadius:
+                                  const BorderRadius.all(Radius.circular(10))),
+                          padding: const EdgeInsets.all(15.0),
+                          child: GestureDetector(
+                            onTap: () async {
+                              await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) => const NotePage()));
+                              initNote(songState.songInfo!.titletranslit);
+                            },
+                            child: Column(
+                              children: [
+                                Text(
+                                  "Previous Note",
+                                  style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
+                                ),
+                                Text(
+                                  prevNote!.contents,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  formatDate(DateTime.parse(prevNote!.date)),
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500),
+                                ),
+                              ]
+                                  .expand(
+                                      (x) => [const SizedBox(height: 10), x])
+                                  .skip(1)
+                                  .toList(),
+                            ),
+                          )),
                   ]
                       .expand((x) => [const SizedBox(height: 10), x])
                       .skip(1)
@@ -177,4 +226,37 @@ class _SongPageState extends State<SongPage> {
       }),
     );
   }
+}
+
+// TODO: UNUSED
+class NoteScore extends StatelessWidget {
+  const NoteScore({super.key});
+
+  @override
+  Widget build(BuildContext context) => const Column(
+        children: [
+          Text(
+            "Recent Score:",
+            style: TextStyle(fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image(
+                  image: AssetImage('assets/rank_s_aaa.png'),
+                ),
+                Image(
+                  image: AssetImage('assets/full_mar.png'),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '1,000,000',
+            style: TextStyle(fontFamily: 'Handel'),
+          ),
+        ],
+      );
 }

@@ -24,6 +24,7 @@ class DatabaseProvider {
   }
 
   // -- FAVS FUNCTIONS
+  // Add favorite to the database
   static addFavorite(Favorite favorite) async {
     final db = await _instance;
     var raw = await db.insert(
@@ -34,6 +35,7 @@ class DatabaseProvider {
     return raw;
   }
 
+  // Get favorites list
   static Future<List<Favorite>> getAllFavorites() async {
     final db = await _instance;
     var response = await db.query("favorites");
@@ -41,6 +43,7 @@ class DatabaseProvider {
     return list;
   }
 
+  // Delete favorite from the database
   static deleteFavorite(Favorite fav) async {
     final db = await _instance;
     Favorite deletedFav =
@@ -59,6 +62,7 @@ class DatabaseProvider {
   }
 
   // --- NOTES FUNCTIONS
+  // Add note to database
   static addNote(Note note) async {
     final db = await _instance;
     var raw = await db.insert(
@@ -69,6 +73,7 @@ class DatabaseProvider {
     return raw;
   }
 
+  // Update existing note in the database
   static updateNote(Note note, String newContents) async {
     final db = await _instance;
     Note updatedNote = Note(
@@ -80,12 +85,14 @@ class DatabaseProvider {
     return raw;
   }
 
+  // Delete note from the database
   static deleteNote(String date) async {
     final db = await _instance;
     var raw = await db.delete("notes", where: "date = ?", whereArgs: [date]);
     return raw;
   }
 
+  // Get all notes from the database - UNUSED
   static Future<List<Note>> getAllNotes() async {
     final db = await _instance;
     var response = await db.query("notes");
@@ -93,11 +100,21 @@ class DatabaseProvider {
     return list;
   }
 
+  // Get all notes from the database for a specific song
   static Future<List<Note>> getAllNotesBySong(String songTitleTranslit) async {
     final db = await _instance;
     var response = await db
         .query("notes", where: "songTitle = ?", whereArgs: [songTitleTranslit]);
     List<Note> list = response.map((c) => Note.fromMap(c)).toList();
     return list;
+  }
+
+  static Future<Note?> getPrevNoteBySong(String songTitleTranslit) async {
+    final db = await _instance;
+    var response = await db
+        .query("notes", where: "songTitle = ?", whereArgs: [songTitleTranslit]);
+    if (response.isEmpty) return null;
+    Note prevNote = response.map((c) => Note.fromMap(c)).toList().last;
+    return prevNote;
   }
 }
