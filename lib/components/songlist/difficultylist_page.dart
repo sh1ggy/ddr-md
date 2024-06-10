@@ -245,9 +245,38 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       FutureBuilder(
         future: _songItemsPromise,
         builder: (context, snapshot) {
-          List<Widget> difficultyFolders;
+          List<Widget> difficultyFolders = [];
           if (snapshot.hasData) {
-            difficultyFolders =
+            difficultyFolders.add(
+              ListTile(
+                title: RichText(
+                  text: TextSpan(
+                    text: 'Favourites: ',
+                    style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge!.color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 22),
+                    children: <TextSpan>[
+                      TextSpan(
+                          text: '$favCount songs',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 19,
+                              color: Colors.grey.shade500)),
+                    ],
+                  ),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const FavoriteListPage()));
+                  generateSongItems(songState.modes);
+                },
+              ),
+            );
+            difficultyFolders.addAll(
                 snapshot.data!.map<ListTile>((ListDifficulty difficulty) {
               return ListTile(
                 title: RichText(
@@ -278,44 +307,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   generateSongItems(songState.modes);
                 },
               );
-            }).toList();
-          } else {
-            difficultyFolders = [];
+            }).toList());
           }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.max,
-            children: [
-              ListTile(
-                title: RichText(
-                  text: TextSpan(
-                    text: 'Favourites: ',
-                    style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge!.color,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22),
-                    children: <TextSpan>[
-                      TextSpan(
-                          text: '$favCount songs',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 19,
-                              color: Colors.grey.shade500)),
-                    ],
-                  ),
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const FavoriteListPage()));
-                  generateSongItems(songState.modes);
-                },
-              ),
-              ...difficultyFolders
-            ],
+            children: difficultyFolders,
           );
         },
       ),
