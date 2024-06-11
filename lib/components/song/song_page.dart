@@ -32,7 +32,7 @@ class _SongPageState extends State<SongPage> {
   late int _nearestModIndex;
 
   Favorite? favorite;
-  Note? prevNote;
+  Note? latestNote;
 
   void initFav(String songTitleTranslit) async {
     Favorite? initFav =
@@ -44,9 +44,9 @@ class _SongPageState extends State<SongPage> {
 
   void initNote(String songTitleTranslit) async {
     Note? initNote =
-        await DatabaseProvider.getPrevNoteBySong(songTitleTranslit);
+        await DatabaseProvider.getLatestNoteBySong(songTitleTranslit);
     setState(() {
-      prevNote = initNote;
+      latestNote = initNote;
     });
   }
 
@@ -173,7 +173,7 @@ class _SongPageState extends State<SongPage> {
                           context: context,
                           songInfo: songState.songInfo,
                           chart: _chart),
-                    if (prevNote != null)
+                    if (latestNote != null)
                       GestureDetector(
                         onTap: () async {
                           await Navigator.push(
@@ -195,13 +195,13 @@ class _SongPageState extends State<SongPage> {
                                           .primary),
                                 ),
                                 Text(
-                                  prevNote!.contents,
+                                  latestNote!.contents,
                                   maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
                                   formatDate(
-                                      DateTime.parse(prevNote!.date)),
+                                      DateTime.parse(latestNote!.date)),
                                   style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500),

@@ -109,12 +109,12 @@ class DatabaseProvider {
     return list;
   }
 
-  static Future<Note?> getPrevNoteBySong(String songTitleTranslit) async {
+  static Future<Note?> getLatestNoteBySong(String songTitleTranslit) async {
     final db = await _instance;
     var response = await db
         .query("notes", where: "songTitle = ?", whereArgs: [songTitleTranslit]);
     if (response.isEmpty) return null;
-    Note prevNote = response.map((c) => Note.fromMap(c)).toList().last;
-    return prevNote;
+    Note latestNote = response.map((c) => Note.fromMap(c)).toList().last;
+    return latestNote;
   }
 }
