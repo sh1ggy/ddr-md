@@ -112,7 +112,7 @@ class DatabaseProvider {
   static Future<Note?> getLatestNoteBySong(String songTitleTranslit) async {
     final db = await _instance;
     var response = await db
-        .query("notes", where: "songTitle = ?", whereArgs: [songTitleTranslit]);
+        .query("notes", where: "songTitle = ?", whereArgs: [songTitleTranslit], orderBy: "date ASC");
     if (response.isEmpty) return null;
     Note latestNote = response.map((c) => Note.fromMap(c)).toList().last;
     return latestNote;
