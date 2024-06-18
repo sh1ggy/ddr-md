@@ -113,7 +113,7 @@ class _SongPageState extends State<SongPage> {
                       icon: Icon(
                         favorite != null ? Icons.star : Icons.star_border,
                       ),
-                      tooltip: "Add favourite",
+                      tooltip: favorite != null ? "Unfavourite" : "Favourite",
                       onPressed: () async {
                         SongInfo? songStateInfo = songState.songInfo;
                         if (songStateInfo == null) {
