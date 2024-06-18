@@ -56,77 +56,97 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: LayoutBuilder(builder: (context, constraints) {
-        return Directionality(
-          textDirection: TextDirection.ltr,
-          child: Scaffold(
-            appBar: AppBar(
-              surfaceTintColor: Colors.black,
-              shadowColor: Colors.black,
-              elevation: 2,
-              title: const Text(
-                'Settings',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.w600,
-                ),
+        child: Directionality(
+      textDirection: TextDirection.ltr,
+      child: GestureDetector(
+        onTap: () {
+          FocusScope.of(context).unfocus();
+        },
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
+          appBar: AppBar(
+            surfaceTintColor: Colors.black,
+            shadowColor: Colors.black,
+            elevation: 2,
+            title: const Text(
+              'Settings',
+              style: TextStyle(
+                fontSize: 20,
+                color: Colors.blueGrey,
+                fontWeight: FontWeight.w600,
               ),
-              iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
-            body: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                mainAxisAlignment: MainAxisAlignment.start,
-                mainAxisSize: MainAxisSize.max,
-                children: [
-                  SettingCard<int>(
-                    setValue: _setReadSpeed,
-                    chosenValue: _chosenReadSpeed,
-                    field: "Read Speed",
-                    maxLength: 3,
-                  ),
-                  SettingCard<String>(
-                    setValue: _setRivalCode,
-                    chosenValue: _rivalCode,
-                    field: "Rival Code",
-                    maxLength: 8,
-                  ),
-                  Expanded(
-                    child: Align(
-                      alignment: FractionalOffset.bottomCenter,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.max,
-                        children: [
-                          const Expanded(child: Padding(
-                            padding: EdgeInsets.only(left: 8.0),
-                            child: Text(constants.appVer),
-                          )),
-                          IconButton(
-                              onPressed: () => _launchUrl(constants.bug),
-                              icon: const Icon(Icons.bug_report, size: 25)),
-                          IconButton(
-                              onPressed: () => _launchUrl(constants.github),
-                              icon: const Icon(SimpleIcons.github, size: 20)),
-                          IconButton(
-                              onPressed: () => _launchUrl(constants.linkedin),
-                              icon: const Icon(SimpleIcons.linkedin, size: 20)),
-                          IconButton(
-                              onPressed: () => _launchUrl(constants.paypalDono),
-                              icon: const Icon(SimpleIcons.paypal, size: 20)),
-                        ],
-                      ),
+            iconTheme: const IconThemeData(color: Colors.blueGrey),
+          ),
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                  child: ConstrainedBox(
+                constraints: BoxConstraints(
+                    minWidth: constraints.maxWidth,
+                    minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.max,
+                            children: [
+                              SettingCard<int>(
+                                setValue: _setReadSpeed,
+                                chosenValue: _chosenReadSpeed,
+                                field: "Read Speed",
+                                maxLength: 3,
+                              ),
+                              SettingCard<String>(
+                                setValue: _setRivalCode,
+                                chosenValue: _rivalCode,
+                                field: "Rival Code",
+                                maxLength: 8,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            const Expanded(
+                                child: Padding(
+                              padding: EdgeInsets.only(left: 8.0),
+                              child: Text(constants.appVer),
+                            )),
+                            IconButton(
+                                onPressed: () => _launchUrl(constants.bug),
+                                icon: const Icon(Icons.bug_report, size: 25)),
+                            IconButton(
+                                onPressed: () => _launchUrl(constants.github),
+                                icon: const Icon(SimpleIcons.github, size: 20)),
+                            IconButton(
+                                onPressed: () => _launchUrl(constants.linkedin),
+                                icon:
+                                    const Icon(SimpleIcons.linkedin, size: 20)),
+                            IconButton(
+                                onPressed: () =>
+                                    _launchUrl(constants.paypalDono),
+                                icon: const Icon(SimpleIcons.paypal, size: 20)),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+              ));
+            },
           ),
-        );
-      }),
-    );
+        ),
+      ),
+    ));
   }
 
   Future<void> _launchUrl(String urlString) async {
