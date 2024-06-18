@@ -258,7 +258,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                         fontSize: 22),
                     children: <TextSpan>[
                       TextSpan(
-                          text: '$favCount songs',
+                          text: '$favCount song${favCount == 1 ? 's' : ''}',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 19,
