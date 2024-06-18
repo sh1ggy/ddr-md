@@ -81,67 +81,74 @@ class _SettingsPageState extends State<SettingsPage> {
           body: LayoutBuilder(
             builder: (context, constraints) {
               return SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
                   child: ConstrainedBox(
-                constraints: BoxConstraints(
-                    minWidth: constraints.maxWidth,
-                    minHeight: constraints.maxHeight),
-                child: IntrinsicHeight(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.max,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.max,
-                            children: [
-                              SettingCard<int>(
-                                setValue: _setReadSpeed,
-                                chosenValue: _chosenReadSpeed,
-                                field: "Read Speed",
-                                maxLength: 3,
-                              ),
-                              SettingCard<String>(
-                                setValue: _setRivalCode,
-                                chosenValue: _rivalCode,
-                                field: "Rival Code",
-                                maxLength: 8,
-                              ),
-                            ],
-                          ),
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
+                    constraints: BoxConstraints(
+                        minWidth: constraints.maxWidth,
+                        // TODO: find a better way to set height, dynamic height shifts the layout
+                        minHeight: MediaQuery.of(context).size.height * 0.74),
+                    child: IntrinsicHeight(
+                      child: Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Column(
                           mainAxisSize: MainAxisSize.max,
                           children: [
-                            const Expanded(
-                                child: Padding(
-                              padding: EdgeInsets.only(left: 8.0),
-                              child: Text(constants.appVer),
-                            )),
-                            IconButton(
-                                onPressed: () => _launchUrl(constants.bug),
-                                icon: const Icon(Icons.bug_report, size: 25)),
-                            IconButton(
-                                onPressed: () => _launchUrl(constants.github),
-                                icon: const Icon(SimpleIcons.github, size: 20)),
-                            IconButton(
-                                onPressed: () => _launchUrl(constants.linkedin),
-                                icon:
-                                    const Icon(SimpleIcons.linkedin, size: 20)),
-                            IconButton(
-                                onPressed: () =>
-                                    _launchUrl(constants.paypalDono),
-                                icon: const Icon(SimpleIcons.paypal, size: 20)),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.max,
+                                children: [
+                                  SettingCard<int>(
+                                    setValue: _setReadSpeed,
+                                    chosenValue: _chosenReadSpeed,
+                                    field: "Read Speed",
+                                    maxLength: 3,
+                                  ),
+                                  SettingCard<String>(
+                                    setValue: _setRivalCode,
+                                    chosenValue: _rivalCode,
+                                    field: "Rival Code",
+                                    maxLength: 8,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.max,
+                              children: [
+                                const Expanded(
+                                    child: Padding(
+                                  padding: EdgeInsets.only(left: 8.0),
+                                  child: Text(constants.appVer),
+                                )),
+                                IconButton(
+                                    onPressed: () => _launchUrl(constants.bug),
+                                    icon:
+                                        const Icon(Icons.bug_report, size: 25)),
+                                IconButton(
+                                    onPressed: () =>
+                                        _launchUrl(constants.github),
+                                    icon: const Icon(SimpleIcons.github,
+                                        size: 20)),
+                                IconButton(
+                                    onPressed: () =>
+                                        _launchUrl(constants.linkedin),
+                                    icon: const Icon(SimpleIcons.linkedin,
+                                        size: 20)),
+                                IconButton(
+                                    onPressed: () =>
+                                        _launchUrl(constants.paypalDono),
+                                    icon: const Icon(SimpleIcons.paypal,
+                                        size: 20)),
+                              ],
+                            ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              ));
+                  ));
             },
           ),
         ),
