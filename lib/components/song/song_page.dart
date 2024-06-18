@@ -187,7 +187,7 @@ class _SongPageState extends State<SongPage> {
                             title: Column(
                               children: [
                                 Text(
-                                  "Previous Note",
+                                  "Latest Note",
                                   style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Theme.of(context)
