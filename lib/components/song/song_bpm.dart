@@ -108,16 +108,16 @@ class SongBpm extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             SongBpmTextItem(
-                                text: avg.toString(),
+                                text: avg.round().toString(),
                                 nearestModIndex: nearestModIndex,
                                 mod: mod),
                             if (isBpmChange) ...[
                               SongBpmTextItem(
-                                  text: min.toString(),
+                                  text: min.round().toString(),
                                   nearestModIndex: nearestModIndex,
                                   mod: mod),
                               SongBpmTextItem(
-                                  text: max.toString(),
+                                  text: max.round().toString(),
                                   nearestModIndex: nearestModIndex,
                                   mod: mod),
                             ],

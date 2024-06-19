@@ -156,7 +156,7 @@ class _BpmPageState extends State<BpmPage> {
                                               nearestModIndex: nearestModIndex,
                                               mod: mod),
                                           SongBpmTextItem(
-                                              text: readSpeed.toString(),
+                                              text: readSpeed.round().toString(),
                                               nearestModIndex: nearestModIndex,
                                               mod: mod),
                                         ]
