@@ -111,9 +111,9 @@ class _SongPageState extends State<SongPage> {
                 actions: <Widget>[
                   IconButton(
                       icon: Icon(
-                        favorite != null ? Icons.star : Icons.star_border,
+                        favorite == null ? Icons.star_border : Icons.star,
                       ),
-                      tooltip: "Add favourite",
+                      tooltip: favorite == null ? "Favourite" : "Unfavourite",
                       onPressed: () async {
                         SongInfo? songStateInfo = songState.songInfo;
                         if (songStateInfo == null) {
@@ -187,7 +187,7 @@ class _SongPageState extends State<SongPage> {
                             title: Column(
                               children: [
                                 Text(
-                                  "Previous Note",
+                                  "Latest Note",
                                   style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: Theme.of(context)
@@ -200,15 +200,14 @@ class _SongPageState extends State<SongPage> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
-                                  formatDate(
-                                      DateTime.parse(latestNote!.date)),
+                                  formatDate(DateTime.parse(latestNote!.date)),
                                   style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500),
                                 ),
                               ]
-                                  .expand((x) =>
-                                      [const SizedBox(height: 10), x])
+                                  .expand(
+                                      (x) => [const SizedBox(height: 10), x])
                                   .skip(1)
                                   .toList(),
                             ),

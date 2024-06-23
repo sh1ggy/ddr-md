@@ -48,8 +48,9 @@ class DatabaseProvider {
     final db = await _instance;
     Favorite deletedFav =
         Favorite(id: fav.id, isFav: false, songTitle: fav.songTitle);
+    // Favourites is one to one with song so this where condition reflects that. 
     var raw =
-        await db.delete("favorites", where: "id = ?", whereArgs: [fav.id]);
+        await db.delete("favorites", where: "songTitle = ?", whereArgs: [fav.songTitle]);
     return deletedFav;
   }
 

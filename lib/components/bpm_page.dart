@@ -59,26 +59,26 @@ class _BpmPageState extends State<BpmPage> {
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
           textDirection: TextDirection.ltr,
-          child: Scaffold(
-            appBar: AppBar(
-              surfaceTintColor: Colors.black,
-              shadowColor: Colors.black,
-              elevation: 2,
-              title: const Text(
-                'BPM',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.w600,
+          child: GestureDetector(
+            onTap: () {
+              FocusScope.of(context).unfocus();
+            },
+            child: Scaffold(
+              appBar: AppBar(
+                surfaceTintColor: Colors.black,
+                shadowColor: Colors.black,
+                elevation: 2,
+                title: const Text(
+                  'BPM',
+                  style: TextStyle(
+                    fontSize: 20,
+                    color: Colors.blueGrey,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
+                iconTheme: const IconThemeData(color: Colors.blueGrey),
               ),
-              iconTheme: const IconThemeData(color: Colors.blueGrey),
-            ),
-            body: GestureDetector(
-              onTap: () {
-                FocusScope.of(context).unfocus();
-              },
-              child: Padding(
+              body: Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -156,7 +156,7 @@ class _BpmPageState extends State<BpmPage> {
                                               nearestModIndex: nearestModIndex,
                                               mod: mod),
                                           SongBpmTextItem(
-                                              text: readSpeed.toString(),
+                                              text: readSpeed.round().toString(),
                                               nearestModIndex: nearestModIndex,
                                               mod: mod),
                                         ]
