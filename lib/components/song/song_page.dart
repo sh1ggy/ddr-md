@@ -111,9 +111,9 @@ class _SongPageState extends State<SongPage> {
                 actions: <Widget>[
                   IconButton(
                       icon: Icon(
-                        favorite != null ? Icons.star : Icons.star_border,
+                        favorite == null ? Icons.star_border : Icons.star,
                       ),
-                      tooltip: favorite != null ? "Unfavourite" : "Favourite",
+                      tooltip: favorite == null ? "Favourite" : "Unfavourite",
                       onPressed: () async {
                         SongInfo? songStateInfo = songState.songInfo;
                         if (songStateInfo == null) {
