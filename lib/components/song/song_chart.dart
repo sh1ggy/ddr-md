@@ -8,6 +8,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 class SongChart extends StatefulWidget {
@@ -265,7 +266,8 @@ class SongChartState extends State<SongChart> {
           CheckboxListTile(
             title: const Text("Toggle Stops", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             value: isShowingStops,
-            onChanged: (value) {
+            onChanged: (_) {
+              HapticFeedback.lightImpact();
               setState(() {
                 isShowingStops = !isShowingStops;
               });

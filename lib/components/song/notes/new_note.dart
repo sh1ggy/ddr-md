@@ -9,6 +9,7 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 class NewNoteField extends StatefulWidget {
@@ -100,6 +101,7 @@ class NewNoteFieldState extends State<NewNoteField> {
                         color: Colors.redAccent,
                         tooltip: "Delete note",
                         onPressed: () async {
+                          HapticFeedback.lightImpact();
                           await DatabaseProvider.deleteNote(widget.date!);
                           if (!context.mounted) return;
                           Navigator.pop(context, true);
@@ -112,6 +114,7 @@ class NewNoteFieldState extends State<NewNoteField> {
                       color: Colors.green,
                       tooltip: "Save note",
                       onPressed: () async {
+                        HapticFeedback.lightImpact();
                         if (widget.contentsInit != "" && widget.date != null) {
                           await DatabaseProvider.updateNote(
                               Note(

@@ -71,6 +71,7 @@ class _SettingCardState<T> extends State<SettingCard> {
                   ),
                   tooltip: "Save ${widget.field}",
                   onPressed: () {
+                    HapticFeedback.lightImpact();
                     if (textValue == "") {
                       showToast(context, "Invalid ${widget.field}");
                       return;

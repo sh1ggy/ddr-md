@@ -6,6 +6,7 @@ library;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:flutter/services.dart';
 
 class SongBpm extends StatelessWidget {
   const SongBpm(
@@ -93,6 +94,9 @@ class SongBpm extends StatelessWidget {
                     FixedExtentScrollController(initialItem: nearestModIndex),
                 overAndUnderCenterOpacity: .5,
                 itemExtent: 25,
+                onSelectedItemChanged: (_) {
+                  HapticFeedback.selectionClick();
+                },
                 childDelegate: ListWheelChildListDelegate(
                   children: constants.mods.map<Widget>((mod) {
                     var avg = mod * chart.dominantBpm;
