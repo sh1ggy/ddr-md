@@ -148,7 +148,8 @@ class _LayoutState extends State<Layout> {
           ],
         ),
         body: <Widget>[
-          /// Home page
+          // Android-specific removal of navigators to make back gesture work
+          // Note that this removes the bottom navigator
           if (Platform.isAndroid) ...{
             const BpmPage(),
             const DifficultyListPage(),
