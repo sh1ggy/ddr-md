@@ -7,6 +7,9 @@ This is the repo for the mobile application for DDR MD (name pending), a self-im
 ## About
 This project is being made to assist with the self-improvement process involved in the pad-stomping games of DDR and ITG before, during and after play. The approach with this project is to not only display chart information in a digestible format to make chart study easier, but also provide tools for you to take personal notes and reflect upon the quirks of your specific playstyle.  
 
+## Usage
+The intended usage of this application is to use it while you're playing DDR. For more information about release-specific usage, refer to [this user guide](./wiki/Release%201.md)
+
 ## Stack
 - [Flutter](https://flutter.dev/), our chosen mobile development framework. 
 
