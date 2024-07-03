@@ -65,97 +65,118 @@ class App extends StatelessWidget {
       ),
       darkTheme: ThemeData.dark(useMaterial3: true),
       themeMode: ThemeMode.system,
-      home: const Navbar(),
+      home: const Layout(),
     );
   }
 }
 
-class Navbar extends StatefulWidget {
-  const Navbar({super.key});
+class Layout extends StatefulWidget {
+  const Layout({super.key});
 
   @override
-  State<Navbar> createState() => _NavbarState();
+  State<Layout> createState() => _LayoutState();
 }
 
-class _NavbarState extends State<Navbar> {
+class _LayoutState extends State<Layout> {
   int currentPageIndex = 0;
 
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
-    return Scaffold(
-      bottomNavigationBar: NavigationBar(
-        elevation: 5,
-        surfaceTintColor: Colors.black,
-        onDestinationSelected: (int index) {
-          setState(() {
-            currentPageIndex = index;
-          });
-        },
-        indicatorColor: Colors.primaries.first,
-        selectedIndex: currentPageIndex,
-        destinations: const <Widget>[
-          NavigationDestination(
-            selectedIcon: Icon(
-              Icons.onetwothree,
-              color: Colors.white,
-            ),
-            icon: Icon(Icons.onetwothree),
-            label: 'BPM',
-          ),
-          NavigationDestination(
-            selectedIcon: Icon(
-              Icons.music_note,
-              color: Colors.white,
-            ),
-            icon: Icon(Icons.music_note),
-            label: 'Songs',
-          ),
-          // NavigationDestination(
-          //   selectedIcon: Icon(
-          //     Icons.abc,
-          //     color: Colors.white,
-          //   ),
-          //   icon: Icon(Icons.abc),
-          //   label: 'Scores',
-          // ),
-          // NavigationDestination(
-          //   selectedIcon: Icon(
-          //     Icons.people,
-          //     color: Colors.white,
-          //   ),
-          //   icon: Icon(Icons.people),
-          //   label: 'Social',
-          // ),
-          NavigationDestination(
-            selectedIcon: Icon(
-              Icons.settings,
-              color: Colors.white,
-            ),
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
-      ),
-      body: <Widget>[
-        /// Home page
-        const BpmPage(),
-        Navigator(
-          key: const Key("Song"),
-          onGenerateRoute: (settings) {
-            Widget page = const DifficultyListPage();
-            return MaterialPageRoute(builder: (_) => page);
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) => showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: const Text('Exit Application'),
+                content: const SingleChildScrollView(
+                  child: ListBody(
+                    children: <Widget>[
+                      Text('Do you really want to exit the app?'),
+                    ],
+                  ),
+                ),
+                actions: <Widget>[
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, 'Cancel'),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => SystemNavigator.pop(),
+                    child: const Text('OK'),
+                  ),
+                ],
+              )),
+      child: Scaffold(
+        bottomNavigationBar: NavigationBar(
+          elevation: 5,
+          surfaceTintColor: Colors.black,
+          onDestinationSelected: (int index) {
+            setState(() {
+              currentPageIndex = index;
+            });
           },
+          indicatorColor: Colors.primaries.first,
+          selectedIndex: currentPageIndex,
+          destinations: const <Widget>[
+            NavigationDestination(
+              selectedIcon: Icon(
+                Icons.onetwothree,
+                color: Colors.white,
+              ),
+              icon: Icon(Icons.onetwothree),
+              label: 'BPM',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(
+                Icons.music_note,
+                color: Colors.white,
+              ),
+              icon: Icon(Icons.music_note),
+              label: 'Songs',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(
+                Icons.settings,
+                color: Colors.white,
+              ),
+              icon: Icon(Icons.settings),
+              label: 'Settings',
+            ),
+          ],
         ),
-        // const Placeholder(),
-        // const Placeholder(),
-        Navigator(
-            key: const Key("Settings"),
-            onGenerateRoute: (settings) {
-              Widget page = const SettingsPage();
-              return MaterialPageRoute(builder: (_) => page);
-            }),
-      ][currentPageIndex],
+        body: <Widget>[
+          /// Home page
+          const BpmPage(),
+          // const DifficultyListPage(),
+          // const SettingsPage(),
+          NavigatorPopHandler(
+            enabled: true,
+            onPop: () {
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+              print(ModalRoute.of(context)!.settings.name);
+              // Navigator.of(context, rootNavigator: false).pop(context);
+            },
+            child: Navigator(
+              key: const Key("SongList"),
+              onGenerateRoute: (settings) {
+                Widget page = const DifficultyListPage();
+                return MaterialPageRoute(
+                    builder: (_) => page);
+              },
+            ),
+          ),
+          Navigator(
+              key: const Key("Settings"),
+              onGenerateRoute: (settings) {
+                Widget page = const SettingsPage();
+                return MaterialPageRoute(
+                    builder: (_) => page);
+              }),
+        ][currentPageIndex],
+      ),
     );
   }
 }
