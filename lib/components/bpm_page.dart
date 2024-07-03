@@ -135,6 +135,9 @@ class _BpmPageState extends State<BpmPage> {
                               magnification: 1.1,
                               diameterRatio: 1.5,
                               itemExtent: 25,
+                              onSelectedItemChanged: (value) {
+                                HapticFeedback.selectionClick();
+                              },
                               childDelegate: ListWheelChildListDelegate(
                                 children: constants.mods.map<Widget>((mod) {
                                   var readSpeed = mod * bpm;
@@ -156,7 +159,8 @@ class _BpmPageState extends State<BpmPage> {
                                               nearestModIndex: nearestModIndex,
                                               mod: mod),
                                           SongBpmTextItem(
-                                              text: readSpeed.round().toString(),
+                                              text:
+                                                  readSpeed.round().toString(),
                                               nearestModIndex: nearestModIndex,
                                               mod: mod),
                                         ]

@@ -15,6 +15,7 @@ import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 class SongPage extends StatefulWidget {
@@ -115,6 +116,7 @@ class _SongPageState extends State<SongPage> {
                       ),
                       tooltip: favorite == null ? "Favourite" : "Unfavourite",
                       onPressed: () async {
+                        HapticFeedback.lightImpact();
                         SongInfo? songStateInfo = songState.songInfo;
                         if (songStateInfo == null) {
                           return;
