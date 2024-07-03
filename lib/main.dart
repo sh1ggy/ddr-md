@@ -3,6 +3,8 @@
 /// which page is getting rendered.
 library;
 
+import 'dart:io';
+
 import 'package:ddr_md/components/bpm_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -147,34 +149,32 @@ class _LayoutState extends State<Layout> {
         ),
         body: <Widget>[
           /// Home page
-          const BpmPage(),
-          // const DifficultyListPage(),
-          // const SettingsPage(),
-          NavigatorPopHandler(
-            enabled: true,
-            onPop: () {
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              }
-              print(ModalRoute.of(context)!.settings.name);
-              // Navigator.of(context, rootNavigator: false).pop(context);
-            },
-            child: Navigator(
+          if (Platform.isAndroid) ...{
+            const BpmPage(),
+            const DifficultyListPage(),
+            const SettingsPage(),
+          } else ...{
+            Navigator(
+              key: const Key("Bpm"),
+              onGenerateRoute: (settings) {
+                Widget page = const BpmPage();
+                return MaterialPageRoute(builder: (_) => page);
+              },
+            ),
+            Navigator(
               key: const Key("SongList"),
               onGenerateRoute: (settings) {
                 Widget page = const DifficultyListPage();
-                return MaterialPageRoute(
-                    builder: (_) => page);
+                return MaterialPageRoute(builder: (_) => page);
               },
             ),
-          ),
-          Navigator(
-              key: const Key("Settings"),
-              onGenerateRoute: (settings) {
-                Widget page = const SettingsPage();
-                return MaterialPageRoute(
-                    builder: (_) => page);
-              }),
+            Navigator(
+                key: const Key("Settings"),
+                onGenerateRoute: (settings) {
+                  Widget page = const SettingsPage();
+                  return MaterialPageRoute(builder: (_) => page);
+                }),
+          }
         ][currentPageIndex],
       ),
     );
