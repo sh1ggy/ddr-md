@@ -11,8 +11,10 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/navigation_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/navigation_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/services.dart';
@@ -91,11 +93,13 @@ class _SongPageState extends State<SongPage> {
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
+    var navigationState = context.watch<NavigationState>();
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
           textDirection: TextDirection.ltr,
           child: Scaffold(
+            bottomNavigationBar: LayoutNavigationBar(navigationState: navigationState,),
             appBar: AppBar(
                 surfaceTintColor: Colors.black,
                 shadowColor: Colors.black,

@@ -4,9 +4,12 @@
 library;
 
 import 'package:ddr_md/components/settings/setting_card.dart';
+import 'package:ddr_md/models/navigation_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/navigation_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:provider/provider.dart';
 import 'package:simple_icons/simple_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -55,6 +58,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    var navigationState = context.watch<NavigationState>();
     return SafeArea(
         child: Directionality(
       textDirection: TextDirection.ltr,
@@ -63,6 +67,7 @@ class _SettingsPageState extends State<SettingsPage> {
           FocusScope.of(context).unfocus();
         },
         child: Scaffold(
+          bottomNavigationBar: LayoutNavigationBar(navigationState: navigationState,),
           resizeToAvoidBottomInset: false,
           appBar: AppBar(
             surfaceTintColor: Colors.black,

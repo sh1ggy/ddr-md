@@ -8,8 +8,10 @@ import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/difficultylist_page.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/navigation_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/navigation_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -42,7 +44,10 @@ void main() async {
 
   // Wrapped app with providers
   runApp(MultiProvider(
-    providers: [ChangeNotifierProvider(create: (context) => SongState())],
+    providers: [
+      ChangeNotifierProvider(create: (context) => SongState()),
+      ChangeNotifierProvider(create: (context) => NavigationState())
+    ],
     child: const App(),
   ));
 }
@@ -78,10 +83,9 @@ class Layout extends StatefulWidget {
 }
 
 class _LayoutState extends State<Layout> {
-  int currentPageIndex = 0;
-
   @override
   Widget build(BuildContext context) {
+    var navigationState = context.watch<NavigationState>();
     Theme.of(context);
     return PopScope(
       canPop: false,
@@ -108,74 +112,42 @@ class _LayoutState extends State<Layout> {
                 ],
               )),
       child: Scaffold(
-        bottomNavigationBar: NavigationBar(
-          elevation: 5,
-          surfaceTintColor: Colors.black,
-          onDestinationSelected: (int index) {
-            setState(() {
-              currentPageIndex = index;
-            });
-          },
-          indicatorColor: Colors.primaries.first,
-          selectedIndex: currentPageIndex,
-          destinations: const <Widget>[
-            NavigationDestination(
-              selectedIcon: Icon(
-                Icons.onetwothree,
-                color: Colors.white,
-              ),
-              icon: Icon(Icons.onetwothree),
-              label: 'BPM',
-            ),
-            NavigationDestination(
-              selectedIcon: Icon(
-                Icons.music_note,
-                color: Colors.white,
-              ),
-              icon: Icon(Icons.music_note),
-              label: 'Songs',
-            ),
-            NavigationDestination(
-              selectedIcon: Icon(
-                Icons.settings,
-                color: Colors.white,
-              ),
-              icon: Icon(Icons.settings),
-              label: 'Settings',
-            ),
-          ],
+        bottomNavigationBar: LayoutNavigationBar(
+          navigationState: navigationState,
         ),
         body: <Widget>[
           /// Home page
           const BpmPage(),
-          // const DifficultyListPage(),
-          // const SettingsPage(),
-          NavigatorPopHandler(
-            enabled: true,
-            onPop: () {
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              }
-              print(ModalRoute.of(context)!.settings.name);
-              // Navigator.of(context, rootNavigator: false).pop(context);
-            },
-            child: Navigator(
-              key: const Key("SongList"),
-              onGenerateRoute: (settings) {
-                Widget page = const DifficultyListPage();
-                return MaterialPageRoute(
-                    builder: (_) => page);
-              },
-            ),
-          ),
-          Navigator(
-              key: const Key("Settings"),
-              onGenerateRoute: (settings) {
-                Widget page = const SettingsPage();
-                return MaterialPageRoute(
-                    builder: (_) => page);
-              }),
-        ][currentPageIndex],
+          const DifficultyListPage(),
+          const SettingsPage(),
+
+          // bottom sheet removed for android
+          // NavigatorPopHandler(
+          //   enabled: true,
+          //   onPop: () {
+          //     if (Navigator.of(context).canPop()) {
+          //       Navigator.of(context).pop();
+          //     }
+          //     print(ModalRoute.of(context)!.settings.name);
+          //     // Navigator.of(context, rootNavigator: false).pop(context);
+          //   },
+          //   child: Navigator(
+          //     key: const Key("SongList"),
+          //     onGenerateRoute: (settings) {
+          //       Widget page = const DifficultyListPage();
+          //       return MaterialPageRoute(
+          //           builder: (_) => page);
+          //     },
+          //   ),
+          // ),
+          // Navigator(
+          //     key: const Key("Settings"),
+          //     onGenerateRoute: (settings) {
+          //       Widget page = const SettingsPage();
+          //       return MaterialPageRoute(
+          //           builder: (_) => page);
+          //     }),
+        ][navigationState.currentPage],
       ),
     );
   }

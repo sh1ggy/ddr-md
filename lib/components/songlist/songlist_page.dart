@@ -8,7 +8,10 @@ import 'package:ddr_md/components/songlist/difficultylist_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/navigation_model.dart';
+import 'package:ddr_md/navigation_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class SongListPage extends StatefulWidget {
   const SongListPage({super.key, required this.difficulty});
@@ -42,8 +45,12 @@ class _SongListPageState extends State<SongListPage> {
 
   @override
   Widget build(BuildContext context) {
+    var navigationState = context.watch<NavigationState>();
     return SafeArea(
         child: Scaffold(
+      bottomNavigationBar: LayoutNavigationBar(
+        navigationState: navigationState,
+      ),
       appBar: AppBar(
         surfaceTintColor: Colors.black,
         shadowColor: Colors.black,
