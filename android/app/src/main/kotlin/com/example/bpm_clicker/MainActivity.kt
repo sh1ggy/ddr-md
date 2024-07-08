@@ -1,4 +1,4 @@
-package com.example.bpm_clicker
+package com.example.ddr_md
 
 import io.flutter.embedding.android.FlutterActivity
 
