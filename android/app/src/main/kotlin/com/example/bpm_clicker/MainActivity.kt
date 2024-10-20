@@ -1,4 +1,4 @@
-package com.example.ddr_md
+package com.sh1.ddr-md
 
 import io.flutter.embedding.android.FlutterActivity
 
