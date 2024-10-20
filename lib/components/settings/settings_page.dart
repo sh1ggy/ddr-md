@@ -124,10 +124,6 @@ class _SettingsPageState extends State<SettingsPage> {
                                   child: Text(constants.appVer),
                                 )),
                                 IconButton(
-                                    onPressed: () => _launchUrl(constants.bug),
-                                    icon:
-                                        const Icon(Icons.bug_report, size: 25)),
-                                IconButton(
                                     onPressed: () =>
                                         _launchUrl(constants.github),
                                     icon: const Icon(SimpleIcons.github,
