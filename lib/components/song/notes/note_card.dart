@@ -6,7 +6,6 @@ library;
 
 import 'package:ddr_md/components/song/notes/new_note.dart';
 import 'package:ddr_md/helpers.dart';
-import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -30,6 +29,7 @@ class NoteCard extends StatelessWidget {
       onTap: () async {
         // Wait for return from modalBottomSheet
         final result = await showModalBottomSheet<bool>(
+          isScrollControlled: true, // for keyboard movement
           context: context,
           builder: (BuildContext context) {
             return NewNoteField(
