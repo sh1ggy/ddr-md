@@ -1,4 +1,4 @@
-package com.example.ddr_md
+package com.shiggy.ddrmd
 
 import io.flutter.embedding.android.FlutterActivity
 
