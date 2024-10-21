@@ -72,6 +72,7 @@ class NotePageState extends State<NotePage> {
     var songState = context.watch<SongState>();
     return SafeArea(
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         appBar: AppBar(
           surfaceTintColor: Colors.black,
           shadowColor: Colors.black,
@@ -92,6 +93,7 @@ class NotePageState extends State<NotePage> {
           onPressed: () async {
             // Wait for return from modalBottomSheet
             final result = await showModalBottomSheet<bool>(
+              isScrollControlled: true,
               context: context,
               builder: (BuildContext context) {
                 return const NewNoteField();

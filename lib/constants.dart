@@ -37,10 +37,9 @@ const maxDifficulty = 19;
 const note =
     "The crossovers in this song are surprisingly hard, I keep leading with the wrong first foot in after the jumps. Song should be played with those in mind.";
 
-const appVer = "v1.0.0";
+const appVer = "v1.0.1";
 
 // Links
 const linkedin = 'https://www.linkedin.com/in/tyrone-nolasco/';
-const bug = 'https://github.com/sh1ggy/ddr-md-issues';
 const github = 'https://github.com/sh1ggy';
 const paypalDono = 'https://www.paypal.com/donate/?business=Z2967WX5FNN8J&no_recurring=0&item_name=Thank+you+for+supporting+DDR+MD%21&currency_code=AUD';
