@@ -48,9 +48,9 @@ class NewNoteFieldState extends State<NewNoteField> {
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
-    return Container(
-      padding: const EdgeInsets.all(12),
-      width: MediaQuery.of(context).size.width,
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SizedBox(
         height: 300,
         child: Center(
@@ -94,6 +94,7 @@ class NewNoteFieldState extends State<NewNoteField> {
                 ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     if (widget.getNotes != null && widget.date != null)
                       IconButton(
