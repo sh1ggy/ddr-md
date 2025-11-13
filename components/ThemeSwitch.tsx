@@ -1,7 +1,7 @@
+import { Text, View } from "@/components/Themed";
 import { theme } from "@/stores/global";
 import { useAtom } from "jotai";
 import { Switch, SwitchChangeEvent } from "react-native";
-import { Text, View } from "./Themed";
 
 interface Props {}
 export default function ({}: Props) {
