@@ -33,18 +33,32 @@ class SongInfo {
     required this.charts,
   });
 
-  factory SongInfo.fromJson(Map<String, dynamic> json) => SongInfo(
-        ssc: json["ssc"],
-        version: json["version"],
-        name: json["name"],
-        title: json["title"],
-        titletranslit: json["titletranslit"],
-        songLength: json["song_length"]?.toDouble(),
-        perChart: json["per_chart"],
-        singles: Difficulty.fromJson(json["sp"]),
-        doubles: Difficulty.fromJson(json["dp"]),
-        charts: List<Chart>.from(json["charts"].map((x) => Chart.fromJson(x))),
-      );
+  factory SongInfo.fromJson(Map<String, dynamic> json) {
+    final levels = json["levels"] as Map<String, dynamic>?;
+
+    return SongInfo(
+      ssc: json["ssc"] ?? false,
+      version: json["version"] ?? "",
+      name: json["name"] ?? "",
+      title: json["title"] ?? "",
+      titletranslit: json["titletranslit"] ?? "",
+      songLength: (json["song_length"] ?? 0).toDouble(),
+      perChart: json["per_chart"] ?? false,
+
+      // NEW: supports both formats
+      singles: Difficulty.fromJson(
+        json["sp"] ?? levels?["single"] ?? {},
+      ),
+      doubles: Difficulty.fromJson(
+        json["dp"] ?? levels?["double"] ?? {},
+      ),
+
+      // NEW: supports both "charts" and "chart"
+      charts: List<Chart>.from(
+        (json["charts"] ?? json["chart"] ?? []).map((x) => Chart.fromJson(x)),
+      ),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         "ssc": ssc,
@@ -78,12 +92,16 @@ class Chart {
   });
 
   factory Chart.fromJson(Map<String, dynamic> json) => Chart(
-        dominantBpm: json["dominant_bpm"],
-        trueMin: json["true_min"],
-        trueMax: json["true_max"],
-        bpmRange: json["bpm_range"],
-        bpms: List<Bpm>.from(json["bpms"].map((x) => Bpm.fromJson(x))),
-        stops: List<Stop>.from(json["stops"].map((x) => Stop.fromJson(x))),
+        dominantBpm: json["dominant_bpm"] ?? 0,
+        trueMin: json["true_min"] ?? 0,
+        trueMax: json["true_max"] ?? 0,
+        bpmRange: json["bpm_range"] ?? "",
+        bpms: List<Bpm>.from(
+          (json["bpms"] ?? []).map((x) => Bpm.fromJson(x)),
+        ),
+        stops: List<Stop>.from(
+          (json["stops"] ?? []).map((x) => Stop.fromJson(x)),
+        ),
       );
 
   Map<String, dynamic> toJson() => {
@@ -131,11 +149,33 @@ class Stop {
     required this.beats,
   });
 
-  factory Stop.fromJson(Map<String, dynamic> json) => Stop(
-        st: json["st"]?.toDouble(),
-        dur: json["dur"]?.toDouble(),
-        beats: List<Beat>.from(json["beats"].map((x) => Beat.fromJson(x))),
+  factory Stop.fromJson(Map<String, dynamic> json) {
+    final beatsRaw = json["beats"];
+
+    List<Beat> parsedBeats;
+
+    if (beatsRaw == null) {
+      parsedBeats = [];
+    } else if (beatsRaw is num) {
+      // OLD FORMAT
+      parsedBeats = [
+        Beat(bpm: 0, val: beatsRaw.toDouble()),
+      ];
+    } else if (beatsRaw is List) {
+      // NEW FORMAT
+      parsedBeats = List<Beat>.from(
+        beatsRaw.map((x) => Beat.fromJson(x)),
       );
+    } else {
+      parsedBeats = [];
+    }
+
+    return Stop(
+      st: (json["st"] ?? 0).toDouble(),
+      dur: (json["dur"] ?? 0).toDouble(),
+      beats: parsedBeats,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         "st": st,
