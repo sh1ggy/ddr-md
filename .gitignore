@@ -141,3 +141,6 @@ app.*.symbols
 /assets/jackets-lowres
 /assets/jackets
 /assets/song-data
+
+# OpenCV downloaded SDK
+/scripts/download

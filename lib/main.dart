@@ -6,6 +6,7 @@ library;
 import 'dart:io';
 
 import 'package:ddr_md/components/bpm_page.dart';
+import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/difficultylist_page.dart';
@@ -48,7 +49,7 @@ void main() async {
   await Settings.init();
   await DatabaseProvider.init();
   await loadSongList();
-  
+
   // Wrapped app with providers
   runApp(MultiProvider(
     providers: [ChangeNotifierProvider(create: (context) => SongState())],
@@ -152,6 +153,14 @@ class _LayoutState extends State<Layout> {
               icon: Icon(Icons.settings),
               label: 'Settings',
             ),
+            NavigationDestination(
+              selectedIcon: Icon(
+                Icons.camera_enhance,
+                color: Colors.white,
+              ),
+              icon: Icon(Icons.camera_enhance),
+              label: 'OCR',
+            ),
           ],
         ),
         body: <Widget>[
@@ -180,6 +189,12 @@ class _LayoutState extends State<Layout> {
                 key: const Key("Settings"),
                 onGenerateRoute: (settings) {
                   Widget page = const SettingsPage();
+                  return MaterialPageRoute(builder: (_) => page);
+                }),
+            Navigator(
+                key: const Key("OCR"),
+                onGenerateRoute: (settings) {
+                  Widget page = const OcrPage();
                   return MaterialPageRoute(builder: (_) => page);
                 }),
           }
