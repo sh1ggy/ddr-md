@@ -17,8 +17,6 @@ typedef _ProcessImageFunc = void Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 ffi.DynamicLibrary _openDynamicLibrary() {
   if (Platform.isAndroid) {
     return ffi.DynamicLibrary.open('libnative_opencv.so');
-  } else if (Platform.isWindows) {
-    return ffi.DynamicLibrary.open("native_opencv_windows_plugin.dll");
   }
 
   return ffi.DynamicLibrary.process();

@@ -10,12 +10,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  native_opencv_macos:
-    path: ../native_opencv_macos
-  native_opencv_linux:
-    path: ../native_opencv_linux
-  native_opencv_windows:
-    path: ../native_opencv_windows
+  # native_opencv_macos:
+  #   path: ../native_opencv_macos
+  # native_opencv_linux:
+  #   path: ../native_opencv_linux
+  # native_opencv_windows:
+  #   path: ../native_opencv_windows
 
 dev_dependencies:
   flutter_test:
@@ -37,12 +37,12 @@ flutter:
         pluginClass: NativeOpencvPlugin
       ios:
         pluginClass: NativeOpencvPlugin
-      macos:
-        default_package: native_opencv_macos
-      linux:
-        default_package: native_opencv_linux
-      windows:
-        default_package: native_opencv_windows
+      # macos:
+      #   default_package: native_opencv_macos
+      # linux:
+      #   default_package: native_opencv_linux
+      # windows:
+      #   default_package: native_opencv_windows
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:
