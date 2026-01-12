@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 // Function to load song list JSONs from asset bundle into static class for global use
-void loadSongList() async {
+Future<void> loadSongList() async {
   AssetManifest asset = await AssetManifest.loadFromAssetBundle(rootBundle);
   Songs.assets = asset.listAssets();
 
@@ -29,8 +29,15 @@ void loadSongList() async {
 
   for (int i = 0; i < songDataPaths.length; i++) {
     var response = await rootBundle.loadString('${songDataPaths[i]}.json');
-    SongInfo songInfo = parseJson(response);
-    Songs.list.add(songInfo);
+    SongInfo songInfo;
+    try {
+      songInfo = parseJson(response);
+      Songs.list.add(songInfo);
+    } catch (e) {
+      // ignore: avoid_print
+      print("Error parsing JSON for ${songDataPaths[i]}: $e");
+      continue;
+    }
   }
 }
 
@@ -40,8 +47,8 @@ void main() async {
   // Initialise global objects
   await Settings.init();
   await DatabaseProvider.init();
-  loadSongList();
-
+  await loadSongList();
+  
   // Wrapped app with providers
   runApp(MultiProvider(
     providers: [ChangeNotifierProvider(create: (context) => SongState())],
