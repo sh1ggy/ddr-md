@@ -1,4 +1,4 @@
-group 'com.example.native_opencv'
+group 'com.shiggy.native_opencv'
 version '1.0-SNAPSHOT'
 
 buildscript {
@@ -23,9 +23,10 @@ apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion 28
+    namespace 'com.shiggy.native_opencv'
 
     defaultConfig {
-        minSdkVersion 16
+        minSdkVersion 21
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         externalNativeBuild {

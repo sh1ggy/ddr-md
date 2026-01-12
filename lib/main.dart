@@ -170,6 +170,7 @@ class _LayoutState extends State<Layout> {
             const BpmPage(),
             const DifficultyListPage(),
             const SettingsPage(),
+            const OcrPage(),
           } else ...{
             Navigator(
               key: const Key("Bpm"),
