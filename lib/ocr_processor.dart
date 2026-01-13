@@ -37,19 +37,58 @@ final DynamicLibrary _nativeLib = _openDynamicLibrary();
 
 // Getting a library that holds needed symbols
 DynamicLibrary _openDynamicLibrary() {
-  return Platform.isAndroid ? DynamicLibrary.open("libnative_opencv.so") : DynamicLibrary.process();
+  return Platform.isAndroid
+      ? DynamicLibrary.open("libnative_opencv.so")
+      : DynamicLibrary.process();
 }
 
 // C Functions signatures
-typedef _c_processImage = Void Function(
-    Int32 width, Int32 height, Int32 bytesPerPixel, Pointer<Uint8> imageBytes, Pointer<Int32> outRoi);
+typedef _c_processImage = Void Function(Int32 width, Int32 height,
+    Int32 bytesPerPixel, Pointer<Uint8> imageBytes, Pointer<Int32> outRoi);
 
 // Dart functions signatures
-typedef _dart_processImage = void Function(
-    int width, int height, int bytesPerPixel, Pointer<Uint8> bytes, Pointer<Int32> outRoi);
+typedef _dart_processImage = void Function(int width, int height,
+    int bytesPerPixel, Pointer<Uint8> bytes, Pointer<Int32> outRoi);
 
 // Create dart functions that invoke the C funcion
-final _processImageFn = _nativeLib.lookupFunction<_c_processImage, _dart_processImage>('processImage');
+final _processImageFn = _nativeLib
+    .lookupFunction<_c_processImage, _dart_processImage>('process_image');
+
+Future<FrameProcessResult> _processFrameIsolate(
+    _FrameProcessParams params) async {
+  final bytes = params.bytes.materialize().asUint8List();
+  // final bytes = params.bytes;
+
+  Pointer<Uint8> imageBuffer = calloc<Uint8>(bytes.length);
+  imageBuffer.asTypedList(bytes.length).setAll(0, bytes);
+
+  Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
+  _processImageFn(
+      params.width, params.height, params.bytesPerPixel, imageBuffer, retRoi);
+
+  if (retRoi == nullptr) {
+    calloc.free(retRoi);
+    calloc.free(imageBuffer);
+    return FrameProcessResult(
+        0, DifficultyType.None, const Rectangle(0, 0, 0, 0));
+  }
+
+  FrameProcessResult result = FrameProcessResult(
+    100, // Placeholder score
+    DifficultyType.FFXI, // Placeholder difficulty
+    Rectangle<int>(
+      retRoi[0].toInt(),
+      retRoi[1].toInt(),
+      retRoi[2].toInt(),
+      retRoi[3].toInt(),
+    ),
+  );
+
+  calloc.free(retRoi);
+  calloc.free(imageBuffer);
+
+  return result;
+}
 
 class OCRProcessor {
   static OCRProcessor? _instance;
@@ -73,13 +112,14 @@ class OCRProcessor {
     try {
       // Convert CameraImage to Uint8List
       final bytes = image.planes.first.bytes;
-      bytes.asUnmodifiableView();
 
       // Create TransferableTypedData for zero-copy transfer (theoretically we relinquish ownership here but should be fine)
-      final transferable = TransferableTypedData.fromList([bytes]);
+      final transferable =
+          TransferableTypedData.fromList([bytes]);
 
       final params = _FrameProcessParams(
         bytes: transferable,
+        // bytes: bytes,
         width: image.width,
         height: image.height,
         bytesPerPixel: 4,
@@ -95,41 +135,6 @@ class OCRProcessor {
     } finally {
       _isProcessing = false;
     }
-  }
-
-  Future<FrameProcessResult> _processFrameIsolate(
-      _FrameProcessParams params) async {
-    final bytes = params.bytes.materialize().asUint8List();
-
-    Pointer<Uint8> imageBuffer = calloc<Uint8>(bytes.length);
-    imageBuffer.asTypedList(bytes.length).setAll(0, bytes);
-
-    Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
-    _processImageFn(
-        params.width, params.height, params.bytesPerPixel, imageBuffer, retRoi);
-
-    if (retRoi == nullptr) {
-      calloc.free(retRoi);
-      calloc.free(imageBuffer);
-      return FrameProcessResult(0, DifficultyType.None, const Rectangle(0, 0, 0, 0));
-    }
-
-    FrameProcessResult result = FrameProcessResult(
-      100, // Placeholder score
-      DifficultyType.FFXI, // Placeholder difficulty
-      Rectangle<int>(
-        retRoi[0].toInt(),
-        retRoi[1].toInt(),
-        retRoi[2].toInt(),
-        retRoi[3].toInt(),
-      ),
-    );
-
-
-    calloc.free(retRoi);
-    calloc.free(imageBuffer);
-
-    return result;
   }
 
   Uint8List _convertCameraImageToBytes(CameraImage image) {
