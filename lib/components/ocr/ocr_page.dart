@@ -39,6 +39,7 @@ class _OcrPageState extends State<OcrPage> {
 
   @override
   void dispose() {
+    _controller?.stopImageStream();
     _controller?.dispose();
     _ocrProcessor.dispose();
     super.dispose();
@@ -53,7 +54,7 @@ class _OcrPageState extends State<OcrPage> {
         throw Exception('No cameras available');
       }
 
-      var controller = CameraController(
+      _controller = CameraController(
         cameras[cameraId],
         ResolutionPreset.max,
         enableAudio: false,
@@ -61,26 +62,26 @@ class _OcrPageState extends State<OcrPage> {
 
       //TODO if controller not initialized, reroute back to other page and put up a snackbar saying user is cring
 
-      await controller.initialize();
+      await _controller!.initialize();
 
-      await controller.stopImageStream();
+      await _controller!.stopImageStream();
 
-      await controller.startImageStream(_processImage);
+      await _controller!.startImageStream(_processImage);
 
 
-      print('AS: ${controller.value.aspectRatio}'
-          '   SIZE: ${controller.value.previewSize}'
-          '   ORIENTATION: ${controller.value.deviceOrientation}'
-          '   RES PRESET: ${controller.resolutionPreset}'
-          '   IMG FMT GROUP: ${controller.imageFormatGroup}'
+      print('AS: ${_controller!.value.aspectRatio}'
+          '   SIZE: ${_controller!.value.previewSize}'
+          '   ORIENTATION: ${_controller!.value.deviceOrientation}'
+          '   RES PRESET: ${_controller!.resolutionPreset}'
+          '   IMG FMT GROUP: ${_controller!.imageFormatGroup}'
           '   CAMERA SENSOR: ${cameras[cameraId].sensorOrientation}');
 
 
-      if (!mounted) return;
+      // if (!mounted) return;
 
 
       setState(() {
-        _controller = controller;
+        // _controller! = controller;
       });
 
     } on CameraException catch (e) {
