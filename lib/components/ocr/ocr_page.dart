@@ -39,7 +39,10 @@ class _OcrPageState extends State<OcrPage> {
 
   @override
   void dispose() {
-    _controller?.stopImageStream();
+    if (_controller != null) {
+      _controller?.stopImageStream();
+    }
+
     _controller?.dispose();
     _ocrProcessor.dispose();
     super.dispose();
@@ -64,10 +67,7 @@ class _OcrPageState extends State<OcrPage> {
 
       await _controller!.initialize();
 
-      await _controller!.stopImageStream();
-
       await _controller!.startImageStream(_processImage);
-
 
       print('AS: ${_controller!.value.aspectRatio}'
           '   SIZE: ${_controller!.value.previewSize}'
@@ -76,15 +76,13 @@ class _OcrPageState extends State<OcrPage> {
           '   IMG FMT GROUP: ${_controller!.imageFormatGroup}'
           '   CAMERA SENSOR: ${cameras[cameraId].sensorOrientation}');
 
-
       // if (!mounted) return;
-
 
       setState(() {
         // _controller! = controller;
       });
-
     } on CameraException catch (e) {
+      print('Error initializing camera: $e');
       setState(() {});
     } catch (e) {
       setState(() {});
@@ -92,6 +90,7 @@ class _OcrPageState extends State<OcrPage> {
   }
 
   void _processImage(CameraImage image) {
+    // print('Processing image frame...');
     _ocrProcessor.processFrame(image);
   }
 
