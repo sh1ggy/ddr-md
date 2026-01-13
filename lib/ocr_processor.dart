@@ -10,22 +10,22 @@ import 'package:ffi/ffi.dart';
 
 enum DifficultyType { None, FFXI }
 
-class FrameProcessResult {
+class ProcessImageResult {
   final int score;
   final DifficultyType difficulty;
   // TODO reconsider to using a rect that can do Floats
   final Rectangle<int> roi;
 
-  FrameProcessResult(this.score, this.difficulty, this.roi);
+  ProcessImageResult(this.score, this.difficulty, this.roi);
 }
 
-class _FrameProcessParams {
+class ProcessImageParams {
   final TransferableTypedData bytes;
   final int width;
   final int height;
   final int bytesPerPixel;
 
-  _FrameProcessParams({
+  ProcessImageParams({
     required this.bytes,
     required this.width,
     required this.height,
@@ -54,8 +54,8 @@ typedef _dart_processImage = void Function(int width, int height,
 final _processImageFn = _nativeLib
     .lookupFunction<_c_processImage, _dart_processImage>('process_image');
 
-Future<FrameProcessResult> _processFrameIsolate(
-    _FrameProcessParams params) async {
+Future<ProcessImageResult> _processFrameIsolate(
+    ProcessImageParams params) async {
   final bytes = params.bytes.materialize().asUint8List();
   // final bytes = params.bytes;
 
@@ -69,18 +69,20 @@ Future<FrameProcessResult> _processFrameIsolate(
   if (retRoi == nullptr) {
     calloc.free(retRoi);
     calloc.free(imageBuffer);
-    return FrameProcessResult(
+    return ProcessImageResult(
         0, DifficultyType.None, const Rectangle(0, 0, 0, 0));
   }
 
-  FrameProcessResult result = FrameProcessResult(
+  final rectArray = retRoi.cast<Int32>().asTypedList(4);
+
+  ProcessImageResult result = ProcessImageResult(
     100, // Placeholder score
     DifficultyType.FFXI, // Placeholder difficulty
     Rectangle<int>(
-      retRoi[0].toInt(),
-      retRoi[1].toInt(),
-      retRoi[2].toInt(),
-      retRoi[3].toInt(),
+      rectArray[0],
+      rectArray[1],
+      rectArray[2],
+      rectArray[3],
     ),
   );
 
@@ -95,7 +97,7 @@ class OCRProcessor {
 
   bool _isProcessing = false;
 
-  final streamResultController = StreamController<FrameProcessResult>();
+  final streamResultController = StreamController<ProcessImageResult>();
 
   factory OCRProcessor() {
     _instance ??= OCRProcessor._internal();
@@ -114,10 +116,9 @@ class OCRProcessor {
       final bytes = image.planes.first.bytes;
 
       // Create TransferableTypedData for zero-copy transfer (theoretically we relinquish ownership here but should be fine)
-      final transferable =
-          TransferableTypedData.fromList([bytes]);
+      final transferable = TransferableTypedData.fromList([bytes]);
 
-      final params = _FrameProcessParams(
+      final params = ProcessImageParams(
         bytes: transferable,
         // bytes: bytes,
         width: image.width,
@@ -127,7 +128,7 @@ class OCRProcessor {
 
       final result = await compute(_processFrameIsolate, params);
 
-      if (result != null) {
+      if (result != null && !streamResultController.isClosed) {
         streamResultController.add(result);
       }
     } catch (e) {
@@ -149,5 +150,6 @@ class OCRProcessor {
 
   void dispose() {
     streamResultController.close();
+    _instance = null;
   }
 }

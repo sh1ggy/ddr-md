@@ -21,7 +21,7 @@ class _OcrPageState extends State<OcrPage> {
   bool _isImageLoaded = false;
   CameraController? _controller;
   late OCRProcessor _ocrProcessor;
-  FrameProcessResult? _lastResult;
+  ProcessImageResult? _lastResult;
 
   @override
   void initState() {

@@ -78,10 +78,14 @@ extern "C"
         
         Rect randomRect(rectX, rectY, rectWidth, rectHeight);
        
+        outputRect[0] = randomRect.x;
+        outputRect[1] = randomRect.y;
+        outputRect[2] = randomRect.width;
+        outputRect[3] = randomRect.height;
 
         int evalInMillis = static_cast<int>(get_now() - start);
-        platform_log("Processing done in %dms\n", evalInMillis);
-        platform_log("Random rect: x=%d, y=%d, w=%d, h=%d\n", rectX, rectY, rectWidth, rectHeight);
+        // platform_log("Processing done in %dms\n", evalInMillis);
+        // platform_log("Random rect: x=%d, y=%d, w=%d, h=%d\n", rectX, rectY, rectWidth, rectHeight);
     }
 
     // This doesnt work but doesnt crash either,
