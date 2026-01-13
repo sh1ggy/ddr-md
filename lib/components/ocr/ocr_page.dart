@@ -19,7 +19,7 @@ String get tempPath => '${tempDir.path}/temp.jpg';
 
 class _OcrPageState extends State<OcrPage> {
   bool _isImageLoaded = false;
-  late CameraController _controller;
+  CameraController? _controller;
   late OCRProcessor _ocrProcessor;
   FrameProcessResult? _lastResult;
 
@@ -32,13 +32,14 @@ class _OcrPageState extends State<OcrPage> {
         _lastResult = result;
       });
     });
+
     getTemporaryDirectory().then((dir) => tempDir = dir);
     _initCamera();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     _ocrProcessor.dispose();
     super.dispose();
   }
@@ -75,9 +76,11 @@ class _OcrPageState extends State<OcrPage> {
 
       if (!mounted) return;
 
+
       setState(() {
         _controller = controller;
       });
+
     } on CameraException catch (e) {
       setState(() {});
     } catch (e) {
@@ -134,8 +137,8 @@ class _OcrPageState extends State<OcrPage> {
       appBar: AppBar(title: const Text("OCR Page")),
       body: Stack(
         children: <Widget>[
-          if (_controller.value.isInitialized)
-            CameraPreview(_controller)
+          if (_controller != null && _controller!.value.isInitialized)
+            CameraPreview(_controller!)
           else
             const Center(child: CircularProgressIndicator()),
           if (_lastResult != null)
