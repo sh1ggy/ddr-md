@@ -14,23 +14,25 @@
 #endif
 
 #if defined(__GNUC__)
-    // Attributes to prevent 'unused' function from being removed and to make it visible
-    #define FUNCTION_ATTRIBUTE __attribute__((visibility("default"))) __attribute__((used))
+// Attributes to prevent 'unused' function from being removed and to make it visible
+#define FUNCTION_ATTRIBUTE __attribute__((visibility("default"))) __attribute__((used))
 #elif defined(_MSC_VER)
-    // Marking a function for export
-    #define FUNCTION_ATTRIBUTE __declspec(dllexport)
+// Marking a function for export
+#define FUNCTION_ATTRIBUTE __declspec(dllexport)
 #endif
 
 using namespace cv;
 using namespace std;
 
-long long int get_now() {
+long long int get_now()
+{
     return chrono::duration_cast<std::chrono::milliseconds>(
-            chrono::system_clock::now().time_since_epoch()
-    ).count();
+               chrono::system_clock::now().time_since_epoch())
+        .count();
 }
 
-void platform_log(const char *fmt, ...) {
+void platform_log(const char *fmt, ...)
+{
     va_list args;
     va_start(args, fmt);
 #ifdef __ANDROID__
@@ -48,31 +50,78 @@ void platform_log(const char *fmt, ...) {
 }
 
 // Avoiding name mangling
-extern "C" {
+extern "C"
+{
     FUNCTION_ATTRIBUTE
-    const char* version() {
+    const char *version()
+    {
         return CV_VERSION;
     }
 
     FUNCTION_ATTRIBUTE
-    void process_image(char* inputImagePath, char* outputImagePath) {
+    void process_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
+                       uint8_t *imageBuffer, int32_t *outputRect)
+    {
         long long start = get_now();
-        
-        Mat input = imread(inputImagePath, IMREAD_GRAYSCALE);
-        Mat threshed, withContours;
 
-        vector<vector<Point>> contours;
-        vector<Vec4i> hierarchy;
+        // Mat input = imread(inputImagePath, IMREAD_GRAYSCALE);
+        // Mat threshed, withContours;
+
+        // vector<vector<Point>> contours;
+        // vector<Vec4i> hierarchy;
+
+        // Generate random rectangle within image bounds
+        int rectWidth = 50 + rand() % (imgWidth / 2);
+        int rectHeight = 50 + rand() % (imgHeight / 2);
+        int rectX = rand() % (imgWidth - rectWidth);
+        int rectY = rand() % (imgHeight - rectHeight);
         
-        adaptiveThreshold(input, threshed, 255, ADAPTIVE_THRESH_GAUSSIAN_C, THRESH_BINARY_INV, 77, 6);
-        findContours(threshed, contours, hierarchy, RETR_TREE, CHAIN_APPROX_TC89_L1);
-        
-        cvtColor(threshed, withContours, COLOR_GRAY2BGR);
-        drawContours(withContours, contours, -1, Scalar(0, 255, 0), 4);
-        
-        imwrite(outputImagePath, withContours);
-        
+        Rect randomRect(rectX, rectY, rectWidth, rectHeight);
+       
+
         int evalInMillis = static_cast<int>(get_now() - start);
         platform_log("Processing done in %dms\n", evalInMillis);
+        platform_log("Random rect: x=%d, y=%d, w=%d, h=%d\n", rectX, rectY, rectWidth, rectHeight);
+    }
+
+    // This doesnt work but doesnt crash either,
+    // global cap.cpp:480 open VIDEOIO(ANDROID_NATIVE): backend is
+    //  generally available but can't be used to capture by index
+    FUNCTION_ATTRIBUTE
+    void camera_snapshot(char *outputImagePath)
+    {
+        long long start = get_now();
+
+        string buildInfo = cv::getBuildInformation();
+        platform_log("OpenCV Build Information:\n%s\n", buildInfo.c_str());
+
+        VideoCapture cap(0);
+
+        cap.open(0, cv::CAP_ANDROID);
+
+        if (!cap.isOpened())
+        {
+            platform_log("Cannot open camera\n");
+            return;
+        }
+
+        Mat frame;
+        cap >> frame;
+
+        if (frame.empty())
+        {
+            platform_log("Cannot capture frame\n");
+            return;
+        }
+
+        Mat gray;
+        cvtColor(frame, gray, COLOR_BGR2GRAY);
+
+        imwrite(outputImagePath, gray);
+
+        int evalInMillis = static_cast<int>(get_now() - start);
+        platform_log("Picture taken and processed!\n");
+        platform_log("Size: %dx%d\n", frame.cols, frame.rows);
+        platform_log("Camera snapshot done in %dms\n", evalInMillis);
     }
 }

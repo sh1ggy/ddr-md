@@ -20,6 +20,8 @@ dependencies:
   ffi: ^2.1.5
   native_opencv:
     path: native_opencv
+  path_provider: ^2.1.5
+  camera: ^0.11.3
 
 dev_dependencies:
   flutter_test:

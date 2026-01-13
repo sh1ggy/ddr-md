@@ -8,10 +8,14 @@ typedef _CProcessImageFunc = ffi.Void Function(
   ffi.Pointer<Utf8>,
   ffi.Pointer<Utf8>,
 );
+typedef _CCameraSnapshotFunc = ffi.Void Function(
+  ffi.Pointer<Utf8>,
+);
 
 // Dart function signatures
 typedef _VersionFunc = ffi.Pointer<Utf8> Function();
 typedef _ProcessImageFunc = void Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _CameraSnapshotFunc = void Function(ffi.Pointer<Utf8>);
 
 // Getting a library that holds needed symbols
 ffi.DynamicLibrary _openDynamicLibrary() {
@@ -30,6 +34,9 @@ final _VersionFunc _version =
 final _ProcessImageFunc _processImage = _lib
     .lookup<ffi.NativeFunction<_CProcessImageFunc>>('process_image')
     .asFunction();
+final _CameraSnapshotFunc _cameraSnapshot = _lib
+    .lookup<ffi.NativeFunction<_CCameraSnapshotFunc>>('camera_snapshot')
+    .asFunction();
 
 String opencvVersion() {
   return _version().toDartString();
@@ -37,6 +44,10 @@ String opencvVersion() {
 
 void processImage(ProcessImageArguments args) {
   _processImage(args.inputPath.toNativeUtf8(), args.outputPath.toNativeUtf8());
+}
+
+void cameraSnapshot(String outputPath) {
+  _cameraSnapshot(outputPath.toNativeUtf8());
 }
 
 class ProcessImageArguments {
