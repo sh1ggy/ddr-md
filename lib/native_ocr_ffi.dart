@@ -1,41 +1,42 @@
-import 'dart:ffi' as ffi;
+import 'dart:ffi';
 import 'dart:io';
+
 import 'package:ffi/ffi.dart';
 
 // C function signatures
-typedef _CVersionFunc = ffi.Pointer<Utf8> Function();
-typedef _CProcessImageFunc = ffi.Void Function(
-  ffi.Pointer<Utf8>,
-  ffi.Pointer<Utf8>,
+typedef _CVersionFunc = Pointer<Utf8> Function();
+typedef _CProcessImageFunc = Void Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
 );
-typedef _CCameraSnapshotFunc = ffi.Void Function(
-  ffi.Pointer<Utf8>,
+typedef _CCameraSnapshotFunc = Void Function(
+  Pointer<Utf8>,
 );
 
 // Dart function signatures
-typedef _VersionFunc = ffi.Pointer<Utf8> Function();
-typedef _ProcessImageFunc = void Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
-typedef _CameraSnapshotFunc = void Function(ffi.Pointer<Utf8>);
+typedef _VersionFunc = Pointer<Utf8> Function();
+typedef _ProcessImageFunc = void Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _CameraSnapshotFunc = void Function(Pointer<Utf8>);
 
 // Getting a library that holds needed symbols
-ffi.DynamicLibrary _openDynamicLibrary() {
+DynamicLibrary _openDynamicLibrary() {
   if (Platform.isAndroid) {
-    return ffi.DynamicLibrary.open('libnative_opencv.so');
+    return DynamicLibrary.open('libnative_opencv.so');
   }
 
-  return ffi.DynamicLibrary.process();
+  return DynamicLibrary.process();
 }
 
-ffi.DynamicLibrary _lib = _openDynamicLibrary();
+DynamicLibrary _lib = _openDynamicLibrary();
 
 // Looking for the functions
 final _VersionFunc _version =
-    _lib.lookup<ffi.NativeFunction<_CVersionFunc>>('version').asFunction();
+    _lib.lookup<NativeFunction<_CVersionFunc>>('version').asFunction();
 final _ProcessImageFunc _processImage = _lib
-    .lookup<ffi.NativeFunction<_CProcessImageFunc>>('process_image')
+    .lookup<NativeFunction<_CProcessImageFunc>>('process_image')
     .asFunction();
 final _CameraSnapshotFunc _cameraSnapshot = _lib
-    .lookup<ffi.NativeFunction<_CCameraSnapshotFunc>>('camera_snapshot')
+    .lookup<NativeFunction<_CCameraSnapshotFunc>>('camera_snapshot')
     .asFunction();
 
 String opencvVersion() {

@@ -61,10 +61,12 @@ class _OcrPageState extends State<OcrPage> {
 
       //TODO if controller not initialized, reroute back to other page and put up a snackbar saying user is cring
 
+      await controller.initialize();
+
       await controller.stopImageStream();
+
       await controller.startImageStream(_processImage);
 
-      await controller.initialize();
 
       print('AS: ${controller.value.aspectRatio}'
           '   SIZE: ${controller.value.previewSize}'
