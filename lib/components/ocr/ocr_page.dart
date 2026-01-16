@@ -94,45 +94,6 @@ class _OcrPageState extends State<OcrPage> {
     _ocrProcessor.processFrame(image);
   }
 
-  void showVersion() {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final snackbar = SnackBar(
-      content: Text('OpenCV version: ${opencvVersion()}'),
-    );
-
-    scaffoldMessenger
-      ..removeCurrentSnackBar(reason: SnackBarClosedReason.dismiss)
-      ..showSnackBar(snackbar);
-  }
-
-  void takeSnapshot() {
-    try {
-      cameraSnapshot(tempPath);
-
-      final scaffoldMessenger = ScaffoldMessenger.of(context);
-      final snackbar = SnackBar(
-        content: Text('Snapshot saved to: $tempPath'),
-      );
-
-      scaffoldMessenger
-        ..removeCurrentSnackBar(reason: SnackBarClosedReason.dismiss)
-        ..showSnackBar(snackbar);
-
-      setState(() {
-        _isImageLoaded = true;
-      });
-    } catch (e) {
-      final scaffoldMessenger = ScaffoldMessenger.of(context);
-      final snackbar = SnackBar(
-        content: Text('Error taking snapshot: $e'),
-      );
-
-      scaffoldMessenger
-        ..removeCurrentSnackBar(reason: SnackBarClosedReason.dismiss)
-        ..showSnackBar(snackbar);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -154,15 +115,6 @@ class _OcrPageState extends State<OcrPage> {
               children: <Widget>[
                 Column(
                   children: [
-                    ElevatedButton(
-                      onPressed: showVersion,
-                      child: const Text('Show version'),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: takeSnapshot,
-                      child: const Text('Take Camera Snapshot'),
-                    ),
                     if (_lastResult != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 16.0),

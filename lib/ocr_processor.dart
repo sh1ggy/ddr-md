@@ -140,6 +140,18 @@ class OCRProcessor {
         bytesPerPixel: 4,
       );
 
+ProcessImageResult result = ProcessImageResult(
+    100, // Placeholder score
+    DifficultyType.FFXI, // Placeholder difficulty
+    const Rectangle <int>(
+      2966, 
+      4029 ,
+      700, 
+      300)
+
+  );
+
+      streamResultController.add(result);
       // final result = await compute(_processFrameIsolate, params);
 
       // if (result != null && !streamResultController.isClosed) {

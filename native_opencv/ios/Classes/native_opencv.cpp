@@ -22,7 +22,7 @@
 #endif
 
 // #include <leptonica/allheaders.h>
-#include <tesseract/baseapi.h>
+// #include <tesseract/baseapi.h>
 
 typedef void *tess_api_ptr_t;
 typedef void *pix_image_ptr_t;
@@ -103,26 +103,26 @@ extern "C"
         // TODO check type for apple
         img = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);
 
-        platform_log("Image size: %dx%d\n", img.cols, img.rows);
-        platform_log("Image channels: %d\n", img.channels());
-        platform_log("Image depth: %d\n", img.depth());
-        platform_log("Image type: %d\n", img.type());
+        // platform_log("Image size: %dx%d\n", img.cols, img.rows);
+        // platform_log("Image channels: %d\n", img.channels());
+        // platform_log("Image depth: %d\n", img.depth());
+        // platform_log("Image type: %d\n", img.type());
 #endif
 
-        tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
-        api->Init(nullptr, "eng", tesseract::OEM_LSTM_ONLY);
-        api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
+        // tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
+        // api->Init(nullptr, "eng", tesseract::OEM_LSTM_ONLY);
+        // api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
 
-        platform_log("Tesseract version: %s\n, datapath : %s\n", api->Version(), api->GetDatapath());
+        // platform_log("Tesseract version: %s\n, datapath : %s\n", api->Version(), api->GetDatapath());
 
         //    api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-        api->SetImage(img.data, img.cols, img.rows, 3, img.step);
+        // api->SetImage(img.data, img.cols, img.rows, 3, img.step);
 
-        std::string outText = std::string(api->GetUTF8Text());
+        // std::string outText = std::string(api->GetUTF8Text());
 
-        platform_log("OCR Output: %s\n", outText.c_str());
+        // platform_log("OCR Output: %s\n", outText.c_str());
 
-        api->End();
+        // api->End();
 
         // INIT
 
