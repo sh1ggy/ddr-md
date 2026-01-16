@@ -21,6 +21,26 @@
 #define FUNCTION_ATTRIBUTE __declspec(dllexport)
 #endif
 
+// #include <leptonica/allheaders.h>
+#include <tesseract/baseapi.h>
+
+typedef void *tess_api_ptr_t;
+typedef void *pix_image_ptr_t;
+
+struct bounding_box
+{
+    int x1, y1, x2, y2;
+    char *word;
+    float confidence;
+    int block_num, par_num, line_num, word_num;
+};
+
+struct bounding_boxes
+{
+    int length;
+    struct bounding_box *boxes;
+};
+
 using namespace cv;
 using namespace std;
 
@@ -77,26 +97,21 @@ extern "C"
         frame = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);
 #endif
 
-        // Mat input = imread(inputImagePath, IMREAD_GRAYSCALE);
-        // Mat threshed, withContours;
+        tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
+        api->Init(nullptr, "eng", tesseract::OEM_LSTM_ONLY);
+        api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
 
-        // vector<vector<Point>> contours;
-        // vector<Vec4i> hierarchy;
+        platform_log("Tesseract version: %s\n, datapath : %s\n", api->Version(), api->GetDatapath());
 
-        // Generate random rectangle within image bounds
-        // int rectWidth = 50 + rand() % (imgWidth / 2);
-        // int rectHeight = 50 + rand() % (imgHeight / 2);
-        // int rectX = rand() % (imgWidth - rectWidth);
-        // int rectY = rand() % (imgHeight - rectHeight);
+        //    api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+        api->SetImage(frame.data, frame.cols, frame.rows, 3, frame.step);
 
-        // Rect randomRect(rectX, rectY, rectWidth, rectHeight);
+        std::string outText = std::string(api->GetUTF8Text());
 
-        // outputRect[0] = randomRect.x;
-        // outputRect[1] = randomRect.y;
-        // outputRect[2] = randomRect.width;
-        // outputRect[3] = randomRect.height;
+        platform_log("OCR Output: %s\n", outText.c_str());
 
-        // int evalInMillis = static_cast<int>(get_now() - start);
+        api->End();
+
 
         // INIT
 
@@ -227,7 +242,7 @@ extern "C"
         Mat BW3_ocr;
         bitwise_not(BW2_ocr, BW3_ocr);
 
-        // GOOTTTAAA GOOO 
+        // GOOTTTAAA GOOO
         outputRect[0] = ocr_roi[0].x;
         outputRect[1] = ocr_roi[0].y;
         outputRect[2] = ocr_roi[0].width;

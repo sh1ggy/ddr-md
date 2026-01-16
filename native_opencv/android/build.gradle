@@ -16,6 +16,9 @@ rootProject.allprojects {
     repositories {
         google()
         jcenter()
+        maven {
+            url = uri("https://jitpack.io")
+        }
     }
 }
 
@@ -51,4 +54,7 @@ android {
     }
 }
 
-dependencies {}
+dependencies {
+    // To use Standard variant:
+    implementation 'cz.adaptech.tesseract4android:tesseract4android:4.9.0'
+}
