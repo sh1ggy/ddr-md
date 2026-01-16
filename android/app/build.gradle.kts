@@ -37,6 +37,44 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+ // Handle duplicate native libraries
+    packaging {
+        jniLibs {
+            pickFirsts.add("lib/arm64-v8a/libjpeg.so")
+            pickFirsts.add("lib/arm64-v8a/libpng.so")
+            pickFirsts.add("lib/arm64-v8a/libpngx.so")
+            pickFirsts.add("lib/arm64-v8a/liblept.so")
+            pickFirsts.add("lib/arm64-v8a/libleptonica.so")
+            pickFirsts.add("lib/arm64-v8a/libtesseract.so")
+            pickFirsts.add("lib/arm64-v8a/libc++_shared.so")
+            
+            pickFirsts.add("lib/armeabi-v7a/libjpeg.so")
+            pickFirsts.add("lib/armeabi-v7a/libpng.so")
+            pickFirsts.add("lib/armeabi-v7a/libpngx.so")
+            pickFirsts.add("lib/armeabi-v7a/liblept.so")
+            pickFirsts.add("lib/armeabi-v7a/libleptonica.so")
+            pickFirsts.add("lib/armeabi-v7a/libtesseract.so")
+            pickFirsts.add("lib/armeabi-v7a/libc++_shared.so")
+            
+            pickFirsts.add("lib/x86/libjpeg.so")
+            pickFirsts.add("lib/x86/libpng.so")
+            pickFirsts.add("lib/x86/libpngx.so")
+            pickFirsts.add("lib/x86/liblept.so")
+            pickFirsts.add("lib/x86/libleptonica.so")
+            pickFirsts.add("lib/x86/libtesseract.so")
+            pickFirsts.add("lib/x86/libc++_shared.so")
+            
+            pickFirsts.add("lib/x86_64/libjpeg.so")
+            pickFirsts.add("lib/x86_64/libpng.so")
+            pickFirsts.add("lib/x86_64/libpngx.so")
+            pickFirsts.add("lib/x86_64/liblept.so")
+            pickFirsts.add("lib/x86_64/libleptonica.so")
+            pickFirsts.add("lib/x86_64/libtesseract.so")
+            pickFirsts.add("lib/x86_64/libc++_shared.so")
+        }
+    }
+
 }
 
 flutter {

@@ -55,6 +55,4 @@ android {
 }
 
 dependencies {
-    // To use Standard variant:
-    implementation 'cz.adaptech.tesseract4android:tesseract4android:4.9.0'
 }

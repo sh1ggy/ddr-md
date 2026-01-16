@@ -20,7 +20,11 @@ class ProcessImageResult {
 }
 
 class ProcessImageParams {
+  // TODO This has to be multiple buffers transfered over
   final TransferableTypedData bytes;
+  // final TransferableTypedData bytes;
+  // final TransferableTypedData bytes;
+
   final int width;
   final int height;
   final int bytesPerPixel;
@@ -112,6 +116,16 @@ class OCRProcessor {
     _isProcessing = true;
 
     try {
+      Pointer<Uint8>? _imageBuffer;
+      if (image.format.group == ImageFormatGroup.yuv420) {
+        // On Android the image format is YUV and we get a buffer per channel,
+        // in iOS the format is BGRA and we get a single buffer for all channels.
+        // So the yBuffer variable on Android will be just the Y channel but on iOS it will be
+        // the entire image
+        var planes = image.planes;
+        var yBuffer = planes[0].bytes;
+      }
+
       // Convert CameraImage to Uint8List
       final bytes = image.planes.first.bytes;
 
@@ -126,26 +140,16 @@ class OCRProcessor {
         bytesPerPixel: 4,
       );
 
-      final result = await compute(_processFrameIsolate, params);
+      // final result = await compute(_processFrameIsolate, params);
 
-      if (result != null && !streamResultController.isClosed) {
-        streamResultController.add(result);
-      }
+      // if (result != null && !streamResultController.isClosed) {
+      //   streamResultController.add(result);
+      // }
     } catch (e) {
       print('Error processing frame: $e');
     } finally {
       _isProcessing = false;
     }
-  }
-
-  Uint8List _convertCameraImageToBytes(CameraImage image) {
-    final bytes = <int>[];
-
-    for (final plane in image.planes) {
-      bytes.addAll(plane.bytes);
-    }
-
-    return Uint8List.fromList(bytes);
   }
 
   void dispose() {
