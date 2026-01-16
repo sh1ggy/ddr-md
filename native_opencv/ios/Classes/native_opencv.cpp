@@ -86,15 +86,27 @@ extern "C"
                        uint8_t *imageBuffer, int32_t *outputRect)
     {
         long long start = get_now();
-        Mat img(imgHeight, imgWidth, (bytesPerPixel == 4) ? CV_8UC4 : CV_8UC3, imageBuffer);
 
-        Mat frame;
+        Mat img;
 
 #ifdef __ANDROID__
-        Mat myyuv(imgHeight + imgHeight / 2, imgWidth, CV_8UC4, imageBuffer);
-        cvtColor(myyuv, frame, COLOR_YUV2BGRA_NV21);
+
+        // yuv is weird, see https://www.youtube.com/watch?v=q_mhF_Ys6nw
+        Mat frame(imgHeight + imgHeight/2 , imgWidth, CV_8UC1, imageBuffer);
+        platform_log("Image size: %dx%d\n", img.cols, img.rows);
+        platform_log("Image channels: %d\n", img.channels());
+        platform_log("Image depth: %d\n", img.depth());
+        platform_log("Image type: %d\n", img.type());
+
+        cvtColor(frame, img, COLOR_YUV2RGB);
 #else
-        frame = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);
+        // TODO check type for apple
+        img = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);
+
+        platform_log("Image size: %dx%d\n", img.cols, img.rows);
+        platform_log("Image channels: %d\n", img.channels());
+        platform_log("Image depth: %d\n", img.depth());
+        platform_log("Image type: %d\n", img.type());
 #endif
 
         tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
@@ -104,14 +116,13 @@ extern "C"
         platform_log("Tesseract version: %s\n, datapath : %s\n", api->Version(), api->GetDatapath());
 
         //    api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-        api->SetImage(frame.data, frame.cols, frame.rows, 3, frame.step);
+        api->SetImage(img.data, img.cols, img.rows, 3, img.step);
 
         std::string outText = std::string(api->GetUTF8Text());
 
         platform_log("OCR Output: %s\n", outText.c_str());
 
         api->End();
-
 
         // INIT
 
