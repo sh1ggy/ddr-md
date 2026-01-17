@@ -26,6 +26,8 @@ class _OcrPageState extends State<OcrPage> {
   int _processedFrames = 0;
   double lastTimeProcessed = 0.0;
 
+  CameraImage? _lastFrame;
+
   @override
   void initState() {
     super.initState();
@@ -96,10 +98,63 @@ class _OcrPageState extends State<OcrPage> {
     }
   }
 
+  void _requestDump() async {
+    if (_lastFrame == null) {
+      print('No frame to dump.');
+      return;
+    }
+    var image = _lastFrame!;
+
+    final dir = await getExternalStorageDirectory();
+
+    // Write Y plane
+    final yFile = File('${dir!.path}/yuv_y_plane.raw');
+    await yFile.writeAsBytes(image.planes[0].bytes);
+
+    // Write U plane
+    final uFile = File('${dir.path}/yuv_u_plane.raw');
+    await uFile.writeAsBytes(image.planes[1].bytes);
+
+    // Write V plane
+    final vFile = File('${dir.path}/yuv_v_plane.raw');
+    await vFile.writeAsBytes(image.planes[2].bytes);
+
+    // Write metadata
+    final metaFile = File('${dir.path}/yuv_metadata.txt');
+    await metaFile.writeAsString('''
+Width: ${image.width}
+Height: ${image.height}
+Y size: ${image.planes[0].bytes.length}
+U size: ${image.planes[1].bytes.length}
+V size: ${image.planes[2].bytes.length}
+Format: ${image.format.group}
+    ''');
+
+    print('Dumped YUV data to ${dir.path}');
+  }
+
+// TODO actually handle this to stop debug from breaking
+
+//   @override
+// void didChangeAppLifecycleState(AppLifecycleState state) {
+//   final CameraController? cameraController = controller;
+
+//   // App state changed before we got the chance to initialize.
+//   if (cameraController == null || !cameraController.value.isInitialized) {
+//     return;
+//   }
+
+//   if (state == AppLifecycleState.inactive) {
+//     cameraController.dispose();
+//   } else if (state == AppLifecycleState.resumed) {
+//     _initializeCameraController(cameraController.description);
+//   }
+// }
 
   void _processImage(CameraImage image) {
     // print('Processing image frame...');
     _ocrProcessor.processFrame(image);
+    _lastFrame = image;
   }
 
   @override
@@ -136,6 +191,25 @@ class _OcrPageState extends State<OcrPage> {
                   ],
                 )
               ],
+            ),
+          ),
+
+          // Dump button
+          Positioned(
+            bottom: 80,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: ElevatedButton.icon(
+                onPressed: _requestDump,
+                icon: Icon(Icons.save),
+                label: Text('Dump YUV Frame'),
+                style: ElevatedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  backgroundColor: Colors.blue,
+                ),
+              ),
             ),
           ),
         ],

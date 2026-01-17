@@ -93,12 +93,19 @@ extern "C"
 
         // yuv is weird, see https://www.youtube.com/watch?v=q_mhF_Ys6nw
         Mat frame(imgHeight + imgHeight/2 , imgWidth, CV_8UC1, imageBuffer);
+        platform_log("frame size: %dx%d\n", frame.cols, frame.rows);
+        platform_log("frame channels: %d\n", frame.channels());
+        platform_log("frame depth: %d\n", frame.depth());
+        platform_log("frame type: %d\n", frame.type());
+
+        
+        // cvtColor(frame, img, COLOR_YUV2RGB);
+        cvtColor(frame, img, COLOR_YUV2BGR_NV21);
+
         platform_log("Image size: %dx%d\n", img.cols, img.rows);
         platform_log("Image channels: %d\n", img.channels());
         platform_log("Image depth: %d\n", img.depth());
         platform_log("Image type: %d\n", img.type());
-
-        cvtColor(frame, img, COLOR_YUV2RGB);
 #else
         // TODO check type for apple
         img = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);

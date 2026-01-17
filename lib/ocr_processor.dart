@@ -78,7 +78,8 @@ Future<ProcessImageResult> _processFrameIsolate(
   // final bytes = params.bytes;
 
   Pointer<Uint8> imageBuffer = calloc<Uint8>(bytes.length);
-  imageBuffer.asTypedList(bytes.length).setAll(0, bytes);
+  var uintImgBuffer = imageBuffer.asTypedList(bytes.length);
+  uintImgBuffer.setAll(0, bytes);
 
   Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
   _processImageFn(
@@ -139,9 +140,12 @@ void isolateEntryPoint(InitialRequest initReq) {
                 vBuffer.lengthInBytes;
             bytes = Uint8List(totalSize);
             bytes.setAll(0, yBuffer);
-            bytes.setAll(yBuffer.lengthInBytes, uBuffer);
+            //Swap the u and v buffers since thats what opencv wants for some reason 
+            //(flutter opencv stream processing says so)
+
+            bytes.setAll(yBuffer.lengthInBytes, vBuffer);
             bytes.setAll(
-                yBuffer.lengthInBytes + uBuffer.lengthInBytes, vBuffer);
+                yBuffer.lengthInBytes + vBuffer.lengthInBytes, uBuffer);
           } else {
             bytes = image.planes.first.bytes;
           }
