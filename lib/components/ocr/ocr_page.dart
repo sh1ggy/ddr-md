@@ -23,6 +23,9 @@ class _OcrPageState extends State<OcrPage> {
   late OCRProcessor _ocrProcessor;
   ProcessImageResult? _lastResult;
 
+  int _processedFrames = 0;
+  double lastTimeProcessed = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -40,7 +43,9 @@ class _OcrPageState extends State<OcrPage> {
   @override
   void dispose() {
     if (_controller != null) {
-      _controller?.stopImageStream();
+      if (_controller!.value.isStreamingImages) {
+        _controller?.stopImageStream();
+      }
     }
 
     _controller?.dispose();
@@ -50,6 +55,8 @@ class _OcrPageState extends State<OcrPage> {
 
   Future<void> _initCamera() async {
     try {
+      await _ocrProcessor.init();
+
       final cameras = await availableCameras();
       var cameraId = 0;
 
@@ -88,6 +95,7 @@ class _OcrPageState extends State<OcrPage> {
       setState(() {});
     }
   }
+
 
   void _processImage(CameraImage image) {
     // print('Processing image frame...');

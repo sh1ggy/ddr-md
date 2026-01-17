@@ -19,22 +19,36 @@ class ProcessImageResult {
   ProcessImageResult(this.score, this.difficulty, this.roi);
 }
 
-class ProcessImageParams {
+//TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
+class ProcessImageRequestParams {
   // TODO This has to be multiple buffers transfered over
   final TransferableTypedData bytes;
-  // final TransferableTypedData bytes;
-  // final TransferableTypedData bytes;
-
   final int width;
   final int height;
   final int bytesPerPixel;
 
-  ProcessImageParams({
+  ProcessImageRequestParams({
     required this.bytes,
     required this.width,
     required this.height,
     required this.bytesPerPixel,
   });
+}
+
+enum ReqeustType { ProcessImage, Shutdown }
+
+class Request {
+  final ReqeustType type;
+  // final ProcessImageRequestParams? params;
+  final CameraImage? params;
+
+  Request(this.type, this.params);
+}
+
+class InitialRequest {
+  final SendPort toMainThread;
+
+  InitialRequest(this.toMainThread);
 }
 
 final DynamicLibrary _nativeLib = _openDynamicLibrary();
@@ -59,7 +73,7 @@ final _processImageFn = _nativeLib
     .lookupFunction<_c_processImage, _dart_processImage>('process_image');
 
 Future<ProcessImageResult> _processFrameIsolate(
-    ProcessImageParams params) async {
+    ProcessImageRequestParams params) async {
   final bytes = params.bytes.materialize().asUint8List();
   // final bytes = params.bytes;
 
@@ -96,75 +110,155 @@ Future<ProcessImageResult> _processFrameIsolate(
   return result;
 }
 
+void isolateEntryPoint(InitialRequest initReq) {
+  // Save the port on which we will send messages to the main thread
+  SendPort _toMainThread = initReq.toMainThread;
+
+  // Create a port on which the main thread can send us messages and listen to it
+  ReceivePort fromMainThread = ReceivePort();
+  fromMainThread.listen((data) {
+    if (data is Request) {
+      switch (data.type) {
+        case ReqeustType.ProcessImage:
+          ProcessImageResult? res;
+
+          var image = data.params!;
+          Uint8List bytes;
+
+          if (image.format.group == ImageFormatGroup.yuv420) {
+            // On Android the image format is YUV and we get a buffer per channel,
+            // in iOS the format is BGRA and we get a single buffer for all channels.
+            // So the yBuffer variable on Android will be just the Y channel but on iOS it will be
+            // the entire image
+            var planes = image.planes;
+            var yBuffer = planes[0].bytes;
+            var uBuffer = planes[1].bytes;
+            var vBuffer = planes[2].bytes;
+            int totalSize = yBuffer.lengthInBytes +
+                uBuffer.lengthInBytes +
+                vBuffer.lengthInBytes;
+            bytes = Uint8List(totalSize);
+            bytes.setAll(0, yBuffer);
+            bytes.setAll(yBuffer.lengthInBytes, uBuffer);
+            bytes.setAll(
+                yBuffer.lengthInBytes + uBuffer.lengthInBytes, vBuffer);
+          } else {
+            bytes = image.planes.first.bytes;
+          }
+
+          // Create TransferableTypedData for zero-copy transfer (theoretically we relinquish ownership here but should be fine)
+          final transferable = TransferableTypedData.fromList([bytes]);
+
+          final params = ProcessImageRequestParams(
+            bytes: transferable,
+            width: image.width,
+            height: image.height,
+            bytesPerPixel: 4,
+          );
+
+          _processFrameIsolate(params).then((result) {
+            res = result;
+            // Send the result back to the main thread
+            _toMainThread.send(res);
+          });
+          break;
+
+        case ReqeustType.Shutdown:
+          // Clean up and exit
+          fromMainThread.close();
+          Isolate.exit();
+          break;
+        default:
+          print('Unknown method: ${data.type.name}');
+      }
+    }
+  });
+
+  // Send the main thread the port on which it can send us messages
+  _toMainThread.send(fromMainThread.sendPort);
+}
+
 class OCRProcessor {
   static OCRProcessor? _instance;
 
-  bool _isProcessing = false;
-
   final streamResultController = StreamController<ProcessImageResult>();
-
   factory OCRProcessor() {
     _instance ??= OCRProcessor._internal();
     return _instance!;
   }
 
+  bool _isProcessing = false;
+  ReceivePort fromIsolate = ReceivePort();
+  SendPort? toIsolate;
+  Isolate? _isolate;
+
   OCRProcessor._internal() {}
 
-  Future<void> processFrame(CameraImage image) async {
-    // Pointer<Uint8> ptr = image.planes.first.bytes.address.address;
-    if (_isProcessing) return;
+  Future<void> init() {
+    Completer<void> completer = Completer<void>();
+
+    // Start the isolate
+    Isolate.spawn(isolateEntryPoint, InitialRequest(fromIsolate.sendPort))
+        .then((isolate) {
+      _isolate = isolate;
+      // Wait for the isolate to send us its port
+      fromIsolate.listen((data) {
+        if (data is SendPort) {
+          // We have received the SendPort from the isolate
+          toIsolate = data;
+          completer.complete();
+        } else if (data is ProcessImageResult) {
+          // We have received a result from the isolate
+          _isProcessing = false;
+          streamResultController.add(data);
+        }
+      });
+    });
+
+    return completer.future;
+  }
+
+  int MAX_SKIPPED_FRAMES = 20;
+
+  int _cameraFrames = 0;
+  int skippedFrames = 0;
+
+  void panicFromNotProcessing() {
+    _isProcessing = false;
+    skippedFrames = 0;
+    print('Panic reset of OCR processing state invoked.');
+    dispose();
+  }
+
+  void processFrame(CameraImage image) async {
+    _cameraFrames++;
+    if (_cameraFrames % 10 != 0) {
+      return;
+    }
+
+    if (_isProcessing) {
+      skippedFrames++;
+      if (skippedFrames > MAX_SKIPPED_FRAMES) {
+        // panicFromNotProcessing();
+      }
+      return;
+    }
+
+    print('Processing image frame... Camera frame #: $_cameraFrames');
+
+    final request = Request(ReqeustType.ProcessImage, image);
     _isProcessing = true;
 
-    try {
-      Pointer<Uint8>? _imageBuffer;
-      if (image.format.group == ImageFormatGroup.yuv420) {
-        // On Android the image format is YUV and we get a buffer per channel,
-        // in iOS the format is BGRA and we get a single buffer for all channels.
-        // So the yBuffer variable on Android will be just the Y channel but on iOS it will be
-        // the entire image
-        var planes = image.planes;
-        var yBuffer = planes[0].bytes;
-      }
-
-      // Convert CameraImage to Uint8List
-      final bytes = image.planes.first.bytes;
-
-      // Create TransferableTypedData for zero-copy transfer (theoretically we relinquish ownership here but should be fine)
-      final transferable = TransferableTypedData.fromList([bytes]);
-
-      final params = ProcessImageParams(
-        bytes: transferable,
-        // bytes: bytes,
-        width: image.width,
-        height: image.height,
-        bytesPerPixel: 4,
-      );
-
-ProcessImageResult result = ProcessImageResult(
-    100, // Placeholder score
-    DifficultyType.FFXI, // Placeholder difficulty
-    const Rectangle <int>(
-      2966, 
-      4029 ,
-      700, 
-      300)
-
-  );
-
-      streamResultController.add(result);
-      // final result = await compute(_processFrameIsolate, params);
-
-      // if (result != null && !streamResultController.isClosed) {
-      //   streamResultController.add(result);
-      // }
-    } catch (e) {
-      print('Error processing frame: $e');
-    } finally {
-      _isProcessing = false;
-    }
+    toIsolate?.send(request);
   }
 
   void dispose() {
+    final request = Request(ReqeustType.Shutdown, null);
+    fromIsolate.sendPort.send(request);
+    fromIsolate.close();
+
+    _isolate?.kill(priority: Isolate.immediate);
+
     streamResultController.close();
     _instance = null;
   }
