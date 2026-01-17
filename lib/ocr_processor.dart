@@ -15,8 +15,9 @@ class ProcessImageResult {
   final DifficultyType difficulty;
   // TODO reconsider to using a rect that can do Floats
   final Rectangle<int> roi;
+  final bool isDetected;
 
-  ProcessImageResult(this.score, this.difficulty, this.roi);
+  ProcessImageResult(this.score, this.difficulty, this.roi, this.isDetected);
 }
 
 //TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
@@ -62,11 +63,11 @@ DynamicLibrary _openDynamicLibrary() {
 
 // C Functions signatures
 typedef _c_processImage = Void Function(Int32 width, Int32 height,
-    Int32 bytesPerPixel, Pointer<Uint8> imageBytes, Pointer<Int32> outRoi);
+    Int32 bytesPerPixel, Pointer<Uint8> imageBytes, Pointer<Int32> outRoi, Pointer<Int32> outIsDetected);
 
 // Dart functions signatures
 typedef _dart_processImage = void Function(int width, int height,
-    int bytesPerPixel, Pointer<Uint8> bytes, Pointer<Int32> outRoi);
+    int bytesPerPixel, Pointer<Uint8> bytes, Pointer<Int32> outRoi, Pointer<Int32> outIsDetected);
 
 // Create dart functions that invoke the C funcion
 final _processImageFn = _nativeLib
@@ -82,14 +83,17 @@ Future<ProcessImageResult> _processFrameIsolate(
   uintImgBuffer.setAll(0, bytes);
 
   Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
+  Pointer<Int32> retIsDetected = calloc.allocate<Int32>(4);
+
   _processImageFn(
-      params.width, params.height, params.bytesPerPixel, imageBuffer, retRoi);
+      params.width, params.height, params.bytesPerPixel, imageBuffer, retRoi, retIsDetected);
 
   if (retRoi == nullptr) {
+    calloc.free(retIsDetected);
     calloc.free(retRoi);
     calloc.free(imageBuffer);
     return ProcessImageResult(
-        0, DifficultyType.None, const Rectangle(0, 0, 0, 0));
+        0, DifficultyType.None, const Rectangle(0, 0, 0, 0), false);
   }
 
   final rectArray = retRoi.cast<Int32>().asTypedList(4);
@@ -103,6 +107,7 @@ Future<ProcessImageResult> _processFrameIsolate(
       rectArray[2],
       rectArray[3],
     ),
+    retIsDetected.value != 0,
   );
 
   calloc.free(retRoi);
@@ -239,11 +244,12 @@ class OCRProcessor {
     if (_cameraFrames % 10 != 0) {
       return;
     }
+    
 
     if (_isProcessing) {
       skippedFrames++;
       if (skippedFrames > MAX_SKIPPED_FRAMES) {
-        // panicFromNotProcessing();
+        panicFromNotProcessing();
       }
       return;
     }

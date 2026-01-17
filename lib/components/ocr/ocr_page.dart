@@ -19,6 +19,7 @@ String get tempPath => '${tempDir.path}/temp.jpg';
 
 class _OcrPageState extends State<OcrPage> {
   bool _isImageLoaded = false;
+  bool _isCameraActive = false;
   CameraController? _controller;
   late OCRProcessor _ocrProcessor;
   ProcessImageResult? _lastResult;
@@ -76,8 +77,6 @@ class _OcrPageState extends State<OcrPage> {
 
       await _controller!.initialize();
 
-      await _controller!.startImageStream(_processImage);
-
       print('AS: ${_controller!.value.aspectRatio}'
           '   SIZE: ${_controller!.value.previewSize}'
           '   ORIENTATION: ${_controller!.value.deviceOrientation}'
@@ -85,15 +84,17 @@ class _OcrPageState extends State<OcrPage> {
           '   IMG FMT GROUP: ${_controller!.imageFormatGroup}'
           '   CAMERA SENSOR: ${cameras[cameraId].sensorOrientation}');
 
-      // if (!mounted) return;
-
       setState(() {
         // _controller! = controller;
       });
     } on CameraException catch (e) {
       print('Error initializing camera: $e');
+      if (!mounted) return;
+      Navigator.pushNamed(context, "/");
       setState(() {});
     } catch (e) {
+      if (!mounted) return;
+      Navigator.pushNamed(context, "/");
       setState(() {});
     }
   }
@@ -157,15 +158,40 @@ Format: ${image.format.group}
     _lastFrame = image;
   }
 
+  Future<void> _toggleCamera() async {
+    print('Toggle camera called. Current state: $_isCameraActive');
+    if (_isCameraActive) {
+      // Stop the camera
+      print('Stopping camera stream...');
+      await _controller?.stopImageStream();
+      setState(() {
+        _isCameraActive = false;
+      });
+      print('Camera stopped. New state: $_isCameraActive');
+    } else {
+      // Start the camera
+      print('Starting camera stream...');
+      if (_controller != null && _controller!.value.isInitialized) {
+        await _controller!.startImageStream(_processImage);
+        setState(() {
+          _isCameraActive = true;
+        });
+        print('Camera started. New state: $_isCameraActive');
+      } else {
+        print('Controller not initialized or null');
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("OCR Page")),
       body: Stack(
         children: <Widget>[
-          if (_controller != null && _controller!.value.isInitialized)
+          if (_controller != null && _controller!.value.isInitialized && _isCameraActive)
             CameraPreview(_controller!)
-          else
+          else if (_controller == null || !_controller!.value.isInitialized)
             const Center(child: CircularProgressIndicator()),
           if (_lastResult != null)
             CustomPaint(
@@ -178,6 +204,10 @@ Format: ${image.format.group}
               children: <Widget>[
                 Column(
                   children: [
+                    ElevatedButton(
+                      onPressed: _toggleCamera,
+                      child: Text(_isCameraActive ? 'Stop Camera' : 'Start Camera'),
+                    ),
                     if (_lastResult != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 16.0),

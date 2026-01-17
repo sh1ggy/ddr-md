@@ -83,7 +83,7 @@ extern "C"
 
     FUNCTION_ATTRIBUTE
     void process_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
-                       uint8_t *imageBuffer, int32_t *outputRect)
+                       uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected)
     {
         long long start = get_now();
 
@@ -261,16 +261,28 @@ extern "C"
         bitwise_not(BW2_ocr, BW3_ocr);
 
         // GOOTTTAAA GOOO
-        outputRect[0] = ocr_roi[0].x;
-        outputRect[1] = ocr_roi[0].y;
+        if (ocr_roi.size() == 0)
+        {
+            outputRect[0] = 0;
+            outputRect[1] = 0;
+            outputRect[2] = img.cols;
+            outputRect[3] = img.rows;
+            platform_log("No OCR ROI detected, defaulting to full image\n");
+            *outputIsDetected = 0;
+            return;
+        }
+        *outputIsDetected = 1;
+        outputRect[0] = ocr_roi[0].tl().x;
+        outputRect[1] = ocr_roi[0].tl().y;
         outputRect[2] = ocr_roi[0].width;
         outputRect[3] = ocr_roi[0].height;
+
+        platform_log("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
         // outputRect[0] = randomRect.x;
         // outputRect[1] = randomRect.y;
         // outputRect[2] = randomRect.width;
         // outputRect[3] = randomRect.height;
         // platform_log("Processing done in %dms\n", evalInMillis);
-        // platform_log("Random rect: x=%d, y=%d, w=%d, h=%d\n", rectX, rectY, rectWidth, rectHeight);
     }
 
     // This doesnt work but doesnt crash either,
