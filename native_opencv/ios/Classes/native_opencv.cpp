@@ -274,7 +274,7 @@ extern "C"
         outputRect[2] = ocr_roi[0].width;
         outputRect[3] = ocr_roi[0].height;
 
-        platform_log("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
+        platform_log("ocr roi size: tl.x=%d, tl.y=%d, w=%d, h=%d\n", ocr_roi[0].tl().x, ocr_roi[0].tl().y, ocr_roi[0].width, ocr_roi[0].height);
         // outputRect[0] = randomRect.x;
         // outputRect[1] = randomRect.y;
         // outputRect[2] = randomRect.width;

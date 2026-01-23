@@ -99,6 +99,19 @@ Future<ProcessImageResult> _processFrameIsolate(
 
   Pointer<Uint8> retImgBuff;
 
+  // return  ProcessImageResult(
+  //   100, // Placeholder score
+  //   DifficultyType.FFXI, // Placeholder difficulty
+  //   const Rectangle <int>(
+  //     0, 
+  //     0 ,
+  //     1100, 
+  //     10),
+  //     true,
+  //     null,
+  // );
+
+
   _processImageFn(params.width, params.height, params.bytesPerPixel,
       imageBuffer, retRoi, retIsDetected);
 

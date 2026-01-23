@@ -23,6 +23,7 @@ class _OcrPageState extends State<OcrPage> {
   CameraController? _controller;
   late OCRProcessor _ocrProcessor;
   ProcessImageResult? _lastResult;
+  double _camFrameToScreenScale = 0;
 
   int _processedFrames = 0;
   double lastTimeProcessed = 0.0;
@@ -35,7 +36,22 @@ class _OcrPageState extends State<OcrPage> {
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
       setState(() {
-        _lastResult = result;
+
+        // This is fine to do since we are measuring from top left, width and height
+        var newRoi = Rectangle<int>(
+          (result.roi.left * _camFrameToScreenScale).toInt(),
+          (result.roi.top * _camFrameToScreenScale).toInt(),
+          (result.roi.width * _camFrameToScreenScale).toInt(),
+          (result.roi.height * _camFrameToScreenScale).toInt(),
+        );
+
+        // TODO here is where the state for the result should be created and processed instead of this 
+        var fin = ProcessImageResult(
+            result.score, result.difficulty, newRoi, result.isDetected,
+            result.processedImageBytes);
+
+
+        _lastResult = fin;
       });
     });
 
@@ -184,8 +200,11 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
 
   void _processImage(CameraImage image) {
     // print('Processing image frame...');
-    int orientation = _controller?.description.sensorOrientation ?? 0;
-    
+    int rotation = _controller?.description.sensorOrientation ?? 0;
+    var w = (rotation == 0 || rotation == 180) ? image.width : image.height;
+
+    _camFrameToScreenScale = MediaQuery.of(context).size.width / w;
+
     _ocrProcessor.processFrame(image);
     _lastFrame = image;
   }
@@ -227,10 +246,10 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             CameraPreview(_controller!)
           else if (_controller == null || !_controller!.value.isInitialized)
             const Center(child: CircularProgressIndicator()),
-          if (_lastResult != null)
+          if (_lastResult != null && _lastResult!.isDetected)
             CustomPaint(
               painter: OCRResultPainter(roi: _lastResult!.roi),
-              size: Size.infinite,
+              // size: Size.infinite,
             ),
           Center(
             child: ListView(
@@ -259,24 +278,24 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             ),
           ),
 
-          // Dump button
-          Positioned(
-            bottom: 80,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: ElevatedButton.icon(
-                onPressed: _requestDump,
-                icon: Icon(Icons.save),
-                label: Text('Dump YUV Frame'),
-                style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  backgroundColor: Colors.blue,
-                ),
-              ),
-            ),
-          ),
+          // // Dump button
+          // Positioned(
+          //   bottom: 80,
+          //   left: 0,
+          //   right: 0,
+          //   child: Center(
+          //     child: ElevatedButton.icon(
+          //       onPressed: _requestDump,
+          //       icon: Icon(Icons.save),
+          //       label: Text('Dump YUV Frame'),
+          //       style: ElevatedButton.styleFrom(
+          //         padding:
+          //             const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          //         backgroundColor: Colors.blue,
+          //       ),
+          //     ),
+          //   ),
+          // ),
         ],
       ),
     );
