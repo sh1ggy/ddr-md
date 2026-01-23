@@ -106,10 +106,25 @@ class _OcrPageState extends State<OcrPage> {
     }
     var image = _lastFrame!;
 
-    final dir = await getExternalStorageDirectory();
+    Directory? dir = Platform.isAndroid
+        ? await getExternalStorageDirectory()
+        : await getApplicationDocumentsDirectory();
 
+    if (dir == null) {
+      print('no dir');
+      return;
+    }
+    print(dir.path);
+    if (Platform.isAndroid) {
+      _dumpAndroidYuv(image, dir);
+    } else if (Platform.isIOS) {
+      _dumpIos(image, dir);
+    }
+  }
+
+  void _dumpAndroidYuv(CameraImage image, Directory dir) async {
     // Write Y plane
-    final yFile = File('${dir!.path}/yuv_y_plane.raw');
+    final yFile = File('${dir.path}/yuv_y_plane.raw');
     await yFile.writeAsBytes(image.planes[0].bytes);
 
     // Write U plane
@@ -130,8 +145,23 @@ U size: ${image.planes[1].bytes.length}
 V size: ${image.planes[2].bytes.length}
 Format: ${image.format.group}
     ''');
+    print("ANDROID DUMPED");
+  }
 
-    print('Dumped YUV data to ${dir.path}');
+  void _dumpIos(CameraImage image, Directory dir) async {
+    final bgraFile = File('${dir.path}/bgra8888.raw');
+    await bgraFile.writeAsBytes(image.planes[0].bytes);
+
+    final metaFile = File('${dir.path}/metadata.txt');
+    await metaFile.writeAsString('''
+Platform: iOS
+Format: BGRA8888
+Width: ${image.width}
+Height: ${image.height}
+Bytes: ${image.planes[0].bytes.length}
+BytesPerRow: ${image.planes[0].bytesPerRow}
+''');
+    print("iOS DUMPED");
   }
 
 // TODO actually handle this to stop debug from breaking
@@ -191,7 +221,9 @@ Format: ${image.format.group}
       appBar: AppBar(title: const Text("OCR Page")),
       body: Stack(
         children: <Widget>[
-          if (_controller != null && _controller!.value.isInitialized && _isCameraActive)
+          if (_controller != null &&
+              _controller!.value.isInitialized &&
+              _isCameraActive)
             CameraPreview(_controller!)
           else if (_controller == null || !_controller!.value.isInitialized)
             const Center(child: CircularProgressIndicator()),
@@ -208,7 +240,8 @@ Format: ${image.format.group}
                   children: [
                     ElevatedButton(
                       onPressed: _toggleCamera,
-                      child: Text(_isCameraActive ? 'Stop Camera' : 'Start Camera'),
+                      child: Text(
+                          _isCameraActive ? 'Stop Camera' : 'Start Camera'),
                     ),
                     if (_lastResult != null)
                       Padding(
