@@ -81,6 +81,7 @@ extern "C"
         return CV_VERSION;
     }
 
+    // TODO pass in img rotation
     FUNCTION_ATTRIBUTE
     void process_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
                        uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected)
@@ -92,20 +93,17 @@ extern "C"
 #ifdef __ANDROID__
 
         // yuv is weird, see https://www.youtube.com/watch?v=q_mhF_Ys6nw
-        Mat frame(imgHeight + imgHeight/2 , imgWidth, CV_8UC1, imageBuffer);
-        platform_log("frame size: %dx%d\n", frame.cols, frame.rows);
-        platform_log("frame channels: %d\n", frame.channels());
-        platform_log("frame depth: %d\n", frame.depth());
-        platform_log("frame type: %d\n", frame.type());
+        Mat frame(imgHeight + imgHeight/2 , imgWidth, CV_8UC1, imageBuffer); //frame size: 1600x1800, frame channels: 1 , type = 0
 
         
         // cvtColor(frame, img, COLOR_YUV2RGB);
         cvtColor(frame, img, COLOR_YUV2BGR_NV21);
 
-        platform_log("Image size: %dx%d\n", img.cols, img.rows);
-        platform_log("Image channels: %d\n", img.channels());
-        platform_log("Image depth: %d\n", img.depth());
-        platform_log("Image type: %d\n", img.type());
+        rotate(img, img, ROTATE_90_CLOCKWISE);
+        // platform_log("Image size: %dx%d\n", img.cols, img.rows); // 1600x1200,  Image channels: 3, Image type: 16
+        // platform_log("Image channels: %d\n", img.channels());
+        // platform_log("Image depth: %d\n", img.depth());
+        // platform_log("Image type: %d\n", img.type());
 #else
         // TODO check type for apple
         img = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);
@@ -260,7 +258,6 @@ extern "C"
         Mat BW3_ocr;
         bitwise_not(BW2_ocr, BW3_ocr);
 
-        // GOOTTTAAA GOOO
         if (ocr_roi.size() == 0)
         {
             outputRect[0] = 0;

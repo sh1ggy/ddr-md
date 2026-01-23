@@ -154,6 +154,8 @@ Format: ${image.format.group}
 
   void _processImage(CameraImage image) {
     // print('Processing image frame...');
+    int orientation = _controller?.description.sensorOrientation ?? 0;
+    
     _ocrProcessor.processFrame(image);
     _lastFrame = image;
   }

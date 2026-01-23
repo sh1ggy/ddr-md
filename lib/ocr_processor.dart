@@ -16,8 +16,10 @@ class ProcessImageResult {
   // TODO reconsider to using a rect that can do Floats
   final Rectangle<int> roi;
   final bool isDetected;
+  final Uint8List? processedImageBytes;
 
-  ProcessImageResult(this.score, this.difficulty, this.roi, this.isDetected);
+  ProcessImageResult(this.score, this.difficulty, this.roi, this.isDetected,
+      this.processedImageBytes);
 }
 
 //TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
@@ -62,12 +64,22 @@ DynamicLibrary _openDynamicLibrary() {
 }
 
 // C Functions signatures
-typedef _c_processImage = Void Function(Int32 width, Int32 height,
-    Int32 bytesPerPixel, Pointer<Uint8> imageBytes, Pointer<Int32> outRoi, Pointer<Int32> outIsDetected);
+typedef _c_processImage = Void Function(
+    Int32 width,
+    Int32 height,
+    Int32 bytesPerPixel,
+    Pointer<Uint8> imageBytes,
+    Pointer<Int32> outRoi,
+    Pointer<Int32> outIsDetected);
 
 // Dart functions signatures
-typedef _dart_processImage = void Function(int width, int height,
-    int bytesPerPixel, Pointer<Uint8> bytes, Pointer<Int32> outRoi, Pointer<Int32> outIsDetected);
+typedef _dart_processImage = void Function(
+    int width,
+    int height,
+    int bytesPerPixel,
+    Pointer<Uint8> bytes,
+    Pointer<Int32> outRoi,
+    Pointer<Int32> outIsDetected);
 
 // Create dart functions that invoke the C funcion
 final _processImageFn = _nativeLib
@@ -85,18 +97,24 @@ Future<ProcessImageResult> _processFrameIsolate(
   Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
   Pointer<Int32> retIsDetected = calloc.allocate<Int32>(4);
 
-  _processImageFn(
-      params.width, params.height, params.bytesPerPixel, imageBuffer, retRoi, retIsDetected);
+  Pointer<Uint8> retImgBuff;
+
+  _processImageFn(params.width, params.height, params.bytesPerPixel,
+      imageBuffer, retRoi, retIsDetected);
 
   if (retRoi == nullptr) {
     calloc.free(retIsDetected);
     calloc.free(retRoi);
     calloc.free(imageBuffer);
     return ProcessImageResult(
-        0, DifficultyType.None, const Rectangle(0, 0, 0, 0), false);
+        0, DifficultyType.None, const Rectangle(0, 0, 0, 0), false, null);
   }
 
+
+
   final rectArray = retRoi.cast<Int32>().asTypedList(4);
+  // final imgArray = retImgBuff.cast<Uint8>().asTypedList(
+      // params.width * params.height * params.bytesPerPixel); // Assuming RGBA
 
   ProcessImageResult result = ProcessImageResult(
     100, // Placeholder score
@@ -108,6 +126,7 @@ Future<ProcessImageResult> _processFrameIsolate(
       rectArray[3],
     ),
     retIsDetected.value != 0,
+    null
   );
 
   calloc.free(retRoi);
@@ -145,7 +164,7 @@ void isolateEntryPoint(InitialRequest initReq) {
                 vBuffer.lengthInBytes;
             bytes = Uint8List(totalSize);
             bytes.setAll(0, yBuffer);
-            //Swap the u and v buffers since thats what opencv wants for some reason 
+            //Swap the u and v buffers since thats what opencv wants for some reason
             //(flutter opencv stream processing says so)
 
             bytes.setAll(yBuffer.lengthInBytes, vBuffer);
@@ -244,7 +263,6 @@ class OCRProcessor {
     if (_cameraFrames % 10 != 0) {
       return;
     }
-    
 
     if (_isProcessing) {
       skippedFrames++;
