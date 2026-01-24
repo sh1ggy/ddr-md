@@ -130,6 +130,10 @@ extern "C"
 
         // INIT
 
+        imwrite(outputImagePath, img);
+        platform_log("Saved input image to %s\n", outputImagePath);
+
+
         Mat grayImg;
         cvtColor(img, grayImg, COLOR_BGR2GRAY);
 
@@ -222,8 +226,6 @@ extern "C"
                 largestRoiArea = thisRoi;
             }
         }
-
-        vector<Point> &largestContour = contours_final.at(largestRoiAreaIndex);
 
         if (roi.size() == 0)
         {
