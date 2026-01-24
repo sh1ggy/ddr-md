@@ -84,7 +84,7 @@ extern "C"
     // TODO pass in img rotation
     FUNCTION_ATTRIBUTE
     void process_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
-                       uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected)
+                       uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff, char *outputImagePath)
     {
         long long start = get_now();
 
@@ -93,9 +93,8 @@ extern "C"
 #ifdef __ANDROID__
 
         // yuv is weird, see https://www.youtube.com/watch?v=q_mhF_Ys6nw
-        Mat frame(imgHeight + imgHeight/2 , imgWidth, CV_8UC1, imageBuffer); //frame size: 1600x1800, frame channels: 1 , type = 0
+        Mat frame(imgHeight + imgHeight / 2, imgWidth, CV_8UC1, imageBuffer); // frame size: 1600x1800, frame channels: 1 , type = 0
 
-        
         // cvtColor(frame, img, COLOR_YUV2RGB);
         cvtColor(frame, img, COLOR_YUV2BGR_NV21);
 
@@ -207,58 +206,26 @@ extern "C"
         findContours(BW3.clone(), contours_final, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
         vector<Rect> roi;
+
+        int largestRoiAreaIndex = 0;
+        double largestRoiArea = 0;
+
         for (size_t i = 0; i < contours_final.size(); i++)
         {
+
+            double thisRoi = contourArea(contours_final[i]);
             roi.push_back(boundingRect(contours_final[i]));
-        }
 
-        int numAdditionalPixels = 5;
-        for (size_t i = 0; i < roi.size(); i++)
-        {
-            roi[i].x -= numAdditionalPixels;
-            roi[i].y -= numAdditionalPixels;
-            roi[i].width += 2 * numAdditionalPixels;
-            roi[i].height += 2 * numAdditionalPixels;
-        }
-
-        Mat roi_img = img.clone();
-        for (size_t i = 0; i < roi.size(); i++)
-        {
-            rectangle(roi_img, roi[i], Scalar(0, 255, 0), 4);
-        }
-
-        // OCR Preprocessing
-        Mat Icorrected;
-        Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(31, 31));
-        morphologyEx(img, Icorrected, MORPH_BLACKHAT, kernel);
-
-        Mat Ifiltered;
-        GaussianBlur(Icorrected, Ifiltered, Size(0, 0), 1);
-
-        Mat BW_ocr;
-        cvtColor(Ifiltered, BW_ocr, COLOR_BGR2GRAY);
-
-        Mat BW1;
-        threshold(BW_ocr, BW1, 0, 255, THRESH_BINARY + THRESH_OTSU);
-
-        // Morphological filtering
-        Mat BW2_ocr = Mat::zeros(BW1.size(), CV_8U);
-        vector<vector<Point>> contours_ocr;
-        findContours(BW1.clone(), contours_ocr, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-        vector<Rect> ocr_roi;
-        for (size_t i = 0; i < contours_ocr.size(); i++)
-        {
-            if (contourArea(contours_ocr[i]) >= 5)
+            if (thisRoi > largestRoiArea)
             {
-                ocr_roi.push_back(boundingRect(contours_ocr[i]));
-                drawContours(BW2_ocr, contours_ocr, i, Scalar(255), FILLED);
+                largestRoiAreaIndex = i;
+                largestRoiArea = thisRoi;
             }
         }
 
-        Mat BW3_ocr;
-        bitwise_not(BW2_ocr, BW3_ocr);
+        vector<Point> &largestContour = contours_final.at(largestRoiAreaIndex);
 
-        if (ocr_roi.size() == 0)
+        if (roi.size() == 0)
         {
             outputRect[0] = 0;
             outputRect[1] = 0;
@@ -268,18 +235,23 @@ extern "C"
             *outputIsDetected = 0;
             return;
         }
-        *outputIsDetected = 1;
-        outputRect[0] = ocr_roi[0].tl().x;
-        outputRect[1] = ocr_roi[0].tl().y;
-        outputRect[2] = ocr_roi[0].width;
-        outputRect[3] = ocr_roi[0].height;
 
-        platform_log("ocr roi size: tl.x=%d, tl.y=%d, w=%d, h=%d\n", ocr_roi[0].tl().x, ocr_roi[0].tl().y, ocr_roi[0].width, ocr_roi[0].height);
-        // outputRect[0] = randomRect.x;
-        // outputRect[1] = randomRect.y;
-        // outputRect[2] = randomRect.width;
-        // outputRect[3] = randomRect.height;
-        // platform_log("Processing done in %dms\n", evalInMillis);
+        // For debug
+        Mat roi_img = img.clone();
+        for (size_t i = 0; i < roi.size(); i++)
+        {
+            rectangle(roi_img, roi[i], Scalar(0, 255, 0), 4);
+        }
+
+        *outputIsDetected = 1;
+        platform_log("%d", largestRoiAreaIndex);
+        outputRect[0] = roi[largestRoiAreaIndex].tl().x;
+        outputRect[1] = roi[largestRoiAreaIndex].tl().y;
+        outputRect[2] = roi[largestRoiAreaIndex].width;
+        outputRect[3] = roi[largestRoiAreaIndex].height;
+
+        // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
+        platform_log("Returned OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRect[0], outputRect[1], outputRect[2], outputRect[3]);
     }
 
     // This doesnt work but doesnt crash either,

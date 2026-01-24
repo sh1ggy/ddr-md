@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:ffi/ffi.dart';
+import 'package:path_provider/path_provider.dart';
 
 enum DifficultyType { None, FFXI }
 
@@ -29,12 +30,15 @@ class ProcessImageRequestParams {
   final int width;
   final int height;
   final int bytesPerPixel;
+  // TODO Pass this in into isolate with initial request
+  final String tempPath;
 
   ProcessImageRequestParams({
     required this.bytes,
     required this.width,
     required this.height,
     required this.bytesPerPixel,
+    required this.tempPath,
   });
 }
 
@@ -50,8 +54,9 @@ class Request {
 
 class InitialRequest {
   final SendPort toMainThread;
+  final String tempPath;
 
-  InitialRequest(this.toMainThread);
+  InitialRequest(this.toMainThread, this.tempPath);
 }
 
 final DynamicLibrary _nativeLib = _openDynamicLibrary();
@@ -70,7 +75,10 @@ typedef _c_processImage = Void Function(
     Int32 bytesPerPixel,
     Pointer<Uint8> imageBytes,
     Pointer<Int32> outRoi,
-    Pointer<Int32> outIsDetected);
+    Pointer<Int32> outIsDetected,
+    Pointer<Int32> outImgSize,
+    Pointer<Uint8> outImgBuff,
+    Pointer<Utf8> outImgPath);
 
 // Dart functions signatures
 typedef _dart_processImage = void Function(
@@ -79,7 +87,10 @@ typedef _dart_processImage = void Function(
     int bytesPerPixel,
     Pointer<Uint8> bytes,
     Pointer<Int32> outRoi,
-    Pointer<Int32> outIsDetected);
+    Pointer<Int32> outIsDetected,
+    Pointer<Int32> outImgSize,
+    Pointer<Uint8> outImgBuff,
+    Pointer<Utf8> outImgPath);
 
 // Create dart functions that invoke the C funcion
 final _processImageFn = _nativeLib
@@ -97,23 +108,30 @@ Future<ProcessImageResult> _processFrameIsolate(
   Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
   Pointer<Int32> retIsDetected = calloc.allocate<Int32>(4);
 
-  Pointer<Uint8> retImgBuff;
+  Pointer<Int32> retImgSize = calloc.allocate<Int32>(4 * 2); // width, height
 
-  // return  ProcessImageResult(
+  // return ProcessImageResult(
   //   100, // Placeholder score
   //   DifficultyType.FFXI, // Placeholder difficulty
-  //   const Rectangle <int>(
-  //     0, 
-  //     0 ,
-  //     1100, 
-  //     10),
-  //     true,
-  //     null,
+  //   const Rectangle<int>(0, 0, 1100, 100),
+  //   true,
+  //   null,
   // );
 
+  Pointer<Uint8> retImgBuff = nullptr; // Placeholder for processed image buffer
 
-  _processImageFn(params.width, params.height, params.bytesPerPixel,
-      imageBuffer, retRoi, retIsDetected);
+  print(params.tempPath);
+
+  _processImageFn(
+      params.width,
+      params.height,
+      params.bytesPerPixel,
+      imageBuffer,
+      retRoi,
+      retIsDetected,
+      retImgSize,
+      retImgBuff,
+      params.tempPath.toNativeUtf8());
 
   if (retRoi == nullptr) {
     calloc.free(retIsDetected);
@@ -123,27 +141,28 @@ Future<ProcessImageResult> _processFrameIsolate(
         0, DifficultyType.None, const Rectangle(0, 0, 0, 0), false, null);
   }
 
-
-
   final rectArray = retRoi.cast<Int32>().asTypedList(4);
+
   // final imgArray = retImgBuff.cast<Uint8>().asTypedList(
-      // params.width * params.height * params.bytesPerPixel); // Assuming RGBA
+  //     params.width * params.height * params.bytesPerPixel); // Assuming RGBA
 
   ProcessImageResult result = ProcessImageResult(
-    100, // Placeholder score
-    DifficultyType.FFXI, // Placeholder difficulty
-    Rectangle<int>(
-      rectArray[0],
-      rectArray[1],
-      rectArray[2],
-      rectArray[3],
-    ),
-    retIsDetected.value != 0,
-    null
-  );
+      100, // Placeholder score
+      DifficultyType.FFXI, // Placeholder difficulty
+      Rectangle<int>(
+        rectArray[0],
+        rectArray[1],
+        rectArray[2],
+        rectArray[3],
+      ),
+      retIsDetected.value != 0,
+      null);
 
   calloc.free(retRoi);
   calloc.free(imageBuffer);
+  calloc.free(retIsDetected);
+  calloc.free(retImgSize);
+  calloc.free(retImgBuff);
 
   return result;
 }
@@ -195,6 +214,7 @@ void isolateEntryPoint(InitialRequest initReq) {
             width: image.width,
             height: image.height,
             bytesPerPixel: 4,
+            tempPath: initReq.tempPath,
           );
 
           _processFrameIsolate(params).then((result) {
@@ -222,6 +242,9 @@ void isolateEntryPoint(InitialRequest initReq) {
 class OCRProcessor {
   static OCRProcessor? _instance;
 
+  Directory? tempDir;
+
+
   final streamResultController = StreamController<ProcessImageResult>();
   factory OCRProcessor() {
     _instance ??= OCRProcessor._internal();
@@ -237,24 +260,34 @@ class OCRProcessor {
 
   Future<void> init() {
     Completer<void> completer = Completer<void>();
+    // Prepare temp directory
+    getTemporaryDirectory().then((dir) {
 
-    // Start the isolate
-    Isolate.spawn(isolateEntryPoint, InitialRequest(fromIsolate.sendPort))
-        .then((isolate) {
-      _isolate = isolate;
-      // Wait for the isolate to send us its port
-      fromIsolate.listen((data) {
-        if (data is SendPort) {
-          // We have received the SendPort from the isolate
-          toIsolate = data;
-          completer.complete();
-        } else if (data is ProcessImageResult) {
-          // We have received a result from the isolate
-          _isProcessing = false;
-          streamResultController.add(data);
-        }
+      String tempPath = '${dir.path}/temp.jpg';
+
+      // Start the isolate
+      Isolate.spawn(
+              isolateEntryPoint, InitialRequest(fromIsolate.sendPort, tempPath))
+          .then((isolate) {
+        _isolate = isolate;
+        // Wait for the isolate to send us its port
+        fromIsolate.listen((data) {
+          if (data is SendPort) {
+            // We have received the SendPort from the isolate
+            toIsolate = data;
+            completer.complete();
+          } else if (data is ProcessImageResult) {
+            // We have received a result from the isolate
+            _isProcessing = false;
+            streamResultController.add(data);
+          }
+        });
       });
+
+
     });
+
+
 
     return completer.future;
   }
@@ -263,6 +296,7 @@ class OCRProcessor {
 
   int _cameraFrames = 0;
   int skippedFrames = 0;
+  int FRAME_THRESHOLD = 60;
 
   void panicFromNotProcessing() {
     _isProcessing = false;
@@ -273,7 +307,7 @@ class OCRProcessor {
 
   void processFrame(CameraImage image) async {
     _cameraFrames++;
-    if (_cameraFrames % 10 != 0) {
+    if (_cameraFrames % FRAME_THRESHOLD != 0) {
       return;
     }
 
