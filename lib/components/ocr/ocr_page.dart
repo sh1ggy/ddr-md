@@ -17,7 +17,8 @@ class OcrPage extends StatefulWidget {
 late Directory tempDir;
 String get tempPath => '${tempDir.path}/temp.jpg';
 
-class _OcrPageState extends State<OcrPage> {
+class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
+  final List<AppLifecycleState> _stateHistoryList = <AppLifecycleState>[];
   bool _isImageLoaded = false;
   bool _isCameraActive = false;
   CameraController? _controller;
@@ -33,10 +34,14 @@ class _OcrPageState extends State<OcrPage> {
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
+    if (WidgetsBinding.instance.lifecycleState != null) {
+      _stateHistoryList.add(WidgetsBinding.instance.lifecycleState!);
+    }
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
       setState(() {
-
         // This is fine to do since we are measuring from top left, width and height
         var newRoi = Rectangle<int>(
           (result.roi.left * _camFrameToScreenScale).toInt(),
@@ -45,11 +50,9 @@ class _OcrPageState extends State<OcrPage> {
           (result.roi.height * _camFrameToScreenScale).toInt(),
         );
 
-        // TODO here is where the state for the result should be created and processed instead of this 
-        var fin = ProcessImageResult(
-            result.score, result.difficulty, newRoi, result.isDetected,
-            result.processedImageBytes);
-
+        // TODO here is where the state for the result should be created and processed instead of this
+        var fin = ProcessImageResult(result.score, result.difficulty, newRoi,
+            result.isDetected, result.processedImageBytes);
 
         _lastResult = fin;
       });
@@ -180,23 +183,22 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     print("iOS DUMPED");
   }
 
-// TODO actually handle this to stop debug from breaking
+  // TODO actually handle this to stop debug from breaking
+  // @override
+  // void didChangeAppLifecycleState(AppLifecycleState state) {
+  //   final CameraController? cameraController = _controller;
 
-//   @override
-// void didChangeAppLifecycleState(AppLifecycleState state) {
-//   final CameraController? cameraController = controller;
+  //   // App state changed before we got the chance to initialize.
+  //   if (cameraController == null || !cameraController.value.isInitialized) {
+  //     return;
+  //   }
 
-//   // App state changed before we got the chance to initialize.
-//   if (cameraController == null || !cameraController.value.isInitialized) {
-//     return;
-//   }
-
-//   if (state == AppLifecycleState.inactive) {
-//     cameraController.dispose();
-//   } else if (state == AppLifecycleState.resumed) {
-//     _initializeCameraController(cameraController.description);
-//   }
-// }
+  //   if (state == AppLifecycleState.inactive) {
+  //     cameraController.dispose();
+  //   } else if (state == AppLifecycleState.resumed) {
+  //     _initCamera();
+  //   }
+  // }
 
   void _processImage(CameraImage image) {
     // print('Processing image frame...');
@@ -245,39 +247,14 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
               _isCameraActive)
             CameraPreview(_controller!)
           else if (_controller == null || !_controller!.value.isInitialized)
-            const Center(child: CircularProgressIndicator()),
+            const Center(child: Text("Camera not started")),
           if (_lastResult != null && _lastResult!.isDetected)
-            CustomPaint(
-              painter: OCRResultPainter(roi: _lastResult!.roi),
-              // size: Size.infinite,
+            Positioned.fill(
+              child: CustomPaint(
+                painter: OCRResultPainter(roi: _lastResult!.roi),
+                size: Size.infinite,
+              ),
             ),
-          Center(
-            child: ListView(
-              shrinkWrap: true,
-              children: <Widget>[
-                Column(
-                  children: [
-                    ElevatedButton(
-                      onPressed: _toggleCamera,
-                      child: Text(
-                          _isCameraActive ? 'Stop Camera' : 'Start Camera'),
-                    ),
-                    if (_lastResult != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 16.0),
-                        child: Column(
-                          children: [
-                            Text('Score: ${_lastResult!.score}'),
-                            Text('Difficulty: ${_lastResult!.difficulty}'),
-                          ],
-                        ),
-                      ),
-                  ],
-                )
-              ],
-            ),
-          ),
-
           // // Dump button
           // Positioned(
           //   bottom: 80,
@@ -298,6 +275,27 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           // ),
         ],
       ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_lastResult != null) ...[
+                const SizedBox(height: 8),
+                Text('Score: ${_lastResult!.score}'),
+                Text('Difficulty: ${_lastResult!.difficulty}'),
+              ],
+              ElevatedButton(
+                onPressed: _toggleCamera,
+                child: Text(
+                  _isCameraActive ? 'Stop Camera' : 'Start Camera',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -309,16 +307,29 @@ class OCRResultPainter extends CustomPainter {
 
   final _paint = Paint()
     ..strokeWidth = 3.0
-    ..color = Colors.green
+    ..color = Colors.red
     ..style = PaintingStyle.stroke;
 
   final _fillPaint = Paint()
-    ..color = Colors.green.withOpacity(0.1)
+    ..color = Colors.red.withOpacity(0.1)
+    ..style = PaintingStyle.fill;
+
+  final _centerPaint = Paint()
+    ..color = Colors.green
     ..style = PaintingStyle.fill;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final centerRectWidth = size.width * 0.1;
+    final centerRectHeight = size.height * 0.1;
+
+    final centerRect = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height / 2),
+      width: centerRectWidth,
+      height: centerRectHeight,
+    );
     if (roi.width <= 0 || roi.height <= 0) {
+      canvas.drawRect(centerRect, _centerPaint);
       return;
     }
 
