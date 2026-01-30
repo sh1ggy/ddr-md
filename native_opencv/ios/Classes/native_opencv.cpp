@@ -81,6 +81,34 @@ extern "C"
         return CV_VERSION;
     }
 
+
+
+    FUNCTION_ATTRIBUTE
+    void process_picked_image(char* inputImagePath, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff,     
+                              char* outputImagePath)
+    {
+        long long start = get_now();
+
+        Mat img = imread(inputImagePath);
+
+        if (img.empty())
+        {
+            platform_log("Could not open or find the image: %s\n", inputImagePath);
+            return;
+        }
+
+        // TODO CALL BASE IMAGE FUN
+        // For example, convert to grayscale
+        Mat grayImg;
+        cvtColor(img, grayImg, COLOR_BGR2GRAY);
+
+        imwrite(outputImagePath, grayImg);
+        platform_log("Saved processed image to %s\n", outputImagePath);
+
+        int evalInMillis = static_cast<int>(get_now() - start);
+        platform_log("Image processed in %dms\n", evalInMillis);
+    }
+
     // TODO pass in img rotation
     FUNCTION_ATTRIBUTE
     void process_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,

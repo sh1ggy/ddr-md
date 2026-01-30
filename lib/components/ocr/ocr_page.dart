@@ -1,11 +1,16 @@
+/// Name: OcrPage
+/// Description: Page to process camera feed frames for OCR using native FFI & OpenCV
+library;
+
+import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:camera/camera.dart';
-import 'package:ddr_md/native_ocr_ffi.dart';
+import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 
 class OcrPage extends StatefulWidget {
   const OcrPage({super.key});
@@ -78,6 +83,7 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
   Future<void> _initCamera() async {
     try {
       await _ocrProcessor.init();
+      await _ocrProcessor.init_camera_actor();
 
       final cameras = await availableCameras();
       var cameraId = 0;
@@ -207,7 +213,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
 
     _camFrameToScreenScale = MediaQuery.of(context).size.width / w;
 
-    _ocrProcessor.processFrame(image);
+    _ocrProcessor.processVideostreamFrame(image);
     _lastFrame = image;
   }
 
@@ -291,6 +297,17 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
                 child: Text(
                   _isCameraActive ? 'Stop Camera' : 'Start Camera',
                 ),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => LoadImage(
+                                ocrProcessor: _ocrProcessor,
+                              )));
+                },
+                child: const Text("Load Image"),
               ),
             ],
           ),
