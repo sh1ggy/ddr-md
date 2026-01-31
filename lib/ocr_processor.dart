@@ -11,16 +11,19 @@ import 'package:path_provider/path_provider.dart';
 
 enum DifficultyType { None, FFXI }
 
-class ProcessImageResult {
+enum ReturnImageType { None, DirImage, BytesImage }
+
+class ProcessResult {
   final int score;
   final DifficultyType difficulty;
   // TODO reconsider to using a rect that can do Floats
   final Rectangle<int> roi;
   final bool isDetected;
+  final ReturnImageType returnImageType;
   final Uint8List? processedImageBytes;
 
-  ProcessImageResult(this.score, this.difficulty, this.roi, this.isDetected,
-      this.processedImageBytes);
+  ProcessResult(this.score, this.difficulty, this.roi, this.isDetected,
+      this.returnImageType, this.processedImageBytes);
 }
 
 //TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
@@ -142,13 +145,14 @@ typedef _dart_processPickedImage = void Function(
     Pointer<Utf8> outImgPath);
 
 // Create dart functions that invoke the C funcion
-final _processImageFn = _nativeLib
-    .lookupFunction<_c_processImage, _dart_processImage>('process_image');
+final _processCameraImageFn =
+    _nativeLib.lookupFunction<_c_processImage, _dart_processImage>(
+        'process_camera_image');
 final _processPickedImageFn =
     _nativeLib.lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
         'process_picked_image');
 
-Future<ProcessImageResult> _processPickedImageIsolate(
+Future<ProcessResult> _processPickedImage(
     ProcessPickedImageRequestParams params) async {
   Pointer<Uint8> retImgBuff = nullptr; // Placeholder for processed image buffer
 
@@ -165,13 +169,13 @@ Future<ProcessImageResult> _processPickedImageIsolate(
   if (retRoi == nullptr) {
     calloc.free(retIsDetected);
     calloc.free(retRoi);
-    return ProcessImageResult(
-        0, DifficultyType.None, const Rectangle(0, 0, 0, 0), false, null);
+    return ProcessResult(0, DifficultyType.None, const Rectangle(0, 0, 0, 0),
+        false, ReturnImageType.None, null);
   }
 
   final rectArray = retRoi.cast<Int32>().asTypedList(4);
 
-  ProcessImageResult result = ProcessImageResult(
+  ProcessResult result = ProcessResult(
       100, // Placeholder score
       DifficultyType.FFXI, // Placeholder difficulty
       Rectangle<int>(
@@ -181,6 +185,7 @@ Future<ProcessImageResult> _processPickedImageIsolate(
         rectArray[3],
       ),
       retIsDetected.value != 0,
+      ReturnImageType.DirImage,
       null);
 
   calloc.free(retRoi);
@@ -191,8 +196,7 @@ Future<ProcessImageResult> _processPickedImageIsolate(
   return result;
 }
 
-Future<ProcessImageResult> _processFrameIsolate(
-    ProcessImageRequestParams params) async {
+Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
   final bytes = params.bytes.materialize().asUint8List();
   // final bytes = params.bytes;
 
@@ -217,7 +221,7 @@ Future<ProcessImageResult> _processFrameIsolate(
 
   print(params.tempPath);
 
-  _processImageFn(
+  _processCameraImageFn(
       params.width,
       params.height,
       params.bytesPerPixel,
@@ -232,8 +236,8 @@ Future<ProcessImageResult> _processFrameIsolate(
     calloc.free(retIsDetected);
     calloc.free(retRoi);
     calloc.free(imageBuffer);
-    return ProcessImageResult(
-        0, DifficultyType.None, const Rectangle(0, 0, 0, 0), false, null);
+    return ProcessResult(0, DifficultyType.None, const Rectangle(0, 0, 0, 0),
+        false, ReturnImageType.None, null);
   }
 
   final rectArray = retRoi.cast<Int32>().asTypedList(4);
@@ -241,7 +245,7 @@ Future<ProcessImageResult> _processFrameIsolate(
   // final imgArray = retImgBuff.cast<Uint8>().asTypedList(
   //     params.width * params.height * params.bytesPerPixel); // Assuming RGBA
 
-  ProcessImageResult result = ProcessImageResult(
+  ProcessResult result = ProcessResult(
       100, // Placeholder score
       DifficultyType.FFXI, // Placeholder difficulty
       Rectangle<int>(
@@ -251,6 +255,7 @@ Future<ProcessImageResult> _processFrameIsolate(
         rectArray[3],
       ),
       retIsDetected.value != 0,
+      ReturnImageType.BytesImage,
       null);
 
   calloc.free(retRoi);
@@ -272,22 +277,21 @@ void isolateEntryPoint(InitialRequest initReq) {
     if (data is Request) {
       switch (data.type) {
         case RequestType.ProcessPickedImage:
-          ProcessImageResult? res;
+          ProcessResult? res;
           var path = data.pickedImagePath!;
           var appPath = initReq.appPath;
           final params = ProcessPickedImageRequestParams(
             imagePath: path,
             outputPath: appPath,
           );
-
-          _processPickedImageIsolate(params).then((result) {
+          _processPickedImage(params).then((result) {
             res = result;
             // Send the result back to the main thread
             _toMainThread.send(res);
           });
           break;
         case RequestType.ProcessVideoImage:
-          ProcessImageResult? res;
+          ProcessResult? res;
 
           var image = data.params!;
           Uint8List bytes;
@@ -327,7 +331,7 @@ void isolateEntryPoint(InitialRequest initReq) {
             tempPath: initReq.tempPath,
           );
 
-          _processFrameIsolate(params).then((result) {
+          _processFrame(params).then((result) {
             res = result;
             // Send the result back to the main thread
             _toMainThread.send(res);
@@ -355,8 +359,7 @@ class OCRProcessor {
   Directory? tempDir;
   Directory? appDir; // for iOS
 
-  final streamResultController =
-      StreamController<ProcessImageResult>.broadcast();
+  final streamResultController = StreamController<ProcessResult>.broadcast();
   factory OCRProcessor() {
     _instance ??= OCRProcessor._internal();
     return _instance!;
@@ -391,7 +394,7 @@ class OCRProcessor {
           // We have received the SendPort from the isolate
           toIsolate = data;
           completer.complete();
-        } else if (data is ProcessImageResult) {
+        } else if (data is ProcessResult) {
           // We have received a result from the isolate
           _isProcessing = false;
           streamResultController.add(data);
@@ -414,7 +417,7 @@ class OCRProcessor {
     dispose();
   }
 
-  void processImage(XFile image) async {
+  void processPickedImage(XFile image) async {
     // Placeholder implementation
     print('Processing image from file: ${image.path}');
     final request =

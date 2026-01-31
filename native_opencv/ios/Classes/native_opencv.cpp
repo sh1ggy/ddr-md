@@ -72,6 +72,141 @@ void platform_log(const char *fmt, ...)
     va_end(args);
 }
 
+typedef struct ProcessImgResult
+{
+    Mat img;
+    double_t outputRect[4];
+    int32_t isDetected;
+    Mat BW3;
+};
+
+ProcessImgResult process_image(Mat img)
+{
+    ProcessImgResult result;
+
+    Mat grayImg;
+    cvtColor(img, grayImg, COLOR_BGR2GRAY);
+
+    // Selecting Details box - HSV mask
+    Mat imgHSV;
+    cvtColor(img, imgHSV, COLOR_BGR2HSV);
+
+    double channel1Min = 0.380;
+    double channel1Max = 0.531;
+    double channel2Min = 0.204;
+    double channel2Max = 1.000;
+    double channel3Min = 0.592;
+    double channel3Max = 1.000;
+
+    // Use inRange for HSV thresholding
+    Scalar lowerHSV(channel1Min * max_value_H, channel2Min * max_value, channel3Min * max_value);
+    Scalar upperHSV(channel1Max * max_value_H, channel2Max * max_value, channel3Max * max_value);
+
+    Mat BW_HSV;
+    inRange(imgHSV, lowerHSV, upperHSV, BW_HSV);
+
+    // Do blob detection and filter small blobs
+    vector<vector<Point>> contours;
+    findContours(BW_HSV, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+    Mat BW2 = Mat::zeros(BW_HSV.size(), CV_8U);
+    for (size_t i = 0; i < contours.size(); i++)
+    {
+        double area = contourArea(contours[i]);
+        if (area >= 3000 && area <= 50000)
+        {
+            drawContours(BW2, contours, i, Scalar(255), FILLED);
+        }
+    }
+
+    int m = 360;
+    int n = 90;
+
+    // Create opening kernel using byte array (faster than getStructuringElement)
+    int open_width = m * 0.1;
+    int open_height = n * 0.1;
+    uchar *open_data = new uchar[open_height * open_width];
+    memset(open_data, 255, open_height * open_width);
+    Mat SE_open(open_height, open_width, CV_8U, open_data);
+
+    // TODO: refactor stateful object to avoid recreating structuring elements every time cache optimisation
+    auto start_open = chrono::high_resolution_clock::now();
+    Mat BW3;
+    morphologyEx(BW2, BW3, MORPH_OPEN, SE_open);
+    auto end_open = chrono::high_resolution_clock::now();
+    auto duration_open = chrono::duration_cast<chrono::microseconds>(end_open - start_open);
+    cout << "Opening operation with byte array kernel: " << duration_open.count() << " microseconds" << endl;
+
+    // Dont need close for now, works fiune with JUST open to get rid of noise
+
+    //// Create closing kernel using byte array
+    // int close_width = m * 1.2;
+    // int close_height = n * 1.2;
+    // uchar* close_data = new uchar[close_height * close_width];
+    // memset(close_data, 255, close_height * close_width);
+    // Mat SE_close(close_height, close_width, CV_8U, close_data);
+
+    // auto start_close = chrono::high_resolution_clock::now();
+    // Mat BW4;
+    // morphologyEx(BW3, BW4, MORPH_CLOSE, SE_close);
+    // auto end_close = chrono::high_resolution_clock::now();
+    // auto duration_close = chrono::duration_cast<chrono::microseconds>(end_close - start_close);
+    // cout << "Closing operation with byte array kernel: " << duration_close.count() << " microseconds" << endl;
+
+    delete[] open_data;
+    // delete[] close_data;
+
+    // Get bounding boxes
+    vector<vector<Point>> contours_final;
+    findContours(BW3.clone(), contours_final, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+    vector<Rect> roi;
+
+    int largestRoiAreaIndex = 0;
+    double largestRoiArea = 0;
+
+    for (size_t i = 0; i < contours_final.size(); i++)
+    {
+
+        double thisRoi = contourArea(contours_final[i]);
+        roi.push_back(boundingRect(contours_final[i]));
+
+        if (thisRoi > largestRoiArea)
+        {
+            largestRoiAreaIndex = i;
+            largestRoiArea = thisRoi;
+        }
+    }
+
+    if (roi.size() == 0)
+    {
+        result.outputRect[0] = 0;
+        result.outputRect[1] = 0;
+        result.outputRect[2] = img.cols;
+        result.outputRect[3] = img.rows;
+        platform_log("No OCR ROI detected, defaulting to full image\n");
+        result.isDetected = 0;
+        return result;
+    }
+
+    // For debug
+    Mat roi_img = img.clone();
+    for (size_t i = 0; i < roi.size(); i++)
+    {
+        rectangle(roi_img, roi[i], Scalar(0, 255, 0), 4);
+    }
+
+    result.isDetected = 1;
+    platform_log("%d", largestRoiAreaIndex);
+    result.outputRect[0] = roi[largestRoiAreaIndex].tl().x;
+    result.outputRect[1] = roi[largestRoiAreaIndex].tl().y;
+    result.outputRect[2] = roi[largestRoiAreaIndex].width;
+    result.outputRect[3] = roi[largestRoiAreaIndex].height;
+    platform_log("Detected OCR ROI: x=%d, y=%d, w=%d, h=%d\n", result.outputRect[0], result.outputRect[1], result.outputRect[2], result.outputRect[3]);
+    result.BW3 = BW3;
+    return result;
+}
+
 // Avoiding name mangling
 extern "C"
 {
@@ -81,11 +216,9 @@ extern "C"
         return CV_VERSION;
     }
 
-
-
     FUNCTION_ATTRIBUTE
-    void process_picked_image(char* inputImagePath, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff,     
-                              char* outputImagePath)
+    void process_picked_image(char *inputImagePath, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff,
+                              char *outputImagePath)
     {
         long long start = get_now();
 
@@ -96,23 +229,28 @@ extern "C"
             platform_log("Could not open or find the image: %s\n", inputImagePath);
             return;
         }
-
-        // TODO CALL BASE IMAGE FUN
-        // For example, convert to grayscale
-        Mat grayImg;
-        cvtColor(img, grayImg, COLOR_BGR2GRAY);
-
-        imwrite(outputImagePath, grayImg);
-        platform_log("Saved processed image to %s\n", outputImagePath);
-
+        ProcessImgResult result = process_image(img);
+        if (!result.isDetected)
+        {
+            platform_log("No OCR region detected, skipping saving processed image.\n");
+            return;
+        }
+        int imwrite_result = imwrite(outputImagePath, result.BW3);
         int evalInMillis = static_cast<int>(get_now() - start);
-        platform_log("Image processed in %dms\n", evalInMillis);
+
+        *outputIsDetected = result.isDetected;
+        outputRect[0] = result.outputRect[0];
+        outputRect[1] = result.outputRect[1];
+        outputRect[2] = result.outputRect[2];
+        outputRect[3] = result.outputRect[3];
+
+        platform_log("Saved processed image to %s (imwrite result: %s) in %dms\n", outputImagePath, imwrite_result ? "successful" : "failed", evalInMillis);
     }
 
     // TODO pass in img rotation
     FUNCTION_ATTRIBUTE
-    void process_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
-                       uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff, char *outputImagePath)
+    void process_camera_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
+                              uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff, char *outputImagePath)
     {
         long long start = get_now();
 
@@ -160,127 +298,16 @@ extern "C"
 
         imwrite(outputImagePath, img);
         platform_log("Saved input image to %s\n", outputImagePath);
-
-
-        Mat grayImg;
-        cvtColor(img, grayImg, COLOR_BGR2GRAY);
-
-        // Selecting Details box - HSV mask
-        Mat imgHSV;
-        cvtColor(img, imgHSV, COLOR_BGR2HSV);
-
-        double channel1Min = 0.380;
-        double channel1Max = 0.531;
-        double channel2Min = 0.204;
-        double channel2Max = 1.000;
-        double channel3Min = 0.592;
-        double channel3Max = 1.000;
-
-        // Use inRange for HSV thresholding
-        Scalar lowerHSV(channel1Min * max_value_H, channel2Min * max_value, channel3Min * max_value);
-        Scalar upperHSV(channel1Max * max_value_H, channel2Max * max_value, channel3Max * max_value);
-
-        Mat BW_HSV;
-        inRange(imgHSV, lowerHSV, upperHSV, BW_HSV);
-
-        // Do blob detection and filter small blobs
-        vector<vector<Point>> contours;
-        findContours(BW_HSV, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-
-        Mat BW2 = Mat::zeros(BW_HSV.size(), CV_8U);
-        for (size_t i = 0; i < contours.size(); i++)
-        {
-            double area = contourArea(contours[i]);
-            if (area >= 3000 && area <= 50000)
-            {
-                drawContours(BW2, contours, i, Scalar(255), FILLED);
-            }
-        }
-
-        int m = 360;
-        int n = 90;
-
-        // Create opening kernel using byte array (faster than getStructuringElement)
-        int open_width = m * 0.1;
-        int open_height = n * 0.1;
-        uchar *open_data = new uchar[open_height * open_width];
-        memset(open_data, 255, open_height * open_width);
-        Mat SE_open(open_height, open_width, CV_8U, open_data);
-
-        auto start_open = chrono::high_resolution_clock::now();
-        Mat BW3;
-        morphologyEx(BW2, BW3, MORPH_OPEN, SE_open);
-        auto end_open = chrono::high_resolution_clock::now();
-        auto duration_open = chrono::duration_cast<chrono::microseconds>(end_open - start_open);
-        cout << "Opening operation with byte array kernel: " << duration_open.count() << " microseconds" << endl;
-
-        // Dont need close for now, works fiune with JUST open to get rid of noise
-
-        //// Create closing kernel using byte array
-        // int close_width = m * 1.2;
-        // int close_height = n * 1.2;
-        // uchar* close_data = new uchar[close_height * close_width];
-        // memset(close_data, 255, close_height * close_width);
-        // Mat SE_close(close_height, close_width, CV_8U, close_data);
-
-        // auto start_close = chrono::high_resolution_clock::now();
-        // Mat BW4;
-        // morphologyEx(BW3, BW4, MORPH_CLOSE, SE_close);
-        // auto end_close = chrono::high_resolution_clock::now();
-        // auto duration_close = chrono::duration_cast<chrono::microseconds>(end_close - start_close);
-        // cout << "Closing operation with byte array kernel: " << duration_close.count() << " microseconds" << endl;
-
-        delete[] open_data;
-        // delete[] close_data;
-
-        // Get bounding boxes
-        vector<vector<Point>> contours_final;
-        findContours(BW3.clone(), contours_final, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-
-        vector<Rect> roi;
-
-        int largestRoiAreaIndex = 0;
-        double largestRoiArea = 0;
-
-        for (size_t i = 0; i < contours_final.size(); i++)
-        {
-
-            double thisRoi = contourArea(contours_final[i]);
-            roi.push_back(boundingRect(contours_final[i]));
-
-            if (thisRoi > largestRoiArea)
-            {
-                largestRoiAreaIndex = i;
-                largestRoiArea = thisRoi;
-            }
-        }
-
-        if (roi.size() == 0)
-        {
-            outputRect[0] = 0;
-            outputRect[1] = 0;
-            outputRect[2] = img.cols;
-            outputRect[3] = img.rows;
-            platform_log("No OCR ROI detected, defaulting to full image\n");
-            *outputIsDetected = 0;
-            return;
-        }
-
-        // For debug
-        Mat roi_img = img.clone();
-        for (size_t i = 0; i < roi.size(); i++)
-        {
-            rectangle(roi_img, roi[i], Scalar(0, 255, 0), 4);
-        }
-
-        *outputIsDetected = 1;
-        platform_log("%d", largestRoiAreaIndex);
-        outputRect[0] = roi[largestRoiAreaIndex].tl().x;
-        outputRect[1] = roi[largestRoiAreaIndex].tl().y;
-        outputRect[2] = roi[largestRoiAreaIndex].width;
-        outputRect[3] = roi[largestRoiAreaIndex].height;
-
+        ProcessImgResult result = process_image(img);
+        imwrite(outputImagePath, result.BW3);
+        platform_log("Saved processed image to %s\n", outputImagePath);
         // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
+        *outputIsDetected = result.isDetected;
+        outputRect[0] = result.outputRect[0];
+        outputRect[1] = result.outputRect[1];
+        outputRect[2] = result.outputRect[2];
+        outputRect[3] = result.outputRect[3];
+
         platform_log("Returned OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRect[0], outputRect[1], outputRect[2], outputRect[3]);
     }
 

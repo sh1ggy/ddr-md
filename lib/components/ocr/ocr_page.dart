@@ -28,7 +28,7 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
   bool _isCameraActive = false;
   CameraController? _controller;
   late OCRProcessor _ocrProcessor;
-  ProcessImageResult? _lastResult;
+  ProcessResult? _lastResult;
   double _camFrameToScreenScale = 0;
 
   int _processedFrames = 0;
@@ -56,8 +56,13 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
         );
 
         // TODO here is where the state for the result should be created and processed instead of this
-        var fin = ProcessImageResult(result.score, result.difficulty, newRoi,
-            result.isDetected, result.processedImageBytes);
+        var fin = ProcessResult(
+            result.score,
+            result.difficulty,
+            newRoi,
+            result.isDetected,
+            result.returnImageType,
+            result.processedImageBytes);
 
         _lastResult = fin;
       });
