@@ -221,9 +221,7 @@ extern "C"
                               char *outputImagePath)
     {
         long long start = get_now();
-
         Mat img = imread(inputImagePath);
-
         if (img.empty())
         {
             platform_log("Could not open or find the image: %s\n", inputImagePath);
@@ -252,6 +250,8 @@ extern "C"
     void process_camera_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
                               uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff, char *outputImagePath)
     {
+        // throw std::runtime_error("Test crash");
+        // abort();
         long long start = get_now();
 
         Mat img;
@@ -260,19 +260,15 @@ extern "C"
 
         // yuv is weird, see https://www.youtube.com/watch?v=q_mhF_Ys6nw
         Mat frame(imgHeight + imgHeight / 2, imgWidth, CV_8UC1, imageBuffer); // frame size: 1600x1800, frame channels: 1 , type = 0
-
         // cvtColor(frame, img, COLOR_YUV2RGB);
         cvtColor(frame, img, COLOR_YUV2BGR_NV21);
-
         rotate(img, img, ROTATE_90_CLOCKWISE);
         // platform_log("Image size: %dx%d\n", img.cols, img.rows); // 1600x1200,  Image channels: 3, Image type: 16
         // platform_log("Image channels: %d\n", img.channels());
         // platform_log("Image depth: %d\n", img.depth());
         // platform_log("Image type: %d\n", img.type());
 #else
-        // TODO check type for apple
         img = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);
-
         // platform_log("Image size: %dx%d\n", img.cols, img.rows);
         // platform_log("Image channels: %d\n", img.channels());
         // platform_log("Image depth: %d\n", img.depth());
@@ -294,21 +290,35 @@ extern "C"
 
         // api->End();
 
+        if (img.empty())
+        {
+            platform_log("Could not open or find the image: %s\n", outputImagePath);
+        }
+
         // INIT
-
-        imwrite(outputImagePath, img);
-        platform_log("Saved input image to %s\n", outputImagePath);
         ProcessImgResult result = process_image(img);
-        imwrite(outputImagePath, result.BW3);
-        platform_log("Saved processed image to %s\n", outputImagePath);
-        // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
-        *outputIsDetected = result.isDetected;
-        outputRect[0] = result.outputRect[0];
-        outputRect[1] = result.outputRect[1];
-        outputRect[2] = result.outputRect[2];
-        outputRect[3] = result.outputRect[3];
 
-        platform_log("Returned OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRect[0], outputRect[1], outputRect[2], outputRect[3]);
+        try
+        {
+            imwrite(outputImagePath, img);
+            platform_log("Saved input image to %s\n", outputImagePath);
+            imwrite(outputImagePath, result.BW3);
+            platform_log("Saved processed image to %s\n", outputImagePath);
+            // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
+            *outputIsDetected = result.isDetected;
+            outputRect[0] = result.outputRect[0];
+            outputRect[1] = result.outputRect[1];
+            outputRect[2] = result.outputRect[2];
+            outputRect[3] = result.outputRect[3];
+    
+            platform_log("Returned OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRect[0], outputRect[1], outputRect[2], outputRect[3]);
+            return;
+        }
+        catch (cv::Exception &e)
+        {
+            printf(e.what());
+            return;
+        }
     }
 
     // This doesnt work but doesnt crash either,

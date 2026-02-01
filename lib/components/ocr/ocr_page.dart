@@ -75,11 +75,11 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     if (_controller != null) {
+      _controller?.pausePreview();
       if (_controller!.value.isStreamingImages) {
         _controller?.stopImageStream();
       }
     }
-
     _controller?.dispose();
     _ocrProcessor.dispose();
     super.dispose();
