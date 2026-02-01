@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui' as ui;
 
+import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -24,7 +26,7 @@ class _LoadImageState extends State<LoadImage> {
   final _picker = ImagePicker();
   bool _isProcessed = false;
   bool _isWorking = false;
-  bool _isDetected = false;
+  ProcessResult? _lastResult;
   double _camFrameToScreenScale = 1.0;
 
   Future<XFile?> _pickImage() async {
@@ -44,6 +46,7 @@ class _LoadImageState extends State<LoadImage> {
       _isWorking = true;
     });
     final pickedImage = await _pickImage();
+
     if (pickedImage == null) {
       return;
     }
@@ -60,24 +63,70 @@ class _LoadImageState extends State<LoadImage> {
   void initState() {
     super.initState();
     getApplicationDocumentsDirectory().then((dir) => tempDir = dir);
-    widget.ocrProcessor.streamResultController.stream.listen((result) {
-      setState(() {
-        // This is fine to do since we are measuring from top left, width and height
-        var newRoi = Rectangle<int>(
-          (result.roi.left * _camFrameToScreenScale).toInt(),
-          (result.roi.top * _camFrameToScreenScale).toInt(),
-          (result.roi.width * _camFrameToScreenScale).toInt(),
-          (result.roi.height * _camFrameToScreenScale).toInt(),
-        );
-        ProcessResult processedImageResult = ProcessResult(
-            result.score,
-            result.difficulty,
-            newRoi,
-            result.isDetected,
-            result.returnImageType,
-            result.processedImageBytes);
-        _isDetected = processedImageResult.isDetected;
-      });
+    widget.ocrProcessor.streamResultController.stream.listen((result) async {
+      // Try to read the saved temp image and compute a scale so ROI maps to
+      // the displayed image width. Falls back to existing scale if file missing.
+      try {
+        final f = File(tempPath);
+        if (await f.exists()) {
+          final bytes = await f.readAsBytes();
+          ui.decodeImageFromList(bytes, (img) {
+            final screenW = MediaQuery.of(context).size.width;
+            final scale =
+                img.width > 0 ? screenW / img.width : _camFrameToScreenScale;
+
+            setState(() {
+              _camFrameToScreenScale = scale;
+              var newRoi = Rectangle<int>(
+                (result.roi.left * _camFrameToScreenScale).toInt(),
+                (result.roi.top * _camFrameToScreenScale).toInt(),
+                (result.roi.width * _camFrameToScreenScale).toInt(),
+                (result.roi.height * _camFrameToScreenScale).toInt(),
+              );
+              _lastResult = ProcessResult(
+                  result.score,
+                  result.difficulty,
+                  newRoi,
+                  result.isDetected,
+                  result.returnImageType,
+                  result.processedImageBytes);
+            });
+          });
+        } else {
+          // fallback if file not yet written
+          setState(() {
+            var newRoi = Rectangle<int>(
+              (result.roi.left * _camFrameToScreenScale).toInt(),
+              (result.roi.top * _camFrameToScreenScale).toInt(),
+              (result.roi.width * _camFrameToScreenScale).toInt(),
+              (result.roi.height * _camFrameToScreenScale).toInt(),
+            );
+            _lastResult = ProcessResult(
+                result.score,
+                result.difficulty,
+                newRoi,
+                result.isDetected,
+                result.returnImageType,
+                result.processedImageBytes);
+          });
+        }
+      } catch (e) {
+        setState(() {
+          var newRoi = Rectangle<int>(
+            (result.roi.left * _camFrameToScreenScale).toInt(),
+            (result.roi.top * _camFrameToScreenScale).toInt(),
+            (result.roi.width * _camFrameToScreenScale).toInt(),
+            (result.roi.height * _camFrameToScreenScale).toInt(),
+          );
+          _lastResult = ProcessResult(
+              result.score,
+              result.difficulty,
+              newRoi,
+              result.isDetected,
+              result.returnImageType,
+              result.processedImageBytes);
+        });
+      }
     });
   }
 
@@ -99,14 +148,25 @@ class _LoadImageState extends State<LoadImage> {
         child: _isWorking
             ? const CircularProgressIndicator()
             : ListView(shrinkWrap: true, children: [
-                _isDetected
-                    ? ConstrainedBox(
-                        constraints: const BoxConstraints(
-                            maxWidth: 3000, maxHeight: 300),
-                        child: Image.file(
-                          File(tempPath),
-                          alignment: Alignment.center,
-                        ),
+                _lastResult != null && _lastResult!.isDetected
+                    ? Stack(
+                        children: [
+                          Align(
+                            alignment: Alignment.topCenter,
+                            child: Image.file(
+                              File(tempPath),
+                              alignment: Alignment.topCenter,
+                              width: MediaQuery.of(context).size.width,
+                              fit: BoxFit.fitWidth,
+                            ),
+                          ),
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: OCRResultPainter(roi: _lastResult!.roi),
+                              size: Size.infinite,
+                            ),
+                          ),
+                        ],
                       )
                     : Text(_isProcessed
                         ? "please pick image"
