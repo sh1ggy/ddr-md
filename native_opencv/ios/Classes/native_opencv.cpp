@@ -293,13 +293,19 @@ extern "C"
         }
 
         // INIT
+        imwrite(outputImagePath, img);
+        platform_log("Saved input image to %s\n", outputImagePath);
         try
         {
             ProcessImgResult result = process_image(img);
-            // imwrite(outputImagePath, img);
-            // platform_log("Saved input image to %s\n", outputImagePath);
-            // imwrite(outputImagePath, result.BW3);
-            // platform_log("Saved processed image to %s\n", outputImagePath);
+            if (!result.isDetected)
+            {
+                platform_log("No OCR region detected, skipping saving processed image.\n");
+                *outputIsDetected = result.isDetected;
+                return;
+            }
+            imwrite(outputImagePath, result.BW3);
+            platform_log("Saved processed image to %s\n", outputImagePath);
             // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
             *outputIsDetected = result.isDetected;
             outputRect[0] = result.outputRect[0];
