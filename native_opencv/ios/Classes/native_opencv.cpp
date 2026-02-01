@@ -316,7 +316,7 @@ extern "C"
         }
         catch (cv::Exception &e)
         {
-            printf(e.what());
+            platform_log(e.what());
             return;
         }
     }
