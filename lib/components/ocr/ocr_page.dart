@@ -277,13 +277,14 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           if (_controller != null &&
               _controller!.value.isInitialized &&
               _isCameraActive)
-            Positioned.fill(child: CameraPreview(_controller!))
+            CameraPreview(_controller!)
           else if (_controller == null || !_controller!.value.isInitialized)
             const Center(child: Text("Camera not started")),
           if (_lastResult != null && _lastResult!.isDetected)
             Positioned.fill(
               child: CustomPaint(
                 painter: OCRResultPainter(roi: _lastResult!.roi),
+                size: Size.infinite,
               ),
             ),
           // // Dump button
