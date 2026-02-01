@@ -250,10 +250,7 @@ extern "C"
     void process_camera_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
                               uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff, char *outputImagePath)
     {
-        // throw std::runtime_error("Test crash");
-        // abort();
         long long start = get_now();
-
         Mat img;
 
 #ifdef __ANDROID__
@@ -269,10 +266,10 @@ extern "C"
         // platform_log("Image type: %d\n", img.type());
 #else
         img = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);
-        // platform_log("Image size: %dx%d\n", img.cols, img.rows);
-        // platform_log("Image channels: %d\n", img.channels());
-        // platform_log("Image depth: %d\n", img.depth());
-        // platform_log("Image type: %d\n", img.type());
+        platform_log("Image size: %dx%d\n", img.cols, img.rows);
+        platform_log("Image channels: %d\n", img.channels());
+        platform_log("Image depth: %d\n", img.depth());
+        platform_log("Image type: %d\n", img.type());
 #endif
 
         // tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
@@ -296,14 +293,13 @@ extern "C"
         }
 
         // INIT
-        ProcessImgResult result = process_image(img);
-
         try
         {
-            imwrite(outputImagePath, img);
-            platform_log("Saved input image to %s\n", outputImagePath);
-            imwrite(outputImagePath, result.BW3);
-            platform_log("Saved processed image to %s\n", outputImagePath);
+            ProcessImgResult result = process_image(img);
+            // imwrite(outputImagePath, img);
+            // platform_log("Saved input image to %s\n", outputImagePath);
+            // imwrite(outputImagePath, result.BW3);
+            // platform_log("Saved processed image to %s\n", outputImagePath);
             // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
             *outputIsDetected = result.isDetected;
             outputRect[0] = result.outputRect[0];
