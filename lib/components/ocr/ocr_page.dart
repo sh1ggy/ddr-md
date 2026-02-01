@@ -277,7 +277,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           if (_controller != null &&
               _controller!.value.isInitialized &&
               _isCameraActive)
-            CameraPreview(_controller!)
+            Positioned.fill(child: CameraPreview(_controller!))
           else if (_controller == null || !_controller!.value.isInitialized)
             const Center(child: Text("Camera not started")),
           if (_lastResult != null && _lastResult!.isDetected)
