@@ -44,6 +44,8 @@ class OCRResultPainter extends CustomPainter {
 
     canvas.drawRect(rect, _fillPaint);
     canvas.drawRect(rect, _paint);
+
+    // canvas.rotate(pi/2);
   }
 
   @override

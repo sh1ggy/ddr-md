@@ -304,7 +304,7 @@ extern "C"
                 *outputIsDetected = result.isDetected;
                 return;
             }
-            imwrite(outputImagePath, result.BW3);
+            // imwrite(outputImagePath, result.BW3);
             platform_log("Saved processed image to %s\n", outputImagePath);
             // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
             *outputIsDetected = result.isDetected;

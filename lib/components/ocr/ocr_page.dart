@@ -215,7 +215,12 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
   void _processImage(CameraImage image) {
     // print('Processing image frame...');
     int rotation = _controller?.description.sensorOrientation ?? 0;
-    var w = (rotation == 0 || rotation == 180) ? image.width : image.height;
+    var w = 0;
+    if (Platform.isAndroid) {
+      w = (rotation == 0 || rotation == 180) ? image.width : image.height;
+    } else if (Platform.isIOS) {
+      w = (rotation == 90 || rotation == 270) ? image.height : image.width;
+    }
 
     _camFrameToScreenScale = MediaQuery.of(context).size.width / w;
 
@@ -251,20 +256,34 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("OCR Page")),
+      appBar: AppBar(
+        title: const Text("OCR Page"),
+        actions: [
+          ElevatedButton(
+            onPressed: () async {
+              await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => LoadImage(
+                            ocrProcessor: _ocrProcessor,
+                          )));
+            },
+            child: const Text("Load Image"),
+          ),
+        ],
+      ),
       body: Stack(
         children: <Widget>[
           if (_controller != null &&
               _controller!.value.isInitialized &&
               _isCameraActive)
-            CameraPreview(_controller!)
+            Positioned.fill(child: CameraPreview(_controller!))
           else if (_controller == null || !_controller!.value.isInitialized)
             const Center(child: Text("Camera not started")),
           if (_lastResult != null && _lastResult!.isDetected)
             Positioned.fill(
               child: CustomPaint(
                 painter: OCRResultPainter(roi: _lastResult!.roi),
-                size: Size.infinite,
               ),
             ),
           // // Dump button
@@ -295,25 +314,23 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             children: [
               if (_lastResult != null) ...[
                 const SizedBox(height: 8),
-                Text('Score: ${_lastResult!.score}'),
-                Text('Difficulty: ${_lastResult!.difficulty}'),
+                Center(
+                  child: Text(
+                    _lastResult!.isDetected ? "(Detected)" : "(Not Detected)",
+                    style: TextStyle(
+                      color:
+                          _lastResult!.isDetected ? Colors.green : Colors.red,
+                    ),
+                  ),
+                ),
+                Text(
+                    'Difficulty: ${_lastResult!.difficulty} Score: ${_lastResult!.score}'),
               ],
               ElevatedButton(
                 onPressed: _toggleCamera,
                 child: Text(
                   _isCameraActive ? 'Stop Camera' : 'Start Camera',
                 ),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => LoadImage(
-                                ocrProcessor: _ocrProcessor,
-                              )));
-                },
-                child: const Text("Load Image"),
               ),
             ],
           ),
