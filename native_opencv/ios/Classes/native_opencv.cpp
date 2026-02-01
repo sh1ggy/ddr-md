@@ -80,16 +80,16 @@ typedef struct ProcessImgResult
     Mat BW3;
 };
 
-ProcessImgResult process_image(Mat img)
+ProcessImgResult process_image(Mat inputImg)
 {
     ProcessImgResult result;
 
     Mat grayImg;
-    cvtColor(img, grayImg, COLOR_BGR2GRAY);
+    cvtColor(inputImg, grayImg, COLOR_BGR2GRAY);
 
     // Selecting Details box - HSV mask
     Mat imgHSV;
-    cvtColor(img, imgHSV, COLOR_BGR2HSV);
+    cvtColor(inputImg, imgHSV, COLOR_BGR2HSV);
 
     double channel1Min = 0.380;
     double channel1Max = 0.531;
@@ -182,15 +182,15 @@ ProcessImgResult process_image(Mat img)
     {
         result.outputRect[0] = 0;
         result.outputRect[1] = 0;
-        result.outputRect[2] = img.cols;
-        result.outputRect[3] = img.rows;
+        result.outputRect[2] = inputImg.cols;
+        result.outputRect[3] = inputImg.rows;
         platform_log("No OCR ROI detected, defaulting to full image\n");
         result.isDetected = 0;
         return result;
     }
 
     // For debug
-    Mat roi_img = img.clone();
+    Mat roi_img = inputImg.clone();
     for (size_t i = 0; i < roi.size(); i++)
     {
         rectangle(roi_img, roi[i], Scalar(0, 255, 0), 4);
