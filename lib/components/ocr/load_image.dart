@@ -66,65 +66,42 @@ class _LoadImageState extends State<LoadImage> {
     widget.ocrProcessor.streamResultController.stream.listen((result) async {
       // Try to read the saved temp image and compute a scale so ROI maps to
       // the displayed image width. Falls back to existing scale if file missing.
-      try {
-        final f = File(tempPath);
-        if (await f.exists()) {
-          final bytes = await f.readAsBytes();
-          ui.decodeImageFromList(bytes, (img) {
-            final screenW = MediaQuery.of(context).size.width;
-            final scale =
-                img.width > 0 ? screenW / img.width : _camFrameToScreenScale;
+      final f = File(tempPath);
+      if (await f.exists()) {
+        final bytes = await f.readAsBytes();
+        ui.decodeImageFromList(bytes, (img) {
+          final screenW = MediaQuery.of(context).size.width;
+          final scale =
+              img.width > 0 ? screenW / img.width : _camFrameToScreenScale;
 
-            setState(() {
-              _camFrameToScreenScale = scale;
-              var newRoi = Rectangle<int>(
-                (result.roi.left * _camFrameToScreenScale).toInt(),
-                (result.roi.top * _camFrameToScreenScale).toInt(),
-                (result.roi.width * _camFrameToScreenScale).toInt(),
-                (result.roi.height * _camFrameToScreenScale).toInt(),
-              );
-              _lastResult = ProcessResult(
-                  result.score,
-                  result.difficulty,
-                  newRoi,
-                  result.isDetected,
-                  result.returnImageType,
-                  result.processedImageBytes);
-            });
-          });
-        } else {
-          // fallback if file not yet written
+          List<Rectangle<int>> detectedRois = [];
           setState(() {
-            var newRoi = Rectangle<int>(
-              (result.roi.left * _camFrameToScreenScale).toInt(),
-              (result.roi.top * _camFrameToScreenScale).toInt(),
-              (result.roi.width * _camFrameToScreenScale).toInt(),
-              (result.roi.height * _camFrameToScreenScale).toInt(),
-            );
+            _camFrameToScreenScale = scale;
+            if (result.detectedRois == null) {
+              return;
+            }
+            for (int i = 0; i < result.detectedRois!.length; i++) {
+              final roi = result.detectedRois![i];
+              print(
+                  'Detected ROI $i: left=${roi.left}, top=${roi.top}, width=${roi.width}, height=${roi.height}');
+
+              Rectangle<int> roiToAdd = Rectangle<int>(
+                (roi.left * _camFrameToScreenScale).toInt(),
+                (roi.top * _camFrameToScreenScale).toInt(),
+                (roi.width * _camFrameToScreenScale).toInt(),
+                (roi.height * _camFrameToScreenScale).toInt(),
+              );
+              detectedRois.add(roiToAdd);
+            }
             _lastResult = ProcessResult(
                 result.score,
                 result.difficulty,
-                newRoi,
+                null,
+                detectedRois,
                 result.isDetected,
                 result.returnImageType,
                 result.processedImageBytes);
           });
-        }
-      } catch (e) {
-        setState(() {
-          var newRoi = Rectangle<int>(
-            (result.roi.left * _camFrameToScreenScale).toInt(),
-            (result.roi.top * _camFrameToScreenScale).toInt(),
-            (result.roi.width * _camFrameToScreenScale).toInt(),
-            (result.roi.height * _camFrameToScreenScale).toInt(),
-          );
-          _lastResult = ProcessResult(
-              result.score,
-              result.difficulty,
-              newRoi,
-              result.isDetected,
-              result.returnImageType,
-              result.processedImageBytes);
         });
       }
     });
@@ -148,7 +125,9 @@ class _LoadImageState extends State<LoadImage> {
         child: _isWorking
             ? const CircularProgressIndicator()
             : ListView(shrinkWrap: true, children: [
-                _lastResult != null && _lastResult!.isDetected
+                _lastResult != null &&
+                        _lastResult!.isDetected &&
+                        _lastResult!.detectedRois != null
                     ? Stack(
                         children: [
                           Align(
@@ -160,12 +139,15 @@ class _LoadImageState extends State<LoadImage> {
                               fit: BoxFit.fitWidth,
                             ),
                           ),
-                          Positioned.fill(
-                            child: CustomPaint(
-                              painter: OCRResultPainter(roi: _lastResult!.roi),
-                              size: Size.infinite,
-                            ),
-                          ),
+                          _lastResult!.detectedRois!.isNotEmpty
+                              ? Positioned.fill(
+                                  child: CustomPaint(
+                                    painter: RoiResultPainter(
+                                        rois: _lastResult!.detectedRois!),
+                                    size: Size.infinite,
+                                  ),
+                                )
+                              : Container(),
                         ],
                       )
                     : Text(_isProcessed

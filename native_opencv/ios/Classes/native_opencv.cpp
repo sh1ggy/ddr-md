@@ -75,9 +75,9 @@ void platform_log(const char *fmt, ...)
 typedef struct ProcessImgResult
 {
     Mat img;
-    double_t outputRect[4];
     int32_t isDetected;
     Mat BW3;
+    vector<Rect> rois;
 };
 
 ProcessImgResult process_image(Mat inputImg)
@@ -160,16 +160,17 @@ ProcessImgResult process_image(Mat inputImg)
     vector<vector<Point>> contours_final;
     findContours(BW3.clone(), contours_final, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
-    vector<Rect> roi;
+    vector<Rect> detectedRois;
 
     int largestRoiAreaIndex = 0;
     double largestRoiArea = 0;
 
+    // Looping through contours to find its area & bounding box
     for (size_t i = 0; i < contours_final.size(); i++)
     {
 
         double thisRoi = contourArea(contours_final[i]);
-        roi.push_back(boundingRect(contours_final[i]));
+        detectedRois.push_back(boundingRect(contours_final[i]));
 
         if (thisRoi > largestRoiArea)
         {
@@ -178,12 +179,8 @@ ProcessImgResult process_image(Mat inputImg)
         }
     }
 
-    if (roi.size() == 0)
+    if (detectedRois.size() == 0)
     {
-        result.outputRect[0] = 0;
-        result.outputRect[1] = 0;
-        result.outputRect[2] = inputImg.cols;
-        result.outputRect[3] = inputImg.rows;
         platform_log("No OCR ROI detected, defaulting to full image\n");
         result.isDetected = 0;
         return result;
@@ -191,18 +188,15 @@ ProcessImgResult process_image(Mat inputImg)
 
     // For debug
     Mat roi_img = inputImg.clone();
-    for (size_t i = 0; i < roi.size(); i++)
+    for (size_t i = 0; i < detectedRois.size(); i++)
     {
-        rectangle(roi_img, roi[i], Scalar(0, 255, 0), 4);
+        rectangle(roi_img, detectedRois[i], Scalar(0, 255, 0), 4);
     }
 
     result.isDetected = 1;
     platform_log("%d", largestRoiAreaIndex);
-    result.outputRect[0] = roi[largestRoiAreaIndex].tl().x;
-    result.outputRect[1] = roi[largestRoiAreaIndex].tl().y;
-    result.outputRect[2] = roi[largestRoiAreaIndex].width;
-    result.outputRect[3] = roi[largestRoiAreaIndex].height;
-    platform_log("Detected OCR ROI: x=%d, y=%d, w=%d, h=%d\n", result.outputRect[0], result.outputRect[1], result.outputRect[2], result.outputRect[3]);
+    // copy all detected rois so callers can access them
+    result.rois = detectedRois;
     result.BW3 = BW3;
     return result;
 }
@@ -217,8 +211,14 @@ extern "C"
     }
 
     FUNCTION_ATTRIBUTE
-    void process_picked_image(char *inputImagePath, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff,
-                              char *outputImagePath)
+    void process_picked_image(
+        char *inputImagePath,
+        int32_t *outputIsDetected,
+        int32_t *outputImgSize,
+        uint8_t *outputImgBuff,
+        char *outputImgPath,
+        int32_t **outputRois,
+        int32_t *outputRoisCount)
     {
         long long start = get_now();
         Mat img = imread(inputImagePath);
@@ -231,24 +231,45 @@ extern "C"
         if (!result.isDetected)
         {
             platform_log("No OCR region detected, skipping saving processed image.\n");
+            *outputIsDetected = result.isDetected;
             return;
         }
-        int imwrite_result = imwrite(outputImagePath, result.BW3);
+        platform_log("result isDetected: %d\n", result.isDetected);
+        int actualCount = (int)result.rois.size();
+
+        platform_log("%d", actualCount);
+        int imwrite_result = imwrite(outputImgPath, result.BW3);
         int evalInMillis = static_cast<int>(get_now() - start);
 
-        *outputIsDetected = result.isDetected;
-        outputRect[0] = result.outputRect[0];
-        outputRect[1] = result.outputRect[1];
-        outputRect[2] = result.outputRect[2];
-        outputRect[3] = result.outputRect[3];
+        // copy all detected rois to outputRects
+        *outputRois = (int32_t *)malloc(sizeof(int32_t) * actualCount * 4);
+        int32_t *roisPtr = *outputRois;
 
-        platform_log("Saved processed image to %s (imwrite result: %s) in %dms\n", outputImagePath, imwrite_result ? "successful" : "failed", evalInMillis);
+        for (size_t i = 0; i < result.rois.size(); i++)
+        {
+            roisPtr[i * 4 + 0] = result.rois[i].tl().x;
+            roisPtr[i * 4 + 1] = result.rois[i].tl().y;
+            roisPtr[i * 4 + 2] = result.rois[i].width;
+            roisPtr[i * 4 + 3] = result.rois[i].height;
+            platform_log("Detected OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRois[i * 4 + 0], outputRois[i * 4 + 1], outputRois[i * 4 + 2], outputRois[i * 4 + 3]);
+        }
+        *outputRoisCount = actualCount;
+        *outputIsDetected = result.isDetected;
+        platform_log("Saved processed image to %s (imwrite result: %s) in %dms\n", outputImgPath, imwrite_result ? "successful" : "failed", evalInMillis);
     }
 
     // TODO pass in img rotation
     FUNCTION_ATTRIBUTE
-    void process_camera_image(int32_t imgWidth, int32_t imgHeight, int32_t bytesPerPixel,
-                              uint8_t *imageBuffer, int32_t *outputRect, int32_t *outputIsDetected, int32_t *outputImgSize, uint8_t *outputImgBuff, char *outputImagePath)
+    void process_camera_image(
+        int32_t imgWidth,
+        int32_t imgHeight,
+        int32_t bytesPerPixel,
+        uint8_t *imgBuffer,
+        int32_t *outputRoi,
+        int32_t *outputIsDetected,
+        int32_t *outputImgSize,
+        uint8_t *outputImgBuff,
+        char *outputImgPath)
     {
         long long start = get_now();
         Mat img;
@@ -265,7 +286,7 @@ extern "C"
         // platform_log("Image depth: %d\n", img.depth());
         // platform_log("Image type: %d\n", img.type());
 #else
-        img = Mat(imgHeight, imgWidth, CV_8UC4, imageBuffer);
+        img = Mat(imgHeight, imgWidth, CV_8UC4, imgBuffer);
         platform_log("Image size: %dx%d\n", img.cols, img.rows);
         platform_log("Image channels: %d\n", img.channels());
         platform_log("Image depth: %d\n", img.depth());
@@ -289,12 +310,12 @@ extern "C"
 
         if (img.empty())
         {
-            platform_log("Could not open or find the image: %s\n", outputImagePath);
+            platform_log("Could not open or find the image: %s\n", outputImgPath);
         }
 
         // INIT
-        imwrite(outputImagePath, img);
-        platform_log("Saved input image to %s\n", outputImagePath);
+        imwrite(outputImgPath, img);
+        platform_log("Saved input image to %s\n", outputImgPath);
         try
         {
             ProcessImgResult result = process_image(img);
@@ -304,21 +325,21 @@ extern "C"
                 *outputIsDetected = result.isDetected;
                 return;
             }
-            // imwrite(outputImagePath, result.BW3);
-            platform_log("Saved processed image to %s\n", outputImagePath);
+            // imwrite(outputImgPath, result.BW3);
+            platform_log("Saved processed image to %s\n", outputImgPath);
             // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
             *outputIsDetected = result.isDetected;
-            outputRect[0] = result.outputRect[0];
-            outputRect[1] = result.outputRect[1];
-            outputRect[2] = result.outputRect[2];
-            outputRect[3] = result.outputRect[3];
-    
-            platform_log("Returned OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRect[0], outputRect[1], outputRect[2], outputRect[3]);
+            outputRoi[0] = result.rois[0].tl().x;
+            outputRoi[1] = result.rois[0].tl().y;
+            outputRoi[2] = result.rois[0].width;
+            outputRoi[3] = result.rois[0].height;
+
+            platform_log("Returned OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRoi[0], outputRoi[1], outputRoi[2], outputRoi[3]);
             return;
         }
         catch (cv::Exception &e)
         {
-            platform_log(e.what());
+            printf(e.what());
             return;
         }
     }

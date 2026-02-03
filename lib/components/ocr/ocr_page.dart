@@ -48,12 +48,15 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
       setState(() {
+        if (result.roi == null) {
+          return;
+        }
         // This is fine to do since we are measuring from top left, width and height
         var newRoi = Rectangle<int>(
-          (result.roi.left * _camFrameToScreenScale).toInt(),
-          (result.roi.top * _camFrameToScreenScale).toInt(),
-          (result.roi.width * _camFrameToScreenScale).toInt(),
-          (result.roi.height * _camFrameToScreenScale).toInt(),
+          (result.roi!.left * _camFrameToScreenScale).toInt(),
+          (result.roi!.top * _camFrameToScreenScale).toInt(),
+          (result.roi!.width * _camFrameToScreenScale).toInt(),
+          (result.roi!.height * _camFrameToScreenScale).toInt(),
         );
 
         // TODO here is where the state for the result should be created and processed instead of this
@@ -61,6 +64,7 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
             result.score,
             result.difficulty,
             newRoi,
+            null,
             result.isDetected,
             result.returnImageType,
             result.processedImageBytes);
@@ -89,7 +93,7 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
   Future<void> _initCamera() async {
     try {
       await _ocrProcessor.init();
-      await _ocrProcessor.init_camera_actor();
+      await _ocrProcessor.initActor();
 
       final cameras = await availableCameras();
       var cameraId = 0;
@@ -280,10 +284,12 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             Positioned.fill(child: CameraPreview(_controller!))
           else if (_controller == null || !_controller!.value.isInitialized)
             const Center(child: Text("Camera not started")),
-          if (_lastResult != null && _lastResult!.isDetected)
+          if (_lastResult != null &&
+              _lastResult!.isDetected &&
+              _lastResult!.roi != null)
             Positioned.fill(
               child: CustomPaint(
-                painter: OCRResultPainter(roi: _lastResult!.roi),
+                painter: RoiResultPainter(rois: [_lastResult!.roi!]),
                 size: Size.infinite,
               ),
             ),

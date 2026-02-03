@@ -17,13 +17,14 @@ class ProcessResult {
   final int score;
   final DifficultyType difficulty;
   // TODO reconsider to using a rect that can do Floats
-  final Rectangle<int> roi;
+  final Rectangle<int>? roi;
+  final List<Rectangle<int>>? detectedRois;
   final bool isDetected;
   final ReturnImageType returnImageType;
   final Uint8List? processedImageBytes;
 
-  ProcessResult(this.score, this.difficulty, this.roi, this.isDetected,
-      this.returnImageType, this.processedImageBytes);
+  ProcessResult(this.score, this.difficulty, this.roi, this.detectedRois,
+      this.isDetected, this.returnImageType, this.processedImageBytes);
 }
 
 //TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
@@ -105,48 +106,52 @@ DynamicLibrary _openDynamicLibrary() {
 }
 
 // C Functions signatures
-typedef _c_processImage = Void Function(
-    Int32 width,
-    Int32 height,
+typedef _c_processCameraImage = Void Function(
+    Int32 imgWidth,
+    Int32 imgHeight,
     Int32 bytesPerPixel,
-    Pointer<Uint8> imageBytes,
-    Pointer<Int32> outRoi,
-    Pointer<Int32> outIsDetected,
-    Pointer<Int32> outImgSize,
-    Pointer<Uint8> outImgBuff,
-    Pointer<Utf8> outImgPath);
+    Pointer<Uint8> imgBuffer,
+    Pointer<Int32> outputRoi,
+    Pointer<Int32> outputIsDetected,
+    Pointer<Int32> outputImgSize,
+    Pointer<Uint8> outputImgBuff,
+    Pointer<Utf8> outputImgPath);
 
 typedef _c_processPickedImage = Void Function(
-    Pointer<Utf8> inputImagePath,
-    Pointer<Int32> outRoi,
-    Pointer<Int32> outIsDetected,
-    Pointer<Int32> outImgSize,
-    Pointer<Uint8> outImgBuff,
-    Pointer<Utf8> outImgPath);
+  Pointer<Utf8> inputImagePath,
+  Pointer<Int32> outputIsDetected,
+  Pointer<Int32> outputImgSize,
+  Pointer<Uint8> outputImgBuff,
+  Pointer<Utf8> outputImgPath,
+  Pointer<Pointer<Int32>> outputRois,
+  Pointer<Int32> outputRoisCount,
+);
 
 // Dart functions signatures
-typedef _dart_processImage = void Function(
-    int width,
-    int height,
+typedef _dart_processCameraImage = void Function(
+    int imgWidth,
+    int imgHeight,
     int bytesPerPixel,
-    Pointer<Uint8> bytes,
-    Pointer<Int32> outRoi,
-    Pointer<Int32> outIsDetected,
-    Pointer<Int32> outImgSize,
-    Pointer<Uint8> outImgBuff,
-    Pointer<Utf8> outImgPath);
+    Pointer<Uint8> imgBuffer,
+    Pointer<Int32> outputRoi,
+    Pointer<Int32> outputIsDetected,
+    Pointer<Int32> outputImgSize,
+    Pointer<Uint8> outputImgBuff,
+    Pointer<Utf8> outputImgPath);
 
 typedef _dart_processPickedImage = void Function(
-    Pointer<Utf8> inputImagePath,
-    Pointer<Int32> outRoi,
-    Pointer<Int32> outIsDetected,
-    Pointer<Int32> outImgSize,
-    Pointer<Uint8> outImgBuff,
-    Pointer<Utf8> outImgPath);
+  Pointer<Utf8> inputImagePath,
+  Pointer<Int32> outputIsDetected,
+  Pointer<Int32> outputImgSize,
+  Pointer<Uint8> outputImgBuff,
+  Pointer<Utf8> outputImgPath,
+  Pointer<Pointer<Int32>> outputRois,
+  Pointer<Int32> outputRoisCount,
+);
 
 // Create dart functions that invoke the C funcion
 final _processCameraImageFn =
-    _nativeLib.lookupFunction<_c_processImage, _dart_processImage>(
+    _nativeLib.lookupFunction<_c_processCameraImage, _dart_processCameraImage>(
         'process_camera_image');
 final _processPickedImageFn =
     _nativeLib.lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
@@ -154,44 +159,63 @@ final _processPickedImageFn =
 
 Future<ProcessResult> _processPickedImage(
     ProcessPickedImageRequestParams params) async {
-  Pointer<Uint8> retImgBuff = nullptr; // Placeholder for processed image buffer
-
-  Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
-  Pointer<Int32> retIsDetected = calloc.allocate<Int32>(4);
-
-  Pointer<Int32> retImgSize = calloc.allocate<Int32>(4 * 2); // width, height
+  Pointer<Uint8> outputImgBuff =
+      nullptr; // Placeholder for processed image buffer
+  Pointer<Int32> outputIsDetected = calloc.allocate<Int32>(4);
+  Pointer<Int32> outputImgSize = calloc.allocate<Int32>(4 * 2); // width, height
 
   print(params.imagePath);
 
-  _processPickedImageFn(params.imagePath.toNativeUtf8(), retRoi, retIsDetected,
-      retImgSize, retImgBuff, params.outputPath.toNativeUtf8());
+  Pointer<Int32> outputRoisCount = calloc.allocate<Int32>(4);
+  Pointer<Pointer<Int32>> outputRoisPtr = calloc<Pointer<Int32>>();
 
-  if (retRoi == nullptr) {
-    calloc.free(retIsDetected);
-    calloc.free(retRoi);
-    return ProcessResult(0, DifficultyType.None, const Rectangle(0, 0, 0, 0),
-        false, ReturnImageType.None, null);
+  _processPickedImageFn(
+      params.imagePath.toNativeUtf8(),
+      outputIsDetected,
+      outputImgSize,
+      outputImgBuff,
+      params.outputPath.toNativeUtf8(),
+      outputRoisPtr,
+      outputRoisCount);
+
+  final Pointer<Int32> outputRois = outputRoisPtr.value;
+  if (outputRois == nullptr) {
+    calloc.free(outputIsDetected);
+    calloc.free(outputRoisCount);
+    return ProcessResult(
+        0, DifficultyType.None, null, [], false, ReturnImageType.None, null);
   }
 
-  final rectArray = retRoi.cast<Int32>().asTypedList(4);
+  final outputRoiArray =
+      outputRois.cast<Int32>().asTypedList(outputRoisCount.value * 4);
+
+  List<Rectangle<int>> detectedRois = [];
+  for (int i = 0; i < outputRoisCount.value; i++) {
+    // Each rect consists of 4 integers: x, y, width, height
+    int baseIndex = i * 4;
+    // Access the rectangle values using baseIndex
+    int x = outputRois[baseIndex];
+    int y = outputRois[baseIndex + 1];
+    int width = outputRois[baseIndex + 2];
+    int height = outputRois[baseIndex + 3];
+    detectedRois.add(Rectangle<int>(x, y, width, height));
+    print('Detected ROI $i: x=$x, y=$y, width=$width, height=$height');
+  }
 
   ProcessResult result = ProcessResult(
       100, // Placeholder score
       DifficultyType.FFXI, // Placeholder difficulty
-      Rectangle<int>(
-        rectArray[0],
-        rectArray[1],
-        rectArray[2],
-        rectArray[3],
-      ),
-      retIsDetected.value != 0,
+      null, // No single ROI for picked images
+      detectedRois, // List of detected ROIs
+      outputIsDetected.value != 0,
       ReturnImageType.DirImage,
       null);
 
-  calloc.free(retRoi);
-  calloc.free(retIsDetected);
-  calloc.free(retImgSize);
-  calloc.free(retImgBuff);
+  calloc.free(outputRois);
+  calloc.free(outputIsDetected);
+  calloc.free(outputImgSize);
+  calloc.free(outputImgBuff);
+  calloc.free(outputRoisCount);
 
   return result;
 }
@@ -200,14 +224,15 @@ Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
   final bytes = params.bytes.materialize().asUint8List();
   // final bytes = params.bytes;
 
-  Pointer<Uint8> imageBuffer = calloc<Uint8>(bytes.length);
-  var uintImgBuffer = imageBuffer.asTypedList(bytes.length);
+  Pointer<Uint8> imgBuffer = calloc<Uint8>(bytes.length);
+  var uintImgBuffer = imgBuffer.asTypedList(bytes.length);
   uintImgBuffer.setAll(0, bytes);
 
-  Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
-  Pointer<Int32> retIsDetected = calloc.allocate<Int32>(4);
+  Pointer<Int32> outputRoi =
+      calloc.allocate<Int32>(4 * 4); // x, y, width, height
+  Pointer<Int32> outputIsDetected = calloc.allocate<Int32>(4);
 
-  Pointer<Int32> retImgSize = calloc.allocate<Int32>(4 * 2); // width, height
+  Pointer<Int32> outputImgSize = calloc.allocate<Int32>(4 * 2); // width, height
 
   // return ProcessImageResult(
   //   100, // Placeholder score
@@ -217,7 +242,8 @@ Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
   //   null,
   // );
 
-  Pointer<Uint8> retImgBuff = nullptr; // Placeholder for processed image buffer
+  Pointer<Uint8> outputImgBuff =
+      nullptr; // Placeholder for processed image buffer
 
   print(params.tempPath);
 
@@ -225,24 +251,25 @@ Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
       params.width,
       params.height,
       params.bytesPerPixel,
-      imageBuffer,
-      retRoi,
-      retIsDetected,
-      retImgSize,
-      retImgBuff,
+      imgBuffer,
+      outputRoi,
+      outputIsDetected,
+      outputImgSize,
+      outputImgBuff,
       params.tempPath.toNativeUtf8());
 
-  if (retRoi == nullptr) {
-    calloc.free(retIsDetected);
-    calloc.free(retRoi);
-    calloc.free(imageBuffer);
-    return ProcessResult(0, DifficultyType.None, const Rectangle(0, 0, 0, 0),
-        false, ReturnImageType.None, null);
+  if (outputRoi == nullptr) {
+    calloc.free(outputIsDetected);
+    calloc.free(outputRoi);
+    calloc.free(imgBuffer);
+    calloc.free(outputImgSize);
+    return ProcessResult(
+        0, DifficultyType.None, null, [], false, ReturnImageType.None, null);
   }
 
-  final rectArray = retRoi.cast<Int32>().asTypedList(4);
+  final rectArray = outputRoi.cast<Int32>().asTypedList(4);
 
-  // final imgArray = retImgBuff.cast<Uint8>().asTypedList(
+  // final imgArray = outputImgBuff.cast<Uint8>().asTypedList(
   //     params.width * params.height * params.bytesPerPixel); // Assuming RGBA
 
   ProcessResult result = ProcessResult(
@@ -254,15 +281,16 @@ Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
         rectArray[2],
         rectArray[3],
       ),
-      retIsDetected.value != 0,
+      null,
+      outputIsDetected.value != 0,
       ReturnImageType.BytesImage,
       null);
 
-  calloc.free(retRoi);
-  calloc.free(imageBuffer);
-  calloc.free(retIsDetected);
-  calloc.free(retImgSize);
-  calloc.free(retImgBuff);
+  calloc.free(outputRoi);
+  calloc.free(imgBuffer);
+  calloc.free(outputIsDetected);
+  calloc.free(outputImgSize);
+  calloc.free(outputImgBuff);
 
   return result;
 }
@@ -359,6 +387,7 @@ class OCRProcessor {
   Directory? tempDir;
   Directory? appDir; // for iOS
 
+  // TODO: two controllers cos dynamic is gay
   final streamResultController = StreamController<ProcessResult>.broadcast();
   factory OCRProcessor() {
     _instance ??= OCRProcessor._internal();
@@ -377,7 +406,7 @@ class OCRProcessor {
     appDir = await getApplicationDocumentsDirectory();
   }
 
-  Future<void> init_camera_actor() {
+  Future<void> initActor() {
     Completer<void> completer = Completer<void>();
     // Prepare temp directory
     String tempPath = '${tempDir!.path}/temp.jpg';
