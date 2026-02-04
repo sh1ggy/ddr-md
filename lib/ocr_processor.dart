@@ -120,8 +120,6 @@ typedef _c_processCameraImage = Void Function(
 typedef _c_processPickedImage = Void Function(
   Pointer<Utf8> inputImagePath,
   Pointer<Int32> outputIsDetected,
-  Pointer<Int32> outputImgSize,
-  Pointer<Uint8> outputImgBuff,
   Pointer<Utf8> outputImgPath,
   Pointer<Pointer<Int32>> outputRois,
   Pointer<Int32> outputRoisCount,
@@ -142,8 +140,6 @@ typedef _dart_processCameraImage = void Function(
 typedef _dart_processPickedImage = void Function(
   Pointer<Utf8> inputImagePath,
   Pointer<Int32> outputIsDetected,
-  Pointer<Int32> outputImgSize,
-  Pointer<Uint8> outputImgBuff,
   Pointer<Utf8> outputImgPath,
   Pointer<Pointer<Int32>> outputRois,
   Pointer<Int32> outputRoisCount,
@@ -159,35 +155,22 @@ final _processPickedImageFn =
 
 Future<ProcessResult> _processPickedImage(
     ProcessPickedImageRequestParams params) async {
-  Pointer<Uint8> outputImgBuff =
-      nullptr; // Placeholder for processed image buffer
   Pointer<Int32> outputIsDetected = calloc.allocate<Int32>(4);
-  Pointer<Int32> outputImgSize = calloc.allocate<Int32>(4 * 2); // width, height
-
-  print(params.imagePath);
-
   Pointer<Int32> outputRoisCount = calloc.allocate<Int32>(4);
   Pointer<Pointer<Int32>> outputRoisPtr = calloc<Pointer<Int32>>();
 
-  _processPickedImageFn(
-      params.imagePath.toNativeUtf8(),
-      outputIsDetected,
-      outputImgSize,
-      outputImgBuff,
-      params.outputPath.toNativeUtf8(),
-      outputRoisPtr,
-      outputRoisCount);
+  _processPickedImageFn(params.imagePath.toNativeUtf8(), outputIsDetected,
+      params.outputPath.toNativeUtf8(), outputRoisPtr, outputRoisCount);
 
-  final Pointer<Int32> outputRois = outputRoisPtr.value;
+  final Pointer<Int32> outputRois = outputRoisPtr.value; // dereference
+
   if (outputRois == nullptr) {
+    calloc.free(outputRoisPtr);
     calloc.free(outputIsDetected);
     calloc.free(outputRoisCount);
     return ProcessResult(
         0, DifficultyType.None, null, [], false, ReturnImageType.None, null);
   }
-
-  final outputRoiArray =
-      outputRois.cast<Int32>().asTypedList(outputRoisCount.value * 4);
 
   List<Rectangle<int>> detectedRois = [];
   for (int i = 0; i < outputRoisCount.value; i++) {
@@ -213,8 +196,8 @@ Future<ProcessResult> _processPickedImage(
 
   calloc.free(outputRois);
   calloc.free(outputIsDetected);
-  calloc.free(outputImgSize);
-  calloc.free(outputImgBuff);
+  print("FLUTTER POINTER ADDR: ${outputRois.address}");
+  calloc.free(outputRoisPtr); 
   calloc.free(outputRoisCount);
 
   return result;

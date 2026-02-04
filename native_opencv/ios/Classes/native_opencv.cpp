@@ -214,8 +214,6 @@ extern "C"
     void process_picked_image(
         char *inputImagePath,
         int32_t *outputIsDetected,
-        int32_t *outputImgSize,
-        uint8_t *outputImgBuff,
         char *outputImgPath,
         int32_t **outputRois,
         int32_t *outputRoisCount)
@@ -244,6 +242,7 @@ extern "C"
         // copy all detected rois to outputRects
         *outputRois = (int32_t *)malloc(sizeof(int32_t) * actualCount * 4);
         int32_t *roisPtr = *outputRois;
+        platform_log("C++ POINTER ADDR: %d \n", roisPtr);
 
         for (size_t i = 0; i < result.rois.size(); i++)
         {

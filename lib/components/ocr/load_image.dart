@@ -26,6 +26,7 @@ class _LoadImageState extends State<LoadImage> {
   final _picker = ImagePicker();
   bool _isProcessed = false;
   bool _isWorking = false;
+  String? _pickedImagePath;
   ProcessResult? _lastResult;
   double _camFrameToScreenScale = 1.0;
 
@@ -56,6 +57,7 @@ class _LoadImageState extends State<LoadImage> {
     setState(() {
       _isWorking = false;
       _isProcessed = true;
+      _pickedImagePath = pickedImage.path;
     });
   }
 
@@ -127,13 +129,14 @@ class _LoadImageState extends State<LoadImage> {
             : ListView(shrinkWrap: true, children: [
                 _lastResult != null &&
                         _lastResult!.isDetected &&
-                        _lastResult!.detectedRois != null
+                        _lastResult!.detectedRois != null &&
+                        _pickedImagePath != null
                     ? Stack(
                         children: [
                           Align(
                             alignment: Alignment.topCenter,
                             child: Image.file(
-                              File(tempPath),
+                              File(_pickedImagePath!),
                               alignment: Alignment.topCenter,
                               width: MediaQuery.of(context).size.width,
                               fit: BoxFit.fitWidth,
