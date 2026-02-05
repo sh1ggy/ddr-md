@@ -42,15 +42,16 @@ class _LoadImageState extends State<LoadImage> {
   }
 
   Future<void> _pickImageAndProcess() async {
-    setState(() {
-      _isProcessed = false;
-      _isWorking = true;
-    });
     final pickedImage = await _pickImage();
 
     if (pickedImage == null) {
       return;
     }
+
+    setState(() {
+      _isProcessed = false;
+      _isWorking = true;
+    });
 
     widget.ocrProcessor.processPickedImage(pickedImage);
 

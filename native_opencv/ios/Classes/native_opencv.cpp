@@ -276,7 +276,7 @@ extern "C"
 #ifdef __ANDROID__
 
         // yuv is weird, see https://www.youtube.com/watch?v=q_mhF_Ys6nw
-        Mat frame(imgHeight + imgHeight / 2, imgWidth, CV_8UC1, imageBuffer); // frame size: 1600x1800, frame channels: 1 , type = 0
+        Mat frame(imgHeight + imgHeight / 2, imgWidth, CV_8UC1, imgBuffer); // frame size: 1600x1800, frame channels: 1 , type = 0
         // cvtColor(frame, img, COLOR_YUV2RGB);
         cvtColor(frame, img, COLOR_YUV2BGR_NV21);
         rotate(img, img, ROTATE_90_CLOCKWISE);
@@ -338,7 +338,7 @@ extern "C"
         }
         catch (cv::Exception &e)
         {
-            printf(e.what());
+            platform_log(e.what());
             return;
         }
     }
