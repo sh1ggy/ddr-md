@@ -221,6 +221,13 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
 
     int correct_roi_idx = 5; // HARDCODED
 
+    if (result.rois.size() <= correct_roi_idx)
+    {
+        platform_log("Not enough ROIs detected, defaulting to first detected ROI\n");
+        result.isDetected = 1;
+        return result;
+    }
+
     // Using regionprops Convex hull method
     vector<Point> hull;
     convexHull(contours_final[correct_roi_idx], hull);
@@ -311,7 +318,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
 
     save_img(outputImgPath, "tophat_op", Icorrected_score);
     save_img(outputImgPath, "Score_bin", BW1_score);
-    
+
     Mat BW2_score;
     bitwise_not(BW1_score, BW2_score);
     save_img(outputImgPath, "Score_bin2", BW2_score);

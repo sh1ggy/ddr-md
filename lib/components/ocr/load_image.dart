@@ -146,22 +146,25 @@ class _LoadImageState extends State<LoadImage> {
       body: Center(
         child: _isPicking
             ? const CircularProgressIndicator()
-            : ListView(shrinkWrap: true, children: [
-                isDetected
-                    ? RoiOverlay(
-                        rois: _lastResult!.detectedRois!,
-                        child: Image.file(
-                          File(_pickedImage!.path),
-                          width: MediaQuery.of(context).size.width,
-                          fit: BoxFit.fitWidth,
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  isDetected
+                      ? RoiOverlay(
+                          rois: _lastResult!.detectedRois!,
+                          child: Image.file(
+                            File(_pickedImage!.path),
+                            width: MediaQuery.of(context).size.width,
+                            fit: BoxFit.fitWidth,
+                          ),
+                        )
+                      : Center(
+                          child: Text(_pickedImage == null
+                              ? "please pick image"
+                              : 'No DDR chart detected. Please try another image.'),
                         ),
-                      )
-                    : Center(
-                        child: Text(_pickedImage == null
-                            ? "please pick image"
-                            : 'No DDR chart detected. Please try another image.'),
-                      ),
-              ]),
+                ],
+              ),
       ),
     );
   }
