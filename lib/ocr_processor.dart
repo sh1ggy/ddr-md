@@ -11,16 +11,20 @@ import 'package:path_provider/path_provider.dart';
 
 enum DifficultyType { None, FFXI }
 
-class ProcessImageResult {
+enum ReturnImageType { None, DirImage, BytesImage }
+
+class ProcessResult {
   final int score;
   final DifficultyType difficulty;
   // TODO reconsider to using a rect that can do Floats
-  final Rectangle<int> roi;
+  final Rectangle<int>? roi;
+  final List<Rectangle<int>>? detectedRois;
   final bool isDetected;
+  final ReturnImageType returnImageType;
   final Uint8List? processedImageBytes;
 
-  ProcessImageResult(this.score, this.difficulty, this.roi, this.isDetected,
-      this.processedImageBytes);
+  ProcessResult(this.score, this.difficulty, this.roi, this.detectedRois,
+      this.isDetected, this.returnImageType, this.processedImageBytes);
 }
 
 //TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
@@ -42,21 +46,54 @@ class ProcessImageRequestParams {
   });
 }
 
-enum ReqeustType { ProcessImage, Shutdown }
+class ProcessPickedImageRequestParams {
+  final String imagePath;
+  final String outputPath;
+
+  ProcessPickedImageRequestParams({
+    required this.imagePath,
+    required this.outputPath,
+  });
+}
+
+enum RequestType { ProcessVideoImage, ProcessPickedImage, Shutdown }
 
 class Request {
-  final ReqeustType type;
-  // final ProcessImageRequestParams? params;
+  final RequestType type;
   final CameraImage? params;
+  final String? pickedImagePath;
 
-  Request(this.type, this.params);
+  Request._({
+    required this.type,
+    this.params,
+    this.pickedImagePath,
+  });
+
+  Request.fromCamera(
+    RequestType type,
+    CameraImage params,
+  ) : this._(
+          type: type,
+          params: params,
+        );
+
+  Request.fromFile(
+    RequestType type,
+    String path,
+  ) : this._(
+          type: type,
+          pickedImagePath: path,
+        );
+
+  Request.death() : this._(type: RequestType.Shutdown);
 }
 
 class InitialRequest {
   final SendPort toMainThread;
   final String tempPath;
+  final String appPath;
 
-  InitialRequest(this.toMainThread, this.tempPath);
+  InitialRequest(this.toMainThread, this.tempPath, this.appPath);
 }
 
 final DynamicLibrary _nativeLib = _openDynamicLibrary();
@@ -69,46 +106,116 @@ DynamicLibrary _openDynamicLibrary() {
 }
 
 // C Functions signatures
-typedef _c_processImage = Void Function(
-    Int32 width,
-    Int32 height,
+typedef _c_processCameraImage = Void Function(
+    Int32 imgWidth,
+    Int32 imgHeight,
     Int32 bytesPerPixel,
-    Pointer<Uint8> imageBytes,
-    Pointer<Int32> outRoi,
-    Pointer<Int32> outIsDetected,
-    Pointer<Int32> outImgSize,
-    Pointer<Uint8> outImgBuff,
-    Pointer<Utf8> outImgPath);
+    Pointer<Uint8> imgBuffer,
+    Pointer<Int32> outputRoi,
+    Pointer<Int32> outputIsDetected,
+    Pointer<Int32> outputImgSize,
+    Pointer<Uint8> outputImgBuff,
+    Pointer<Utf8> outputImgPath);
+
+typedef _c_processPickedImage = Void Function(
+  Pointer<Utf8> inputImagePath,
+  Pointer<Int32> outputIsDetected,
+  Pointer<Utf8> outputImgPath,
+  Pointer<Pointer<Int32>> outputRois,
+  Pointer<Int32> outputRoisCount,
+);
 
 // Dart functions signatures
-typedef _dart_processImage = void Function(
-    int width,
-    int height,
+typedef _dart_processCameraImage = void Function(
+    int imgWidth,
+    int imgHeight,
     int bytesPerPixel,
-    Pointer<Uint8> bytes,
-    Pointer<Int32> outRoi,
-    Pointer<Int32> outIsDetected,
-    Pointer<Int32> outImgSize,
-    Pointer<Uint8> outImgBuff,
-    Pointer<Utf8> outImgPath);
+    Pointer<Uint8> imgBuffer,
+    Pointer<Int32> outputRoi,
+    Pointer<Int32> outputIsDetected,
+    Pointer<Int32> outputImgSize,
+    Pointer<Uint8> outputImgBuff,
+    Pointer<Utf8> outputImgPath);
+
+typedef _dart_processPickedImage = void Function(
+  Pointer<Utf8> inputImagePath,
+  Pointer<Int32> outputIsDetected,
+  Pointer<Utf8> outputImgPath,
+  Pointer<Pointer<Int32>> outputRois,
+  Pointer<Int32> outputRoisCount,
+);
 
 // Create dart functions that invoke the C funcion
-final _processImageFn = _nativeLib
-    .lookupFunction<_c_processImage, _dart_processImage>('process_image');
+final _processCameraImageFn =
+    _nativeLib.lookupFunction<_c_processCameraImage, _dart_processCameraImage>(
+        'process_camera_image');
+final _processPickedImageFn =
+    _nativeLib.lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
+        'process_picked_image');
 
-Future<ProcessImageResult> _processFrameIsolate(
-    ProcessImageRequestParams params) async {
+Future<ProcessResult> _processPickedImage(
+    ProcessPickedImageRequestParams params) async {
+  Pointer<Int32> outputIsDetected = calloc.allocate<Int32>(4);
+  Pointer<Int32> outputRoisCount = calloc.allocate<Int32>(4);
+  Pointer<Pointer<Int32>> outputRoisPtr = calloc<Pointer<Int32>>();
+
+  _processPickedImageFn(params.imagePath.toNativeUtf8(), outputIsDetected,
+      params.outputPath.toNativeUtf8(), outputRoisPtr, outputRoisCount);
+
+  final Pointer<Int32> outputRois = outputRoisPtr.value; // dereference
+
+  if (outputRois == nullptr) {
+    calloc.free(outputRoisPtr);
+    calloc.free(outputIsDetected);
+    calloc.free(outputRoisCount);
+    return ProcessResult(
+        0, DifficultyType.None, null, [], false, ReturnImageType.None, null);
+  }
+
+  List<Rectangle<int>> detectedRois = [];
+  for (int i = 0; i < outputRoisCount.value; i++) {
+    // Each rect consists of 4 integers: x, y, width, height
+    int baseIndex = i * 4;
+    // Access the rectangle values using baseIndex
+    int x = outputRois[baseIndex];
+    int y = outputRois[baseIndex + 1];
+    int width = outputRois[baseIndex + 2];
+    int height = outputRois[baseIndex + 3];
+    detectedRois.add(Rectangle<int>(x, y, width, height));
+    print('Detected ROI $i: x=$x, y=$y, width=$width, height=$height');
+  }
+
+  ProcessResult result = ProcessResult(
+      100, // Placeholder score
+      DifficultyType.FFXI, // Placeholder difficulty
+      null, // No single ROI for picked images
+      detectedRois, // List of detected ROIs
+      outputIsDetected.value != 0,
+      ReturnImageType.DirImage,
+      null);
+
+  calloc.free(outputRois);
+  calloc.free(outputIsDetected);
+  print("FLUTTER POINTER ADDR: ${outputRois.address}");
+  calloc.free(outputRoisPtr); 
+  calloc.free(outputRoisCount);
+
+  return result;
+}
+
+Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
   final bytes = params.bytes.materialize().asUint8List();
   // final bytes = params.bytes;
 
-  Pointer<Uint8> imageBuffer = calloc<Uint8>(bytes.length);
-  var uintImgBuffer = imageBuffer.asTypedList(bytes.length);
+  Pointer<Uint8> imgBuffer = calloc<Uint8>(bytes.length);
+  var uintImgBuffer = imgBuffer.asTypedList(bytes.length);
   uintImgBuffer.setAll(0, bytes);
 
-  Pointer<Int32> retRoi = calloc.allocate<Int32>(4 * 4); // x, y, width, height
-  Pointer<Int32> retIsDetected = calloc.allocate<Int32>(4);
+  Pointer<Int32> outputRoi =
+      calloc.allocate<Int32>(4 * 4); // x, y, width, height
+  Pointer<Int32> outputIsDetected = calloc.allocate<Int32>(4);
 
-  Pointer<Int32> retImgSize = calloc.allocate<Int32>(4 * 2); // width, height
+  Pointer<Int32> outputImgSize = calloc.allocate<Int32>(4 * 2); // width, height
 
   // return ProcessImageResult(
   //   100, // Placeholder score
@@ -118,35 +225,37 @@ Future<ProcessImageResult> _processFrameIsolate(
   //   null,
   // );
 
-  Pointer<Uint8> retImgBuff = nullptr; // Placeholder for processed image buffer
+  Pointer<Uint8> outputImgBuff =
+      nullptr; // Placeholder for processed image buffer
 
   print(params.tempPath);
 
-  _processImageFn(
+  _processCameraImageFn(
       params.width,
       params.height,
       params.bytesPerPixel,
-      imageBuffer,
-      retRoi,
-      retIsDetected,
-      retImgSize,
-      retImgBuff,
+      imgBuffer,
+      outputRoi,
+      outputIsDetected,
+      outputImgSize,
+      outputImgBuff,
       params.tempPath.toNativeUtf8());
 
-  if (retRoi == nullptr) {
-    calloc.free(retIsDetected);
-    calloc.free(retRoi);
-    calloc.free(imageBuffer);
-    return ProcessImageResult(
-        0, DifficultyType.None, const Rectangle(0, 0, 0, 0), false, null);
+  if (outputRoi == nullptr) {
+    calloc.free(outputIsDetected);
+    calloc.free(outputRoi);
+    calloc.free(imgBuffer);
+    calloc.free(outputImgSize);
+    return ProcessResult(
+        0, DifficultyType.None, null, [], false, ReturnImageType.None, null);
   }
 
-  final rectArray = retRoi.cast<Int32>().asTypedList(4);
+  final rectArray = outputRoi.cast<Int32>().asTypedList(4);
 
-  // final imgArray = retImgBuff.cast<Uint8>().asTypedList(
+  // final imgArray = outputImgBuff.cast<Uint8>().asTypedList(
   //     params.width * params.height * params.bytesPerPixel); // Assuming RGBA
 
-  ProcessImageResult result = ProcessImageResult(
+  ProcessResult result = ProcessResult(
       100, // Placeholder score
       DifficultyType.FFXI, // Placeholder difficulty
       Rectangle<int>(
@@ -155,14 +264,16 @@ Future<ProcessImageResult> _processFrameIsolate(
         rectArray[2],
         rectArray[3],
       ),
-      retIsDetected.value != 0,
+      null,
+      outputIsDetected.value != 0,
+      ReturnImageType.BytesImage,
       null);
 
-  calloc.free(retRoi);
-  calloc.free(imageBuffer);
-  calloc.free(retIsDetected);
-  calloc.free(retImgSize);
-  calloc.free(retImgBuff);
+  calloc.free(outputRoi);
+  calloc.free(imgBuffer);
+  calloc.free(outputIsDetected);
+  calloc.free(outputImgSize);
+  calloc.free(outputImgBuff);
 
   return result;
 }
@@ -176,8 +287,22 @@ void isolateEntryPoint(InitialRequest initReq) {
   fromMainThread.listen((data) {
     if (data is Request) {
       switch (data.type) {
-        case ReqeustType.ProcessImage:
-          ProcessImageResult? res;
+        case RequestType.ProcessPickedImage:
+          ProcessResult? res;
+          var path = data.pickedImagePath!;
+          var appPath = initReq.appPath;
+          final params = ProcessPickedImageRequestParams(
+            imagePath: path,
+            outputPath: appPath,
+          );
+          _processPickedImage(params).then((result) {
+            res = result;
+            // Send the result back to the main thread
+            _toMainThread.send(res);
+          });
+          break;
+        case RequestType.ProcessVideoImage:
+          ProcessResult? res;
 
           var image = data.params!;
           Uint8List bytes;
@@ -217,14 +342,14 @@ void isolateEntryPoint(InitialRequest initReq) {
             tempPath: initReq.tempPath,
           );
 
-          _processFrameIsolate(params).then((result) {
+          _processFrame(params).then((result) {
             res = result;
             // Send the result back to the main thread
             _toMainThread.send(res);
           });
           break;
 
-        case ReqeustType.Shutdown:
+        case RequestType.Shutdown:
           // Clean up and exit
           fromMainThread.close();
           Isolate.exit();
@@ -243,52 +368,45 @@ class OCRProcessor {
   static OCRProcessor? _instance;
 
   Directory? tempDir;
+  Directory? appDir; // for iOS
 
-
-  final streamResultController = StreamController<ProcessImageResult>();
-  factory OCRProcessor() {
-    _instance ??= OCRProcessor._internal();
-    return _instance!;
-  }
+  // TODO: two controllers cos dynamic is gay
+  final streamResultController = StreamController<ProcessResult>.broadcast();
 
   bool _isProcessing = false;
   ReceivePort fromIsolate = ReceivePort();
   SendPort? toIsolate;
   Isolate? _isolate;
 
-  OCRProcessor._internal() {}
+  Future<void> init() async {
+    tempDir = await getTemporaryDirectory();
+    appDir = await getApplicationDocumentsDirectory();
+  }
 
-  Future<void> init() {
+  Future<void> initActor() {
     Completer<void> completer = Completer<void>();
     // Prepare temp directory
-    getTemporaryDirectory().then((dir) {
+    String tempPath = '${tempDir!.path}/temp.jpg';
+    String appPath = '${appDir!.path}/temp.jpg';
 
-      String tempPath = '${dir.path}/temp.jpg';
-
-      // Start the isolate
-      Isolate.spawn(
-              isolateEntryPoint, InitialRequest(fromIsolate.sendPort, tempPath))
-          .then((isolate) {
-        _isolate = isolate;
-        // Wait for the isolate to send us its port
-        fromIsolate.listen((data) {
-          if (data is SendPort) {
-            // We have received the SendPort from the isolate
-            toIsolate = data;
-            completer.complete();
-          } else if (data is ProcessImageResult) {
-            // We have received a result from the isolate
-            _isProcessing = false;
-            streamResultController.add(data);
-          }
-        });
+    // Start the isolate
+    Isolate.spawn(isolateEntryPoint,
+            InitialRequest(fromIsolate.sendPort, tempPath, appPath))
+        .then((isolate) {
+      _isolate = isolate;
+      // Wait for the isolate to send us its port
+      fromIsolate.listen((data) {
+        if (data is SendPort) {
+          // We have received the SendPort from the isolate
+          toIsolate = data;
+          completer.complete();
+        } else if (data is ProcessResult) {
+          // We have received a result from the isolate
+          _isProcessing = false;
+          streamResultController.add(data);
+        }
       });
-
-
     });
-
-
-
     return completer.future;
   }
 
@@ -296,7 +414,7 @@ class OCRProcessor {
 
   int _cameraFrames = 0;
   int skippedFrames = 0;
-  int FRAME_THRESHOLD = 60;
+  int FRAME_THRESHOLD = 10;
 
   void panicFromNotProcessing() {
     _isProcessing = false;
@@ -305,7 +423,16 @@ class OCRProcessor {
     dispose();
   }
 
-  void processFrame(CameraImage image) async {
+  void processPickedImage(XFile image) async {
+    // Placeholder implementation
+    print('Processing image from file: ${image.path}');
+    final request =
+        Request.fromFile(RequestType.ProcessPickedImage, image.path);
+    _isProcessing = true;
+    toIsolate?.send(request);
+  }
+
+  void processVideostreamFrame(CameraImage image) async {
     _cameraFrames++;
     if (_cameraFrames % FRAME_THRESHOLD != 0) {
       return;
@@ -321,20 +448,19 @@ class OCRProcessor {
 
     print('Processing image frame... Camera frame #: $_cameraFrames');
 
-    final request = Request(ReqeustType.ProcessImage, image);
+    final request = Request.fromCamera(RequestType.ProcessVideoImage, image);
     _isProcessing = true;
 
     toIsolate?.send(request);
   }
 
   void dispose() {
-    final request = Request(ReqeustType.Shutdown, null);
+    final request = Request.death();
     fromIsolate.sendPort.send(request);
     fromIsolate.close();
 
     _isolate?.kill(priority: Isolate.immediate);
 
     streamResultController.close();
-    _instance = null;
   }
 }
