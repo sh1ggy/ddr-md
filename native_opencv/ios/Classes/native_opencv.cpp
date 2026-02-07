@@ -72,15 +72,22 @@ void platform_log(const char *fmt, ...)
     va_end(args);
 }
 
+void save_img(const string &outputImgPath, const string &fileName, Mat img)
+{
+    char path[250];
+    snprintf(path, sizeof(path), "%s/%s.jpg", outputImgPath.c_str(), fileName.c_str());
+    platform_log("wrote: %s\n", path);
+    int imwrite_result = imwrite(path, img);
+}
+
 typedef struct ProcessImgResult
 {
     Mat img;
     int32_t isDetected;
-    Mat BW3;
     vector<Rect> rois;
 };
 
-ProcessImgResult process_image(Mat inputImg)
+ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
 {
     ProcessImgResult result;
 
@@ -197,7 +204,117 @@ ProcessImgResult process_image(Mat inputImg)
     platform_log("%d", largestRoiAreaIndex);
     // copy all detected rois so callers can access them
     result.rois = detectedRois;
-    result.BW3 = BW3;
+    save_img(outputImgPath, "BW3", BW3); // save bW3
+
+    // Create offsets for score OCR
+    Point2d top_left_details(2054, 2345);
+    Point2d bot_right_details(2417, 2454);
+    Point2d top_left_score(2700, 2551);
+    Point2d bot_right_score(2953, 2611);
+    Point2d top_left_difficulty(1657, 2471);
+
+    Size score_box_size(bot_right_score.x - top_left_score.x, bot_right_score.y - top_left_score.y);
+    Point2d score_offset(top_left_score.x - top_left_details.x, top_left_score.y - top_left_details.y);
+
+    Point2d difficulty_offset(top_left_difficulty.x - top_left_details.x, top_left_difficulty.y - top_left_details.y);
+    Size difficulty_box_size(score_box_size.width * 0.8, score_box_size.height);
+
+    int correct_roi_idx = 5; // HARDCODED
+
+    // Using regionprops Convex hull method
+    vector<Point> hull;
+    convexHull(contours_final[correct_roi_idx], hull);
+
+    // Approximate polygon
+    vector<Point> approx;
+    // Use the perimeter (arcLength) as part of the calculation for how much the polygon should be reduced.
+    double epsilon = 0.1 * arcLength(hull, true);
+    approxPolyDP(hull, approx, epsilon, true);
+
+    Mat approx_img = inputImg.clone();
+    for (size_t i = 0; i < approx.size(); i++)
+    {
+        line(approx_img, approx[i], approx[(i + 1) % approx.size()],
+             Scalar(0, 255, 0), 4);
+        circle(approx_img, approx[i], 12, Scalar(0, 255, 255), -1);
+    }
+
+    save_img(outputImgPath, "extrema", approx_img);
+
+    // Get first 4 points and order them
+    vector<Point2f> pts;
+    for (int i = 0; i < min(4, (int)approx.size()); i++)
+    {
+        pts.push_back(Point2f(approx[i].x, approx[i].y));
+    }
+
+    // Order points: top-left, top-right, bottom-right, bottom-left
+    vector<pair<float, int>> sums;
+    for (int i = 0; i < pts.size(); i++)
+    {
+        sums.push_back(make_pair(pts[i].x + pts[i].y, i));
+    }
+    sort(sums.begin(), sums.end());
+
+    Point2f tl = pts[sums[0].second];
+    Point2f br = pts[sums[3].second];
+
+    Point2f remaining[2] = {pts[sums[1].second], pts[sums[2].second]};
+    Point2f tr = remaining[0].x > remaining[1].x ? remaining[0] : remaining[1];
+    Point2f bl = remaining[0].x < remaining[1].x ? remaining[0] : remaining[1];
+
+    vector<Point2f> ordered = {tl, tr, br, bl};
+
+    // Perform homography
+    Point2f ref_tl(top_left_details.x, top_left_details.y);
+    Point2f ref_tr(bot_right_details.x, top_left_details.y);
+    Point2f ref_br(bot_right_details.x, bot_right_details.y);
+    Point2f ref_bl(top_left_details.x, bot_right_details.y);
+
+    vector<Point2f> referencePoints = {ref_tl, ref_tr, ref_br, ref_bl};
+
+    Mat H = getPerspectiveTransform(ordered, referencePoints);
+
+    Mat warpedImg;
+    // The size doesnt affect the output to ROI (as long as the size is big enough)
+    Size beeg = Size(4000, 5000);
+    warpPerspective(inputImg, warpedImg, H, beeg);
+
+    save_img(outputImgPath, "warped", warpedImg);
+
+    // Read from offsets
+    vector<Point2f> tl_vec = {tl};
+    vector<Point2f> tl_transformed;
+    perspectiveTransform(tl_vec, tl_transformed, H);
+
+    Point2f warped_details_top_left = tl_transformed[0];
+    int numAdditionalPixels = 5;
+    Rect score_roi_warped(warped_details_top_left.x + score_offset.x - numAdditionalPixels,
+                          warped_details_top_left.y + score_offset.y - numAdditionalPixels,
+                          score_box_size.width + 2 * numAdditionalPixels,
+                          score_box_size.height + 2 * numAdditionalPixels);
+
+    // Ensure ROI is within image bounds
+    score_roi_warped &= Rect(0, 0, warpedImg.cols, warpedImg.rows);
+
+    Mat img_cropped = warpedImg(score_roi_warped);
+
+    save_img(outputImgPath, "cropped", img_cropped);
+
+    Mat kernel_tophat = getStructuringElement(MORPH_ELLIPSE, Size(31, 31));
+    Mat Icorrected_score;
+    morphologyEx(img_cropped, Icorrected_score, MORPH_TOPHAT, kernel_tophat);
+
+    Mat BW1_score;
+    cvtColor(Icorrected_score, BW1_score, COLOR_BGR2GRAY);
+    threshold(BW1_score, BW1_score, 0, 255, THRESH_BINARY + THRESH_OTSU);
+
+    save_img(outputImgPath, "tophat_op", Icorrected_score);
+    save_img(outputImgPath, "Score_bin", BW1_score);
+    
+    Mat BW2_score;
+    bitwise_not(BW1_score, BW2_score);
+    save_img(outputImgPath, "Score_bin2", BW2_score);
     return result;
 }
 
@@ -225,7 +342,8 @@ extern "C"
             platform_log("Could not open or find the image: %s\n", inputImagePath);
             return;
         }
-        ProcessImgResult result = process_image(img);
+        string staticOutputImgPath = string(outputImgPath);
+        ProcessImgResult result = process_image(img, staticOutputImgPath);
         if (!result.isDetected)
         {
             platform_log("No OCR region detected, skipping saving processed image.\n");
@@ -236,7 +354,6 @@ extern "C"
         int actualCount = (int)result.rois.size();
 
         platform_log("%d", actualCount);
-        int imwrite_result = imwrite(outputImgPath, result.BW3);
         int evalInMillis = static_cast<int>(get_now() - start);
 
         // copy all detected rois to outputRects
@@ -254,7 +371,6 @@ extern "C"
         }
         *outputRoisCount = actualCount;
         *outputIsDetected = result.isDetected;
-        platform_log("Saved processed image to %s (imwrite result: %s) in %dms\n", outputImgPath, imwrite_result ? "successful" : "failed", evalInMillis);
     }
 
     // TODO pass in img rotation
@@ -313,11 +429,11 @@ extern "C"
         }
 
         // INIT
-        imwrite(outputImgPath, img);
+        // imwrite(outputImgPath, img);
         platform_log("Saved input image to %s\n", outputImgPath);
         try
         {
-            ProcessImgResult result = process_image(img);
+            ProcessImgResult result = process_image(img, outputImgPath);
             if (!result.isDetected)
             {
                 platform_log("No OCR region detected, skipping saving processed image.\n");

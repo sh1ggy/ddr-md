@@ -159,6 +159,7 @@ Future<ProcessResult> _processPickedImage(
   Pointer<Int32> outputRoisCount = calloc.allocate<Int32>(4);
   Pointer<Pointer<Int32>> outputRoisPtr = calloc<Pointer<Int32>>();
 
+  print('FLUTTER DEEEEEEZ: ${params.outputPath}');
   _processPickedImageFn(params.imagePath.toNativeUtf8(), outputIsDetected,
       params.outputPath.toNativeUtf8(), outputRoisPtr, outputRoisCount);
 
@@ -197,7 +198,7 @@ Future<ProcessResult> _processPickedImage(
   calloc.free(outputRois);
   calloc.free(outputIsDetected);
   print("FLUTTER POINTER ADDR: ${outputRois.address}");
-  calloc.free(outputRoisPtr); 
+  calloc.free(outputRoisPtr);
   calloc.free(outputRoisCount);
 
   return result;
@@ -386,8 +387,8 @@ class OCRProcessor {
   Future<void> initActor() {
     Completer<void> completer = Completer<void>();
     // Prepare temp directory
-    String tempPath = '${tempDir!.path}/temp.jpg';
-    String appPath = '${appDir!.path}/temp.jpg';
+    String tempPath = tempDir!.path;
+    String appPath = appDir!.path;
 
     // Start the isolate
     Isolate.spawn(isolateEntryPoint,

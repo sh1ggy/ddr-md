@@ -12,7 +12,7 @@ import 'package:path_provider/path_provider.dart';
 
 const int imageQuality = 100;
 late Directory tempDir;
-String get tempPath => '${tempDir.path}/temp.jpg';
+String get tempPath => '${tempDir.path}/';
 
 class LoadImage extends StatefulWidget {
   const LoadImage({super.key});
@@ -68,7 +68,8 @@ class _LoadImageState extends State<LoadImage> {
     _ocrProcessor.streamResultController.stream.listen((result) async {
       // Try to read the saved temp image and compute a scale so ROI maps to
       // the displayed image width. Falls back to existing scale if file missing.
-      final f = File(tempPath);
+      if (_pickedImage == null) return;
+      final f = File(_pickedImage!.path);
       if (await f.exists()) {
         final bytes = await f.readAsBytes();
         ui.decodeImageFromList(bytes, (img) {
@@ -155,9 +156,11 @@ class _LoadImageState extends State<LoadImage> {
                           fit: BoxFit.fitWidth,
                         ),
                       )
-                    : Text(_pickedImage == null
-                        ? "please pick image"
-                        : 'No DDR chart detected. Please try another image.'),
+                    : Center(
+                        child: Text(_pickedImage == null
+                            ? "please pick image"
+                            : 'No DDR chart detected. Please try another image.'),
+                      ),
               ]),
       ),
     );
