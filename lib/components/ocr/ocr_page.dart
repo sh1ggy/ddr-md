@@ -8,10 +8,16 @@ import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
-import 'package:ddr_md/components/roi_painter.dart';
+import 'package:ddr_md/components/roi_overlay.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+
+enum CameraState {
+  notReady,
+  inactive,
+  active,
+}
 
 class OcrPage extends StatefulWidget {
   const OcrPage({super.key});
@@ -31,7 +37,6 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
   late OCRProcessor _ocrProcessor;
   ProcessResult? _lastResult;
   double _camFrameToScreenScale = 0;
-
   int _processedFrames = 0;
   double lastTimeProcessed = 0.0;
 
@@ -79,13 +84,15 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    if (_controller != null) {
-      _controller?.pausePreview();
-      if (_controller!.value.isStreamingImages) {
-        _controller?.stopImageStream();
-      }
-    }
+    // TODO: use actual lifecycle events to call asynchronous controller methods
+    // if (_controller != null) {
+    //   _controller?.pausePreview();
+    //   if (_controller!.value.isStreamingImages) {
+    //     _controller?.stopImageStream();
+    //   }
+    // }
     _controller?.dispose();
+    _controller = null;
     _ocrProcessor.dispose();
     super.dispose();
   }
@@ -257,6 +264,18 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     }
   }
 
+  bool get cameraReady =>
+      _controller != null && _controller!.value.isInitialized;
+
+  bool get hasRoi =>
+      _lastResult?.isDetected == true && _lastResult?.roi != null;
+
+  CameraState get cameraState {
+    if (!cameraReady) return CameraState.notReady;
+    if (!_isCameraActive) return CameraState.inactive;
+    return CameraState.active;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -265,54 +284,40 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
         actions: [
           ElevatedButton(
             onPressed: () async {
-              await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => LoadImage(
-                            ocrProcessor: _ocrProcessor,
-                          )));
+              await Navigator.pushReplacement(context,
+                  MaterialPageRoute(builder: (context) => const LoadImage()));
             },
             child: const Text("Load Image"),
           ),
         ],
       ),
-      body: Stack(
-        children: <Widget>[
-          if (_controller != null &&
-              _controller!.value.isInitialized &&
-              _isCameraActive)
-              // Might need positioned.fill for ios to look idea
-              CameraPreview(_controller!)
-          else if (_controller == null || !_controller!.value.isInitialized)
-            const Center(child: Text("Camera not started")),
-          if (_lastResult != null &&
-              _lastResult!.isDetected &&
-              _lastResult!.roi != null)
-            Positioned.fill(
-              child: CustomPaint(
-                painter: RoiResultPainter(rois: [_lastResult!.roi!]),
-                size: Size.infinite,
-              ),
+      body: Center(
+        child: switch (cameraState) {
+          CameraState.notReady => const Text("Camera not started"),
+          CameraState.inactive => const Text("Camera stopped"),
+          CameraState.active => RoiOverlay(
+              rois: hasRoi ? [_lastResult!.roi!] : const [],
+              child: CameraPreview(_controller!),
             ),
-          // // Dump button
-          // Positioned(
-          //   bottom: 80,
-          //   left: 0,
-          //   right: 0,
-          //   child: Center(
-          //     child: ElevatedButton.icon(
-          //       onPressed: _requestDump,
-          //       icon: Icon(Icons.save),
-          //       label: Text('Dump YUV Frame'),
-          //       style: ElevatedButton.styleFrom(
-          //         padding:
-          //             const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          //         backgroundColor: Colors.blue,
-          //       ),
-          //     ),
-          //   ),
-          // ),
-        ],
+        },
+        // // Dump button
+        // Positioned(
+        //   bottom: 80,
+        //   left: 0,
+        //   right: 0,
+        //   child: Center(
+        //     child: ElevatedButton.icon(
+        //       onPressed: _requestDump,
+        //       icon: Icon(Icons.save),
+        //       label: Text('Dump YUV Frame'),
+        //       style: ElevatedButton.styleFrom(
+        //         padding:
+        //             const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        //         backgroundColor: Colors.blue,
+        //       ),
+        //     ),
+        //   ),
+        // ),
       ),
       bottomNavigationBar: SafeArea(
         child: Container(

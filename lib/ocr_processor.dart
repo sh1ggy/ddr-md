@@ -372,17 +372,11 @@ class OCRProcessor {
 
   // TODO: two controllers cos dynamic is gay
   final streamResultController = StreamController<ProcessResult>.broadcast();
-  factory OCRProcessor() {
-    _instance ??= OCRProcessor._internal();
-    return _instance!;
-  }
 
   bool _isProcessing = false;
   ReceivePort fromIsolate = ReceivePort();
   SendPort? toIsolate;
   Isolate? _isolate;
-
-  OCRProcessor._internal() {}
 
   Future<void> init() async {
     tempDir = await getTemporaryDirectory();
@@ -468,6 +462,5 @@ class OCRProcessor {
     _isolate?.kill(priority: Isolate.immediate);
 
     streamResultController.close();
-    _instance = null;
   }
 }
