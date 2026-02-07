@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/roi_overlay.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
@@ -10,7 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 const int imageQuality = 100;
-late Directory tempDir; 
+late Directory tempDir;
 String get tempPath => '${tempDir.path}/temp.jpg';
 
 class LoadImage extends StatefulWidget {
@@ -125,7 +126,18 @@ class _LoadImageState extends State<LoadImage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Load Image")),
+      appBar: AppBar(
+        title: const Text("Load Image"),
+        actions: [
+          ElevatedButton(
+            onPressed: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (context) => const OcrPage()));
+            },
+            child: const Text("Load Image"),
+          ),
+        ],
+      ),
       bottomNavigationBar: ElevatedButton(
         onPressed: _processImage,
         child: const Text('Process photo'),
@@ -143,7 +155,7 @@ class _LoadImageState extends State<LoadImage> {
                           fit: BoxFit.fitWidth,
                         ),
                       )
-                    : Text(_pickedImage == null 
+                    : Text(_pickedImage == null
                         ? "please pick image"
                         : 'No DDR chart detected. Please try another image.'),
               ]),

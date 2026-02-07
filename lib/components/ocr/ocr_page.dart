@@ -30,7 +30,6 @@ late Directory tempDir;
 String get tempPath => '${tempDir.path}/temp.jpg';
 
 class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
-  final List<AppLifecycleState> _stateHistoryList = <AppLifecycleState>[];
   bool _isImageLoaded = false;
   bool _isCameraActive = false;
   CameraController? _controller;
@@ -46,10 +45,8 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
 
+    // Add observer to listen for app lifecycle changes
     WidgetsBinding.instance.addObserver(this);
-    if (WidgetsBinding.instance.lifecycleState != null) {
-      _stateHistoryList.add(WidgetsBinding.instance.lifecycleState!);
-    }
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
       setState(() {

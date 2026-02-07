@@ -6,6 +6,7 @@ library;
 import 'dart:io';
 
 import 'package:ddr_md/components/bpm_page.dart';
+import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -170,7 +171,7 @@ class _LayoutState extends State<Layout> {
             const BpmPage(),
             const DifficultyListPage(),
             const SettingsPage(),
-            const OcrPage(),
+            const LoadImage(),
           } else ...{
             Navigator(
               key: const Key("Bpm"),
@@ -195,7 +196,7 @@ class _LayoutState extends State<Layout> {
             Navigator(
                 key: const Key("OCR"),
                 onGenerateRoute: (settings) {
-                  Widget page = const OcrPage();
+                  Widget page = const LoadImage();
                   return MaterialPageRoute(builder: (_) => page);
                 }),
           }
