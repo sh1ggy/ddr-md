@@ -1,5 +1,6 @@
 #include <opencv2/opencv.hpp>
 #include <chrono>
+#include "ocr_wrapper.h"
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
 #define IS_WIN32
@@ -298,11 +299,18 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     }
 
     // For debug
-    Mat roi_img = inputImg.clone();
+   
+    Mat roi_img = inputImg.clone(); // TODO rename to all_rois_img
     for (size_t i = 0; i < detectedRois.size(); i++)
     {
         rectangle(roi_img, detectedRois[i], Scalar(0, 255, 0), 4);
+        Rect details_roi = detectedRois[i];
+        //Mat details_roi_img = inputImg(details_roi);
+        // TODO: NOT PERFORMANT pass in just ROI or pass in input image once at start of fun
+        OCRResult ocrResult = OCRWrapper::performOCR(inputImg, details_roi); 
+        platform_log("%s", ocrResult.text.c_str());
     }
+    
 
     result.isDetected = 1;
     platform_log("%d", largestRoiAreaIndex);
