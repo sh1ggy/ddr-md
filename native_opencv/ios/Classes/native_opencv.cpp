@@ -80,6 +80,110 @@ void save_img(const string &outputImgPath, const string &fileName, Mat img)
     int imwrite_result = imwrite(path, img);
 }
 
+Rect expandRoi(Rect roi, Point expand)
+{
+    return Rect(
+        roi.x - expand.x,
+        roi.y - expand.y,
+        roi.width + expand.x * 2,
+        roi.height + expand.y * 2);
+}
+
+vector<Point2f> rectToPoints(const Rect &r)
+{
+    Point2f tl(r.x, r.y);
+    Point2f tr(r.x + r.width, r.y);
+    Point2f br(r.x + r.width, r.y + r.height);
+    Point2f bl(r.x, r.y + r.height);
+
+    return {tl, tr, br, bl};
+}
+
+Rect offsetToRoi(Point tl, Point br, Point expansion = {0, 0})
+{
+    // Width/height from raw coordinates
+    int width = br.x - tl.x;
+    int height = br.y - tl.y;
+
+    // Expand ROI by expansion.x and expansion.y on all sides
+    int x = tl.x - expansion.x;
+    int y = tl.y - expansion.y;
+    width += expansion.x * 2;
+    height += expansion.y * 2;
+
+    return Rect(x, y, width, height);
+}
+
+Mat getPreprocessedRoiImage(
+    const Mat &warpedImg,
+    const Rect &ROI_Target,
+    const Rect &ROI_Details,
+    const Point &warped_details_top_left,
+    const Point &expand,
+    const string &imageName,
+    const string &outputImgPath)
+{
+    if (warpedImg.empty())
+        return Mat();
+
+    // Compute offset
+    Point2d offset(
+        ROI_Target.x - ROI_Details.x,
+        ROI_Target.y - ROI_Details.y);
+
+    // Initial ROI
+    Rect roi_warped(
+        warped_details_top_left.x + offset.x,
+        warped_details_top_left.y + offset.y,
+        ROI_Target.width,
+        ROI_Target.height);
+
+    // Expand
+    roi_warped = expandRoi(roi_warped, expand);
+
+    // Clip to image bounds
+    Rect imgBounds(0, 0, warpedImg.cols, warpedImg.rows);
+    roi_warped &= imgBounds;
+
+    // Validate after clip
+    if (roi_warped.width <= 0 || roi_warped.height <= 0)
+        return Mat();
+
+    // Safe crop
+    Mat cropped;
+    try
+    {
+        cropped = warpedImg(roi_warped);
+    }
+    catch (...)
+    {
+        return Mat();
+    }
+
+    if (cropped.empty())
+        return Mat();
+
+    // Top-hat
+    Mat kernel_tophat = getStructuringElement(MORPH_ELLIPSE, Size(31, 31));
+    Mat corrected;
+    morphologyEx(cropped, corrected, MORPH_TOPHAT, kernel_tophat);
+
+    // Grayscale
+    Mat gray;
+    cvtColor(corrected, gray, COLOR_BGR2GRAY);
+
+    // Threshold
+    Mat BW1;
+    threshold(gray, BW1, 0, 255, THRESH_BINARY | THRESH_OTSU);
+
+    // Invert
+    Mat BW2;
+    bitwise_not(BW1, BW2);
+    save_img(outputImgPath, imageName, BW2);
+
+    return BW2;
+}
+
 typedef struct ProcessImgResult
 {
     Mat img;
@@ -207,17 +311,19 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     save_img(outputImgPath, "BW3", BW3); // save bW3
 
     // Create offsets for score OCR
-    Point2d top_left_details(2054, 2345);
-    Point2d bot_right_details(2417, 2454);
-    Point2d top_left_score(2700, 2551);
-    Point2d bot_right_score(2953, 2611);
-    Point2d top_left_difficulty(1657, 2471);
+    Rect ROI_Details = offsetToRoi(Point(2054, 2348), Point(2418, 2450));
 
-    Size score_box_size(bot_right_score.x - top_left_score.x, bot_right_score.y - top_left_score.y);
-    Point2d score_offset(top_left_score.x - top_left_details.x, top_left_score.y - top_left_details.y);
-
-    Point2d difficulty_offset(top_left_difficulty.x - top_left_details.x, top_left_difficulty.y - top_left_details.y);
-    Size difficulty_box_size(score_box_size.width * 0.8, score_box_size.height);
+    Rect ROI_Score = offsetToRoi(Point(2700, 2551), Point(2968, 2611));
+    Rect ROI_Marvelous = offsetToRoi(Point(1896, 2549), Point(2018, 2599));
+    Rect ROI_Perfect = offsetToRoi(Point(1896, 2608), Point(2018, 2657));
+    Rect ROI_Great = offsetToRoi(Point(1896, 2664), Point(2018, 2702));
+    Rect ROI_Good = offsetToRoi(Point(1896, 2727), Point(2018, 2771));
+    Rect ROI_Miss = offsetToRoi(Point(1896, 2825), Point(2018, 2879));
+    Rect ROI_Flare = offsetToRoi(Point(1649, 2466), Point(1817, 2508));
+    Rect ROI_Title = offsetToRoi(Point(1210, 2075), Point(1744, 2133));
+    Rect ROI_Username = offsetToRoi(Point(2180, 1388), Point(2465, 1439));
+    Rect ROI_Difficulty = offsetToRoi(Point(2056, 1463), Point(2627, 1536));
+    Rect ROI_MaxCombo = offsetToRoi(Point(2665, 2779), Point(2797, 2831));
 
     int correct_roi_idx = 5; // HARDCODED
 
@@ -270,21 +376,15 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     Point2f tr = remaining[0].x > remaining[1].x ? remaining[0] : remaining[1];
     Point2f bl = remaining[0].x < remaining[1].x ? remaining[0] : remaining[1];
 
-    vector<Point2f> ordered = {tl, tr, br, bl};
-
+    vector<Point2f> detailsPoints = {tl, tr, br, bl};
     // Perform homography
-    Point2f ref_tl(top_left_details.x, top_left_details.y);
-    Point2f ref_tr(bot_right_details.x, top_left_details.y);
-    Point2f ref_br(bot_right_details.x, bot_right_details.y);
-    Point2f ref_bl(top_left_details.x, bot_right_details.y);
-
-    vector<Point2f> referencePoints = {ref_tl, ref_tr, ref_br, ref_bl};
-
-    Mat H = getPerspectiveTransform(ordered, referencePoints);
+    vector<Point2f> detailsReferencePoints = rectToPoints(ROI_Details);
+    Mat H = getPerspectiveTransform(detailsPoints, detailsReferencePoints);
 
     Mat warpedImg;
     // The size doesnt affect the output to ROI (as long as the size is big enough)
     Size beeg = Size(4000, 5000);
+    // Size beeg = Size(1000, 1000);
     warpPerspective(inputImg, warpedImg, H, beeg);
 
     save_img(outputImgPath, "warped", warpedImg);
@@ -296,32 +396,61 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
 
     Point2f warped_details_top_left = tl_transformed[0];
     int numAdditionalPixels = 5;
-    Rect score_roi_warped(warped_details_top_left.x + score_offset.x - numAdditionalPixels,
-                          warped_details_top_left.y + score_offset.y - numAdditionalPixels,
-                          score_box_size.width + 2 * numAdditionalPixels,
-                          score_box_size.height + 2 * numAdditionalPixels);
 
-    // Ensure ROI is within image bounds
-    score_roi_warped &= Rect(0, 0, warpedImg.cols, warpedImg.rows);
+    Mat score = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Score,
+        ROI_Details,
+        warped_details_top_left,
+        Point(5, 5),
+        "score",
+        outputImgPath);
+    // #endregion
 
-    Mat img_cropped = warpedImg(score_roi_warped);
+    Mat marvelous = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Marvelous,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 0),
+        "marvelous",
+        outputImgPath);
 
-    save_img(outputImgPath, "cropped", img_cropped);
+    Mat perfect = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Perfect,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 4),
+        "perfect",
+        outputImgPath);
 
-    Mat kernel_tophat = getStructuringElement(MORPH_ELLIPSE, Size(31, 31));
-    Mat Icorrected_score;
-    morphologyEx(img_cropped, Icorrected_score, MORPH_TOPHAT, kernel_tophat);
+    Mat great = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Great,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 5),
+        "great",
+        outputImgPath);
 
-    Mat BW1_score;
-    cvtColor(Icorrected_score, BW1_score, COLOR_BGR2GRAY);
-    threshold(BW1_score, BW1_score, 0, 255, THRESH_BINARY + THRESH_OTSU);
+    Mat good = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Good,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 5),
+        "good",
+        outputImgPath);
 
-    save_img(outputImgPath, "tophat_op", Icorrected_score);
-    save_img(outputImgPath, "Score_bin", BW1_score);
-
-    Mat BW2_score;
-    bitwise_not(BW1_score, BW2_score);
-    save_img(outputImgPath, "Score_bin2", BW2_score);
+    Mat miss = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Miss,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 0),
+        "miss",
+        outputImgPath);
     return result;
 }
 

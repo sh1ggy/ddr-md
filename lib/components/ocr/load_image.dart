@@ -57,7 +57,6 @@ class _LoadImageState extends State<LoadImage> {
       _isProcessing = true;
     });
     _ocrProcessor.processPickedImage(_pickedImage!);
-    await _recogniseText();
     setState(() => _isProcessing = false);
   }
 
@@ -78,6 +77,7 @@ class _LoadImageState extends State<LoadImage> {
       // the displayed image width. Falls back to existing scale if file missing.
       if (_pickedImage == null) return;
       final f = File(_pickedImage!.path);
+      await _recogniseText();
       if (await f.exists()) {
         final bytes = await f.readAsBytes();
         ui.decodeImageFromList(bytes, (img) {
@@ -114,6 +114,7 @@ class _LoadImageState extends State<LoadImage> {
                 result.processedImageBytes);
           });
         });
+
       }
     });
     _initLoadImage();
@@ -127,7 +128,7 @@ class _LoadImageState extends State<LoadImage> {
 
   Future<void> _recogniseText() async {
     final inputScoreImage =
-        InputImage.fromFilePath('${tempDir.path}/Score_bin2.jpg');
+        InputImage.fromFilePath('${tempDir.path}/score.jpeg');
     if (!_canProcess) return;
     if (_isBusy) return;
     _isBusy = true;
@@ -180,12 +181,12 @@ class _LoadImageState extends State<LoadImage> {
                               ? "please pick image"
                               : 'No DDR chart detected. Please try another image.'),
                         ),
-                  if (_scoreText != null) Row(
-                    children: [
-                      Image.file(File('${tempDir.path}/Score_bin2.jpg')),
-                      Text(_scoreText!),
-                    ],
-                  )
+                  if (_scoreText != null)
+                    Row(
+                      children: [
+                        Text(_scoreText!),
+                      ],
+                    )
                 ],
               ),
       ),
