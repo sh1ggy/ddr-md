@@ -77,7 +77,6 @@ class _LoadImageState extends State<LoadImage> {
       // the displayed image width. Falls back to existing scale if file missing.
       if (_pickedImage == null) return;
       final f = File(_pickedImage!.path);
-      await _recogniseText();
       if (await f.exists()) {
         final bytes = await f.readAsBytes();
         ui.decodeImageFromList(bytes, (img) {
@@ -114,8 +113,8 @@ class _LoadImageState extends State<LoadImage> {
                 result.processedImageBytes);
           });
         });
-
       }
+      await _recogniseText();
     });
     _initLoadImage();
   }
@@ -127,8 +126,13 @@ class _LoadImageState extends State<LoadImage> {
   }
 
   Future<void> _recogniseText() async {
-    final inputScoreImage =
-        InputImage.fromFilePath('${tempDir.path}/score.jpeg');
+    InputImage inputScoreImage;
+    if (Platform.isAndroid) {
+      inputScoreImage = InputImage.fromFilePath('${tempDir.path}/score.jpg');
+    } else {
+      inputScoreImage = InputImage.fromFilePath('${tempDir.path}/score.jpeg');
+    }
+
     if (!_canProcess) return;
     if (_isBusy) return;
     _isBusy = true;
@@ -185,6 +189,7 @@ class _LoadImageState extends State<LoadImage> {
                     Row(
                       children: [
                         Text(_scoreText!),
+                      Image.file(File('${tempDir.path}/score.jpg')),
                       ],
                     )
                 ],

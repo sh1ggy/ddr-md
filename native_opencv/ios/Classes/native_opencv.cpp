@@ -325,7 +325,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     Rect ROI_Difficulty = offsetToRoi(Point(2056, 1463), Point(2627, 1536));
     Rect ROI_MaxCombo = offsetToRoi(Point(2665, 2779), Point(2797, 2831));
 
-    int correct_roi_idx = 5; // HARDCODED
+    int correct_roi_idx = 1; // HARDCODED
 
     if (result.rois.size() <= correct_roi_idx)
     {
@@ -403,7 +403,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         ROI_Details,
         warped_details_top_left,
         Point(5, 5),
-        "score",
+        "score.jpeg",
         outputImgPath);
     // #endregion
 
@@ -413,7 +413,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         ROI_Details,
         warped_details_top_left,
         Point(0, 0),
-        "marvelous",
+        "marvelous.jpeg",
         outputImgPath);
 
     Mat perfect = getPreprocessedRoiImage(
@@ -422,7 +422,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         ROI_Details,
         warped_details_top_left,
         Point(0, 4),
-        "perfect",
+        "perfect.jpeg",
         outputImgPath);
 
     Mat great = getPreprocessedRoiImage(
@@ -431,7 +431,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         ROI_Details,
         warped_details_top_left,
         Point(0, 5),
-        "great",
+        "great.jpeg",
         outputImgPath);
 
     Mat good = getPreprocessedRoiImage(
@@ -440,7 +440,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         ROI_Details,
         warped_details_top_left,
         Point(0, 5),
-        "good",
+        "good.jpeg",
         outputImgPath);
 
     Mat miss = getPreprocessedRoiImage(
@@ -449,7 +449,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         ROI_Details,
         warped_details_top_left,
         Point(0, 0),
-        "miss",
+        "miss.jpeg",
         outputImgPath);
     return result;
 }
