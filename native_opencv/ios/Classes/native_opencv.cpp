@@ -309,21 +309,21 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
 
     // Preprocess image fro OCR on details
     /*
-    Icorrected = imbothat(img,strel("disk",15));
+     Icorrected = imbothat(img,strel("disk",15));
 
-    % gaus filter to reduce LED screen noise
-    Ifiltered = imgaussfilt(Icorrected, 1);
+     % gaus filter to reduce LED screen noise
+     Ifiltered = imgaussfilt(Icorrected, 1);
 
-    BW = rgb2gray(Ifiltered);
-    BW1 = imbinarize(BW);
+     BW = rgb2gray(Ifiltered);
+     BW1 = imbinarize(BW);
 
-    % morphological filtering (no reconstruction as some letters are non
-    % contiguous)
-    BW2 = bwareaopen(BW1, 5);
+     % morphological filtering (no reconstruction as some letters are non
+     % contiguous)
+     BW2 = bwareaopen(BW1, 5);
 
-    % Black text on white background preferred for OCR
-    BW3 = imcomplement(BW2);
-    */
+     % Black text on white background preferred for OCR
+     BW3 = imcomplement(BW2);
+     */
 
     // imbothat = closing - original (bottom hat)
     Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(31, 31)); // radius 15 -> size 31
@@ -370,7 +370,15 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         // Mat details_roi_img = inputImg(details_roi);
         //  TODO: NOT PERFORMANT pass in just ROI or pass in input image once at start of fun
         save_img(outputImgPath, "preprocessed_BW3", preprocessed_BW3); // save bW3
-        OCRResult ocrResult = OCRWrapper::performOCR(preprocessed_BW3, details_roi);
+
+        cv::Mat roiMat = preprocessed_BW3(details_roi);
+        OCRResult ocrResult = OCRWrapper::performOCR(
+            roiMat.data,
+            roiMat.cols,
+            roiMat.rows,
+            roiMat.step,
+            roiMat.channels());
+            
         if (ocrResult.confidence < 0.5) // confidence threshold, can be tuned
         {
             platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", ocrResult.confidence, i);
@@ -386,7 +394,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     // copy all detected rois so callers can access them
     result.rois = detectedRois;
     save_img(outputImgPath, "BW3", BW3); // save bW3
-    
+
     if (correct_roi_idx == -1)
     {
         platform_log("Failed to find 'Details' in any ROI, defaulting to first detected ROI\n");

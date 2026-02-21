@@ -16,15 +16,18 @@
 #define NO (BOOL)0
 #endif
 
-struct OCRResult {
+struct OCRResult
+{
     std::string text;
     float confidence;
     cv::Rect boundingBox;
 };
 
-class OCRWrapper {
+class OCRWrapper
+{
 public:
-    static OCRResult performOCR(const cv::Mat& image, const cv::Rect& roi);
+    static OCRResult performOCR(const uint8_t *data, int width, int height,
+                                int step, int channels);
 };
 
 #endif
