@@ -7,7 +7,6 @@ import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/roi_overlay.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -29,11 +28,6 @@ class _LoadImageState extends State<LoadImage> {
   XFile? _pickedImage;
   ProcessResult? _lastResult;
   double _camFrameToScreenScale = 1.0;
-
-  var _script = TextRecognitionScript.latin;
-  var _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-  bool _canProcess = true;
-  bool _isBusy = false;
   String? _scoreText;
 
   Future<void> _processImage() async {
@@ -126,23 +120,6 @@ class _LoadImageState extends State<LoadImage> {
     super.dispose();
   }
 
-  Future<void> _recogniseText() async {
-    final inputScoreImage =
-        InputImage.fromFilePath('${tempDir.path}/score.jpeg');
-    if (!_canProcess) return;
-    if (_isBusy) return;
-    _isBusy = true;
-    setState(() {
-      _scoreText = '';
-    });
-
-    final recognizedText = await _textRecognizer.processImage(inputScoreImage);
-    _scoreText = recognizedText.text;
-    _isBusy = false;
-    if (mounted) {
-      setState(() {});
-    }
-  }
 
   bool get pickedImage => _pickedImage != null;
   bool get isProcessed => _lastResult != null;

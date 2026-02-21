@@ -307,25 +307,91 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         return result;
     }
 
-    // For debug
-   
+    // Preprocess image fro OCR on details
+    /*
+    Icorrected = imbothat(img,strel("disk",15));
+
+    % gaus filter to reduce LED screen noise
+    Ifiltered = imgaussfilt(Icorrected, 1);
+
+    BW = rgb2gray(Ifiltered);
+    BW1 = imbinarize(BW);
+
+    % morphological filtering (no reconstruction as some letters are non
+    % contiguous)
+    BW2 = bwareaopen(BW1, 5);
+
+    % Black text on white background preferred for OCR
+    BW3 = imcomplement(BW2);
+    */
+
+    // imbothat = closing - original (bottom hat)
+    Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(31, 31)); // radius 15 -> size 31
+    Mat closed, Icorrected;
+    morphologyEx(inputImg, closed, MORPH_CLOSE, kernel);
+    subtract(closed, inputImg, Icorrected);
+
+    // gaussian filter sigma=1
+    Mat Ifiltered;
+    GaussianBlur(Icorrected, Ifiltered, Size(0, 0), 1.0);
+
+    // rgb2gray
+    Mat preprocessed_BW;
+    cvtColor(Ifiltered, preprocessed_BW, COLOR_BGR2GRAY);
+
+    // imbinarize (Otsu)
+    Mat preprocessed_BW1;
+    threshold(preprocessed_BW, preprocessed_BW1, 0, 255, THRESH_BINARY | THRESH_OTSU);
+
+    // bwareaopen - remove connected components smaller than 5 pixels
+    Mat preprocessed_BW2 = preprocessed_BW1.clone();
+    std::vector<std::vector<Point>> preprocessed_contours;
+    Mat labels, stats, centroids;
+    int preprocessed_n = connectedComponentsWithStats(preprocessed_BW1, labels, stats, centroids);
+    for (int i = 1; i < n; i++)
+    {
+        if (stats.at<int>(i, CC_STAT_AREA) < 5)
+        {
+            Mat mask = (labels == i);
+            preprocessed_BW2.setTo(0, mask);
+        }
+    }
+
+    // imcomplement
+    Mat preprocessed_BW3;
+    bitwise_not(preprocessed_BW2, preprocessed_BW3);
+
     Mat roi_img = inputImg.clone(); // TODO rename to all_rois_img
+    int correct_roi_idx = -1;
     for (size_t i = 0; i < detectedRois.size(); i++)
     {
         rectangle(roi_img, detectedRois[i], Scalar(0, 255, 0), 4);
         Rect details_roi = detectedRois[i];
-        //Mat details_roi_img = inputImg(details_roi);
-        // TODO: NOT PERFORMANT pass in just ROI or pass in input image once at start of fun
-        OCRResult ocrResult = OCRWrapper::performOCR(inputImg, details_roi); 
-        platform_log("OBJ C SHIT: %s", ocrResult.text.c_str());
+        // Mat details_roi_img = inputImg(details_roi);
+        //  TODO: NOT PERFORMANT pass in just ROI or pass in input image once at start of fun
+        save_img(outputImgPath, "preprocessed_BW3", preprocessed_BW3); // save bW3
+        OCRResult ocrResult = OCRWrapper::performOCR(preprocessed_BW3, details_roi);
+        if (ocrResult.confidence < 0.5) // confidence threshold, can be tuned
+        {
+            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", ocrResult.confidence, i);
+            continue;
+        }
+        if (ocrResult.text == "Details")
+        {
+            correct_roi_idx = i;
+            platform_log("Found 'Details' with confidence %.2f in ROI %d\n", ocrResult.confidence, i);
+        }
     }
-    
-
     result.isDetected = 1;
-    platform_log("%d", largestRoiAreaIndex);
     // copy all detected rois so callers can access them
     result.rois = detectedRois;
     save_img(outputImgPath, "BW3", BW3); // save bW3
+    
+    if (correct_roi_idx == -1)
+    {
+        platform_log("Failed to find 'Details' in any ROI, defaulting to first detected ROI\n");
+        return result;
+    }
 
     // Create offsets for score OCR
     Rect ROI_Details = offsetToRoi(Point(2054, 2348), Point(2418, 2450));
@@ -341,8 +407,6 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     Rect ROI_Username = offsetToRoi(Point(2180, 1388), Point(2465, 1439));
     Rect ROI_Difficulty = offsetToRoi(Point(2056, 1463), Point(2627, 1536));
     Rect ROI_MaxCombo = offsetToRoi(Point(2665, 2779), Point(2797, 2831));
-
-    int correct_roi_idx = 5; // HARDCODED
 
     if (result.rois.size() <= correct_roi_idx)
     {
