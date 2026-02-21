@@ -77,7 +77,7 @@ class _LoadImageState extends State<LoadImage> {
       // the displayed image width. Falls back to existing scale if file missing.
       if (_pickedImage == null) return;
       final f = File(_pickedImage!.path);
-      await _recogniseText();
+      // await _recogniseText();
       if (await f.exists()) {
         final bytes = await f.readAsBytes();
         ui.decodeImageFromList(bytes, (img) {

@@ -1,6 +1,15 @@
+#ifdef NO
+#define APPLE_NO_DEFINED
+#undef NO
+#endif
+
 #include <opencv2/opencv.hpp>
 #include <chrono>
 #include "ocr_wrapper.h"
+
+#ifdef APPLE_NO_DEFINED
+#define NO (BOOL)0
+#endif
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
 #define IS_WIN32
@@ -308,7 +317,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         //Mat details_roi_img = inputImg(details_roi);
         // TODO: NOT PERFORMANT pass in just ROI or pass in input image once at start of fun
         OCRResult ocrResult = OCRWrapper::performOCR(inputImg, details_roi); 
-        platform_log("%s", ocrResult.text.c_str());
+        platform_log("OBJ C SHIT: %s", ocrResult.text.c_str());
     }
     
 

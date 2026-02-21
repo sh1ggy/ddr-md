@@ -1,9 +1,22 @@
-#import <Vision/Vision.h>
-#import <UIKit/UIKit.h>
+#ifdef __OBJC__
+ #import <Foundation/Foundation.h>
+ #undef YES
+ #undef NO
+#endif
+
+#include <opencv2/opencv.hpp>
 #include "ocr_wrapper.h"
 
+#ifdef __OBJC__
+ #define YES ((BOOL)1)
+ #define NO  ((BOOL)0)
+#endif
+
+#import <Vision/Vision.h>
+#import <UIKit/UIKit.h>
+
 OCRResult OCRWrapper::performOCR(const cv::Mat& image, const cv::Rect& roi) {
-    OCRResult result;
+    __block OCRResult result;
     result.confidence = 0.0f;
     result.boundingBox = roi;
     
