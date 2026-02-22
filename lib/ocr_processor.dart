@@ -22,9 +22,17 @@ class ProcessResult {
   final bool isDetected;
   final ReturnImageType returnImageType;
   final Uint8List? processedImageBytes;
+  final int? detailsRoiIndex;
 
-  ProcessResult(this.score, this.difficulty, this.roi, this.detectedRois,
-      this.isDetected, this.returnImageType, this.processedImageBytes);
+  ProcessResult(
+      this.score,
+      this.difficulty,
+      this.roi,
+      this.detectedRois,
+      this.isDetected,
+      this.returnImageType,
+      this.processedImageBytes,
+      this.detailsRoiIndex);
 }
 
 //TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
@@ -119,10 +127,11 @@ typedef _c_processCameraImage = Void Function(
 
 typedef _c_processPickedImage = Void Function(
   Pointer<Utf8> inputImagePath,
-  Pointer<Int32> outputIsDetected,
+  Pointer<Int32> outputIsRoisDetected,
   Pointer<Utf8> outputImgPath,
   Pointer<Pointer<Int32>> outputRois,
   Pointer<Int32> outputRoisCount,
+  Pointer<Int32> outputdetailsRoiIndex,
 );
 
 // Dart functions signatures
@@ -143,6 +152,7 @@ typedef _dart_processPickedImage = void Function(
   Pointer<Utf8> outputImgPath,
   Pointer<Pointer<Int32>> outputRois,
   Pointer<Int32> outputRoisCount,
+  Pointer<Int32> outputdetailsRoiIndex,
 );
 
 // Create dart functions that invoke the C funcion
@@ -158,19 +168,25 @@ Future<ProcessResult> _processPickedImage(
   Pointer<Int32> outputIsDetected = calloc.allocate<Int32>(4);
   Pointer<Int32> outputRoisCount = calloc.allocate<Int32>(4);
   Pointer<Pointer<Int32>> outputRoisPtr = calloc<Pointer<Int32>>();
+  Pointer<Int32> outputdetailsRoiIndex = calloc.allocate<Int32>(4);
 
   print('FLUTTER DEEEEEEZ: ${params.outputPath}');
-  _processPickedImageFn(params.imagePath.toNativeUtf8(), outputIsDetected,
-      params.outputPath.toNativeUtf8(), outputRoisPtr, outputRoisCount);
-
+  _processPickedImageFn(
+      params.imagePath.toNativeUtf8(),
+      outputIsDetected,
+      params.outputPath.toNativeUtf8(),
+      outputRoisPtr,
+      outputRoisCount,
+      outputdetailsRoiIndex);
   final Pointer<Int32> outputRois = outputRoisPtr.value; // dereference
 
   if (outputRois == nullptr) {
     calloc.free(outputRoisPtr);
     calloc.free(outputIsDetected);
     calloc.free(outputRoisCount);
-    return ProcessResult(
-        0, DifficultyType.None, null, [], false, ReturnImageType.None, null);
+    calloc.free(outputdetailsRoiIndex);
+    return ProcessResult(0, DifficultyType.None, null, [], false,
+        ReturnImageType.None, null, -1);
   }
 
   List<Rectangle<int>> detectedRois = [];
@@ -187,19 +203,22 @@ Future<ProcessResult> _processPickedImage(
   }
 
   ProcessResult result = ProcessResult(
-      100, // Placeholder score
-      DifficultyType.FFXI, // Placeholder difficulty
-      null, // No single ROI for picked images
-      detectedRois, // List of detected ROIs
-      outputIsDetected.value != 0,
-      ReturnImageType.DirImage,
-      null);
+    100, // Placeholder score
+    DifficultyType.FFXI, // Placeholder difficulty
+    null, // No single ROI for picked images
+    detectedRois, // List of detected ROIs
+    outputIsDetected.value != 0,
+    ReturnImageType.DirImage,
+    null,
+    outputdetailsRoiIndex.value,
+  );
 
   calloc.free(outputRois);
   calloc.free(outputIsDetected);
   print("FLUTTER POINTER ADDR: ${outputRois.address}");
   calloc.free(outputRoisPtr);
   calloc.free(outputRoisCount);
+  calloc.free(outputdetailsRoiIndex);
 
   return result;
 }
@@ -247,8 +266,8 @@ Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
     calloc.free(outputRoi);
     calloc.free(imgBuffer);
     calloc.free(outputImgSize);
-    return ProcessResult(
-        0, DifficultyType.None, null, [], false, ReturnImageType.None, null);
+    return ProcessResult(0, DifficultyType.None, null, [], false,
+        ReturnImageType.None, null, -1);
   }
 
   final rectArray = outputRoi.cast<Int32>().asTypedList(4);
@@ -268,7 +287,9 @@ Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
       null,
       outputIsDetected.value != 0,
       ReturnImageType.BytesImage,
-      null);
+      null,
+      null // Placeholder for details detected
+      );
 
   calloc.free(outputRoi);
   calloc.free(imgBuffer);
@@ -367,7 +388,6 @@ void isolateEntryPoint(InitialRequest initReq) {
 
 class OCRProcessor {
   static OCRProcessor? _instance;
-
   Directory? tempDir;
   Directory? appDir; // for iOS
 

@@ -4,18 +4,20 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 class RoiResultPainter extends CustomPainter {
-  RoiResultPainter({required this.rois});
+  RoiResultPainter({required this.rois, this.detailsRoiIndex});
 
   final List<Rectangle<int>> rois;
+  final int? detailsRoiIndex;
 
   final _paint = Paint()
     ..strokeWidth = 3.0
     ..color = Colors.red
     ..style = PaintingStyle.stroke;
 
-  final _fillPaint = Paint()
-    ..color = Colors.red.withOpacity(0.1)
-    ..style = PaintingStyle.fill;
+  final _detailsPaint = Paint()
+    ..strokeWidth = 3.0
+    ..color = Colors.lightGreenAccent
+    ..style = PaintingStyle.stroke;
 
   final paragraphStyle = ui.ParagraphStyle(
     textAlign: TextAlign.left,
@@ -46,9 +48,12 @@ class RoiResultPainter extends CustomPainter {
         roi.height.toDouble(),
       );
 
+      final paintToUse = (detailsRoiIndex != null && i == detailsRoiIndex)
+          ? _detailsPaint
+          : _paint;
+
       // Draw rect + fill
-      canvas.drawRect(rectToDraw, _fillPaint);
-      canvas.drawRect(rectToDraw, _paint);
+      canvas.drawRect(rectToDraw, paintToUse);
 
       final builder = ui.ParagraphBuilder(paragraphStyle)
         ..pushStyle(textStyle)

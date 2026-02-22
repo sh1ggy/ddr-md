@@ -105,10 +105,10 @@ class _LoadImageState extends State<LoadImage> {
                 detectedRois,
                 result.isDetected,
                 result.returnImageType,
-                result.processedImageBytes);
+                result.processedImageBytes,
+                result.detailsRoiIndex);
           });
         });
-
       }
     });
     _initLoadImage();
@@ -120,13 +120,14 @@ class _LoadImageState extends State<LoadImage> {
     super.dispose();
   }
 
-
   bool get pickedImage => _pickedImage != null;
   bool get isProcessed => _lastResult != null;
   bool get isDetected =>
       _lastResult != null &&
       _lastResult!.isDetected &&
       _lastResult!.detectedRois != null;
+  bool get detailsRoiIndex =>
+      _lastResult != null && _lastResult!.detailsRoiIndex != -1;
 
   @override
   Widget build(BuildContext context) {
@@ -147,6 +148,7 @@ class _LoadImageState extends State<LoadImage> {
                   isDetected
                       ? RoiOverlay(
                           rois: _lastResult!.detectedRois!,
+                          detailsRoiIndex: _lastResult!.detailsRoiIndex,
                           child: Image.file(
                             File(_pickedImage!.path),
                             width: MediaQuery.of(context).size.width,
@@ -155,15 +157,28 @@ class _LoadImageState extends State<LoadImage> {
                         )
                       : Center(
                           child: Text(_pickedImage == null
-                              ? "please pick image"
-                              : 'No DDR chart detected. Please try another image.'),
+                              ? "Please pick image"
+                              : 'No DDR chart detected.\nPlease try another image.'),
                         ),
                   if (_scoreText != null)
                     Row(
                       children: [
                         Text(_scoreText!),
                       ],
-                    )
+                    ),
+                  detailsRoiIndex
+                      ? const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Center(
+                              child: Text(
+                            "Details detected!",
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.lightGreenAccent),
+                          )),
+                        )
+                      : Container(),
                 ],
               ),
       ),

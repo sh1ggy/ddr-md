@@ -254,6 +254,7 @@ typedef struct ProcessImgResult
     Mat img;
     int32_t isDetected;
     vector<Rect> rois;
+    int32_t detailsRoiIndex;
 };
 
 ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
@@ -442,9 +443,11 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         if (ocrResult.text == "Details")
         {
             correct_roi_idx = i;
+            result.detailsRoiIndex = i;
             platform_log("Found 'Details' with confidence %.2f in ROI %d\n", ocrResult.confidence, i);
         }
     }
+    
     result.isDetected = 1;
     // copy all detected rois so callers can access them
     result.rois = detectedRois;
@@ -453,6 +456,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     if (correct_roi_idx == -1)
     {
         platform_log("Failed to find 'Details' in any ROI, defaulting to first detected ROI\n");
+        result.detailsRoiIndex = -1;
         return result;
     }
     
@@ -613,7 +617,8 @@ void process_picked_image(
                           int32_t *outputIsDetected,
                           char *outputImgPath,
                           int32_t **outputRois,
-                          int32_t *outputRoisCount)
+                          int32_t *outputRoisCount,
+                          int32_t *outputdetailsRoiIndex)
 {
     long long start = get_now();
     Mat img = imread(inputImagePath);
@@ -651,6 +656,7 @@ void process_picked_image(
     }
     *outputRoisCount = actualCount;
     *outputIsDetected = result.isDetected;
+    *outputdetailsRoiIndex = result.detailsRoiIndex;
 }
 
 // TODO pass in img rotation
