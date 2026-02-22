@@ -182,23 +182,76 @@ class _LoadImageState extends State<LoadImage> {
                         )
                       : Container(),
                   if (hasScore)
-                    Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Column(
-                          children: [
-                            const Text(
-                              "OCR Result:",
-                              style: TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            ..._lastResult!.ocrStrings!.entries.map((entry) =>
-                                Text("${entry.key}: ${entry.value}",
-                                    style: const TextStyle(fontSize: 16))),
-                          ],
-                        )),
+                    Center(
+                      child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ..._lastResult!.ocrStrings.entries.map((entry) =>
+                                  OCRKeyValue(
+                                      keyName: entry.key.toUpperCase(),
+                                      value: entry.value))
+                            ],
+                          )),
+                    ),
                 ],
               ),
       ),
+    );
+  }
+}
+
+class OCRKeyValue extends StatelessWidget {
+  final String keyName;
+  final String value;
+  const OCRKeyValue({super.key, required this.keyName, required this.value});
+
+  Color _colorForKey(String k) {
+    final s = k.toLowerCase();
+    switch (s) {
+      case 'score':
+        return Colors.black;
+      case 'marvelous':
+        return Colors.grey;
+      case 'perfect':
+        return Colors.yellow[700]!;
+      case 'great':
+        return Colors.green;
+      case 'good':
+        return Colors.blueAccent;
+      case 'bad':
+        return Colors.purpleAccent;
+      default:
+        return Colors.black87;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            keyName,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: _colorForKey(keyName),
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
