@@ -14,7 +14,6 @@ enum DifficultyType { None, FFXI }
 enum ReturnImageType { None, DirImage, BytesImage }
 
 class ProcessResult {
-  final int score;
   final DifficultyType difficulty;
   // TODO reconsider to using a rect that can do Floats
   final Rectangle<int>? roi;
@@ -23,16 +22,17 @@ class ProcessResult {
   final ReturnImageType returnImageType;
   final Uint8List? processedImageBytes;
   final int? detailsRoiIndex;
+  final Map<String, String> ocrStrings;
 
   ProcessResult(
-      this.score,
       this.difficulty,
       this.roi,
       this.detectedRois,
       this.isDetected,
       this.returnImageType,
       this.processedImageBytes,
-      this.detailsRoiIndex);
+      this.detailsRoiIndex,
+      this.ocrStrings);
 }
 
 //TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
@@ -113,6 +113,15 @@ DynamicLibrary _openDynamicLibrary() {
       : DynamicLibrary.process();
 }
 
+final class COCRStrings extends Struct {
+  external Pointer<Char> score;
+  external Pointer<Char> marvelous;
+  external Pointer<Char> perfect;
+  external Pointer<Char> great;
+  external Pointer<Char> good;
+  external Pointer<Char> miss;
+}
+
 // C Functions signatures
 typedef _c_processCameraImage = Void Function(
     Int32 imgWidth,
@@ -132,6 +141,7 @@ typedef _c_processPickedImage = Void Function(
   Pointer<Pointer<Int32>> outputRois,
   Pointer<Int32> outputRoisCount,
   Pointer<Int32> outputdetailsRoiIndex,
+  Pointer<COCRStrings> outStrings,
 );
 
 // Dart functions signatures
@@ -153,6 +163,7 @@ typedef _dart_processPickedImage = void Function(
   Pointer<Pointer<Int32>> outputRois,
   Pointer<Int32> outputRoisCount,
   Pointer<Int32> outputdetailsRoiIndex,
+  Pointer<COCRStrings> outStrings,
 );
 
 // Create dart functions that invoke the C funcion
@@ -169,15 +180,30 @@ Future<ProcessResult> _processPickedImage(
   Pointer<Int32> outputRoisCount = calloc.allocate<Int32>(4);
   Pointer<Pointer<Int32>> outputRoisPtr = calloc<Pointer<Int32>>();
   Pointer<Int32> outputdetailsRoiIndex = calloc.allocate<Int32>(4);
+  Pointer<Char> scorePtr = calloc<Char>(256);
+  Pointer<Char> marvelousPtr = calloc<Char>(256);
+  Pointer<Char> perfectPtr = calloc<Char>(256);
+  Pointer<Char> greatPtr = calloc<Char>(256);
+  Pointer<Char> goodPtr = calloc<Char>(256);
+  Pointer<Char> missPtr = calloc<Char>(256);
+  Pointer<COCRStrings> outStrings = calloc<COCRStrings>();
 
-  print('FLUTTER DEEEEEEZ: ${params.outputPath}');
+  outStrings.ref.score = scorePtr;
+  outStrings.ref.marvelous = marvelousPtr;
+  outStrings.ref.perfect = perfectPtr;
+  outStrings.ref.great = greatPtr;
+  outStrings.ref.good = goodPtr;
+  outStrings.ref.miss = missPtr;
+
   _processPickedImageFn(
-      params.imagePath.toNativeUtf8(),
-      outputIsDetected,
-      params.outputPath.toNativeUtf8(),
-      outputRoisPtr,
-      outputRoisCount,
-      outputdetailsRoiIndex);
+    params.imagePath.toNativeUtf8(),
+    outputIsDetected,
+    params.outputPath.toNativeUtf8(),
+    outputRoisPtr,
+    outputRoisCount,
+    outputdetailsRoiIndex,
+    outStrings,
+  );
   final Pointer<Int32> outputRois = outputRoisPtr.value; // dereference
 
   if (outputRois == nullptr) {
@@ -185,8 +211,18 @@ Future<ProcessResult> _processPickedImage(
     calloc.free(outputIsDetected);
     calloc.free(outputRoisCount);
     calloc.free(outputdetailsRoiIndex);
-    return ProcessResult(0, DifficultyType.None, null, [], false,
-        ReturnImageType.None, null, -1);
+
+    calloc.free(scorePtr);
+    calloc.free(marvelousPtr);
+    calloc.free(perfectPtr);
+    calloc.free(greatPtr);
+    calloc.free(goodPtr);
+    calloc.free(missPtr);
+
+    calloc.free(outStrings);
+
+    return ProcessResult(DifficultyType.None, null, [], false,
+        ReturnImageType.None, null, -1, {});
   }
 
   List<Rectangle<int>> detectedRois = [];
@@ -203,7 +239,6 @@ Future<ProcessResult> _processPickedImage(
   }
 
   ProcessResult result = ProcessResult(
-    100, // Placeholder score
     DifficultyType.FFXI, // Placeholder difficulty
     null, // No single ROI for picked images
     detectedRois, // List of detected ROIs
@@ -211,14 +246,29 @@ Future<ProcessResult> _processPickedImage(
     ReturnImageType.DirImage,
     null,
     outputdetailsRoiIndex.value,
+    {
+      'score': outStrings.ref.score.cast<Utf8>().toDartString(),
+      'marvelous': outStrings.ref.marvelous.cast<Utf8>().toDartString(),
+      'perfect': outStrings.ref.perfect.cast<Utf8>().toDartString(),
+      'great': outStrings.ref.great.cast<Utf8>().toDartString(),
+      'good': outStrings.ref.good.cast<Utf8>().toDartString(),
+      'miss': outStrings.ref.miss.cast<Utf8>().toDartString(),
+    },
   );
 
   calloc.free(outputRois);
   calloc.free(outputIsDetected);
-  print("FLUTTER POINTER ADDR: ${outputRois.address}");
   calloc.free(outputRoisPtr);
   calloc.free(outputRoisCount);
   calloc.free(outputdetailsRoiIndex);
+  // score items
+  calloc.free(scorePtr);
+  calloc.free(marvelousPtr);
+  calloc.free(perfectPtr);
+  calloc.free(greatPtr);
+  calloc.free(goodPtr);
+  calloc.free(missPtr);
+  calloc.free(outStrings);
 
   return result;
 }
@@ -266,8 +316,8 @@ Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
     calloc.free(outputRoi);
     calloc.free(imgBuffer);
     calloc.free(outputImgSize);
-    return ProcessResult(0, DifficultyType.None, null, [], false,
-        ReturnImageType.None, null, -1);
+    return ProcessResult(DifficultyType.None, null, [], false,
+        ReturnImageType.None, null, -1, {});
   }
 
   final rectArray = outputRoi.cast<Int32>().asTypedList(4);
@@ -276,20 +326,20 @@ Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
   //     params.width * params.height * params.bytesPerPixel); // Assuming RGBA
 
   ProcessResult result = ProcessResult(
-      100, // Placeholder score
-      DifficultyType.FFXI, // Placeholder difficulty
-      Rectangle<int>(
-        rectArray[0],
-        rectArray[1],
-        rectArray[2],
-        rectArray[3],
-      ),
-      null,
-      outputIsDetected.value != 0,
-      ReturnImageType.BytesImage,
-      null,
-      null // Placeholder for details detected
-      );
+    DifficultyType.FFXI, // Placeholder difficulty
+    Rectangle<int>(
+      rectArray[0],
+      rectArray[1],
+      rectArray[2],
+      rectArray[3],
+    ),
+    null,
+    outputIsDetected.value != 0,
+    ReturnImageType.BytesImage,
+    null,
+    null, // Placeholder for details detected
+    {},
+  );
 
   calloc.free(outputRoi);
   calloc.free(imgBuffer);

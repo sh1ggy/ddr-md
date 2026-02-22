@@ -99,14 +99,14 @@ class _LoadImageState extends State<LoadImage> {
               detectedRois.add(roiToAdd);
             }
             _lastResult = ProcessResult(
-                result.score,
                 result.difficulty,
                 null,
                 detectedRois,
                 result.isDetected,
                 result.returnImageType,
                 result.processedImageBytes,
-                result.detailsRoiIndex);
+                result.detailsRoiIndex,
+                result.ocrStrings);
           });
         });
       }
@@ -128,6 +128,8 @@ class _LoadImageState extends State<LoadImage> {
       _lastResult!.detectedRois != null;
   bool get detailsRoiIndex =>
       _lastResult != null && _lastResult!.detailsRoiIndex != -1;
+  bool get hasScore =>
+      _lastResult != null && _lastResult!.ocrStrings.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -179,6 +181,21 @@ class _LoadImageState extends State<LoadImage> {
                           )),
                         )
                       : Container(),
+                  if (hasScore)
+                    Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Column(
+                          children: [
+                            const Text(
+                              "OCR Result:",
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                            ..._lastResult!.ocrStrings!.entries.map((entry) =>
+                                Text("${entry.key}: ${entry.value}",
+                                    style: const TextStyle(fontSize: 16))),
+                          ],
+                        )),
                 ],
               ),
       ),
