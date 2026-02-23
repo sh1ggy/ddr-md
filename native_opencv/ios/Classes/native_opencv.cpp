@@ -127,6 +127,13 @@ char classifyDigit_0_or_1(const cv::Mat &input)
     return '?'; // unexpected case
 }
 
+static char* allocCString(const std::string& s) {
+    size_t len = s.length();
+    char* buf = (char*)malloc(len + 1);
+    memcpy(buf, s.c_str(), len + 1);
+    return buf;
+}
+
 void save_img(const string &outputImgPath, const string &fileName, Mat img)
 {
     char path[250];
@@ -265,6 +272,11 @@ struct OCRResults
     OCRResult great;
     OCRResult good;
     OCRResult miss;
+    OCRResult flare;
+    OCRResult title;
+    OCRResult username;
+    OCRResult difficulty;
+    OCRResult max_combo;
 };
 
 typedef struct ProcessImgResult
@@ -284,6 +296,11 @@ typedef struct
     char *great;
     char *good;
     char *miss;
+    char *flare;
+    char *title;
+    char *username;
+    char *difficulty;
+    char *maxCombo;
 } COCRStrings;
 
 ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
@@ -319,7 +336,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     for (size_t i = 0; i < contours.size(); i++)
     {
         double area = contourArea(contours[i]);
-        if (area >= 3000 && area <= 50000)
+        if (area >= 3000 && area <= 30000)
         {
             drawContours(BW2, contours, i, Scalar(255), FILLED);
         }
@@ -329,8 +346,8 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     int n = 90;
 
     // Create opening kernel using byte array (faster than getStructuringElement)
-    int open_width = m * 0.1;
-    int open_height = n * 0.1;
+    int open_width = m * 0.05;
+    int open_height = n * 0.05;
     uchar *open_data = new uchar[open_height * open_width];
     memset(open_data, 255, open_height * open_width);
     Mat SE_open(open_height, open_width, CV_8U, open_data);
@@ -339,6 +356,9 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
     auto start_open = chrono::high_resolution_clock::now();
     Mat BW3;
     morphologyEx(BW2, BW3, MORPH_OPEN, SE_open);
+    save_img(outputImgPath, "BW_HSV", BW_HSV);
+    save_img(outputImgPath, "BW2", BW2);
+    save_img(outputImgPath, "BW3", BW3);
     auto end_open = chrono::high_resolution_clock::now();
     auto duration_open = chrono::duration_cast<chrono::microseconds>(end_open - start_open);
     cout << "Opening operation with byte array kernel: " << duration_open.count() << " microseconds" << endl;
@@ -630,7 +650,52 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         Point(0, 0),
         "miss",
         outputImgPath);
-    
+
+    ocrResults.flare = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Flare,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 5),
+        "flare",
+        outputImgPath);
+
+    ocrResults.title = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Title,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 0),
+        "title",
+        outputImgPath);
+
+    ocrResults.username = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Username,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 0),
+        "username",
+        outputImgPath);
+
+    ocrResults.difficulty = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_Difficulty,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 0),
+        "difficulty",
+        outputImgPath);
+
+    ocrResults.max_combo = getPreprocessedRoiImage(
+        warpedImg,
+        ROI_MaxCombo,
+        ROI_Details,
+        warped_details_top_left,
+        Point(0, 0),
+        "max_combo",
+        outputImgPath);
+
     result.ocrResults = ocrResults;
     return result;
 }
@@ -693,22 +758,17 @@ extern "C"
         *outputdetailsRoiIndex = result.detailsRoiIndex;
 
         const auto &ocr = result.ocrResults;
-        const struct
-        {
-            const std::string &text;
-            char *out;
-        } fields[] = {
-            {ocr.score.text, outStrings->score},
-            {ocr.marvelous.text, outStrings->marvelous},
-            {ocr.perfect.text, outStrings->perfect},
-            {ocr.great.text, outStrings->great},
-            {ocr.good.text, outStrings->good},
-            {ocr.miss.text, outStrings->miss},
-        };
-        for (const auto &f : fields) {
-            size_t len = f.text.copy(f.out, 255);
-            f.out[len] = '\0';
-        }
+        outStrings->score      = allocCString(ocr.score.text);
+        outStrings->marvelous  = allocCString(ocr.marvelous.text);
+        outStrings->perfect    = allocCString(ocr.perfect.text);
+        outStrings->great      = allocCString(ocr.great.text);
+        outStrings->good       = allocCString(ocr.good.text);
+        outStrings->miss       = allocCString(ocr.miss.text);
+        outStrings->flare      = allocCString(ocr.flare.text);
+        outStrings->title      = allocCString(ocr.title.text);
+        outStrings->username   = allocCString(ocr.username.text);
+        outStrings->difficulty = allocCString(ocr.difficulty.text);
+        outStrings->maxCombo   = allocCString(ocr.max_combo.text);
     }
 
     // TODO pass in img rotation

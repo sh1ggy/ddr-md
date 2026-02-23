@@ -120,6 +120,11 @@ final class COCRStrings extends Struct {
   external Pointer<Char> great;
   external Pointer<Char> good;
   external Pointer<Char> miss;
+  external Pointer<Char> flare;
+  external Pointer<Char> title;
+  external Pointer<Char> username;
+  external Pointer<Char> difficulty;
+  external Pointer<Char> maxCombo;
 }
 
 // C Functions signatures
@@ -186,6 +191,10 @@ Future<ProcessResult> _processPickedImage(
   Pointer<Char> greatPtr = calloc<Char>(256);
   Pointer<Char> goodPtr = calloc<Char>(256);
   Pointer<Char> missPtr = calloc<Char>(256);
+  Pointer<Char> flarePtr = calloc<Char>(256);
+  Pointer<Char> usernamePtr = calloc<Char>(256);
+  Pointer<Char> difficultyPtr = calloc<Char>(256);
+  Pointer<Char> maxComboPtr = calloc<Char>(256);
   Pointer<COCRStrings> outStrings = calloc<COCRStrings>();
 
   outStrings.ref.score = scorePtr;
@@ -194,6 +203,11 @@ Future<ProcessResult> _processPickedImage(
   outStrings.ref.great = greatPtr;
   outStrings.ref.good = goodPtr;
   outStrings.ref.miss = missPtr;
+  outStrings.ref.flare = flarePtr;
+  outStrings.ref.username = usernamePtr;
+  outStrings.ref.difficulty = difficultyPtr;
+  outStrings.ref.maxCombo = maxComboPtr;
+
 
   _processPickedImageFn(
     params.imagePath.toNativeUtf8(),
@@ -218,9 +232,12 @@ Future<ProcessResult> _processPickedImage(
     calloc.free(greatPtr);
     calloc.free(goodPtr);
     calloc.free(missPtr);
+    calloc.free(flarePtr);
+    calloc.free(usernamePtr);
+    calloc.free(difficultyPtr);
+    calloc.free(maxComboPtr);
 
     calloc.free(outStrings);
-
     return ProcessResult(DifficultyType.None, null, [], false,
         ReturnImageType.None, null, -1, {});
   }
