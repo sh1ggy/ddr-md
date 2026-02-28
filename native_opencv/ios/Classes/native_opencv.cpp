@@ -240,16 +240,7 @@ OCRResult getPreprocessedRoiImage(
 
     save_img(outputImgPath, imageName, BW2);
 
-    // OCR call
-#ifdef __ANDROID__
-    // TODO: tesseract
-    result = {};
-#elif __APPLE__
     result = OCRWrapper::performOCR(BW2.clone());
-#else
-    // invalid platform.
-    result = {};
-#endif
 
     // Fallback to classify 0/1 explicitly
     if (result.confidence == 0)
@@ -482,14 +473,9 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
 
         cv::Mat roiMat = preprocessed_BW3(details_roi);
         OCRResult roiOcrResult = {};
-#ifdef __ANDROID__
-        // TODO: tesseract
-        roiOcrResult = {};
-#elif __APPLE__
+
         roiOcrResult = OCRWrapper::performOCR(roiMat.clone());
-#else
-        roiOcrResult = {};
-#endif
+
         if (roiOcrResult.confidence < 0.5) // confidence threshold, can be tuned
         {
             platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
