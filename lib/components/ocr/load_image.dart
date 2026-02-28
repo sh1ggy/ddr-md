@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
-import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/roi_overlay.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
@@ -37,8 +36,7 @@ class _LoadImageState extends State<LoadImage> {
     setState(() => _isPicking = true);
 
     final picker = ImagePicker();
-    final pickedImage = await picker.pickImage(
-        source: ImageSource.gallery, imageQuality: imageQuality);
+    final pickedImage = await picker.pickImage(source: ImageSource.gallery);
 
     if (!mounted) return;
     if (pickedImage == null) {
@@ -51,7 +49,7 @@ class _LoadImageState extends State<LoadImage> {
       _isProcessing = true;
     });
     _ocrProcessor.processPickedImage(_pickedImage!);
-    setState(() => _isProcessing = false);
+    // wait for the stream listener to clear _isProcessing when a result arrives
   }
 
   Future<void> _initLoadImage() async {
@@ -158,9 +156,11 @@ class _LoadImageState extends State<LoadImage> {
                           ),
                         )
                       : Center(
-                          child: Text(_pickedImage == null
-                              ? "Please pick image"
-                              : 'No DDR chart detected.\nPlease try another image.'),
+                          child: _isProcessing
+                              ? const CircularProgressIndicator()
+                              : Text(_pickedImage == null
+                                  ? "Please pick image"
+                                  : 'No DDR chart detected.\nPlease try another image.'),
                         ),
                   if (_scoreText != null)
                     Row(
