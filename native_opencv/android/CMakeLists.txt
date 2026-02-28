@@ -23,5 +23,13 @@ add_subdirectory(src/main/cpp/libpng)
 add_subdirectory(src/main/cpp/leptonica)
 add_subdirectory(src/main/cpp/tesseract)
 
-# This adds the required libraries for for our stuff
-target_link_libraries(native_opencv tesseract lib_opencv ${log-lib})
+# Add include directories for leptonica and tesseract
+# leptonica headers live under src/src, and tesseract public headers are in include/tesseract
+# Avoid adding whole source trees to prevent non-header files (like "version") from being picked up.
+target_include_directories(native_opencv PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp/leptonica/src/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp/tesseract/src/include
+)
+
+# Link against the libraries we've built
+target_link_libraries(native_opencv tesseract leptonica lib_opencv ${log-lib})
