@@ -287,14 +287,14 @@ struct OCRResults
     OCRResult max_combo;
 };
 
-typedef struct ProcessImgResult
+typedef struct 
 {
     Mat img;
     int32_t isDetected;
     vector<Rect> rois;
     int32_t detailsRoiIndex;
     OCRResults ocrResults;
-};
+} ProcessImgResult;
 
 typedef struct
 {
@@ -488,7 +488,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         OCRResult roiOcrResult = {};
 #ifdef __ANDROID__
         // TODO: tesseract
-        ocrResult = {};
+        roiOcrResult = {};
 #elif __APPLE__
         roiOcrResult = OCRWrapper::performOCR(
                                            roiMat.data,
@@ -497,8 +497,7 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
                                            roiMat.step,
                                            roiMat.channels());
 #else
-        // TODO: tesseract
-        ocrResult = {};
+        roiOcrResult = {};
 #endif
         if (roiOcrResult.confidence < 0.5) // confidence threshold, can be tuned
         {
