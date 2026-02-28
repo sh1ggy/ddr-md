@@ -26,8 +26,7 @@ struct OCRResult
 class OCRWrapper
 {
 public:
-    static OCRResult performOCR(const uint8_t *data, int width, int height,
-                                int step, int channels);
+    static OCRResult performOCR(const cv::Mat& roiMat);
 };
 
 #endif

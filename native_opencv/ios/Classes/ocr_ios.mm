@@ -9,7 +9,7 @@
 
 #ifdef __OBJC__
 #define YES ((BOOL)1)
-#define NO ((BOOL)0)
+#define NO  ((BOOL)0)
 #endif
 
 #import <Vision/Vision.h>
@@ -41,73 +41,101 @@ void UIImageToMat(const UIImage *image, cv::Mat &m, bool alphaExist = false) {
     CGContextRelease(contextRef);
 }
 
-OCRResult OCRWrapper::performOCR(const uint8_t *data,
-                                 int width,
-                                 int height,
-                                 int step,
-                                 int channels)
-{
+OCRResult OCRWrapper::performOCR(const cv::Mat& roiMat) {
     __block OCRResult result;
     result.confidence = 0.0f;
+    //TODO zero out BoundingBox
     
-    @autoreleasepool
-    {
-        // --- Create CGImage from raw ROI buffer ---
-        CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceGray();
+    @autoreleasepool {
+        // Convert OpenCV Mat to UIImage
+        NSData *data = [NSData dataWithBytes:roiMat.data
+                                      length:roiMat.elemSize()*roiMat.total()];
         
-        CGDataProviderRef provider =
-        CGDataProviderCreateWithData(NULL, data, step * height, NULL);
+        CGColorSpaceRef colorSpace;
+        CGBitmapInfo bitmapInfo;
         
-        CGImageRef cgImage =
-        CGImageCreate(width,
-                      height,
-                      8,              // bits per component
-                      8,              // bits per pixel (gray)
-                      step,           // bytes per row
-                      colorSpace,
-                      kCGImageAlphaNone,
-                      provider,
-                      NULL,
-                      false,
-                      kCGRenderingIntentDefault);
+        if (roiMat.elemSize() == 1) {
+            colorSpace = CGColorSpaceCreateDeviceGray();
+            //            bitmapInfo = kCGImageAlphaNone;
+        } else {
+            colorSpace = CGColorSpaceCreateDeviceRGB();
+            //            bitmapInfo = kCGBitmapByteOrderDefault | kCGImageAlphaNoneSkipLast;
+        }
         
-        CIImage *ciImage = [[CIImage alloc] initWithCGImage:cgImage];
+        CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
         
-        CGImageRelease(cgImage);
+        // Creating CGImage from cv::Mat
+        CGImageRef imageRef = CGImageCreate(
+                                            roiMat.cols, //width
+                                            roiMat.rows, //height
+                                            8, //bits per component
+                                            8*roiMat.elemSize(), // bits per pixel
+                                            roiMat.step.p[0], // bytesPerRow
+                                            colorSpace, // colorspace
+                                            kCGImageAlphaNone|kCGBitmapByteOrderDefault,// bitmap info
+                                            provider, // CGDataProviderRef
+                                            NULL, //decode
+                                            false, //should interpolate
+                                            kCGRenderingIntentDefault //intent
+                                            );
+        
+        UIImage *uiImage = [UIImage imageWithCGImage:imageRef];
+        
+        CGImageRelease(imageRef);
         CGDataProviderRelease(provider);
         CGColorSpaceRelease(colorSpace);
         
-        // --- OCR ---
-        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+        NSURL *documentsURL = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
+                                                                      inDomains:NSUserDomainMask] firstObject];
+        NSString *documentsDirectory = [documentsURL path];
+        NSData *dataToSave = UIImageJPEGRepresentation(uiImage, 1.0);
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+        NSString *fullPath = [documentsDirectory stringByAppendingPathComponent:@"DEETroiImage.jpg"];
+        [fileManager createFileAtPath:fullPath contents:dataToSave attributes:nil];
         
-        VNRecognizeTextRequest *request =
-        [[VNRecognizeTextRequest alloc] initWithCompletionHandler:
-         ^(VNRequest *request, NSError *error) {
+        // Perform OCR using Vision
+        dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+        
+        VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc]
+                                           initWithCompletionHandler:^(VNRequest *request, NSError *error) {
+            if (error) {
+                NSLog(@"Vision OCR error: %@", error);
+                dispatch_semaphore_signal(semaphore);
+                return;
+            }
             
-            NSArray *observations = request.results;
-            if (observations.count > 0)
-            {
-                VNRecognizedTextObservation *obs = observations.firstObject;
-                VNRecognizedText *txt = [[obs topCandidates:1] firstObject];
-                if (txt)
-                {
-                    result.text = std::string([txt.string UTF8String]);
-                    result.confidence = txt.confidence;
+            NSArray<VNRecognizedTextObservation *> *observations = request.results;
+            if (observations.count > 0) {
+                VNRecognizedTextObservation *topObservation = observations.firstObject;
+                VNRecognizedText *recognizedText = [topObservation topCandidates:1].firstObject;
+                
+                if (recognizedText) {
+                    result.text = std::string([recognizedText.string UTF8String]);
+                    result.confidence = recognizedText.confidence;
+                    
+                    NSLog(@"Recognized: %@ (confidence: %.2f)",
+                          recognizedText.string, recognizedText.confidence);
                 }
             }
-            dispatch_semaphore_signal(sem);
+            
+            dispatch_semaphore_signal(semaphore);
         }];
         
+        // Configure for fast, accurate recognition
         request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
         request.usesLanguageCorrection = NO;
-        request.recognitionLanguages = @[ @"en-US" ];
+        request.recognitionLanguages = @[@"en-US"];
         
-        VNImageRequestHandler *handler =
-        [[VNImageRequestHandler alloc] initWithCIImage:ciImage options:@{}];
+        // Perform the request
+        VNImageRequestHandler *handler = [[VNImageRequestHandler alloc]
+                                          initWithCGImage:uiImage.CGImage
+                                          options:@{}];
         
-        [handler performRequests:@[request] error:nil];
+        NSError *error;
+        [handler performRequests:@[request] error:&error];
         
-        dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+        // Wait for completion (with timeout)
+        dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC));
     }
     
     return result;
