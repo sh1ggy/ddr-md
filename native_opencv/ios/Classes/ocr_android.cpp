@@ -59,8 +59,8 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat)
     api->SetImage(pixImage);
     // Get OCR result
     char *outText = api->GetUTF8Text();
-    result.text = outText ? outText : "";
-    result.confidence = static_cast<float>(api->MeanTextConf());
+    result.text = outText ? std::string(outText) : "";
+    result.confidence = static_cast<float>(api->MeanTextConf())/100.0f;
     if (outText)
     {
         platform_log("OCR output:\n%s", outText);

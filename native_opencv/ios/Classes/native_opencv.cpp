@@ -475,13 +475,19 @@ ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
         OCRResult roiOcrResult = {};
 
         roiOcrResult = OCRWrapper::performOCR(roiMat.clone());
-
         if (roiOcrResult.confidence < 0.5) // confidence threshold, can be tuned
         {
             platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
             continue;
         }
-        if (roiOcrResult.text == "Details")
+
+        // Strip all non-alphanumeric characters (including \n, spaces, punctuation) from OCR text for comparison
+        std::string cleanText;
+        for (char c : roiOcrResult.text) {
+            if (std::isalnum(static_cast<unsigned char>(c))) cleanText += c;
+            // else skip (removes \n, spaces, punctuation, etc.)
+        }
+        if (cleanText == "Details")
         {
             correct_roi_idx = i;
             result.detailsRoiIndex = i;
