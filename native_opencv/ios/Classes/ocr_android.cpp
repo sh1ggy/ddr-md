@@ -27,8 +27,8 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat)
 
     if (api->Init(NULL, "eng", tesseract::OEM_LSTM_ONLY))
     {
-        fprintf(stderr, "Could not initialize tesseract.\n");
-        exit(1);
+        platform_log("Could not initialize tesseract.\n");
+        return result;
     }
     // api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
     // api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
@@ -62,7 +62,7 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat)
     result.confidence = static_cast<float>(api->MeanTextConf());
     if (outText)
     {
-        printf("OCR output:\n%s", outText);
+        platform_log("OCR output:\n%s", outText);
     }
 
     // Destroy used object and release memory
