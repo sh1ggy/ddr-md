@@ -15,61 +15,61 @@ extern void platform_log(const char *fmt, ...);
 
 #include "ocr_wrapper.h"
 
-OCRResult OCRWrapper::performOCR(const cv::Mat& roiMat)
+OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat)
 {
     OCRResult result;
+    result.text = "";
+    result.confidence = 0.0f;
+    result.boundingBox = cv::Rect(0, 0, roiMat.cols, roiMat.rows);
 
-    // Create a Pix image from the raw data. `pixCreate` allocates its own
-    // buffer; we then copy the pixels from the OpenCV matrix into that buffer.
-    // If we instead pointed Pix at roiMat.data and later called pixDestroy,
-    // the Mat's memory would be freed prematurely, leading to exactly the
-    // crash seen earlier (invalid chunk state in Mat::~Mat).  So copying is
-    // safer.
-    
-    // pix_image_ptr_t pixImage = pixCreate(roiMat.cols, roiMat.rows, 8 * roiMat.channels());
-    // pixSetData(pixImage, (l_uint32 *)roiMat.data);
-    
-    Pix *pixImage = pixCreate(roiMat.cols, roiMat.rows, 8 * roiMat.channels());
-    if (!pixImage) {
-        platform_log("pixCreate failed\n");
-        return {};
-    }
-    // copy pixel data into the pix structure
-    size_t imageSize = roiMat.total() * roiMat.elemSize();
-    l_uint32 *pData = pixGetData(pixImage);
-    if (pData && roiMat.data) {
-        memcpy(pData, roiMat.data, imageSize);
-    } else {
-        platform_log("failed to obtain pix data pointer\n");
-        pixDestroy(&pixImage);
-        return {};
-    }
-
-    // Initialize Tesseract API
     tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
-    if (api->Init(nullptr, "eng"))
+    // Initialize tesseract-ocr with English, without specifying tessdata path
+
+    if (api->Init(NULL, "eng", tesseract::OEM_LSTM_ONLY))
     {
-        platform_log("Could not initialize tesseract.\n");
+        fprintf(stderr, "Could not initialize tesseract.\n");
+        exit(1);
+    }
+    // api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
+    // api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
+    api->SetPageSegMode(tesseract::PSM_SINGLE_WORD);
+
+    Pix *pixImage = pixCreate(roiMat.cols, roiMat.rows, 8);
+    if (!pixImage)
+    {
+        platform_log("pixCreate failed\n");
+        api->End();
         delete api;
-        pixDestroy(&pixImage);
-        return {};
+        return result;
     }
 
-    // Set the image for OCR
+    // Copy row by row, respecting both OpenCV and Pix strides
+    l_uint32 *pixData = pixGetData(pixImage);
+    l_int32 wpl = pixGetWpl(pixImage);
+    l_int32 pixRowBytes = wpl * sizeof(l_uint32);
+
+    for (int row = 0; row < roiMat.rows; ++row)
+    {
+        l_uint8 *pixRow = (l_uint8 *)pixData + row * pixRowBytes;
+        const l_uint8 *matRow = roiMat.data + row * roiMat.step;
+        memcpy(pixRow, matRow, roiMat.cols);
+    }
+
     api->SetImage(pixImage);
-
-    // Perform OCR
+    // Get OCR result
     char *outText = api->GetUTF8Text();
-    if (outText) {
-        result.text = std::string(outText);
-        delete[] outText; // GetUTF8Text allocates with new[]
+    result.text = outText ? outText : "";
+    result.confidence = static_cast<float>(api->MeanTextConf());
+    if (outText)
+    {
+        printf("OCR output:\n%s", outText);
     }
-    result.confidence = api->MeanTextConf() / 100.0f;
 
-    pixDestroy(&pixImage); // frees the buffer we allocated inside pixCreate
-    // Clean up
+    // Destroy used object and release memory
+    pixDestroy(&pixImage);
     api->End();
     delete api;
+    delete[] outText;
     return result;
 }
 
