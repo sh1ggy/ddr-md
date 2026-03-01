@@ -24,8 +24,9 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat)
 
     tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
     // Initialize tesseract-ocr with English, without specifying tessdata path
+    std::string tessdataPath = "/data/data/com.shiggy.ddr_md/app_flutter";
 
-    if (api->Init(NULL, "eng", tesseract::OEM_LSTM_ONLY))
+    if (api->Init(tessdataPath.c_str(), "eng", tesseract::OEM_LSTM_ONLY))
     {
         platform_log("Could not initialize tesseract.\n");
         return result;
