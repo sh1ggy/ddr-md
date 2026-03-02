@@ -33,7 +33,7 @@ enum class OCRType { Eng, Digit, EngJP };
 class OCRWrapper
 {
 public:
-    OCRWrapper(const string dataPath = "");
+    OCRWrapper(const std::string dataPath = "");
     ~OCRWrapper();
     
     OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng);

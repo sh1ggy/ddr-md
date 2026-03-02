@@ -43,7 +43,7 @@ void UIImageToMat(const UIImage *image, cv::Mat &m, bool alphaExist = false) {
 
 extern void platform_log(const char *fmt, ...);
 
-OCRWrapper::OCRWrapper()
+OCRWrapper::OCRWrapper(std::string datapath)
 {
     platform_log("Ios OCRWrapper initialized\n");
 }
@@ -53,7 +53,7 @@ OCRWrapper::~OCRWrapper()
     platform_log("Ios OCRWrapper destroyed\n");
 }
 
-OCRResult OCRWrapper::performOCR(const cv::Mat& roiMat) {
+OCRResult OCRWrapper::performOCR(const cv::Mat& roiMat, OCRType ocrType) {
     __block OCRResult result;
     result.confidence = 0.0f;
     //TODO zero out BoundingBox

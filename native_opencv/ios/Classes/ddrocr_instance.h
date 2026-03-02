@@ -45,16 +45,17 @@ struct ProcessImgResult
 class DdrocrInstance
 {
 public:
-    DdrocrInstance();
+    DdrocrInstance(std::string dataPath);
     ~DdrocrInstance();
-
+    //TODO use outputimg path declared in class
     ProcessImgResult process_image(cv::Mat inputImg, const std::string &outputImgPath);
 
 private:
     // Helper methods
+    OCRWrapper ocrWrapper;
     cv::Rect expandRoi(cv::Rect roi, cv::Point expand);
     std::vector<cv::Point2f> rectToPoints(const cv::Rect &r);
-    cv::Rect offsetToRoi(cv::Point tl, cv::Point br, cv::Point expansion);
+    cv::Rect offsetToRoi(cv::Point tl, cv::Point br, cv::Point expansion = {0, 0});
     char classifyDigit_0_or_1(const cv::Mat &input);
 
     OCRResult getPreprocessedRoiImage(

@@ -10,25 +10,18 @@
 const int max_value_H = 360 / 2;
 const int max_value = 255;
 
-void platform_log(const char *fmt, ...)
+extern void platform_log(const char *fmt, ...);
+
+DdrocrInstance::DdrocrInstance(std::string dataPath)
+    : ocrWrapper(dataPath)
 {
-    va_list args;
-    va_start(args, fmt);
-#ifdef __ANDROID__
-    __android_log_vprint(ANDROID_LOG_VERBOSE, "ndk", fmt, args);
-#elif defined(IS_WIN32)
-    char *buf = new char[4096];
-    std::fill_n(buf, 4096, '\0');
-    _vsprintf_p(buf, 4096, fmt, args);
-    OutputDebugStringA(buf);
-    delete[] buf;
-#else
-    vprintf(fmt, args);
-#endif
-    va_end(args);
+    platform_log("DdrocrInstance initialized\n");
 }
 
-
+DdrocrInstance::~DdrocrInstance()
+{
+    platform_log("DdrocrInstance destroyed\n");
+}
 
 ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::string &outputImgPath)
 {
@@ -168,7 +161,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         cv::Mat roiMat = preprocessed_BW3(details_roi);
         OCRResult roiOcrResult = {};
 
-        roiOcrResult = OCRWrapper::performOCR(roiMat.clone());
+        roiOcrResult = ocrWrapper.performOCR(roiMat.clone());
         if (roiOcrResult.confidence < 0.5)
         {
             platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
@@ -448,7 +441,7 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
     save_img(outputImgPath, imageName, BW2);
 
-    result = OCRWrapper::performOCR(BW2.clone());
+    result = ocrWrapper.performOCR(BW2.clone());
 
     // TODO: This is kinda garbage, we should prioritize fixing the underlying cause of bad detection 
     // OR not have this platform specific hack here
@@ -516,17 +509,6 @@ char DdrocrInstance::classifyDigit_0_or_1(const cv::Mat &input)
     return '?'; // unexpected case
 }
 
-DdrocrInstance::DdrocrInstance()
-{
-    // Initialize OCRWrapper if needed
-    platform_log("DdrocrInstance initialized\n");
-}
-
-DdrocrInstance::~DdrocrInstance()
-{
-    platform_log("DdrocrInstance destroyed\n");
-}
-
 void DdrocrInstance::save_img(const std::string &outputImgPath, const std::string &fileName, cv::Mat img)
 {
     char path[250];
@@ -554,7 +536,7 @@ std::vector<cv::Point2f> DdrocrInstance::rectToPoints(const cv::Rect &r)
     return {tl, tr, br, bl};
 }
 
-cv::Rect DdrocrInstance::offsetToRoi(cv::Point tl, cv::Point br, cv::Point expansion = {0, 0})
+cv::Rect DdrocrInstance::offsetToRoi(cv::Point tl, cv::Point br, cv::Point expansion)
 {
     // Width/height from raw coordinates
     int width = br.x - tl.x;

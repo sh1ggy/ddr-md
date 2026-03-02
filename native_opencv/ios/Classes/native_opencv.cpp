@@ -16,7 +16,6 @@
 #include <android/log.h>
 #endif
 
-
 #if defined(__GNUC__)
 // Attributes to prevent 'unused' function from being removed and to make it visible
 #define FUNCTION_ATTRIBUTE __attribute__((visibility("default"))) __attribute__((used))
@@ -29,7 +28,7 @@ using namespace cv;
 using namespace std;
 
 // Static OCR instance
-static DdrocrInstance* instance = nullptr;
+static DdrocrInstance *instance = nullptr;
 
 long long int get_now()
 {
@@ -90,27 +89,6 @@ extern "C"
     }
 
     FUNCTION_ATTRIBUTE
-    void processImageInit()
-    {
-        if (instance == nullptr)
-        {
-            instance = new DdrocrInstance();
-            platform_log("DdrocrInstance initialized\n");
-        }
-    }
-
-    FUNCTION_ATTRIBUTE
-    void processImageShutdown()
-    {
-        if (instance != nullptr)
-        {
-            delete instance;
-            instance = nullptr;
-            platform_log("DdrocrInstance destroyed\n");
-        }
-    }
-
-    FUNCTION_ATTRIBUTE
     void process_picked_image(
         char *inputImagePath,
         int32_t *outputIsDetected,
@@ -122,7 +100,13 @@ extern "C"
     {
         if (instance == nullptr)
         {
-            processImageInit();
+            // TODO evaluate a static instance of DdrocrInstance instead of initializing with Ocrprocessor
+            // For now, this lives for the lifetime of the app
+            if (instance == nullptr)
+            {
+                instance = new DdrocrInstance(std::string(outputImgPath));
+                platform_log("DdrocrInstance initialized\n");
+            }
         }
 
         long long start = get_now();
@@ -192,7 +176,8 @@ extern "C"
     {
         if (instance == nullptr)
         {
-            processImageInit();
+            instance = new DdrocrInstance(std::string(outputImgPath));
+            platform_log("DdrocrInstance initialized\n");
         }
 
         long long start = get_now();
