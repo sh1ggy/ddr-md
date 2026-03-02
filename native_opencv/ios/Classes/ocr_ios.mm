@@ -124,7 +124,7 @@ OCRResult OCRWrapper::performOCR(const cv::Mat& roiMat) {
         // Configure for fast, accurate recognition
         request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
         request.usesLanguageCorrection = NO;
-        request.recognitionLanguages = @[@"en-US"];
+        request.recognitionLanguages = @[@"en-US", @"ja-JP"];
         
         // Perform the request
         VNImageRequestHandler *handler = [[VNImageRequestHandler alloc]
