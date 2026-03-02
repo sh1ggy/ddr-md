@@ -41,6 +41,18 @@ void UIImageToMat(const UIImage *image, cv::Mat &m, bool alphaExist = false) {
     CGContextRelease(contextRef);
 }
 
+extern void platform_log(const char *fmt, ...);
+
+OCRWrapper::OCRWrapper()
+{
+    platform_log("Ios OCRWrapper initialized\n");
+}
+
+OCRWrapper::~OCRWrapper()
+{
+    platform_log("Ios OCRWrapper destroyed\n");
+}
+
 OCRResult OCRWrapper::performOCR(const cv::Mat& roiMat) {
     __block OCRResult result;
     result.confidence = 0.0f;

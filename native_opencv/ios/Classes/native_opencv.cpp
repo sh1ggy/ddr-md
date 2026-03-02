@@ -6,22 +6,16 @@
 #include <opencv2/opencv.hpp>
 #include <chrono>
 #include "ocr_wrapper.h"
+#include "ddrocr_instance.h"
 
 #ifdef APPLE_NO_DEFINED
 #define NO (BOOL)0
-#endif
-
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
-#define IS_WIN32
 #endif
 
 #ifdef __ANDROID__
 #include <android/log.h>
 #endif
 
-#ifdef IS_WIN32
-#include <windows.h>
-#endif
 
 #if defined(__GNUC__)
 // Attributes to prevent 'unused' function from being removed and to make it visible
@@ -31,31 +25,11 @@
 #define FUNCTION_ATTRIBUTE __declspec(dllexport)
 #endif
 
-// #include <leptonica/allheaders.h>
-// #include <tesseract/baseapi.h>
-
-typedef void *tess_api_ptr_t;
-typedef void *pix_image_ptr_t;
-
-struct bounding_box
-{
-    int x1, y1, x2, y2;
-    char *word;
-    float confidence;
-    int block_num, par_num, line_num, word_num;
-};
-
-struct bounding_boxes
-{
-    int length;
-    struct bounding_box *boxes;
-};
-
 using namespace cv;
 using namespace std;
 
-const int max_value_H = 360 / 2;
-const int max_value = 255;
+// Static OCR instance
+static DdrocrInstance* instance = nullptr;
 
 long long int get_now()
 {
@@ -82,207 +56,6 @@ void platform_log(const char *fmt, ...)
     va_end(args);
 }
 
-// Returns either '0', '1', or '?' if unknown
-char classifyDigit_0_or_1(const cv::Mat &input)
-{
-    // 1. Convert to grayscale if needed
-    Mat gray;
-    if (input.channels() == 3)
-        cvtColor(input, gray, COLOR_BGR2GRAY);
-    else
-        gray = input.clone();
-
-    // 2. Binarize (digit should be black)
-    Mat binary;
-    threshold(gray, binary, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
-    // Now digit = white, background = black
-
-    // 3. Find contours with hierarchy (needed to detect holes)
-    std::vector<std::vector<Point>> contours;
-    std::vector<Vec4i> hierarchy;
-
-    findContours(binary, contours, hierarchy,
-                 RETR_CCOMP, CHAIN_APPROX_SIMPLE);
-
-    if (contours.empty())
-        return '?';
-
-    // 4. Count how many contours are "holes" (child contours)
-    int holeCount = 0;
-    for (size_t i = 0; i < hierarchy.size(); i++)
-    {
-        int parentIdx = hierarchy[i][3]; // parent contour index
-        if (parentIdx != -1)
-            holeCount++;
-    }
-
-    platform_log("hole: %d\n", holeCount);
-
-    // 5. Decide digit based on hole count
-    if (holeCount == 1)
-        return '0';
-    if (holeCount == 0)
-        return '1';
-
-    return '?'; // unexpected case
-}
-
-static char *allocCString(const std::string &s)
-{
-    size_t len = s.length();
-    char *buf = (char *)malloc(len + 1);
-    memcpy(buf, s.c_str(), len + 1);
-    return buf;
-}
-
-void save_img(const string &outputImgPath, const string &fileName, Mat img)
-{
-    char path[250];
-    snprintf(path, sizeof(path), "%s/%s.jpg", outputImgPath.c_str(), fileName.c_str());
-    platform_log("wrote: %s\n", path);
-    int imwrite_result = imwrite(path, img);
-}
-
-Rect expandRoi(Rect roi, Point expand)
-{
-    return Rect(
-        roi.x - expand.x,
-        roi.y - expand.y,
-        roi.width + expand.x * 2,
-        roi.height + expand.y * 2);
-}
-
-vector<Point2f> rectToPoints(const Rect &r)
-{
-    Point2f tl(r.x, r.y);
-    Point2f tr(r.x + r.width, r.y);
-    Point2f br(r.x + r.width, r.y + r.height);
-    Point2f bl(r.x, r.y + r.height);
-
-    return {tl, tr, br, bl};
-}
-
-Rect offsetToRoi(Point tl, Point br, Point expansion = {0, 0})
-{
-    // Width/height from raw coordinates
-    int width = br.x - tl.x;
-    int height = br.y - tl.y;
-
-    // Expand ROI by expansion.x and expansion.y on all sides
-    int x = tl.x - expansion.x;
-    int y = tl.y - expansion.y;
-    width += expansion.x * 2;
-    height += expansion.y * 2;
-
-    return Rect(x, y, width, height);
-}
-
-OCRResult getPreprocessedRoiImage(
-    const Mat &warpedImg,
-    const Rect &ROI_Target,
-    const Rect &ROI_Details,
-    const Point &warped_details_top_left,
-    const Point &expand,
-    const string &imageName,
-    const string &outputImgPath)
-{
-    OCRResult result{}; // Always have a valid return object
-
-    if (warpedImg.empty())
-        return result;
-
-    // Offset for ROI
-    Point2d offset(
-        ROI_Target.x - ROI_Details.x,
-        ROI_Target.y - ROI_Details.y);
-
-    Rect roi_warped(
-        warped_details_top_left.x + offset.x,
-        warped_details_top_left.y + offset.y,
-        ROI_Target.width,
-        ROI_Target.height);
-
-    roi_warped = expandRoi(roi_warped, expand);
-
-    Rect imgBounds(0, 0, warpedImg.cols, warpedImg.rows);
-    roi_warped &= imgBounds;
-
-    if (roi_warped.width <= 0 || roi_warped.height <= 0)
-        return result;
-
-    Mat cropped;
-    try
-    {
-        cropped = warpedImg(roi_warped);
-    }
-    catch (...)
-    {
-        return result;
-    }
-
-    if (cropped.empty())
-        return result;
-
-    // Preprocessing: top-hat + grayscale + threshold
-    Mat kernel_tophat = getStructuringElement(MORPH_ELLIPSE, Size(31, 31));
-
-    Mat corrected;
-    morphologyEx(cropped, corrected, MORPH_TOPHAT, kernel_tophat);
-
-    Mat gray;
-    cvtColor(corrected, gray, COLOR_BGR2GRAY);
-
-    Mat BW1;
-    threshold(gray, BW1, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
-    Mat BW2;
-    bitwise_not(BW1, BW2);
-
-    save_img(outputImgPath, imageName, BW2);
-
-    result = OCRWrapper::performOCR(BW2.clone());
-
-    // Fallback to classify 0/1 explicitly
-    if (result.confidence == 0)
-    {
-        char digit = classifyDigit_0_or_1(BW2);
-        result.text = digit;
-    }
-
-    platform_log("[OCR] [%s] ROI(%d,%d %dx%d) confidence=%.2f text=%s\n",
-                 imageName.c_str(),
-                 roi_warped.x, roi_warped.y,
-                 roi_warped.width, roi_warped.height,
-                 result.confidence,
-                 result.text.c_str());
-
-    return result;
-}
-
-struct OCRResults
-{
-    OCRResult score;
-    OCRResult marvelous;
-    OCRResult perfect;
-    OCRResult great;
-    OCRResult good;
-    OCRResult miss;
-    OCRResult flare;
-    OCRResult title;
-    OCRResult username;
-    OCRResult difficulty;
-    OCRResult max_combo;
-};
-
-typedef struct
-{
-    Mat img;
-    int32_t isDetected;
-    vector<Rect> rois;
-    int32_t detailsRoiIndex;
-    OCRResults ocrResults;
-} ProcessImgResult;
-
 typedef struct
 {
     char *score;
@@ -298,404 +71,13 @@ typedef struct
     char *maxCombo;
 } COCRStrings;
 
-ProcessImgResult process_image(Mat inputImg, const string &outputImgPath)
+// Helper function to convert std::string to char* (caller must free the result)
+static char *allocCString(const std::string &s)
 {
-    ProcessImgResult result;
-
-    Mat grayImg;
-    cvtColor(inputImg, grayImg, COLOR_BGR2GRAY);
-
-    // Selecting Details box - HSV mask
-    Mat imgHSV;
-    cvtColor(inputImg, imgHSV, COLOR_BGR2HSV);
-
-    double channel1Min = 0.380;
-    double channel1Max = 0.531;
-    double channel2Min = 0.204;
-    double channel2Max = 1.000;
-    double channel3Min = 0.592;
-    double channel3Max = 1.000;
-
-    // Use inRange for HSV thresholding
-    Scalar lowerHSV(channel1Min * max_value_H, channel2Min * max_value, channel3Min * max_value);
-    Scalar upperHSV(channel1Max * max_value_H, channel2Max * max_value, channel3Max * max_value);
-
-    Mat BW_HSV;
-    inRange(imgHSV, lowerHSV, upperHSV, BW_HSV);
-
-    // Do blob detection and filter small blobs
-    vector<vector<Point>> contours;
-    findContours(BW_HSV, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-
-    Mat BW2 = Mat::zeros(BW_HSV.size(), CV_8U);
-    for (size_t i = 0; i < contours.size(); i++)
-    {
-        double area = contourArea(contours[i]);
-        if (area >= 3000 && area <= 50000)
-        {
-            drawContours(BW2, contours, i, Scalar(255), FILLED);
-        }
-    }
-
-    int m = 360;
-    int n = 90;
-
-    // Create opening kernel using byte array (faster than getStructuringElement)
-    int open_width = m * 0.1;
-    int open_height = n * 0.1;
-    uchar *open_data = new uchar[open_height * open_width];
-    memset(open_data, 255, open_height * open_width);
-    Mat SE_open(open_height, open_width, CV_8U, open_data);
-
-    // TODO: refactor stateful object to avoid recreating structuring elements every time cache optimisation
-    auto start_open = chrono::high_resolution_clock::now();
-    Mat BW3;
-    morphologyEx(BW2, BW3, MORPH_OPEN, SE_open);
-    save_img(outputImgPath, "BW_HSV", BW_HSV);
-    save_img(outputImgPath, "BW2", BW2);
-    save_img(outputImgPath, "BW3", BW3);
-    auto end_open = chrono::high_resolution_clock::now();
-    auto duration_open = chrono::duration_cast<chrono::microseconds>(end_open - start_open);
-    cout << "Opening operation with byte array kernel: " << duration_open.count() << " microseconds" << endl;
-
-    // Dont need close for now, works fiune with JUST open to get rid of noise
-
-    //// Create closing kernel using byte array
-    // int close_width = m * 1.2;
-    // int close_height = n * 1.2;
-    // uchar* close_data = new uchar[close_height * close_width];
-    // memset(close_data, 255, close_height * close_width);
-    // Mat SE_close(close_height, close_width, CV_8U, close_data);
-
-    // auto start_close = chrono::high_resolution_clock::now();
-    // Mat BW4;
-    // morphologyEx(BW3, BW4, MORPH_CLOSE, SE_close);
-    // auto end_close = chrono::high_resolution_clock::now();
-    // auto duration_close = chrono::duration_cast<chrono::microseconds>(end_close - start_close);
-    // cout << "Closing operation with byte array kernel: " << duration_close.count() << " microseconds" << endl;
-
-    delete[] open_data;
-    // delete[] close_data;
-
-    // Get bounding boxes
-    vector<vector<Point>> contours_final;
-    findContours(BW3.clone(), contours_final, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-
-    vector<Rect> detectedRois;
-
-    int largestRoiAreaIndex = 0;
-    double largestRoiArea = 0;
-
-    // Looping through contours to find its area & bounding box
-    for (size_t i = 0; i < contours_final.size(); i++)
-    {
-
-        double thisRoi = contourArea(contours_final[i]);
-        detectedRois.push_back(boundingRect(contours_final[i]));
-
-        if (thisRoi > largestRoiArea)
-        {
-            largestRoiAreaIndex = i;
-            largestRoiArea = thisRoi;
-        }
-    }
-
-    if (detectedRois.size() == 0)
-    {
-        platform_log("No OCR ROI detected, defaulting to full image\n");
-        result.isDetected = 0;
-        return result;
-    }
-
-    // Preprocess image fro OCR on details
-    /*
-     Icorrected = imbothat(img,strel("disk",15));
-
-     % gaus filter to reduce LED screen noise
-     Ifiltered = imgaussfilt(Icorrected, 1);
-
-     BW = rgb2gray(Ifiltered);
-     BW1 = imbinarize(BW);
-
-     % morphological filtering (no reconstruction as some letters are non
-     % contiguous)
-     BW2 = bwareaopen(BW1, 5);
-
-     % Black text on white background preferred for OCR
-     BW3 = imcomplement(BW2);
-     */
-
-    // imbothat = closing - original (bottom hat)
-    Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(31, 31)); // radius 15 -> size 31
-    Mat closed, Icorrected;
-    morphologyEx(inputImg, closed, MORPH_CLOSE, kernel);
-    subtract(closed, inputImg, Icorrected);
-
-    // gaussian filter sigma=1
-    Mat Ifiltered;
-    GaussianBlur(Icorrected, Ifiltered, Size(0, 0), 1.0);
-
-    // rgb2gray
-    Mat preprocessed_BW;
-    cvtColor(Ifiltered, preprocessed_BW, COLOR_BGR2GRAY);
-
-    // imbinarize (Otsu)
-    Mat preprocessed_BW1;
-    threshold(preprocessed_BW, preprocessed_BW1, 0, 255, THRESH_BINARY | THRESH_OTSU);
-
-    // bwareaopen - remove connected components smaller than 5 pixels
-    Mat preprocessed_BW2 = preprocessed_BW1.clone();
-    std::vector<std::vector<Point>> preprocessed_contours;
-    Mat labels, stats, centroids;
-    int preprocessed_n = connectedComponentsWithStats(preprocessed_BW1, labels, stats, centroids);
-    for (int i = 1; i < n; i++)
-    {
-        if (stats.at<int>(i, CC_STAT_AREA) < 5)
-        {
-            Mat mask = (labels == i);
-            preprocessed_BW2.setTo(0, mask);
-        }
-    }
-
-    // imcomplement
-    Mat preprocessed_BW3;
-    bitwise_not(preprocessed_BW2, preprocessed_BW3);
-
-    Mat roi_img = inputImg.clone(); // TODO rename to all_rois_img
-    int correct_roi_idx = -1;
-    for (size_t i = 0; i < detectedRois.size(); i++)
-    {
-        rectangle(roi_img, detectedRois[i], Scalar(0, 255, 0), 4);
-        Rect details_roi = detectedRois[i];
-        // Mat details_roi_img = inputImg(details_roi);
-        //  TODO: NOT PERFORMANT pass in just ROI or pass in input image once at start of fun
-        save_img(outputImgPath, "preprocessed_BW3", preprocessed_BW3); // save bW3
-
-        cv::Mat roiMat = preprocessed_BW3(details_roi);
-        OCRResult roiOcrResult = {};
-
-        roiOcrResult = OCRWrapper::performOCR(roiMat.clone());
-        if (roiOcrResult.confidence < 0.5) // confidence threshold, can be tuned
-        {
-            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
-            continue;
-        }
-
-        // Strip all non-alphanumeric characters (including \n, spaces, punctuation) from OCR text for comparison
-        std::string cleanText;
-        for (char c : roiOcrResult.text) {
-            if (std::isalnum(static_cast<unsigned char>(c))) cleanText += c;
-            // else skip (removes \n, spaces, punctuation, etc.)
-        }
-        if (cleanText == "Details")
-        {
-            correct_roi_idx = i;
-            result.detailsRoiIndex = i;
-            platform_log("Found 'Details' with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
-        }
-    }
-
-    result.isDetected = 1;
-    // copy all detected rois so callers can access them
-    result.rois = detectedRois;
-    save_img(outputImgPath, "BW3", BW3); // save bW3
-
-    if (correct_roi_idx == -1)
-    {
-        platform_log("Failed to find 'Details' in any ROI, defaulting to first detected ROI\n");
-        result.detailsRoiIndex = -1;
-        return result;
-    }
-
-    // Create offsets for score OCR
-    Rect ROI_Details = offsetToRoi(Point(2054, 2348), Point(2418, 2450));
-
-    Rect ROI_Score = offsetToRoi(Point(2700, 2551), Point(2968, 2611));
-    Rect ROI_Marvelous = offsetToRoi(Point(1896, 2549), Point(2018, 2599));
-    Rect ROI_Perfect = offsetToRoi(Point(1896, 2608), Point(2018, 2657));
-    Rect ROI_Great = offsetToRoi(Point(1896, 2664), Point(2018, 2702));
-    Rect ROI_Good = offsetToRoi(Point(1896, 2727), Point(2018, 2771));
-    Rect ROI_Miss = offsetToRoi(Point(1896, 2825), Point(2018, 2879));
-    Rect ROI_Flare = offsetToRoi(Point(1649, 2466), Point(1817, 2508));
-    Rect ROI_Title = offsetToRoi(Point(1210, 2075), Point(1744, 2133));
-    Rect ROI_Username = offsetToRoi(Point(2180, 1388), Point(2465, 1439));
-    Rect ROI_Difficulty = offsetToRoi(Point(2056, 1463), Point(2627, 1536));
-    Rect ROI_MaxCombo = offsetToRoi(Point(2665, 2779), Point(2797, 2831));
-
-    if (result.rois.size() <= correct_roi_idx)
-    {
-        platform_log("Not enough ROIs detected, defaulting to first detected ROI\n");
-        result.isDetected = 1;
-        return result;
-    }
-
-    // Using regionprops Convex hull method
-    vector<Point> hull;
-    convexHull(contours_final[correct_roi_idx], hull);
-
-    // Approximate polygon
-    vector<Point> approx;
-    // Use the perimeter (arcLength) as part of the calculation for how much the polygon should be reduced.
-    double epsilon = 0.1 * arcLength(hull, true);
-    approxPolyDP(hull, approx, epsilon, true);
-
-    Mat approx_img = inputImg.clone();
-    for (size_t i = 0; i < approx.size(); i++)
-    {
-        line(approx_img, approx[i], approx[(i + 1) % approx.size()],
-             Scalar(0, 255, 0), 4);
-        circle(approx_img, approx[i], 12, Scalar(0, 255, 255), -1);
-    }
-
-    save_img(outputImgPath, "extrema", approx_img);
-
-    // Get first 4 points and order them
-    vector<Point2f> pts;
-    for (int i = 0; i < min(4, (int)approx.size()); i++)
-    {
-        pts.push_back(Point2f(approx[i].x, approx[i].y));
-    }
-
-    // Order points: top-left, top-right, bottom-right, bottom-left
-    vector<pair<float, int>> sums;
-    for (int i = 0; i < pts.size(); i++)
-    {
-        sums.push_back(make_pair(pts[i].x + pts[i].y, i));
-    }
-    sort(sums.begin(), sums.end());
-
-    Point2f tl = pts[sums[0].second];
-    Point2f br = pts[sums[3].second];
-
-    Point2f remaining[2] = {pts[sums[1].second], pts[sums[2].second]};
-    Point2f tr = remaining[0].x > remaining[1].x ? remaining[0] : remaining[1];
-    Point2f bl = remaining[0].x < remaining[1].x ? remaining[0] : remaining[1];
-
-    vector<Point2f> detailsPoints = {tl, tr, br, bl};
-    // Perform homography
-    vector<Point2f> detailsReferencePoints = rectToPoints(ROI_Details);
-    Mat H = getPerspectiveTransform(detailsPoints, detailsReferencePoints);
-
-    Mat warpedImg;
-    // The size doesnt affect the output to ROI (as long as the size is big enough)
-    Size beeg = Size(4000, 5000);
-    // Size beeg = Size(1000, 1000);
-    warpPerspective(inputImg, warpedImg, H, beeg);
-
-    save_img(outputImgPath, "warped", warpedImg);
-
-    // Read from offsets
-    vector<Point2f> tl_vec = {tl};
-    vector<Point2f> tl_transformed;
-    perspectiveTransform(tl_vec, tl_transformed, H);
-
-    Point2f warped_details_top_left = tl_transformed[0];
-    int numAdditionalPixels = 5;
-
-    OCRResults ocrResults = {};
-
-    ocrResults.score = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Score,
-        ROI_Details,
-        warped_details_top_left,
-        Point(5, 5),
-        "score",
-        outputImgPath);
-    // #endregion
-
-    ocrResults.marvelous = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Marvelous,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 0),
-        "marvelous",
-        outputImgPath);
-
-    ocrResults.perfect = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Perfect,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 4),
-        "perfect",
-        outputImgPath);
-
-    ocrResults.great = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Great,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 5),
-        "great",
-        outputImgPath);
-
-    ocrResults.good = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Good,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 5),
-        "good",
-        outputImgPath);
-
-    ocrResults.miss = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Miss,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 0),
-        "miss",
-        outputImgPath);
-
-    ocrResults.flare = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Flare,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 5),
-        "flare",
-        outputImgPath);
-
-    ocrResults.title = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Title,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 0),
-        "title",
-        outputImgPath);
-
-    ocrResults.username = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Username,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 0),
-        "username",
-        outputImgPath);
-
-    ocrResults.difficulty = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Difficulty,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 0),
-        "difficulty",
-        outputImgPath);
-
-    ocrResults.max_combo = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_MaxCombo,
-        ROI_Details,
-        warped_details_top_left,
-        Point(0, 0),
-        "max_combo",
-        outputImgPath);
-
-    result.ocrResults = ocrResults;
-    return result;
+    size_t len = s.length();
+    char *buf = (char *)malloc(len + 1);
+    memcpy(buf, s.c_str(), len + 1);
+    return buf;
 }
 
 // Avoiding name mangling
@@ -708,6 +90,27 @@ extern "C"
     }
 
     FUNCTION_ATTRIBUTE
+    void processImageInit()
+    {
+        if (instance == nullptr)
+        {
+            instance = new DdrocrInstance();
+            platform_log("DdrocrInstance initialized\n");
+        }
+    }
+
+    FUNCTION_ATTRIBUTE
+    void processImageShutdown()
+    {
+        if (instance != nullptr)
+        {
+            delete instance;
+            instance = nullptr;
+            platform_log("DdrocrInstance destroyed\n");
+        }
+    }
+
+    FUNCTION_ATTRIBUTE
     void process_picked_image(
         char *inputImagePath,
         int32_t *outputIsDetected,
@@ -717,6 +120,11 @@ extern "C"
         int32_t *outputdetailsRoiIndex,
         COCRStrings *outStrings)
     {
+        if (instance == nullptr)
+        {
+            processImageInit();
+        }
+
         long long start = get_now();
         Mat img = imread(inputImagePath);
         if (img.empty())
@@ -725,7 +133,7 @@ extern "C"
             return;
         }
         string staticOutputImgPath = string(outputImgPath);
-        ProcessImgResult result = process_image(img, staticOutputImgPath);
+        ProcessImgResult result = instance->process_image(img, staticOutputImgPath);
         if (!result.isDetected)
         {
             platform_log("No OCR region detected, skipping saving processed image.\n");
@@ -782,6 +190,11 @@ extern "C"
         uint8_t *outputImgBuff,
         char *outputImgPath)
     {
+        if (instance == nullptr)
+        {
+            processImageInit();
+        }
+
         long long start = get_now();
         Mat img;
 
@@ -804,41 +217,22 @@ extern "C"
         platform_log("Image type: %d\n", img.type());
 #endif
 
-        // tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
-        // api->Init(nullptr, "eng", tesseract::OEM_LSTM_ONLY);
-        // api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
-
-        // platform_log("Tesseract version: %s\n, datapath : %s\n", api->Version(), api->GetDatapath());
-
-        //    api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-        // api->SetImage(img.data, img.cols, img.rows, 3, img.step);
-
-        // std::string outText = std::string(api->GetUTF8Text());
-
-        // platform_log("OCR Output: %s\n", outText.c_str());
-
-        // api->End();
-
         if (img.empty())
         {
             platform_log("Could not open or find the image: %s\n", outputImgPath);
         }
 
-        // INIT
-        // imwrite(outputImgPath, img);
         platform_log("Saved input image to %s\n", outputImgPath);
         try
         {
-            ProcessImgResult result = process_image(img, outputImgPath);
+            ProcessImgResult result = instance->process_image(img, string(outputImgPath));
             if (!result.isDetected)
             {
                 platform_log("No OCR region detected, skipping saving processed image.\n");
                 *outputIsDetected = result.isDetected;
                 return;
             }
-            // imwrite(outputImgPath, result.BW3);
             platform_log("Saved processed image to %s\n", outputImgPath);
-            // printf("ocr roi size: x=%d, y=%d, w=%d, h=%d\n", ocr_roi[0].x, ocr_roi[0].y, ocr_roi[0].width, ocr_roi[0].height);
             *outputIsDetected = result.isDetected;
             outputRoi[0] = result.rois[0].tl().x;
             outputRoi[1] = result.rois[0].tl().y;
