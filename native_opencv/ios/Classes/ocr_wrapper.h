@@ -11,6 +11,13 @@
 
 #include <opencv2/opencv.hpp>
 
+// This is just to get intellisense
+// #define __ANDROID__
+
+#if defined(__ANDROID__)
+#include <tesseract/baseapi.h>
+#endif
+
 // Restore Apple's NO macro after OpenCV
 #ifdef APPLE_NO_DEFINED
 #define NO (BOOL)0
@@ -23,10 +30,30 @@ struct OCRResult
     cv::Rect boundingBox;
 };
 
+
+enum class OCRType { Eng, Digit, EngJP };
+
 class OCRWrapper
 {
 public:
-    static OCRResult performOCR(const cv::Mat& roiMat);
+    OCRWrapper(const std::string dataPath);
+    ~OCRWrapper();
+    
+    OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng);
+    std::string dataPath;
+
+    #if defined(__ANDROID__)
+    tesseract::TessBaseAPI *api;
+    #endif
 };
 
 #endif
+
+/*
+--- NOTE ---
+Since both vision and tesseract suuport ROIS 
+https://tesseract-ocr.github.io/tessdoc/Examples_C++.html
+
+https://developer.apple.com/documentation/Vision/extracting-phone-numbers-from-text-in-images
+
+*/
