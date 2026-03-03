@@ -1,6 +1,6 @@
 
 // This is just to get intellisense
-#define __ANDROID__
+// #define __ANDROID__
 
 #ifdef __ANDROID__
 
