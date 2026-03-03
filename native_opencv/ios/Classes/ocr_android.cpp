@@ -1,3 +1,7 @@
+
+// This is just to get intellisense
+// #define __ANDROID__
+
 #ifdef __ANDROID__
 
 // On Android the leptonica headers are installed directly in the include
@@ -15,7 +19,7 @@ extern void platform_log(const char *fmt, ...);
 
 #include "ocr_wrapper.h"
 
-OCRWrapper::OCRWrapper(const string dataPath)
+OCRWrapper::OCRWrapper(const std::string dataPath)
 {
     platform_log("OCRWrapper initialized\n");
 
@@ -29,8 +33,8 @@ OCRWrapper::OCRWrapper(const string dataPath)
         return;
     }
     
-    this.api = api;
-    this.tessdataPath = dataPath;
+    this->api = api;
+    this->dataPath = dataPath;
 }
 
 OCRWrapper::~OCRWrapper()
@@ -45,11 +49,6 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
     result.confidence = 0.0f;
     result.boundingBox = cv::Rect(0, 0, roiMat.cols, roiMat.rows);
 
-    if (api->Init(tessdataPath.c_str(), "eng", tesseract::OEM_LSTM_ONLY))
-    {
-        platform_log("Could not initialize tesseract.\n");
-        return result;
-    }
     // api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
     // api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
     if (type == OCRType::Digit)
@@ -101,8 +100,6 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
 
     // Destroy used object and release memory
     pixDestroy(&pixImage);
-    api->End();
-    delete api;
     delete[] outText;
     return result;
 }

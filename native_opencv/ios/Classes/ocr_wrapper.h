@@ -11,6 +11,9 @@
 
 #include <opencv2/opencv.hpp>
 
+// This is just to get intellisense
+// #define __ANDROID__
+
 #if defined(__ANDROID__)
 #include <tesseract/baseapi.h>
 #endif
@@ -33,13 +36,13 @@ enum class OCRType { Eng, Digit, EngJP };
 class OCRWrapper
 {
 public:
-    OCRWrapper(const std::string dataPath = "");
+    OCRWrapper(const std::string dataPath);
     ~OCRWrapper();
     
     OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng);
+    std::string dataPath;
 
     #if defined(__ANDROID__)
-    std::string dataPath;
     tesseract::TessBaseAPI *api;
     #endif
 };
