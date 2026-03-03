@@ -33,7 +33,12 @@ class _LoadImageState extends State<LoadImage> {
     if (_isPicking || (!Platform.isIOS && !Platform.isAndroid)) {
       return;
     }
-    setState(() => _isPicking = true);
+    setState(() {
+      _isPicking = true;
+      _lastResult = null; // Clear previous ROI data immediately
+      _scoreText = null;
+      _isProcessing = false;
+    });
 
     final picker = ImagePicker();
     final pickedImage = await picker.pickImage(source: ImageSource.gallery);
