@@ -445,16 +445,6 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
     result = ocrWrapper.performOCR(BW2.clone());
 
-    // TODO: This is kinda garbage, we should prioritize fixing the underlying cause of bad detection
-    // OR not have this platform specific hack here
-
-    // Fallback to classify 0/1 explicitly
-    if (result.confidence == 0)
-    {
-        char digit = classifyDigit_0_or_1(BW2);
-        result.text = digit;
-    }
-
     platform_log("[OCR] [%s] ROI(%d,%d %dx%d) confidence=%.2f text=%s\n",
                  imageName.c_str(),
                  roi_warped.x, roi_warped.y,
@@ -463,51 +453,6 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
                  result.text.c_str());
 
     return result;
-}
-
-// Returns either '0', '1', or '?' if unknown
-char DdrocrInstance::classifyDigit_0_or_1(const cv::Mat &input)
-{
-    // 1. Convert to grayscale if needed
-    cv::Mat gray;
-    if (input.channels() == 3)
-        cv::cvtColor(input, gray, cv::COLOR_BGR2GRAY);
-    else
-        gray = input.clone();
-
-    // 2. Binarize (digit should be black)
-    cv::Mat binary;
-    cv::threshold(gray, binary, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    // Now digit = white, background = black
-
-    // 3. Find contours with hierarchy (needed to detect holes)
-    std::vector<std::vector<cv::Point>> contours;
-    std::vector<cv::Vec4i> hierarchy;
-
-    cv::findContours(binary, contours, hierarchy,
-                     cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE);
-
-    if (contours.empty())
-        return '?';
-
-    // 4. Count how many contours are "holes" (child contours)
-    int holeCount = 0;
-    for (size_t i = 0; i < hierarchy.size(); i++)
-    {
-        int parentIdx = hierarchy[i][3]; // parent contour index
-        if (parentIdx != -1)
-            holeCount++;
-    }
-
-    platform_log("hole: %d\n", holeCount);
-
-    // 5. Decide digit based on hole count
-    if (holeCount == 1)
-        return '0';
-    if (holeCount == 0)
-        return '1';
-
-    return '?'; // unexpected case
 }
 
 void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
