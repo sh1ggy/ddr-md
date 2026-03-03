@@ -443,7 +443,7 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
     save_img(imageName, BW2);
 
-    result = ocrWrapper.performOCR(BW2.clone());
+    result = ocrWrapper.performOCR(BW2.clone(), type);
 
     // TODO: This is kinda garbage, we should prioritize fixing the underlying cause of bad detection
     // OR not have this platform specific hack here

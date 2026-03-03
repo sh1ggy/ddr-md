@@ -1,6 +1,6 @@
 
 // This is just to get intellisense
-// #define __ANDROID__
+#define __ANDROID__
 
 #ifdef __ANDROID__
 
@@ -53,7 +53,8 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
     // api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
     if (type == OCRType::Digit)
     {
-        api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
+        //TODO use digits traineddata and also why is the segmode not working
+        api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
         api->SetVariable("tessedit_char_whitelist", "0123456789");
     }
     else if (type == OCRType::Eng)
@@ -67,6 +68,7 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
         api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん");
     }
 
+    //TO TEST slowdown here?
     Pix *pixImage = pixCreate(roiMat.cols, roiMat.rows, 8);
     if (!pixImage)
     {
@@ -90,6 +92,8 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
 
     api->SetImage(pixImage);
     // Get OCR result
+
+    //TO TEST slowdown here?
     char *outText = api->GetUTF8Text();
     result.text = outText ? std::string(outText) : "";
     result.confidence = static_cast<float>(api->MeanTextConf()) / 100.0f;
@@ -97,6 +101,9 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
     {
         platform_log("OCR output:\n%s", outText);
     }
+
+
+    //TO TEST slowdown here?
 
     // Destroy used object and release memory
     pixDestroy(&pixImage);
