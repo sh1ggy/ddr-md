@@ -116,8 +116,7 @@ extern "C"
             platform_log("Could not open or find the image: %s\n", inputImagePath);
             return;
         }
-        string staticOutputImgPath = string(outputImgPath);
-        ProcessImgResult result = instance->process_image(img, staticOutputImgPath);
+        ProcessImgResult result = instance->process_image(img);
         if (!result.isDetected)
         {
             platform_log("No OCR region detected, skipping saving processed image.\n");
@@ -210,7 +209,7 @@ extern "C"
         platform_log("Saved input image to %s\n", outputImgPath);
         try
         {
-            ProcessImgResult result = instance->process_image(img, string(outputImgPath));
+            ProcessImgResult result = instance->process_image(img);
             if (!result.isDetected)
             {
                 platform_log("No OCR region detected, skipping saving processed image.\n");

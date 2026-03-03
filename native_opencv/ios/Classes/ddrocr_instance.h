@@ -45,10 +45,11 @@ struct ProcessImgResult
 class DdrocrInstance
 {
 public:
+    std::string dataPath;
     DdrocrInstance(std::string dataPath);
     ~DdrocrInstance();
-    //TODO use outputimg path declared in class
-    ProcessImgResult process_image(cv::Mat inputImg, const std::string &outputImgPath);
+    // TODO use outputimg path declared in class
+    ProcessImgResult process_image(cv::Mat inputImg);
 
 private:
     // Helper methods
@@ -65,7 +66,7 @@ private:
         const cv::Point &warped_details_top_left,
         const cv::Point &expand,
         const std::string &imageName,
-        const std::string &outputImgPath);
+        OCRType type);
 
-    void save_img(const std::string &outputImgPath, const std::string &fileName, cv::Mat img);
+    void save_img(const std::string &fileName, cv::Mat img);
 };

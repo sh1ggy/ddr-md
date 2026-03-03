@@ -13,7 +13,7 @@ const int max_value = 255;
 extern void platform_log(const char *fmt, ...);
 
 DdrocrInstance::DdrocrInstance(std::string dataPath)
-    : ocrWrapper(dataPath)
+    : dataPath(dataPath), ocrWrapper(dataPath)
 {
     platform_log("DdrocrInstance initialized\n");
 }
@@ -23,7 +23,7 @@ DdrocrInstance::~DdrocrInstance()
     platform_log("DdrocrInstance destroyed\n");
 }
 
-ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::string &outputImgPath)
+ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 {
     ProcessImgResult result;
 
@@ -75,9 +75,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
     auto start_open = std::chrono::high_resolution_clock::now();
     cv::Mat BW3;
     cv::morphologyEx(BW2, BW3, cv::MORPH_OPEN, SE_open);
-    save_img(outputImgPath, "BW_HSV", BW_HSV);
-    save_img(outputImgPath, "BW2", BW2);
-    save_img(outputImgPath, "BW3", BW3);
+    save_img("BW_HSV", BW_HSV);
+    save_img("BW2", BW2);
+    save_img("BW3", BW3);
     auto end_open = std::chrono::high_resolution_clock::now();
     auto duration_open = std::chrono::duration_cast<std::chrono::microseconds>(end_open - start_open);
     std::cout << "Opening operation with byte array kernel: " << duration_open.count() << " microseconds" << std::endl;
@@ -156,7 +156,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
         cv::Rect details_roi = detectedRois[i];
 
-        save_img(outputImgPath, "preprocessed_BW3", preprocessed_BW3);
+        save_img("preprocessed_BW3", preprocessed_BW3);
 
         cv::Mat roiMat = preprocessed_BW3(details_roi);
         OCRResult roiOcrResult = {};
@@ -170,8 +170,10 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
 
         // Strip all non-alphanumeric characters
         std::string cleanText;
-        for (char c : roiOcrResult.text) {
-            if (std::isalnum(static_cast<unsigned char>(c))) cleanText += c;
+        for (char c : roiOcrResult.text)
+        {
+            if (std::isalnum(static_cast<unsigned char>(c)))
+                cleanText += c;
         }
         if (cleanText == "Details")
         {
@@ -183,7 +185,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
 
     result.isDetected = 1;
     result.rois = detectedRois;
-    save_img(outputImgPath, "BW3", BW3);
+    save_img("BW3", BW3);
 
     if (correct_roi_idx == -1)
     {
@@ -231,7 +233,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         cv::circle(approx_img, approx[i], 12, cv::Scalar(0, 255, 255), -1);
     }
 
-    save_img(outputImgPath, "extrema", approx_img);
+    save_img("extrema", approx_img);
 
     // Get first 4 points and order them
     std::vector<cv::Point2f> pts;
@@ -264,7 +266,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
     cv::Size beeg = cv::Size(4000, 5000);
     cv::warpPerspective(inputImg, warpedImg, H, beeg);
 
-    save_img(outputImgPath, "warped", warpedImg);
+    save_img("warped", warpedImg);
 
     // Read from offsets
     std::vector<cv::Point2f> tl_vec = {tl};
@@ -282,7 +284,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         warped_details_top_left,
         cv::Point(5, 5),
         "score",
-        outputImgPath);
+        OCRType::Digit);
 
     ocrResults.marvelous = getPreprocessedRoiImage(
         warpedImg,
@@ -291,7 +293,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         warped_details_top_left,
         cv::Point(0, 0),
         "marvelous",
-        outputImgPath);
+        OCRType::Digit);
 
     ocrResults.perfect = getPreprocessedRoiImage(
         warpedImg,
@@ -300,16 +302,16 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         warped_details_top_left,
         cv::Point(0, 4),
         "perfect",
-        outputImgPath);
+        OCRType::Digit);
 
     ocrResults.great = getPreprocessedRoiImage(
         warpedImg,
         ROI_Great,
         ROI_Details,
         warped_details_top_left,
-        cv::Point(0, 5),
+        cv::Point(0, 6),
         "great",
-        outputImgPath);
+        OCRType::Digit);
 
     ocrResults.good = getPreprocessedRoiImage(
         warpedImg,
@@ -318,7 +320,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         warped_details_top_left,
         cv::Point(0, 5),
         "good",
-        outputImgPath);
+        OCRType::Digit);
 
     ocrResults.miss = getPreprocessedRoiImage(
         warpedImg,
@@ -327,43 +329,43 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         warped_details_top_left,
         cv::Point(0, 0),
         "miss",
-        outputImgPath);
+        OCRType::Digit);
 
     ocrResults.flare = getPreprocessedRoiImage(
         warpedImg,
         ROI_Flare,
         ROI_Details,
         warped_details_top_left,
-        cv::Point(0, 5),
+        cv::Point(0, 7),
         "flare",
-        outputImgPath);
+        OCRType::Eng);
 
     ocrResults.title = getPreprocessedRoiImage(
         warpedImg,
         ROI_Title,
         ROI_Details,
         warped_details_top_left,
-        cv::Point(0, 0),
+        cv::Point(0, 10),
         "title",
-        outputImgPath);
+        OCRType::EngJP);
 
     ocrResults.username = getPreprocessedRoiImage(
         warpedImg,
         ROI_Username,
         ROI_Details,
         warped_details_top_left,
-        cv::Point(0, 0),
+        cv::Point(10, 10),
         "username",
-        outputImgPath);
+        OCRType::EngJP);
 
     ocrResults.difficulty = getPreprocessedRoiImage(
         warpedImg,
         ROI_Difficulty,
         ROI_Details,
         warped_details_top_left,
-        cv::Point(0, 0),
+        cv::Point(10, 10),
         "difficulty",
-        outputImgPath);
+        OCRType::Eng);
 
     ocrResults.max_combo = getPreprocessedRoiImage(
         warpedImg,
@@ -372,7 +374,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, const std::stri
         warped_details_top_left,
         cv::Point(0, 0),
         "max_combo",
-        outputImgPath);
+        OCRType::Digit);
 
     result.ocrResults = ocrResults;
     return result;
@@ -385,7 +387,7 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     const cv::Point &warped_details_top_left,
     const cv::Point &expand,
     const std::string &imageName,
-    const std::string &outputImgPath)
+    const OCRType type)
 {
     OCRResult result{}; // Always have a valid return object
 
@@ -439,11 +441,11 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     cv::Mat BW2;
     cv::bitwise_not(BW1, BW2);
 
-    save_img(outputImgPath, imageName, BW2);
+    save_img(imageName, BW2);
 
     result = ocrWrapper.performOCR(BW2.clone());
 
-    // TODO: This is kinda garbage, we should prioritize fixing the underlying cause of bad detection 
+    // TODO: This is kinda garbage, we should prioritize fixing the underlying cause of bad detection
     // OR not have this platform specific hack here
 
     // Fallback to classify 0/1 explicitly
@@ -462,7 +464,6 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
     return result;
 }
-
 
 // Returns either '0', '1', or '?' if unknown
 char DdrocrInstance::classifyDigit_0_or_1(const cv::Mat &input)
@@ -509,10 +510,10 @@ char DdrocrInstance::classifyDigit_0_or_1(const cv::Mat &input)
     return '?'; // unexpected case
 }
 
-void DdrocrInstance::save_img(const std::string &outputImgPath, const std::string &fileName, cv::Mat img)
+void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
 {
     char path[250];
-    snprintf(path, sizeof(path), "%s/%s.jpg", outputImgPath.c_str(), fileName.c_str());
+    snprintf(path, sizeof(path), "%s/%s.jpg", dataPath.c_str(), fileName.c_str());
     platform_log("wrote: %s\n", path);
     int imwrite_result = cv::imwrite(path, img);
 }
