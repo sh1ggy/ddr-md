@@ -63,13 +63,15 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
 
         // TODO here is where the state for the result should be created and processed instead of this
         var fin = ProcessResult(
-            result.score,
-            result.difficulty,
-            newRoi,
-            null,
-            result.isDetected,
-            result.returnImageType,
-            result.processedImageBytes);
+          result.difficulty,
+          newRoi,
+          null,
+          result.isDetected,
+          result.returnImageType,
+          result.processedImageBytes,
+          result.detailsRoiIndex,
+          result.ocrStrings,
+        );
 
         _lastResult = fin;
       });
@@ -334,7 +336,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
                   ),
                 ),
                 Text(
-                    'Difficulty: ${_lastResult!.difficulty} Score: ${_lastResult!.score}'),
+                    'Difficulty: ${_lastResult!.difficulty}'),
               ],
               ElevatedButton(
                 onPressed: _toggleCamera,

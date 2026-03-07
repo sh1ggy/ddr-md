@@ -3,11 +3,9 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
-import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/roi_overlay.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -29,22 +27,21 @@ class _LoadImageState extends State<LoadImage> {
   XFile? _pickedImage;
   ProcessResult? _lastResult;
   double _camFrameToScreenScale = 1.0;
-
-  var _script = TextRecognitionScript.latin;
-  var _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-  bool _canProcess = true;
-  bool _isBusy = false;
   String? _scoreText;
 
   Future<void> _processImage() async {
     if (_isPicking || (!Platform.isIOS && !Platform.isAndroid)) {
       return;
     }
-    setState(() => _isPicking = true);
+    setState(() {
+      _isPicking = true;
+      _lastResult = null; // Clear previous ROI data immediately
+      _scoreText = null;
+      _isProcessing = false;
+    });
 
     final picker = ImagePicker();
-    final pickedImage = await picker.pickImage(
-        source: ImageSource.gallery, imageQuality: imageQuality);
+    final pickedImage = await picker.pickImage(source: ImageSource.gallery);
 
     if (!mounted) return;
     if (pickedImage == null) {
@@ -57,7 +54,7 @@ class _LoadImageState extends State<LoadImage> {
       _isProcessing = true;
     });
     _ocrProcessor.processPickedImage(_pickedImage!);
-    setState(() => _isProcessing = false);
+    // wait for the stream listener to clear _isProcessing when a result arrives
   }
 
   Future<void> _initLoadImage() async {
@@ -104,17 +101,17 @@ class _LoadImageState extends State<LoadImage> {
               detectedRois.add(roiToAdd);
             }
             _lastResult = ProcessResult(
-                result.score,
                 result.difficulty,
                 null,
                 detectedRois,
                 result.isDetected,
                 result.returnImageType,
-                result.processedImageBytes);
+                result.processedImageBytes,
+                result.detailsRoiIndex,
+                result.ocrStrings);
           });
         });
       }
-      await _recogniseText();
     });
     _initLoadImage();
   }
@@ -125,35 +122,16 @@ class _LoadImageState extends State<LoadImage> {
     super.dispose();
   }
 
-  Future<void> _recogniseText() async {
-    InputImage inputScoreImage;
-    if (Platform.isAndroid) {
-      inputScoreImage = InputImage.fromFilePath('${tempDir.path}/score.jpg');
-    } else {
-      inputScoreImage = InputImage.fromFilePath('${tempDir.path}/score.jpeg');
-    }
-
-    if (!_canProcess) return;
-    if (_isBusy) return;
-    _isBusy = true;
-    setState(() {
-      _scoreText = '';
-    });
-
-    final recognizedText = await _textRecognizer.processImage(inputScoreImage);
-    _scoreText = recognizedText.text;
-    _isBusy = false;
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
   bool get pickedImage => _pickedImage != null;
   bool get isProcessed => _lastResult != null;
   bool get isDetected =>
       _lastResult != null &&
       _lastResult!.isDetected &&
       _lastResult!.detectedRois != null;
+  bool get detailsRoiIndex =>
+      _lastResult != null && _lastResult!.detailsRoiIndex != -1;
+  bool get hasScore =>
+      _lastResult != null && _lastResult!.ocrStrings.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -174,6 +152,7 @@ class _LoadImageState extends State<LoadImage> {
                   isDetected
                       ? RoiOverlay(
                           rois: _lastResult!.detectedRois!,
+                          detailsRoiIndex: _lastResult!.detailsRoiIndex,
                           child: Image.file(
                             File(_pickedImage!.path),
                             width: MediaQuery.of(context).size.width,
@@ -181,20 +160,102 @@ class _LoadImageState extends State<LoadImage> {
                           ),
                         )
                       : Center(
-                          child: Text(_pickedImage == null
-                              ? "please pick image"
-                              : 'No DDR chart detected. Please try another image.'),
+                          child: _isProcessing
+                              ? const CircularProgressIndicator()
+                              : Text(_pickedImage == null
+                                  ? "Please pick image"
+                                  : 'No DDR chart detected.\nPlease try another image.'),
                         ),
                   if (_scoreText != null)
                     Row(
                       children: [
                         Text(_scoreText!),
-                      Image.file(File('${tempDir.path}/score.jpg')),
                       ],
-                    )
+                    ),
+                  detailsRoiIndex
+                      ? const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Center(
+                              child: Text(
+                            "Details detected!",
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.lightGreenAccent),
+                          )),
+                        )
+                      : Container(),
+                  if (hasScore)
+                    Center(
+                      child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ..._lastResult!.ocrStrings.entries.map((entry) =>
+                                  OCRKeyValue(
+                                      keyName: entry.key.toUpperCase(),
+                                      value: entry.value))
+                            ],
+                          )),
+                    ),
                 ],
               ),
       ),
+    );
+  }
+}
+
+class OCRKeyValue extends StatelessWidget {
+  final String keyName;
+  final String value;
+  const OCRKeyValue({super.key, required this.keyName, required this.value});
+
+  Color _colorForKey(String k) {
+    final s = k.toLowerCase();
+    switch (s) {
+      case 'score':
+        return Colors.black;
+      case 'marvelous':
+        return Colors.grey;
+      case 'perfect':
+        return Colors.yellow[700]!;
+      case 'great':
+        return Colors.green;
+      case 'good':
+        return Colors.blueAccent;
+      case 'bad':
+        return Colors.purpleAccent;
+      default:
+        return Colors.black87;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            keyName,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: _colorForKey(keyName),
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
