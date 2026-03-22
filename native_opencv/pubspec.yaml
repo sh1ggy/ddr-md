@@ -33,6 +33,7 @@ flutter:
   plugin:
     platforms:
       android:
+        ffiPlugin: true
         package: com.example.native_opencv
         pluginClass: NativeOpencvPlugin
       ios:

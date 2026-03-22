@@ -31,5 +31,12 @@ target_include_directories(native_opencv PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp/tesseract/src/include
 )
 
+target_compile_definitions(native_opencv PUBLIC DART_SHARED_LIB)
+
+if (ANDROID)
+    # Support Android 15 16k page size.
+    target_link_options(native_opencv PRIVATE "-Wl,-z,max-page-size=16384")
+endif()
+
 # Link against the libraries we've built
 target_link_libraries(native_opencv tesseract leptonica lib_opencv ${log-lib})
