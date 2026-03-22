@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -486,17 +485,7 @@ class OCRProcessor {
       await tessdataDir.create(recursive: true);
     }
 
-    final assetManifest = await rootBundle.loadString('AssetManifest.json');
-    final Map<String, dynamic> manifest = json.decode(assetManifest);
-    final tessdataAssets = manifest.keys
-        .where((key) => key.startsWith('assets/tessdata/'))
-        .cast<String>()
-        .toList();
-
-    if (tessdataAssets.isEmpty) {
-      print('No tessdata entries found in AssetManifest.json');
-      return;
-    }
+    final tessdataAssets = ['assets/tessdata/eng.traineddata'];
 
     for (final assetPath in tessdataAssets) {
       final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
