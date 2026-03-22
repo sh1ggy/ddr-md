@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -6,7 +7,9 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:ffi/ffi.dart';
+import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 enum DifficultyType { None, FFXI }
@@ -207,7 +210,6 @@ Future<ProcessResult> _processPickedImage(
   outStrings.ref.username = usernamePtr;
   outStrings.ref.difficulty = difficultyPtr;
   outStrings.ref.maxCombo = maxComboPtr;
-
 
   _processPickedImageFn(
     params.imagePath.toNativeUtf8(),
@@ -469,6 +471,41 @@ class OCRProcessor {
   Future<void> init() async {
     tempDir = await getTemporaryDirectory();
     appDir = await getApplicationDocumentsDirectory();
+    await loadTessdata();
+  }
+
+  Future<void> loadTessdata() async {
+    if (!Platform.isAndroid) {
+      // Tessdata copying is only needed for mobile platforms.
+      print('Skipping tessdata copy on unsupported platform: ${Platform.operatingSystem}');
+      return;
+    }
+
+    final tessdataDir = Directory(path.join(appDir!.path, 'tessdata'));
+    if (!await tessdataDir.exists()) {
+      await tessdataDir.create(recursive: true);
+    }
+
+    final assetManifest = await rootBundle.loadString('AssetManifest.json');
+    final Map<String, dynamic> manifest = json.decode(assetManifest);
+    final tessdataAssets = manifest.keys
+        .where((key) => key.startsWith('assets/tessdata/'))
+        .cast<String>()
+        .toList();
+
+    if (tessdataAssets.isEmpty) {
+      print('No tessdata entries found in AssetManifest.json');
+      return;
+    }
+
+    for (final assetPath in tessdataAssets) {
+      final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
+      final targetFile = File(path.join(tessdataDir.path, path.basename(assetPath)));
+      await targetFile.writeAsBytes(bytes, flush: true);
+      print('Copied tessdata asset $assetPath -> ${targetFile.path}');
+    }
+
+    print('Tessdata loaded to ${tessdataDir.path}');
   }
 
   Future<void> initActor() {
