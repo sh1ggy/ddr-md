@@ -208,11 +208,15 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         OCRResult roiOcrResult = {};
 
         roiOcrResult = ocrWrapper.performOCR(roiMat.clone());
+
+// TODO: fix Android's tesseract janky confidence in order to actl use this
+#ifdef __IOS__
         if (roiOcrResult.confidence < 0.5)
         {
             platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
             continue;
         }
+#endif
 
         // Strip all non-alphanumeric characters
         std::string cleanText;
