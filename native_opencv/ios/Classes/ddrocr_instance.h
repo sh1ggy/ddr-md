@@ -54,6 +54,8 @@ public:
 private:
     // Helper methods
     OCRWrapper ocrWrapper;
+    cv::Mat otsuToLogical(const cv::Mat &gray, bool invert = false) const;
+    cv::Mat logicalToDisplayU8(const cv::Mat &logical) const;
     cv::Rect expandRoi(cv::Rect roi, cv::Point expand);
     std::vector<cv::Point2f> rectToPoints(const cv::Rect &r);
     cv::Rect offsetToRoi(cv::Point tl, cv::Point br, cv::Point expansion = {0, 0});

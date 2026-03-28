@@ -374,6 +374,7 @@ void isolateEntryPoint(InitialRequest initReq) {
 
   // Create a port on which the main thread can send us messages and listen to it
   ReceivePort fromMainThread = ReceivePort();
+  // TODO initialise the cpp class here
   fromMainThread.listen((data) {
     if (data is Request) {
       switch (data.type) {
@@ -429,7 +430,7 @@ void isolateEntryPoint(InitialRequest initReq) {
             width: image.width,
             height: image.height,
             bytesPerPixel: 4,
-            tempPath: initReq.tempPath,
+            tempPath: initReq.appPath,
           );
 
           _processFrame(params).then((result) {

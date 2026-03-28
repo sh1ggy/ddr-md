@@ -23,6 +23,52 @@ DdrocrInstance::~DdrocrInstance()
     platform_log("DdrocrInstance destroyed\n");
 }
 
+cv::Mat DdrocrInstance::otsuToLogical(const cv::Mat &gray, bool invert) const
+{
+    cv::Mat gray8;
+    if (gray.channels() == 1)
+    {
+        if (gray.depth() == CV_8U)
+            gray8 = gray;
+        else
+            gray.convertTo(gray8, CV_8U);
+    }
+    else
+    {
+        cv::Mat grayConverted;
+        cv::cvtColor(gray, grayConverted, cv::COLOR_BGR2GRAY);
+        if (grayConverted.depth() == CV_8U)
+            gray8 = grayConverted;
+        else
+            grayConverted.convertTo(gray8, CV_8U);
+    }
+
+    cv::Mat binary255;
+    const int type = invert ? (cv::THRESH_BINARY_INV | cv::THRESH_OTSU)
+                            : (cv::THRESH_BINARY | cv::THRESH_OTSU);
+    cv::threshold(gray8, binary255, 0, 255, type);
+
+    cv::Mat logical;
+    binary255.convertTo(logical, CV_8U, 1.0 / 255.0);
+    return logical;
+}
+
+cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
+{
+    if (logical.empty())
+        return logical;
+
+    cv::Mat logical8;
+    if (logical.depth() == CV_8U)
+        logical8 = logical;
+    else
+        logical.convertTo(logical8, CV_8U);
+
+    cv::Mat display;
+    display = logical8 * 255;
+    return display;
+}
+
 ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 {
     ProcessImgResult result;
@@ -127,9 +173,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
     cv::Mat preprocessed_BW;
     cv::cvtColor(Ifiltered, preprocessed_BW, cv::COLOR_BGR2GRAY);
 
-    // imbinarize (Otsu)
+    // MATLAB-like imbinarize (Otsu) -> logical 0/1
     cv::Mat preprocessed_BW1;
-    cv::threshold(preprocessed_BW, preprocessed_BW1, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    preprocessed_BW1 = otsuToLogical(preprocessed_BW);
 
     // bwareaopen - remove connected components smaller than 5 pixels
     cv::Mat preprocessed_BW2 = preprocessed_BW1.clone();
@@ -145,9 +191,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         }
     }
 
-    // imcomplement
+    // imcomplement for logical image (0/1)
     cv::Mat preprocessed_BW3;
-    cv::bitwise_not(preprocessed_BW2, preprocessed_BW3);
+    cv::subtract(cv::Scalar::all(1), preprocessed_BW2, preprocessed_BW3);
 
     cv::Mat roi_img = inputImg.clone();
     int correct_roi_idx = -1;
@@ -156,7 +202,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
         cv::Rect details_roi = detectedRois[i];
 
-        save_img("preprocessed_BW3", preprocessed_BW3);
+        save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW3));
 
         cv::Mat roiMat = preprocessed_BW3(details_roi);
         OCRResult roiOcrResult = {};
@@ -413,15 +459,7 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     if (roi_warped.width <= 0 || roi_warped.height <= 0)
         return result;
 
-    cv::Mat cropped;
-    try
-    {
-        cropped = warpedImg(roi_warped);
-    }
-    catch (...)
-    {
-        return result;
-    }
+    cv::Mat cropped = warpedImg(roi_warped);
 
     if (cropped.empty())
         return result;
@@ -436,12 +474,12 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     cv::cvtColor(corrected, gray, cv::COLOR_BGR2GRAY);
 
     cv::Mat BW1;
-    cv::threshold(gray, BW1, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    BW1 = otsuToLogical(gray);
 
     cv::Mat BW2;
-    cv::bitwise_not(BW1, BW2);
+    cv::subtract(cv::Scalar::all(1), BW1, BW2);
 
-    save_img(imageName, BW2);
+    save_img(imageName, logicalToDisplayU8(BW2));
 
     result = ocrWrapper.performOCR(BW2.clone(), type);
 

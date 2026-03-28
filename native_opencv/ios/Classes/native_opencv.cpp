@@ -98,15 +98,12 @@ extern "C"
         int32_t *outputdetailsRoiIndex,
         COCRStrings *outStrings)
     {
+        // TODO evaluate a static instance of DdrocrInstance instead of initializing with Ocrprocessor
+        // For now, this lives for the lifetime of the app
         if (instance == nullptr)
         {
-            // TODO evaluate a static instance of DdrocrInstance instead of initializing with Ocrprocessor
-            // For now, this lives for the lifetime of the app
-            if (instance == nullptr)
-            {
-                instance = new DdrocrInstance(std::string(outputImgPath));
-                platform_log("DdrocrInstance initialized\n");
-            }
+            instance = new DdrocrInstance(std::string(outputImgPath));
+            platform_log("DdrocrInstance initialized\n");
         }
 
         long long start = get_now();

@@ -21,12 +21,11 @@ extern void platform_log(const char *fmt, ...);
 
 OCRWrapper::OCRWrapper(const std::string dataPath)
 {
-    platform_log("OCRWrapper initialized\n");
-
+    std::string tessdataPath = dataPath + "/tessdata";
     //TODO add in jp 
     tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
     // Initialize tesseract-ocr with English, without specifying tessdata path
-    if (api->Init(dataPath.c_str(), "eng", tesseract::OEM_LSTM_ONLY))
+    if (api->Init(tessdataPath.c_str(), "eng", tesseract::OEM_LSTM_ONLY))
     {
         platform_log("Could not initialize tesseract.\n");
         delete api;
@@ -35,6 +34,7 @@ OCRWrapper::OCRWrapper(const std::string dataPath)
     
     this->api = api;
     this->dataPath = dataPath;
+    platform_log("OCRWrapper initialized\n");
 }
 
 OCRWrapper::~OCRWrapper()
