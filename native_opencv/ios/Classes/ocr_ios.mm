@@ -53,16 +53,28 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType ocrType) {
     __block OCRResult result;
     result.confidence = 0.0f;
     // TODO zero out BoundingBox
+
+    // roiMat is a logical 0/1 image (CV_8U); scale to 0-255 so Vision sees
+    // actual white text on a black background instead of an all-black image.
+    cv::Mat mat;
+    {
+        cv::Mat logical8;
+        if (roiMat.depth() == CV_8U)
+            logical8 = roiMat;
+        else
+            roiMat.convertTo(logical8, CV_8U);
+        mat = logical8 * 255;
+    }
     
     @autoreleasepool {
         // Convert OpenCV Mat to UIImage
-        NSData *data = [NSData dataWithBytes:roiMat.data
-                                      length:roiMat.elemSize() * roiMat.total()];
+        NSData *data = [NSData dataWithBytes:mat.data
+                                      length:mat.elemSize() * mat.total()];
         
         CGColorSpaceRef colorSpace;
         CGBitmapInfo bitmapInfo;
         
-        if (roiMat.elemSize() == 1) {
+        if (mat.elemSize() == 1) {
             colorSpace = CGColorSpaceCreateDeviceGray();
             //            bitmapInfo = kCGImageAlphaNone;
         } else {
@@ -76,11 +88,11 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType ocrType) {
         
         // Creating CGImage from cv::Mat
         CGImageRef imageRef = CGImageCreate(
-                                            roiMat.cols,                                   // width
-                                            roiMat.rows,                                   // height
+                                            mat.cols,                             // width
+                                            mat.rows,                             // height
                                             8,                                             // bits per component
-                                            8 * roiMat.elemSize(),                         // bits per pixel
-                                            roiMat.step.p[0],                              // bytesPerRow
+                                            8 * mat.elemSize(),                   // bits per pixel
+                                            mat.step.p[0],                        // bytesPerRow
                                             colorSpace,                                    // colorspace
                                             kCGImageAlphaNone | kCGBitmapByteOrderDefault, // bitmap info
                                             provider,                                      // CGDataProviderRef
