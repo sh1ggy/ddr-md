@@ -208,7 +208,6 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         OCRResult roiOcrResult = {};
 
         roiOcrResult = ocrWrapper.performOCR(roiMat.clone());
-
 // TODO: fix Android's tesseract janky confidence in order to actl use this
 #ifdef __IOS__
         if (roiOcrResult.confidence < 0.5)

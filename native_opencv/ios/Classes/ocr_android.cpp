@@ -112,7 +112,7 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
     result.text = "";
     result.confidence = 0.0f;
     result.boundingBox = cv::Rect(0, 0, roiMat.cols, roiMat.rows);
- 
+
     // todo: change all conditions to asserts
     if (!api)
     {
@@ -183,8 +183,6 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
         // Use single character mode for improved digit recognition
         api->SetPageSegMode(tesseract::PSM_RAW_LINE);
         api->SetVariable("tessedit_char_whitelist", "0123456789,");
-       
-        return result;
     }
     else if (type == OCRType::Eng)
     {
@@ -235,6 +233,40 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
 
     api->SetImage(pixImage);
     // Get OCR result
+
+    // For debug TODO remove 
+    if (type == OCRType::Digit)
+    {
+        // For digit mode, we want to get symbol-level results to compute confidence
+        api->Recognize(0);
+        tesseract::ResultIterator *ri = api->GetIterator();
+        tesseract::PageIteratorLevel level = tesseract::RIL_SYMBOL;
+
+        float totalConf = 0.0f;
+        int charCount = 0;
+
+        if (ri != 0)
+        {
+            do
+            {
+                const char *symbol = ri->GetUTF8Text(level);
+                float conf = ri->Confidence(level);
+                int x1, y1, x2, y2;
+                ri->BoundingBox(level, &x1, &y1, &x2, &y2);
+
+                platform_log("[OCR][SYMBOL] char='%s' conf=%.2f BoundingBox: %d,%d,%d,%d\n",
+                             symbol, conf, x1, y1, x2, y2);
+
+                result.text += symbol ? std::string(symbol) : "";
+                totalConf += conf;
+                ++charCount;
+
+                delete[] symbol;
+            } while (ri->Next(level));
+        }
+
+        return result;
+    }
 
     // TO TEST slowdown here?
     char *outText = api->GetUTF8Text();
