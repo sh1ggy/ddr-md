@@ -39,7 +39,7 @@ public:
     OCRWrapper(const std::string dataPath);
     ~OCRWrapper();
     
-    OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng);
+    OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng, const std::string& roiName = "unknown");
     std::string dataPath;
 
     #if defined(__ANDROID__)

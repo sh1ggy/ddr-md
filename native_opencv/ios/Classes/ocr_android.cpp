@@ -106,82 +106,46 @@ OCRWrapper::~OCRWrapper()
     platform_log("OCRWrapper destroyed\n");
 }
 
-OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
+OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std::string &roiName)
 {
     OCRResult result;
     result.text = "";
     result.confidence = 0.0f;
     result.boundingBox = cv::Rect(0, 0, roiMat.cols, roiMat.rows);
 
-    // todo: change all conditions to asserts
     if (!api)
     {
-        platform_log("[OCR] api not initialized\n");
+        platform_log("[OCR][%s] ERROR: api not initialized\n", roiName.c_str());
         return result;
     }
 
     if (roiMat.empty())
     {
-        platform_log("[OCR] empty ROI input\n");
+        platform_log("[OCR][%s] ERROR: empty ROI input\n", roiName.c_str());
         return result;
     }
 
-    cv::Mat grayInput;
-    if (roiMat.channels() == 1)
+    // Input from getPreprocessedRoiImage is already a clean logical 0/1 image
+    // (single-channel CV_8U, dark text on light background). Skip redundant binarization.
+    if (roiMat.channels() != 1 || roiMat.depth() != CV_8U)
     {
-        grayInput = roiMat;
-    }
-    else
-    {
-        cv::cvtColor(roiMat, grayInput, cv::COLOR_BGR2GRAY);
+        platform_log("[OCR][%s] ERROR: unexpected format channels=%d depth=%d\n",
+                     roiName.c_str(), roiMat.channels(), roiMat.depth());
+        return result;
     }
 
-    cv::Mat gray8;
-    if (grayInput.depth() == CV_8U)
-        gray8 = grayInput;
-    else
-        grayInput.convertTo(gray8, CV_8U);
-
-    cv::Mat logical;
+    cv::Mat logical = roiMat;
     double minVal = 0.0;
     double maxVal = 0.0;
-    cv::minMaxLoc(gray8, &minVal, &maxVal);
-    if (maxVal <= 1.0)
-    {
-        logical = gray8;
-    }
-    else
-    {
-        cv::Mat binary255;
-        cv::threshold(gray8, binary255, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
-        binary255.convertTo(logical, CV_8U, 1.0 / 255.0);
-    }
-
     cv::minMaxLoc(logical, &minVal, &maxVal);
 
-    platform_log("[OCR][INPUT] type=%s rows=%d cols=%d channels=%d depth=%d elemSize=%zu elemSize1=%zu total=%zu step=%zu step1=%zu isContinuous=%d cvType=%d(%s) min=%.1f max=%.1f\n",
-                 ocrTypeToString(type),
-                 logical.rows,
-                 logical.cols,
-                 logical.channels(),
-                 logical.depth(),
-                 logical.elemSize(),
-                 logical.elemSize1(),
-                 logical.total(),
-                 logical.step,
-                 logical.step1(),
-                 logical.isContinuous() ? 1 : 0,
-                 logical.type(),
-                 cvMatTypeToString(logical.type()).c_str(),
-                 minVal,
-                 maxVal);
+    platform_log("[OCR][%s] INPUT: type=%s size=%dx%d min=%.0f max=%.0f\n",
+                 roiName.c_str(), ocrTypeToString(type),
+                 logical.cols, logical.rows, minVal, maxVal);
 
-    // api->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
-    // api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
+    // Configure whitelist per type
     if (type == OCRType::Digit)
     {
-        // Use single character mode for improved digit recognition
-        api->SetPageSegMode(tesseract::PSM_RAW_LINE);
         api->SetVariable("tessedit_char_whitelist", "0123456789,");
     }
     else if (type == OCRType::Eng)
@@ -195,28 +159,29 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
         api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん");
     }
 
+    // Set DPI to 300 to match Tesseract's training data expectations
+    api->SetVariable("user_defined_dpi", "300");
+
+    // Debug: save per-ROI image just before sending to Tesseract
+    {
+        cv::Mat debugImg = logical * 255;
+        char debugPath[250];
+        snprintf(debugPath, sizeof(debugPath), "%s/ocr_input_%s.png",
+                 dataPath.c_str(), roiName.c_str());
+        cv::imwrite(std::string(debugPath), debugImg);
+        platform_log("[OCR][%s] saved: %s\n", roiName.c_str(), debugPath);
+    }
+
     Pix *pixImage = pixCreate(logical.cols, logical.rows, 1);
     if (!pixImage)
     {
-        platform_log("pixCreate failed\n");
+        platform_log("[OCR][%s] ERROR: pixCreate failed\n", roiName.c_str());
         return result;
     }
 
     // Copy row by row, respecting both OpenCV and Pix strides
     l_uint32 *pixData = pixGetData(pixImage);
     l_int32 wpl = pixGetWpl(pixImage);
-    l_int32 pixRowBytes = wpl * sizeof(l_uint32);
-    const l_int32 pixDepth = pixGetDepth(pixImage);
-    const l_int32 pixWidth = pixGetWidth(pixImage);
-    const l_int32 pixHeight = pixGetHeight(pixImage);
-
-    platform_log("[OCR][PIX] width=%d height=%d depth=%d wpl=%d rowBytes=%d inputStep=%zu\n",
-                 pixWidth,
-                 pixHeight,
-                 pixDepth,
-                 wpl,
-                 pixRowBytes,
-                 logical.step);
 
     for (int row = 0; row < logical.rows; ++row)
     {
@@ -231,62 +196,108 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type)
         }
     }
 
-    api->SetImage(pixImage);
-    // Get OCR result
-
-    // For debug TODO remove 
     if (type == OCRType::Digit)
     {
-        // For digit mode, we want to get symbol-level results to compute confidence
-        api->Recognize(0);
-        tesseract::ResultIterator *ri = api->GetIterator();
-        tesseract::PageIteratorLevel level = tesseract::RIL_SYMBOL;
+        // Try multiple PSM modes and pick the one with highest confidence.
+        // This helps with single-digit and two-digit ROIs that fail under a single mode.
+        struct PsmCandidate {
+            tesseract::PageSegMode mode;
+            const char *name;
+        };
+        const PsmCandidate psmModes[] = {
+            { tesseract::PSM_SINGLE_CHAR,  "SINGLE_CHAR"  },
+            { tesseract::PSM_SINGLE_WORD,  "SINGLE_WORD"  },
+            { tesseract::PSM_SINGLE_LINE,  "SINGLE_LINE"  },
+            { tesseract::PSM_RAW_LINE,     "RAW_LINE"     },
+            { tesseract::PSM_SINGLE_BLOCK, "SINGLE_BLOCK" },
+        };
+        const int numModes = sizeof(psmModes) / sizeof(psmModes[0]);
 
-        float totalConf = 0.0f;
-        int charCount = 0;
+        float bestConf = -1.0f;
+        std::string bestText;
+        std::string bestSymbolDetail;
+        int bestCharCount = 0;
+        const char *bestModeName = "";
 
-        if (ri != 0)
+        for (int m = 0; m < numModes; ++m)
         {
-            do
+            api->SetPageSegMode(psmModes[m].mode);
+            api->SetImage(pixImage);
+            api->Recognize(0);
+
+            tesseract::ResultIterator *ri = api->GetIterator();
+            tesseract::PageIteratorLevel level = tesseract::RIL_SYMBOL;
+
+            float totalConf = 0.0f;
+            int charCount = 0;
+            std::string text;
+            std::string symbolDetail;
+
+            if (ri != 0)
             {
-                const char *symbol = ri->GetUTF8Text(level);
-                float conf = ri->Confidence(level);
-                int x1, y1, x2, y2;
-                ri->BoundingBox(level, &x1, &y1, &x2, &y2);
+                do
+                {
+                    const char *symbol = ri->GetUTF8Text(level);
+                    float conf = ri->Confidence(level);
 
-                platform_log("[OCR][SYMBOL] char='%s' conf=%.2f BoundingBox: %d,%d,%d,%d\n",
-                             symbol, conf, x1, y1, x2, y2);
+                    if (symbol)
+                    {
+                        if (!symbolDetail.empty()) symbolDetail += ", ";
+                        symbolDetail += "'" + std::string(symbol) + "'@" + std::to_string((int)conf) + "%";
+                        text += std::string(symbol);
+                    }
+                    totalConf += conf;
+                    ++charCount;
 
-                result.text += symbol ? std::string(symbol) : "";
-                totalConf += conf;
-                ++charCount;
+                    delete[] symbol;
+                } while (ri->Next(level));
+            }
 
-                delete[] symbol;
-            } while (ri->Next(level));
+            float avgConf = charCount > 0 ? totalConf / charCount : 0.0f;
+
+            platform_log("[OCR][%s] PSM_%-12s: text='%s' avgConf=%.1f%% chars=%d symbols=[%s]\n",
+                         roiName.c_str(), psmModes[m].name,
+                         text.c_str(), avgConf, charCount,
+                         symbolDetail.c_str());
+
+            if (avgConf > bestConf)
+            {
+                bestConf = avgConf;
+                bestText = text;
+                bestSymbolDetail = symbolDetail;
+                bestCharCount = charCount;
+                bestModeName = psmModes[m].name;
+            }
+
+            api->Clear();
         }
 
+        result.text = bestText;
+        result.confidence = bestConf / 100.0f;
+
+        platform_log("[OCR][%s] BEST: psm=%s text='%s' avgConf=%.1f%% chars=%d symbols=[%s]\n",
+                     roiName.c_str(), bestModeName,
+                     result.text.c_str(),
+                     result.confidence * 100.0f, bestCharCount,
+                     bestSymbolDetail.c_str());
+
+        pixDestroy(&pixImage);
         return result;
     }
 
-    // TO TEST slowdown here?
+    api->SetImage(pixImage);
     char *outText = api->GetUTF8Text();
     result.text = outText ? std::string(outText) : "";
     result.confidence = static_cast<float>(api->MeanTextConf()) / 100.0f;
-    const int confRaw = api->MeanTextConf();
 
-    const size_t textLen = result.text.size();
-    platform_log("[OCR][OUTPUT] confRaw=%d conf=%.3f textLen=%zu text=%s\n",
-                 confRaw,
-                 result.confidence,
-                 textLen,
-                 result.text.c_str());
+    // Trim trailing whitespace/newlines from OCR output
+    while (!result.text.empty() && (result.text.back() == '\n' || result.text.back() == ' '))
+        result.text.pop_back();
 
-    if (outText)
-    {
-        platform_log("OCR output:\n%s", outText);
-    }
-
-    // TO TEST slowdown here?
+    platform_log("[OCR][%s] RESULT: text='%s' conf=%.1f%% type=%s size=%dx%d\n",
+                 roiName.c_str(), result.text.c_str(),
+                 result.confidence * 100.0f, ocrTypeToString(type),
+                 logical.cols, logical.rows);
 
     // Destroy used object and release memory
     pixDestroy(&pixImage);

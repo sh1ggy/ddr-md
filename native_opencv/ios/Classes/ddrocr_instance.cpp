@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstring>
 #include <algorithm>
+#include <set>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -467,14 +468,22 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     if (cropped.empty())
         return result;
 
+    // Step 1: Upscale ROI 3× before binarization (tiny ~50px ROIs → ~150px)
+    cv::Mat upscaled;
+    cv::resize(cropped, upscaled, cv::Size(), 3.0, 3.0, cv::INTER_CUBIC);
+
     // Preprocessing: top-hat + grayscale + threshold
-    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(31, 31));
+    // Kernel scaled proportionally: 31×31 → 93×93 for 3× upscale
+    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(93, 93));
 
     cv::Mat corrected;
-    cv::morphologyEx(cropped, corrected, cv::MORPH_TOPHAT, kernel_tophat);
+    cv::morphologyEx(upscaled, corrected, cv::MORPH_TOPHAT, kernel_tophat);
 
     cv::Mat gray;
     cv::cvtColor(corrected, gray, cv::COLOR_BGR2GRAY);
+
+    // Step 2: Light GaussianBlur to denoise before Otsu (3×3 at 3× scale)
+    cv::GaussianBlur(gray, gray, cv::Size(3, 3), 0);
 
     cv::Mat BW1;
     BW1 = otsuToLogical(gray);
@@ -482,11 +491,26 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     cv::Mat BW2;
     cv::subtract(cv::Scalar::all(1), BW1, BW2);
 
+    // In BW2: text=1 (foreground), background=0
+    save_img(imageName + "_raw", logicalToDisplayU8(BW2));
+
+    // --- Step 3a: Morphological opening to remove small noise specks ---
+    // At 3× scale a 3×3 kernel removes isolated pixels without affecting character strokes
+    {
+        cv::Mat openKernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+        cv::morphologyEx(BW2, BW2, cv::MORPH_OPEN, openKernel);
+    }
+
+    // --- Step 3b: Add white border padding so Tesseract sees whitespace around text ---
+    // In logical image: 1 = background (white), 0 = text (dark)
+    // 20px at 3× scale gives adequate breathing room for Tesseract
+    cv::copyMakeBorder(BW2, BW2, 20, 20, 20, 20, cv::BORDER_CONSTANT, cv::Scalar(1));
+
     save_img(imageName, logicalToDisplayU8(BW2));
 
-    result = ocrWrapper.performOCR(BW2.clone(), type);
+    result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
 
-    platform_log("[OCR] [%s] ROI(%d,%d %dx%d) confidence=%.2f text=%s\n",
+    platform_log("[OCR] [%s] ROI(%d,%d %dx%d) confidence=%.2f text='%s'\n",
                  imageName.c_str(),
                  roi_warped.x, roi_warped.y,
                  roi_warped.width, roi_warped.height,
@@ -499,7 +523,7 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
 {
     char path[250];
-    snprintf(path, sizeof(path), "%s/%s.jpg", dataPath.c_str(), fileName.c_str());
+    snprintf(path, sizeof(path), "%s/%s.png", dataPath.c_str(), fileName.c_str());
     platform_log("wrote: %s\n", path);
     int imwrite_result = cv::imwrite(path, img);
 }
