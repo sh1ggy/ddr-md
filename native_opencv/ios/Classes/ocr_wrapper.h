@@ -41,6 +41,7 @@ public:
     
     OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng, const std::string& roiName = "unknown");
     std::string dataPath;
+    std::string debugDir; // timestamped output directory for current run
 
     #if defined(__ANDROID__)
     tesseract::TessBaseAPI *api;

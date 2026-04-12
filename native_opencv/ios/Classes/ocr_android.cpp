@@ -163,11 +163,12 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
     api->SetVariable("user_defined_dpi", "300");
 
     // Debug: save per-ROI image just before sending to Tesseract
+    if (!debugDir.empty())
     {
         cv::Mat debugImg = logical * 255;
-        char debugPath[250];
+        char debugPath[512];
         snprintf(debugPath, sizeof(debugPath), "%s/ocr_input_%s.png",
-                 dataPath.c_str(), roiName.c_str());
+                 debugDir.c_str(), roiName.c_str());
         cv::imwrite(std::string(debugPath), debugImg);
         platform_log("[OCR][%s] saved: %s\n", roiName.c_str(), debugPath);
     }

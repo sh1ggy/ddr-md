@@ -3,6 +3,9 @@
 #include <cstring>
 #include <algorithm>
 #include <set>
+#include <sstream>
+#include <iomanip>
+#include <sys/stat.h>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -73,6 +76,25 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
 ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 {
     ProcessImgResult result;
+
+    // Create a timestamped directory for all debug images from this run
+    {
+        auto now = std::chrono::system_clock::now();
+        auto time_t_now = std::chrono::system_clock::to_time_t(now);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()) % 1000;
+        std::tm tm_buf;
+        localtime_r(&time_t_now, &tm_buf);
+
+        std::ostringstream oss;
+        oss << dataPath << "/ocr_debug_"
+            << std::put_time(&tm_buf, "%Y%m%d_%H%M%S")
+            << "_" << std::setfill('0') << std::setw(3) << ms.count();
+        debugDir = oss.str();
+        mkdir(debugDir.c_str(), 0755);
+        ocrWrapper.debugDir = debugDir;
+        platform_log("[DEBUG] output dir: %s\n", debugDir.c_str());
+    }
 
     cv::Mat grayImg;
     cv::cvtColor(inputImg, grayImg, cv::COLOR_BGR2GRAY);
@@ -468,13 +490,13 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     if (cropped.empty())
         return result;
 
-    // Step 1: Upscale ROI 3× before binarization (tiny ~50px ROIs → ~150px)
+    // Step 1: Upscale ROI 4× before binarization (tiny ~50px ROIs → ~200px)
     cv::Mat upscaled;
     cv::resize(cropped, upscaled, cv::Size(), 3.0, 3.0, cv::INTER_CUBIC);
 
     // Preprocessing: top-hat + grayscale + threshold
-    // Kernel scaled proportionally: 31×31 → 93×93 for 3× upscale
-    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(93, 93));
+    // Kernel scaled proportionally: 31×31 → 125×125 for 4× upscale
+    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(125, 125));
 
     cv::Mat corrected;
     cv::morphologyEx(upscaled, corrected, cv::MORPH_TOPHAT, kernel_tophat);
@@ -492,21 +514,10 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     cv::subtract(cv::Scalar::all(1), BW1, BW2);
 
     // In BW2: text=1 (foreground), background=0
-    save_img(imageName + "_raw", logicalToDisplayU8(BW2));
 
-    // --- Step 3a: Morphological opening to remove small noise specks ---
-    // At 3× scale a 3×3 kernel removes isolated pixels without affecting character strokes
-    {
-        cv::Mat openKernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
-        cv::morphologyEx(BW2, BW2, cv::MORPH_OPEN, openKernel);
-    }
-
-    // --- Step 3b: Add white border padding so Tesseract sees whitespace around text ---
-    // In logical image: 1 = background (white), 0 = text (dark)
-    // 20px at 3× scale gives adequate breathing room for Tesseract
-    cv::copyMakeBorder(BW2, BW2, 20, 20, 20, 20, cv::BORDER_CONSTANT, cv::Scalar(1));
-
-    save_img(imageName, logicalToDisplayU8(BW2));
+    // --- Step 3: Add white border padding so Tesseract sees whitespace around text ---
+    // In BW2 after complement: text=0, background=1. Pad with 1 (background/white).
+    cv::copyMakeBorder(BW2, BW2, 30, 30, 30, 30, cv::BORDER_CONSTANT, cv::Scalar(1));
 
     result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
 
@@ -522,10 +533,12 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
 void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
 {
-    char path[250];
-    snprintf(path, sizeof(path), "%s/%s.png", dataPath.c_str(), fileName.c_str());
+    if (debugDir.empty())
+        return;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s.png", debugDir.c_str(), fileName.c_str());
     platform_log("wrote: %s\n", path);
-    int imwrite_result = cv::imwrite(path, img);
+    cv::imwrite(path, img);
 }
 
 cv::Rect DdrocrInstance::expandRoi(cv::Rect roi, cv::Point expand)
