@@ -486,7 +486,7 @@ class OCRProcessor {
       await tessdataDir.create(recursive: true);
     }
 
-    final tessdataAssets = ['assets/tessdata/eng.traineddata'];
+    final tessdataAssets = ['assets/tessdata/eng.best.traineddata'];
 
     for (final assetPath in tessdataAssets) {
       final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
