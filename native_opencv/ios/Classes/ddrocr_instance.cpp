@@ -227,7 +227,12 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 
         save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW3));
 
+#ifdef __APPLE__
+        cv::Mat bw3_display = logicalToDisplayU8(preprocessed_BW3);
+        cv::Mat roiMat = bw3_display(details_roi);
+#else
         cv::Mat roiMat = preprocessed_BW3(details_roi);
+#endif
         OCRResult roiOcrResult = {};
 
         roiOcrResult = ocrWrapper.performOCR(roiMat.clone());
@@ -507,17 +512,26 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     // Step 2: Light GaussianBlur to denoise before Otsu (3×3 at 3× scale)
     cv::GaussianBlur(gray, gray, cv::Size(3, 3), 0);
 
-    cv::Mat BW1;
-    BW1 = otsuToLogical(gray);
-
     cv::Mat BW2;
-    cv::subtract(cv::Scalar::all(1), BW1, BW2);
 
+#if defined(__APPLE__)
+    // iOS Vision: feed Otsu-thresholded (0-255) image directly —
+    // no logical conversion needed since Vision expects a real grayscale image.
+    cv::Mat otsu255;
+    cv::threshold(gray, otsu255, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    BW2 = otsu255; // text=255 (white), background=0 (black)
+
+    cv::copyMakeBorder(BW2, BW2, 30, 30, 30, 30, cv::BORDER_CONSTANT, cv::Scalar(255));
+#else
+    // Android Tesseract: use logical 0/1 binary image.
+    cv::Mat BW1 = otsuToLogical(gray);
+    cv::subtract(cv::Scalar::all(1), BW1, BW2);
     // In BW2: text=1 (foreground), background=0
 
-    // --- Step 3: Add white border padding so Tesseract sees whitespace around text ---
+    // Add white border padding so Tesseract sees whitespace around text.
     // In BW2 after complement: text=0, background=1. Pad with 1 (background/white).
     cv::copyMakeBorder(BW2, BW2, 30, 30, 30, 30, cv::BORDER_CONSTANT, cv::Scalar(1));
+#endif
 
     result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
 

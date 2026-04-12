@@ -18,7 +18,7 @@
 void UIImageToMat(const UIImage *image, cv::Mat &m, bool alphaExist = false) {
     CGColorSpaceRef colorSpace = CGImageGetColorSpace(image.CGImage);
     CGFloat cols = image.size.width, rows = image.size.height;
-    CGContextRef contextRef;
+    CGContextRef contextRef = nullptr;
     CGBitmapInfo bitmapInfo = kCGImageAlphaPremultipliedLast;
     if (CGColorSpaceGetModel(colorSpace) == 0) {
         m.create(rows, cols, CV_8UC1);
@@ -37,8 +37,10 @@ void UIImageToMat(const UIImage *image, cv::Mat &m, bool alphaExist = false) {
             }
         }
     }
-    CGContextDrawImage(contextRef, CGRectMake(0, 0, cols, rows), image.CGImage);
-    CGContextRelease(contextRef);
+    if (contextRef) {
+        CGContextDrawImage(contextRef, CGRectMake(0, 0, cols, rows), image.CGImage);
+        CGContextRelease(contextRef);
+    }
 }
 
 extern void platform_log(const char *fmt, ...);
@@ -49,22 +51,18 @@ OCRWrapper::OCRWrapper(std::string datapath) {
 
 OCRWrapper::~OCRWrapper() { platform_log("Ios OCRWrapper destroyed\n"); }
 
-OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType ocrType) {
+OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType ocrType, const std::string& roiName) {
     __block OCRResult result;
     result.confidence = 0.0f;
     // TODO zero out BoundingBox
 
-    // roiMat is a logical 0/1 image (CV_8U); scale to 0-255 so Vision sees
-    // actual white text on a black background instead of an all-black image.
+    // roiMat is already a 0-255 Otsu-thresholded image (white text on
+    // black background) — no rescaling required.
     cv::Mat mat;
-    {
-        cv::Mat logical8;
-        if (roiMat.depth() == CV_8U)
-            logical8 = roiMat;
-        else
-            roiMat.convertTo(logical8, CV_8U);
-        mat = logical8 * 255;
-    }
+    if (roiMat.depth() == CV_8U)
+        mat = roiMat;
+    else
+        roiMat.convertTo(mat, CV_8U);
     
     @autoreleasepool {
         // Convert OpenCV Mat to UIImage
@@ -72,7 +70,6 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType ocrType) {
                                       length:mat.elemSize() * mat.total()];
         
         CGColorSpaceRef colorSpace;
-        CGBitmapInfo bitmapInfo;
         
         if (mat.elemSize() == 1) {
             colorSpace = CGColorSpaceCreateDeviceGray();
@@ -107,15 +104,15 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType ocrType) {
         CGDataProviderRelease(provider);
         CGColorSpaceRelease(colorSpace);
         
-        NSURL *documentsURL = [[[NSFileManager defaultManager]
-                                URLsForDirectory:NSDocumentDirectory
-                                inDomains:NSUserDomainMask] firstObject];
-        NSString *documentsDirectory = [documentsURL path];
-        NSData *dataToSave = UIImageJPEGRepresentation(uiImage, 1.0);
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        NSString *fullPath =
-        [documentsDirectory stringByAppendingPathComponent:@"DEETroiImage.jpg"];
-        [fileManager createFileAtPath:fullPath contents:dataToSave attributes:nil];
+        if (!debugDir.empty()) {
+            NSString *debugDirNS = [NSString stringWithUTF8String:debugDir.c_str()];
+            NSString *roiNameNS = [NSString stringWithUTF8String:roiName.c_str()];
+            NSString *fullPath = [debugDirNS stringByAppendingPathComponent:
+                                  [roiNameNS stringByAppendingString:@"_vision_input.jpg"]];
+            NSData *dataToSave = UIImageJPEGRepresentation(uiImage, 1.0);
+            [[NSFileManager defaultManager] createFileAtPath:fullPath contents:dataToSave attributes:nil];
+            platform_log("[OCR] saved Vision input image: %s\n", [fullPath UTF8String]);
+        }
         
         // Perform OCR using Vision
         dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
