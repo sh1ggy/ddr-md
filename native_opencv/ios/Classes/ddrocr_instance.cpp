@@ -220,6 +220,15 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 
     cv::Mat roi_img = inputImg.clone();
     int correct_roi_idx = -1;
+
+    // Create a details_rois subfolder for debug output
+    std::string detailsRoiDir;
+    if (!debugDir.empty())
+    {
+        detailsRoiDir = debugDir + "/details_rois";
+        mkdir(detailsRoiDir.c_str(), 0755);
+    }
+
     for (size_t i = 0; i < detectedRois.size(); i++)
     {
         cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
@@ -227,23 +236,36 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 
         save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW3));
 
-#ifdef __APPLE__
-        cv::Mat bw3_display = logicalToDisplayU8(preprocessed_BW3);
-        cv::Mat roiMat = bw3_display(details_roi);
-#else
         cv::Mat roiMat = preprocessed_BW3(details_roi);
-#endif
         OCRResult roiOcrResult = {};
 
-        roiOcrResult = ocrWrapper.performOCR(roiMat.clone());
-// TODO: fix Android's tesseract janky confidence in order to actl use this
-#ifdef __IOS__
-        if (roiOcrResult.confidence < 0.5)
+        // Upscale + pad the "Details" ROI before OCR — matches the
+        // preprocessing that getPreprocessedRoiImage applies to score ROIs.
+        cv::Mat detailsInput;
+        cv::resize(roiMat, detailsInput, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
+        cv::copyMakeBorder(detailsInput, detailsInput, 30, 30, 30, 30,
+                           cv::BORDER_CONSTANT, cv::Scalar(1));
+
+        // Save raw and preprocessed details ROI candidates to debug subfolder
+        if (!detailsRoiDir.empty())
         {
-            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
-            continue;
+            char rawPath[512], prepPath[512];
+            snprintf(rawPath, sizeof(rawPath), "%s/roi_%zu_raw.png",
+                     detailsRoiDir.c_str(), i);
+            snprintf(prepPath, sizeof(prepPath), "%s/roi_%zu_preprocessed.png",
+                     detailsRoiDir.c_str(), i);
+            cv::imwrite(std::string(rawPath), logicalToDisplayU8(roiMat));
+            cv::imwrite(std::string(prepPath), logicalToDisplayU8(detailsInput));
+            platform_log("[DEBUG] saved details ROI %zu: %s\n", i, rawPath);
         }
-#endif
+
+        roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
+// TODO: fix Tesseract's confidence calibration to reliably use this threshold
+//        if (roiOcrResult.confidence < 0.5)
+//        {
+//            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
+//            continue;
+//        }
 
         // Strip all non-alphanumeric characters
         std::string cleanText;
@@ -514,16 +536,7 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
     cv::Mat BW2;
 
-#if defined(__APPLE__)
-    // iOS Vision: feed Otsu-thresholded (0-255) image directly —
-    // no logical conversion needed since Vision expects a real grayscale image.
-    cv::Mat otsu255;
-    cv::threshold(gray, otsu255, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    BW2 = otsu255; // text=255 (white), background=0 (black)
-
-    cv::copyMakeBorder(BW2, BW2, 30, 30, 30, 30, cv::BORDER_CONSTANT, cv::Scalar(255));
-#else
-    // Android Tesseract: use logical 0/1 binary image.
+    // Tesseract: use logical 0/1 binary image.
     cv::Mat BW1 = otsuToLogical(gray);
     cv::subtract(cv::Scalar::all(1), BW1, BW2);
     // In BW2: text=1 (foreground), background=0
@@ -531,7 +544,6 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     // Add white border padding so Tesseract sees whitespace around text.
     // In BW2 after complement: text=0, background=1. Pad with 1 (background/white).
     cv::copyMakeBorder(BW2, BW2, 30, 30, 30, 30, cv::BORDER_CONSTANT, cv::Scalar(1));
-#endif
 
     result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
 

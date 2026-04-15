@@ -5,6 +5,8 @@
 
 #include <opencv2/opencv.hpp>
 #include <chrono>
+#include <cerrno>
+#include <sys/stat.h>
 #include "ocr_wrapper.h"
 #include "ddrocr_instance.h"
 
@@ -107,10 +109,55 @@ extern "C"
         }
 
         long long start = get_now();
+        platform_log("imread loading: %s\n", inputImagePath);
+
+        // Check file exists first
+        struct stat st;
+        if (stat(inputImagePath, &st) != 0)
+        {
+            platform_log("File does not exist or cannot stat: %s (errno=%d: %s)\n",
+                         inputImagePath, errno, strerror(errno));
+            *outputIsDetected = 0;
+            return;
+        }
+        platform_log("File exists: %s (%ld bytes)\n", inputImagePath, (long)st.st_size);
+
         Mat img = imread(inputImagePath);
         if (img.empty())
         {
+            platform_log("imread failed, trying fopen+imdecode\n");
+            FILE *f = fopen(inputImagePath, "rb");
+            if (f)
+            {
+                fseek(f, 0, SEEK_END);
+                long len = ftell(f);
+                fseek(f, 0, SEEK_SET);
+                if (len > 0)
+                {
+                    std::vector<uchar> buf(len);
+                    size_t read = fread(buf.data(), 1, len, f);
+                    fclose(f);
+                    platform_log("fopen+fread OK: %ld bytes read\n", (long)read);
+                    img = imdecode(buf, IMREAD_COLOR);
+                    if (img.empty())
+                        platform_log("imdecode also failed for: %s\n", inputImagePath);
+                }
+                else
+                {
+                    fclose(f);
+                    platform_log("ftell returned %ld for: %s\n", len, inputImagePath);
+                }
+            }
+            else
+            {
+                platform_log("fopen failed: %s (errno=%d: %s)\n",
+                             inputImagePath, errno, strerror(errno));
+            }
+        }
+        if (img.empty())
+        {
             platform_log("Could not open or find the image: %s\n", inputImagePath);
+            *outputIsDetected = 0;
             return;
         }
         ProcessImgResult result = instance->process_image(img);
@@ -191,11 +238,10 @@ extern "C"
         // platform_log("Image depth: %d\n", img.depth());
         // platform_log("Image type: %d\n", img.type());
 #else
-        img = Mat(imgHeight, imgWidth, CV_8UC4, imgBuffer);
+        Mat bgra(imgHeight, imgWidth, CV_8UC4, imgBuffer);
+        cvtColor(bgra, img, COLOR_BGRA2BGR);
         platform_log("Image size: %dx%d\n", img.cols, img.rows);
         platform_log("Image channels: %d\n", img.channels());
-        platform_log("Image depth: %d\n", img.depth());
-        platform_log("Image type: %d\n", img.type());
 #endif
 
         if (img.empty())

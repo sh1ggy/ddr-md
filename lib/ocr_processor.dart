@@ -475,7 +475,7 @@ class OCRProcessor {
   }
 
   Future<void> loadTessdata() async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !Platform.isIOS) {
       // Tessdata copying is only needed for mobile platforms.
       print('Skipping tessdata copy on unsupported platform: ${Platform.operatingSystem}');
       return;

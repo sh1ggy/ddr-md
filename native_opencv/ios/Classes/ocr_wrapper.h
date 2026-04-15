@@ -14,7 +14,7 @@
 // This is just to get intellisense
 // #define __ANDROID__
 
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(__APPLE__)
 #include <tesseract/baseapi.h>
 #endif
 
@@ -43,7 +43,7 @@ public:
     std::string dataPath;
     std::string debugDir; // timestamped output directory for current run
 
-    #if defined(__ANDROID__)
+    #if defined(__ANDROID__) || defined(__APPLE__)
     tesseract::TessBaseAPI *api;
     #endif
 };
