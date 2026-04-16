@@ -108,52 +108,7 @@ extern "C"
             platform_log("DdrocrInstance initialized\n");
         }
 
-        long long start = get_now();
-        platform_log("imread loading: %s\n", inputImagePath);
-
-        // Check file exists first
-        struct stat st;
-        if (stat(inputImagePath, &st) != 0)
-        {
-            platform_log("File does not exist or cannot stat: %s (errno=%d: %s)\n",
-                         inputImagePath, errno, strerror(errno));
-            *outputIsDetected = 0;
-            return;
-        }
-        platform_log("File exists: %s (%ld bytes)\n", inputImagePath, (long)st.st_size);
-
         Mat img = imread(inputImagePath);
-        if (img.empty())
-        {
-            platform_log("imread failed, trying fopen+imdecode\n");
-            FILE *f = fopen(inputImagePath, "rb");
-            if (f)
-            {
-                fseek(f, 0, SEEK_END);
-                long len = ftell(f);
-                fseek(f, 0, SEEK_SET);
-                if (len > 0)
-                {
-                    std::vector<uchar> buf(len);
-                    size_t read = fread(buf.data(), 1, len, f);
-                    fclose(f);
-                    platform_log("fopen+fread OK: %ld bytes read\n", (long)read);
-                    img = imdecode(buf, IMREAD_COLOR);
-                    if (img.empty())
-                        platform_log("imdecode also failed for: %s\n", inputImagePath);
-                }
-                else
-                {
-                    fclose(f);
-                    platform_log("ftell returned %ld for: %s\n", len, inputImagePath);
-                }
-            }
-            else
-            {
-                platform_log("fopen failed: %s (errno=%d: %s)\n",
-                             inputImagePath, errno, strerror(errno));
-            }
-        }
         if (img.empty())
         {
             platform_log("Could not open or find the image: %s\n", inputImagePath);
@@ -167,24 +122,15 @@ extern "C"
             *outputIsDetected = result.isDetected;
             return;
         }
-        platform_log("result isDetected: %d\n", result.isDetected);
         int actualCount = (int)result.rois.size();
-
-        platform_log("%d", actualCount);
-        int evalInMillis = static_cast<int>(get_now() - start);
-
-        // copy all detected rois to outputRects
         *outputRois = (int32_t *)malloc(sizeof(int32_t) * actualCount * 4);
         int32_t *roisPtr = *outputRois;
-        platform_log("C++ POINTER ADDR: %d \n", roisPtr);
-
         for (size_t i = 0; i < result.rois.size(); i++)
         {
             roisPtr[i * 4 + 0] = result.rois[i].tl().x;
             roisPtr[i * 4 + 1] = result.rois[i].tl().y;
             roisPtr[i * 4 + 2] = result.rois[i].width;
             roisPtr[i * 4 + 3] = result.rois[i].height;
-            platform_log("Detected OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRois[i * 4 + 0], outputRois[i * 4 + 1], outputRois[i * 4 + 2], outputRois[i * 4 + 3]);
         }
         *outputRoisCount = actualCount;
         *outputIsDetected = result.isDetected;
