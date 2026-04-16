@@ -14,9 +14,8 @@
 // This is just to get intellisense
 // #define __ANDROID__
 
-#if defined(__ANDROID__) || defined(__APPLE__)
+
 #include <tesseract/baseapi.h>
-#endif
 
 // Restore Apple's NO macro after OpenCV
 #ifdef APPLE_NO_DEFINED
@@ -43,9 +42,7 @@ public:
     std::string dataPath;
     std::string debugDir; // timestamped output directory for current run
 
-    #if defined(__ANDROID__) || defined(__APPLE__)
     tesseract::TessBaseAPI *api;
-    #endif
 };
 
 #endif
