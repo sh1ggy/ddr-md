@@ -272,13 +272,16 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         for (char c : roiOcrResult.text)
         {
             if (std::isalnum(static_cast<unsigned char>(c)))
-                cleanText += c;
+                cleanText += std::tolower(static_cast<unsigned char>(c));
         }
-        if (cleanText == "Details")
+        // Normalize target string: "Details" -> "details"
+        const std::string target = "details";
+        // Check if cleanText contains target as a substring (loose match)
+        if (cleanText.find(target) != std::string::npos)
         {
             correct_roi_idx = i;
             result.detailsRoiIndex = i;
-            platform_log("Found 'Details' with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
+            platform_log("Found 'Details' (loose match) with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
         }
     }
 
