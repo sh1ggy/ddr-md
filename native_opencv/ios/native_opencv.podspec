@@ -20,27 +20,33 @@ A new flutter plugin project.
   s.private_header_files = 'Classes/ocr_wrapper.h', 'Classes/**/*.hpp'
   s.frameworks = 'AVFoundation', 'Vision', 'UIKit'
   s.dependency 'Flutter'
-  s.platform = :ios, '11.0'
+  s.platform = :ios, '13.0'
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 
     'DEFINES_MODULE' => 'YES', 
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386 arm64',
-    'GCC_PREPROCESSOR_DEFINITIONS' => 'FLUTTER_ROOT=\$(SRCROOT)/../..',
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) FLUTTER_ROOT=\$(SRCROOT)/../.. HAVE_LIBJPEG=1 HAVE_LIBPNG=1 HAVE_LIBZ=1 HAVE_CONFIG_H GRAPHICS_DISABLED FAST_FLOAT OS_IOS',
     'CLANG_CXX_LANGUAGE_DIALECT' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++',
-    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_ROOT}/native_opencv/opencv2.framework/Headers"'
+    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/opencv2.framework/Headers" "${PODS_TARGET_SRCROOT}/libs/include" "${PODS_TARGET_SRCROOT}/libs/include/leptonica"'
   }
   s.swift_version = '5.0'
 
   # telling CocoaPods not to remove framework
-  s.preserve_paths = 'opencv2.framework' 
+  s.preserve_paths = 'opencv2.framework', 'libs'
 
-  # telling linker to include opencv2 framework
-  s.xcconfig = { 'OTHER_LDFLAGS' => '-framework opencv2' }
+  # telling linker to include opencv2 framework and Tesseract static libs
+  s.xcconfig = { 'OTHER_LDFLAGS' => '-framework opencv2 -lz' }
 
   # including OpenCV framework
   s.vendored_frameworks = 'opencv2.framework' 
+
+  # including Tesseract/Leptonica static libraries
+  # NOTE: libjpeg and libpng are NOT listed here — opencv2.framework already
+  # bundles both.  Linking a second copy causes duplicate-symbol collisions
+  # that silently break imread/imdecode.
+  s.vendored_libraries = 'libs/libtesseract.a', 'libs/libleptonica.a'
 
   # including C++ library
   s.library = 'c++'

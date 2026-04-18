@@ -19,6 +19,33 @@ The intended usage of this application is to use it while you're playing DDR. Fo
 - Install the appropriate dependencies with `flutter pub get`
 - Either run the project via the debugger or with `flutter run`
 
+### iOS Build Process
+
+The iOS build uses the same Tesseract+Leptonica OCR pipeline as Android. The native C++ sources live in `native_opencv/android/src/main/cpp/` (shared between both platforms) and are cross-compiled into static libraries for iOS.
+
+**Prerequisites:** Xcode with iOS SDK, CMake (`brew install cmake`), CocoaPods.
+
+**Steps:**
+
+1. **Init submodules** — `git submodule update --init --recursive` (pulls `Tesseract4Android` which contains the Tesseract & Leptonica source).
+
+2. **Build static libs** — `bash scripts/build_tesseract_ios.sh`
+   - Uses CMake (`scripts/ios_tesseract_cmake/CMakeLists.txt`) to cross-compile for iOS arm64 (deployment target 13.0).
+   - Produces 2 static libraries in `native_opencv/ios/libs/`: `libtesseract.a`, `libleptonica.a`. (libjpeg and libpng are built during compilation but **not** vendored — `opencv2.framework` already bundles both, and linking duplicates causes symbol collisions that break `imread`.)
+   - Copies public headers to `native_opencv/ios/libs/include/` (including CMake-generated `config_auto.h`).
+   - The `libs/` directory is gitignored — you must run this script before building.
+
+3. **Pod install** — `cd ios && pod install`
+   - The podspec (`native_opencv/ios/native_opencv.podspec`) references the static libs as `vendored_libraries` and sets up header search paths + preprocessor defines (`OS_IOS`, `HAVE_LIBJPEG`, `HAVE_LIBPNG`, etc.).
+
+4. **Flutter build** — `flutter build ios` or run from Xcode/VS Code.
+
+**Key details:**
+- iOS deployment target is **13.0** (required for `std::filesystem` used by Tesseract).
+- The Vision OCR backend in `ocr_ios.mm` is stubbed out (`#if 0`) — both platforms now use the Tesseract backend via `ocr_android.cpp`.
+- Tessdata files (`eng.best.traineddata`, `jpn.best.traineddata`) are bundled as Flutter assets and copied to the app's documents directory at runtime by `loadTessdata()` in `lib/ocr_processor.dart`.
+- `scripts/init.sh` runs the full setup including the iOS build step.
+
 ## Credits
 - This project takes heavy inspiration from the existing [DDR BPM](https://ddrbpm.com/) application, with the data sourced from the process spun up by [xiexingwu](https://github.com/xiexingwu) 
 - Credits to the Brisbane DDR community for helping with feedback during development.

@@ -2,8 +2,6 @@
 // This is just to get intellisense
 // #define __ANDROID__
 
-#ifdef __ANDROID__
-
 #include <cstring>
 #include <string>
 
@@ -13,11 +11,9 @@
 // at
 //     android/src/main/cpp/leptonica/src/src
 // so the headers are referenced as just <allheaders.h>.
-#ifdef __ANDROID__
+// On iOS, the podspec adds libs/include/leptonica to the header search
+// path, so we also use <allheaders.h>.
 #include <allheaders.h>
-#else
-#include <leptonica/allheaders.h>
-#endif
 #include <tesseract/baseapi.h>
 
 // `platform_log` is defined in native_opencv.cpp; we need a declaration so
@@ -88,13 +84,16 @@ OCRWrapper::OCRWrapper(const std::string dataPath)
     std::string tessdataPath = dataPath + "/tessdata";
     // TODO add in jp
     tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
+    // Suppress Leptonica TIFF/bmf warnings (no TIFF support on iOS, bitmap fonts not needed for OCR)
+    setMsgSeverity(L_SEVERITY_NONE);
     // Initialize tesseract-ocr with English, without specifying tessdata path
-    if (api->Init(tessdataPath.c_str(), "eng", tesseract::OEM_LSTM_ONLY))
+    if (api->Init(tessdataPath.c_str(), "eng.best", tesseract::OEM_LSTM_ONLY))
     {
         platform_log("Could not initialize tesseract.\n");
         delete api;
         return;
     }
+    setMsgSeverity(L_SEVERITY_ERROR);
 
     this->api = api;
     this->dataPath = dataPath;
@@ -150,7 +149,10 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
     }
     else if (type == OCRType::Eng)
     {
-        api->SetPageSegMode(tesseract::PSM_SINGLE_WORD);
+        // TODO: still tune this. 
+        // psm word for tesseract fast
+        // psm single block tesseract best
+        api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
         api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
     }
     else if (type == OCRType::EngJP)
@@ -305,4 +307,3 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
     delete[] outText;
     return result;
 }
-#endif

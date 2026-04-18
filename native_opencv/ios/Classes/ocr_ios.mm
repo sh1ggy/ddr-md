@@ -1,3 +1,11 @@
+// =====================================================================
+// Vision-based OCR implementation — DISABLED.
+// Preserved for potential future use; the Tesseract pipeline in
+// ocr_android.cpp is now used on both Android and iOS.
+// =====================================================================
+
+#if 0 // USE_VISION_OCR — disabled in favour of unified Tesseract backend
+
 #ifdef __OBJC__
 #import <Foundation/Foundation.h>
 #undef YES
@@ -179,3 +187,5 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType ocrType, const s
     
     return result;
 }
+
+#endif // USE_VISION_OCR
