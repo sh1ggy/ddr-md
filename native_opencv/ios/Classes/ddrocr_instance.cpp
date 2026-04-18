@@ -123,10 +123,15 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
     cv::findContours(BW_HSV, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
     cv::Mat BW2 = cv::Mat::zeros(BW_HSV.size(), CV_8U);
+
+    // Area thresholds as a percentage of current image area
+    double imgArea = static_cast<double>(inputImg.cols * inputImg.rows);
+    double areaMin = imgArea * 0.00082; // 0.082% of image area
+    double areaMax = imgArea * 0.0082;  // 0.82% of image area
     for (size_t i = 0; i < contours.size(); i++)
     {
         double area = cv::contourArea(contours[i]);
-        if (area >= 3000 && area <= 50000)
+        if (area >= areaMin && area <= areaMax)
         {
             cv::drawContours(BW2, contours, i, cv::Scalar(255), cv::FILLED);
         }
@@ -393,7 +398,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         ROI_Score,
         ROI_Details,
         warped_details_top_left,
-        cv::Point(5, 5),
+        cv::Point(5, 0),
         "score",
         OCRType::Digit);
 
