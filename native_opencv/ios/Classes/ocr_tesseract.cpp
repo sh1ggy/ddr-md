@@ -149,7 +149,10 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
     }
     else if (type == OCRType::Eng)
     {
-        api->SetPageSegMode(tesseract::PSM_SINGLE_WORD);
+        // TODO: still tune this. 
+        // psm word for tesseract fast
+        // psm single block tesseract best
+        api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
         api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
     }
     else if (type == OCRType::EngJP)

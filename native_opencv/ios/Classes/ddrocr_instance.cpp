@@ -82,7 +82,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         auto now = std::chrono::system_clock::now();
         auto time_t_now = std::chrono::system_clock::to_time_t(now);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()) % 1000;
+                      now.time_since_epoch()) %
+                  1000;
         std::tm tm_buf;
         localtime_r(&time_t_now, &tm_buf);
 
@@ -260,12 +261,12 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         }
 
         roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
-// TODO: fix Tesseract's confidence calibration to reliably use this threshold
-//        if (roiOcrResult.confidence < 0.5)
-//        {
-//            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
-//            continue;
-//        }
+        // TODO: fix Tesseract's confidence calibration to reliably use this threshold
+        //        if (roiOcrResult.confidence < 0.5)
+        //        {
+        //            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
+        //            continue;
+        //        }
 
         // Strip all non-alphanumeric characters
         std::string cleanText;
@@ -324,7 +325,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 
     // Approximate polygon
     std::vector<cv::Point> approx;
-    double epsilon = 0.1 * cv::arcLength(hull, true);
+    // TODO: This needs tweaking and optim
+    double epsilon = 0.07 * cv::arcLength(hull, true);
     cv::approxPolyDP(hull, approx, epsilon, true);
 
     cv::Mat approx_img = inputImg.clone();
@@ -351,6 +353,13 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         sums.push_back(std::make_pair(pts[i].x + pts[i].y, i));
     }
     std::sort(sums.begin(), sums.end());
+
+    if (sums.size() < 4)
+    {
+        platform_log("Not enough points for homography, defaulting to first detected ROI\n");
+        result.isDetected = 1;
+        return result;
+    }
 
     cv::Point2f tl = pts[sums[0].second];
     cv::Point2f br = pts[sums[3].second];
