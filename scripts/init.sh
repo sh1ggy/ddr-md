@@ -16,4 +16,9 @@ cd ../
 cp -r ../submodules/Tesseract4Android/tesseract4android/src/main/cpp/tesseract/src/include/tesseract ../native_opencv/include
 cp -r ../submodules/Tesseract4Android/tesseract4android/src/main/cpp ../native_opencv/android/src/main
 
+# Build Tesseract static libraries for iOS
+echo "Building Tesseract for iOS..."
+cd ../
+bash scripts/build_tesseract_ios.sh
+
 echo "dun :)"

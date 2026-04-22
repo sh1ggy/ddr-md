@@ -2,6 +2,10 @@
 #include <chrono>
 #include <cstring>
 #include <algorithm>
+#include <set>
+#include <sstream>
+#include <iomanip>
+#include <sys/stat.h>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -73,6 +77,26 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 {
     ProcessImgResult result;
 
+    // Create a timestamped directory for all debug images from this run
+    {
+        auto now = std::chrono::system_clock::now();
+        auto time_t_now = std::chrono::system_clock::to_time_t(now);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      now.time_since_epoch()) %
+                  1000;
+        std::tm tm_buf;
+        localtime_r(&time_t_now, &tm_buf);
+
+        std::ostringstream oss;
+        oss << dataPath << "/ocr_debug_"
+            << std::put_time(&tm_buf, "%Y%m%d_%H%M%S")
+            << "_" << std::setfill('0') << std::setw(3) << ms.count();
+        debugDir = oss.str();
+        mkdir(debugDir.c_str(), 0755);
+        ocrWrapper.debugDir = debugDir;
+        platform_log("[DEBUG] output dir: %s\n", debugDir.c_str());
+    }
+
     cv::Mat grayImg;
     cv::cvtColor(inputImg, grayImg, cv::COLOR_BGR2GRAY);
 
@@ -99,10 +123,15 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
     cv::findContours(BW_HSV, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
     cv::Mat BW2 = cv::Mat::zeros(BW_HSV.size(), CV_8U);
+
+    // Area thresholds as a percentage of current image area
+    double imgArea = static_cast<double>(inputImg.cols * inputImg.rows);
+    double areaMin = imgArea * 0.00082; // 0.082% of image area
+    double areaMax = imgArea * 0.0082;  // 0.82% of image area
     for (size_t i = 0; i < contours.size(); i++)
     {
         double area = cv::contourArea(contours[i]);
-        if (area >= 3000 && area <= 50000)
+        if (area >= areaMin && area <= areaMax)
         {
             cv::drawContours(BW2, contours, i, cv::Scalar(255), cv::FILLED);
         }
@@ -197,6 +226,15 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 
     cv::Mat roi_img = inputImg.clone();
     int correct_roi_idx = -1;
+
+    // Create a details_rois subfolder for debug output
+    std::string detailsRoiDir;
+    if (!debugDir.empty())
+    {
+        detailsRoiDir = debugDir + "/details_rois";
+        mkdir(detailsRoiDir.c_str(), 0755);
+    }
+
     for (size_t i = 0; i < detectedRois.size(); i++)
     {
         cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
@@ -207,28 +245,49 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         cv::Mat roiMat = preprocessed_BW3(details_roi);
         OCRResult roiOcrResult = {};
 
-        roiOcrResult = ocrWrapper.performOCR(roiMat.clone());
-// TODO: fix Android's tesseract janky confidence in order to actl use this
-#ifdef __IOS__
-        if (roiOcrResult.confidence < 0.5)
+        // Upscale + pad the "Details" ROI before OCR — matches the
+        // preprocessing that getPreprocessedRoiImage applies to score ROIs.
+        cv::Mat detailsInput;
+        cv::resize(roiMat, detailsInput, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
+        cv::copyMakeBorder(detailsInput, detailsInput, 30, 30, 30, 30,
+                           cv::BORDER_CONSTANT, cv::Scalar(1));
+
+        // Save raw and preprocessed details ROI candidates to debug subfolder
+        if (!detailsRoiDir.empty())
         {
-            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
-            continue;
+            char rawPath[512], prepPath[512];
+            snprintf(rawPath, sizeof(rawPath), "%s/roi_%zu_raw.png",
+                     detailsRoiDir.c_str(), i);
+            snprintf(prepPath, sizeof(prepPath), "%s/roi_%zu_preprocessed.png",
+                     detailsRoiDir.c_str(), i);
+            cv::imwrite(std::string(rawPath), logicalToDisplayU8(roiMat));
+            cv::imwrite(std::string(prepPath), logicalToDisplayU8(detailsInput));
+            platform_log("[DEBUG] saved details ROI %zu: %s\n", i, rawPath);
         }
-#endif
+
+        roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
+        // TODO: fix Tesseract's confidence calibration to reliably use this threshold
+        //        if (roiOcrResult.confidence < 0.5)
+        //        {
+        //            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
+        //            continue;
+        //        }
 
         // Strip all non-alphanumeric characters
         std::string cleanText;
         for (char c : roiOcrResult.text)
         {
             if (std::isalnum(static_cast<unsigned char>(c)))
-                cleanText += c;
+                cleanText += std::tolower(static_cast<unsigned char>(c));
         }
-        if (cleanText == "Details")
+        // Normalize target string: "Details" -> "details"
+        const std::string target = "details";
+        // Check if cleanText contains target as a substring (loose match)
+        if (cleanText.find(target) != std::string::npos)
         {
             correct_roi_idx = i;
             result.detailsRoiIndex = i;
-            platform_log("Found 'Details' with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
+            platform_log("Found 'Details' (loose match) with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
         }
     }
 
@@ -271,7 +330,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 
     // Approximate polygon
     std::vector<cv::Point> approx;
-    double epsilon = 0.1 * cv::arcLength(hull, true);
+    // TODO: This needs tweaking and optim
+    double epsilon = 0.07 * cv::arcLength(hull, true);
     cv::approxPolyDP(hull, approx, epsilon, true);
 
     cv::Mat approx_img = inputImg.clone();
@@ -298,6 +358,13 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         sums.push_back(std::make_pair(pts[i].x + pts[i].y, i));
     }
     std::sort(sums.begin(), sums.end());
+
+    if (sums.size() < 4)
+    {
+        platform_log("Not enough points for homography, defaulting to first detected ROI\n");
+        result.isDetected = 1;
+        return result;
+    }
 
     cv::Point2f tl = pts[sums[0].second];
     cv::Point2f br = pts[sums[3].second];
@@ -331,7 +398,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         ROI_Score,
         ROI_Details,
         warped_details_top_left,
-        cv::Point(5, 5),
+        cv::Point(5, 0),
         "score",
         OCRType::Digit);
 
@@ -467,26 +534,37 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     if (cropped.empty())
         return result;
 
+    // Step 1: Upscale ROI 4× before binarization (tiny ~50px ROIs → ~200px)
+    cv::Mat upscaled;
+    cv::resize(cropped, upscaled, cv::Size(), 3.0, 3.0, cv::INTER_CUBIC);
+
     // Preprocessing: top-hat + grayscale + threshold
-    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(31, 31));
+    // Kernel scaled proportionally: 31×31 → 125×125 for 4× upscale
+    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(125, 125));
 
     cv::Mat corrected;
-    cv::morphologyEx(cropped, corrected, cv::MORPH_TOPHAT, kernel_tophat);
+    cv::morphologyEx(upscaled, corrected, cv::MORPH_TOPHAT, kernel_tophat);
 
     cv::Mat gray;
     cv::cvtColor(corrected, gray, cv::COLOR_BGR2GRAY);
 
-    cv::Mat BW1;
-    BW1 = otsuToLogical(gray);
+    // Step 2: Light GaussianBlur to denoise before Otsu (3×3 at 3× scale)
+    cv::GaussianBlur(gray, gray, cv::Size(3, 3), 0);
 
     cv::Mat BW2;
+
+    // Tesseract: use logical 0/1 binary image.
+    cv::Mat BW1 = otsuToLogical(gray);
     cv::subtract(cv::Scalar::all(1), BW1, BW2);
+    // In BW2: text=1 (foreground), background=0
 
-    save_img(imageName, logicalToDisplayU8(BW2));
+    // Add white border padding so Tesseract sees whitespace around text.
+    // In BW2 after complement: text=0, background=1. Pad with 1 (background/white).
+    cv::copyMakeBorder(BW2, BW2, 30, 30, 30, 30, cv::BORDER_CONSTANT, cv::Scalar(1));
 
-    result = ocrWrapper.performOCR(BW2.clone(), type);
+    result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
 
-    platform_log("[OCR] [%s] ROI(%d,%d %dx%d) confidence=%.2f text=%s\n",
+    platform_log("[OCR] [%s] ROI(%d,%d %dx%d) confidence=%.2f text='%s'\n",
                  imageName.c_str(),
                  roi_warped.x, roi_warped.y,
                  roi_warped.width, roi_warped.height,
@@ -498,10 +576,12 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
 void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
 {
-    char path[250];
-    snprintf(path, sizeof(path), "%s/%s.jpg", dataPath.c_str(), fileName.c_str());
+    if (debugDir.empty())
+        return;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s.png", debugDir.c_str(), fileName.c_str());
     platform_log("wrote: %s\n", path);
-    int imwrite_result = cv::imwrite(path, img);
+    cv::imwrite(path, img);
 }
 
 cv::Rect DdrocrInstance::expandRoi(cv::Rect roi, cv::Point expand)

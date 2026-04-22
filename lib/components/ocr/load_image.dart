@@ -41,7 +41,7 @@ class _LoadImageState extends State<LoadImage> {
     });
 
     final picker = ImagePicker();
-    final pickedImage = await picker.pickImage(source: ImageSource.gallery);
+    final pickedImage = await picker.pickImage(source: ImageSource.gallery, imageQuality: 100);
 
     if (!mounted) return;
     if (pickedImage == null) {
@@ -72,7 +72,10 @@ class _LoadImageState extends State<LoadImage> {
     _ocrProcessor.streamResultController.stream.listen((result) async {
       // Try to read the saved temp image and compute a scale so ROI maps to
       // the displayed image width. Falls back to existing scale if file missing.
-      if (_pickedImage == null) return;
+      if (_pickedImage == null) {
+        setState(() => _isProcessing = false);
+        return;
+      }
       final f = File(_pickedImage!.path);
       if (await f.exists()) {
         final bytes = await f.readAsBytes();
@@ -83,6 +86,7 @@ class _LoadImageState extends State<LoadImage> {
 
           List<Rectangle<int>> detectedRois = [];
           setState(() {
+            _isProcessing = false;
             _camFrameToScreenScale = scale;
             if (result.detectedRois == null) {
               return;
@@ -111,6 +115,8 @@ class _LoadImageState extends State<LoadImage> {
                 result.ocrStrings);
           });
         });
+      } else {
+        setState(() => _isProcessing = false);
       }
     });
     _initLoadImage();

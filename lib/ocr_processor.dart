@@ -475,7 +475,7 @@ class OCRProcessor {
   }
 
   Future<void> loadTessdata() async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !Platform.isIOS) {
       // Tessdata copying is only needed for mobile platforms.
       print('Skipping tessdata copy on unsupported platform: ${Platform.operatingSystem}');
       return;
@@ -486,7 +486,7 @@ class OCRProcessor {
       await tessdataDir.create(recursive: true);
     }
 
-    final tessdataAssets = ['assets/tessdata/eng.traineddata'];
+    final tessdataAssets = ['assets/tessdata/eng.best.traineddata'];
 
     for (final assetPath in tessdataAssets) {
       final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();

@@ -5,6 +5,8 @@
 
 #include <opencv2/opencv.hpp>
 #include <chrono>
+#include <cerrno>
+#include <sys/stat.h>
 #include "ocr_wrapper.h"
 #include "ddrocr_instance.h"
 
@@ -106,11 +108,11 @@ extern "C"
             platform_log("DdrocrInstance initialized\n");
         }
 
-        long long start = get_now();
         Mat img = imread(inputImagePath);
         if (img.empty())
         {
             platform_log("Could not open or find the image: %s\n", inputImagePath);
+            *outputIsDetected = 0;
             return;
         }
         ProcessImgResult result = instance->process_image(img);
@@ -120,24 +122,15 @@ extern "C"
             *outputIsDetected = result.isDetected;
             return;
         }
-        platform_log("result isDetected: %d\n", result.isDetected);
         int actualCount = (int)result.rois.size();
-
-        platform_log("%d", actualCount);
-        int evalInMillis = static_cast<int>(get_now() - start);
-
-        // copy all detected rois to outputRects
         *outputRois = (int32_t *)malloc(sizeof(int32_t) * actualCount * 4);
         int32_t *roisPtr = *outputRois;
-        platform_log("C++ POINTER ADDR: %d \n", roisPtr);
-
         for (size_t i = 0; i < result.rois.size(); i++)
         {
             roisPtr[i * 4 + 0] = result.rois[i].tl().x;
             roisPtr[i * 4 + 1] = result.rois[i].tl().y;
             roisPtr[i * 4 + 2] = result.rois[i].width;
             roisPtr[i * 4 + 3] = result.rois[i].height;
-            platform_log("Detected OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRois[i * 4 + 0], outputRois[i * 4 + 1], outputRois[i * 4 + 2], outputRois[i * 4 + 3]);
         }
         *outputRoisCount = actualCount;
         *outputIsDetected = result.isDetected;
@@ -191,11 +184,10 @@ extern "C"
         // platform_log("Image depth: %d\n", img.depth());
         // platform_log("Image type: %d\n", img.type());
 #else
-        img = Mat(imgHeight, imgWidth, CV_8UC4, imgBuffer);
+        Mat bgra(imgHeight, imgWidth, CV_8UC4, imgBuffer);
+        cvtColor(bgra, img, COLOR_BGRA2BGR);
         platform_log("Image size: %dx%d\n", img.cols, img.rows);
         platform_log("Image channels: %d\n", img.channels());
-        platform_log("Image depth: %d\n", img.depth());
-        platform_log("Image type: %d\n", img.type());
 #endif
 
         if (img.empty())

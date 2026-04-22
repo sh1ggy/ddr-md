@@ -14,9 +14,8 @@
 // This is just to get intellisense
 // #define __ANDROID__
 
-#if defined(__ANDROID__)
+
 #include <tesseract/baseapi.h>
-#endif
 
 // Restore Apple's NO macro after OpenCV
 #ifdef APPLE_NO_DEFINED
@@ -39,12 +38,11 @@ public:
     OCRWrapper(const std::string dataPath);
     ~OCRWrapper();
     
-    OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng);
+    OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng, const std::string& roiName = "unknown");
     std::string dataPath;
+    std::string debugDir; // timestamped output directory for current run
 
-    #if defined(__ANDROID__)
     tesseract::TessBaseAPI *api;
-    #endif
 };
 
 #endif
