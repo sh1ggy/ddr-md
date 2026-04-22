@@ -472,6 +472,8 @@ class OCRProcessor {
     tempDir = await getTemporaryDirectory();
     appDir = await getApplicationDocumentsDirectory();
     await loadTessdata();
+    final configStr = await rootBundle.loadString('assets/ocr_config.txt');
+    await File(path.join(appDir!.path, 'ocr_config.txt')).writeAsString(configStr);
   }
 
   Future<void> loadTessdata() async {

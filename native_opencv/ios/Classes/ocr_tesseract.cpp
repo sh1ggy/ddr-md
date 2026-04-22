@@ -152,12 +152,12 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
         // TODO: still tune this. 
         // psm word for tesseract fast
         // psm single block tesseract best
-        api->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
+        api->SetPageSegMode(static_cast<tesseract::PageSegMode>(psm_eng));
         api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
     }
     else if (type == OCRType::EngJP)
     {
-        api->SetPageSegMode(tesseract::PSM_SINGLE_WORD);
+        api->SetPageSegMode(static_cast<tesseract::PageSegMode>(psm_engjp));
         api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん");
     }
 

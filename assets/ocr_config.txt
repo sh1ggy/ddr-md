@@ -1,0 +1,17 @@
+border=30
+psm_eng=6
+psm_engjp=8
+gaussian_blur_size=3
+simplification_epsilon=0.1
+roi_details=2054,2348,2418,2450
+roi_score=2700,2551,2968,2611,5,0
+roi_marvelous=1896,2549,2018,2599,0,0
+roi_perfect=1896,2608,2018,2657,0,4
+roi_great=1896,2664,2018,2702,0,6
+roi_good=1896,2727,2018,2771,0,5
+roi_miss=1896,2825,2018,2879,0,0
+roi_flare=1649,2466,1817,2508,0,7
+roi_title=1210,2075,1744,2133,0,10
+roi_username=2180,1388,2465,1439,10,10
+roi_difficulty=2056,1463,2627,1536,10,10
+roi_max_combo=2665,2779,2797,2831,0,0

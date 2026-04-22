@@ -115,6 +115,7 @@ extern "C"
             *outputIsDetected = 0;
             return;
         }
+        instance->reloadConfig();
         ProcessImgResult result = instance->process_image(img);
         if (!result.isDetected)
         {

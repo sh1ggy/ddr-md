@@ -42,6 +42,31 @@ struct ProcessImgResult
     OCRResults ocrResults;
 };
 
+struct COCRConfig
+{
+    int border                    = 30;
+    int psm_eng                   = 6;   // tesseract::PSM_SINGLE_BLOCK
+    int psm_engjp                 = 8;   // tesseract::PSM_SINGLE_WORD
+    int gaussian_blur_size        = 3;
+    double simplification_epsilon = 0.07;
+    // roi order: details, score, marvelous, perfect, great, good, miss, flare, title, username, difficulty, max_combo
+    // each row: {x1, y1, x2, y2, expand_x, expand_y}  (details has no expansion so last two are 0)
+    int roi[12][6] = {
+        {2054,2348,2418,2450, 0, 0}, // details
+        {2700,2551,2968,2611, 5, 0}, // score
+        {1896,2549,2018,2599, 0, 0}, // marvelous
+        {1896,2608,2018,2657, 0, 4}, // perfect
+        {1896,2664,2018,2702, 0, 6}, // great
+        {1896,2727,2018,2771, 0, 5}, // good
+        {1896,2825,2018,2879, 0, 0}, // miss
+        {1649,2466,1817,2508, 0, 7}, // flare
+        {1210,2075,1744,2133, 0,10}, // title
+        {2180,1388,2465,1439,10,10}, // username
+        {2056,1463,2627,1536,10,10}, // difficulty
+        {2665,2779,2797,2831, 0, 0}, // max_combo
+    };
+};
+
 class DdrocrInstance
 {
 public:
@@ -51,8 +76,10 @@ public:
     ~DdrocrInstance();
     // TODO use outputimg path declared in class
     ProcessImgResult process_image(cv::Mat inputImg);
+    void reloadConfig();
 
 private:
+    COCRConfig config;
     // Helper methods
     OCRWrapper ocrWrapper;
     cv::Mat otsuToLogical(const cv::Mat &gray, bool invert = false) const;

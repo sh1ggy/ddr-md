@@ -5,6 +5,7 @@
 #include <set>
 #include <sstream>
 #include <iomanip>
+#include <fstream>
 #include <sys/stat.h>
 
 #ifdef __ANDROID__
@@ -27,6 +28,20 @@ void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
 const int max_value_H = 360 / 2;
 const int max_value = 255;
 
+// ROI indices into config.roi[N] — order matches ocr_config.txt
+static const int ROI_IDX_DETAILS    = 0;
+static const int ROI_IDX_SCORE      = 1;
+static const int ROI_IDX_MARVELOUS  = 2;
+static const int ROI_IDX_PERFECT    = 3;
+static const int ROI_IDX_GREAT      = 4;
+static const int ROI_IDX_GOOD       = 5;
+static const int ROI_IDX_MISS       = 6;
+static const int ROI_IDX_FLARE      = 7;
+static const int ROI_IDX_TITLE      = 8;
+static const int ROI_IDX_USERNAME   = 9;
+static const int ROI_IDX_DIFFICULTY = 10;
+static const int ROI_IDX_MAXCOMBO   = 11;
+
 DdrocrInstance::DdrocrInstance(std::string dataPath)
     : dataPath(dataPath), ocrWrapper(dataPath)
 {
@@ -36,6 +51,56 @@ DdrocrInstance::DdrocrInstance(std::string dataPath)
 DdrocrInstance::~DdrocrInstance()
 {
     platform_log("DdrocrInstance destroyed\n");
+}
+
+void DdrocrInstance::reloadConfig()
+{
+    std::string filePath = dataPath + "/ocr_config.txt";
+    std::ifstream f(filePath);
+    if (!f.is_open())
+    {
+        platform_log("ocr_config.txt not found at %s, using defaults\n", filePath.c_str());
+        return;
+    }
+
+    auto parseInts = [](const std::string &s, int *arr, int n) {
+        std::istringstream ss(s);
+        std::string tok;
+        for (int i = 0; i < n && std::getline(ss, tok, ','); i++)
+            arr[i] = std::stoi(tok);
+    };
+
+    std::string line;
+    while (std::getline(f, line))
+    {
+        size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        std::string k = line.substr(0, eq);
+        std::string v = line.substr(eq + 1);
+
+        if      (k == "border")                 config.border                   = std::stoi(v);
+        else if (k == "psm_eng")                config.psm_eng                  = std::stoi(v);
+        else if (k == "psm_engjp")              config.psm_engjp                = std::stoi(v);
+        else if (k == "gaussian_blur_size")     config.gaussian_blur_size       = std::stoi(v);
+        else if (k == "simplification_epsilon") config.simplification_epsilon   = std::stod(v);
+        else if (k == "roi_details")            parseInts(v, config.roi[0],  4); // no expansion
+        else if (k == "roi_score")              parseInts(v, config.roi[1],  6);
+        else if (k == "roi_marvelous")          parseInts(v, config.roi[2],  6);
+        else if (k == "roi_perfect")            parseInts(v, config.roi[3],  6);
+        else if (k == "roi_great")              parseInts(v, config.roi[4],  6);
+        else if (k == "roi_good")               parseInts(v, config.roi[5],  6);
+        else if (k == "roi_miss")               parseInts(v, config.roi[6],  6);
+        else if (k == "roi_flare")              parseInts(v, config.roi[7],  6);
+        else if (k == "roi_title")              parseInts(v, config.roi[8],  6);
+        else if (k == "roi_username")           parseInts(v, config.roi[9],  6);
+        else if (k == "roi_difficulty")         parseInts(v, config.roi[10], 6);
+        else if (k == "roi_max_combo")          parseInts(v, config.roi[11], 6);
+    }
+
+    ocrWrapper.psm_eng   = config.psm_eng;
+    ocrWrapper.psm_engjp = config.psm_engjp;
+    platform_log("reloadConfig: border=%d gaussian=%d epsilon=%.3f\n",
+                 config.border, config.gaussian_blur_size, config.simplification_epsilon);
 }
 
 cv::Mat DdrocrInstance::otsuToLogical(const cv::Mat &gray, bool invert) const
@@ -313,20 +378,23 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         return result;
     }
 
-    // Create offsets for score OCR
-    cv::Rect ROI_Details = offsetToRoi(cv::Point(2054, 2348), cv::Point(2418, 2450));
-
-    cv::Rect ROI_Score = offsetToRoi(cv::Point(2700, 2551), cv::Point(2968, 2611));
-    cv::Rect ROI_Marvelous = offsetToRoi(cv::Point(1896, 2549), cv::Point(2018, 2599));
-    cv::Rect ROI_Perfect = offsetToRoi(cv::Point(1896, 2608), cv::Point(2018, 2657));
-    cv::Rect ROI_Great = offsetToRoi(cv::Point(1896, 2664), cv::Point(2018, 2702));
-    cv::Rect ROI_Good = offsetToRoi(cv::Point(1896, 2727), cv::Point(2018, 2771));
-    cv::Rect ROI_Miss = offsetToRoi(cv::Point(1896, 2825), cv::Point(2018, 2879));
-    cv::Rect ROI_Flare = offsetToRoi(cv::Point(1649, 2466), cv::Point(1817, 2508));
-    cv::Rect ROI_Title = offsetToRoi(cv::Point(1210, 2075), cv::Point(1744, 2133));
-    cv::Rect ROI_Username = offsetToRoi(cv::Point(2180, 1388), cv::Point(2465, 1439));
-    cv::Rect ROI_Difficulty = offsetToRoi(cv::Point(2056, 1463), cv::Point(2627, 1536));
-    cv::Rect ROI_MaxCombo = offsetToRoi(cv::Point(2665, 2779), cv::Point(2797, 2831));
+    // Create offsets for score OCR (driven by config)
+    auto roiRect = [&](int i) {
+        return offsetToRoi(cv::Point(config.roi[i][0], config.roi[i][1]),
+                           cv::Point(config.roi[i][2], config.roi[i][3]));
+    };
+    cv::Rect ROI_Score      = roiRect(ROI_IDX_SCORE);
+    cv::Rect ROI_Details    = roiRect(ROI_IDX_DETAILS);
+    cv::Rect ROI_Marvelous  = roiRect(ROI_IDX_MARVELOUS);
+    cv::Rect ROI_Perfect    = roiRect(ROI_IDX_PERFECT);
+    cv::Rect ROI_Great      = roiRect(ROI_IDX_GREAT);
+    cv::Rect ROI_Good       = roiRect(ROI_IDX_GOOD);
+    cv::Rect ROI_Miss       = roiRect(ROI_IDX_MISS);
+    cv::Rect ROI_Flare      = roiRect(ROI_IDX_FLARE);
+    cv::Rect ROI_Title      = roiRect(ROI_IDX_TITLE);
+    cv::Rect ROI_Username   = roiRect(ROI_IDX_USERNAME);
+    cv::Rect ROI_Difficulty = roiRect(ROI_IDX_DIFFICULTY);
+    cv::Rect ROI_MaxCombo   = roiRect(ROI_IDX_MAXCOMBO);
 
     if (result.rois.size() <= correct_roi_idx)
     {
@@ -342,7 +410,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
     // Approximate polygon
     std::vector<cv::Point> approx;
     // TODO: This needs tweaking and optim
-    double epsilon = 0.07 * cv::arcLength(hull, true);
+    double epsilon = config.simplification_epsilon * cv::arcLength(hull, true);
     cv::approxPolyDP(hull, approx, epsilon, true);
 
     cv::Mat approx_img = inputImg.clone();
@@ -404,104 +472,53 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 
     OCRResults ocrResults = {};
 
+    auto expand = [&](int i) {
+        return cv::Point(config.roi[i][4], config.roi[i][5]);
+    };
+
     ocrResults.score = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Score,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(5, 0),
-        "score",
-        OCRType::Digit);
+        warpedImg, ROI_Score, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_SCORE), "score", OCRType::Digit);
 
     ocrResults.marvelous = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Marvelous,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(0, 0),
-        "marvelous",
-        OCRType::Digit);
+        warpedImg, ROI_Marvelous, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_MARVELOUS), "marvelous", OCRType::Digit);
 
     ocrResults.perfect = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Perfect,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(0, 4),
-        "perfect",
-        OCRType::Digit);
+        warpedImg, ROI_Perfect, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_PERFECT), "perfect", OCRType::Digit);
 
     ocrResults.great = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Great,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(0, 6),
-        "great",
-        OCRType::Digit);
+        warpedImg, ROI_Great, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_GREAT), "great", OCRType::Digit);
 
     ocrResults.good = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Good,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(0, 5),
-        "good",
-        OCRType::Digit);
+        warpedImg, ROI_Good, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_GOOD), "good", OCRType::Digit);
 
     ocrResults.miss = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Miss,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(0, 0),
-        "miss",
-        OCRType::Digit);
+        warpedImg, ROI_Miss, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_MISS), "miss", OCRType::Digit);
 
     ocrResults.flare = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Flare,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(0, 7),
-        "flare",
-        OCRType::Eng);
+        warpedImg, ROI_Flare, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_FLARE), "flare", OCRType::Eng);
 
     ocrResults.title = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Title,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(0, 10),
-        "title",
-        OCRType::EngJP);
+        warpedImg, ROI_Title, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_TITLE), "title", OCRType::EngJP);
 
     ocrResults.username = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Username,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(10, 10),
-        "username",
-        OCRType::EngJP);
+        warpedImg, ROI_Username, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_USERNAME), "username", OCRType::EngJP);
 
     ocrResults.difficulty = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_Difficulty,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(10, 10),
-        "difficulty",
-        OCRType::Eng);
+        warpedImg, ROI_Difficulty, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_DIFFICULTY), "difficulty", OCRType::Eng);
 
     ocrResults.max_combo = getPreprocessedRoiImage(
-        warpedImg,
-        ROI_MaxCombo,
-        ROI_Details,
-        warped_details_top_left,
-        cv::Point(0, 0),
-        "max_combo",
-        OCRType::Digit);
+        warpedImg, ROI_MaxCombo, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_MAXCOMBO), "max_combo", OCRType::Digit);
 
     result.ocrResults = ocrResults;
     return result;
@@ -559,8 +576,8 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     cv::Mat gray;
     cv::cvtColor(corrected, gray, cv::COLOR_BGR2GRAY);
 
-    // Step 2: Light GaussianBlur to denoise before Otsu (3×3 at 3× scale)
-    cv::GaussianBlur(gray, gray, cv::Size(3, 3), 0);
+    // Step 2: Light GaussianBlur to denoise before Otsu
+    cv::GaussianBlur(gray, gray, cv::Size(config.gaussian_blur_size, config.gaussian_blur_size), 0);
 
     cv::Mat BW2;
 
@@ -571,7 +588,8 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
     // Add white border padding so Tesseract sees whitespace around text.
     // In BW2 after complement: text=0, background=1. Pad with 1 (background/white).
-    cv::copyMakeBorder(BW2, BW2, 30, 30, 30, 30, cv::BORDER_CONSTANT, cv::Scalar(1));
+    cv::copyMakeBorder(BW2, BW2, config.border, config.border, config.border, config.border,
+                       cv::BORDER_CONSTANT, cv::Scalar(1));
 
     result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
 

@@ -41,8 +41,10 @@ public:
     OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng, const std::string& roiName = "unknown");
     std::string dataPath;
     std::string debugDir; // timestamped output directory for current run
+    int psm_eng   = 6;   // tesseract::PSM_SINGLE_BLOCK
+    int psm_engjp = 8;   // tesseract::PSM_SINGLE_WORD
 
-    tesseract::TessBaseAPI *api;
+    tesseract::TessBaseAPI *api = nullptr;
 };
 
 #endif
