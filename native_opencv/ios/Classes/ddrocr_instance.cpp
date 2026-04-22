@@ -11,10 +11,21 @@
 #include <android/log.h>
 #endif
 
+extern void platform_log(const char *fmt, ...);
+
+//These functions are divergent between testebed and regular
+void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
+{
+    if (debugDir.empty())
+        return;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s.png", debugDir.c_str(), fileName.c_str());
+    platform_log("wrote: %s\n", path);
+    cv::imwrite(path, img);
+}
+
 const int max_value_H = 360 / 2;
 const int max_value = 255;
-
-extern void platform_log(const char *fmt, ...);
 
 DdrocrInstance::DdrocrInstance(std::string dataPath)
     : dataPath(dataPath), ocrWrapper(dataPath)
@@ -572,16 +583,6 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
                  result.text.c_str());
 
     return result;
-}
-
-void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
-{
-    if (debugDir.empty())
-        return;
-    char path[512];
-    snprintf(path, sizeof(path), "%s/%s.png", debugDir.c_str(), fileName.c_str());
-    platform_log("wrote: %s\n", path);
-    cv::imwrite(path, img);
 }
 
 cv::Rect DdrocrInstance::expandRoi(cv::Rect roi, cv::Point expand)
