@@ -2,6 +2,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <string>
+#include <stdint.h>
 #include "ocr_wrapper.h"
 
 struct bounding_box
@@ -42,16 +43,31 @@ struct ProcessImgResult
     OCRResults ocrResults;
 };
 
+// FFI-compatible config struct — layout must match the Dart COCRConfig Struct exactly.
+// offset  0: border               int32_t
+// offset  4: psm_eng              int32_t
+// offset  8: psm_engjp            int32_t
+// offset 12: gaussian_blur_size   int32_t
+// offset 16: simplification_epsilon double  (16%8==0, no padding)
+// offset 24: area_min_factor      double
+// offset 32: area_max_factor      double
+// offset 40: roi[12][6]           int32_t[72]
+// total: 328 bytes
+//
+// roi row: {x1, y1, x2, y2, expand_x, expand_y}
+// roi order: details(0), score(1), marvelous(2), perfect(3), great(4),
+//            good(5), miss(6), flare(7), title(8), username(9),
+//            difficulty(10), max_combo(11)
 struct COCRConfig
 {
-    int border                    = 30;
-    int psm_eng                   = 6;   // tesseract::PSM_SINGLE_BLOCK
-    int psm_engjp                 = 8;   // tesseract::PSM_SINGLE_WORD
-    int gaussian_blur_size        = 3;
-    double simplification_epsilon = 0.07;
-    // roi order: details, score, marvelous, perfect, great, good, miss, flare, title, username, difficulty, max_combo
-    // each row: {x1, y1, x2, y2, expand_x, expand_y}  (details has no expansion so last two are 0)
-    int roi[12][6] = {
+    int32_t border                    = 30;
+    int32_t psm_eng                   = 6;   // tesseract::PSM_SINGLE_BLOCK
+    int32_t psm_engjp                 = 8;   // tesseract::PSM_SINGLE_WORD
+    int32_t gaussian_blur_size        = 3;
+    double  simplification_epsilon    = 0.07;
+    double  area_min_factor           = 0.00082; // 0.082% of image area
+    double  area_max_factor           = 0.0082;  // 0.82% of image area
+    int32_t roi[12][6] = {
         {2054,2348,2418,2450, 0, 0}, // details
         {2700,2551,2968,2611, 5, 0}, // score
         {1896,2549,2018,2599, 0, 0}, // marvelous
@@ -76,7 +92,7 @@ public:
     ~DdrocrInstance();
     // TODO use outputimg path declared in class
     ProcessImgResult process_image(cv::Mat inputImg);
-    void reloadConfig();
+    void setConfig(const COCRConfig &cfg);
 
 private:
     COCRConfig config;

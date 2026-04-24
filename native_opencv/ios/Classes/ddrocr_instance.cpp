@@ -5,7 +5,6 @@
 #include <set>
 #include <sstream>
 #include <iomanip>
-#include <fstream>
 #include <sys/stat.h>
 
 #ifdef __ANDROID__
@@ -53,54 +52,13 @@ DdrocrInstance::~DdrocrInstance()
     platform_log("DdrocrInstance destroyed\n");
 }
 
-void DdrocrInstance::reloadConfig()
+void DdrocrInstance::setConfig(const COCRConfig &cfg)
 {
-    std::string filePath = dataPath + "/ocr_config.txt";
-    std::ifstream f(filePath);
-    if (!f.is_open())
-    {
-        platform_log("ocr_config.txt not found at %s, using defaults\n", filePath.c_str());
-        return;
-    }
-
-    auto parseInts = [](const std::string &s, int *arr, int n) {
-        std::istringstream ss(s);
-        std::string tok;
-        for (int i = 0; i < n && std::getline(ss, tok, ','); i++)
-            arr[i] = std::stoi(tok);
-    };
-
-    std::string line;
-    while (std::getline(f, line))
-    {
-        size_t eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string k = line.substr(0, eq);
-        std::string v = line.substr(eq + 1);
-
-        if      (k == "border")                 config.border                   = std::stoi(v);
-        else if (k == "psm_eng")                config.psm_eng                  = std::stoi(v);
-        else if (k == "psm_engjp")              config.psm_engjp                = std::stoi(v);
-        else if (k == "gaussian_blur_size")     config.gaussian_blur_size       = std::stoi(v);
-        else if (k == "simplification_epsilon") config.simplification_epsilon   = std::stod(v);
-        else if (k == "roi_details")            parseInts(v, config.roi[0],  4); // no expansion
-        else if (k == "roi_score")              parseInts(v, config.roi[1],  6);
-        else if (k == "roi_marvelous")          parseInts(v, config.roi[2],  6);
-        else if (k == "roi_perfect")            parseInts(v, config.roi[3],  6);
-        else if (k == "roi_great")              parseInts(v, config.roi[4],  6);
-        else if (k == "roi_good")               parseInts(v, config.roi[5],  6);
-        else if (k == "roi_miss")               parseInts(v, config.roi[6],  6);
-        else if (k == "roi_flare")              parseInts(v, config.roi[7],  6);
-        else if (k == "roi_title")              parseInts(v, config.roi[8],  6);
-        else if (k == "roi_username")           parseInts(v, config.roi[9],  6);
-        else if (k == "roi_difficulty")         parseInts(v, config.roi[10], 6);
-        else if (k == "roi_max_combo")          parseInts(v, config.roi[11], 6);
-    }
-
-    ocrWrapper.psm_eng   = config.psm_eng;
-    ocrWrapper.psm_engjp = config.psm_engjp;
-    platform_log("reloadConfig: border=%d gaussian=%d epsilon=%.3f\n",
-                 config.border, config.gaussian_blur_size, config.simplification_epsilon);
+    config = cfg;
+    ocrWrapper.psm_eng   = cfg.psm_eng;
+    ocrWrapper.psm_engjp = cfg.psm_engjp;
+    platform_log("setConfig: border=%d gaussian=%d epsilon=%.3f\n",
+                 cfg.border, cfg.gaussian_blur_size, cfg.simplification_epsilon);
 }
 
 cv::Mat DdrocrInstance::otsuToLogical(const cv::Mat &gray, bool invert) const
@@ -202,8 +160,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
 
     // Area thresholds as a percentage of current image area
     double imgArea = static_cast<double>(inputImg.cols * inputImg.rows);
-    double areaMin = imgArea * 0.00082; // 0.082% of image area
-    double areaMax = imgArea * 0.0082;  // 0.82% of image area
+    double areaMin = imgArea * config.area_min_factor;
+    double areaMax = imgArea * config.area_max_factor;
     for (size_t i = 0; i < contours.size(); i++)
     {
         double area = cv::contourArea(contours[i]);
@@ -325,7 +283,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         // preprocessing that getPreprocessedRoiImage applies to score ROIs.
         cv::Mat detailsInput;
         cv::resize(roiMat, detailsInput, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
-        cv::copyMakeBorder(detailsInput, detailsInput, 30, 30, 30, 30,
+        cv::copyMakeBorder(detailsInput, detailsInput,
+                           config.border, config.border, config.border, config.border,
                            cv::BORDER_CONSTANT, cv::Scalar(1));
 
         // Save raw and preprocessed details ROI candidates to debug subfolder

@@ -29,8 +29,10 @@
 using namespace cv;
 using namespace std;
 
-// Static OCR instance
+// Static OCR instance and config
 static DdrocrInstance *instance = nullptr;
+static COCRConfig g_config;
+static bool g_configSet = false;
 
 long long int get_now()
 {
@@ -91,6 +93,16 @@ extern "C"
     }
 
     FUNCTION_ATTRIBUTE
+    void set_ocr_config(COCRConfig *config)
+    {
+        g_config = *config;
+        g_configSet = true;
+        if (instance != nullptr)
+            instance->setConfig(g_config);
+        platform_log("set_ocr_config called\n");
+    }
+
+    FUNCTION_ATTRIBUTE
     void process_picked_image(
         char *inputImagePath,
         int32_t *outputIsDetected,
@@ -105,6 +117,8 @@ extern "C"
         if (instance == nullptr)
         {
             instance = new DdrocrInstance(std::string(outputImgPath));
+            if (g_configSet)
+                instance->setConfig(g_config);
             platform_log("DdrocrInstance initialized\n");
         }
 
@@ -115,7 +129,6 @@ extern "C"
             *outputIsDetected = 0;
             return;
         }
-        instance->reloadConfig();
         ProcessImgResult result = instance->process_image(img);
         if (!result.isDetected)
         {
@@ -167,6 +180,8 @@ extern "C"
         if (instance == nullptr)
         {
             instance = new DdrocrInstance(std::string(outputImgPath));
+            if (g_configSet)
+                instance->setConfig(g_config);
             platform_log("DdrocrInstance initialized\n");
         }
 
