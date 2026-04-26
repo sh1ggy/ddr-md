@@ -14,7 +14,7 @@ const int roiExpandY = 5;
 const double ocrAreaMinFactor = 0.00082; // 0.082% of image area
 const double ocrAreaMaxFactor = 0.0082; // 0.82% of image area
 
-const int ocrBorder = 30;
+const int ocrBorder = 20;
 const int ocrPsmEng = 8; // PSM_SINGLE_WORD
 const int ocrPsmEngJP = 8; // PSM_SINGLE_WORD
 const int ocrGaussianBlurSize = 3; // must be odd
