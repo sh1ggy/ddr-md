@@ -87,6 +87,13 @@ struct COCRConfig
     };
 };
 
+enum class DetectionSide
+{
+    FIRST = 0, // Default: use OCR to locate the "Details" region
+    LEFT  = 1, // Pick the spatially leftmost detected ROI
+    RIGHT = 2, // Pick the spatially rightmost detected ROI
+};
+
 class DdrocrInstance
 {
 public:
@@ -95,7 +102,7 @@ public:
     DdrocrInstance(std::string dataPath);
     ~DdrocrInstance();
     // TODO use outputimg path declared in class
-    ProcessImgResult process_image(cv::Mat inputImg);
+    ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST);
     void setConfig(const COCRConfig &cfg);
 
 private:

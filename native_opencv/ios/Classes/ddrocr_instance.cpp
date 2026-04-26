@@ -107,7 +107,7 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
     return display;
 }
 
-ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
+ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side)
 {
     ProcessImgResult result;
 
@@ -272,7 +272,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
     for (size_t i = 0; i < detectedRois.size(); i++)
     {
         cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
-        cv::Rect details_roi = detectedRois[i];
+         cv::Rect details_roi = detectedRois[i];
 
         save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW3));
 
@@ -319,7 +319,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         const std::string target = "details";
         // Check if cleanText contains target as a substring (loose match)
         if (cleanText.find(target) != std::string::npos)
-        {
+    {
             correct_roi_idx = i;
             result.detailsRoiIndex = i;
             platform_log("Found 'Details' (loose match) with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
