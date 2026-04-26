@@ -116,7 +116,7 @@ DynamicLibrary _openDynamicLibrary() {
       : DynamicLibrary.process();
 }
 
-// Mirrors C COCRConfig struct — layout must match exactly (328 bytes).
+// Mirrors C COCRConfig struct — layout must match exactly (340 bytes).
 // offset  0: border               Int32
 // offset  4: psm_eng              Int32
 // offset  8: psm_engjp            Int32
@@ -124,7 +124,9 @@ DynamicLibrary _openDynamicLibrary() {
 // offset 16: simplification_epsilon Double
 // offset 24: area_min_factor      Double
 // offset 32: area_max_factor      Double
-// offset 40: roi[12][6]           Array<Array<Int32>>
+// offset 40: resolution_scale     Double
+// offset 48: tophat_kernel_size   Int32
+// offset 52: roi[12][6]           Array<Array<Int32>>
 final class COCRConfig extends Struct {
   @Int32()
   external int border;
@@ -140,6 +142,10 @@ final class COCRConfig extends Struct {
   external double areaMinFactor;
   @Double()
   external double areaMaxFactor;
+  @Double()
+  external double resolutionScale;
+  @Int32()
+  external int tophatKernelSize;
   @Array(12, 6)
   external Array<Array<Int32>> roi;
 }
@@ -225,6 +231,8 @@ void _callSetOcrConfig() {
   p.ref.simplificationEpsilon = ocrSimplificationEpsilon;
   p.ref.areaMinFactor = ocrAreaMinFactor;
   p.ref.areaMaxFactor = ocrAreaMaxFactor;
+  p.ref.resolutionScale = ocrResolutionScale;
+  p.ref.tophatKernelSize = ocrTophatKernelSize;
   for (int r = 0; r < 12; r++) {
     final (rect, (ex, ey)) = ocrRoi[r];
     p.ref.roi[r][roiX1] = rect[roiX1];

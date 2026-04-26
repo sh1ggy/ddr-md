@@ -284,7 +284,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg)
         cv::Mat detailsInput;
         cv::resize(roiMat, detailsInput, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
         cv::copyMakeBorder(detailsInput, detailsInput,
-                           config.border, config.border, config.border, config.border,
+                           0, 0, 0, 0,
                            cv::BORDER_CONSTANT, cv::Scalar(1));
 
         // Save raw and preprocessed details ROI candidates to debug subfolder
@@ -523,11 +523,11 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
     // Step 1: Upscale ROI 4× before binarization (tiny ~50px ROIs → ~200px)
     cv::Mat upscaled;
-    cv::resize(cropped, upscaled, cv::Size(), 3.0, 3.0, cv::INTER_CUBIC);
+    cv::resize(cropped, upscaled, cv::Size(), config.resolution_scale, config.resolution_scale, cv::INTER_CUBIC);
 
     // Preprocessing: top-hat + grayscale + threshold
     // Kernel scaled proportionally: 31×31 → 125×125 for 4× upscale
-    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(125, 125));
+    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(config.tophat_kernel_size, config.tophat_kernel_size));
 
     cv::Mat corrected;
     cv::morphologyEx(upscaled, corrected, cv::MORPH_TOPHAT, kernel_tophat);

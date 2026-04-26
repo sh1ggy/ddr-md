@@ -51,8 +51,10 @@ struct ProcessImgResult
 // offset 16: simplification_epsilon double  (16%8==0, no padding)
 // offset 24: area_min_factor      double
 // offset 32: area_max_factor      double
-// offset 40: roi[12][6]           int32_t[72]
-// total: 328 bytes
+// offset 40: resolution_scale     double
+// offset 48: tophat_kernel_size   int32_t
+// offset 52: roi[12][6]           int32_t[72]
+// total: 340 bytes
 //
 // roi row: {x1, y1, x2, y2, expand_x, expand_y}
 // roi order: details(0), score(1), marvelous(2), perfect(3), great(4),
@@ -67,6 +69,8 @@ struct COCRConfig
     double  simplification_epsilon    = 0.07;
     double  area_min_factor           = 0.00082; // 0.082% of image area
     double  area_max_factor           = 0.0082;  // 0.82% of image area
+    double  resolution_scale          = 3.0;     // upscale factor applied to each ROI before binarization
+    int32_t tophat_kernel_size        = 125;     // morphological top-hat kernel size (must be odd)
     int32_t roi[12][6] = {
         {2054,2348,2418,2450, 0, 0}, // details
         {2700,2551,2968,2611, 5, 0}, // score
