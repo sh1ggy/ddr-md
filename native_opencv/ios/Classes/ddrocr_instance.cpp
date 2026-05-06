@@ -156,7 +156,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(BW_HSV, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-    cv::Mat BW2 = cv::Mat::zeros(BW_HSV.size(), CV_8U);
+    cv::Mat BW2 = cv::Mat::zeros(inputImg.rows, inputImg.cols, CV_8U);
 
     // Area thresholds as a percentage of current image area
     double imgArea = static_cast<double>(inputImg.cols * inputImg.rows);
