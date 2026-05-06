@@ -43,6 +43,9 @@ long long int get_now()
 
 void platform_log(const char *fmt, ...)
 {
+#ifdef NDEBUG
+    return;
+#endif
     va_list args;
     va_start(args, fmt);
 #ifdef __ANDROID__
