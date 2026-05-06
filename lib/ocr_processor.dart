@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'ocr_config.dart';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
@@ -12,6 +13,10 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 enum DifficultyType { None, FFXI }
+
+enum DetectionSide { first, left, right }
+
+const DetectionSide kDetectionSide = DetectionSide.left;
 
 enum ReturnImageType { None, DirImage, BytesImage }
 
@@ -115,6 +120,40 @@ DynamicLibrary _openDynamicLibrary() {
       : DynamicLibrary.process();
 }
 
+// Mirrors C COCRConfig struct — layout must match exactly (340 bytes).
+// offset  0: border               Int32
+// offset  4: psm_eng              Int32
+// offset  8: psm_engjp            Int32
+// offset 12: gaussian_blur_size   Int32
+// offset 16: simplification_epsilon Double
+// offset 24: area_min_factor      Double
+// offset 32: area_max_factor      Double
+// offset 40: resolution_scale     Double
+// offset 48: tophat_kernel_size   Int32
+// offset 52: roi[12][6]           Array<Array<Int32>>
+final class COCRConfig extends Struct {
+  @Int32()
+  external int border;
+  @Int32()
+  external int psmEng;
+  @Int32()
+  external int psmEngJP;
+  @Int32()
+  external int gaussianBlurSize;
+  @Double()
+  external double simplificationEpsilon;
+  @Double()
+  external double areaMinFactor;
+  @Double()
+  external double areaMaxFactor;
+  @Double()
+  external double resolutionScale;
+  @Int32()
+  external int tophatKernelSize;
+  @Array(12, 6)
+  external Array<Array<Int32>> roi;
+}
+
 final class COCRStrings extends Struct {
   external Pointer<Char> score;
   external Pointer<Char> marvelous;
@@ -149,6 +188,7 @@ typedef _c_processPickedImage = Void Function(
   Pointer<Int32> outputRoisCount,
   Pointer<Int32> outputdetailsRoiIndex,
   Pointer<COCRStrings> outStrings,
+  Int32 side,
 );
 
 // Dart functions signatures
@@ -171,7 +211,11 @@ typedef _dart_processPickedImage = void Function(
   Pointer<Int32> outputRoisCount,
   Pointer<Int32> outputdetailsRoiIndex,
   Pointer<COCRStrings> outStrings,
+  int side,
 );
+
+typedef _c_setOcrConfig = Void Function(Pointer<COCRConfig>);
+typedef _dart_setOcrConfig = void Function(Pointer<COCRConfig>);
 
 // Create dart functions that invoke the C funcion
 final _processCameraImageFn =
@@ -180,6 +224,33 @@ final _processCameraImageFn =
 final _processPickedImageFn =
     _nativeLib.lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
         'process_picked_image');
+final _setOcrConfigFn =
+    _nativeLib.lookupFunction<_c_setOcrConfig, _dart_setOcrConfig>(
+        'set_ocr_config');
+
+void _callSetOcrConfig() {
+  final p = calloc<COCRConfig>();
+  p.ref.border = ocrBorder;
+  p.ref.psmEng = ocrPsmEng;
+  p.ref.psmEngJP = ocrPsmEngJP;
+  p.ref.gaussianBlurSize = ocrGaussianBlurSize;
+  p.ref.simplificationEpsilon = ocrSimplificationEpsilon;
+  p.ref.areaMinFactor = ocrAreaMinFactor;
+  p.ref.areaMaxFactor = ocrAreaMaxFactor;
+  p.ref.resolutionScale = ocrResolutionScale;
+  p.ref.tophatKernelSize = ocrTophatKernelSize;
+  for (int r = 0; r < 12; r++) {
+    final (rect, (ex, ey)) = ocrRoi[r];
+    p.ref.roi[r][roiX1] = rect[roiX1];
+    p.ref.roi[r][roiY1] = rect[roiY1];
+    p.ref.roi[r][roiX2] = rect[roiX2];
+    p.ref.roi[r][roiY2] = rect[roiY2];
+    p.ref.roi[r][roiExpandX] = ex;
+    p.ref.roi[r][roiExpandY] = ey;
+  }
+  _setOcrConfigFn(p);
+  calloc.free(p);
+}
 
 Future<ProcessResult> _processPickedImage(
     ProcessPickedImageRequestParams params) async {
@@ -218,6 +289,7 @@ Future<ProcessResult> _processPickedImage(
     outputRoisCount,
     outputdetailsRoiIndex,
     outStrings,
+    kDetectionSide.index,
   );
   final Pointer<Int32> outputRois = outputRoisPtr.value; // dereference
 
@@ -374,7 +446,7 @@ void isolateEntryPoint(InitialRequest initReq) {
 
   // Create a port on which the main thread can send us messages and listen to it
   ReceivePort fromMainThread = ReceivePort();
-  // TODO initialise the cpp class here
+  _callSetOcrConfig();
   fromMainThread.listen((data) {
     if (data is Request) {
       switch (data.type) {
@@ -539,10 +611,11 @@ class OCRProcessor {
   }
 
   void processPickedImage(XFile image) async {
-    // Placeholder implementation
     print('Processing image from file: ${image.path}');
-    final request =
-        Request.fromFile(RequestType.ProcessPickedImage, image.path);
+    final request = Request.fromFile(
+      RequestType.ProcessPickedImage,
+      image.path,
+    );
     _isProcessing = true;
     toIsolate?.send(request);
   }

@@ -29,8 +29,10 @@
 using namespace cv;
 using namespace std;
 
-// Static OCR instance
+// Static OCR instance and config
 static DdrocrInstance *instance = nullptr;
+static COCRConfig g_config;
+static bool g_configSet = false;
 
 long long int get_now()
 {
@@ -41,6 +43,9 @@ long long int get_now()
 
 void platform_log(const char *fmt, ...)
 {
+#ifdef NDEBUG
+    return;
+#endif
     va_list args;
     va_start(args, fmt);
 #ifdef __ANDROID__
@@ -91,6 +96,16 @@ extern "C"
     }
 
     FUNCTION_ATTRIBUTE
+    void set_ocr_config(COCRConfig *config)
+    {
+        g_config = *config;
+        g_configSet = true;
+        if (instance != nullptr)
+            instance->setConfig(g_config);
+        platform_log("set_ocr_config called\n");
+    }
+
+    FUNCTION_ATTRIBUTE
     void process_picked_image(
         char *inputImagePath,
         int32_t *outputIsDetected,
@@ -98,13 +113,16 @@ extern "C"
         int32_t **outputRois,
         int32_t *outputRoisCount,
         int32_t *outputdetailsRoiIndex,
-        COCRStrings *outStrings)
+        COCRStrings *outStrings,
+        int32_t side)
     {
         // TODO evaluate a static instance of DdrocrInstance instead of initializing with Ocrprocessor
         // For now, this lives for the lifetime of the app
         if (instance == nullptr)
         {
             instance = new DdrocrInstance(std::string(outputImgPath));
+            if (g_configSet)
+                instance->setConfig(g_config);
             platform_log("DdrocrInstance initialized\n");
         }
 
@@ -115,7 +133,7 @@ extern "C"
             *outputIsDetected = 0;
             return;
         }
-        ProcessImgResult result = instance->process_image(img);
+        ProcessImgResult result = instance->process_image(img, static_cast<DetectionSide>(side));
         if (!result.isDetected)
         {
             platform_log("No OCR region detected, skipping saving processed image.\n");
@@ -166,6 +184,8 @@ extern "C"
         if (instance == nullptr)
         {
             instance = new DdrocrInstance(std::string(outputImgPath));
+            if (g_configSet)
+                instance->setConfig(g_config);
             platform_log("DdrocrInstance initialized\n");
         }
 

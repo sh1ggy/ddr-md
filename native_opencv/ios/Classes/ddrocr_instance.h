@@ -2,6 +2,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <string>
+#include <stdint.h>
 #include "ocr_wrapper.h"
 
 struct bounding_box
@@ -42,6 +43,57 @@ struct ProcessImgResult
     OCRResults ocrResults;
 };
 
+// FFI-compatible config struct — layout must match the Dart COCRConfig Struct exactly.
+// offset  0: border               int32_t
+// offset  4: psm_eng              int32_t
+// offset  8: psm_engjp            int32_t
+// offset 12: gaussian_blur_size   int32_t
+// offset 16: simplification_epsilon double  (16%8==0, no padding)
+// offset 24: area_min_factor      double
+// offset 32: area_max_factor      double
+// offset 40: resolution_scale     double
+// offset 48: tophat_kernel_size   int32_t
+// offset 52: roi[12][6]           int32_t[72]
+// total: 340 bytes
+//
+// roi row: {x1, y1, x2, y2, expand_x, expand_y}
+// roi order: details(0), score(1), marvelous(2), perfect(3), great(4),
+//            good(5), miss(6), flare(7), title(8), username(9),
+//            difficulty(10), max_combo(11)
+struct COCRConfig
+{
+    int32_t border                    = 30;
+    int32_t psm_eng                   = 6;   // tesseract::PSM_SINGLE_BLOCK
+    int32_t psm_engjp                 = 8;   // tesseract::PSM_SINGLE_WORD
+    int32_t gaussian_blur_size        = 3;
+    double  simplification_epsilon    = 0.07;
+    double  area_min_factor           = 0.00082; // 0.082% of image area
+    double  area_max_factor           = 0.0082;  // 0.82% of image area
+    double  resolution_scale          = 3.0;     // upscale factor applied to each ROI before binarization
+    int32_t tophat_kernel_size        = 125;     // morphological top-hat kernel size (must be odd)
+    int32_t roi[12][6] = {
+        {2054,2348,2418,2450, 0, 0}, // details
+        {2700,2551,2968,2611, 5, 0}, // score
+        {1896,2549,2018,2599, 0, 0}, // marvelous
+        {1896,2608,2018,2657, 0, 4}, // perfect
+        {1896,2664,2018,2702, 0, 6}, // great
+        {1896,2727,2018,2771, 0, 5}, // good
+        {1896,2825,2018,2879, 0, 0}, // miss
+        {1649,2466,1817,2508, 0, 7}, // flare
+        {1210,2075,1744,2133, 0,10}, // title
+        {2180,1388,2465,1439,10,10}, // username
+        {2056,1463,2627,1536,10,10}, // difficulty
+        {2665,2779,2797,2831, 0, 0}, // max_combo
+    };
+};
+
+enum class DetectionSide
+{
+    FIRST = 0, // Default: use OCR to locate the "Details" region
+    LEFT  = 1, // Pick the spatially leftmost detected ROI
+    RIGHT = 2, // Pick the spatially rightmost detected ROI
+};
+
 class DdrocrInstance
 {
 public:
@@ -50,9 +102,11 @@ public:
     DdrocrInstance(std::string dataPath);
     ~DdrocrInstance();
     // TODO use outputimg path declared in class
-    ProcessImgResult process_image(cv::Mat inputImg);
+    ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST);
+    void setConfig(const COCRConfig &cfg);
 
 private:
+    COCRConfig config;
     // Helper methods
     OCRWrapper ocrWrapper;
     cv::Mat otsuToLogical(const cv::Mat &gray, bool invert = false) const;
