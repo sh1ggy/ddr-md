@@ -14,6 +14,10 @@ import 'package:path_provider/path_provider.dart';
 
 enum DifficultyType { None, FFXI }
 
+enum DetectionSide { first, left, right }
+
+const DetectionSide kDetectionSide = DetectionSide.left;
+
 enum ReturnImageType { None, DirImage, BytesImage }
 
 class ProcessResult {
@@ -184,6 +188,7 @@ typedef _c_processPickedImage = Void Function(
   Pointer<Int32> outputRoisCount,
   Pointer<Int32> outputdetailsRoiIndex,
   Pointer<COCRStrings> outStrings,
+  Int32 side,
 );
 
 // Dart functions signatures
@@ -206,6 +211,7 @@ typedef _dart_processPickedImage = void Function(
   Pointer<Int32> outputRoisCount,
   Pointer<Int32> outputdetailsRoiIndex,
   Pointer<COCRStrings> outStrings,
+  int side,
 );
 
 typedef _c_setOcrConfig = Void Function(Pointer<COCRConfig>);
@@ -283,6 +289,7 @@ Future<ProcessResult> _processPickedImage(
     outputRoisCount,
     outputdetailsRoiIndex,
     outStrings,
+    kDetectionSide.index,
   );
   final Pointer<Int32> outputRois = outputRoisPtr.value; // dereference
 
@@ -604,10 +611,11 @@ class OCRProcessor {
   }
 
   void processPickedImage(XFile image) async {
-    // Placeholder implementation
     print('Processing image from file: ${image.path}');
-    final request =
-        Request.fromFile(RequestType.ProcessPickedImage, image.path);
+    final request = Request.fromFile(
+      RequestType.ProcessPickedImage,
+      image.path,
+    );
     _isProcessing = true;
     toIsolate?.send(request);
   }

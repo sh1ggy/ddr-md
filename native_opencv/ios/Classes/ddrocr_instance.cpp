@@ -109,6 +109,7 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
 
 ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side)
 {
+    platform_log("----------------- - - - - - - - - - - - THIS IS SIDE: %d\n", static_cast<int>(side));
     ProcessImgResult result;
 
     // Create a timestamped directory for all debug images from this run
@@ -260,6 +261,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
 
     cv::Mat roi_img = inputImg.clone();
     int correct_roi_idx = -1;
+    std::vector<int> detectedDetailsIndices;
 
     // Create a details_rois subfolder for debug output
     std::string detailsRoiDir;
@@ -300,6 +302,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             platform_log("[DEBUG] saved details ROI %zu: %s\n", i, rawPath);
         }
 
+        
         roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
         // TODO: fix Tesseract's confidence calibration to reliably use this threshold
         //        if (roiOcrResult.confidence < 0.5)
@@ -319,9 +322,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         const std::string target = "details";
         // Check if cleanText contains target as a substring (loose match)
         if (cleanText.find(target) != std::string::npos)
-    {
-            correct_roi_idx = i;
-            result.detailsRoiIndex = i;
+        {
+            detectedDetailsIndices.push_back(i);
             platform_log("Found 'Details' (loose match) with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
         }
     }
@@ -330,12 +332,40 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     result.rois = detectedRois;
     save_img("BW3", BW3);
 
-    if (correct_roi_idx == -1)
+    if (detectedDetailsIndices.empty())
     {
         platform_log("Failed to find 'Details' in any ROI, defaulting to first detected ROI\n");
         result.detailsRoiIndex = -1;
         return result;
     }
+
+    // Pick correct_roi_idx from detectedDetailsIndices based on DetectionSide
+    if (side == DetectionSide::LEFT)
+    {
+        correct_roi_idx = detectedDetailsIndices[0];
+        for (int idx : detectedDetailsIndices)
+        {
+            if (detectedRois[idx].x < detectedRois[correct_roi_idx].x)
+                correct_roi_idx = idx;
+        }
+        platform_log("DetectionSide::LEFT selected ROI %d (x=%d)\n", correct_roi_idx, detectedRois[correct_roi_idx].x);
+    }
+    else if (side == DetectionSide::RIGHT)
+    {
+        correct_roi_idx = detectedDetailsIndices[0];
+        for (int idx : detectedDetailsIndices)
+        {
+            if (detectedRois[idx].x > detectedRois[correct_roi_idx].x)
+                correct_roi_idx = idx;
+        }
+        platform_log("DetectionSide::RIGHT selected ROI %d (x=%d)\n", correct_roi_idx, detectedRois[correct_roi_idx].x);
+    }
+    else
+    {
+        // FIRST: use the first OCR match found
+        correct_roi_idx = detectedDetailsIndices[0];
+    }
+    result.detailsRoiIndex = correct_roi_idx;
 
     // Create offsets for score OCR (driven by config)
     auto roiRect = [&](int i) {

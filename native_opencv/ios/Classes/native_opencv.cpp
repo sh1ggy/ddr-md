@@ -110,7 +110,8 @@ extern "C"
         int32_t **outputRois,
         int32_t *outputRoisCount,
         int32_t *outputdetailsRoiIndex,
-        COCRStrings *outStrings)
+        COCRStrings *outStrings,
+        int32_t side)
     {
         // TODO evaluate a static instance of DdrocrInstance instead of initializing with Ocrprocessor
         // For now, this lives for the lifetime of the app
@@ -129,7 +130,7 @@ extern "C"
             *outputIsDetected = 0;
             return;
         }
-        ProcessImgResult result = instance->process_image(img);
+        ProcessImgResult result = instance->process_image(img, static_cast<DetectionSide>(side));
         if (!result.isDetected)
         {
             platform_log("No OCR region detected, skipping saving processed image.\n");
