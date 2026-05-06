@@ -109,7 +109,6 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
 
 ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side)
 {
-    platform_log("----------------- - - - - - - - - - - - THIS IS SIDE: %d\n", static_cast<int>(side));
     ProcessImgResult result;
 
     // Create a timestamped directory for all debug images from this run
