@@ -131,6 +131,15 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         platform_log("[DEBUG] output dir: %s\n", debugDir.c_str());
     }
 
+    auto t_total_start = std::chrono::high_resolution_clock::now();
+    auto checkpoint = [&](const char *label, std::chrono::high_resolution_clock::time_point &ref) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - ref).count();
+        platform_log("[TIMER] %s: %lld ms\n", label, (long long)ms);
+        ref = now;
+    };
+    auto t_ck = t_total_start;
+
     cv::Mat grayImg;
     cv::cvtColor(inputImg, grayImg, cv::COLOR_BGR2GRAY);
 
@@ -171,8 +180,10 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
     }
 
-    double morph_scale_factor = 0.3;
-    cv::resize(BW2, BW2, cv::Size(), morph_scale_factor, morph_scale_factor, cv::INTER_AREA);
+    checkpoint("HSV mask + blob filter", t_ck);
+
+    // double morph_scale_factor = 0.3;
+    // cv::resize(BW2, BW2, cv::Size(), morph_scale_factor, morph_scale_factor, cv::INTER_AREA);
 
     int m = config.morph_width;
     int n = config.morph_height;
@@ -184,15 +195,16 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     memset(open_data, 255, open_height * open_width);
     cv::Mat SE_open(open_height, open_width, CV_8U, open_data);
 
-    auto start_open = std::chrono::high_resolution_clock::now();
+    auto t_open_start = std::chrono::high_resolution_clock::now();
     cv::Mat BW3;
     cv::morphologyEx(BW2, BW3, cv::MORPH_OPEN, SE_open);
     save_img("BW_HSV", BW_HSV);
     save_img("BW2", BW2);
     save_img("BW3", BW3);
-    auto end_open = std::chrono::high_resolution_clock::now();
-    auto duration_open = std::chrono::duration_cast<std::chrono::microseconds>(end_open - start_open);
-    std::cout << "Opening operation with byte array kernel: " << duration_open.count() << " microseconds" << std::endl;
+    auto duration_open = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::high_resolution_clock::now() - t_open_start);
+    platform_log("[TIMER] morphologyEx OPEN: %lld us\n", (long long)duration_open.count());
+    checkpoint("morphologyEx OPEN + contours", t_ck);
 
     delete[] open_data;
 
@@ -218,14 +230,14 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
     }
 
-    // Scale bounding boxes back to original image size
-    for (size_t i = 0; i < detectedRois.size(); i++)
-    {
-        detectedRois[i].x /= morph_scale_factor;
-        detectedRois[i].y /= morph_scale_factor;
-        detectedRois[i].width /= morph_scale_factor;
-        detectedRois[i].height /= morph_scale_factor;
-    }
+    // // Scale bounding boxes back to original image size
+    // for (size_t i = 0; i < detectedRois.size(); i++)
+    // {
+    //     detectedRois[i].x /= morph_scale_factor;
+    //     detectedRois[i].y /= morph_scale_factor;
+    //     detectedRois[i].width /= morph_scale_factor;
+    //     detectedRois[i].height /= morph_scale_factor;
+    // }
 
     if (detectedRois.size() == 0)
     {
@@ -252,23 +264,26 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     cv::Mat preprocessed_BW1;
     preprocessed_BW1 = otsuToLogical(preprocessed_BW);
 
+    // TODO: this takes 4000ms, move this noise reduction to before logical 
     // bwareaopen - remove connected components smaller than 5 pixels
-    cv::Mat preprocessed_BW2 = preprocessed_BW1.clone();
-    std::vector<std::vector<cv::Point>> preprocessed_contours;
-    cv::Mat labels, stats, centroids;
-    int preprocessed_n = cv::connectedComponentsWithStats(preprocessed_BW1, labels, stats, centroids);
-    for (int i = 1; i < preprocessed_n; i++)
-    {
-        if (stats.at<int>(i, cv::CC_STAT_AREA) < 5)
-        {
-            cv::Mat mask = (labels == i);
-            preprocessed_BW2.setTo(0, mask);
-        }
-    }
+    // cv::Mat preprocessed_BW2 = preprocessed_BW1.clone();
+    // std::vector<std::vector<cv::Point>> preprocessed_contours;
+    // cv::Mat labels, stats, centroids;
+    // int preprocessed_n = cv::connectedComponentsWithStats(preprocessed_BW1, labels, stats, centroids);
+    // for (int i = 1; i < preprocessed_n; i++)
+    // {
+    //     if (stats.at<int>(i, cv::CC_STAT_AREA) < 5)
+    //     {
+    //         cv::Mat mask = (labels == i);
+    //         preprocessed_BW2.setTo(0, mask);
+    //     }
+    // }
 
     // imcomplement for logical image (0/1)
     cv::Mat preprocessed_BW3;
-    cv::subtract(cv::Scalar::all(1), preprocessed_BW2, preprocessed_BW3);
+    cv::subtract(cv::Scalar::all(1), preprocessed_BW1, preprocessed_BW3);
+
+    checkpoint("image preprocessing (close/gaussian/otsu/bwareaopen)", t_ck);
 
     cv::Mat roi_img = inputImg.clone();
     int correct_roi_idx = -1;
@@ -313,8 +328,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             platform_log("[DEBUG] saved details ROI %zu: %s\n", i, rawPath);
         }
 
-        
+        auto t_ocr_start = std::chrono::high_resolution_clock::now();
         roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
+        auto t_ocr_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - t_ocr_start).count();
+        platform_log("[TIMER] performOCR ROI %zu: %lld ms\n", i, (long long)t_ocr_ms);
         // TODO: fix Tesseract's confidence calibration to reliably use this threshold
         //        if (roiOcrResult.confidence < 0.5)
         //        {
@@ -339,12 +357,21 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
     }
 
+    checkpoint("details OCR loop", t_ck);
+
+    auto t_full_details_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - t_total_start).count();
+    platform_log("[TIMER] full details detection: %lld ms\n", (long long)t_full_details_ms);
+
     result.isDetected = 1;
     result.rois = detectedRois;
     save_img("BW3", BW3);
 
     if (detectedDetailsIndices.empty())
     {
+        auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - t_total_start).count();
+        platform_log("[TIMER] process_image total (no Details found): %lld ms\n", (long long)t_total_ms);
         platform_log("Failed to find 'Details' in any ROI, defaulting to first detected ROI\n");
         result.detailsRoiIndex = -1;
         return result;
@@ -521,6 +548,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         expand(ROI_IDX_MAXCOMBO), "max_combo", OCRType::Digit);
 
     result.ocrResults = ocrResults;
+
+    auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - t_total_start).count();
+    platform_log("[TIMER] process_image total: %lld ms\n", (long long)t_total_ms);
+
     return result;
 }
 
