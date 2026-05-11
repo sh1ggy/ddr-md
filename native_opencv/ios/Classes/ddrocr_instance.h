@@ -53,8 +53,10 @@ struct ProcessImgResult
 // offset 32: area_max_factor      double
 // offset 40: resolution_scale     double
 // offset 48: tophat_kernel_size   int32_t
-// offset 52: roi[12][6]           int32_t[72]
-// total: 340 bytes
+// offset 52: morph_width          int32_t  (HSV blob morphology kernel width)
+// offset 56: morph_height         int32_t  (HSV blob morphology kernel height)
+// offset 60: roi[12][6]           int32_t[72]
+// total: 348 bytes
 //
 // roi row: {x1, y1, x2, y2, expand_x, expand_y}
 // roi order: details(0), score(1), marvelous(2), perfect(3), great(4),
@@ -71,6 +73,8 @@ struct COCRConfig
     double  area_max_factor           = 0.0082;  // 0.82% of image area
     double  resolution_scale          = 3.0;     // upscale factor applied to each ROI before binarization
     int32_t tophat_kernel_size        = 125;     // morphological top-hat kernel size (must be odd)
+    int32_t morph_width               = 360;     // HSV blob morphology opening kernel width
+    int32_t morph_height              = 90;      // HSV blob morphology opening kernel height
     int32_t roi[12][6] = {
         {2054,2348,2418,2450, 0, 0}, // details
         {2700,2551,2968,2611, 5, 0}, // score

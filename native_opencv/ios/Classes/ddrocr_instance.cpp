@@ -171,8 +171,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
     }
 
-    int m = 360;
-    int n = 90;
+    double morph_scale_factor = 0.3;
+    cv::resize(BW2, BW2, cv::Size(), morph_scale_factor, morph_scale_factor, cv::INTER_AREA);
+
+    int m = config.morph_width;
+    int n = config.morph_height;
 
     // Create opening kernel using byte array (faster than getStructuringElement)
     int open_width = m * 0.1;
@@ -213,6 +216,15 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             largestRoiAreaIndex = i;
             largestRoiArea = thisRoi;
         }
+    }
+
+    // Scale bounding boxes back to original image size
+    for (size_t i = 0; i < detectedRois.size(); i++)
+    {
+        detectedRois[i].x /= morph_scale_factor;
+        detectedRois[i].y /= morph_scale_factor;
+        detectedRois[i].width /= morph_scale_factor;
+        detectedRois[i].height /= morph_scale_factor;
     }
 
     if (detectedRois.size() == 0)
