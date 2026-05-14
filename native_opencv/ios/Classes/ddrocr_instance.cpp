@@ -16,6 +16,9 @@ extern void platform_log(const char *fmt, ...);
 //These functions are divergent between testebed and regular
 void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
 {
+    #ifdef NDEBUG
+        return;
+    #endif
     if (debugDir.empty())
         return;
     char path[512];
