@@ -138,7 +138,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         platform_log("[TIMER] %s: %lld ms\n", label, (long long)ms);
         ref = now;
     };
-    auto t_ck = t_total_start;
+    auto t_rolling_timer = t_total_start;
 
     cv::Mat grayImg;
     cv::cvtColor(inputImg, grayImg, cv::COLOR_BGR2GRAY);
@@ -180,7 +180,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
     }
 
-    checkpoint("HSV mask + blob filter", t_ck);
+    checkpoint("HSV mask + blob filter", t_rolling_timer);
 
     // double morph_scale_factor = 0.3;
     // cv::resize(BW2, BW2, cv::Size(), morph_scale_factor, morph_scale_factor, cv::INTER_AREA);
@@ -195,16 +195,12 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     memset(open_data, 255, open_height * open_width);
     cv::Mat SE_open(open_height, open_width, CV_8U, open_data);
 
-    auto t_open_start = std::chrono::high_resolution_clock::now();
     cv::Mat BW3;
     cv::morphologyEx(BW2, BW3, cv::MORPH_OPEN, SE_open);
     save_img("BW_HSV", BW_HSV);
     save_img("BW2", BW2);
     save_img("BW3", BW3);
-    auto duration_open = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::high_resolution_clock::now() - t_open_start);
-    platform_log("[TIMER] morphologyEx OPEN: %lld us\n", (long long)duration_open.count());
-    checkpoint("morphologyEx OPEN + contours", t_ck);
+    checkpoint("morphologyEx OPEN + contours", t_rolling_timer);
 
     delete[] open_data;
 
@@ -283,7 +279,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     cv::Mat preprocessed_BW3;
     cv::subtract(cv::Scalar::all(1), preprocessed_BW1, preprocessed_BW3);
 
-    checkpoint("image preprocessing (close/gaussian/otsu/bwareaopen)", t_ck);
+    checkpoint("image preprocessing (close/gaussian/otsu/bwareaopen)", t_rolling_timer);
 
     cv::Mat roi_img = inputImg.clone();
     int correct_roi_idx = -1;
@@ -357,7 +353,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
     }
 
-    checkpoint("details OCR loop", t_ck);
+    checkpoint("details OCR loop", t_rolling_timer);
 
     auto t_full_details_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - t_total_start).count();
