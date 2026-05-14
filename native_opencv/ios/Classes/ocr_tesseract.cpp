@@ -33,6 +33,8 @@ namespace
             return "Eng";
         case OCRType::EngJP:
             return "EngJP";
+        case OCRType::Details:
+            return "Details";
         default:
             return "Unknown";
         }
@@ -86,16 +88,28 @@ OCRWrapper::OCRWrapper(const std::string dataPath)
     tesseract::TessBaseAPI *api = new tesseract::TessBaseAPI();
     // Suppress Leptonica TIFF/bmf warnings (no TIFF support on iOS, bitmap fonts not needed for OCR)
     setMsgSeverity(L_SEVERITY_NONE);
-    // Initialize tesseract-ocr with English, without specifying tessdata path
+    // Initialize eng.best API (used for all types except Details)
     if (api->Init(tessdataPath.c_str(), "eng.best", tesseract::OEM_LSTM_ONLY))
     {
-        platform_log("Could not initialize tesseract.\n");
+        platform_log("Could not initialize tesseract (eng.best).\n");
         delete api;
         return;
     }
     setMsgSeverity(L_SEVERITY_ERROR);
 
-    this->api = api;
+    // Initialize eng.fast API (used for OCRType::Details)
+    tesseract::TessBaseAPI *api_fast = new tesseract::TessBaseAPI();
+    setMsgSeverity(L_SEVERITY_NONE);
+    if (api_fast->Init(tessdataPath.c_str(), "eng.fast", tesseract::OEM_LSTM_ONLY))
+    {
+        platform_log("Could not initialize tesseract (eng.fast).\n");
+        delete api_fast;
+        api_fast = nullptr;
+    }
+    setMsgSeverity(L_SEVERITY_ERROR);
+
+    this->api      = api;
+    this->api_fast = api_fast;
     this->dataPath = dataPath;
     platform_log("OCRWrapper initialized\n");
 }
@@ -112,7 +126,10 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
     result.confidence = 0.0f;
     result.boundingBox = cv::Rect(0, 0, roiMat.cols, roiMat.rows);
 
-    if (!api)
+    // Route Details to the fast model; everything else uses the best model.
+    tesseract::TessBaseAPI *activeApi = (type == OCRType::Details && api_fast) ? api_fast : api;
+
+    if (!activeApi)
     {
         platform_log("[OCR][%s] ERROR: api not initialized\n", roiName.c_str());
         return result;
@@ -145,24 +162,29 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
     // Configure whitelist per type
     if (type == OCRType::Digit)
     {
-        api->SetVariable("tessedit_char_whitelist", "0123456789,");
+        activeApi->SetVariable("tessedit_char_whitelist", "0123456789,");
     }
     else if (type == OCRType::Eng)
     {
-        // TODO: still tune this. 
+        // TODO: still tune this.
         // psm word for tesseract fast
         // psm single block tesseract best
-        api->SetPageSegMode(static_cast<tesseract::PageSegMode>(psm_eng));
-        api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+        activeApi->SetPageSegMode(static_cast<tesseract::PageSegMode>(psm_eng));
+        activeApi->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
     }
     else if (type == OCRType::EngJP)
     {
-        api->SetPageSegMode(static_cast<tesseract::PageSegMode>(psm_engjp));
-        api->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん");
+        activeApi->SetPageSegMode(static_cast<tesseract::PageSegMode>(psm_engjp));
+        activeApi->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzあいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん");
+    }
+    else if (type == OCRType::Details)
+    {
+        activeApi->SetPageSegMode(tesseract::PSM_SINGLE_WORD);
+        activeApi->SetVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
     }
 
     // Set DPI to 300 to match Tesseract's training data expectations
-    api->SetVariable("user_defined_dpi", "300");
+    activeApi->SetVariable("user_defined_dpi", "300");
 
     // Debug: save per-ROI image just before sending to Tesseract
     if (!debugDir.empty())
@@ -201,13 +223,13 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
 
     if (type == OCRType::Digit)
     {
-        api->SetPageSegMode(tesseract::PSM_SINGLE_WORD);
+        activeApi->SetPageSegMode(tesseract::PSM_SINGLE_WORD);
     }
 
-    api->SetImage(pixImage);
-    char *outText = api->GetUTF8Text();
+    activeApi->SetImage(pixImage);
+    char *outText = activeApi->GetUTF8Text();
     result.text = outText ? std::string(outText) : "";
-    result.confidence = static_cast<float>(api->MeanTextConf()) / 100.0f;
+    result.confidence = static_cast<float>(activeApi->MeanTextConf()) / 100.0f;
 
     // Trim trailing whitespace/newlines from OCR output
     while (!result.text.empty() && (result.text.back() == '\n' || result.text.back() == ' '))

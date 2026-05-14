@@ -161,6 +161,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     cv::Mat BW_HSV;
     cv::inRange(imgHSV, lowerHSV, upperHSV, BW_HSV);
 
+    checkpoint("Threshholding", t_rolling_timer);
+
     // Do blob detection and filter small blobs
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(BW_HSV, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -180,7 +182,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
     }
 
-    checkpoint("HSV mask + blob filter", t_rolling_timer);
+    checkpoint("Blob filtering", t_rolling_timer);
 
     // double morph_scale_factor = 0.3;
     // cv::resize(BW2, BW2, cv::Size(), morph_scale_factor, morph_scale_factor, cv::INTER_AREA);
@@ -325,7 +327,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
 
         auto t_ocr_start = std::chrono::high_resolution_clock::now();
-        roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
+        roiOcrResult = ocrWrapper.performOCR(detailsInput.clone(), OCRType::Details);
+        // roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
         auto t_ocr_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t_ocr_start).count();
         platform_log("[TIMER] performOCR ROI %zu: %lld ms\n", i, (long long)t_ocr_ms);
