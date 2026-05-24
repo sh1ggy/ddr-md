@@ -30,7 +30,7 @@ struct OCRResult
 };
 
 
-enum class OCRType { Eng, Digit, EngJP };
+enum class OCRType { Eng, Digit, EngJP, Details };
 
 class OCRWrapper
 {
@@ -44,7 +44,8 @@ public:
     int psm_eng   = 6;   // tesseract::PSM_SINGLE_BLOCK
     int psm_engjp = 8;   // tesseract::PSM_SINGLE_WORD
 
-    tesseract::TessBaseAPI *api = nullptr;
+    tesseract::TessBaseAPI *api      = nullptr; // eng.best — used for all types except Details
+    tesseract::TessBaseAPI *api_fast = nullptr; // eng.fast — used for OCRType::Details
 };
 
 #endif

@@ -168,6 +168,11 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType ocrType, const s
                 request.usesLanguageCorrection = YES;
                 request.recognitionLanguages = @[ @"en-US", @"ja-JP" ];
                 break;
+            case OCRType::Details:
+                request.recognitionLevel = VNRequestTextRecognitionLevelFast;
+                request.usesLanguageCorrection = NO;
+                request.recognitionLanguages = @[ @"en-US" ];
+                break;
             default:
                 break;
         }

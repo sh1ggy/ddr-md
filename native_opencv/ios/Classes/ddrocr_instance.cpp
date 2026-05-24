@@ -16,6 +16,9 @@ extern void platform_log(const char *fmt, ...);
 //These functions are divergent between testebed and regular
 void DdrocrInstance::save_img(const std::string &fileName, cv::Mat img)
 {
+    #ifdef NDEBUG
+        return;
+    #endif
     if (debugDir.empty())
         return;
     char path[512];
@@ -161,6 +164,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     cv::Mat BW_HSV;
     cv::inRange(imgHSV, lowerHSV, upperHSV, BW_HSV);
 
+    checkpoint("Threshholding", t_rolling_timer);
+
     // Do blob detection and filter small blobs
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(BW_HSV, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
@@ -180,7 +185,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         }
     }
 
-    checkpoint("HSV mask + blob filter", t_rolling_timer);
+    checkpoint("Blob filtering", t_rolling_timer);
 
     // double morph_scale_factor = 0.3;
     // cv::resize(BW2, BW2, cv::Size(), morph_scale_factor, morph_scale_factor, cv::INTER_AREA);
@@ -242,15 +247,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         return result;
     }
 
-    // Preprocess image for OCR on details
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(31, 31));
-    cv::Mat closed, Icorrected;
-    cv::morphologyEx(inputImg, closed, cv::MORPH_CLOSE, kernel);
-    cv::subtract(closed, inputImg, Icorrected);
-
     // gaussian filter sigma=1
     cv::Mat Ifiltered;
-    cv::GaussianBlur(Icorrected, Ifiltered, cv::Size(0, 0), 1.0);
+    cv::GaussianBlur(inputImg, Ifiltered, cv::Size(0, 0), 1.0);
 
     // rgb2gray
     cv::Mat preprocessed_BW;
@@ -277,7 +276,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
 
     // imcomplement for logical image (0/1)
     cv::Mat preprocessed_BW3;
-    cv::subtract(cv::Scalar::all(1), preprocessed_BW1, preprocessed_BW3);
+    //cv::subtract(cv::Scalar::all(1), preprocessed_BW1, preprocessed_BW3);
 
     checkpoint("image preprocessing (close/gaussian/otsu/bwareaopen)", t_rolling_timer);
 
@@ -298,9 +297,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
          cv::Rect details_roi = detectedRois[i];
 
-        save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW3));
+        save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW1));
 
-        cv::Mat roiMat = preprocessed_BW3(details_roi);
+        cv::Mat roiMat = preprocessed_BW1(details_roi);
         OCRResult roiOcrResult = {};
 
         // Upscale + pad the "Details" ROI before OCR — matches the
@@ -314,18 +313,18 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         // Save raw and preprocessed details ROI candidates to debug subfolder
         if (!detailsRoiDir.empty())
         {
-            char rawPath[512], prepPath[512];
-            snprintf(rawPath, sizeof(rawPath), "%s/roi_%zu_raw.png",
-                     detailsRoiDir.c_str(), i);
-            snprintf(prepPath, sizeof(prepPath), "%s/roi_%zu_preprocessed.png",
-                     detailsRoiDir.c_str(), i);
-            cv::imwrite(std::string(rawPath), logicalToDisplayU8(roiMat));
-            cv::imwrite(std::string(prepPath), logicalToDisplayU8(detailsInput));
-            platform_log("[DEBUG] saved details ROI %zu: %s\n", i, rawPath);
+            char rawStem[512], prepStem[512];
+            snprintf(rawStem, sizeof(rawStem), "details_rois/roi_%zu_raw", i);
+            snprintf(prepStem, sizeof(prepStem), "details_rois/roi_%zu_preprocessed", i);
+
+            save_img(rawStem, logicalToDisplayU8(roiMat));
+            save_img(prepStem, logicalToDisplayU8(detailsInput));
+            platform_log("[DEBUG] saved details ROI %zu: %s/%s.png\n", i, debugDir.c_str(), rawStem);
         }
 
         auto t_ocr_start = std::chrono::high_resolution_clock::now();
-        roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
+        roiOcrResult = ocrWrapper.performOCR(detailsInput.clone(), OCRType::Details);
+        // roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
         auto t_ocr_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t_ocr_start).count();
         platform_log("[TIMER] performOCR ROI %zu: %lld ms\n", i, (long long)t_ocr_ms);
