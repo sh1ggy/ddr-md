@@ -44,9 +44,10 @@ static const int ROI_IDX_USERNAME   = 9;
 static const int ROI_IDX_DIFFICULTY = 10;
 static const int ROI_IDX_MAXCOMBO   = 11;
 
-DdrocrInstance::DdrocrInstance(std::string dataPath)
+DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg)
     : dataPath(dataPath), ocrWrapper(dataPath)
 {
+    setConfig(cfg);
     platform_log("DdrocrInstance initialized\n");
 }
 

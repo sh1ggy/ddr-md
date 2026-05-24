@@ -103,7 +103,7 @@ class DdrocrInstance
 public:
     std::string dataPath;
     std::string debugDir; // timestamped output directory for current run
-    DdrocrInstance(std::string dataPath);
+    DdrocrInstance(std::string dataPath, const COCRConfig &cfg);
     ~DdrocrInstance();
     // TODO use outputimg path declared in class
     ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST);

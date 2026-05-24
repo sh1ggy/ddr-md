@@ -33,10 +33,16 @@ String get tempPath => '${tempDir.path}/temp.jpg';
 class _OcrPageState extends State<OcrPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool _isCameraActive = false;
+  bool _isTogglingCamera = false;
   CameraController? _controller;
   late OCRProcessor _ocrProcessor;
   ProcessResult? _lastResult;
+  // Holds the most recent result where isDetected == true so the score
+  // panel persists across frames that fail to detect.
+  ProcessResult? _lastDetectedResult;
   double _camFrameToScreenScale = 0;
+  // Raw camera frame dimensions (landscape BGRA on iOS) used for ROI transform.
+  int _rawFrameWidth = 0;
 
   CameraImage? _lastFrame;
 
@@ -60,16 +66,55 @@ class _OcrPageState extends State<OcrPage>
 
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
-      final scaled = (result.detectedRois ?? [])
-          .map((r) => Rectangle<int>(
-                (r.left * _camFrameToScreenScale).toInt(),
-                (r.top * _camFrameToScreenScale).toInt(),
-                (r.width * _camFrameToScreenScale).toInt(),
-                (r.height * _camFrameToScreenScale).toInt(),
-              ))
-          .toList();
+      final int sensorOrientation =
+          _controller?.description.sensorOrientation ?? 0;
+      final double scale = _camFrameToScreenScale;
+      final int frameWidth = _rawFrameWidth;
+
+      final scaled = (result.detectedRois ?? []).map((r) {
+        if (Platform.isIOS &&
+            (sensorOrientation == 90 || sensorOrientation == 270)) {
+          // The raw BGRA frame is landscape; CameraPreview rotates it
+          // 90° CCW (sensor=90) or 90° CW (sensor=270) for portrait display.
+          // Apply the same transform so ROIs land on the correct pixels.
+          if (sensorOrientation == 90) {
+            // 90° CCW: (x,y) -> (y, frameWidth - x - rw)
+            return Rectangle<int>(
+              (r.top * scale).toInt(),
+              ((frameWidth - r.left - r.width) * scale).toInt(),
+              (r.height * scale).toInt(),
+              (r.width * scale).toInt(),
+            );
+          } else {
+            // 90° CW: (x,y) -> (frameHeight - y - rh, x)
+            // frameHeight not stored separately; use r.top + r.height boundary
+            // Approximate using _rawFrameWidth as landscape height is image.height
+            // (stored indirectly via scale = screenWidth / image.height).
+            // landscape height = screenWidth / scale
+            final int frameHeight = (MediaQuery.of(context).size.width / scale)
+                .round();
+            return Rectangle<int>(
+              ((frameHeight - r.top - r.height) * scale).toInt(),
+              (r.left * scale).toInt(),
+              (r.height * scale).toInt(),
+              (r.width * scale).toInt(),
+            );
+          }
+        }
+        // Android: C++ already rotates the frame 90° CW before processing,
+        // so ROIs are in portrait space — direct scale is correct.
+        return Rectangle<int>(
+          (r.left * scale).toInt(),
+          (r.top * scale).toInt(),
+          (r.width * scale).toInt(),
+          (r.height * scale).toInt(),
+        );
+      }).toList();
       _roiData.value = (scaled, result.detailsRoiIndex);
-      setState(() => _lastResult = result);
+      setState(() {
+        _lastResult = result;
+        if (result.isDetected) _lastDetectedResult = result;
+      });
     });
 
     getTemporaryDirectory().then((dir) => tempDir = dir);
@@ -231,33 +276,46 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     }
 
     _camFrameToScreenScale = MediaQuery.of(context).size.width / w;
+    _rawFrameWidth = image.width;
 
     _ocrProcessor.processVideostreamFrame(image);
     _lastFrame = image;
   }
 
   Future<void> _toggleCamera() async {
+    if (_isTogglingCamera) return;
+    _isTogglingCamera = true;
     print('Toggle camera called. Current state: $_isCameraActive');
-    if (_isCameraActive) {
-      // Stop the camera
-      print('Stopping camera stream...');
-      await _controller?.stopImageStream();
-      setState(() {
-        _isCameraActive = false;
-      });
-      print('Camera stopped. New state: $_isCameraActive');
-    } else {
-      // Start the camera
-      print('Starting camera stream...');
-      if (_controller != null && _controller!.value.isInitialized) {
-        await _controller!.startImageStream(_processImage);
+    try {
+      if (_isCameraActive) {
+        // Stop the camera
+        print('Stopping camera stream...');
+        if (_controller?.value.isStreamingImages ?? false) {
+          await _controller!.stopImageStream();
+        }
         setState(() {
-          _isCameraActive = true;
+          _isCameraActive = false;
         });
-        print('Camera started. New state: $_isCameraActive');
+        print('Camera stopped. New state: $_isCameraActive');
       } else {
-        print('Controller not initialized or null');
+        // Start the camera
+        print('Starting camera stream...');
+        if (_controller != null &&
+            _controller!.value.isInitialized &&
+            !(_controller!.value.isStreamingImages)) {
+          await _controller!.startImageStream(_processImage);
+          setState(() {
+            _isCameraActive = true;
+          });
+          print('Camera started. New state: $_isCameraActive');
+        } else {
+          print('Controller not initialized, null, or already streaming');
+        }
       }
+    } catch (e) {
+      print('Error toggling camera: $e');
+    } finally {
+      _isTogglingCamera = false;
     }
   }
 
@@ -272,7 +330,8 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
 
   @override
   Widget build(BuildContext context) {
-    final ocrStrings = _lastResult?.ocrStrings ?? const {};
+    // Show strings from the last detected frame, falling back to last result.
+    final ocrStrings = _lastDetectedResult?.ocrStrings ?? _lastResult?.ocrStrings ?? const {};
     return Scaffold(
       appBar: AppBar(title: const Text("Camera")),
       body: Center(

@@ -129,9 +129,9 @@ extern "C"
     }
 
     FUNCTION_ATTRIBUTE
-    void *create_ocr_instance(char *dataPath)
+    void *create_ocr_instance(char *dataPath, COCRConfig *config)
     {
-        DdrocrInstance *instance = new DdrocrInstance(std::string(dataPath));
+        DdrocrInstance *instance = new DdrocrInstance(std::string(dataPath), *config);
         platform_log("DdrocrInstance created %p\n", instance);
         return instance;
     }
@@ -141,13 +141,6 @@ extern "C"
     {
         delete static_cast<DdrocrInstance *>(handle);
         platform_log("DdrocrInstance destroyed %p\n", handle);
-    }
-
-    FUNCTION_ATTRIBUTE
-    void set_ocr_config(void *handle, COCRConfig *config)
-    {
-        static_cast<DdrocrInstance *>(handle)->setConfig(*config);
-        platform_log("set_ocr_config called\n");
     }
 
     FUNCTION_ATTRIBUTE

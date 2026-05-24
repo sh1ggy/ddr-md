@@ -24,13 +24,14 @@ class _LoadImageState extends State<LoadImage> {
   late OCRProcessor _ocrProcessor;
   bool _isPicking = false;
   bool _isProcessing = false;
+  bool _isReady = false;
   XFile? _pickedImage;
   ProcessResult? _lastResult;
   double _camFrameToScreenScale = 1.0;
   String? _scoreText;
 
   Future<void> _processImage() async {
-    if (_isPicking || (!Platform.isIOS && !Platform.isAndroid)) {
+    if (!_isReady || _isPicking || (!Platform.isIOS && !Platform.isAndroid)) {
       return;
     }
     setState(() {
@@ -60,6 +61,7 @@ class _LoadImageState extends State<LoadImage> {
   Future<void> _initLoadImage() async {
     await _ocrProcessor.init();
     await _ocrProcessor.initActor();
+    if (mounted) setState(() => _isReady = true);
   }
 
   @override
@@ -146,8 +148,8 @@ class _LoadImageState extends State<LoadImage> {
         title: const Text("Load Image"),
       ),
       bottomNavigationBar: ElevatedButton(
-        onPressed: _processImage,
-        child: const Text('Process photo'),
+        onPressed: _isReady ? _processImage : null,
+        child: Text(_isReady ? 'Process photo' : 'Initialising…'),
       ),
       body: Center(
         child: _isPicking

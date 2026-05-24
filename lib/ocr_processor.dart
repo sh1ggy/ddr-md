@@ -168,8 +168,8 @@ final class COCRStrings extends Struct {
 }
 
 // C Functions signatures
-typedef _c_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>);
-typedef _dart_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>);
+typedef _c_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>, Pointer<COCRConfig>);
+typedef _dart_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>, Pointer<COCRConfig>);
 
 typedef _c_destroyOcrInstance = Void Function(Pointer<Void>);
 typedef _dart_destroyOcrInstance = void Function(Pointer<Void>);
@@ -221,9 +221,6 @@ typedef _dart_processPickedImage = void Function(
   int side,
 );
 
-typedef _c_setOcrConfig = Void Function(Pointer<Void>, Pointer<COCRConfig>);
-typedef _dart_setOcrConfig = void Function(Pointer<Void>, Pointer<COCRConfig>);
-
 // Create dart functions that invoke the C funcion
 final _createOcrInstanceFn =
     _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
@@ -237,11 +234,10 @@ final _processCameraImageFn =
 final _processPickedImageFn =
     _nativeLib.lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
         'process_picked_image');
-final _setOcrConfigFn =
-    _nativeLib.lookupFunction<_c_setOcrConfig, _dart_setOcrConfig>(
-        'set_ocr_config');
 
-void _callSetOcrConfig(Pointer<Void> handle) {
+// Builds a COCRConfig struct from ocr_config.dart constants.
+// Caller must calloc.free() the returned pointer.
+Pointer<COCRConfig> _buildOCRConfig() {
   final p = calloc<COCRConfig>();
   p.ref.border = ocrBorder;
   p.ref.psmEng = ocrPsmEng;
@@ -263,8 +259,7 @@ void _callSetOcrConfig(Pointer<Void> handle) {
     p.ref.roi[r][roiExpandX] = ex;
     p.ref.roi[r][roiExpandY] = ey;
   }
-  _setOcrConfigFn(handle, p);
-  calloc.free(p);
+  return p;
 }
 
 // Reads the 6 score/judgement strings the UI displays. C allocates each field
@@ -425,9 +420,10 @@ void isolateEntryPoint(InitialRequest initReq) {
   // This isolate owns its own native DdrocrInstance for its whole lifetime, so
   // it is the sole thread ever touching that instance (and its Tesseract APIs).
   final dataPathPtr = initReq.appPath.toNativeUtf8();
-  final handle = _createOcrInstanceFn(dataPathPtr);
+  final cfg = _buildOCRConfig();
+  final handle = _createOcrInstanceFn(dataPathPtr, cfg);
   calloc.free(dataPathPtr);
-  _callSetOcrConfig(handle);
+  calloc.free(cfg);
 
   // Create a port on which the main thread can send us messages and listen to it
   ReceivePort fromMainThread = ReceivePort();
@@ -492,8 +488,12 @@ class OCRProcessor {
     ];
 
     for (final assetPath in tessdataAssets) {
-      final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
       final targetFile = File(path.join(tessdataDir.path, path.basename(assetPath)));
+      if (await targetFile.exists()) {
+        print('Tessdata already exists, skipping: ${targetFile.path}');
+        continue;
+      }
+      final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
       await targetFile.writeAsBytes(bytes, flush: true);
       print('Copied tessdata asset $assetPath -> ${targetFile.path}');
     }
@@ -532,13 +532,12 @@ class OCRProcessor {
 
   int _cameraFrames = 0;
   int skippedFrames = 0;
-  int FRAME_THRESHOLD = 10;
+  int FRAME_THRESHOLD = 3;
 
   void panicFromNotProcessing() {
     _isProcessing = false;
     skippedFrames = 0;
-    print('Panic reset of OCR processing state invoked.');
-    dispose();
+    print('Panic reset of OCR processing state invoked. Continuing without dispose.');
   }
 
   void processPickedImage(XFile image) async {
