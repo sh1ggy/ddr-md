@@ -247,15 +247,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         return result;
     }
 
-    // Preprocess image for OCR on details
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(31, 31));
-    cv::Mat closed, Icorrected;
-    cv::morphologyEx(inputImg, closed, cv::MORPH_CLOSE, kernel);
-    cv::subtract(closed, inputImg, Icorrected);
-
     // gaussian filter sigma=1
     cv::Mat Ifiltered;
-    cv::GaussianBlur(Icorrected, Ifiltered, cv::Size(0, 0), 1.0);
+    cv::GaussianBlur(inputImg, Ifiltered, cv::Size(0, 0), 1.0);
 
     // rgb2gray
     cv::Mat preprocessed_BW;
@@ -282,7 +276,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
 
     // imcomplement for logical image (0/1)
     cv::Mat preprocessed_BW3;
-    cv::subtract(cv::Scalar::all(1), preprocessed_BW1, preprocessed_BW3);
+    //cv::subtract(cv::Scalar::all(1), preprocessed_BW1, preprocessed_BW3);
 
     checkpoint("image preprocessing (close/gaussian/otsu/bwareaopen)", t_rolling_timer);
 
@@ -303,9 +297,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
          cv::Rect details_roi = detectedRois[i];
 
-        save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW3));
+        save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW1));
 
-        cv::Mat roiMat = preprocessed_BW3(details_roi);
+        cv::Mat roiMat = preprocessed_BW1(details_roi);
         OCRResult roiOcrResult = {};
 
         // Upscale + pad the "Details" ROI before OCR — matches the
