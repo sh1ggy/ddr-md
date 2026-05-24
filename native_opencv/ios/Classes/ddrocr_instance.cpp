@@ -319,15 +319,13 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         // Save raw and preprocessed details ROI candidates to debug subfolder
         if (!detailsRoiDir.empty())
         {
-            char rawPath[512], prepPath[512];
-            snprintf(rawPath, sizeof(rawPath), "%s/roi_%zu_raw.png",
-                     detailsRoiDir.c_str(), i);
-            snprintf(prepPath, sizeof(prepPath), "%s/roi_%zu_preprocessed.png",
-                     detailsRoiDir.c_str(), i);
+            char rawStem[512], prepStem[512];
+            snprintf(rawStem, sizeof(rawStem), "details_rois/roi_%zu_raw", i);
+            snprintf(prepStem, sizeof(prepStem), "details_rois/roi_%zu_preprocessed", i);
 
-            save_img(rawPath, logicalToDisplayU8(roiMat));
-            save_img(prepPath, logicalToDisplayU8(detailsInput));
-            platform_log("[DEBUG] saved details ROI %zu: %s\n", i, rawPath);
+            save_img(rawStem, logicalToDisplayU8(roiMat));
+            save_img(prepStem, logicalToDisplayU8(detailsInput));
+            platform_log("[DEBUG] saved details ROI %zu: %s/%s.png\n", i, debugDir.c_str(), rawStem);
         }
 
         auto t_ocr_start = std::chrono::high_resolution_clock::now();
