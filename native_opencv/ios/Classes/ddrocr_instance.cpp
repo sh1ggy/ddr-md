@@ -324,8 +324,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
                      detailsRoiDir.c_str(), i);
             snprintf(prepPath, sizeof(prepPath), "%s/roi_%zu_preprocessed.png",
                      detailsRoiDir.c_str(), i);
-            cv::imwrite(std::string(rawPath), logicalToDisplayU8(roiMat));
-            cv::imwrite(std::string(prepPath), logicalToDisplayU8(detailsInput));
+
+            save_img(rawPath, logicalToDisplayU8(roiMat));
+            save_img(prepPath, logicalToDisplayU8(detailsInput));
             platform_log("[DEBUG] saved details ROI %zu: %s\n", i, rawPath);
         }
 
