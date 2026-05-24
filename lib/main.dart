@@ -156,11 +156,19 @@ class _LayoutState extends State<Layout> {
             ),
             NavigationDestination(
               selectedIcon: Icon(
-                Icons.camera_enhance,
+                Icons.camera_alt,
                 color: Colors.white,
               ),
-              icon: Icon(Icons.camera_enhance),
-              label: 'OCR',
+              icon: Icon(Icons.camera_alt),
+              label: 'Camera',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(
+                Icons.image,
+                color: Colors.white,
+              ),
+              icon: Icon(Icons.image),
+              label: 'Image',
             ),
           ],
         ),
@@ -171,6 +179,7 @@ class _LayoutState extends State<Layout> {
             const BpmPage(),
             const DifficultyListPage(),
             const SettingsPage(),
+            const OcrPage(),
             const LoadImage(),
           } else ...{
             Navigator(
@@ -194,7 +203,13 @@ class _LayoutState extends State<Layout> {
                   return MaterialPageRoute(builder: (_) => page);
                 }),
             Navigator(
-                key: const Key("OCR"),
+                key: const Key("Camera"),
+                onGenerateRoute: (settings) {
+                  Widget page = const OcrPage();
+                  return MaterialPageRoute(builder: (_) => page);
+                }),
+            Navigator(
+                key: const Key("Image"),
                 onGenerateRoute: (settings) {
                   Widget page = const LoadImage();
                   return MaterialPageRoute(builder: (_) => page);

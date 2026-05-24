@@ -42,54 +42,47 @@ class ProcessResult {
       this.ocrStrings);
 }
 
-//TODO inf sending over Camera Image is too slow, send over buffer of TransferableTypedData instead
+// Camera frame bytes are extracted on the main thread and handed to the isolate
+// via TransferableTypedData (zero-copy on receive).
 class ProcessImageRequestParams {
-  // TODO This has to be multiple buffers transfered over
   final TransferableTypedData bytes;
   final int width;
   final int height;
   final int bytesPerPixel;
-  // TODO Pass this in into isolate with initial request
-  final String tempPath;
 
   ProcessImageRequestParams({
     required this.bytes,
     required this.width,
     required this.height,
     required this.bytesPerPixel,
-    required this.tempPath,
   });
 }
 
 class ProcessPickedImageRequestParams {
   final String imagePath;
-  final String outputPath;
 
-  ProcessPickedImageRequestParams({
-    required this.imagePath,
-    required this.outputPath,
-  });
+  ProcessPickedImageRequestParams({required this.imagePath});
 }
 
 enum RequestType { ProcessVideoImage, ProcessPickedImage, Shutdown }
 
 class Request {
   final RequestType type;
-  final CameraImage? params;
+  final ProcessImageRequestParams? cameraParams;
   final String? pickedImagePath;
 
   Request._({
     required this.type,
-    this.params,
+    this.cameraParams,
     this.pickedImagePath,
   });
 
   Request.fromCamera(
     RequestType type,
-    CameraImage params,
+    ProcessImageRequestParams params,
   ) : this._(
           type: type,
-          params: params,
+          cameraParams: params,
         );
 
   Request.fromFile(
@@ -175,21 +168,28 @@ final class COCRStrings extends Struct {
 }
 
 // C Functions signatures
+typedef _c_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>);
+typedef _dart_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>);
+
+typedef _c_destroyOcrInstance = Void Function(Pointer<Void>);
+typedef _dart_destroyOcrInstance = void Function(Pointer<Void>);
+
 typedef _c_processCameraImage = Void Function(
+    Pointer<Void> handle,
     Int32 imgWidth,
     Int32 imgHeight,
     Int32 bytesPerPixel,
     Pointer<Uint8> imgBuffer,
-    Pointer<Int32> outputRoi,
     Pointer<Int32> outputIsDetected,
-    Pointer<Int32> outputImgSize,
-    Pointer<Uint8> outputImgBuff,
-    Pointer<Utf8> outputImgPath);
+    Pointer<Pointer<Int32>> outputRois,
+    Pointer<Int32> outputRoisCount,
+    Pointer<Int32> outputdetailsRoiIndex,
+    Pointer<COCRStrings> outStrings);
 
 typedef _c_processPickedImage = Void Function(
+  Pointer<Void> handle,
   Pointer<Utf8> inputImagePath,
-  Pointer<Int32> outputIsRoisDetected,
-  Pointer<Utf8> outputImgPath,
+  Pointer<Int32> outputIsDetected,
   Pointer<Pointer<Int32>> outputRois,
   Pointer<Int32> outputRoisCount,
   Pointer<Int32> outputdetailsRoiIndex,
@@ -199,20 +199,21 @@ typedef _c_processPickedImage = Void Function(
 
 // Dart functions signatures
 typedef _dart_processCameraImage = void Function(
+    Pointer<Void> handle,
     int imgWidth,
     int imgHeight,
     int bytesPerPixel,
     Pointer<Uint8> imgBuffer,
-    Pointer<Int32> outputRoi,
     Pointer<Int32> outputIsDetected,
-    Pointer<Int32> outputImgSize,
-    Pointer<Uint8> outputImgBuff,
-    Pointer<Utf8> outputImgPath);
+    Pointer<Pointer<Int32>> outputRois,
+    Pointer<Int32> outputRoisCount,
+    Pointer<Int32> outputdetailsRoiIndex,
+    Pointer<COCRStrings> outStrings);
 
 typedef _dart_processPickedImage = void Function(
+  Pointer<Void> handle,
   Pointer<Utf8> inputImagePath,
   Pointer<Int32> outputIsDetected,
-  Pointer<Utf8> outputImgPath,
   Pointer<Pointer<Int32>> outputRois,
   Pointer<Int32> outputRoisCount,
   Pointer<Int32> outputdetailsRoiIndex,
@@ -220,10 +221,16 @@ typedef _dart_processPickedImage = void Function(
   int side,
 );
 
-typedef _c_setOcrConfig = Void Function(Pointer<COCRConfig>);
-typedef _dart_setOcrConfig = void Function(Pointer<COCRConfig>);
+typedef _c_setOcrConfig = Void Function(Pointer<Void>, Pointer<COCRConfig>);
+typedef _dart_setOcrConfig = void Function(Pointer<Void>, Pointer<COCRConfig>);
 
 // Create dart functions that invoke the C funcion
+final _createOcrInstanceFn =
+    _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
+        'create_ocr_instance');
+final _destroyOcrInstanceFn =
+    _nativeLib.lookupFunction<_c_destroyOcrInstance, _dart_destroyOcrInstance>(
+        'destroy_ocr_instance');
 final _processCameraImageFn =
     _nativeLib.lookupFunction<_c_processCameraImage, _dart_processCameraImage>(
         'process_camera_image');
@@ -234,7 +241,7 @@ final _setOcrConfigFn =
     _nativeLib.lookupFunction<_c_setOcrConfig, _dart_setOcrConfig>(
         'set_ocr_config');
 
-void _callSetOcrConfig() {
+void _callSetOcrConfig(Pointer<Void> handle) {
   final p = calloc<COCRConfig>();
   p.ref.border = ocrBorder;
   p.ref.psmEng = ocrPsmEng;
@@ -256,277 +263,189 @@ void _callSetOcrConfig() {
     p.ref.roi[r][roiExpandX] = ex;
     p.ref.roi[r][roiExpandY] = ey;
   }
-  _setOcrConfigFn(p);
+  _setOcrConfigFn(handle, p);
   calloc.free(p);
 }
 
-Future<ProcessResult> _processPickedImage(
-    ProcessPickedImageRequestParams params) async {
-  Pointer<Int32> outputIsDetected = calloc.allocate<Int32>(4);
-  Pointer<Int32> outputRoisCount = calloc.allocate<Int32>(4);
-  Pointer<Pointer<Int32>> outputRoisPtr = calloc<Pointer<Int32>>();
-  Pointer<Int32> outputdetailsRoiIndex = calloc.allocate<Int32>(4);
-  Pointer<Char> scorePtr = calloc<Char>(256);
-  Pointer<Char> marvelousPtr = calloc<Char>(256);
-  Pointer<Char> perfectPtr = calloc<Char>(256);
-  Pointer<Char> greatPtr = calloc<Char>(256);
-  Pointer<Char> goodPtr = calloc<Char>(256);
-  Pointer<Char> missPtr = calloc<Char>(256);
-  Pointer<Char> flarePtr = calloc<Char>(256);
-  Pointer<Char> usernamePtr = calloc<Char>(256);
-  Pointer<Char> difficultyPtr = calloc<Char>(256);
-  Pointer<Char> maxComboPtr = calloc<Char>(256);
-  Pointer<COCRStrings> outStrings = calloc<COCRStrings>();
+// Reads the 6 score/judgement strings the UI displays. C allocates each field
+// with malloc; the corresponding _freeOcrStrings releases them.
+Map<String, String> _readOcrStrings(Pointer<COCRStrings> p) {
+  String read(Pointer<Char> s) =>
+      s == nullptr ? '' : s.cast<Utf8>().toDartString();
+  final r = p.ref;
+  return {
+    'score': read(r.score),
+    'marvelous': read(r.marvelous),
+    'perfect': read(r.perfect),
+    'great': read(r.great),
+    'good': read(r.good),
+    'miss': read(r.miss),
+  };
+}
 
-  outStrings.ref.score = scorePtr;
-  outStrings.ref.marvelous = marvelousPtr;
-  outStrings.ref.perfect = perfectPtr;
-  outStrings.ref.great = greatPtr;
-  outStrings.ref.good = goodPtr;
-  outStrings.ref.miss = missPtr;
-  outStrings.ref.flare = flarePtr;
-  outStrings.ref.username = usernamePtr;
-  outStrings.ref.difficulty = difficultyPtr;
-  outStrings.ref.maxCombo = maxComboPtr;
+void _freeOcrStrings(Pointer<COCRStrings> p) {
+  final r = p.ref;
+  for (final s in [
+    r.score,
+    r.marvelous,
+    r.perfect,
+    r.great,
+    r.good,
+    r.miss,
+    r.flare,
+    r.title,
+    r.username,
+    r.difficulty,
+    r.maxCombo
+  ]) {
+    if (s != nullptr) calloc.free(s);
+  }
+  calloc.free(p);
+}
 
-  _processPickedImageFn(
-    params.imagePath.toNativeUtf8(),
-    outputIsDetected,
-    params.outputPath.toNativeUtf8(),
-    outputRoisPtr,
-    outputRoisCount,
-    outputdetailsRoiIndex,
-    outStrings,
-    kDetectionSide.index,
-  );
-  final Pointer<Int32> outputRois = outputRoisPtr.value; // dereference
+// Builds a ProcessResult from the FFI output pointers and frees all of them
+// (including the C-allocated rois array and strings). Shared by the picked-image
+// and camera paths, which produce identical output.
+ProcessResult _buildAndFreeResult({
+  required Pointer<Int32> outputIsDetected,
+  required Pointer<Pointer<Int32>> outputRoisPtr,
+  required Pointer<Int32> outputRoisCount,
+  required Pointer<Int32> outputDetailsRoiIndex,
+  required Pointer<COCRStrings> outStrings,
+}) {
+  final Pointer<Int32> outputRois = outputRoisPtr.value;
 
   if (outputRois == nullptr) {
     calloc.free(outputRoisPtr);
     calloc.free(outputIsDetected);
     calloc.free(outputRoisCount);
-    calloc.free(outputdetailsRoiIndex);
-
-    calloc.free(scorePtr);
-    calloc.free(marvelousPtr);
-    calloc.free(perfectPtr);
-    calloc.free(greatPtr);
-    calloc.free(goodPtr);
-    calloc.free(missPtr);
-    calloc.free(flarePtr);
-    calloc.free(usernamePtr);
-    calloc.free(difficultyPtr);
-    calloc.free(maxComboPtr);
-
-    calloc.free(outStrings);
+    calloc.free(outputDetailsRoiIndex);
+    _freeOcrStrings(outStrings);
     return ProcessResult(DifficultyType.None, null, [], false,
         ReturnImageType.None, null, -1, {});
   }
 
-  List<Rectangle<int>> detectedRois = [];
+  final detectedRois = <Rectangle<int>>[];
   for (int i = 0; i < outputRoisCount.value; i++) {
-    // Each rect consists of 4 integers: x, y, width, height
-    int baseIndex = i * 4;
-    // Access the rectangle values using baseIndex
-    int x = outputRois[baseIndex];
-    int y = outputRois[baseIndex + 1];
-    int width = outputRois[baseIndex + 2];
-    int height = outputRois[baseIndex + 3];
-    detectedRois.add(Rectangle<int>(x, y, width, height));
-    print('Detected ROI $i: x=$x, y=$y, width=$width, height=$height');
+    final base = i * 4;
+    detectedRois.add(Rectangle<int>(outputRois[base], outputRois[base + 1],
+        outputRois[base + 2], outputRois[base + 3]));
   }
 
-  ProcessResult result = ProcessResult(
-    DifficultyType.FFXI, // Placeholder difficulty
-    null, // No single ROI for picked images
-    detectedRois, // List of detected ROIs
+  final result = ProcessResult(
+    DifficultyType.FFXI,
+    null,
+    detectedRois,
     outputIsDetected.value != 0,
     ReturnImageType.DirImage,
     null,
-    outputdetailsRoiIndex.value,
-    {
-      'score': outStrings.ref.score.cast<Utf8>().toDartString(),
-      'marvelous': outStrings.ref.marvelous.cast<Utf8>().toDartString(),
-      'perfect': outStrings.ref.perfect.cast<Utf8>().toDartString(),
-      'great': outStrings.ref.great.cast<Utf8>().toDartString(),
-      'good': outStrings.ref.good.cast<Utf8>().toDartString(),
-      'miss': outStrings.ref.miss.cast<Utf8>().toDartString(),
-    },
+    outputDetailsRoiIndex.value,
+    _readOcrStrings(outStrings),
   );
 
   calloc.free(outputRois);
-  calloc.free(outputIsDetected);
   calloc.free(outputRoisPtr);
+  calloc.free(outputIsDetected);
   calloc.free(outputRoisCount);
-  calloc.free(outputdetailsRoiIndex);
-  // score items
-  calloc.free(scorePtr);
-  calloc.free(marvelousPtr);
-  calloc.free(perfectPtr);
-  calloc.free(greatPtr);
-  calloc.free(goodPtr);
-  calloc.free(missPtr);
-  calloc.free(outStrings);
-
+  calloc.free(outputDetailsRoiIndex);
+  _freeOcrStrings(outStrings);
   return result;
 }
 
-Future<ProcessResult> _processFrame(ProcessImageRequestParams params) async {
+Future<ProcessResult> _processPickedImage(
+    Pointer<Void> handle, ProcessPickedImageRequestParams params) async {
+  final outputIsDetected = calloc<Int32>();
+  final outputRoisCount = calloc<Int32>();
+  final outputRoisPtr = calloc<Pointer<Int32>>();
+  final outputDetailsRoiIndex = calloc<Int32>();
+  final outStrings = calloc<COCRStrings>();
+
+  final imagePathPtr = params.imagePath.toNativeUtf8();
+  _processPickedImageFn(
+    handle,
+    imagePathPtr,
+    outputIsDetected,
+    outputRoisPtr,
+    outputRoisCount,
+    outputDetailsRoiIndex,
+    outStrings,
+    kDetectionSide.index,
+  );
+  calloc.free(imagePathPtr);
+
+  return _buildAndFreeResult(
+    outputIsDetected: outputIsDetected,
+    outputRoisPtr: outputRoisPtr,
+    outputRoisCount: outputRoisCount,
+    outputDetailsRoiIndex: outputDetailsRoiIndex,
+    outStrings: outStrings,
+  );
+}
+
+Future<ProcessResult> _processFrame(
+    Pointer<Void> handle, ProcessImageRequestParams params) async {
   final bytes = params.bytes.materialize().asUint8List();
-  // final bytes = params.bytes;
 
-  Pointer<Uint8> imgBuffer = calloc<Uint8>(bytes.length);
-  var uintImgBuffer = imgBuffer.asTypedList(bytes.length);
-  uintImgBuffer.setAll(0, bytes);
+  final imgBuffer = calloc<Uint8>(bytes.length);
+  imgBuffer.asTypedList(bytes.length).setAll(0, bytes);
 
-  Pointer<Int32> outputRoi =
-      calloc.allocate<Int32>(4 * 4); // x, y, width, height
-  Pointer<Int32> outputIsDetected = calloc.allocate<Int32>(4);
-
-  Pointer<Int32> outputImgSize = calloc.allocate<Int32>(4 * 2); // width, height
-
-  // return ProcessImageResult(
-  //   100, // Placeholder score
-  //   DifficultyType.FFXI, // Placeholder difficulty
-  //   const Rectangle<int>(0, 0, 1100, 100),
-  //   true,
-  //   null,
-  // );
-
-  Pointer<Uint8> outputImgBuff =
-      nullptr; // Placeholder for processed image buffer
-
-  print(params.tempPath);
+  final outputIsDetected = calloc<Int32>();
+  final outputRoisCount = calloc<Int32>();
+  final outputRoisPtr = calloc<Pointer<Int32>>();
+  final outputDetailsRoiIndex = calloc<Int32>();
+  final outStrings = calloc<COCRStrings>();
 
   _processCameraImageFn(
-      params.width,
-      params.height,
-      params.bytesPerPixel,
-      imgBuffer,
-      outputRoi,
-      outputIsDetected,
-      outputImgSize,
-      outputImgBuff,
-      params.tempPath.toNativeUtf8());
-
-  if (outputRoi == nullptr) {
-    calloc.free(outputIsDetected);
-    calloc.free(outputRoi);
-    calloc.free(imgBuffer);
-    calloc.free(outputImgSize);
-    return ProcessResult(DifficultyType.None, null, [], false,
-        ReturnImageType.None, null, -1, {});
-  }
-
-  final rectArray = outputRoi.cast<Int32>().asTypedList(4);
-
-  // final imgArray = outputImgBuff.cast<Uint8>().asTypedList(
-  //     params.width * params.height * params.bytesPerPixel); // Assuming RGBA
-
-  ProcessResult result = ProcessResult(
-    DifficultyType.FFXI, // Placeholder difficulty
-    Rectangle<int>(
-      rectArray[0],
-      rectArray[1],
-      rectArray[2],
-      rectArray[3],
-    ),
-    null,
-    outputIsDetected.value != 0,
-    ReturnImageType.BytesImage,
-    null,
-    null, // Placeholder for details detected
-    {},
+    handle,
+    params.width,
+    params.height,
+    params.bytesPerPixel,
+    imgBuffer,
+    outputIsDetected,
+    outputRoisPtr,
+    outputRoisCount,
+    outputDetailsRoiIndex,
+    outStrings,
   );
-
-  calloc.free(outputRoi);
   calloc.free(imgBuffer);
-  calloc.free(outputIsDetected);
-  calloc.free(outputImgSize);
-  calloc.free(outputImgBuff);
 
-  return result;
+  return _buildAndFreeResult(
+    outputIsDetected: outputIsDetected,
+    outputRoisPtr: outputRoisPtr,
+    outputRoisCount: outputRoisCount,
+    outputDetailsRoiIndex: outputDetailsRoiIndex,
+    outStrings: outStrings,
+  );
 }
 
 void isolateEntryPoint(InitialRequest initReq) {
   // Save the port on which we will send messages to the main thread
   SendPort _toMainThread = initReq.toMainThread;
 
+  // This isolate owns its own native DdrocrInstance for its whole lifetime, so
+  // it is the sole thread ever touching that instance (and its Tesseract APIs).
+  final dataPathPtr = initReq.appPath.toNativeUtf8();
+  final handle = _createOcrInstanceFn(dataPathPtr);
+  calloc.free(dataPathPtr);
+  _callSetOcrConfig(handle);
+
   // Create a port on which the main thread can send us messages and listen to it
   ReceivePort fromMainThread = ReceivePort();
-  _callSetOcrConfig();
   fromMainThread.listen((data) {
     if (data is Request) {
       switch (data.type) {
         case RequestType.ProcessPickedImage:
-          ProcessResult? res;
-          var path = data.pickedImagePath!;
-          var appPath = initReq.appPath;
-          final params = ProcessPickedImageRequestParams(
-            imagePath: path,
-            outputPath: appPath,
-          );
-          _processPickedImage(params).then((result) {
-            res = result;
-            // Send the result back to the main thread
-            _toMainThread.send(res);
-          });
+          final params =
+              ProcessPickedImageRequestParams(imagePath: data.pickedImagePath!);
+          _processPickedImage(handle, params).then(_toMainThread.send);
           break;
         case RequestType.ProcessVideoImage:
-          ProcessResult? res;
-
-          var image = data.params!;
-          Uint8List bytes;
-
-          if (image.format.group == ImageFormatGroup.yuv420) {
-            // On Android the image format is YUV and we get a buffer per channel,
-            // in iOS the format is BGRA and we get a single buffer for all channels.
-            // So the yBuffer variable on Android will be just the Y channel but on iOS it will be
-            // the entire image
-            var planes = image.planes;
-            var yBuffer = planes[0].bytes;
-            var uBuffer = planes[1].bytes;
-            var vBuffer = planes[2].bytes;
-            int totalSize = yBuffer.lengthInBytes +
-                uBuffer.lengthInBytes +
-                vBuffer.lengthInBytes;
-            bytes = Uint8List(totalSize);
-            bytes.setAll(0, yBuffer);
-            //Swap the u and v buffers since thats what opencv wants for some reason
-            //(flutter opencv stream processing says so)
-
-            bytes.setAll(yBuffer.lengthInBytes, vBuffer);
-            bytes.setAll(
-                yBuffer.lengthInBytes + vBuffer.lengthInBytes, uBuffer);
-          } else {
-            bytes = image.planes.first.bytes;
-          }
-
-          // Create TransferableTypedData for zero-copy transfer (theoretically we relinquish ownership here but should be fine)
-          final transferable = TransferableTypedData.fromList([bytes]);
-
-          final params = ProcessImageRequestParams(
-            bytes: transferable,
-            width: image.width,
-            height: image.height,
-            bytesPerPixel: 4,
-            tempPath: initReq.appPath,
-          );
-
-          _processFrame(params).then((result) {
-            res = result;
-            // Send the result back to the main thread
-            _toMainThread.send(res);
-          });
+          _processFrame(handle, data.cameraParams!).then(_toMainThread.send);
           break;
-
         case RequestType.Shutdown:
-          // Clean up and exit
+          _destroyOcrInstanceFn(handle);
           fromMainThread.close();
           Isolate.exit();
-          break;
-        default:
-          print('Unknown method: ${data.type.name}');
       }
     }
   });
@@ -536,7 +455,6 @@ void isolateEntryPoint(InitialRequest initReq) {
 }
 
 class OCRProcessor {
-  static OCRProcessor? _instance;
   Directory? tempDir;
   Directory? appDir; // for iOS
 
@@ -633,7 +551,7 @@ class OCRProcessor {
     toIsolate?.send(request);
   }
 
-  void processVideostreamFrame(CameraImage image) async {
+  void processVideostreamFrame(CameraImage image) {
     _cameraFrames++;
     if (_cameraFrames % FRAME_THRESHOLD != 0) {
       return;
@@ -647,11 +565,35 @@ class OCRProcessor {
       return;
     }
 
-    print('Processing image frame... Camera frame #: $_cameraFrames');
+    // Extract the frame bytes here (main thread) and hand them to the isolate
+    // via TransferableTypedData so the cross-isolate transfer is zero-copy.
+    Uint8List bytes;
+    if (image.format.group == ImageFormatGroup.yuv420) {
+      // Android: a buffer per YUV channel. iOS: a single BGRA buffer.
+      final planes = image.planes;
+      final yBuffer = planes[0].bytes;
+      final uBuffer = planes[1].bytes;
+      final vBuffer = planes[2].bytes;
+      final totalSize =
+          yBuffer.lengthInBytes + uBuffer.lengthInBytes + vBuffer.lengthInBytes;
+      bytes = Uint8List(totalSize);
+      bytes.setAll(0, yBuffer);
+      // Swap u and v buffers since that's what OpenCV's NV21 conversion expects.
+      bytes.setAll(yBuffer.lengthInBytes, vBuffer);
+      bytes.setAll(yBuffer.lengthInBytes + vBuffer.lengthInBytes, uBuffer);
+    } else {
+      bytes = image.planes.first.bytes;
+    }
 
-    final request = Request.fromCamera(RequestType.ProcessVideoImage, image);
+    final params = ProcessImageRequestParams(
+      bytes: TransferableTypedData.fromList([bytes]),
+      width: image.width,
+      height: image.height,
+      bytesPerPixel: 4,
+    );
+
+    final request = Request.fromCamera(RequestType.ProcessVideoImage, params);
     _isProcessing = true;
-
     toIsolate?.send(request);
   }
 

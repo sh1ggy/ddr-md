@@ -8,9 +8,10 @@ import 'dart:math';
 
 import 'package:camera/camera.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
-import 'package:ddr_md/components/roi_overlay.dart';
+import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:path_provider/path_provider.dart';
 
 enum CameraState {
@@ -29,17 +30,23 @@ class OcrPage extends StatefulWidget {
 late Directory tempDir;
 String get tempPath => '${tempDir.path}/temp.jpg';
 
-class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
-  bool _isImageLoaded = false;
+class _OcrPageState extends State<OcrPage>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool _isCameraActive = false;
   CameraController? _controller;
   late OCRProcessor _ocrProcessor;
   ProcessResult? _lastResult;
   double _camFrameToScreenScale = 0;
-  int _processedFrames = 0;
-  double lastTimeProcessed = 0.0;
 
   CameraImage? _lastFrame;
+
+  // Last-known ROIs (scaled to screen space) painted on every frame, decoupled
+  // from the throttled OCR results that feed it.
+  final ValueNotifier<(List<Rectangle<int>>, int?)> _roiData =
+      ValueNotifier(([], null));
+  // Bumped once per vsync to drive the ROI overlay repaint.
+  final ValueNotifier<int> _frameTick = ValueNotifier(0);
+  late final Ticker _ticker;
 
   @override
   void initState() {
@@ -47,34 +54,22 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
 
     // Add observer to listen for app lifecycle changes
     WidgetsBinding.instance.addObserver(this);
+
+    // Repaint the ROI overlay every frame from the last-known result.
+    _ticker = createTicker((_) => _frameTick.value++)..start();
+
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
-      setState(() {
-        if (result.roi == null) {
-          return;
-        }
-        // This is fine to do since we are measuring from top left, width and height
-        var newRoi = Rectangle<int>(
-          (result.roi!.left * _camFrameToScreenScale).toInt(),
-          (result.roi!.top * _camFrameToScreenScale).toInt(),
-          (result.roi!.width * _camFrameToScreenScale).toInt(),
-          (result.roi!.height * _camFrameToScreenScale).toInt(),
-        );
-
-        // TODO here is where the state for the result should be created and processed instead of this
-        var fin = ProcessResult(
-          result.difficulty,
-          newRoi,
-          null,
-          result.isDetected,
-          result.returnImageType,
-          result.processedImageBytes,
-          result.detailsRoiIndex,
-          result.ocrStrings,
-        );
-
-        _lastResult = fin;
-      });
+      final scaled = (result.detectedRois ?? [])
+          .map((r) => Rectangle<int>(
+                (r.left * _camFrameToScreenScale).toInt(),
+                (r.top * _camFrameToScreenScale).toInt(),
+                (r.width * _camFrameToScreenScale).toInt(),
+                (r.height * _camFrameToScreenScale).toInt(),
+              ))
+          .toList();
+      _roiData.value = (scaled, result.detailsRoiIndex);
+      setState(() => _lastResult = result);
     });
 
     getTemporaryDirectory().then((dir) => tempDir = dir);
@@ -90,6 +85,9 @@ class _OcrPageState extends State<OcrPage> with WidgetsBindingObserver {
     //     _controller?.stopImageStream();
     //   }
     // }
+    _ticker.dispose();
+    _frameTick.dispose();
+    _roiData.dispose();
     _controller?.dispose();
     _controller = null;
     _ocrProcessor.dispose();
@@ -266,9 +264,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
   bool get cameraReady =>
       _controller != null && _controller!.value.isInitialized;
 
-  bool get hasRoi =>
-      _lastResult?.isDetected == true && _lastResult?.roi != null;
-
   CameraState get cameraState {
     if (!cameraReady) return CameraState.notReady;
     if (!_isCameraActive) return CameraState.inactive;
@@ -277,55 +272,29 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
 
   @override
   Widget build(BuildContext context) {
+    final ocrStrings = _lastResult?.ocrStrings ?? const {};
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("OCR Page"),
-        actions: [
-          ElevatedButton(
-            onPressed: () async {
-              await Navigator.pushReplacement(context,
-                  MaterialPageRoute(builder: (context) => const LoadImage()));
-            },
-            child: const Text("Load Image"),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text("Camera")),
       body: Center(
         child: switch (cameraState) {
           CameraState.notReady => const Text("Camera not started"),
           CameraState.inactive => const Text("Camera stopped"),
-          CameraState.active => RoiOverlay(
-              rois: hasRoi ? [_lastResult!.roi!] : const [],
-              child: CameraPreview(_controller!),
+          CameraState.active => RepaintBoundary(
+              child: CustomPaint(
+                foregroundPainter: _CameraRoiPainter(_roiData, _frameTick),
+                child: CameraPreview(_controller!),
+              ),
             ),
         },
-        // // Dump button
-        // Positioned(
-        //   bottom: 80,
-        //   left: 0,
-        //   right: 0,
-        //   child: Center(
-        //     child: ElevatedButton.icon(
-        //       onPressed: _requestDump,
-        //       icon: Icon(Icons.save),
-        //       label: Text('Dump YUV Frame'),
-        //       style: ElevatedButton.styleFrom(
-        //         padding:
-        //             const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        //         backgroundColor: Colors.blue,
-        //       ),
-        //     ),
-        //   ),
-        // ),
       ),
       bottomNavigationBar: SafeArea(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (_lastResult != null) ...[
-                const SizedBox(height: 8),
                 Center(
                   child: Text(
                     _lastResult!.isDetected ? "(Detected)" : "(Not Detected)",
@@ -335,8 +304,9 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
                     ),
                   ),
                 ),
-                Text(
-                    'Difficulty: ${_lastResult!.difficulty}'),
+                ...ocrStrings.entries.map((e) => OCRKeyValue(
+                    keyName: e.key.toUpperCase(), value: e.value)),
+                const SizedBox(height: 8),
               ],
               ElevatedButton(
                 onPressed: _toggleCamera,
@@ -350,4 +320,21 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
       ),
     );
   }
+}
+
+// Repaints every frame (driven by [frameTick]) using the latest [roiData], so the
+// Details ROI stays painted on the live preview between throttled OCR results.
+class _CameraRoiPainter extends CustomPainter {
+  _CameraRoiPainter(this.roiData, Listenable frameTick) : super(repaint: frameTick);
+
+  final ValueNotifier<(List<Rectangle<int>>, int?)> roiData;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final (rois, detailsRoiIndex) = roiData.value;
+    paintRois(canvas, rois, detailsRoiIndex);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CameraRoiPainter oldDelegate) => false;
 }

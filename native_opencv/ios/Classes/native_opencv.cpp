@@ -29,11 +29,6 @@
 using namespace cv;
 using namespace std;
 
-// Static OCR instance and config
-static DdrocrInstance *instance = nullptr;
-static COCRConfig g_config;
-static bool g_configSet = false;
-
 long long int get_now()
 {
     return chrono::duration_cast<std::chrono::milliseconds>(
@@ -44,7 +39,7 @@ long long int get_now()
 void platform_log(const char *fmt, ...)
 {
 #ifdef NDEBUG
-    return;
+    // return;
 #endif
     va_list args;
     va_start(args, fmt);
@@ -86,6 +81,44 @@ static char *allocCString(const std::string &s)
     return buf;
 }
 
+// Marshal a ProcessImgResult into the FFI output pointers. The caller (Dart) owns
+// and frees *outputRois and every COCRStrings char*.
+static void writeResult(
+    const ProcessImgResult &result,
+    int32_t *outputIsDetected,
+    int32_t **outputRois,
+    int32_t *outputRoisCount,
+    int32_t *outputDetailsRoiIndex,
+    COCRStrings *outStrings)
+{
+    int actualCount = (int)result.rois.size();
+    *outputRois = (int32_t *)malloc(sizeof(int32_t) * actualCount * 4);
+    int32_t *roisPtr = *outputRois;
+    for (size_t i = 0; i < result.rois.size(); i++)
+    {
+        roisPtr[i * 4 + 0] = result.rois[i].tl().x;
+        roisPtr[i * 4 + 1] = result.rois[i].tl().y;
+        roisPtr[i * 4 + 2] = result.rois[i].width;
+        roisPtr[i * 4 + 3] = result.rois[i].height;
+    }
+    *outputRoisCount = actualCount;
+    *outputIsDetected = result.isDetected;
+    *outputDetailsRoiIndex = result.detailsRoiIndex;
+
+    const auto &ocr = result.ocrResults;
+    outStrings->score = allocCString(ocr.score.text);
+    outStrings->marvelous = allocCString(ocr.marvelous.text);
+    outStrings->perfect = allocCString(ocr.perfect.text);
+    outStrings->great = allocCString(ocr.great.text);
+    outStrings->good = allocCString(ocr.good.text);
+    outStrings->miss = allocCString(ocr.miss.text);
+    outStrings->flare = allocCString(ocr.flare.text);
+    outStrings->title = allocCString(ocr.title.text);
+    outStrings->username = allocCString(ocr.username.text);
+    outStrings->difficulty = allocCString(ocr.difficulty.text);
+    outStrings->maxCombo = allocCString(ocr.max_combo.text);
+}
+
 // Avoiding name mangling
 extern "C"
 {
@@ -96,35 +129,39 @@ extern "C"
     }
 
     FUNCTION_ATTRIBUTE
-    void set_ocr_config(COCRConfig *config)
+    void *create_ocr_instance(char *dataPath)
     {
-        g_config = *config;
-        g_configSet = true;
-        if (instance != nullptr)
-            instance->setConfig(g_config);
+        DdrocrInstance *instance = new DdrocrInstance(std::string(dataPath));
+        platform_log("DdrocrInstance created %p\n", instance);
+        return instance;
+    }
+
+    FUNCTION_ATTRIBUTE
+    void destroy_ocr_instance(void *handle)
+    {
+        delete static_cast<DdrocrInstance *>(handle);
+        platform_log("DdrocrInstance destroyed %p\n", handle);
+    }
+
+    FUNCTION_ATTRIBUTE
+    void set_ocr_config(void *handle, COCRConfig *config)
+    {
+        static_cast<DdrocrInstance *>(handle)->setConfig(*config);
         platform_log("set_ocr_config called\n");
     }
 
     FUNCTION_ATTRIBUTE
     void process_picked_image(
+        void *handle,
         char *inputImagePath,
         int32_t *outputIsDetected,
-        char *outputImgPath,
         int32_t **outputRois,
         int32_t *outputRoisCount,
         int32_t *outputdetailsRoiIndex,
         COCRStrings *outStrings,
         int32_t side)
     {
-        // TODO evaluate a static instance of DdrocrInstance instead of initializing with Ocrprocessor
-        // For now, this lives for the lifetime of the app
-        if (instance == nullptr)
-        {
-            instance = new DdrocrInstance(std::string(outputImgPath));
-            if (g_configSet)
-                instance->setConfig(g_config);
-            platform_log("DdrocrInstance initialized\n");
-        }
+        DdrocrInstance *instance = static_cast<DdrocrInstance *>(handle);
 
         Mat img = imread(inputImagePath);
         if (img.empty())
@@ -136,108 +173,65 @@ extern "C"
         ProcessImgResult result = instance->process_image(img, static_cast<DetectionSide>(side));
         if (!result.isDetected)
         {
-            platform_log("No OCR region detected, skipping saving processed image.\n");
+            platform_log("No OCR region detected.\n");
             *outputIsDetected = result.isDetected;
             return;
         }
-        int actualCount = (int)result.rois.size();
-        *outputRois = (int32_t *)malloc(sizeof(int32_t) * actualCount * 4);
-        int32_t *roisPtr = *outputRois;
-        for (size_t i = 0; i < result.rois.size(); i++)
-        {
-            roisPtr[i * 4 + 0] = result.rois[i].tl().x;
-            roisPtr[i * 4 + 1] = result.rois[i].tl().y;
-            roisPtr[i * 4 + 2] = result.rois[i].width;
-            roisPtr[i * 4 + 3] = result.rois[i].height;
-        }
-        *outputRoisCount = actualCount;
-        *outputIsDetected = result.isDetected;
-        *outputdetailsRoiIndex = result.detailsRoiIndex;
-
-        const auto &ocr = result.ocrResults;
-        outStrings->score = allocCString(ocr.score.text);
-        outStrings->marvelous = allocCString(ocr.marvelous.text);
-        outStrings->perfect = allocCString(ocr.perfect.text);
-        outStrings->great = allocCString(ocr.great.text);
-        outStrings->good = allocCString(ocr.good.text);
-        outStrings->miss = allocCString(ocr.miss.text);
-        outStrings->flare = allocCString(ocr.flare.text);
-        outStrings->title = allocCString(ocr.title.text);
-        outStrings->username = allocCString(ocr.username.text);
-        outStrings->difficulty = allocCString(ocr.difficulty.text);
-        outStrings->maxCombo = allocCString(ocr.max_combo.text);
+        writeResult(result, outputIsDetected, outputRois, outputRoisCount,
+                    outputdetailsRoiIndex, outStrings);
     }
 
     // TODO pass in img rotation
     FUNCTION_ATTRIBUTE
     void process_camera_image(
+        void *handle,
         int32_t imgWidth,
         int32_t imgHeight,
         int32_t bytesPerPixel,
         uint8_t *imgBuffer,
-        int32_t *outputRoi,
         int32_t *outputIsDetected,
-        int32_t *outputImgSize,
-        uint8_t *outputImgBuff,
-        char *outputImgPath)
+        int32_t **outputRois,
+        int32_t *outputRoisCount,
+        int32_t *outputdetailsRoiIndex,
+        COCRStrings *outStrings)
     {
-        if (instance == nullptr)
-        {
-            instance = new DdrocrInstance(std::string(outputImgPath));
-            if (g_configSet)
-                instance->setConfig(g_config);
-            platform_log("DdrocrInstance initialized\n");
-        }
-
-        long long start = get_now();
+        DdrocrInstance *instance = static_cast<DdrocrInstance *>(handle);
         Mat img;
 
 #ifdef __ANDROID__
 
         // yuv is weird, see https://www.youtube.com/watch?v=q_mhF_Ys6nw
         Mat frame(imgHeight + imgHeight / 2, imgWidth, CV_8UC1, imgBuffer); // frame size: 1600x1800, frame channels: 1 , type = 0
-        // cvtColor(frame, img, COLOR_YUV2RGB);
         cvtColor(frame, img, COLOR_YUV2BGR_NV21);
         rotate(img, img, ROTATE_90_CLOCKWISE);
-        // platform_log("Image size: %dx%d\n", img.cols, img.rows); // 1600x1200,  Image channels: 3, Image type: 16
-        // platform_log("Image channels: %d\n", img.channels());
-        // platform_log("Image depth: %d\n", img.depth());
-        // platform_log("Image type: %d\n", img.type());
 #else
         Mat bgra(imgHeight, imgWidth, CV_8UC4, imgBuffer);
         cvtColor(bgra, img, COLOR_BGRA2BGR);
-        platform_log("Image size: %dx%d\n", img.cols, img.rows);
-        platform_log("Image channels: %d\n", img.channels());
 #endif
 
         if (img.empty())
         {
-            platform_log("Could not open or find the image: %s\n", outputImgPath);
+            platform_log("Camera image empty\n");
+            *outputIsDetected = 0;
+            return;
         }
 
-        platform_log("Saved input image to %s\n", outputImgPath);
         try
         {
             ProcessImgResult result = instance->process_image(img);
             if (!result.isDetected)
             {
-                platform_log("No OCR region detected, skipping saving processed image.\n");
                 *outputIsDetected = result.isDetected;
                 return;
             }
-            platform_log("Saved processed image to %s\n", outputImgPath);
-            *outputIsDetected = result.isDetected;
-            outputRoi[0] = result.rois[0].tl().x;
-            outputRoi[1] = result.rois[0].tl().y;
-            outputRoi[2] = result.rois[0].width;
-            outputRoi[3] = result.rois[0].height;
-
-            platform_log("Returned OCR ROI: x=%d, y=%d, w=%d, h=%d\n", outputRoi[0], outputRoi[1], outputRoi[2], outputRoi[3]);
+            writeResult(result, outputIsDetected, outputRois, outputRoisCount,
+                        outputdetailsRoiIndex, outStrings);
             return;
         }
         catch (cv::Exception &e)
         {
             platform_log(e.what());
+            *outputIsDetected = 0;
             return;
         }
     }
