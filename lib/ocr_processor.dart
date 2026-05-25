@@ -457,7 +457,12 @@ class OCRProcessor {
   // TODO: two controllers cos dynamic is gay
   final streamResultController = StreamController<ProcessResult>.broadcast();
 
-  bool _isProcessing = false;
+  /// Publicly observable processing state. True while the isolate is crunching
+  /// a frame or picked image; false once a result (or panic reset) arrives.
+  final ValueNotifier<bool> isProcessing = ValueNotifier(false);
+
+  bool get _isProcessing => isProcessing.value;
+  set _isProcessing(bool v) => isProcessing.value = v;
   ReceivePort fromIsolate = ReceivePort();
   SendPort? toIsolate;
   Isolate? _isolate;
@@ -597,6 +602,7 @@ class OCRProcessor {
   }
 
   void dispose() {
+    isProcessing.dispose();
     final request = Request.death();
     fromIsolate.sendPort.send(request);
     fromIsolate.close();

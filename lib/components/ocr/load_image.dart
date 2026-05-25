@@ -59,6 +59,10 @@ class _LoadImageState extends State<LoadImage> {
   }
 
   Future<void> _initLoadImage() async {
+    // init() (tessdata copy) and initActor() (isolate spawn + create_ocr_instance)
+    // must still be sequential — the isolate needs the app path from init() —
+    // but we kick them off immediately so the page renders while they run in the
+    // background. The button stays disabled until both complete.
     await _ocrProcessor.init();
     await _ocrProcessor.initActor();
     if (mounted) setState(() => _isReady = true);
@@ -217,7 +221,18 @@ class _LoadImageState extends State<LoadImage> {
 class OCRKeyValue extends StatelessWidget {
   final String keyName;
   final String value;
-  const OCRKeyValue({super.key, required this.keyName, required this.value});
+  // Optional agreement ratio (0..1) shown as a faint percentage; used by the
+  // live camera panel to convey how consistently this value was read.
+  final double? confidence;
+  // Optional number of samples that agreed on this value, shown as "(N)" beside
+  // the percentage.
+  final int? sampleCount;
+  const OCRKeyValue(
+      {super.key,
+      required this.keyName,
+      required this.value,
+      this.confidence,
+      this.sampleCount});
 
   Color _colorForKey(String k) {
     final s = k.toLowerCase();
@@ -255,12 +270,28 @@ class OCRKeyValue extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (confidence != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Text(
+                    sampleCount != null
+                        ? '${(confidence! * 100).round()}% ($sampleCount)'
+                        : '${(confidence! * 100).round()}%',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ),
+            ],
           ),
         ),
       ],

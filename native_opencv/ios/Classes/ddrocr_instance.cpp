@@ -312,16 +312,16 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
                            cv::BORDER_CONSTANT, cv::Scalar(1));
 
         // Save raw and preprocessed details ROI candidates to debug subfolder
-        if (!detailsRoiDir.empty())
-        {
-            char rawStem[512], prepStem[512];
-            snprintf(rawStem, sizeof(rawStem), "details_rois/roi_%zu_raw", i);
-            snprintf(prepStem, sizeof(prepStem), "details_rois/roi_%zu_preprocessed", i);
+        // if (!detailsRoiDir.empty())
+        // {
+        //     char rawStem[512], prepStem[512];
+        //     snprintf(rawStem, sizeof(rawStem), "details_rois/roi_%zu_raw", i);
+        //     snprintf(prepStem, sizeof(prepStem), "details_rois/roi_%zu_preprocessed", i);
 
-            save_img(rawStem, logicalToDisplayU8(roiMat));
-            save_img(prepStem, logicalToDisplayU8(detailsInput));
-            platform_log("[DEBUG] saved details ROI %zu: %s/%s.png\n", i, debugDir.c_str(), rawStem);
-        }
+        //     save_img(rawStem, logicalToDisplayU8(roiMat));
+        //     save_img(prepStem, logicalToDisplayU8(detailsInput));
+        //     platform_log("[DEBUG] saved details ROI %zu: %s/%s.png\n", i, debugDir.c_str(), rawStem);
+        // }
 
         auto t_ocr_start = std::chrono::high_resolution_clock::now();
         roiOcrResult = ocrWrapper.performOCR(detailsInput.clone(), OCRType::Details);
@@ -350,6 +350,19 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         {
             detectedDetailsIndices.push_back(i);
             platform_log("Found 'Details' (loose match) with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
+
+            // Only dump the ROI image once it has actually matched "Details", so
+            // non-details candidate boxes — and every camera frame that finds
+            // nothing — don't flood the debug folder.
+            if (!detailsRoiDir.empty())
+            {
+                char rawStem[512], prepStem[512];
+                snprintf(rawStem, sizeof(rawStem), "details_rois/roi_%zu_raw", i);
+                snprintf(prepStem, sizeof(prepStem), "details_rois/roi_%zu_preprocessed", i);
+                save_img(rawStem, logicalToDisplayU8(roiMat));
+                save_img(prepStem, logicalToDisplayU8(detailsInput));
+                platform_log("[DEBUG] saved details ROI %zu: %s/%s.png\n", i, debugDir.c_str(), rawStem);
+            }
         }
     }
 

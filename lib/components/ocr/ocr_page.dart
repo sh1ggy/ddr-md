@@ -15,8 +15,13 @@ import 'package:flutter/scheduler.dart';
 import 'package:path_provider/path_provider.dart';
 
 enum CameraState {
+  /// OCR processor or camera controller not yet initialised.
   notReady,
+  /// Camera is ready but no OCR session has been started yet.
+  neverRecorded,
+  /// A session has been run and stopped; cached results are visible.
   inactive,
+  /// Live OCR stream is active.
   active,
 }
 
@@ -30,16 +35,27 @@ class OcrPage extends StatefulWidget {
 late Directory tempDir;
 String get tempPath => '${tempDir.path}/temp.jpg';
 
+// Stable display order for the OCR'd score fields.
+const List<String> _ocrKeyOrder = [
+  'score',
+  'marvelous',
+  'perfect',
+  'great',
+  'good',
+  'miss',
+];
+
 class _OcrPageState extends State<OcrPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool _isCameraActive = false;
   bool _isTogglingCamera = false;
+  // True once the user has started (and stopped) at least one OCR session.
+  bool _hasRecorded = false;
   CameraController? _controller;
   late OCRProcessor _ocrProcessor;
-  ProcessResult? _lastResult;
-  // Holds the most recent result where isDetected == true so the score
-  // panel persists across frames that fail to detect.
-  ProcessResult? _lastDetectedResult;
+  // Accumulates OCR readings across frames; the cached values survive frames
+  // that fail to read so the panel stays populated.
+  final _OcrAggregator _aggregator = _OcrAggregator();
   double _camFrameToScreenScale = 0;
   // Raw camera frame dimensions (landscape BGRA on iOS) used for ROI transform.
   int _rawFrameWidth = 0;
@@ -111,10 +127,14 @@ class _OcrPageState extends State<OcrPage>
         );
       }).toList();
       _roiData.value = (scaled, result.detailsRoiIndex);
-      setState(() {
-        _lastResult = result;
-        if (result.isDetected) _lastDetectedResult = result;
-      });
+      // Only count and display when the Details ROI was actually found and
+      // at least one OCR string contributed a non-empty value to the tally.
+      final detailsFound =
+          result.detailsRoiIndex != null && result.detailsRoiIndex! >= 0;
+      if (detailsFound && result.ocrStrings.isNotEmpty) {
+        final added = _aggregator.add(result.ocrStrings);
+        if (added) setState(() {});
+      }
     });
 
     getTemporaryDirectory().then((dir) => tempDir = dir);
@@ -141,45 +161,44 @@ class _OcrPageState extends State<OcrPage>
 
   Future<void> _initCamera() async {
     try {
-      await _ocrProcessor.init();
-      await _ocrProcessor.initActor();
+      // Run OCR processor init and camera discovery in parallel — Tesseract
+      // loading and isolate spawn are independent of the camera controller.
+      final ocrFuture = _ocrProcessor.init().then((_) => _ocrProcessor.initActor());
+      final camerasFuture = availableCameras();
 
-      final cameras = await availableCameras();
-      var cameraId = 0;
-
-      if (cameras.isEmpty) {
-        throw Exception('No cameras available');
-      }
+      // Let the camera preview appear as soon as the controller is ready,
+      // without waiting for OCR (the FAB stays hidden until both are done).
+      final cameras = await camerasFuture;
+      if (cameras.isEmpty) throw Exception('No cameras available');
 
       _controller = CameraController(
-        cameras[cameraId],
+        cameras[0],
         ResolutionPreset.max,
         enableAudio: false,
       );
-
-      //TODO if controller not initialized, reroute back to other page and put up a snackbar saying user is cring
-
       await _controller!.initialize();
+
+      // Show the preview immediately; OCR may still be loading.
+      if (mounted) setState(() {});
+
+      // Now wait for OCR to finish — after this the FAB becomes active.
+      await ocrFuture;
 
       print('AS: ${_controller!.value.aspectRatio}'
           '   SIZE: ${_controller!.value.previewSize}'
           '   ORIENTATION: ${_controller!.value.deviceOrientation}'
           '   RES PRESET: ${_controller!.resolutionPreset}'
           '   IMG FMT GROUP: ${_controller!.imageFormatGroup}'
-          '   CAMERA SENSOR: ${cameras[cameraId].sensorOrientation}');
+          '   CAMERA SENSOR: ${cameras[0].sensorOrientation}');
 
-      setState(() {
-        // _controller! = controller;
-      });
+      if (mounted) setState(() {});
     } on CameraException catch (e) {
       print('Error initializing camera: $e');
       if (!mounted) return;
       Navigator.pushNamed(context, "/");
-      setState(() {});
     } catch (e) {
       if (!mounted) return;
       Navigator.pushNamed(context, "/");
-      setState(() {});
     }
   }
 
@@ -295,6 +314,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
         }
         setState(() {
           _isCameraActive = false;
+          _hasRecorded = true;
         });
         print('Camera stopped. New state: $_isCameraActive');
       } else {
@@ -306,6 +326,8 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           await _controller!.startImageStream(_processImage);
           setState(() {
             _isCameraActive = true;
+            // Start a fresh collection so cached values reflect this run only.
+            _aggregator.clear();
           });
           print('Camera started. New state: $_isCameraActive');
         } else {
@@ -322,61 +344,269 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
   bool get cameraReady =>
       _controller != null && _controller!.value.isInitialized;
 
+  // OCR processor is ready once the isolate send-port has been established.
+  // We reuse _ocrProcessor.toIsolate as the readiness signal.
+  bool get _ocrReady => _ocrProcessor.toIsolate != null;
+
   CameraState get cameraState {
-    if (!cameraReady) return CameraState.notReady;
-    if (!_isCameraActive) return CameraState.inactive;
-    return CameraState.active;
+    if (!cameraReady || !_ocrReady) return CameraState.notReady;
+    if (_isCameraActive) return CameraState.active;
+    if (_hasRecorded) return CameraState.inactive;
+    return CameraState.neverRecorded;
   }
 
   @override
   Widget build(BuildContext context) {
-    // Show strings from the last detected frame, falling back to last result.
-    final ocrStrings = _lastDetectedResult?.ocrStrings ?? _lastResult?.ocrStrings ?? const {};
+    final bool fullyReady = cameraReady && _ocrReady;
+    final bool canStart = _isCameraActive || fullyReady;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Camera")),
-      body: Center(
-        child: switch (cameraState) {
-          CameraState.notReady => const Text("Camera not started"),
-          CameraState.inactive => const Text("Camera stopped"),
-          CameraState.active => RepaintBoundary(
+      appBar: AppBar(
+        title: const Text("Camera"),
+      ),
+      body: switch (cameraState) {
+        CameraState.notReady =>
+          const Center(child: CircularProgressIndicator()),
+        CameraState.neverRecorded => const Center(
+            child: Text(
+              "Start OCR to begin detection",
+              style: TextStyle(fontSize: 16, color: Colors.black54),
+            ),
+          ),
+        CameraState.inactive => _buildStoppedView(),
+        CameraState.active => _buildActiveView(),
+      },
+      floatingActionButton: FloatingActionButton.extended(
+        // Disabled (null onPressed + grey) until both camera and OCR are
+        // ready. Stop is always enabled once a session is active.
+        onPressed: canStart ? _toggleCamera : null,
+        backgroundColor: _isCameraActive
+            ? Colors.red
+            : canStart
+                ? null // theme default
+                : Colors.grey.shade400,
+        icon: Icon(_isCameraActive ? Icons.stop : Icons.play_arrow),
+        label: Text(_isCameraActive ? 'Stop OCR' : 'Start OCR'),
+      ),
+    );
+  }
+
+  // Live view: the full-width camera preview (so ROIs scale by
+  // screenWidth / frameWidth, exactly like the picked-image path) with the ROI
+  // overlay, and the running score panel below. A ListView gives the preview the
+  // full screen width and lets it scroll if it is taller than the viewport.
+  Widget _buildActiveView() {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 96),
+      children: [
+        Stack(
+          children: [
+            RepaintBoundary(
               child: CustomPaint(
                 foregroundPainter: _CameraRoiPainter(_roiData, _frameTick),
                 child: CameraPreview(_controller!),
               ),
             ),
-        },
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_lastResult != null) ...[
-                Center(
-                  child: Text(
-                    _lastResult!.isDetected ? "(Detected)" : "(Not Detected)",
-                    style: TextStyle(
-                      color:
-                          _lastResult!.isDetected ? Colors.green : Colors.red,
-                    ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: _ProcessingDot(isProcessing: _ocrProcessor.isProcessing),
+            ),
+          ],
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: _buildScorePanel(live: true),
+        ),
+      ],
+    );
+  }
+
+  // Stopped view: the cached, highest-confidence readings collected this run.
+  Widget _buildStoppedView() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+      children: [
+        const Text(
+          "Camera stopped",
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        ValueListenableBuilder<bool>(
+          valueListenable: _ocrProcessor.isProcessing,
+          builder: (context, processing, _) {
+            if (!processing) return const SizedBox.shrink();
+            return const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 8,
+                    height: 8,
+                    child: CircularProgressIndicator(strokeWidth: 1.5),
                   ),
-                ),
-                ...ocrStrings.entries.map((e) => OCRKeyValue(
-                    keyName: e.key.toUpperCase(), value: e.value)),
-                const SizedBox(height: 8),
-              ],
-              ElevatedButton(
-                onPressed: _toggleCamera,
-                child: Text(
-                  _isCameraActive ? 'Stop Camera' : 'Start Camera',
-                ),
+                  SizedBox(width: 6),
+                  Text(
+                    "Finalising…",
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ],
               ),
-            ],
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _buildScorePanel(live: false),
+      ],
+    );
+  }
+
+  // One row per OCR field showing the most-frequent (highest-confidence) value
+  // and the share of detections that agreed on it.
+  Widget _buildScorePanel({required bool live}) {
+    final rows = <Widget>[
+      for (final key in _ocrKeyOrder)
+        if (_aggregator.best(key) case final best?)
+          OCRKeyValue(
+            keyName: key.toUpperCase(),
+            value: best.value,
+            confidence: best.confidence,
+            sampleCount: best.count,
+          ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            "Detected: ${_aggregator.detectedCount}",
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
           ),
         ),
-      ),
+        if (rows.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              live ? "Reading score…" : "No score captured.",
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.black54),
+            ),
+          )
+        else
+          ...rows,
+      ],
+    );
+  }
+}
+
+// Accumulates the OCR'd text across frames. For each field it tallies every
+// non-empty value seen; the displayed value is the most-frequent one — frequency
+// stands in for confidence, since the native layer reports no score — and it
+// stays cached even when later frames fail to read that field. Picking the modal
+// reading is the noise-robust form of "averaging" a value that should be fixed.
+class _OcrAggregator {
+  final Map<String, Map<String, int>> _counts = {};
+  // Total detections fed in this run (one per [add]), shown as the "detected"
+  // count regardless of which fields each detection read.
+  int _detectedCount = 0;
+
+  int get detectedCount => _detectedCount;
+
+  // Returns true if at least one non-empty value was added to the tally,
+  // in which case _detectedCount is also incremented.
+  bool add(Map<String, String> strings) {
+    bool anyAdded = false;
+    strings.forEach((key, raw) {
+      final value = raw.trim();
+      if (value.isEmpty) return;
+      final tally = _counts.putIfAbsent(key, () => <String, int>{});
+      tally[value] = (tally[value] ?? 0) + 1;
+      anyAdded = true;
+    });
+    if (anyAdded) _detectedCount++;
+    return anyAdded;
+  }
+
+  void clear() {
+    _counts.clear();
+    _detectedCount = 0;
+  }
+
+  // Highest-confidence (most-frequent) reading for [key], the share of
+  // detections that agreed on it, and how many samples agreed ([count]), or
+  // null if the field was never read.
+  ({String value, double confidence, int count})? best(String key) {
+    final tally = _counts[key];
+    if (tally == null || tally.isEmpty) return null;
+    var total = 0;
+    MapEntry<String, int>? top;
+    for (final entry in tally.entries) {
+      total += entry.value;
+      if (top == null || entry.value > top.value) top = entry;
+    }
+    return (value: top!.key, confidence: top.value / total, count: top.value);
+  }
+}
+
+// Pinging green dot shown in the AppBar while the OCR isolate is processing.
+// Animates opacity so it visibly pulses rather than being a static indicator.
+class _ProcessingDot extends StatefulWidget {
+  const _ProcessingDot({required this.isProcessing});
+
+  final ValueNotifier<bool> isProcessing;
+
+  @override
+  State<_ProcessingDot> createState() => _ProcessingDotState();
+}
+
+class _ProcessingDotState extends State<_ProcessingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+    _opacity = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: widget.isProcessing,
+      builder: (context, active, _) {
+        return AnimatedOpacity(
+          opacity: active ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          child: FadeTransition(
+            opacity: _opacity,
+            child: const SizedBox(
+              width: 10,
+              height: 10,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
