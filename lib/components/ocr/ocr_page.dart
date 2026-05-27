@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
@@ -58,9 +59,32 @@ class _OcrPageState extends State<OcrPage>
   final _OcrAggregator _aggregator = _OcrAggregator();
   double _camFrameToScreenScale = 0;
   // Raw camera frame dimensions (landscape BGRA on iOS) used for ROI transform.
+  // These are the pixel dimensions of the frame the native layer processed, i.e.
+  // the coordinate space of both the detected ROIs and the captured JPEG.
   int _rawFrameWidth = 0;
+  int _rawFrameHeight = 0;
 
   CameraImage? _lastFrame;
+
+  // Whether the native pipeline is asked to return debug images; none disables
+  // the debug panel and keeps the encode cost out of the hot path.
+  DebugImageType _debugImageType = DebugImageType.none;
+  // When true the score panel shows a per-field histogram of every OCR value
+  // seen, not just the winner. Toggled by one button (in both the live and
+  // stopped views), applies to all rows at once — the rows themselves are not
+  // interactive.
+  bool _histogramsExpanded = false;
+  // Latest full-frame binarized mask — updated every processed frame.
+  final ValueNotifier<Uint8List?> _debugMaskBytes = ValueNotifier(null);
+  // Latest successful Details crop — only updated when a frame matched, so the
+  // last good crop persists through frames that detect nothing.
+  final ValueNotifier<Uint8List?> _debugCropBytes = ValueNotifier(null);
+
+  // Last successful color capture for the stopped view. Holds the raw native
+  // frame bytes plus the ROIs in raw frame-pixel space (not screen-scaled), so
+  // the painter can scale and rotate them to whatever size the still image is
+  // laid out at — unlike the live overlay, which is pre-scaled to the preview.
+  final ValueNotifier<_CaptureView?> _captureData = ValueNotifier(null);
 
   // Last-known ROIs (scaled to screen space) painted on every frame, decoupled
   // from the throttled OCR results that feed it.
@@ -82,43 +106,13 @@ class _OcrPageState extends State<OcrPage>
 
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
-      final int sensorOrientation =
-          _controller?.description.sensorOrientation ?? 0;
       final double scale = _camFrameToScreenScale;
-      final int frameWidth = _rawFrameWidth;
 
+      // The detected ROIs are in upright portrait pixel space on both platforms
+      // (Android rotates its landscape YUV frame 90° CW in C++; iOS receives the
+      // BGRA frame already portrait), so the preview — shown full-width — maps
+      // them with a plain scale, no per-platform rotation math.
       final scaled = (result.detectedRois ?? []).map((r) {
-        if (Platform.isIOS &&
-            (sensorOrientation == 90 || sensorOrientation == 270)) {
-          // The raw BGRA frame is landscape; CameraPreview rotates it
-          // 90° CCW (sensor=90) or 90° CW (sensor=270) for portrait display.
-          // Apply the same transform so ROIs land on the correct pixels.
-          if (sensorOrientation == 90) {
-            // 90° CCW: (x,y) -> (y, frameWidth - x - rw)
-            return Rectangle<int>(
-              (r.top * scale).toInt(),
-              ((frameWidth - r.left - r.width) * scale).toInt(),
-              (r.height * scale).toInt(),
-              (r.width * scale).toInt(),
-            );
-          } else {
-            // 90° CW: (x,y) -> (frameHeight - y - rh, x)
-            // frameHeight not stored separately; use r.top + r.height boundary
-            // Approximate using _rawFrameWidth as landscape height is image.height
-            // (stored indirectly via scale = screenWidth / image.height).
-            // landscape height = screenWidth / scale
-            final int frameHeight = (MediaQuery.of(context).size.width / scale)
-                .round();
-            return Rectangle<int>(
-              ((frameHeight - r.top - r.height) * scale).toInt(),
-              (r.left * scale).toInt(),
-              (r.height * scale).toInt(),
-              (r.width * scale).toInt(),
-            );
-          }
-        }
-        // Android: C++ already rotates the frame 90° CW before processing,
-        // so ROIs are in portrait space — direct scale is correct.
         return Rectangle<int>(
           (r.left * scale).toInt(),
           (r.top * scale).toInt(),
@@ -126,11 +120,44 @@ class _OcrPageState extends State<OcrPage>
           (r.height * scale).toInt(),
         );
       }).toList();
+      // Always repaint the detected candidate boxes for this frame. The details
+      // index only highlights one of them and is -1 when none matched, so the
+      // overlay never goes blank just because "Details" wasn't read this frame.
       _roiData.value = (scaled, result.detailsRoiIndex);
-      // Only count and display when the Details ROI was actually found and
-      // at least one OCR string contributed a non-empty value to the tally.
       final detailsFound =
           result.detailsRoiIndex != null && result.detailsRoiIndex! >= 0;
+      // Surface the debug images without a full rebuild — the
+      // ValueListenableBuilders below repaint just the panels. The mask updates
+      // every frame; the Details crop only when this frame matched, so the last
+      // successful crop persists through frames that detect nothing.
+      if (result.debugMaskBytes != null) {
+        _debugMaskBytes.value = result.debugMaskBytes;
+      }
+      if (result.debugDetailsCropBytes != null) {
+        _debugCropBytes.value = result.debugDetailsCropBytes;
+      }
+      // Persist the last successful color capture with the native ROIs (in
+      // frame-pixel space, matching the captured JPEG's own pixels — they come
+      // from the same inputImg). The stopped view scales them to fit however the
+      // still is laid out. Overwrites on each match (last wins).
+      if (result.captureBytes != null) {
+        // Pixel dimensions of the frame the native layer processed (= the JPEG's
+        // own size and the ROI coordinate space), both already upright portrait.
+        // Android rotates its landscape YUV frame 90° in C++, so its processed
+        // dimensions are the raw camera dimensions swapped. iOS delivers the BGRA
+        // frame already portrait and is not rotated, so its dimensions are as-is.
+        final int srcW = Platform.isAndroid ? _rawFrameHeight : _rawFrameWidth;
+        final int srcH = Platform.isAndroid ? _rawFrameWidth : _rawFrameHeight;
+        _captureData.value = _CaptureView(
+          bytes: result.captureBytes!,
+          rois: result.detectedRois ?? const [],
+          detailsRoiIndex: result.detailsRoiIndex,
+          frameWidth: srcW,
+          frameHeight: srcH,
+        );
+      }
+      // Only count and display when the Details ROI was actually found and
+      // at least one OCR string contributed a non-empty value to the tally.
       if (detailsFound && result.ocrStrings.isNotEmpty) {
         final added = _aggregator.add(result.ocrStrings);
         if (added) setState(() {});
@@ -153,6 +180,9 @@ class _OcrPageState extends State<OcrPage>
     _ticker.dispose();
     _frameTick.dispose();
     _roiData.dispose();
+    _debugMaskBytes.dispose();
+    _debugCropBytes.dispose();
+    _captureData.dispose();
     _controller?.dispose();
     _controller = null;
     _ocrProcessor.dispose();
@@ -287,17 +317,22 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
   void _processImage(CameraImage image) {
     // print('Processing image frame...');
     int rotation = _controller?.description.sensorOrientation ?? 0;
-    var w = 0;
+    // Width of the frame in the coordinate space the native layer produces ROIs
+    // in (= the preview's width). Android rotates its landscape YUV frame 90° in
+    // C++, so its portrait width is the raw image.height. iOS delivers the BGRA
+    // frame already portrait and is NOT rotated, so its width is image.width.
+    int w = 0;
     if (Platform.isAndroid) {
       w = (rotation == 0 || rotation == 180) ? image.width : image.height;
     } else if (Platform.isIOS) {
-      w = (rotation == 90 || rotation == 270) ? image.height : image.width;
+      w = image.width;
     }
 
     _camFrameToScreenScale = MediaQuery.of(context).size.width / w;
     _rawFrameWidth = image.width;
+    _rawFrameHeight = image.height;
 
-    _ocrProcessor.processVideostreamFrame(image);
+    _ocrProcessor.processVideostreamFrame(image, rotation);
     _lastFrame = image;
   }
 
@@ -309,6 +344,12 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
       if (_isCameraActive) {
         // Stop the camera
         print('Stopping camera stream...');
+        // stopImageStream() ends new frame delivery, but frames the plugin
+        // already queued keep flowing to the isolate and are processed — a late
+        // detection there still lands. Enter the draining state so the stopped
+        // view shows one continuous "Finalising…" until that queue is empty,
+        // rather than flickering off in the gaps between queued frames.
+        _ocrProcessor.beginDraining();
         if (_controller?.value.isStreamingImages ?? false) {
           await _controller!.stopImageStream();
         }
@@ -323,11 +364,20 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
         if (_controller != null &&
             _controller!.value.isInitialized &&
             !(_controller!.value.isStreamingImages)) {
+          // Restarted before the previous run finished draining — drop that
+          // state so the new run's indicator reflects only this session.
+          _ocrProcessor.cancelDraining();
           await _controller!.startImageStream(_processImage);
           setState(() {
             _isCameraActive = true;
             // Start a fresh collection so cached values reflect this run only.
             _aggregator.clear();
+            // Drop the previous run's persisted overlay, debug frames, and the
+            // last capture so the stopped view reflects only this run.
+            _roiData.value = ([], null);
+            _debugMaskBytes.value = null;
+            _debugCropBytes.value = null;
+            _captureData.value = null;
           });
           print('Camera started. New state: $_isCameraActive');
         } else {
@@ -415,10 +465,147 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           ],
         ),
         Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: _buildDebugControls(),
+        ),
+        Padding(
           padding: const EdgeInsets.all(16),
           child: _buildScorePanel(live: true),
         ),
       ],
+    );
+  }
+
+  // Enables/disables debug image capture. Clears the last images when turning
+  // it off so stale frames don't linger.
+  void _setDebugEnabled(bool enabled) {
+    final type = enabled ? DebugImageType.on : DebugImageType.none;
+    setState(() => _debugImageType = type);
+    _ocrProcessor.debugImageType = type;
+    if (!enabled) {
+      _debugMaskBytes.value = null;
+      _debugCropBytes.value = null;
+    }
+  }
+
+  // On/off toggle plus two panels: the latest full-frame mask and the latest
+  // successfully matched Details crop (persisted across failed frames).
+  Widget _buildDebugControls() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Debug images'),
+          subtitle: const Text('Show the binarized mask and matched Details crop'),
+          value: _debugImageType == DebugImageType.on,
+          onChanged: _setDebugEnabled,
+        ),
+        if (_debugImageType == DebugImageType.on) ...[
+          _buildDebugImagePanel(
+            label: 'Mask (latest frame)',
+            notifier: _debugMaskBytes,
+            emptyText: 'Waiting for mask…',
+          ),
+          _buildDebugImagePanel(
+            label: 'Details crop (last match)',
+            notifier: _debugCropBytes,
+            emptyText: 'No Details matched yet…',
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDebugImagePanel({
+    required String label,
+    required ValueNotifier<Uint8List?> notifier,
+    required String emptyText,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(label,
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ),
+          ValueListenableBuilder<Uint8List?>(
+            valueListenable: notifier,
+            builder: (context, bytes, _) {
+              if (bytes == null) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    emptyText,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                );
+              }
+              return DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.black26),
+                  color: Colors.black,
+                ),
+                child: Image.memory(
+                  bytes,
+                  gaplessPlayback: true,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.none,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Renders the last successful color capture with its static ROIs painted on
+  // top — the stopped-state equivalent of the load_image result view. The
+  // capture is already upright portrait (both platforms rotate in C++), and the
+  // ROIs are in that same pixel space, so a painter just scales them to the
+  // laid-out image size. They stay aligned at any size.
+  Widget _buildCapturePanel() {
+    return ValueListenableBuilder<_CaptureView?>(
+      valueListenable: _captureData,
+      builder: (context, data, _) {
+        if (data == null) return const SizedBox.shrink();
+
+        final Widget framed = CustomPaint(
+          foregroundPainter: _CaptureRoiPainter(
+            rois: data.rois,
+            detailsRoiIndex: data.detailsRoiIndex,
+            frameWidth: data.frameWidth,
+            frameHeight: data.frameHeight,
+          ),
+          child: Image.memory(
+            data.bytes,
+            gaplessPlayback: true,
+            fit: BoxFit.contain,
+          ),
+        );
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Text(
+                  "Last capture",
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ),
+              framed,
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -432,10 +619,16 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        ValueListenableBuilder<bool>(
-          valueListenable: _ocrProcessor.isProcessing,
-          builder: (context, processing, _) {
-            if (!processing) return const SizedBox.shrink();
+        // Show one continuous "Finalising…" while the post-stop queue drains:
+        // isDraining stays true across the gaps between queued frames, where
+        // isProcessing alone would flicker off.
+        ListenableBuilder(
+          listenable: Listenable.merge(
+              [_ocrProcessor.isProcessing, _ocrProcessor.isDraining]),
+          builder: (context, _) {
+            final busy =
+                _ocrProcessor.isProcessing.value || _ocrProcessor.isDraining.value;
+            if (!busy) return const SizedBox.shrink();
             return const Padding(
               padding: EdgeInsets.only(top: 6),
               child: Row(
@@ -457,33 +650,68 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           },
         ),
         const SizedBox(height: 12),
+        _buildCapturePanel(),
         _buildScorePanel(live: false),
       ],
     );
   }
 
   // One row per OCR field showing the most-frequent (highest-confidence) value
-  // and the share of detections that agreed on it.
+  // and the share of detections that agreed on it. A single button expands every
+  // row into a histogram of all values seen for the field, so the losing OCR
+  // candidates are visible too — available in both the live and stopped views.
+  // The rows stay non-interactive; one toggle controls them all.
   Widget _buildScorePanel({required bool live}) {
+    final bool showHistograms = _histogramsExpanded;
     final rows = <Widget>[
       for (final key in _ocrKeyOrder)
-        if (_aggregator.best(key) case final best?)
+        if (_aggregator.best(key) case final best?) ...[
           OCRKeyValue(
             keyName: key.toUpperCase(),
             value: best.value,
             confidence: best.confidence,
             sampleCount: best.count,
           ),
+          if (showHistograms)
+            Padding(
+              padding: const EdgeInsets.only(left: 8, bottom: 8, top: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (i, c) in _aggregator.candidates(key).indexed)
+                    _CandidateBar(candidate: c, isWinner: i == 0),
+                ],
+              ),
+            ),
+        ],
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            "Detected: ${_aggregator.detectedCount}",
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  "Details detections: ${_aggregator.detailsCount}",
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ),
+            ),
+            // One button toggles the value histograms for all rows, in both the
+            // live and stopped views. Hidden only when there's nothing to show.
+            if (rows.isNotEmpty)
+              TextButton.icon(
+                onPressed: () => setState(
+                    () => _histogramsExpanded = !_histogramsExpanded),
+                icon: Icon(
+                  _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                ),
+                label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
+              ),
+          ],
         ),
         if (rows.isEmpty)
           Padding(
@@ -508,14 +736,14 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
 // reading is the noise-robust form of "averaging" a value that should be fixed.
 class _OcrAggregator {
   final Map<String, Map<String, int>> _counts = {};
-  // Total detections fed in this run (one per [add]), shown as the "detected"
-  // count regardless of which fields each detection read.
-  int _detectedCount = 0;
+  // Frames where the "Details" label matched and at least one field was read
+  // (one per successful [add]). The score panel is built from these.
+  int _detailsCount = 0;
 
-  int get detectedCount => _detectedCount;
+  int get detailsCount => _detailsCount;
 
   // Returns true if at least one non-empty value was added to the tally,
-  // in which case _detectedCount is also incremented.
+  // in which case _detailsCount is also incremented.
   bool add(Map<String, String> strings) {
     bool anyAdded = false;
     strings.forEach((key, raw) {
@@ -525,13 +753,13 @@ class _OcrAggregator {
       tally[value] = (tally[value] ?? 0) + 1;
       anyAdded = true;
     });
-    if (anyAdded) _detectedCount++;
+    if (anyAdded) _detailsCount++;
     return anyAdded;
   }
 
   void clear() {
     _counts.clear();
-    _detectedCount = 0;
+    _detailsCount = 0;
   }
 
   // Highest-confidence (most-frequent) reading for [key], the share of
@@ -547,6 +775,80 @@ class _OcrAggregator {
       if (top == null || entry.value > top.value) top = entry;
     }
     return (value: top!.key, confidence: top.value / total, count: top.value);
+  }
+
+  // Every distinct value seen for [key], descending by count, each with its
+  // [count] and [share] of the field's total reads. The first entry is the same
+  // value [best] returns; the rest are the losing candidates a histogram shows.
+  // Empty when the field was never read.
+  List<({String value, int count, double share})> candidates(String key) {
+    final tally = _counts[key];
+    if (tally == null || tally.isEmpty) return const [];
+    final total = tally.values.fold<int>(0, (sum, c) => sum + c);
+    final entries = tally.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return [
+      for (final e in entries)
+        (value: e.key, count: e.value, share: e.value / total),
+    ];
+  }
+}
+
+// A single histogram row: the value, a bar whose width is its share of reads,
+// and the count + percentage. The winning value is tinted to stand out.
+class _CandidateBar extends StatelessWidget {
+  const _CandidateBar({required this.candidate, required this.isWinner});
+
+  final ({String value, int count, double share}) candidate;
+  final bool isWinner;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isWinner ? Colors.green : Colors.grey[400]!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              candidate.value,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                fontWeight: isWinner ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: Stack(
+                  children: [
+                    Container(height: 12, color: Colors.black12),
+                    FractionallySizedBox(
+                      widthFactor: candidate.share.clamp(0.0, 1.0),
+                      child: Container(height: 12, color: color),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 64,
+            child: Text(
+              '${candidate.count} · ${(candidate.share * 100).round()}%',
+              textAlign: TextAlign.right,
+              style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -626,4 +928,63 @@ class _CameraRoiPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CameraRoiPainter oldDelegate) => false;
+}
+
+// The last successful color capture for the stopped view: the native frame
+// JPEG (already upright portrait, since both platforms rotate in C++) and the
+// ROIs in that frame's pixel space.
+class _CaptureView {
+  const _CaptureView({
+    required this.bytes,
+    required this.rois,
+    required this.detailsRoiIndex,
+    required this.frameWidth,
+    required this.frameHeight,
+  });
+
+  final Uint8List bytes;
+  final List<Rectangle<int>> rois;
+  final int? detailsRoiIndex;
+  final int frameWidth;
+  final int frameHeight;
+}
+
+// Paints the static capture ROIs, scaling them from the portrait frame-pixel
+// space to whatever size the still image is laid out at (the canvas size). The
+// capture and its ROIs share that same upright space, so they stay aligned.
+class _CaptureRoiPainter extends CustomPainter {
+  _CaptureRoiPainter({
+    required this.rois,
+    required this.detailsRoiIndex,
+    required this.frameWidth,
+    required this.frameHeight,
+  });
+
+  final List<Rectangle<int>> rois;
+  final int? detailsRoiIndex;
+  final int frameWidth;
+  final int frameHeight;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (frameWidth <= 0 || frameHeight <= 0) return;
+    final double sx = size.width / frameWidth;
+    final double sy = size.height / frameHeight;
+    final scaled = rois
+        .map((r) => Rectangle<int>(
+              (r.left * sx).round(),
+              (r.top * sy).round(),
+              (r.width * sx).round(),
+              (r.height * sy).round(),
+            ))
+        .toList();
+    paintRois(canvas, scaled, detailsRoiIndex);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CaptureRoiPainter oldDelegate) =>
+      rois != oldDelegate.rois ||
+      detailsRoiIndex != oldDelegate.detailsRoiIndex ||
+      frameWidth != oldDelegate.frameWidth ||
+      frameHeight != oldDelegate.frameHeight;
 }

@@ -81,6 +81,39 @@ static char *allocCString(const std::string &s)
     return buf;
 }
 
+// Encodes a single Mat (with the given extension, e.g. ".png"/".jpg") into a
+// freshly malloc'd buffer that Dart owns and frees. Writes nullptr/0 when the
+// Mat is empty.
+static void encodeImage(
+    const cv::Mat &img,
+    const char *ext,
+    uint8_t **outBuf,
+    int32_t *outLen)
+{
+    *outBuf = nullptr;
+    *outLen = 0;
+    if (img.empty())
+        return;
+
+    std::vector<uchar> encoded;
+    if (!cv::imencode(ext, img, encoded) || encoded.empty())
+        return;
+
+    uint8_t *buf = (uint8_t *)malloc(encoded.size());
+    memcpy(buf, encoded.data(), encoded.size());
+    *outBuf = buf;
+    *outLen = (int32_t)encoded.size();
+}
+
+// PNG-encodes a debug Mat (lossless, so the binarized mask/crop stay crisp).
+static void encodeDebugImage(
+    const cv::Mat &img,
+    uint8_t **outBuf,
+    int32_t *outLen)
+{
+    encodeImage(img, ".png", outBuf, outLen);
+}
+
 // Marshal a ProcessImgResult into the FFI output pointers. The caller (Dart) owns
 // and frees *outputRois and every COCRStrings char*.
 static void writeResult(
@@ -174,22 +207,42 @@ extern "C"
                     outputdetailsRoiIndex, outStrings);
     }
 
-    // TODO pass in img rotation
     FUNCTION_ATTRIBUTE
     void process_camera_image(
         void *handle,
         int32_t imgWidth,
         int32_t imgHeight,
-        int32_t bytesPerPixel,
+        int32_t bytesPerRow,
+        int32_t sensorOrientation,
         uint8_t *imgBuffer,
         int32_t *outputIsDetected,
         int32_t **outputRois,
         int32_t *outputRoisCount,
         int32_t *outputdetailsRoiIndex,
-        COCRStrings *outStrings)
+        COCRStrings *outStrings,
+        int32_t debugImageType,
+        uint8_t **outputDebugMask,
+        int32_t *outputDebugMaskLen,
+        uint8_t **outputDebugCrop,
+        int32_t *outputDebugCropLen,
+        uint8_t **outputCapture,
+        int32_t *outputCaptureLen)
     {
+        // Default the out-params so every early-return path leaves Dart a safe
+        // (null, 0) to read.
+        *outputDebugMask = nullptr;
+        *outputDebugMaskLen = 0;
+        *outputDebugCrop = nullptr;
+        *outputDebugCropLen = 0;
+        *outputCapture = nullptr;
+        *outputCaptureLen = 0;
+
         DdrocrInstance *instance = static_cast<DdrocrInstance *>(handle);
         Mat img;
+
+        // Plumbed from Dart for potential per-device orientation handling, but
+        // not needed by the current rotation logic on either platform.
+        (void)sensorOrientation;
 
 #ifdef __ANDROID__
 
@@ -198,7 +251,14 @@ extern "C"
         cvtColor(frame, img, COLOR_YUV2BGR_NV21);
         rotate(img, img, ROTATE_90_CLOCKWISE);
 #else
-        Mat bgra(imgHeight, imgWidth, CV_8UC4, imgBuffer);
+        // Unlike Android's YUV frame (which arrives landscape and needs a 90° CW
+        // rotation), the iOS BGRA frame is delivered already upright/portrait —
+        // its buffer is taller than it is wide (e.g. 3024x4032). So we do NOT
+        // rotate here; the pipeline (ROIs + capture) is already in portrait pixel
+        // space, matching what CameraPreview shows. The optional bytesPerRow lets
+        // us honour row padding when present (0 => tightly packed).
+        size_t bgraStep = bytesPerRow > 0 ? (size_t)bytesPerRow : Mat::AUTO_STEP;
+        Mat bgra(imgHeight, imgWidth, CV_8UC4, imgBuffer, bgraStep);
         cvtColor(bgra, img, COLOR_BGRA2BGR);
 #endif
 
@@ -211,7 +271,15 @@ extern "C"
 
         try
         {
-            ProcessImgResult result = instance->process_image(img);
+            ProcessImgResult result = instance->process_image(
+                img, DetectionSide::FIRST, static_cast<DebugImageType>(debugImageType));
+            // Debug images can be captured even when no Details ROI is selected
+            // (the full-frame mask), so emit them before the isDetected gate.
+            encodeDebugImage(result.debugMask, outputDebugMask, outputDebugMaskLen);
+            encodeDebugImage(result.debugDetailsCrop, outputDebugCrop, outputDebugCropLen);
+            // Color capture (JPEG, lossy is fine for a display thumbnail) is only
+            // ever non-empty on a successful match; emit it the same way.
+            encodeImage(result.colorCapture, ".jpg", outputCapture, outputCaptureLen);
             if (!result.isDetected)
             {
                 *outputIsDetected = result.isDetected;

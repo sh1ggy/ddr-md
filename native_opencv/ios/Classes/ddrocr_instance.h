@@ -34,6 +34,14 @@ struct OCRResults
     OCRResult max_combo;
 };
 
+// Whether the pipeline should capture debug images for on-device inspection.
+// Mirrors the Dart DebugImageType enum (same ordinal order).
+enum class DebugImageType
+{
+    NONE = 0, // skip capture entirely (zero cost in the hot path)
+    ON   = 1, // capture the full-frame mask and the matched Details crop
+};
+
 struct ProcessImgResult
 {
     cv::Mat img;
@@ -41,6 +49,16 @@ struct ProcessImgResult
     std::vector<cv::Rect> rois;
     int32_t detailsRoiIndex;
     OCRResults ocrResults;
+    // Debug images captured when process_image is asked for them; empty
+    // otherwise. debugMask is the full-frame binarized image (every frame);
+    // debugDetailsCrop is the crop Tesseract matched on (only on a successful
+    // Details match, so the UI can persist the last good one).
+    cv::Mat debugMask;
+    cv::Mat debugDetailsCrop;
+    // Full-color frame, set only on a successful "Details" match (independent of
+    // the debug toggle). The stopped view paints the static ROIs over this last
+    // good capture; the UI persists it and overwrites it on the next match.
+    cv::Mat colorCapture;
 };
 
 // FFI-compatible config struct — layout must match the Dart COCRConfig Struct exactly.
@@ -106,7 +124,8 @@ public:
     DdrocrInstance(std::string dataPath, const COCRConfig &cfg);
     ~DdrocrInstance();
     // TODO use outputimg path declared in class
-    ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST);
+    ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST,
+                                   DebugImageType debugImageType = DebugImageType::NONE);
     void setConfig(const COCRConfig &cfg);
 
 private:

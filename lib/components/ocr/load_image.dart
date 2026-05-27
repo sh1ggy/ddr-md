@@ -116,7 +116,9 @@ class _LoadImageState extends State<LoadImage> {
                 detectedRois,
                 result.isDetected,
                 result.returnImageType,
-                result.processedImageBytes,
+                result.debugMaskBytes,
+                result.debugDetailsCropBytes,
+                result.captureBytes,
                 result.detailsRoiIndex,
                 result.ocrStrings);
           });

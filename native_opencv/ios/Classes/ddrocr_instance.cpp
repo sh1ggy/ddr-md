@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstring>
 #include <algorithm>
+#include <map>
 #include <set>
 #include <sstream>
 #include <iomanip>
@@ -111,7 +112,8 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
     return display;
 }
 
-ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side)
+ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side,
+                                               DebugImageType debugImageType)
 {
     ProcessImgResult result;
 
@@ -241,12 +243,10 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     //     detectedRois[i].height /= morph_scale_factor;
     // }
 
-    if (detectedRois.size() == 0)
-    {
-        platform_log("No OCR ROI detected, defaulting to full image\n");
-        result.isDetected = 0;
-        return result;
-    }
+    // The full-frame binarization is computed from inputImg alone (independent of
+    // the detected ROIs), so do it before the no-ROI early return. That way the
+    // debug mask reflects *every* processed frame — including ones where the HSV
+    // Details-box detector found no candidate ROIs — instead of going stale.
 
     // gaussian filter sigma=1
     cv::Mat Ifiltered;
@@ -259,6 +259,18 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     // MATLAB-like imbinarize (Otsu) -> logical 0/1
     cv::Mat preprocessed_BW1;
     preprocessed_BW1 = otsuToLogical(preprocessed_BW);
+
+    // Debug ON: always hand back the full-frame binarized image the OCR crops
+    // are read from (displayed 0/255) — the image the details ROIs index into.
+    if (debugImageType == DebugImageType::ON)
+        result.debugMask = logicalToDisplayU8(preprocessed_BW1);
+
+    if (detectedRois.size() == 0)
+    {
+        platform_log("No OCR ROI detected, defaulting to full image\n");
+        result.isDetected = 0;
+        return result;
+    }
 
     // TODO: this takes 4000ms, move this noise reduction to before logical 
     // bwareaopen - remove connected components smaller than 5 pixels
@@ -284,6 +296,10 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     cv::Mat roi_img = inputImg.clone();
     int correct_roi_idx = -1;
     std::vector<int> detectedDetailsIndices;
+
+    // Debug ON: keep the binarized crop fed to Tesseract for each candidate that
+    // matched "Details", so the selected one can be returned alongside the mask.
+    std::map<int, cv::Mat> detailsCrops;
 
     // Create a details_rois subfolder for debug output
     std::string detailsRoiDir;
@@ -351,6 +367,9 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             detectedDetailsIndices.push_back(i);
             platform_log("Found 'Details' (loose match) with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
 
+            if (debugImageType == DebugImageType::ON)
+                detailsCrops[(int)i] = logicalToDisplayU8(detailsInput);
+
             // Only dump the ROI image once it has actually matched "Details", so
             // non-details candidate boxes — and every camera frame that finds
             // nothing — don't flood the debug folder.
@@ -413,6 +432,22 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         correct_roi_idx = detectedDetailsIndices[0];
     }
     result.detailsRoiIndex = correct_roi_idx;
+
+    // Debug ON: a Details ROI was matched, so also return the crop Tesseract read
+    // for it. This is independent of the full-frame mask — the UI persists the
+    // last successful crop and never clears it on a later failed frame.
+    if (debugImageType == DebugImageType::ON)
+    {
+        auto it = detailsCrops.find(correct_roi_idx);
+        if (it != detailsCrops.end() && !it->second.empty())
+            result.debugDetailsCrop = it->second;
+    }
+
+    // Always (regardless of the debug toggle) hand back the full-color frame for
+    // a successful match — the stopped view paints the static ROIs over this last
+    // good capture. Clone so the FFI encode is decoupled from the input buffer.
+    if (correct_roi_idx >= 0 && !inputImg.empty())
+        result.colorCapture = inputImg.clone();
 
     // Create offsets for score OCR (driven by config)
     auto roiRect = [&](int i) {

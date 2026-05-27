@@ -20,6 +20,10 @@ const DetectionSide kDetectionSide = DetectionSide.left;
 
 enum ReturnImageType { None, DirImage, BytesImage }
 
+// Whether the native pipeline should capture debug images for on-device
+// inspection. Ordinals must match the C++ DebugImageType enum.
+enum DebugImageType { none, on }
+
 class ProcessResult {
   final DifficultyType difficulty;
   // TODO reconsider to using a rect that can do Floats
@@ -27,7 +31,16 @@ class ProcessResult {
   final List<Rectangle<int>>? detectedRois;
   final bool isDetected;
   final ReturnImageType returnImageType;
-  final Uint8List? processedImageBytes;
+  // Full-frame binarized mask (preprocessed_BW1) for every processed frame when
+  // debug is on; null otherwise.
+  final Uint8List? debugMaskBytes;
+  // Crop Tesseract matched on, present only when this frame matched "Details".
+  // The UI persists the last non-null one across failed frames.
+  final Uint8List? debugDetailsCropBytes;
+  // Full-color JPEG of the frame, present only when this frame matched
+  // "Details" (independent of the debug toggle). The stopped view paints the
+  // static ROIs over the last non-null one.
+  final Uint8List? captureBytes;
   final int? detailsRoiIndex;
   final Map<String, String> ocrStrings;
 
@@ -37,7 +50,9 @@ class ProcessResult {
       this.detectedRois,
       this.isDetected,
       this.returnImageType,
-      this.processedImageBytes,
+      this.debugMaskBytes,
+      this.debugDetailsCropBytes,
+      this.captureBytes,
       this.detailsRoiIndex,
       this.ocrStrings);
 }
@@ -48,13 +63,24 @@ class ProcessImageRequestParams {
   final TransferableTypedData bytes;
   final int width;
   final int height;
-  final int bytesPerPixel;
+  // Row stride of the source buffer in bytes. iOS BGRA frames are often padded
+  // (bytesPerRow > width*4); the native layer needs the real stride to read
+  // rows at the right offset. 0 means "tightly packed" (the Android YUV path).
+  final int bytesPerRow;
+  // Camera sensor orientation (0/90/180/270), passed to the native layer for
+  // potential per-device orientation handling. Currently unused there: the iOS
+  // BGRA frame already arrives portrait (no rotation needed) and Android's YUV
+  // frame is hard-coded to 90° CW. Kept plumbed for future use.
+  final int sensorOrientation;
+  final DebugImageType debugImageType;
 
   ProcessImageRequestParams({
     required this.bytes,
     required this.width,
     required this.height,
-    required this.bytesPerPixel,
+    required this.bytesPerRow,
+    required this.sensorOrientation,
+    this.debugImageType = DebugImageType.none,
   });
 }
 
@@ -178,13 +204,21 @@ typedef _c_processCameraImage = Void Function(
     Pointer<Void> handle,
     Int32 imgWidth,
     Int32 imgHeight,
-    Int32 bytesPerPixel,
+    Int32 bytesPerRow,
+    Int32 sensorOrientation,
     Pointer<Uint8> imgBuffer,
     Pointer<Int32> outputIsDetected,
     Pointer<Pointer<Int32>> outputRois,
     Pointer<Int32> outputRoisCount,
     Pointer<Int32> outputdetailsRoiIndex,
-    Pointer<COCRStrings> outStrings);
+    Pointer<COCRStrings> outStrings,
+    Int32 debugImageType,
+    Pointer<Pointer<Uint8>> outputDebugMask,
+    Pointer<Int32> outputDebugMaskLen,
+    Pointer<Pointer<Uint8>> outputDebugCrop,
+    Pointer<Int32> outputDebugCropLen,
+    Pointer<Pointer<Uint8>> outputCapture,
+    Pointer<Int32> outputCaptureLen);
 
 typedef _c_processPickedImage = Void Function(
   Pointer<Void> handle,
@@ -202,13 +236,21 @@ typedef _dart_processCameraImage = void Function(
     Pointer<Void> handle,
     int imgWidth,
     int imgHeight,
-    int bytesPerPixel,
+    int bytesPerRow,
+    int sensorOrientation,
     Pointer<Uint8> imgBuffer,
     Pointer<Int32> outputIsDetected,
     Pointer<Pointer<Int32>> outputRois,
     Pointer<Int32> outputRoisCount,
     Pointer<Int32> outputdetailsRoiIndex,
-    Pointer<COCRStrings> outStrings);
+    Pointer<COCRStrings> outStrings,
+    int debugImageType,
+    Pointer<Pointer<Uint8>> outputDebugMask,
+    Pointer<Int32> outputDebugMaskLen,
+    Pointer<Pointer<Uint8>> outputDebugCrop,
+    Pointer<Int32> outputDebugCropLen,
+    Pointer<Pointer<Uint8>> outputCapture,
+    Pointer<Int32> outputCaptureLen);
 
 typedef _dart_processPickedImage = void Function(
   Pointer<Void> handle,
@@ -301,13 +343,49 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
 // Builds a ProcessResult from the FFI output pointers and frees all of them
 // (including the C-allocated rois array and strings). Shared by the picked-image
 // and camera paths, which produce identical output.
+// Copies the encoded image bytes the native layer allocated (if any) into a
+// Dart-owned Uint8List, then frees the native buffer and the length/pointer
+// cells. Safe to call when no image was requested — the pointers are null/0.
+Uint8List? _readAndFreeImage(
+  Pointer<Pointer<Uint8>>? outputImagePtr,
+  Pointer<Int32>? outputImageLen,
+) {
+  if (outputImagePtr == null || outputImageLen == null) return null;
+  final buf = outputImagePtr.value;
+  final len = outputImageLen.value;
+  Uint8List? bytes;
+  if (buf != nullptr && len > 0) {
+    bytes = Uint8List.fromList(buf.asTypedList(len));
+    calloc.free(buf);
+  }
+  calloc.free(outputImagePtr);
+  calloc.free(outputImageLen);
+  return bytes;
+}
+
 ProcessResult _buildAndFreeResult({
   required Pointer<Int32> outputIsDetected,
   required Pointer<Pointer<Int32>> outputRoisPtr,
   required Pointer<Int32> outputRoisCount,
   required Pointer<Int32> outputDetailsRoiIndex,
   required Pointer<COCRStrings> outStrings,
+  Pointer<Pointer<Uint8>>? outputDebugMaskPtr,
+  Pointer<Int32>? outputDebugMaskLen,
+  Pointer<Pointer<Uint8>>? outputDebugCropPtr,
+  Pointer<Int32>? outputDebugCropLen,
+  Pointer<Pointer<Uint8>>? outputCapturePtr,
+  Pointer<Int32>? outputCaptureLen,
 }) {
+  final Uint8List? maskBytes =
+      _readAndFreeImage(outputDebugMaskPtr, outputDebugMaskLen);
+  final Uint8List? cropBytes =
+      _readAndFreeImage(outputDebugCropPtr, outputDebugCropLen);
+  final Uint8List? captureBytes =
+      _readAndFreeImage(outputCapturePtr, outputCaptureLen);
+  final ReturnImageType imageType = (maskBytes != null || cropBytes != null)
+      ? ReturnImageType.BytesImage
+      : ReturnImageType.None;
+
   final Pointer<Int32> outputRois = outputRoisPtr.value;
 
   if (outputRois == nullptr) {
@@ -317,7 +395,7 @@ ProcessResult _buildAndFreeResult({
     calloc.free(outputDetailsRoiIndex);
     _freeOcrStrings(outStrings);
     return ProcessResult(DifficultyType.None, null, [], false,
-        ReturnImageType.None, null, -1, {});
+        imageType, maskBytes, cropBytes, captureBytes, -1, {});
   }
 
   final detectedRois = <Rectangle<int>>[];
@@ -332,8 +410,10 @@ ProcessResult _buildAndFreeResult({
     null,
     detectedRois,
     outputIsDetected.value != 0,
-    ReturnImageType.DirImage,
-    null,
+    imageType,
+    maskBytes,
+    cropBytes,
+    captureBytes,
     outputDetailsRoiIndex.value,
     _readOcrStrings(outStrings),
   );
@@ -389,18 +469,32 @@ Future<ProcessResult> _processFrame(
   final outputRoisPtr = calloc<Pointer<Int32>>();
   final outputDetailsRoiIndex = calloc<Int32>();
   final outStrings = calloc<COCRStrings>();
+  final outputDebugMaskPtr = calloc<Pointer<Uint8>>();
+  final outputDebugMaskLen = calloc<Int32>();
+  final outputDebugCropPtr = calloc<Pointer<Uint8>>();
+  final outputDebugCropLen = calloc<Int32>();
+  final outputCapturePtr = calloc<Pointer<Uint8>>();
+  final outputCaptureLen = calloc<Int32>();
 
   _processCameraImageFn(
     handle,
     params.width,
     params.height,
-    params.bytesPerPixel,
+    params.bytesPerRow,
+    params.sensorOrientation,
     imgBuffer,
     outputIsDetected,
     outputRoisPtr,
     outputRoisCount,
     outputDetailsRoiIndex,
     outStrings,
+    params.debugImageType.index,
+    outputDebugMaskPtr,
+    outputDebugMaskLen,
+    outputDebugCropPtr,
+    outputDebugCropLen,
+    outputCapturePtr,
+    outputCaptureLen,
   );
   calloc.free(imgBuffer);
 
@@ -410,6 +504,12 @@ Future<ProcessResult> _processFrame(
     outputRoisCount: outputRoisCount,
     outputDetailsRoiIndex: outputDetailsRoiIndex,
     outStrings: outStrings,
+    outputDebugMaskPtr: outputDebugMaskPtr,
+    outputDebugMaskLen: outputDebugMaskLen,
+    outputDebugCropPtr: outputDebugCropPtr,
+    outputDebugCropLen: outputDebugCropLen,
+    outputCapturePtr: outputCapturePtr,
+    outputCaptureLen: outputCaptureLen,
   );
 }
 
@@ -460,6 +560,19 @@ class OCRProcessor {
   /// Publicly observable processing state. True while the isolate is crunching
   /// a frame or picked image; false once a result (or panic reset) arrives.
   final ValueNotifier<bool> isProcessing = ValueNotifier(false);
+
+  /// True from the moment Stop is pressed until the post-stop frame queue has
+  /// genuinely drained. The camera plugin keeps delivering already-queued frames
+  /// after stopImageStream() resolves, and [isProcessing] only reflects the
+  /// single in-flight frame — so it flickers off in the gaps between queued
+  /// frames. This stays true across those gaps (debounced on frame activity) so
+  /// the UI can show one continuous "Finalising…" state until the queue is empty.
+  final ValueNotifier<bool> isDraining = ValueNotifier(false);
+
+  // Quiet window with no submitted frame (and nothing in flight) after which the
+  // post-stop queue is considered drained.
+  static const Duration _drainQuietWindow = Duration(milliseconds: 600);
+  Timer? _drainTimer;
 
   bool get _isProcessing => isProcessing.value;
   set _isProcessing(bool v) => isProcessing.value = v;
@@ -533,6 +646,10 @@ class OCRProcessor {
     return completer.future;
   }
 
+  // Which debug image (if any) the native pipeline should return per frame. Set
+  // by the UI; none in the hot path by default so there is zero encode cost.
+  DebugImageType debugImageType = DebugImageType.none;
+
   int MAX_SKIPPED_FRAMES = 20;
 
   int _cameraFrames = 0;
@@ -545,6 +662,34 @@ class OCRProcessor {
     print('Panic reset of OCR processing state invoked. Continuing without dispose.');
   }
 
+  // Called by the UI when Stop is pressed. Enters the draining state and arms the
+  // quiet-window timer; each post-stop frame that arrives re-arms it, so draining
+  // only ends once frames have genuinely stopped flowing and nothing is in flight.
+  void beginDraining() {
+    isDraining.value = true;
+    _armDrainTimer();
+  }
+
+  // Cancel any in-progress draining — e.g. the user restarted OCR before the
+  // previous run's queue finished emptying.
+  void cancelDraining() {
+    _drainTimer?.cancel();
+    isDraining.value = false;
+  }
+
+  void _armDrainTimer() {
+    _drainTimer?.cancel();
+    _drainTimer = Timer(_drainQuietWindow, () {
+      // If a frame is still being crunched, wait another window — the result
+      // (or its panic reset) will re-evaluate. Otherwise the queue has drained.
+      if (_isProcessing) {
+        _armDrainTimer();
+      } else {
+        isDraining.value = false;
+      }
+    });
+  }
+
   void processPickedImage(XFile image) async {
     print('Processing image from file: ${image.path}');
     final request = Request.fromFile(
@@ -555,7 +700,10 @@ class OCRProcessor {
     toIsolate?.send(request);
   }
 
-  void processVideostreamFrame(CameraImage image) {
+  void processVideostreamFrame(CameraImage image, int sensorOrientation) {
+    // Frames the camera plugin delivers after stopImageStream() are still
+    // processed — they may contain a late detection — so the stream drains
+    // naturally. The UI surfaces this background work via [isProcessing].
     _cameraFrames++;
     if (_cameraFrames % FRAME_THRESHOLD != 0) {
       return;
@@ -572,6 +720,10 @@ class OCRProcessor {
     // Extract the frame bytes here (main thread) and hand them to the isolate
     // via TransferableTypedData so the cross-isolate transfer is zero-copy.
     Uint8List bytes;
+    // iOS BGRA frames may be row-padded; hand the native layer the real stride
+    // so it reads each row at the correct offset (0 => tightly packed, used by
+    // the Android YUV path, which is rebuilt contiguously below).
+    int bytesPerRow = 0;
     if (image.format.group == ImageFormatGroup.yuv420) {
       // Android: a buffer per YUV channel. iOS: a single BGRA buffer.
       final planes = image.planes;
@@ -587,22 +739,30 @@ class OCRProcessor {
       bytes.setAll(yBuffer.lengthInBytes + vBuffer.lengthInBytes, uBuffer);
     } else {
       bytes = image.planes.first.bytes;
+      bytesPerRow = image.planes.first.bytesPerRow;
     }
 
     final params = ProcessImageRequestParams(
       bytes: TransferableTypedData.fromList([bytes]),
       width: image.width,
       height: image.height,
-      bytesPerPixel: 4,
+      bytesPerRow: bytesPerRow,
+      sensorOrientation: sensorOrientation,
+      debugImageType: debugImageType,
     );
 
     final request = Request.fromCamera(RequestType.ProcessVideoImage, params);
     _isProcessing = true;
+    // A post-stop queued frame just got submitted — push the drain quiet window
+    // out so isDraining stays true while frames keep flowing.
+    if (isDraining.value) _armDrainTimer();
     toIsolate?.send(request);
   }
 
   void dispose() {
+    _drainTimer?.cancel();
     isProcessing.dispose();
+    isDraining.dispose();
     final request = Request.death();
     fromIsolate.sendPort.send(request);
     fromIsolate.close();
