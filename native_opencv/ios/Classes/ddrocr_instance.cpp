@@ -640,25 +640,27 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     if (cropped.empty())
         return result;
 
-    // Step 1: Upscale ROI 4× before binarization (tiny ~50px ROIs → ~200px)
-    cv::Mat upscaled;
-    cv::resize(cropped, upscaled, cv::Size(), config.resolution_scale, config.resolution_scale, cv::INTER_CUBIC);
+    // Grayscale + top-hat on the original-resolution single-channel ROI, THEN
+    // upscale. Doing morphology before the resize keeps it off the much larger
+    // upscaled buffer and off the two extra color channels. The kernel is sized
+    // for original resolution (config.tophat_kernel_size).
+    cv::Mat grayOrig;
+    cv::cvtColor(cropped, grayOrig, cv::COLOR_BGR2GRAY);
 
-    // Preprocessing: top-hat + grayscale + threshold
-    // Kernel scaled proportionally: 31×31 → 125×125 for 4× upscale
     cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(config.tophat_kernel_size, config.tophat_kernel_size));
 
     cv::Mat corrected;
     {
         auto t0 = std::chrono::high_resolution_clock::now();
-        cv::morphologyEx(upscaled, corrected, cv::MORPH_TOPHAT, kernel_tophat);
+        cv::morphologyEx(grayOrig, corrected, cv::MORPH_TOPHAT, kernel_tophat);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t0).count();
         platform_log("[TIMER] [%s] morph tophat: %lld ms\n", imageName.c_str(), (long long)ms);
     }
 
+    // Upscale the corrected ROI (tiny ~50px → ~150px) before binarization.
     cv::Mat gray;
-    cv::cvtColor(corrected, gray, cv::COLOR_BGR2GRAY);
+    cv::resize(corrected, gray, cv::Size(), config.resolution_scale, config.resolution_scale, cv::INTER_CUBIC);
 
     // Step 2: Light GaussianBlur to denoise before Otsu
     cv::GaussianBlur(gray, gray, cv::Size(config.gaussian_blur_size, config.gaussian_blur_size), 0);
@@ -677,7 +679,7 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
 
     {
         auto t0 = std::chrono::high_resolution_clock::now();
-        result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
+        result = ocrWrapper.performOCR(BW2, type, imageName);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t0).count();
         platform_log("[TIMER] [%s] performOCR: %lld ms\n", imageName.c_str(), (long long)ms);

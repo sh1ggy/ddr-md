@@ -20,7 +20,7 @@ const int ocrPsmEngJP = 8; // PSM_SINGLE_WORD
 const int ocrGaussianBlurSize = 3; // must be odd
 const double ocrSimplificationEpsilon = 0.07;
 const double ocrResolutionScale = 3.0; // upscale factor applied to each ROI before binarization
-const int ocrTophatKernelSize = 125; // morphological top-hat kernel size (must be odd)
+const int ocrTophatKernelSize = 41; // morphological top-hat kernel size (must be odd); sized for original ROI resolution (top-hat now runs before upscale)
 const int ocrMorphWidth = 360;  // HSV blob morphology opening kernel width
 const int ocrMorphHeight = 90;  // HSV blob morphology opening kernel height
 
