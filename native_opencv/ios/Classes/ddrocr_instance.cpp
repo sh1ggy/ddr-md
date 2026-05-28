@@ -677,6 +677,8 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     cv::copyMakeBorder(BW2, BW2, config.border, config.border, config.border, config.border,
                        cv::BORDER_CONSTANT, cv::Scalar(1));
 
+    save_img(imageName + "_ocr_input", logicalToDisplayU8(BW2));
+
     {
         auto t0 = std::chrono::high_resolution_clock::now();
         result = ocrWrapper.performOCR(BW2, type, imageName);
