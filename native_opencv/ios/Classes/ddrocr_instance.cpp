@@ -614,6 +614,8 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     if (warpedImg.empty())
         return result;
 
+    auto t_roi_start = std::chrono::high_resolution_clock::now();
+
     // Offset for ROI
     cv::Point2d offset(
         ROI_Target.x - ROI_Details.x,
@@ -647,7 +649,13 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(config.tophat_kernel_size, config.tophat_kernel_size));
 
     cv::Mat corrected;
-    cv::morphologyEx(upscaled, corrected, cv::MORPH_TOPHAT, kernel_tophat);
+    {
+        auto t0 = std::chrono::high_resolution_clock::now();
+        cv::morphologyEx(upscaled, corrected, cv::MORPH_TOPHAT, kernel_tophat);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - t0).count();
+        platform_log("[TIMER] [%s] morph tophat: %lld ms\n", imageName.c_str(), (long long)ms);
+    }
 
     cv::Mat gray;
     cv::cvtColor(corrected, gray, cv::COLOR_BGR2GRAY);
@@ -667,7 +675,13 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     cv::copyMakeBorder(BW2, BW2, config.border, config.border, config.border, config.border,
                        cv::BORDER_CONSTANT, cv::Scalar(1));
 
-    result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
+    {
+        auto t0 = std::chrono::high_resolution_clock::now();
+        result = ocrWrapper.performOCR(BW2.clone(), type, imageName);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - t0).count();
+        platform_log("[TIMER] [%s] performOCR: %lld ms\n", imageName.c_str(), (long long)ms);
+    }
 
     platform_log("[OCR] [%s] ROI(%d,%d %dx%d) confidence=%.2f text='%s'\n",
                  imageName.c_str(),
@@ -675,6 +689,10 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
                  roi_warped.width, roi_warped.height,
                  result.confidence,
                  result.text.c_str());
+
+    auto t_roi_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - t_roi_start).count();
+    platform_log("[TIMER] [%s] getPreprocessedRoiImage total: %lld ms\n", imageName.c_str(), (long long)t_roi_ms);
 
     return result;
 }
