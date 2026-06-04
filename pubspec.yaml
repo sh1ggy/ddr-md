@@ -23,6 +23,7 @@ dependencies:
   path_provider: ^2.1.5
   camera: ^0.11.3
   image_picker: ^1.2.1
+  sensors_plus: ^4.0.2
   get: ^4.7.3
 
 dev_dependencies:

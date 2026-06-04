@@ -52,6 +52,25 @@ void paintRois(Canvas canvas, List<Rectangle<int>> rois, int? detailsRoiIndex) {
   }
 }
 
+// Variant of [paintRois] for the live camera overlay. Accepts pre-smoothed
+// [Rect] values (doubles) to avoid integer rounding artifacts mid-animation.
+void paintSmoothedRois(Canvas canvas, List<Rect> rois, int? detailsRoiIndex) {
+  for (int i = 0; i < rois.length; i++) {
+    final rect = rois[i];
+    final paintToUse =
+        (detailsRoiIndex != null && i == detailsRoiIndex)
+            ? _detailsPaint
+            : _roiPaint;
+    canvas.drawRect(rect, paintToUse);
+    final builder = ui.ParagraphBuilder(_paragraphStyle)
+      ..pushStyle(_textStyle)
+      ..addText(i.toString());
+    final paragraph = builder.build()
+      ..layout(ui.ParagraphConstraints(width: rect.width));
+    canvas.drawParagraph(paragraph, Offset(rect.right + 6, rect.top));
+  }
+}
+
 class RoiResultPainter extends CustomPainter {
   RoiResultPainter({required this.rois, this.detailsRoiIndex});
 

@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
+import 'package:ddr_md/components/ocr/roi_smoother.dart';
 import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
@@ -68,6 +69,11 @@ class _OcrPageState extends State<OcrPage>
   final ValueNotifier<int> _frameTick = ValueNotifier(0);
   late final Ticker _ticker;
 
+  final RoiSmoother _smoother = RoiSmoother();
+  final ValueNotifier<(List<Rect>, int?)> _displayRois =
+      ValueNotifier(([], null));
+  Duration _lastTickElapsed = Duration.zero;
+
   @override
   void initState() {
     super.initState();
@@ -75,22 +81,33 @@ class _OcrPageState extends State<OcrPage>
     // Add observer to listen for app lifecycle changes
     WidgetsBinding.instance.addObserver(this);
 
-    // Repaint the ROI overlay every frame from the last-known result.
-    _ticker = createTicker((_) => _frameTick.value++)..start();
+    // Repaint the ROI overlay every frame, running the smoother each vsync.
+    _ticker = createTicker((elapsed) {
+      final dt = elapsed - _lastTickElapsed;
+      _lastTickElapsed = elapsed;
+      if (dt > Duration.zero) {
+        final display = _smoother.update(dt);
+        _displayRois.value = (display, _smoother.detailsIndex);
+      }
+      _frameTick.value++;
+    })..start();
 
+    _smoother.startImu();
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
       final double scale = _camFrameToScreenScale;
 
-      final scaled = (result.detectedRois ?? []).map((r) {
-        return Rectangle<int>(
-          (r.left * scale).toInt(),
-          (r.top * scale).toInt(),
-          (r.width * scale).toInt(),
-          (r.height * scale).toInt(),
+      final scaledRects = (result.detectedRois ?? []).map((r) {
+        return Rect.fromLTWH(
+          r.left * scale,
+          r.top * scale,
+          r.width * scale,
+          r.height * scale,
         );
       }).toList();
-      _roiData.value = (scaled, result.detailsRoiIndex);
+      _smoother.setTarget(scaledRects, result.detailsRoiIndex);
+      // Keep _roiData for the stopped-view capture path (unscaled frame-pixel rois).
+      _roiData.value = (result.detectedRois ?? [], result.detailsRoiIndex);
       final detailsFound =
           result.detailsRoiIndex != null && result.detailsRoiIndex! >= 0;
       if (result.debugMaskBytes != null) {
@@ -123,6 +140,8 @@ class _OcrPageState extends State<OcrPage>
   @override
   void dispose() {
     // TODO: use actual lifecycle events to call asynchronous controller methods
+    _smoother.dispose();
+    _displayRois.dispose();
     _ticker.dispose();
     _frameTick.dispose();
     _roiData.dispose();
@@ -251,6 +270,9 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     _rawFrameWidth = image.width;
     _rawFrameHeight = image.height;
 
+    // Update focal length in screen-pixel space whenever frame dimensions change.
+    _smoother.updateCameraParams(MediaQuery.of(context).size.width);
+
     _ocrProcessor.processVideostreamFrame(image, rotation);
     _lastFrame = image;
   }
@@ -283,6 +305,9 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             _isCameraActive = true;
             _aggregator.clear();
             _roiData.value = ([], null);
+            _smoother.reset();
+            _displayRois.value = ([], null);
+            _lastTickElapsed = Duration.zero;
             _debugMaskBytes.value = null;
             _debugCropBytes.value = null;
             _captureData.value = null;
@@ -355,7 +380,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           children: [
             RepaintBoundary(
               child: CustomPaint(
-                foregroundPainter: _CameraRoiPainter(_roiData, _frameTick),
+                foregroundPainter: _CameraRoiPainter(_displayRois, _frameTick),
                 child: CameraPreview(_controller!),
               ),
             ),
@@ -777,14 +802,15 @@ class _ProcessingDotState extends State<_ProcessingDot>
 }
 
 class _CameraRoiPainter extends CustomPainter {
-  _CameraRoiPainter(this.roiData, Listenable frameTick) : super(repaint: frameTick);
+  _CameraRoiPainter(this.displayRois, Listenable frameTick)
+      : super(repaint: frameTick);
 
-  final ValueNotifier<(List<Rectangle<int>>, int?)> roiData;
+  final ValueNotifier<(List<Rect>, int?)> displayRois;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final (rois, detailsRoiIndex) = roiData.value;
-    paintRois(canvas, rois, detailsRoiIndex);
+    final (rois, detailsRoiIndex) = displayRois.value;
+    paintSmoothedRois(canvas, rois, detailsRoiIndex);
   }
 
   @override
