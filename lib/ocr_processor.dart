@@ -543,40 +543,37 @@ class OCRProcessor {
   Future<void> init() async {
     tempDir = await getTemporaryDirectory();
     appDir = await getApplicationDocumentsDirectory();
-    await loadTessdata();
+    await loadModels();
   }
 
-  Future<void> loadTessdata() async {
+  Future<void> loadModels() async {
     if (!Platform.isAndroid && !Platform.isIOS) {
-      // Tessdata copying is only needed for mobile platforms.
-      print('Skipping tessdata copy on unsupported platform: ${Platform.operatingSystem}');
+      print('Skipping model copy on unsupported platform: ${Platform.operatingSystem}');
       return;
     }
 
-    final tessdataDir = Directory(path.join(appDir!.path, 'tessdata'));
-    if (!await tessdataDir.exists()) {
-      await tessdataDir.create(recursive: true);
+    final modelsDir = Directory(path.join(appDir!.path, 'models'));
+    if (!await modelsDir.exists()) {
+      await modelsDir.create(recursive: true);
     }
 
-    final tessdataAssets = [
-      'assets/tessdata/eng.best.traineddata',
-      'assets/tessdata/eng.fast.traineddata',
-      'assets/tessdata/jpn.best.traineddata',
-      'assets/tessdata/jpn.fast.traineddata',
+    const modelAssets = [
+      'assets/models/ppocr_mobile_rec.onnx',
+      'assets/models/ppocrv5_dict.txt',
     ];
 
-    for (final assetPath in tessdataAssets) {
-      final targetFile = File(path.join(tessdataDir.path, path.basename(assetPath)));
+    for (final assetPath in modelAssets) {
+      final targetFile = File(path.join(modelsDir.path, path.basename(assetPath)));
       if (await targetFile.exists()) {
-        print('Tessdata already exists, skipping: ${targetFile.path}');
+        print('Model already exists, skipping: ${targetFile.path}');
         continue;
       }
       final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
       await targetFile.writeAsBytes(bytes, flush: true);
-      print('Copied tessdata asset $assetPath -> ${targetFile.path}');
+      print('Copied model asset $assetPath -> ${targetFile.path}');
     }
 
-    print('Tessdata loaded to ${tessdataDir.path}');
+    print('Models loaded to ${modelsDir.path}');
   }
 
   Future<void> initActor() {

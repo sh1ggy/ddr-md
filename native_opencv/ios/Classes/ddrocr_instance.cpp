@@ -60,8 +60,6 @@ DdrocrInstance::~DdrocrInstance()
 void DdrocrInstance::setConfig(const COCRConfig &cfg)
 {
     config = cfg;
-    ocrWrapper.psm_eng   = cfg.psm_eng;
-    ocrWrapper.psm_engjp = cfg.psm_engjp;
     platform_log("setConfig: border=%d gaussian=%d epsilon=%.3f\n",
                  cfg.border, cfg.gaussian_blur_size, cfg.simplification_epsilon);
 }
@@ -145,9 +143,6 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         ref = now;
     };
     auto t_rolling_timer = t_total_start;
-
-    cv::Mat grayImg;
-    cv::cvtColor(inputImg, grayImg, cv::COLOR_BGR2GRAY);
 
     // Selecting Details box - HSV mask
     cv::Mat imgHSV;
@@ -243,28 +238,6 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     //     detectedRois[i].height /= morph_scale_factor;
     // }
 
-    // The full-frame binarization is computed from inputImg alone (independent of
-    // the detected ROIs), so do it before the no-ROI early return. That way the
-    // debug mask reflects *every* processed frame — including ones where the HSV
-    // Details-box detector found no candidate ROIs — instead of going stale.
-
-    // gaussian filter sigma=1
-    cv::Mat Ifiltered;
-    cv::GaussianBlur(inputImg, Ifiltered, cv::Size(0, 0), 1.0);
-
-    // rgb2gray
-    cv::Mat preprocessed_BW;
-    cv::cvtColor(Ifiltered, preprocessed_BW, cv::COLOR_BGR2GRAY);
-
-    // MATLAB-like imbinarize (Otsu) -> logical 0/1
-    cv::Mat preprocessed_BW1;
-    preprocessed_BW1 = otsuToLogical(preprocessed_BW);
-
-    // Debug ON: always hand back the full-frame binarized image the OCR crops
-    // are read from (displayed 0/255) — the image the details ROIs index into.
-    if (debugImageType == DebugImageType::ON)
-        result.debugMask = logicalToDisplayU8(preprocessed_BW1);
-
     if (detectedRois.size() == 0)
     {
         platform_log("No OCR ROI detected, defaulting to full image\n");
@@ -272,33 +245,26 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         return result;
     }
 
-    // TODO: this takes 4000ms, move this noise reduction to before logical 
-    // bwareaopen - remove connected components smaller than 5 pixels
-    // cv::Mat preprocessed_BW2 = preprocessed_BW1.clone();
-    // std::vector<std::vector<cv::Point>> preprocessed_contours;
-    // cv::Mat labels, stats, centroids;
-    // int preprocessed_n = cv::connectedComponentsWithStats(preprocessed_BW1, labels, stats, centroids);
-    // for (int i = 1; i < preprocessed_n; i++)
-    // {
-    //     if (stats.at<int>(i, cv::CC_STAT_AREA) < 5)
-    //     {
-    //         cv::Mat mask = (labels == i);
-    //         preprocessed_BW2.setTo(0, mask);
-    //     }
-    // }
+    // Full-frame binarization for Details OCR: Gaussian blur → grayscale → Otsu.
+    // Otsu on the full frame finds a global threshold that cleanly separates the
+    // dark tab text from the lighter backgrounds, the same strategy that worked
+    // with Tesseract. Result is white text on black (inverted from Otsu default).
+    cv::Mat frameGray, frameBlurred, frameBin;
+    cv::GaussianBlur(inputImg, frameBlurred, cv::Size(0, 0), 1.0);
+    cv::cvtColor(frameBlurred, frameGray, cv::COLOR_BGR2GRAY);
+    cv::threshold(frameGray, frameBin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    save_img("frameBin", frameBin);
 
-    // imcomplement for logical image (0/1)
-    cv::Mat preprocessed_BW3;
-    //cv::subtract(cv::Scalar::all(1), preprocessed_BW1, preprocessed_BW3);
+    // Debug: hand back the HSV mask as the debug overlay
+    if (debugImageType == DebugImageType::ON)
+        result.debugMask = BW_HSV;
 
-    checkpoint("image preprocessing (close/gaussian/otsu/bwareaopen)", t_rolling_timer);
+    checkpoint("image preprocessing", t_rolling_timer);
 
     cv::Mat roi_img = inputImg.clone();
     int correct_roi_idx = -1;
     std::vector<int> detectedDetailsIndices;
 
-    // Debug ON: keep the binarized crop fed to Tesseract for each candidate that
-    // matched "Details", so the selected one can be returned alongside the mask.
     std::map<int, cv::Mat> detailsCrops;
 
     // Create a details_rois subfolder for debug output
@@ -312,45 +278,36 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     for (size_t i = 0; i < detectedRois.size(); i++)
     {
         cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
-         cv::Rect details_roi = detectedRois[i];
+        cv::Rect details_roi = detectedRois[i];
 
-        save_img("preprocessed_BW3", logicalToDisplayU8(preprocessed_BW1));
+        // Crop from full-frame Otsu binary, then 3x upscale with INTER_NEAREST —
+        // same strategy as the old Tesseract pipeline that produced clean results.
+        cv::Mat detailsCrop = inputImg(details_roi);
+        cv::Mat detailsBinCrop = frameBin(details_roi);
+        cv::Mat detailsUpscaled, detailsInput;
+        cv::resize(detailsBinCrop, detailsUpscaled, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
+        cv::cvtColor(detailsUpscaled, detailsInput, cv::COLOR_GRAY2BGR);
 
-        cv::Mat roiMat = preprocessed_BW1(details_roi);
+        // Save every candidate crop for debugging
+        if (!detailsRoiDir.empty())
+        {
+            char stem[512];
+            snprintf(stem, sizeof(stem), "details_rois/roi_%zu_input", i);
+            save_img(stem, detailsCrop);
+            snprintf(stem, sizeof(stem), "details_rois/roi_%zu_bin", i);
+            save_img(stem, detailsUpscaled);
+        }
+
+        char roiName[32];
+        snprintf(roiName, sizeof(roiName), "details_roi_%zu", i);
+
         OCRResult roiOcrResult = {};
 
-        // Upscale + pad the "Details" ROI before OCR — matches the
-        // preprocessing that getPreprocessedRoiImage applies to score ROIs.
-        cv::Mat detailsInput;
-        cv::resize(roiMat, detailsInput, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
-        cv::copyMakeBorder(detailsInput, detailsInput,
-                           0, 0, 0, 0,
-                           cv::BORDER_CONSTANT, cv::Scalar(1));
-
-        // Save raw and preprocessed details ROI candidates to debug subfolder
-        // if (!detailsRoiDir.empty())
-        // {
-        //     char rawStem[512], prepStem[512];
-        //     snprintf(rawStem, sizeof(rawStem), "details_rois/roi_%zu_raw", i);
-        //     snprintf(prepStem, sizeof(prepStem), "details_rois/roi_%zu_preprocessed", i);
-
-        //     save_img(rawStem, logicalToDisplayU8(roiMat));
-        //     save_img(prepStem, logicalToDisplayU8(detailsInput));
-        //     platform_log("[DEBUG] saved details ROI %zu: %s/%s.png\n", i, debugDir.c_str(), rawStem);
-        // }
-
         auto t_ocr_start = std::chrono::high_resolution_clock::now();
-        roiOcrResult = ocrWrapper.performOCR(detailsInput.clone(), OCRType::Details);
-        // roiOcrResult = ocrWrapper.performOCR(detailsInput.clone());
+        roiOcrResult = ocrWrapper.performOCR(detailsInput, OCRType::Details, roiName);
         auto t_ocr_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t_ocr_start).count();
         platform_log("[TIMER] performOCR ROI %zu: %lld ms\n", i, (long long)t_ocr_ms);
-        // TODO: fix Tesseract's confidence calibration to reliably use this threshold
-        //        if (roiOcrResult.confidence < 0.5)
-        //        {
-        //            platform_log("Low OCR confidence (%.2f) for ROI %d, skipping\n", roiOcrResult.confidence, i);
-        //            continue;
-        //        }
 
         // Strip all non-alphanumeric characters
         std::string cleanText;
@@ -359,6 +316,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             if (std::isalnum(static_cast<unsigned char>(c)))
                 cleanText += std::tolower(static_cast<unsigned char>(c));
         }
+        platform_log("[DETAILS][ROI %zu] raw='%s' clean='%s'\n", i, roiOcrResult.text.c_str(), cleanText.c_str());
+
         // Normalize target string: "Details" -> "details"
         const std::string target = "details";
         // Check if cleanText contains target as a substring (loose match)
@@ -368,20 +327,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             platform_log("Found 'Details' (loose match) with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
 
             if (debugImageType == DebugImageType::ON)
-                detailsCrops[(int)i] = logicalToDisplayU8(detailsInput);
-
-            // Only dump the ROI image once it has actually matched "Details", so
-            // non-details candidate boxes — and every camera frame that finds
-            // nothing — don't flood the debug folder.
-            if (!detailsRoiDir.empty())
-            {
-                char rawStem[512], prepStem[512];
-                snprintf(rawStem, sizeof(rawStem), "details_rois/roi_%zu_raw", i);
-                snprintf(prepStem, sizeof(prepStem), "details_rois/roi_%zu_preprocessed", i);
-                save_img(rawStem, logicalToDisplayU8(roiMat));
-                save_img(prepStem, logicalToDisplayU8(detailsInput));
-                platform_log("[DEBUG] saved details ROI %zu: %s/%s.png\n", i, debugDir.c_str(), rawStem);
-            }
+                detailsCrops[(int)i] = detailsInput.clone();
         }
     }
 
@@ -541,61 +487,61 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
 
     cv::Point2f warped_details_top_left = tl_transformed[0];
 
-    // OCRResults ocrResults = {};
+    OCRResults ocrResults = {};
 
-    // auto expand = [&](int i) {
-    //     return cv::Point(config.roi[i][4], config.roi[i][5]);
-    // };
+    auto expand = [&](int i) {
+        return cv::Point(config.roi[i][4], config.roi[i][5]);
+    };
 
-    // ocrResults.score = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Score, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_SCORE), "score", OCRType::Digit);
+    ocrResults.score = getPreprocessedRoiImage(
+        warpedImg, ROI_Score, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_SCORE), "score", OCRType::Digit);
 
-    // ocrResults.marvelous = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Marvelous, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_MARVELOUS), "marvelous", OCRType::Digit);
+    ocrResults.marvelous = getPreprocessedRoiImage(
+        warpedImg, ROI_Marvelous, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_MARVELOUS), "marvelous", OCRType::Digit);
 
-    // ocrResults.perfect = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Perfect, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_PERFECT), "perfect", OCRType::Digit);
+    ocrResults.perfect = getPreprocessedRoiImage(
+        warpedImg, ROI_Perfect, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_PERFECT), "perfect", OCRType::Digit);
 
-    // ocrResults.great = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Great, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_GREAT), "great", OCRType::Digit);
+    ocrResults.great = getPreprocessedRoiImage(
+        warpedImg, ROI_Great, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_GREAT), "great", OCRType::Digit);
 
-    // ocrResults.good = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Good, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_GOOD), "good", OCRType::Digit);
+    ocrResults.good = getPreprocessedRoiImage(
+        warpedImg, ROI_Good, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_GOOD), "good", OCRType::Digit);
 
-    // ocrResults.miss = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Miss, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_MISS), "miss", OCRType::Digit);
+    ocrResults.miss = getPreprocessedRoiImage(
+        warpedImg, ROI_Miss, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_MISS), "miss", OCRType::Digit);
 
-    // ocrResults.flare = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Flare, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_FLARE), "flare", OCRType::Eng);
+    ocrResults.flare = getPreprocessedRoiImage(
+        warpedImg, ROI_Flare, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_FLARE), "flare", OCRType::Eng);
 
-    // ocrResults.title = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Title, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_TITLE), "title", OCRType::EngJP);
+    ocrResults.title = getPreprocessedRoiImage(
+        warpedImg, ROI_Title, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_TITLE), "title", OCRType::EngJP);
 
-    // ocrResults.username = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Username, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_USERNAME), "username", OCRType::EngJP);
+    ocrResults.username = getPreprocessedRoiImage(
+        warpedImg, ROI_Username, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_USERNAME), "username", OCRType::EngJP);
 
-    // ocrResults.difficulty = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Difficulty, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_DIFFICULTY), "difficulty", OCRType::Eng);
+    ocrResults.difficulty = getPreprocessedRoiImage(
+        warpedImg, ROI_Difficulty, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_DIFFICULTY), "difficulty", OCRType::Eng);
 
-    // ocrResults.max_combo = getPreprocessedRoiImage(
-    //     warpedImg, ROI_MaxCombo, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_MAXCOMBO), "max_combo", OCRType::Digit);
+    ocrResults.max_combo = getPreprocessedRoiImage(
+        warpedImg, ROI_MaxCombo, ROI_Details, warped_details_top_left,
+        expand(ROI_IDX_MAXCOMBO), "max_combo", OCRType::Digit);
 
-    // result.ocrResults = ocrResults;
+    result.ocrResults = ocrResults;
 
-    // auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-    //     std::chrono::high_resolution_clock::now() - t_total_start).count();
-    // platform_log("[TIMER] process_image total: %lld ms\n", (long long)t_total_ms);
+    auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - t_total_start).count();
+    platform_log("[TIMER] process_image total: %lld ms\n", (long long)t_total_ms);
 
     return result;
 }
@@ -640,15 +586,19 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     if (cropped.empty())
         return result;
 
-    // Grayscale + top-hat on the original-resolution single-channel ROI, THEN
-    // upscale. Doing morphology before the resize keeps it off the much larger
-    // upscaled buffer and off the two extra color channels. The kernel is sized
-    // for original resolution (config.tophat_kernel_size).
+    // Restore the Tesseract-era preprocessing pipeline — it produced the best
+    // binarization results and is equally valid for ONNX input:
+    // 1. Gray + top-hat to correct uneven illumination at original resolution
+    // 2. Upscale (tiny ~50px crops → ~150px) with INTER_CUBIC
+    // 3. Light Gaussian blur to denoise before Otsu
+    // 4. Otsu BINARY_INV → white text on black background
+    // 5. Convert to BGR for performOCR (no border padding needed for ONNX)
     cv::Mat grayOrig;
     cv::cvtColor(cropped, grayOrig, cv::COLOR_BGR2GRAY);
 
-    cv::Mat kernel_tophat = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(config.tophat_kernel_size, config.tophat_kernel_size));
-
+    cv::Mat kernel_tophat = cv::getStructuringElement(
+        cv::MORPH_ELLIPSE,
+        cv::Size(config.tophat_kernel_size, config.tophat_kernel_size));
     cv::Mat corrected;
     {
         auto t0 = std::chrono::high_resolution_clock::now();
@@ -658,28 +608,21 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
         platform_log("[TIMER] [%s] morph tophat: %lld ms\n", imageName.c_str(), (long long)ms);
     }
 
-    // Upscale the corrected ROI (tiny ~50px → ~150px) before binarization.
     cv::Mat gray;
     cv::resize(corrected, gray, cv::Size(), config.resolution_scale, config.resolution_scale, cv::INTER_CUBIC);
-
-    // Step 2: Light GaussianBlur to denoise before Otsu
     cv::GaussianBlur(gray, gray, cv::Size(config.gaussian_blur_size, config.gaussian_blur_size), 0);
 
-    cv::Mat BW2;
+    cv::Mat bin;
+    cv::threshold(gray, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
 
-    // Tesseract: use logical 0/1 binary image.
-    cv::Mat BW1 = otsuToLogical(gray);
-    cv::subtract(cv::Scalar::all(1), BW1, BW2);
-    // In BW2: text=1 (foreground), background=0
+    cv::Mat ocrInput;
+    cv::cvtColor(bin, ocrInput, cv::COLOR_GRAY2BGR);
 
-    // Add white border padding so Tesseract sees whitespace around text.
-    // In BW2 after complement: text=0, background=1. Pad with 1 (background/white).
-    cv::copyMakeBorder(BW2, BW2, config.border, config.border, config.border, config.border,
-                       cv::BORDER_CONSTANT, cv::Scalar(1));
+    save_img("roi_" + imageName, bin);
 
     {
         auto t0 = std::chrono::high_resolution_clock::now();
-        result = ocrWrapper.performOCR(BW2, type, imageName);
+        result = ocrWrapper.performOCR(ocrInput, type, imageName);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t0).count();
         platform_log("[TIMER] [%s] performOCR: %lld ms\n", imageName.c_str(), (long long)ms);

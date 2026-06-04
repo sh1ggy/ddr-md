@@ -36,7 +36,7 @@ flutter:
     - assets/jackets-lowres/
     - assets/jackets/
     - assets/song-data/
-    - assets/tessdata/
+    - assets/models/
   fonts:
     - family: Handel
       fonts: 

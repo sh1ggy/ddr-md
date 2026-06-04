@@ -83,8 +83,8 @@ struct ProcessImgResult
 struct COCRConfig
 {
     int32_t border                    = 30;
-    int32_t psm_eng                   = 6;   // tesseract::PSM_SINGLE_BLOCK
-    int32_t psm_engjp                 = 8;   // tesseract::PSM_SINGLE_WORD
+    int32_t psm_eng                   = 6;
+    int32_t psm_engjp                 = 8;
     int32_t gaussian_blur_size        = 3;
     double  simplification_epsilon    = 0.07;
     double  area_min_factor           = 0.00082; // 0.082% of image area
