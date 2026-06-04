@@ -132,26 +132,13 @@ class InitialRequest {
 
 final DynamicLibrary _nativeLib = _openDynamicLibrary();
 
-// Getting a library that holds needed symbols
 DynamicLibrary _openDynamicLibrary() {
   return Platform.isAndroid
       ? DynamicLibrary.open("libnative_opencv.so")
       : DynamicLibrary.process();
 }
 
-// Mirrors C COCRConfig struct — layout must match exactly (348 bytes).
-// offset  0: border               Int32
-// offset  4: psm_eng              Int32
-// offset  8: psm_engjp            Int32
-// offset 12: gaussian_blur_size   Int32
-// offset 16: simplification_epsilon Double
-// offset 24: area_min_factor      Double
-// offset 32: area_max_factor      Double
-// offset 40: resolution_scale     Double
-// offset 48: tophat_kernel_size   Int32
-// offset 52: morph_width          Int32
-// offset 56: morph_height         Int32
-// offset 60: roi[12][6]           Array<Array<Int32>>
+// Layout must match the C COCRConfig struct exactly.
 final class COCRConfig extends Struct {
   @Int32()
   external int border;
@@ -193,7 +180,6 @@ final class COCRStrings extends Struct {
   external Pointer<Char> maxCombo;
 }
 
-// C Functions signatures
 typedef _c_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>, Pointer<COCRConfig>);
 typedef _dart_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>, Pointer<COCRConfig>);
 
@@ -231,7 +217,6 @@ typedef _c_processPickedImage = Void Function(
   Int32 side,
 );
 
-// Dart functions signatures
 typedef _dart_processCameraImage = void Function(
     Pointer<Void> handle,
     int imgWidth,
@@ -263,7 +248,6 @@ typedef _dart_processPickedImage = void Function(
   int side,
 );
 
-// Create dart functions that invoke the C funcion
 final _createOcrInstanceFn =
     _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
         'create_ocr_instance');
@@ -277,7 +261,6 @@ final _processPickedImageFn =
     _nativeLib.lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
         'process_picked_image');
 
-// Builds a COCRConfig struct from ocr_config.dart constants.
 // Caller must calloc.free() the returned pointer.
 Pointer<COCRConfig> _buildOCRConfig() {
   final p = calloc<COCRConfig>();
@@ -304,8 +287,7 @@ Pointer<COCRConfig> _buildOCRConfig() {
   return p;
 }
 
-// Reads the 6 score/judgement strings the UI displays. C allocates each field
-// with malloc; the corresponding _freeOcrStrings releases them.
+// C allocates each field with malloc; _freeOcrStrings releases them.
 Map<String, String> _readOcrStrings(Pointer<COCRStrings> p) {
   String read(Pointer<Char> s) =>
       s == nullptr ? '' : s.cast<Utf8>().toDartString();
@@ -340,12 +322,6 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
   calloc.free(p);
 }
 
-// Builds a ProcessResult from the FFI output pointers and frees all of them
-// (including the C-allocated rois array and strings). Shared by the picked-image
-// and camera paths, which produce identical output.
-// Copies the encoded image bytes the native layer allocated (if any) into a
-// Dart-owned Uint8List, then frees the native buffer and the length/pointer
-// cells. Safe to call when no image was requested — the pointers are null/0.
 Uint8List? _readAndFreeImage(
   Pointer<Pointer<Uint8>>? outputImagePtr,
   Pointer<Int32>? outputImageLen,
@@ -514,18 +490,14 @@ Future<ProcessResult> _processFrame(
 }
 
 void isolateEntryPoint(InitialRequest initReq) {
-  // Save the port on which we will send messages to the main thread
   SendPort _toMainThread = initReq.toMainThread;
 
-  // This isolate owns its own native DdrocrInstance for its whole lifetime, so
-  // it is the sole thread ever touching that instance (and its Tesseract APIs).
   final dataPathPtr = initReq.appPath.toNativeUtf8();
   final cfg = _buildOCRConfig();
   final handle = _createOcrInstanceFn(dataPathPtr, cfg);
   calloc.free(dataPathPtr);
   calloc.free(cfg);
 
-  // Create a port on which the main thread can send us messages and listen to it
   ReceivePort fromMainThread = ReceivePort();
   fromMainThread.listen((data) {
     if (data is Request) {
@@ -546,31 +518,19 @@ void isolateEntryPoint(InitialRequest initReq) {
     }
   });
 
-  // Send the main thread the port on which it can send us messages
   _toMainThread.send(fromMainThread.sendPort);
 }
 
 class OCRProcessor {
   Directory? tempDir;
-  Directory? appDir; // for iOS
+  Directory? appDir;
 
   // TODO: two controllers cos dynamic is gay
   final streamResultController = StreamController<ProcessResult>.broadcast();
 
-  /// Publicly observable processing state. True while the isolate is crunching
-  /// a frame or picked image; false once a result (or panic reset) arrives.
   final ValueNotifier<bool> isProcessing = ValueNotifier(false);
-
-  /// True from the moment Stop is pressed until the post-stop frame queue has
-  /// genuinely drained. The camera plugin keeps delivering already-queued frames
-  /// after stopImageStream() resolves, and [isProcessing] only reflects the
-  /// single in-flight frame — so it flickers off in the gaps between queued
-  /// frames. This stays true across those gaps (debounced on frame activity) so
-  /// the UI can show one continuous "Finalising…" state until the queue is empty.
   final ValueNotifier<bool> isDraining = ValueNotifier(false);
 
-  // Quiet window with no submitted frame (and nothing in flight) after which the
-  // post-stop queue is considered drained.
   static const Duration _drainQuietWindow = Duration(milliseconds: 600);
   Timer? _drainTimer;
 
@@ -620,24 +580,19 @@ class OCRProcessor {
   }
 
   Future<void> initActor() {
-    Completer<void> completer = Completer<void>();
-    // Prepare temp directory
-    String tempPath = tempDir!.path;
-    String appPath = appDir!.path;
+    final completer = Completer<void>();
+    final tempPath = tempDir!.path;
+    final appPath = appDir!.path;
 
-    // Start the isolate
     Isolate.spawn(isolateEntryPoint,
             InitialRequest(fromIsolate.sendPort, tempPath, appPath))
         .then((isolate) {
       _isolate = isolate;
-      // Wait for the isolate to send us its port
       fromIsolate.listen((data) {
         if (data is SendPort) {
-          // We have received the SendPort from the isolate
           toIsolate = data;
           completer.complete();
         } else if (data is ProcessResult) {
-          // We have received a result from the isolate
           _isProcessing = false;
           streamResultController.add(data);
         }
@@ -646,8 +601,6 @@ class OCRProcessor {
     return completer.future;
   }
 
-  // Which debug image (if any) the native pipeline should return per frame. Set
-  // by the UI; none in the hot path by default so there is zero encode cost.
   DebugImageType debugImageType = DebugImageType.none;
 
   int MAX_SKIPPED_FRAMES = 20;
@@ -662,16 +615,11 @@ class OCRProcessor {
     print('Panic reset of OCR processing state invoked. Continuing without dispose.');
   }
 
-  // Called by the UI when Stop is pressed. Enters the draining state and arms the
-  // quiet-window timer; each post-stop frame that arrives re-arms it, so draining
-  // only ends once frames have genuinely stopped flowing and nothing is in flight.
   void beginDraining() {
     isDraining.value = true;
     _armDrainTimer();
   }
 
-  // Cancel any in-progress draining — e.g. the user restarted OCR before the
-  // previous run's queue finished emptying.
   void cancelDraining() {
     _drainTimer?.cancel();
     isDraining.value = false;
@@ -680,8 +628,6 @@ class OCRProcessor {
   void _armDrainTimer() {
     _drainTimer?.cancel();
     _drainTimer = Timer(_drainQuietWindow, () {
-      // If a frame is still being crunched, wait another window — the result
-      // (or its panic reset) will re-evaluate. Otherwise the queue has drained.
       if (_isProcessing) {
         _armDrainTimer();
       } else {
@@ -701,9 +647,6 @@ class OCRProcessor {
   }
 
   void processVideostreamFrame(CameraImage image, int sensorOrientation) {
-    // Frames the camera plugin delivers after stopImageStream() are still
-    // processed — they may contain a late detection — so the stream drains
-    // naturally. The UI surfaces this background work via [isProcessing].
     _cameraFrames++;
     if (_cameraFrames % FRAME_THRESHOLD != 0) {
       return;
@@ -717,15 +660,9 @@ class OCRProcessor {
       return;
     }
 
-    // Extract the frame bytes here (main thread) and hand them to the isolate
-    // via TransferableTypedData so the cross-isolate transfer is zero-copy.
     Uint8List bytes;
-    // iOS BGRA frames may be row-padded; hand the native layer the real stride
-    // so it reads each row at the correct offset (0 => tightly packed, used by
-    // the Android YUV path, which is rebuilt contiguously below).
     int bytesPerRow = 0;
     if (image.format.group == ImageFormatGroup.yuv420) {
-      // Android: a buffer per YUV channel. iOS: a single BGRA buffer.
       final planes = image.planes;
       final yBuffer = planes[0].bytes;
       final uBuffer = planes[1].bytes;
@@ -734,7 +671,7 @@ class OCRProcessor {
           yBuffer.lengthInBytes + uBuffer.lengthInBytes + vBuffer.lengthInBytes;
       bytes = Uint8List(totalSize);
       bytes.setAll(0, yBuffer);
-      // Swap u and v buffers since that's what OpenCV's NV21 conversion expects.
+      // NV21: V before U.
       bytes.setAll(yBuffer.lengthInBytes, vBuffer);
       bytes.setAll(yBuffer.lengthInBytes + vBuffer.lengthInBytes, uBuffer);
     } else {
@@ -753,8 +690,6 @@ class OCRProcessor {
 
     final request = Request.fromCamera(RequestType.ProcessVideoImage, params);
     _isProcessing = true;
-    // A post-stop queued frame just got submitted — push the drain quiet window
-    // out so isDraining stays true while frames keep flowing.
     if (isDraining.value) _armDrainTimer();
     toIsolate?.send(request);
   }

@@ -1,5 +1,3 @@
-/// Name: OcrPage
-/// Description: Page to process camera feed frames for OCR using native FFI & OpenCV
 library;
 
 import 'dart:async';
@@ -50,47 +48,23 @@ class _OcrPageState extends State<OcrPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool _isCameraActive = false;
   bool _isTogglingCamera = false;
-  // True once the user has started (and stopped) at least one OCR session.
   bool _hasRecorded = false;
   CameraController? _controller;
   late OCRProcessor _ocrProcessor;
-  // Accumulates OCR readings across frames; the cached values survive frames
-  // that fail to read so the panel stays populated.
   final _OcrAggregator _aggregator = _OcrAggregator();
   double _camFrameToScreenScale = 0;
-  // Raw camera frame dimensions (landscape BGRA on iOS) used for ROI transform.
-  // These are the pixel dimensions of the frame the native layer processed, i.e.
-  // the coordinate space of both the detected ROIs and the captured JPEG.
   int _rawFrameWidth = 0;
   int _rawFrameHeight = 0;
 
   CameraImage? _lastFrame;
 
-  // Whether the native pipeline is asked to return debug images; none disables
-  // the debug panel and keeps the encode cost out of the hot path.
   DebugImageType _debugImageType = DebugImageType.none;
-  // When true the score panel shows a per-field histogram of every OCR value
-  // seen, not just the winner. Toggled by one button (in both the live and
-  // stopped views), applies to all rows at once — the rows themselves are not
-  // interactive.
   bool _histogramsExpanded = false;
-  // Latest full-frame binarized mask — updated every processed frame.
   final ValueNotifier<Uint8List?> _debugMaskBytes = ValueNotifier(null);
-  // Latest successful Details crop — only updated when a frame matched, so the
-  // last good crop persists through frames that detect nothing.
   final ValueNotifier<Uint8List?> _debugCropBytes = ValueNotifier(null);
-
-  // Last successful color capture for the stopped view. Holds the raw native
-  // frame bytes plus the ROIs in raw frame-pixel space (not screen-scaled), so
-  // the painter can scale and rotate them to whatever size the still image is
-  // laid out at — unlike the live overlay, which is pre-scaled to the preview.
   final ValueNotifier<_CaptureView?> _captureData = ValueNotifier(null);
-
-  // Last-known ROIs (scaled to screen space) painted on every frame, decoupled
-  // from the throttled OCR results that feed it.
   final ValueNotifier<(List<Rectangle<int>>, int?)> _roiData =
       ValueNotifier(([], null));
-  // Bumped once per vsync to drive the ROI overlay repaint.
   final ValueNotifier<int> _frameTick = ValueNotifier(0);
   late final Ticker _ticker;
 
@@ -108,10 +82,6 @@ class _OcrPageState extends State<OcrPage>
     _ocrProcessor.streamResultController.stream.listen((result) {
       final double scale = _camFrameToScreenScale;
 
-      // The detected ROIs are in upright portrait pixel space on both platforms
-      // (Android rotates its landscape YUV frame 90° CW in C++; iOS receives the
-      // BGRA frame already portrait), so the preview — shown full-width — maps
-      // them with a plain scale, no per-platform rotation math.
       final scaled = (result.detectedRois ?? []).map((r) {
         return Rectangle<int>(
           (r.left * scale).toInt(),
@@ -120,32 +90,16 @@ class _OcrPageState extends State<OcrPage>
           (r.height * scale).toInt(),
         );
       }).toList();
-      // Always repaint the detected candidate boxes for this frame. The details
-      // index only highlights one of them and is -1 when none matched, so the
-      // overlay never goes blank just because "Details" wasn't read this frame.
       _roiData.value = (scaled, result.detailsRoiIndex);
       final detailsFound =
           result.detailsRoiIndex != null && result.detailsRoiIndex! >= 0;
-      // Surface the debug images without a full rebuild — the
-      // ValueListenableBuilders below repaint just the panels. The mask updates
-      // every frame; the Details crop only when this frame matched, so the last
-      // successful crop persists through frames that detect nothing.
       if (result.debugMaskBytes != null) {
         _debugMaskBytes.value = result.debugMaskBytes;
       }
       if (result.debugDetailsCropBytes != null) {
         _debugCropBytes.value = result.debugDetailsCropBytes;
       }
-      // Persist the last successful color capture with the native ROIs (in
-      // frame-pixel space, matching the captured JPEG's own pixels — they come
-      // from the same inputImg). The stopped view scales them to fit however the
-      // still is laid out. Overwrites on each match (last wins).
       if (result.captureBytes != null) {
-        // Pixel dimensions of the frame the native layer processed (= the JPEG's
-        // own size and the ROI coordinate space), both already upright portrait.
-        // Android rotates its landscape YUV frame 90° in C++, so its processed
-        // dimensions are the raw camera dimensions swapped. iOS delivers the BGRA
-        // frame already portrait and is not rotated, so its dimensions are as-is.
         final int srcW = Platform.isAndroid ? _rawFrameHeight : _rawFrameWidth;
         final int srcH = Platform.isAndroid ? _rawFrameWidth : _rawFrameHeight;
         _captureData.value = _CaptureView(
@@ -156,8 +110,6 @@ class _OcrPageState extends State<OcrPage>
           frameHeight: srcH,
         );
       }
-      // Only count and display when the Details ROI was actually found and
-      // at least one OCR string contributed a non-empty value to the tally.
       if (detailsFound && result.ocrStrings.isNotEmpty) {
         final added = _aggregator.add(result.ocrStrings);
         if (added) setState(() {});
@@ -171,12 +123,6 @@ class _OcrPageState extends State<OcrPage>
   @override
   void dispose() {
     // TODO: use actual lifecycle events to call asynchronous controller methods
-    // if (_controller != null) {
-    //   _controller?.pausePreview();
-    //   if (_controller!.value.isStreamingImages) {
-    //     _controller?.stopImageStream();
-    //   }
-    // }
     _ticker.dispose();
     _frameTick.dispose();
     _roiData.dispose();
@@ -191,13 +137,9 @@ class _OcrPageState extends State<OcrPage>
 
   Future<void> _initCamera() async {
     try {
-      // Run OCR processor init and camera discovery in parallel — Tesseract
-      // loading and isolate spawn are independent of the camera controller.
       final ocrFuture = _ocrProcessor.init().then((_) => _ocrProcessor.initActor());
       final camerasFuture = availableCameras();
 
-      // Let the camera preview appear as soon as the controller is ready,
-      // without waiting for OCR (the FAB stays hidden until both are done).
       final cameras = await camerasFuture;
       if (cameras.isEmpty) throw Exception('No cameras available');
 
@@ -208,10 +150,8 @@ class _OcrPageState extends State<OcrPage>
       );
       await _controller!.initialize();
 
-      // Show the preview immediately; OCR may still be loading.
       if (mounted) setState(() {});
 
-      // Now wait for OCR to finish — after this the FAB becomes active.
       await ocrFuture;
 
       print('AS: ${_controller!.value.aspectRatio}'
@@ -297,30 +237,9 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     print("iOS DUMPED");
   }
 
-  // TODO actually handle this to stop debug from breaking
-  // @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) {
-  //   final CameraController? cameraController = _controller;
-
-  //   // App state changed before we got the chance to initialize.
-  //   if (cameraController == null || !cameraController.value.isInitialized) {
-  //     return;
-  //   }
-
-  //   if (state == AppLifecycleState.inactive) {
-  //     cameraController.dispose();
-  //   } else if (state == AppLifecycleState.resumed) {
-  //     _initCamera();
-  //   }
-  // }
-
+  // TODO: handle lifecycle events to stop debug from breaking
   void _processImage(CameraImage image) {
-    // print('Processing image frame...');
     int rotation = _controller?.description.sensorOrientation ?? 0;
-    // Width of the frame in the coordinate space the native layer produces ROIs
-    // in (= the preview's width). Android rotates its landscape YUV frame 90° in
-    // C++, so its portrait width is the raw image.height. iOS delivers the BGRA
-    // frame already portrait and is NOT rotated, so its width is image.width.
     int w = 0;
     if (Platform.isAndroid) {
       w = (rotation == 0 || rotation == 180) ? image.width : image.height;
@@ -342,13 +261,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     print('Toggle camera called. Current state: $_isCameraActive');
     try {
       if (_isCameraActive) {
-        // Stop the camera
         print('Stopping camera stream...');
-        // stopImageStream() ends new frame delivery, but frames the plugin
-        // already queued keep flowing to the isolate and are processed — a late
-        // detection there still lands. Enter the draining state so the stopped
-        // view shows one continuous "Finalising…" until that queue is empty,
-        // rather than flickering off in the gaps between queued frames.
         _ocrProcessor.beginDraining();
         if (_controller?.value.isStreamingImages ?? false) {
           await _controller!.stopImageStream();
@@ -364,16 +277,11 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
         if (_controller != null &&
             _controller!.value.isInitialized &&
             !(_controller!.value.isStreamingImages)) {
-          // Restarted before the previous run finished draining — drop that
-          // state so the new run's indicator reflects only this session.
           _ocrProcessor.cancelDraining();
           await _controller!.startImageStream(_processImage);
           setState(() {
             _isCameraActive = true;
-            // Start a fresh collection so cached values reflect this run only.
             _aggregator.clear();
-            // Drop the previous run's persisted overlay, debug frames, and the
-            // last capture so the stopped view reflects only this run.
             _roiData.value = ([], null);
             _debugMaskBytes.value = null;
             _debugCropBytes.value = null;
@@ -394,8 +302,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
   bool get cameraReady =>
       _controller != null && _controller!.value.isInitialized;
 
-  // OCR processor is ready once the isolate send-port has been established.
-  // We reuse _ocrProcessor.toIsolate as the readiness signal.
   bool get _ocrReady => _ocrProcessor.toIsolate != null;
 
   CameraState get cameraState {
@@ -441,10 +347,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     );
   }
 
-  // Live view: the full-width camera preview (so ROIs scale by
-  // screenWidth / frameWidth, exactly like the picked-image path) with the ROI
-  // overlay, and the running score panel below. A ListView gives the preview the
-  // full screen width and lets it scroll if it is taller than the viewport.
   Widget _buildActiveView() {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96),
@@ -476,8 +378,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     );
   }
 
-  // Enables/disables debug image capture. Clears the last images when turning
-  // it off so stale frames don't linger.
   void _setDebugEnabled(bool enabled) {
     final type = enabled ? DebugImageType.on : DebugImageType.none;
     setState(() => _debugImageType = type);
@@ -488,8 +388,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     }
   }
 
-  // On/off toggle plus two panels: the latest full-frame mask and the latest
-  // successfully matched Details crop (persisted across failed frames).
   Widget _buildDebugControls() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -564,11 +462,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     );
   }
 
-  // Renders the last successful color capture with its static ROIs painted on
-  // top — the stopped-state equivalent of the load_image result view. The
-  // capture is already upright portrait (both platforms rotate in C++), and the
-  // ROIs are in that same pixel space, so a painter just scales them to the
-  // laid-out image size. They stay aligned at any size.
   Widget _buildCapturePanel() {
     return ValueListenableBuilder<_CaptureView?>(
       valueListenable: _captureData,
@@ -609,7 +502,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     );
   }
 
-  // Stopped view: the cached, highest-confidence readings collected this run.
   Widget _buildStoppedView() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
@@ -619,9 +511,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        // Show one continuous "Finalising…" while the post-stop queue drains:
-        // isDraining stays true across the gaps between queued frames, where
-        // isProcessing alone would flicker off.
         ListenableBuilder(
           listenable: Listenable.merge(
               [_ocrProcessor.isProcessing, _ocrProcessor.isDraining]),
@@ -656,11 +545,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     );
   }
 
-  // One row per OCR field showing the most-frequent (highest-confidence) value
-  // and the share of detections that agreed on it. A single button expands every
-  // row into a histogram of all values seen for the field, so the losing OCR
-  // candidates are visible too — available in both the live and stopped views.
-  // The rows stay non-interactive; one toggle controls them all.
   Widget _buildScorePanel({required bool live}) {
     final bool showHistograms = _histogramsExpanded;
     final rows = <Widget>[
@@ -699,8 +583,6 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
                 ),
               ),
             ),
-            // One button toggles the value histograms for all rows, in both the
-            // live and stopped views. Hidden only when there's nothing to show.
             if (rows.isNotEmpty)
               TextButton.icon(
                 onPressed: () => setState(
@@ -729,21 +611,13 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
   }
 }
 
-// Accumulates the OCR'd text across frames. For each field it tallies every
-// non-empty value seen; the displayed value is the most-frequent one — frequency
-// stands in for confidence, since the native layer reports no score — and it
-// stays cached even when later frames fail to read that field. Picking the modal
-// reading is the noise-robust form of "averaging" a value that should be fixed.
+// Tallies OCR readings across frames; the modal value per field is the result.
 class _OcrAggregator {
   final Map<String, Map<String, int>> _counts = {};
-  // Frames where the "Details" label matched and at least one field was read
-  // (one per successful [add]). The score panel is built from these.
   int _detailsCount = 0;
 
   int get detailsCount => _detailsCount;
 
-  // Returns true if at least one non-empty value was added to the tally,
-  // in which case _detailsCount is also incremented.
   bool add(Map<String, String> strings) {
     bool anyAdded = false;
     strings.forEach((key, raw) {
@@ -762,9 +636,6 @@ class _OcrAggregator {
     _detailsCount = 0;
   }
 
-  // Highest-confidence (most-frequent) reading for [key], the share of
-  // detections that agreed on it, and how many samples agreed ([count]), or
-  // null if the field was never read.
   ({String value, double confidence, int count})? best(String key) {
     final tally = _counts[key];
     if (tally == null || tally.isEmpty) return null;
@@ -777,10 +648,6 @@ class _OcrAggregator {
     return (value: top!.key, confidence: top.value / total, count: top.value);
   }
 
-  // Every distinct value seen for [key], descending by count, each with its
-  // [count] and [share] of the field's total reads. The first entry is the same
-  // value [best] returns; the rest are the losing candidates a histogram shows.
-  // Empty when the field was never read.
   List<({String value, int count, double share})> candidates(String key) {
     final tally = _counts[key];
     if (tally == null || tally.isEmpty) return const [];
@@ -794,8 +661,6 @@ class _OcrAggregator {
   }
 }
 
-// A single histogram row: the value, a bar whose width is its share of reads,
-// and the count + percentage. The winning value is tinted to stand out.
 class _CandidateBar extends StatelessWidget {
   const _CandidateBar({required this.candidate, required this.isWinner});
 
@@ -852,8 +717,6 @@ class _CandidateBar extends StatelessWidget {
   }
 }
 
-// Pinging green dot shown in the AppBar while the OCR isolate is processing.
-// Animates opacity so it visibly pulses rather than being a static indicator.
 class _ProcessingDot extends StatefulWidget {
   const _ProcessingDot({required this.isProcessing});
 
@@ -913,8 +776,6 @@ class _ProcessingDotState extends State<_ProcessingDot>
   }
 }
 
-// Repaints every frame (driven by [frameTick]) using the latest [roiData], so the
-// Details ROI stays painted on the live preview between throttled OCR results.
 class _CameraRoiPainter extends CustomPainter {
   _CameraRoiPainter(this.roiData, Listenable frameTick) : super(repaint: frameTick);
 
@@ -930,9 +791,6 @@ class _CameraRoiPainter extends CustomPainter {
   bool shouldRepaint(covariant _CameraRoiPainter oldDelegate) => false;
 }
 
-// The last successful color capture for the stopped view: the native frame
-// JPEG (already upright portrait, since both platforms rotate in C++) and the
-// ROIs in that frame's pixel space.
 class _CaptureView {
   const _CaptureView({
     required this.bytes,
@@ -949,9 +807,6 @@ class _CaptureView {
   final int frameHeight;
 }
 
-// Paints the static capture ROIs, scaling them from the portrait frame-pixel
-// space to whatever size the still image is laid out at (the canvas size). The
-// capture and its ROIs share that same upright space, so they stay aligned.
 class _CaptureRoiPainter extends CustomPainter {
   _CaptureRoiPainter({
     required this.rois,
