@@ -269,6 +269,12 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     {
         platform_log("No OCR ROI detected, defaulting to full image\n");
         result.isDetected = 0;
+        platform_log("[TRACKER] miss-path A (no HSV blobs): tracker.isValid=%d\n",
+                     tracker.isValid() ? 1 : 0);
+        if (tracker.isValid())
+            result.projectedDetailsQuad = tracker.project(grayImg);
+        platform_log("[TRACKER] miss-path A result: projectedQuad.size=%zu\n",
+                     result.projectedDetailsQuad.size());
         return result;
     }
 
@@ -402,6 +408,12 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         platform_log("[TIMER] process_image total (no Details found): %lld ms\n", (long long)t_total_ms);
         platform_log("Failed to find 'Details' in any ROI, defaulting to first detected ROI\n");
         result.detailsRoiIndex = -1;
+        platform_log("[TRACKER] miss-path B (HSV blobs but no Details): tracker.isValid=%d\n",
+                     tracker.isValid() ? 1 : 0);
+        if (tracker.isValid())
+            result.projectedDetailsQuad = tracker.project(grayImg);
+        platform_log("[TRACKER] miss-path B result: projectedQuad.size=%zu\n",
+                     result.projectedDetailsQuad.size());
         return result;
     }
 
@@ -524,6 +536,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     cv::Point2f bl = remaining[0].x < remaining[1].x ? remaining[0] : remaining[1];
 
     std::vector<cv::Point2f> detailsPoints = {tl, tr, br, bl};
+    platform_log("[TRACKER] hit-path (Details detected, idx=%d): refreshing anchor\n",
+                 correct_roi_idx);
+    // Refresh the inter-frame tracker with the freshly detected quad so the
+    // next missed frame can project it forward via KLT + homography.
+    tracker.refresh(grayImg, detailsPoints);
     // Perform homography
     std::vector<cv::Point2f> detailsReferencePoints = rectToPoints(ROI_Details);
     cv::Mat H = cv::getPerspectiveTransform(detailsPoints, detailsReferencePoints);
@@ -541,61 +558,6 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
 
     cv::Point2f warped_details_top_left = tl_transformed[0];
 
-    // OCRResults ocrResults = {};
-
-    // auto expand = [&](int i) {
-    //     return cv::Point(config.roi[i][4], config.roi[i][5]);
-    // };
-
-    // ocrResults.score = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Score, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_SCORE), "score", OCRType::Digit);
-
-    // ocrResults.marvelous = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Marvelous, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_MARVELOUS), "marvelous", OCRType::Digit);
-
-    // ocrResults.perfect = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Perfect, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_PERFECT), "perfect", OCRType::Digit);
-
-    // ocrResults.great = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Great, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_GREAT), "great", OCRType::Digit);
-
-    // ocrResults.good = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Good, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_GOOD), "good", OCRType::Digit);
-
-    // ocrResults.miss = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Miss, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_MISS), "miss", OCRType::Digit);
-
-    // ocrResults.flare = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Flare, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_FLARE), "flare", OCRType::Eng);
-
-    // ocrResults.title = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Title, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_TITLE), "title", OCRType::EngJP);
-
-    // ocrResults.username = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Username, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_USERNAME), "username", OCRType::EngJP);
-
-    // ocrResults.difficulty = getPreprocessedRoiImage(
-    //     warpedImg, ROI_Difficulty, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_DIFFICULTY), "difficulty", OCRType::Eng);
-
-    // ocrResults.max_combo = getPreprocessedRoiImage(
-    //     warpedImg, ROI_MaxCombo, ROI_Details, warped_details_top_left,
-    //     expand(ROI_IDX_MAXCOMBO), "max_combo", OCRType::Digit);
-
-    // result.ocrResults = ocrResults;
-
-    // auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-    //     std::chrono::high_resolution_clock::now() - t_total_start).count();
-    // platform_log("[TIMER] process_image total: %lld ms\n", (long long)t_total_ms);
 
     return result;
 }

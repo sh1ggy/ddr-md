@@ -65,6 +65,10 @@ class _OcrPageState extends State<OcrPage>
   final ValueNotifier<_CaptureView?> _captureData = ValueNotifier(null);
   final ValueNotifier<(List<Rectangle<int>>, int?)> _roiData =
       ValueNotifier(([], null));
+  // 4-corner projected quad (screen-space) from the inter-frame tracker on
+  // miss frames. Null when the current frame detected Details OR when the
+  // tracker has no anchor.
+  final ValueNotifier<List<Offset>?> _projectedQuadScaled = ValueNotifier(null);
   final ValueNotifier<int> _frameTick = ValueNotifier(0);
   late final Ticker _ticker;
 
@@ -93,6 +97,23 @@ class _OcrPageState extends State<OcrPage>
       _roiData.value = (scaled, result.detailsRoiIndex);
       final detailsFound =
           result.detailsRoiIndex != null && result.detailsRoiIndex! >= 0;
+      // Scale the tracker's projected quad into screen space. Clear it on
+      // detection-success frames (the green rect already shows ground truth)
+      // and on miss frames where the tracker had no anchor.
+      if (detailsFound || result.projectedDetailsQuad == null) {
+        if (_projectedQuadScaled.value != null) {
+          print('[TRACKER-UI] clearing projected quad '
+              '(detailsFound=$detailsFound, quadNull=${result.projectedDetailsQuad == null})');
+        }
+        _projectedQuadScaled.value = null;
+      } else {
+        final scaled = result.projectedDetailsQuad!
+            .map((p) => Offset(p.x * scale, p.y * scale))
+            .toList(growable: false);
+        print('[TRACKER-UI] set projected quad (scale=${scale.toStringAsFixed(3)}): '
+            'tl=${scaled[0]} tr=${scaled[1]} br=${scaled[2]} bl=${scaled[3]}');
+        _projectedQuadScaled.value = scaled;
+      }
       if (result.debugMaskBytes != null) {
         _debugMaskBytes.value = result.debugMaskBytes;
       }
@@ -126,6 +147,7 @@ class _OcrPageState extends State<OcrPage>
     _ticker.dispose();
     _frameTick.dispose();
     _roiData.dispose();
+    _projectedQuadScaled.dispose();
     _debugMaskBytes.dispose();
     _debugCropBytes.dispose();
     _captureData.dispose();
@@ -356,7 +378,11 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             RepaintBoundary(
               child: CustomPaint(
                 foregroundPainter: _CameraRoiPainter(_roiData, _frameTick),
-                child: CameraPreview(_controller!),
+                child: CustomPaint(
+                  foregroundPainter:
+                      ProjectedQuadPainter(quad: _projectedQuadScaled),
+                  child: CameraPreview(_controller!),
+                ),
               ),
             ),
             Positioned(

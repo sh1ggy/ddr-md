@@ -4,6 +4,7 @@
 #include <string>
 #include <stdint.h>
 #include "ocr_wrapper.h"
+#include "details_tracker.h"
 
 struct bounding_box
 {
@@ -59,6 +60,11 @@ struct ProcessImgResult
     // the debug toggle). The stopped view paints the static ROIs over this last
     // good capture; the UI persists it and overwrites it on the next match.
     cv::Mat colorCapture;
+    // 4 corners (tl,tr,br,bl) of the Details quad projected forward from the
+    // last successful detection by the KLT/homography tracker. Empty on
+    // successful detections (the fresh rois carry that info) and on misses
+    // where no anchor is available / tracking failed.
+    std::vector<cv::Point2f> projectedDetailsQuad;
 };
 
 // FFI-compatible config struct — layout must match the Dart COCRConfig Struct exactly.
@@ -132,6 +138,7 @@ private:
     COCRConfig config;
     // Helper methods
     OCRWrapper ocrWrapper;
+    DetailsTracker tracker;
     cv::Mat otsuToLogical(const cv::Mat &gray, bool invert = false) const;
     cv::Mat logicalToDisplayU8(const cv::Mat &logical) const;
     cv::Rect expandRoi(cv::Rect roi, cv::Point expand);

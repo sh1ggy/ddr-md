@@ -120,7 +120,8 @@ class _LoadImageState extends State<LoadImage> {
                 result.debugDetailsCropBytes,
                 result.captureBytes,
                 result.detailsRoiIndex,
-                result.ocrStrings);
+                result.ocrStrings,
+                result.projectedDetailsQuad);
           });
         });
       } else {

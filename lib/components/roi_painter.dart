@@ -65,3 +65,47 @@ class RoiResultPainter extends CustomPainter {
   bool shouldRepaint(covariant RoiResultPainter oldDelegate) =>
       rois != oldDelegate.rois;
 }
+
+final _projectedQuadPaint = Paint()
+  ..strokeWidth = 3.0
+  ..color = Colors.yellow
+  ..style = PaintingStyle.stroke;
+
+// Draws the 4-corner quad the inter-frame tracker projected forward when the
+// HSV/Tesseract detector missed. Dashed yellow so it visually distinguishes
+// "tracked" from the solid green "freshly detected" Details rect.
+void paintProjectedQuad(Canvas canvas, List<Offset> quad) {
+  if (quad.length != 4) return;
+  const dashLen = 12.0;
+  const gapLen = 8.0;
+  for (int i = 0; i < 4; i++) {
+    final a = quad[i];
+    final b = quad[(i + 1) % 4];
+    final segLen = (b - a).distance;
+    if (segLen <= 0) continue;
+    final dir = (b - a) / segLen;
+    double drawn = 0;
+    while (drawn < segLen) {
+      final start = a + dir * drawn;
+      final end = a + dir * (drawn + dashLen).clamp(0, segLen).toDouble();
+      canvas.drawLine(start, end, _projectedQuadPaint);
+      drawn += dashLen + gapLen;
+    }
+  }
+}
+
+class ProjectedQuadPainter extends CustomPainter {
+  ProjectedQuadPainter({required this.quad}) : super(repaint: quad);
+
+  final ValueNotifier<List<Offset>?> quad;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final q = quad.value;
+    if (q == null) return;
+    paintProjectedQuad(canvas, q);
+  }
+
+  @override
+  bool shouldRepaint(covariant ProjectedQuadPainter oldDelegate) => false;
+}

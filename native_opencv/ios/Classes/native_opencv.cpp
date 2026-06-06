@@ -114,6 +114,32 @@ static void encodeDebugImage(
     encodeImage(img, ".png", outBuf, outLen);
 }
 
+// Marshal the inter-frame projected quad (4 points = 8 floats) into the FFI
+// out-params. Empty quad => leaves nullptr/0. Caller (Dart) owns and frees.
+static void writeProjectedQuad(
+    const std::vector<cv::Point2f> &quad,
+    float **outBuf,
+    int32_t *outValid)
+{
+    if (quad.size() != 4)
+    {
+        platform_log("[FFI] writeProjectedQuad: empty (size=%zu), out is nullptr/0\n",
+                     quad.size());
+        return;
+    }
+    float *buf = (float *)malloc(sizeof(float) * 8);
+    for (int i = 0; i < 4; i++)
+    {
+        buf[i * 2 + 0] = quad[i].x;
+        buf[i * 2 + 1] = quad[i].y;
+    }
+    *outBuf = buf;
+    *outValid = 1;
+    platform_log("[FFI] writeProjectedQuad: wrote tl=(%.1f,%.1f) tr=(%.1f,%.1f) br=(%.1f,%.1f) bl=(%.1f,%.1f)\n",
+                 quad[0].x, quad[0].y, quad[1].x, quad[1].y,
+                 quad[2].x, quad[2].y, quad[3].x, quad[3].y);
+}
+
 // Marshal a ProcessImgResult into the FFI output pointers. The caller (Dart) owns
 // and frees *outputRois and every COCRStrings char*.
 static void writeResult(
@@ -226,7 +252,9 @@ extern "C"
         uint8_t **outputDebugCrop,
         int32_t *outputDebugCropLen,
         uint8_t **outputCapture,
-        int32_t *outputCaptureLen)
+        int32_t *outputCaptureLen,
+        float **outputProjectedQuad,
+        int32_t *outputProjectedQuadValid)
     {
         // Default the out-params so every early-return path leaves Dart a safe
         // (null, 0) to read.
@@ -236,6 +264,8 @@ extern "C"
         *outputDebugCropLen = 0;
         *outputCapture = nullptr;
         *outputCaptureLen = 0;
+        *outputProjectedQuad = nullptr;
+        *outputProjectedQuadValid = 0;
 
         DdrocrInstance *instance = static_cast<DdrocrInstance *>(handle);
         Mat img;
@@ -280,6 +310,10 @@ extern "C"
             // Color capture (JPEG, lossy is fine for a display thumbnail) is only
             // ever non-empty on a successful match; emit it the same way.
             encodeImage(result.colorCapture, ".jpg", outputCapture, outputCaptureLen);
+            // Projected quad from the inter-frame tracker — surfaced on miss
+            // frames so the UI can paint a fallback overlay. Empty on success.
+            writeProjectedQuad(result.projectedDetailsQuad,
+                               outputProjectedQuad, outputProjectedQuadValid);
             if (!result.isDetected)
             {
                 *outputIsDetected = result.isDetected;

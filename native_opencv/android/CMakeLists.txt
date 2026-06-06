@@ -17,7 +17,7 @@ set_target_properties(lib_opencv PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SO
 find_library(log-lib log)
 
 #This is adding our code and making it a library
-add_library(native_opencv SHARED ../ios/Classes/native_opencv.cpp ../ios/Classes/ocr_tesseract.cpp  ../ios/Classes/ddrocr_instance.cpp )
+add_library(native_opencv SHARED ../ios/Classes/native_opencv.cpp ../ios/Classes/ocr_tesseract.cpp  ../ios/Classes/ddrocr_instance.cpp ../ios/Classes/details_tracker.cpp )
 
 add_subdirectory(src/main/cpp/libjpeg)
 add_subdirectory(src/main/cpp/libpng)

@@ -43,6 +43,11 @@ class ProcessResult {
   final Uint8List? captureBytes;
   final int? detailsRoiIndex;
   final Map<String, String> ocrStrings;
+  // 4-corner quad (tl, tr, br, bl in original-frame pixel space) projected
+  // forward by the inter-frame KLT/homography tracker on frames where the
+  // Details detector missed. Null on successful detections (the rois carry the
+  // ground-truth box) and on misses where no anchor was available.
+  final List<Point<double>>? projectedDetailsQuad;
 
   ProcessResult(
       this.difficulty,
@@ -54,7 +59,8 @@ class ProcessResult {
       this.debugDetailsCropBytes,
       this.captureBytes,
       this.detailsRoiIndex,
-      this.ocrStrings);
+      this.ocrStrings,
+      this.projectedDetailsQuad);
 }
 
 // Camera frame bytes are extracted on the main thread and handed to the isolate
@@ -204,7 +210,9 @@ typedef _c_processCameraImage = Void Function(
     Pointer<Pointer<Uint8>> outputDebugCrop,
     Pointer<Int32> outputDebugCropLen,
     Pointer<Pointer<Uint8>> outputCapture,
-    Pointer<Int32> outputCaptureLen);
+    Pointer<Int32> outputCaptureLen,
+    Pointer<Pointer<Float>> outputProjectedQuad,
+    Pointer<Int32> outputProjectedQuadValid);
 
 typedef _c_processPickedImage = Void Function(
   Pointer<Void> handle,
@@ -235,7 +243,9 @@ typedef _dart_processCameraImage = void Function(
     Pointer<Pointer<Uint8>> outputDebugCrop,
     Pointer<Int32> outputDebugCropLen,
     Pointer<Pointer<Uint8>> outputCapture,
-    Pointer<Int32> outputCaptureLen);
+    Pointer<Int32> outputCaptureLen,
+    Pointer<Pointer<Float>> outputProjectedQuad,
+    Pointer<Int32> outputProjectedQuadValid);
 
 typedef _dart_processPickedImage = void Function(
   Pointer<Void> handle,
@@ -339,6 +349,38 @@ Uint8List? _readAndFreeImage(
   return bytes;
 }
 
+// Reads the 8-float (4 corners x,y) projected-quad buffer the C++ tracker
+// writes on miss frames, then frees it. Returns null if no quad was emitted.
+List<Point<double>>? _readAndFreeProjectedQuad(
+  Pointer<Pointer<Float>>? outputQuadPtr,
+  Pointer<Int32>? outputQuadValid,
+) {
+  if (outputQuadPtr == null || outputQuadValid == null) return null;
+  final buf = outputQuadPtr.value;
+  final valid = outputQuadValid.value;
+  List<Point<double>>? quad;
+  if (buf != nullptr && valid != 0) {
+    final floats = buf.asTypedList(8);
+    quad = [
+      Point<double>(floats[0], floats[1]),
+      Point<double>(floats[2], floats[3]),
+      Point<double>(floats[4], floats[5]),
+      Point<double>(floats[6], floats[7]),
+    ];
+    print('[TRACKER-DART] read projected quad from FFI: '
+        'tl=(${floats[0].toStringAsFixed(1)},${floats[1].toStringAsFixed(1)}) '
+        'tr=(${floats[2].toStringAsFixed(1)},${floats[3].toStringAsFixed(1)}) '
+        'br=(${floats[4].toStringAsFixed(1)},${floats[5].toStringAsFixed(1)}) '
+        'bl=(${floats[6].toStringAsFixed(1)},${floats[7].toStringAsFixed(1)})');
+    calloc.free(buf);
+  } else {
+    print('[TRACKER-DART] no projected quad from FFI (valid=$valid)');
+  }
+  calloc.free(outputQuadPtr);
+  calloc.free(outputQuadValid);
+  return quad;
+}
+
 ProcessResult _buildAndFreeResult({
   required Pointer<Int32> outputIsDetected,
   required Pointer<Pointer<Int32>> outputRoisPtr,
@@ -351,6 +393,8 @@ ProcessResult _buildAndFreeResult({
   Pointer<Int32>? outputDebugCropLen,
   Pointer<Pointer<Uint8>>? outputCapturePtr,
   Pointer<Int32>? outputCaptureLen,
+  Pointer<Pointer<Float>>? outputProjectedQuadPtr,
+  Pointer<Int32>? outputProjectedQuadValid,
 }) {
   final Uint8List? maskBytes =
       _readAndFreeImage(outputDebugMaskPtr, outputDebugMaskLen);
@@ -358,6 +402,8 @@ ProcessResult _buildAndFreeResult({
       _readAndFreeImage(outputDebugCropPtr, outputDebugCropLen);
   final Uint8List? captureBytes =
       _readAndFreeImage(outputCapturePtr, outputCaptureLen);
+  final List<Point<double>>? projectedQuad =
+      _readAndFreeProjectedQuad(outputProjectedQuadPtr, outputProjectedQuadValid);
   final ReturnImageType imageType = (maskBytes != null || cropBytes != null)
       ? ReturnImageType.BytesImage
       : ReturnImageType.None;
@@ -371,7 +417,7 @@ ProcessResult _buildAndFreeResult({
     calloc.free(outputDetailsRoiIndex);
     _freeOcrStrings(outStrings);
     return ProcessResult(DifficultyType.None, null, [], false,
-        imageType, maskBytes, cropBytes, captureBytes, -1, {});
+        imageType, maskBytes, cropBytes, captureBytes, -1, {}, projectedQuad);
   }
 
   final detectedRois = <Rectangle<int>>[];
@@ -392,6 +438,7 @@ ProcessResult _buildAndFreeResult({
     captureBytes,
     outputDetailsRoiIndex.value,
     _readOcrStrings(outStrings),
+    projectedQuad,
   );
 
   calloc.free(outputRois);
@@ -451,6 +498,8 @@ Future<ProcessResult> _processFrame(
   final outputDebugCropLen = calloc<Int32>();
   final outputCapturePtr = calloc<Pointer<Uint8>>();
   final outputCaptureLen = calloc<Int32>();
+  final outputProjectedQuadPtr = calloc<Pointer<Float>>();
+  final outputProjectedQuadValid = calloc<Int32>();
 
   _processCameraImageFn(
     handle,
@@ -471,6 +520,8 @@ Future<ProcessResult> _processFrame(
     outputDebugCropLen,
     outputCapturePtr,
     outputCaptureLen,
+    outputProjectedQuadPtr,
+    outputProjectedQuadValid,
   );
   calloc.free(imgBuffer);
 
@@ -486,6 +537,8 @@ Future<ProcessResult> _processFrame(
     outputDebugCropLen: outputDebugCropLen,
     outputCapturePtr: outputCapturePtr,
     outputCaptureLen: outputCaptureLen,
+    outputProjectedQuadPtr: outputProjectedQuadPtr,
+    outputProjectedQuadValid: outputProjectedQuadValid,
   );
 }
 
