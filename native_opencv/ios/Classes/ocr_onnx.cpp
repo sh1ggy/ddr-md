@@ -90,6 +90,7 @@ OCRWrapper::OCRWrapper(const std::string dataPath)
     : dataPath(dataPath)
 {
     std::string modelPath = dataPath + "/models/ppocr_mobile_rec.onnx";
+    std::string detPath   = dataPath + "/models/ppocr_mobile_det.onnx";
     std::string dictPath  = dataPath + "/models/ppocrv5_dict.txt";
 
     std::ifstream dictFile(dictPath);
@@ -111,11 +112,27 @@ OCRWrapper::OCRWrapper(const std::string dataPath)
     try
     {
         session = std::make_unique<Ort::Session>(*env, modelPath.c_str(), sessionOpts);
-        platform_log("OCRWrapper: ONNX session loaded from %s\n", modelPath.c_str());
+        platform_log("OCRWrapper: rec ONNX session loaded from %s\n", modelPath.c_str());
     }
     catch (const Ort::Exception &e)
     {
-        platform_log("OCRWrapper: failed to load ONNX model: %s\n", e.what());
+        platform_log("OCRWrapper: failed to load rec ONNX model: %s\n", e.what());
+    }
+
+    // Detection model is optional — if absent, performDetectAndRecognise will
+    // return empty and the caller can fall back to per-ROI recognition.
+    // Source: PaddleOCR PP-OCRv5_mobile_det (or PP-OCRv3_mobile_det) converted
+    // to ONNX via paddle2onnx. See model card:
+    //   https://huggingface.co/PaddlePaddle/PP-OCRv3_mobile_det
+    // Place the .onnx at assets/models/ppocr_mobile_det.onnx and add to pubspec.
+    try
+    {
+        detSession = std::make_unique<Ort::Session>(*env, detPath.c_str(), sessionOpts);
+        platform_log("OCRWrapper: det ONNX session loaded from %s\n", detPath.c_str());
+    }
+    catch (const Ort::Exception &e)
+    {
+        platform_log("OCRWrapper: det model unavailable (%s) — det+rec disabled\n", e.what());
     }
 }
 
@@ -238,4 +255,203 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
                  roiMat.cols, roiMat.rows);
 
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// Detection (DBNet) + recognition pipeline.
+// ---------------------------------------------------------------------------
+//
+// Preprocessing matches PaddleOCR's official det inference:
+//   - Resize so the longer side is a multiple of 32, preserving aspect ratio.
+//     We use a fixed limit_side_len of 960 (PP-OCRv5 default for the mobile
+//     det model); smaller inputs are not enlarged.
+//   - BGR -> RGB, normalise with ImageNet mean/std (det uses ImageNet norm,
+//     unlike rec which uses (x/255 - 0.5)/0.5).
+//   - NCHW float32, batch=1.
+//
+// Output: probability map of shape [1,1,H,W]. Postprocess:
+//   - Threshold (default 0.3) -> binary mask
+//   - findContours -> for each contour, axis-aligned bounding rect
+//   - Scale rects back to input regionMat coordinates
+//   - Apply a small unclip expansion so we capture descenders/strokes
+//
+// Reference: PaddleOCR/tools/infer/predict_det.py + db_postprocess.py
+namespace
+{
+    constexpr int   DET_LIMIT_SIDE_LEN = 960;
+    constexpr float DET_BIN_THRESHOLD  = 0.3f;
+    constexpr float DET_BOX_MIN_AREA   = 16.0f; // px^2 in det-space
+    constexpr float DET_UNCLIP_RATIO   = 1.6f;
+
+    // Resize so max(H,W) ~= limit, both rounded to a multiple of 32.
+    // Returns the actual resize dims and the ratios needed to map back.
+    cv::Mat detPreprocess(const cv::Mat &bgr, int limit, float &ratioH, float &ratioW)
+    {
+        int origH = bgr.rows;
+        int origW = bgr.cols;
+        float ratio = 1.0f;
+        if (std::max(origH, origW) > limit)
+            ratio = (float)limit / (float)std::max(origH, origW);
+
+        int newH = std::max(32, (int)std::round(origH * ratio / 32.0f) * 32);
+        int newW = std::max(32, (int)std::round(origW * ratio / 32.0f) * 32);
+
+        cv::Mat resized;
+        cv::resize(bgr, resized, cv::Size(newW, newH));
+
+        ratioH = (float)origH / (float)newH;
+        ratioW = (float)origW / (float)newW;
+        return resized;
+    }
+
+    // Expand rect by unclipRatio (matches DB postprocess unclip step approx).
+    // Pure axis-aligned expansion — cheaper than full polygon offset and good
+    // enough for tight text lines.
+    cv::Rect unclipRect(const cv::Rect &r, float unclipRatio)
+    {
+        // Heuristic: expand by perimeter*unclipRatio / (2*area) on each side,
+        // matching the spirit of the DB unclip distance formula.
+        float area = (float)(r.width * r.height);
+        float peri = 2.0f * (r.width + r.height);
+        if (area < 1.0f || peri < 1.0f) return r;
+        float dist = unclipRatio * area / peri;
+        int d = std::max(1, (int)std::round(dist));
+        return cv::Rect(r.x - d, r.y - d, r.width + 2 * d, r.height + 2 * d);
+    }
+}
+
+std::vector<DetectedText> OCRWrapper::performDetectAndRecognise(
+    const cv::Mat &regionMat, OCRType recType, const std::string &regionName)
+{
+    std::vector<DetectedText> out;
+
+    if (!detSession)
+    {
+        platform_log("[DET][%s] det session unavailable\n", regionName.c_str());
+        return out;
+    }
+    if (regionMat.empty())
+    {
+        platform_log("[DET][%s] empty region\n", regionName.c_str());
+        return out;
+    }
+
+    cv::Mat bgr;
+    if (regionMat.channels() == 1)
+        cv::cvtColor(regionMat, bgr, cv::COLOR_GRAY2BGR);
+    else
+        bgr = regionMat;
+
+    float ratioH = 1.0f, ratioW = 1.0f;
+    cv::Mat resized = detPreprocess(bgr, DET_LIMIT_SIDE_LEN, ratioH, ratioW);
+    int H = resized.rows;
+    int W = resized.cols;
+
+    // Build NCHW float32 [1,3,H,W] — RGB, ImageNet normalised.
+    // PaddleOCR det normalisation: mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]
+    static const float MEAN[3] = {0.485f, 0.456f, 0.406f};
+    static const float STD[3]  = {0.229f, 0.224f, 0.225f};
+
+    std::vector<float> tensor(3 * H * W);
+    for (int row = 0; row < H; ++row)
+    {
+        const uchar *src = resized.ptr<uchar>(row);
+        for (int col = 0; col < W; ++col)
+        {
+            // src is BGR; map to RGB channels of the tensor
+            float b = src[col * 3 + 0] / 255.0f;
+            float g = src[col * 3 + 1] / 255.0f;
+            float r = src[col * 3 + 2] / 255.0f;
+            tensor[0 * H * W + row * W + col] = (r - MEAN[0]) / STD[0];
+            tensor[1 * H * W + row * W + col] = (g - MEAN[1]) / STD[1];
+            tensor[2 * H * W + row * W + col] = (b - MEAN[2]) / STD[2];
+        }
+    }
+
+    Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    std::array<int64_t, 4> inputShape = {1, 3, H, W};
+    Ort::Value inputOrt = Ort::Value::CreateTensor<float>(
+        memInfo, tensor.data(), tensor.size(), inputShape.data(), inputShape.size());
+
+    // PaddleOCR det model input/output names are "x" / "sigmoid_0.tmp_0" for
+    // most exported PP-OCR det checkpoints. If your export uses different
+    // names, adjust here. We discover them at runtime for robustness.
+    Ort::AllocatorWithDefaultOptions alloc;
+    auto inNamePtr  = detSession->GetInputNameAllocated(0, alloc);
+    auto outNamePtr = detSession->GetOutputNameAllocated(0, alloc);
+    const char *inputNames[]  = {inNamePtr.get()};
+    const char *outputNames[] = {outNamePtr.get()};
+
+    std::vector<Ort::Value> outputs;
+    try
+    {
+        outputs = detSession->Run(Ort::RunOptions{nullptr},
+                                  inputNames, &inputOrt, 1,
+                                  outputNames, 1);
+    }
+    catch (const Ort::Exception &e)
+    {
+        platform_log("[DET][%s] inference error: %s\n", regionName.c_str(), e.what());
+        return out;
+    }
+
+    auto &probT = outputs[0];
+    auto probShape = probT.GetTensorTypeAndShapeInfo().GetShape();
+    // Expected shape [1,1,H,W]
+    if (probShape.size() != 4 || probShape[0] != 1 || probShape[1] != 1)
+    {
+        platform_log("[DET][%s] unexpected output rank/shape\n", regionName.c_str());
+        return out;
+    }
+    int pH = (int)probShape[2];
+    int pW = (int)probShape[3];
+    const float *prob = probT.GetTensorData<float>();
+
+    // Threshold to a binary mask at det-space resolution.
+    cv::Mat mask(pH, pW, CV_8UC1);
+    for (int y = 0; y < pH; ++y)
+    {
+        uchar *m = mask.ptr<uchar>(y);
+        const float *p = prob + y * pW;
+        for (int x = 0; x < pW; ++x)
+            m[x] = (p[x] > DET_BIN_THRESHOLD) ? 255 : 0;
+    }
+
+    // Map det-space px -> original region px:
+    //   det output size == resize size (H,W), and resize size maps back via
+    //   ratioH/ratioW to original.
+    float sx = (float)W / (float)pW * ratioW;
+    float sy = (float)H / (float)pH * ratioH;
+
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(mask, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+
+    for (auto &c : contours)
+    {
+        if (c.size() < 3) continue;
+        cv::Rect detRect = cv::boundingRect(c);
+        if ((float)(detRect.width * detRect.height) < DET_BOX_MIN_AREA) continue;
+
+        // Scale to original region coordinates.
+        cv::Rect r(
+            (int)std::round(detRect.x * sx),
+            (int)std::round(detRect.y * sy),
+            (int)std::round(detRect.width * sx),
+            (int)std::round(detRect.height * sy));
+        r = unclipRect(r, DET_UNCLIP_RATIO);
+        r &= cv::Rect(0, 0, regionMat.cols, regionMat.rows);
+        if (r.width <= 0 || r.height <= 0) continue;
+
+        cv::Mat crop = regionMat(r);
+        std::string boxName = regionName + "_" +
+            std::to_string(r.x) + "_" + std::to_string(r.y);
+        OCRResult rec = performOCR(crop, recType, boxName);
+        rec.boundingBox = r;
+        out.push_back({r, rec});
+    }
+
+    platform_log("[DET][%s] %zu boxes detected (det=%dx%d, region=%dx%d)\n",
+                 regionName.c_str(), out.size(), pW, pH,
+                 regionMat.cols, regionMat.rows);
+    return out;
 }

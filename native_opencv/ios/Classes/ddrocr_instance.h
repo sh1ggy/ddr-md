@@ -107,6 +107,10 @@ struct COCRConfig
         {2056,1463,2627,1536,10,10}, // difficulty
         {2665,2779,2797,2831, 0, 0}, // max_combo
     };
+    // Combined ROI {x1,y1,x2,y2} in warped 4000x5000 space — covers the score
+    // panel. Fed to the PaddleOCR detection model; detected boxes are then
+    // mapped to the score-panel fields via the per-field roi[] anchors above.
+    int32_t combinedRoi[4] = {1648, 2439, 2959, 2848};
 };
 
 enum class DetectionSide

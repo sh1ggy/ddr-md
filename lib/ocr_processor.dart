@@ -164,6 +164,8 @@ final class COCRConfig extends Struct {
   external int morphHeight;
   @Array(12, 6)
   external Array<Array<Int32>> roi;
+  @Array(4)
+  external Array<Int32> combinedRoi;
 }
 
 final class COCRStrings extends Struct {
@@ -283,6 +285,9 @@ Pointer<COCRConfig> _buildOCRConfig() {
     p.ref.roi[r][roiY2] = rect[roiY2];
     p.ref.roi[r][roiExpandX] = ex;
     p.ref.roi[r][roiExpandY] = ey;
+  }
+  for (int i = 0; i < 4; i++) {
+    p.ref.combinedRoi[i] = ocrCombinedRoi[i];
   }
   return p;
 }
@@ -559,6 +564,7 @@ class OCRProcessor {
 
     const modelAssets = [
       'assets/models/ppocr_mobile_rec.onnx',
+      'assets/models/ppocr_mobile_det.onnx',
       'assets/models/ppocrv5_dict.txt',
     ];
 
@@ -568,9 +574,15 @@ class OCRProcessor {
         print('Model already exists, skipping: ${targetFile.path}');
         continue;
       }
-      final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
-      await targetFile.writeAsBytes(bytes, flush: true);
-      print('Copied model asset $assetPath -> ${targetFile.path}');
+      try {
+        final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
+        await targetFile.writeAsBytes(bytes, flush: true);
+        print('Copied model asset $assetPath -> ${targetFile.path}');
+      } catch (e) {
+        // Det model is optional; if missing the native side falls back to
+        // per-ROI recognition. Other model assets are required.
+        print('Model asset missing or failed to load: $assetPath ($e)');
+      }
     }
 
     print('Models loaded to ${modelsDir.path}');

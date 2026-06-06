@@ -24,6 +24,13 @@ const int ocrTophatKernelSize = 41; // morphological top-hat kernel size (must b
 const int ocrMorphWidth = 360;  // HSV blob morphology opening kernel width
 const int ocrMorphHeight = 90;  // HSV blob morphology opening kernel height
 
+// Combined ROI covering all per-field regions — fed to the PaddleOCR detection
+// model. Coordinates are TL/BR in 4000×5000 warped space.
+// Detection finds text boxes inside this region; each per-field rectangle below
+// is then used purely as a spatial anchor to label which detection corresponds
+// to which field (score, marvelous, title, etc.).
+const List<int> ocrCombinedRoi = [1648, 2439, 2959, 2848];
+
 // New
 const List<(List<int>, (int, int))> ocrRoi = [
   ([2122, 2344, 2448, 2435], (0, 0)), // details
@@ -37,7 +44,7 @@ const List<(List<int>, (int, int))> ocrRoi = [
   ([1353, 2106, 1849, 2152], (0, 0)), // title
   ([2215, 1486, 2494, 1535], (0, 0)), // username
   ([2128, 1559, 2569, 1619], (0, 0)), // difficulty
-  ([2690, 2729, 2797, 2771], (0,   0)), // max_combo
+  ([2690, 2729, 2797, 2771], (0, 0)), // max_combo
 ];
 
 

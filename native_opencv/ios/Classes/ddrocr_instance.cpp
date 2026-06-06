@@ -493,34 +493,98 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         return cv::Point(config.roi[i][4], config.roi[i][5]);
     };
 
-    ocrResults.score = getPreprocessedRoiImage(
-        warpedImg, ROI_Score, ROI_Details, warped_details_top_left,
-        expand(ROI_IDX_SCORE), "score", OCRType::Digit);
+    // ----- Score-panel: det+rec over the combined ROI -----
+    //
+    // We run the PaddleOCR detection model over a single rectangle covering
+    // the score panel, then map each detected text box back to one of the
+    // score-panel fields by spatial overlap with that field's anchor rect
+    // (the per-field rectangles in config.roi[]). This avoids brittle tight
+    // per-field crops and lets the model produce its preferred bbox.
+    cv::Rect ROI_Combined = offsetToRoi(
+        cv::Point(config.combinedRoi[0], config.combinedRoi[1]),
+        cv::Point(config.combinedRoi[2], config.combinedRoi[3]));
+    cv::Point2d combinedOffset(
+        ROI_Combined.x - ROI_Details.x,
+        ROI_Combined.y - ROI_Details.y);
+    cv::Rect roi_combined_warped(
+        warped_details_top_left.x + combinedOffset.x,
+        warped_details_top_left.y + combinedOffset.y,
+        ROI_Combined.width,
+        ROI_Combined.height);
+    roi_combined_warped &= cv::Rect(0, 0, warpedImg.cols, warpedImg.rows);
 
-    ocrResults.marvelous = getPreprocessedRoiImage(
-        warpedImg, ROI_Marvelous, ROI_Details, warped_details_top_left,
-        expand(ROI_IDX_MARVELOUS), "marvelous", OCRType::Digit);
+    std::vector<DetectedText> detections;
+    if (roi_combined_warped.width > 0 && roi_combined_warped.height > 0)
+    {
+        cv::Mat combinedCrop = warpedImg(roi_combined_warped);
+        save_img("roi_combined", combinedCrop);
+        auto t0 = std::chrono::high_resolution_clock::now();
+        detections = ocrWrapper.performDetectAndRecognise(
+            combinedCrop, OCRType::Digit, "combined");
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - t0).count();
+        platform_log("[TIMER] combined detect+rec: %lld ms, %zu boxes\n",
+                     (long long)ms, detections.size());
+    }
 
-    ocrResults.perfect = getPreprocessedRoiImage(
-        warpedImg, ROI_Perfect, ROI_Details, warped_details_top_left,
-        expand(ROI_IDX_PERFECT), "perfect", OCRType::Digit);
+    // Map each detection (in combined-crop coords) back to warped-image coords
+    // by shifting by roi_combined_warped.tl(), then translate to the
+    // "config.roi anchor" space the per-field rects live in by undoing the
+    // warped_details_top_left + offset transform — i.e. add ROI_Combined.tl()
+    // and subtract roi_combined_warped.tl() == add ROI_Combined.tl() net.
+    // Simpler: compare each detection rect to the per-field anchor rect after
+    // mapping anchor into combined-crop coords.
+    auto fieldInCombinedCrop = [&](const cv::Rect &fieldRoi) -> cv::Rect {
+        cv::Point2d fOff(fieldRoi.x - ROI_Combined.x,
+                         fieldRoi.y - ROI_Combined.y);
+        return cv::Rect(
+            (int)std::round(fOff.x), (int)std::round(fOff.y),
+            fieldRoi.width, fieldRoi.height);
+    };
 
-    ocrResults.great = getPreprocessedRoiImage(
-        warpedImg, ROI_Great, ROI_Details, warped_details_top_left,
-        expand(ROI_IDX_GREAT), "great", OCRType::Digit);
+    auto pickBestDetection = [&](const cv::Rect &fieldRoi) -> OCRResult {
+        cv::Rect anchor = fieldInCombinedCrop(fieldRoi);
+        // Discard fields whose anchor lies outside the combined ROI (e.g.
+        // title/username) — caller will use the per-ROI fallback instead.
+        if (anchor.x + anchor.width <= 0 ||
+            anchor.y + anchor.height <= 0 ||
+            anchor.x >= roi_combined_warped.width ||
+            anchor.y >= roi_combined_warped.height)
+        {
+            return OCRResult{};
+        }
+        int best = -1;
+        double bestScore = 0.0;
+        for (size_t i = 0; i < detections.size(); ++i)
+        {
+            cv::Rect inter = anchor & detections[i].box;
+            if (inter.area() <= 0) continue;
+            // Score = overlap area / anchor area. Bigger overlap with the
+            // anchor wins. Confidence breaks ties.
+            double s = (double)inter.area() / (double)std::max(1, anchor.area());
+            if (s > bestScore ||
+                (s == bestScore && best >= 0 &&
+                 detections[i].result.confidence > detections[best].result.confidence))
+            {
+                bestScore = s;
+                best = (int)i;
+            }
+        }
+        if (best < 0) return OCRResult{};
+        return detections[best].result;
+    };
 
-    ocrResults.good = getPreprocessedRoiImage(
-        warpedImg, ROI_Good, ROI_Details, warped_details_top_left,
-        expand(ROI_IDX_GOOD), "good", OCRType::Digit);
+    ocrResults.score     = pickBestDetection(ROI_Score);
+    ocrResults.marvelous = pickBestDetection(ROI_Marvelous);
+    ocrResults.perfect   = pickBestDetection(ROI_Perfect);
+    ocrResults.great     = pickBestDetection(ROI_Great);
+    ocrResults.good      = pickBestDetection(ROI_Good);
+    ocrResults.miss      = pickBestDetection(ROI_Miss);
+    ocrResults.flare     = pickBestDetection(ROI_Flare);
+    ocrResults.max_combo = pickBestDetection(ROI_MaxCombo);
 
-    ocrResults.miss = getPreprocessedRoiImage(
-        warpedImg, ROI_Miss, ROI_Details, warped_details_top_left,
-        expand(ROI_IDX_MISS), "miss", OCRType::Digit);
-
-    ocrResults.flare = getPreprocessedRoiImage(
-        warpedImg, ROI_Flare, ROI_Details, warped_details_top_left,
-        expand(ROI_IDX_FLARE), "flare", OCRType::Eng);
-
+    // ----- Outside the combined ROI: per-ROI recogniser-only fallback -----
+    // title/username/difficulty/details sit above the score panel.
     ocrResults.title = getPreprocessedRoiImage(
         warpedImg, ROI_Title, ROI_Details, warped_details_top_left,
         expand(ROI_IDX_TITLE), "title", OCRType::EngJP);
@@ -532,10 +596,6 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     ocrResults.difficulty = getPreprocessedRoiImage(
         warpedImg, ROI_Difficulty, ROI_Details, warped_details_top_left,
         expand(ROI_IDX_DIFFICULTY), "difficulty", OCRType::Eng);
-
-    ocrResults.max_combo = getPreprocessedRoiImage(
-        warpedImg, ROI_MaxCombo, ROI_Details, warped_details_top_left,
-        expand(ROI_IDX_MAXCOMBO), "max_combo", OCRType::Digit);
 
     result.ocrResults = ocrResults;
 
@@ -586,43 +646,16 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
     if (cropped.empty())
         return result;
 
-    // Restore the Tesseract-era preprocessing pipeline — it produced the best
-    // binarization results and is equally valid for ONNX input:
-    // 1. Gray + top-hat to correct uneven illumination at original resolution
-    // 2. Upscale (tiny ~50px crops → ~150px) with INTER_CUBIC
-    // 3. Light Gaussian blur to denoise before Otsu
-    // 4. Otsu BINARY_INV → white text on black background
-    // 5. Convert to BGR for performOCR (no border padding needed for ONNX)
-    cv::Mat grayOrig;
-    cv::cvtColor(cropped, grayOrig, cv::COLOR_BGR2GRAY);
-
-    cv::Mat kernel_tophat = cv::getStructuringElement(
-        cv::MORPH_ELLIPSE,
-        cv::Size(config.tophat_kernel_size, config.tophat_kernel_size));
-    cv::Mat corrected;
-    {
-        auto t0 = std::chrono::high_resolution_clock::now();
-        cv::morphologyEx(grayOrig, corrected, cv::MORPH_TOPHAT, kernel_tophat);
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - t0).count();
-        platform_log("[TIMER] [%s] morph tophat: %lld ms\n", imageName.c_str(), (long long)ms);
-    }
-
-    cv::Mat gray;
-    cv::resize(corrected, gray, cv::Size(), config.resolution_scale, config.resolution_scale, cv::INTER_CUBIC);
-    cv::GaussianBlur(gray, gray, cv::Size(config.gaussian_blur_size, config.gaussian_blur_size), 0);
-
-    cv::Mat bin;
-    cv::threshold(gray, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-
-    cv::Mat ocrInput;
-    cv::cvtColor(bin, ocrInput, cv::COLOR_GRAY2BGR);
-
-    save_img("roi_" + imageName, bin);
+    // PP-OCRv5 expects natural-color BGR crops matching its training
+    // distribution. The previous Tesseract-era pipeline (top-hat → Otsu
+    // BINARY_INV → GRAY2BGR) was out-of-distribution for this model and
+    // caused recognition failures on stylised UI text. performOCR handles
+    // the canonical resize_norm_img preprocessing internally.
+    save_img("roi_" + imageName, cropped);
 
     {
         auto t0 = std::chrono::high_resolution_clock::now();
-        result = ocrWrapper.performOCR(ocrInput, type, imageName);
+        result = ocrWrapper.performOCR(cropped, type, imageName);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t0).count();
         platform_log("[TIMER] [%s] performOCR: %lld ms\n", imageName.c_str(), (long long)ms);
