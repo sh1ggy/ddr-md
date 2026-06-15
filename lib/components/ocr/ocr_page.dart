@@ -5,7 +5,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:camera/camera.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/ocr_processor.dart';
@@ -49,14 +48,11 @@ class _OcrPageState extends State<OcrPage>
   bool _isCameraActive = false;
   bool _isTogglingCamera = false;
   bool _hasRecorded = false;
-  CameraController? _controller;
   late OCRProcessor _ocrProcessor;
   final _OcrAggregator _aggregator = _OcrAggregator();
   double _camFrameToScreenScale = 0;
   int _rawFrameWidth = 0;
   int _rawFrameHeight = 0;
-
-  CameraImage? _lastFrame;
 
   DebugImageType _debugImageType = DebugImageType.none;
   bool _histogramsExpanded = false;
@@ -80,6 +76,14 @@ class _OcrPageState extends State<OcrPage>
 
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
+      // The native session reports the processed-frame dimensions (the pixel
+      // space the ROIs live in). Derive the on-screen scale from those.
+      if (result.frameWidth > 0) {
+        _rawFrameWidth = result.frameWidth;
+        _rawFrameHeight = result.frameHeight;
+        _camFrameToScreenScale =
+            MediaQuery.of(context).size.width / result.frameWidth;
+      }
       final double scale = _camFrameToScreenScale;
 
       final scaled = (result.detectedRois ?? []).map((r) {
@@ -100,14 +104,14 @@ class _OcrPageState extends State<OcrPage>
         _debugCropBytes.value = result.debugDetailsCropBytes;
       }
       if (result.captureBytes != null) {
-        final int srcW = Platform.isAndroid ? _rawFrameHeight : _rawFrameWidth;
-        final int srcH = Platform.isAndroid ? _rawFrameWidth : _rawFrameHeight;
+        // Native reports dims already in the processed (upright) orientation,
+        // so no per-platform swap is needed any more.
         _captureData.value = _CaptureView(
           bytes: result.captureBytes!,
           rois: result.detectedRois ?? const [],
           detailsRoiIndex: result.detailsRoiIndex,
-          frameWidth: srcW,
-          frameHeight: srcH,
+          frameWidth: _rawFrameWidth,
+          frameHeight: _rawFrameHeight,
         );
       }
       if (detailsFound && result.ocrStrings.isNotEmpty) {
@@ -117,7 +121,7 @@ class _OcrPageState extends State<OcrPage>
     });
 
     getTemporaryDirectory().then((dir) => tempDir = dir);
-    _initCamera();
+    _initOcr();
   }
 
   @override
@@ -129,130 +133,21 @@ class _OcrPageState extends State<OcrPage>
     _debugMaskBytes.dispose();
     _debugCropBytes.dispose();
     _captureData.dispose();
-    _controller?.dispose();
-    _controller = null;
     _ocrProcessor.dispose();
     super.dispose();
   }
 
-  Future<void> _initCamera() async {
+  Future<void> _initOcr() async {
     try {
-      final ocrFuture = _ocrProcessor.init().then((_) => _ocrProcessor.initActor());
-      final camerasFuture = availableCameras();
-
-      final cameras = await camerasFuture;
-      if (cameras.isEmpty) throw Exception('No cameras available');
-
-      _controller = CameraController(
-        cameras[0],
-        ResolutionPreset.max,
-        enableAudio: false,
-      );
-      await _controller!.initialize();
-
+      // init() copies tessdata, allocates the native preview texture and the
+      // resident OCR instance, and returns the texture id + preview dims.
+      await _ocrProcessor.init();
       if (mounted) setState(() {});
-
-      await ocrFuture;
-
-      print('AS: ${_controller!.value.aspectRatio}'
-          '   SIZE: ${_controller!.value.previewSize}'
-          '   ORIENTATION: ${_controller!.value.deviceOrientation}'
-          '   RES PRESET: ${_controller!.resolutionPreset}'
-          '   IMG FMT GROUP: ${_controller!.imageFormatGroup}'
-          '   CAMERA SENSOR: ${cameras[0].sensorOrientation}');
-
-      if (mounted) setState(() {});
-    } on CameraException catch (e) {
-      print('Error initializing camera: $e');
-      if (!mounted) return;
-      Navigator.pushNamed(context, "/");
     } catch (e) {
+      print('Error initializing OCR session: $e');
       if (!mounted) return;
       Navigator.pushNamed(context, "/");
     }
-  }
-
-  void _requestDump() async {
-    if (_lastFrame == null) {
-      print('No frame to dump.');
-      return;
-    }
-    var image = _lastFrame!;
-
-    Directory? dir = Platform.isAndroid
-        ? await getExternalStorageDirectory()
-        : await getApplicationDocumentsDirectory();
-
-    if (dir == null) {
-      print('no dir');
-      return;
-    }
-    print(dir.path);
-    if (Platform.isAndroid) {
-      _dumpAndroidYuv(image, dir);
-    } else if (Platform.isIOS) {
-      _dumpIos(image, dir);
-    }
-  }
-
-  void _dumpAndroidYuv(CameraImage image, Directory dir) async {
-    // Write Y plane
-    final yFile = File('${dir.path}/yuv_y_plane.raw');
-    await yFile.writeAsBytes(image.planes[0].bytes);
-
-    // Write U plane
-    final uFile = File('${dir.path}/yuv_u_plane.raw');
-    await uFile.writeAsBytes(image.planes[1].bytes);
-
-    // Write V plane
-    final vFile = File('${dir.path}/yuv_v_plane.raw');
-    await vFile.writeAsBytes(image.planes[2].bytes);
-
-    // Write metadata
-    final metaFile = File('${dir.path}/yuv_metadata.txt');
-    await metaFile.writeAsString('''
-Width: ${image.width}
-Height: ${image.height}
-Y size: ${image.planes[0].bytes.length}
-U size: ${image.planes[1].bytes.length}
-V size: ${image.planes[2].bytes.length}
-Format: ${image.format.group}
-    ''');
-    print("ANDROID DUMPED");
-  }
-
-  void _dumpIos(CameraImage image, Directory dir) async {
-    final bgraFile = File('${dir.path}/bgra8888.raw');
-    await bgraFile.writeAsBytes(image.planes[0].bytes);
-
-    final metaFile = File('${dir.path}/metadata.txt');
-    await metaFile.writeAsString('''
-Platform: iOS
-Format: BGRA8888
-Width: ${image.width}
-Height: ${image.height}
-Bytes: ${image.planes[0].bytes.length}
-BytesPerRow: ${image.planes[0].bytesPerRow}
-''');
-    print("iOS DUMPED");
-  }
-
-  // TODO: handle lifecycle events to stop debug from breaking
-  void _processImage(CameraImage image) {
-    int rotation = _controller?.description.sensorOrientation ?? 0;
-    int w = 0;
-    if (Platform.isAndroid) {
-      w = (rotation == 0 || rotation == 180) ? image.width : image.height;
-    } else if (Platform.isIOS) {
-      w = image.width;
-    }
-
-    _camFrameToScreenScale = MediaQuery.of(context).size.width / w;
-    _rawFrameWidth = image.width;
-    _rawFrameHeight = image.height;
-
-    _ocrProcessor.processVideostreamFrame(image, rotation);
-    _lastFrame = image;
   }
 
   Future<void> _toggleCamera() async {
@@ -262,47 +157,37 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     try {
       if (_isCameraActive) {
         print('Stopping camera stream...');
-        _ocrProcessor.beginDraining();
-        if (_controller?.value.isStreamingImages ?? false) {
-          await _controller!.stopImageStream();
-        }
+        await _ocrProcessor.stop();
         setState(() {
           _isCameraActive = false;
           _hasRecorded = true;
         });
         print('Camera stopped. New state: $_isCameraActive');
       } else {
-        // Start the camera
         print('Starting camera stream...');
-        if (_controller != null &&
-            _controller!.value.isInitialized &&
-            !(_controller!.value.isStreamingImages)) {
-          _ocrProcessor.cancelDraining();
-          await _controller!.startImageStream(_processImage);
-          setState(() {
-            _isCameraActive = true;
-            _aggregator.clear();
-            _roiData.value = ([], null);
-            _debugMaskBytes.value = null;
-            _debugCropBytes.value = null;
-            _captureData.value = null;
-          });
-          print('Camera started. New state: $_isCameraActive');
-        } else {
-          print('Controller not initialized, null, or already streaming');
-        }
+        setState(() {
+          _isCameraActive = true;
+          _aggregator.clear();
+          _roiData.value = ([], null);
+          _debugMaskBytes.value = null;
+          _debugCropBytes.value = null;
+          _captureData.value = null;
+        });
+        await _ocrProcessor.start();
+        print('Camera started. New state: $_isCameraActive');
       }
     } catch (e) {
       print('Error toggling camera: $e');
+      // Roll the UI back if start/stop threw (e.g. permission denied).
+      if (mounted) setState(() => _isCameraActive = !_isCameraActive);
     } finally {
       _isTogglingCamera = false;
     }
   }
 
-  bool get cameraReady =>
-      _controller != null && _controller!.value.isInitialized;
+  bool get cameraReady => _ocrProcessor.isReady;
 
-  bool get _ocrReady => _ocrProcessor.toIsolate != null;
+  bool get _ocrReady => _ocrProcessor.isReady;
 
   CameraState get cameraState {
     if (!cameraReady || !_ocrReady) return CameraState.notReady;
@@ -347,6 +232,19 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     );
   }
 
+  Widget _buildPreview() {
+    final id = _ocrProcessor.textureId;
+    if (id == null) {
+      return const AspectRatio(
+        aspectRatio: 3 / 4,
+        child: ColoredBox(color: Colors.black),
+      );
+    }
+    final ar = _ocrProcessor.previewAspectRatio;
+    final preview = Texture(textureId: id);
+    return ar > 0 ? AspectRatio(aspectRatio: ar, child: preview) : preview;
+  }
+
   Widget _buildActiveView() {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96),
@@ -356,7 +254,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             RepaintBoundary(
               child: CustomPaint(
                 foregroundPainter: _CameraRoiPainter(_roiData, _frameTick),
-                child: CameraPreview(_controller!),
+                child: _buildPreview(),
               ),
             ),
             Positioned(

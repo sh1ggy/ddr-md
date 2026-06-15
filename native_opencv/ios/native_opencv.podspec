@@ -14,7 +14,7 @@ A new flutter plugin project.
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*.{h,m,mm,cpp,swift}'
-  s.public_header_files = 'Classes/NativeOpencvPlugin.h'
+  s.public_header_files = 'Classes/NativeOpencvPlugin.h', 'Classes/CameraOcrSession.h'
   # Keep C++ headers out of the module umbrella so Swift/Clang won't try
   # to parse C++ headers when importing the module.
   s.private_header_files = 'Classes/ocr_wrapper.h', 'Classes/**/*.hpp'
