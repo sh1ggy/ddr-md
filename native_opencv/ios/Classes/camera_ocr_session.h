@@ -16,38 +16,24 @@
 #include <media/NdkImageReader.h>
 
 #include <atomic>
-#include <array>
 #include <condition_variable>
-#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "ddrocr_instance.h"
-
-// Marshalled OCR result handed to the delivery callback (JNI bridge → Dart
-// EventChannel). Plain values only — no JNI/OpenCV types — so the JNI layer can
-// build the Java map without touching C++ internals.
-struct OcrFrameResult {
-    bool isDetected = false;
-    int detailsRoiIndex = -1;
-    int width = 0;
-    int height = 0;
-    std::vector<int32_t> rois;            // flat {x,y,w,h} * N
-    std::array<std::string, 6> ocr;       // score,marvelous,perfect,great,good,miss
-    std::vector<uint8_t> maskPng;         // empty when absent
-    std::vector<uint8_t> cropPng;         // empty when absent
-    std::vector<uint8_t> captureJpg;      // empty when absent
-};
-
-using ResultCallback = std::function<void(const OcrFrameResult &)>;
+#include "camera_result.h"
 
 class CameraOcrSession {
 public:
     CameraOcrSession(const std::string &dataPath, const COCRConfig &config,
-                     ANativeWindow *previewWindow, ResultCallback callback);
+                     ANativeWindow *previewWindow);
     ~CameraOcrSession();
+
+    // Registers the FFI result sink (NativeCallable from Dart). Invoked by the
+    // OCR worker once per processed frame; Dart owns/frees the CCameraResult.
+    void setResultFn(CameraResultFn fn) { resultFn_ = fn; }
 
     // Preview surface dimensions (portrait, matching the rotated OCR frame).
     int previewWidth() const { return previewWidth_; }
@@ -78,7 +64,7 @@ private:
 
     std::string dataPath_;
     ANativeWindow *previewWindow_ = nullptr;
-    ResultCallback callback_;
+    CameraResultFn resultFn_ = nullptr;
 
     DdrocrInstance *instance_ = nullptr;
 

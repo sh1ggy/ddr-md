@@ -15,27 +15,10 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-namespace {
-
-// Encodes a Mat into a byte vector with the given extension; empty on failure.
-std::vector<uint8_t> encodeMat(const cv::Mat &img, const char *ext) {
-    std::vector<uint8_t> out;
-    if (img.empty()) return out;
-    std::vector<uchar> buf;
-    if (cv::imencode(ext, img, buf) && !buf.empty()) {
-        out.assign(buf.begin(), buf.end());
-    }
-    return out;
-}
-
-} // namespace
-
 CameraOcrSession::CameraOcrSession(const std::string &dataPath,
                                    const COCRConfig &config,
-                                   ANativeWindow *previewWindow,
-                                   ResultCallback callback)
-    : dataPath_(dataPath), previewWindow_(previewWindow),
-      callback_(std::move(callback)) {
+                                   ANativeWindow *previewWindow)
+    : dataPath_(dataPath), previewWindow_(previewWindow) {
     // config comes from lib/ocr_config.dart via the JNI bridge — not the C++
     // struct defaults, which diverge from the Dart calibration.
     instance_ = new DdrocrInstance(dataPath_, config);
@@ -367,26 +350,12 @@ void CameraOcrSession::workerLoop() {
             continue;
         }
 
-        OcrFrameResult out;
-        out.isDetected = res.isDetected != 0;
-        out.detailsRoiIndex = res.detailsRoiIndex;
-        out.width = bgr.cols;
-        out.height = bgr.rows;
-        out.rois.reserve(res.rois.size() * 4);
-        for (const auto &r : res.rois) {
-            out.rois.push_back(r.x);
-            out.rois.push_back(r.y);
-            out.rois.push_back(r.width);
-            out.rois.push_back(r.height);
+        // Hand the result to Dart over the FFI NativeCallable (same path as
+        // iOS). Dart owns and frees the CCameraResult.
+        if (resultFn_) {
+            CCameraResult *out = BuildCCameraResult(res, bgr.cols, bgr.rows);
+            resultFn_(out);
         }
-        const auto &o = res.ocrResults;
-        out.ocr = {o.score.text, o.marvelous.text, o.perfect.text,
-                   o.great.text, o.good.text,      o.miss.text};
-        out.maskPng = encodeMat(res.debugMask, ".png");
-        out.cropPng = encodeMat(res.debugDetailsCrop, ".png");
-        out.captureJpg = encodeMat(res.colorCapture, ".jpg");
-
-        if (callback_) callback_(out);
         busy_ = false;
     }
 }

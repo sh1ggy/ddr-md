@@ -2,9 +2,13 @@
 //
 // Replaces the Flutter `camera` plugin: an AVCaptureSession feeds full-res BGRA
 // frames straight into the existing C++ DdrocrInstance::process_image with no
-// Dart round-trip. Preview is served to Flutter through a FlutterTexture; OCR
-// results are pushed over an EventChannel as a StandardMessageCodec map that
-// ocr_processor.dart decodes (see ProcessResult.fromEvent).
+// Dart round-trip. Preview is served to Flutter through a FlutterTexture.
+//
+// Control + result delivery are FFI, not channels: the platform channel exists
+// only to mint the texture and hand Dart an opaque session pointer (the texture
+// registry is Obj-C-only). start/stop/setDebug are extern "C" entry points, and
+// each processed frame is pushed to Dart via the registered CameraResultFn
+// (an FFI NativeCallable) — see camera_result.h and ocr_processor.dart.
 
 #import "CameraOcrSession.h"
 #import <AVFoundation/AVFoundation.h>
@@ -22,6 +26,7 @@
 #include <opencv2/opencv.hpp>
 #include "ddrocr_instance.h"
 #include "config_marshal.h"
+#include "camera_result.h"
 
 #ifdef APPLE_NO_DEFINED
 #define NO (BOOL)0
@@ -39,18 +44,14 @@ extern void platform_log(const char *fmt, ...);
 // Matches the Dart-side frame skip: process roughly one of every N frames.
 static const int kFrameThreshold = 3;
 
-// Encodes a Mat (e.g. ".png"/".jpg") into NSData; nil when the Mat is empty.
-static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
-  if (img.empty()) return nil;
-  std::vector<uchar> buf;
-  if (!cv::imencode(ext, img, buf) || buf.empty()) return nil;
-  return [NSData dataWithBytes:buf.data() length:buf.size()];
-}
-
 @interface CameraOcrSession () <AVCaptureVideoDataOutputSampleBufferDelegate,
-                                FlutterTexture,
-                                FlutterStreamHandler>
+                                FlutterTexture>
 - (instancetype)initWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar;
+// FFI entry points (called from the extern "C" shims at file scope).
+- (void)setResultFn:(CameraResultFn)fn;
+- (BOOL)startCamera:(BOOL)debug;
+- (void)stopCamera;
+- (void)setDebugEnabled:(BOOL)enabled;
 @end
 
 @implementation CameraOcrSession {
@@ -62,7 +63,8 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
   dispatch_queue_t _captureQueue; // delegate callback queue
   dispatch_queue_t _ocrQueue;     // serial OCR worker
 
-  FlutterEventSink _eventSink;
+  // FFI result sink (NativeCallable) the OCR worker invokes per frame.
+  CameraResultFn _resultFn;
 
   // Latest preview frame handed to Flutter via copyPixelBuffer. Guarded by
   // _previewLock; retained while stored.
@@ -94,11 +96,6 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
   [methodChannel setMethodCallHandler:^(FlutterMethodCall *call, FlutterResult result) {
     [session handleMethodCall:call result:result];
   }];
-
-  FlutterEventChannel *eventChannel =
-      [FlutterEventChannel eventChannelWithName:@"native_opencv/camera_ocr/events"
-                                binaryMessenger:[registrar messenger]];
-  [eventChannel setStreamHandler:session];
 }
 
 - (instancetype)initWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
@@ -115,6 +112,7 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
     _textureId = -1;
     _instance = nullptr;
     _latestPreview = NULL;
+    _resultFn = nullptr;
   }
   return self;
 }
@@ -123,6 +121,8 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
 
 - (void)handleMethodCall:(FlutterMethodCall *)call result:(FlutterResult)result {
   NSString *method = call.method;
+  // The channel only mints the texture + session pointer and tears it down.
+  // start/stop/setDebug/results are all FFI (see the extern "C" shims below).
   if ([method isEqualToString:@"initialize"]) {
     NSDictionary *args = call.arguments;
     NSString *dataPath = args[@"dataPath"];
@@ -130,15 +130,6 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
                          cfgInts:args[@"cfgInts"]
                       cfgDoubles:args[@"cfgDoubles"]
                           result:result];
-  } else if ([method isEqualToString:@"start"]) {
-    NSNumber *debug = call.arguments[@"debug"];
-    _debug = [debug boolValue];
-    [self start:result];
-  } else if ([method isEqualToString:@"stop"]) {
-    [self stop:result];
-  } else if ([method isEqualToString:@"setDebug"]) {
-    _debug = [call.arguments[@"enabled"] boolValue];
-    result(nil);
   } else if ([method isEqualToString:@"dispose"]) {
     [self disposeSession];
     result(nil);
@@ -166,22 +157,39 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
     _instance = new DdrocrInstance(_dataPath, cfg);
   }
 
-  if (![self configureSession]) {
-    result([FlutterError errorWithCode:@"camera_init_failed"
-                               message:@"Could not configure AVCaptureSession"
-                               details:nil]);
-    return;
-  }
+  // Prompt for camera permission now (the FFI camera_start is synchronous and
+  // can't host an async prompt). The texture/session are still returned if
+  // denied; camera_start just reports failure.
+  void (^finishInit)(void) = ^{
+    if (![self configureSession]) {
+      result([FlutterError errorWithCode:@"camera_init_failed"
+                                 message:@"Could not configure AVCaptureSession"
+                                 details:nil]);
+      return;
+    }
+    if (self->_textureId < 0) {
+      self->_textureId = [self->_textures registerTexture:self];
+    }
+    result(@{
+      @"textureId" : @(self->_textureId),
+      @"previewWidth" : @(self->_previewWidth),
+      @"previewHeight" : @(self->_previewHeight),
+      // Opaque session pointer Dart uses for the FFI camera_* calls. The session
+      // is retained by the method-channel handler block for the engine lifetime.
+      @"sessionPtr" : @((int64_t)(intptr_t)self),
+    });
+  };
 
-  if (_textureId < 0) {
-    _textureId = [_textures registerTexture:self];
+  AVAuthorizationStatus status =
+      [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+  if (status == AVAuthorizationStatusNotDetermined) {
+    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
+                             completionHandler:^(BOOL granted) {
+      dispatch_async(dispatch_get_main_queue(), finishInit);
+    }];
+  } else {
+    finishInit();
   }
-
-  result(@{
-    @"textureId" : @(_textureId),
-    @"previewWidth" : @(_previewWidth),
-    @"previewHeight" : @(_previewHeight),
-  });
 }
 
 - (BOOL)configureSession {
@@ -251,66 +259,48 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
   return YES;
 }
 
-- (void)start:(FlutterResult)result {
-  if (_session == nil) {
-    result([FlutterError errorWithCode:@"not_initialized"
-                               message:@"initialize must be called first"
-                               details:nil]);
-    return;
-  }
-  // Request camera permission before the first run.
-  AVAuthorizationStatus status =
-      [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
-  if (status == AVAuthorizationStatusNotDetermined) {
-    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
-                             completionHandler:^(BOOL granted) {
-      dispatch_async(dispatch_get_main_queue(), ^{
-        if (granted) {
-          [self beginRunning];
-          result(nil);
-        } else {
-          result([FlutterError errorWithCode:@"permission_denied"
-                                     message:@"Camera permission denied"
-                                     details:nil]);
-        }
-      });
-    }];
-    return;
-  }
-  if (status != AVAuthorizationStatusAuthorized) {
-    result([FlutterError errorWithCode:@"permission_denied"
-                               message:@"Camera permission denied"
-                               details:nil]);
-    return;
-  }
-  [self beginRunning];
-  result(nil);
+#pragma mark - FFI-facing control
+
+- (void)setResultFn:(CameraResultFn)fn {
+  _resultFn = fn;
 }
 
-- (void)beginRunning {
-  if (_running) return;
+- (void)setDebugEnabled:(BOOL)enabled {
+  _debug = enabled;
+}
+
+// Synchronous (FFI). Returns NO if the session isn't configured or camera
+// permission isn't granted (permission is requested during initialize).
+- (BOOL)startCamera:(BOOL)debug {
+  if (_session == nil) return NO;
+  if ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo] !=
+      AVAuthorizationStatusAuthorized) {
+    return NO;
+  }
+  _debug = debug;
+  if (_running) return YES;
   _frameCounter = 0;
   _ocrBusy = false;
   _running = YES;
-  // startRunning blocks; run it off the main thread.
+  // startRunning blocks; run it off the calling thread.
   dispatch_async(_captureQueue, ^{
     [self->_session startRunning];
   });
+  return YES;
 }
 
-- (void)stop:(FlutterResult)result {
+// Synchronous (FFI). Blocks until the capture session has stopped and any
+// in-flight OCR frame has drained, so the result is settled on return.
+- (void)stopCamera {
+  if (!_running && (_session == nil || !_session.isRunning)) return;
   _running = NO;
-  dispatch_async(_captureQueue, ^{
+  dispatch_sync(_captureQueue, ^{
     if (self->_session.isRunning) {
       [self->_session stopRunning];
     }
-    // Drain: wait for any in-flight OCR to finish so the Dart side's
-    // "Finalising…" indicator reflects reality.
-    dispatch_async(self->_ocrQueue, ^{
-      dispatch_async(dispatch_get_main_queue(), ^{
-        result(nil);
-      });
-    });
+  });
+  // Drain the OCR queue (serial) so any in-flight frame completes.
+  dispatch_sync(_ocrQueue, ^{
   });
 }
 
@@ -337,18 +327,6 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
     delete _instance;
     _instance = nullptr;
   }
-}
-
-#pragma mark - FlutterStreamHandler
-
-- (FlutterError *)onListenWithArguments:(id)arguments eventSink:(FlutterEventSink)events {
-  _eventSink = events;
-  return nil;
-}
-
-- (FlutterError *)onCancelWithArguments:(id)arguments {
-  _eventSink = nil;
-  return nil;
 }
 
 #pragma mark - FlutterTexture
@@ -430,57 +408,42 @@ static NSData *EncodeMat(const cv::Mat &img, const char *ext) {
     return;
   }
 
-  [self emitResult:res frameWidth:bgr.cols frameHeight:bgr.rows];
-}
-
-#pragma mark - Result marshalling
-
-- (void)emitResult:(const ProcessImgResult &)res
-        frameWidth:(int)frameWidth
-       frameHeight:(int)frameHeight {
-  // Flatten ROIs into an Int32 typed array {x,y,w,h} * N.
-  NSMutableData *rois =
-      [NSMutableData dataWithLength:res.rois.size() * 4 * sizeof(int32_t)];
-  int32_t *roiPtr = (int32_t *)rois.mutableBytes;
-  for (size_t i = 0; i < res.rois.size(); i++) {
-    roiPtr[i * 4 + 0] = res.rois[i].x;
-    roiPtr[i * 4 + 1] = res.rois[i].y;
-    roiPtr[i * 4 + 2] = res.rois[i].width;
-    roiPtr[i * 4 + 3] = res.rois[i].height;
+  // Hand the result to Dart over the FFI NativeCallable. The callable's
+  // listener marshals to the Dart isolate, so we can invoke it straight from
+  // the OCR queue; Dart owns and frees the CCameraResult.
+  if (_resultFn) {
+    CCameraResult *out = BuildCCameraResult(res, bgr.cols, bgr.rows);
+    _resultFn(out);
   }
-
-  const auto &ocr = res.ocrResults;
-  NSDictionary *ocrMap = @{
-    @"score" : [NSString stringWithUTF8String:ocr.score.text.c_str()],
-    @"marvelous" : [NSString stringWithUTF8String:ocr.marvelous.text.c_str()],
-    @"perfect" : [NSString stringWithUTF8String:ocr.perfect.text.c_str()],
-    @"great" : [NSString stringWithUTF8String:ocr.great.text.c_str()],
-    @"good" : [NSString stringWithUTF8String:ocr.good.text.c_str()],
-    @"miss" : [NSString stringWithUTF8String:ocr.miss.text.c_str()],
-  };
-
-  NSMutableDictionary *payload = [@{
-    @"isDetected" : @(res.isDetected != 0),
-    @"detailsRoiIndex" : @(res.detailsRoiIndex),
-    @"width" : @(frameWidth),
-    @"height" : @(frameHeight),
-    @"rois" : [FlutterStandardTypedData typedDataWithInt32:rois],
-    @"ocr" : ocrMap,
-  } mutableCopy];
-
-  NSData *mask = EncodeMat(res.debugMask, ".png");
-  if (mask) payload[@"mask"] = [FlutterStandardTypedData typedDataWithBytes:mask];
-  NSData *crop = EncodeMat(res.debugDetailsCrop, ".png");
-  if (crop) payload[@"crop"] = [FlutterStandardTypedData typedDataWithBytes:crop];
-  NSData *capture = EncodeMat(res.colorCapture, ".jpg");
-  if (capture)
-    payload[@"capture"] = [FlutterStandardTypedData typedDataWithBytes:capture];
-
-  dispatch_async(dispatch_get_main_queue(), ^{
-    if (self->_eventSink) {
-      self->_eventSink(payload);
-    }
-  });
 }
 
 @end
+
+#pragma mark - FFI entry points
+
+// extern "C" so Dart (DynamicLibrary.process) can dlsym these. The used +
+// default-visibility attributes keep the linker from dead-stripping them (they
+// have no compile-time callers). Each takes the opaque session pointer Dart
+// received from the `initialize` channel call.
+#define FFI_EXPORT extern "C" __attribute__((visibility("default"))) __attribute__((used))
+
+FFI_EXPORT void camera_register_callback(void *session, CameraResultFn cb) {
+  if (session) [(__bridge CameraOcrSession *)session setResultFn:cb];
+}
+
+FFI_EXPORT int32_t camera_start(void *session, int32_t debug) {
+  if (!session) return 0;
+  return [(__bridge CameraOcrSession *)session startCamera:(debug != 0)] ? 1 : 0;
+}
+
+FFI_EXPORT void camera_stop(void *session) {
+  if (session) [(__bridge CameraOcrSession *)session stopCamera];
+}
+
+FFI_EXPORT void camera_set_debug(void *session, int32_t enabled) {
+  if (session) [(__bridge CameraOcrSession *)session setDebugEnabled:(enabled != 0)];
+}
+
+FFI_EXPORT void camera_free_result(void *result) {
+  FreeCCameraResult((CCameraResult *)result);
+}
