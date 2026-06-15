@@ -253,13 +253,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     checkpoint("image preprocessing", t_rolling_timer);
 
     // ----- Details detection via template matching -----
-    //
-    // Earlier pipelines used Tesseract (eng.fast, PSM_SINGLE_WORD) and then
-    // PaddleOCR rec to recognise the literal word "Details" inside each HSV
-    // blob candidate. Both were expensive and accuracy-fragile for what is a
-    // fixed, visually-constant UI element. DetailsDetector uses cv::matchTemplate
-    // against a stored reference crop — deterministic, ~order of magnitude
-    // faster, and easier to debug.
+    // DetailsDetector uses cv::matchTemplate against a stored reference crop —
+    // deterministic and fast, since the "Details" badge is a fixed UI element.
     //
     // If no template ships with the build, classify() returns -1 and we report
     // "no Details ROI matched" — the same failure mode the previous OCR-based
@@ -634,10 +629,8 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
         return result;
 
     // PP-OCRv5 expects natural-color BGR crops matching its training
-    // distribution. The previous Tesseract-era pipeline (top-hat → Otsu
-    // BINARY_INV → GRAY2BGR) was out-of-distribution for this model and
-    // caused recognition failures on stylised UI text. performOCR handles
-    // the canonical resize_norm_img preprocessing internally.
+    // distribution. performOCR handles the canonical resize_norm_img
+    // preprocessing internally — pass the raw crop straight through.
     save_img("roi_" + imageName, cropped);
 
     {

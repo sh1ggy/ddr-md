@@ -34,7 +34,7 @@ class ProcessResult {
   // Full-frame binarized mask (preprocessed_BW1) for every processed frame when
   // debug is on; null otherwise.
   final Uint8List? debugMaskBytes;
-  // Crop Tesseract matched on, present only when this frame matched "Details".
+  // Crop the Details template matched on, present only when this frame matched.
   // The UI persists the last non-null one across failed frames.
   final Uint8List? debugDetailsCropBytes;
   // Full-color JPEG of the frame, present only when this frame matched

@@ -59,7 +59,7 @@ class _LoadImageState extends State<LoadImage> {
   }
 
   Future<void> _initLoadImage() async {
-    // init() (tessdata copy) and initActor() (isolate spawn + create_ocr_instance)
+    // init() (model asset copy) and initActor() (isolate spawn + create_ocr_instance)
     // must still be sequential — the isolate needs the app path from init() —
     // but we kick them off immediately so the page renders while they run in the
     // background. The button stays disabled until both complete.
