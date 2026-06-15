@@ -132,7 +132,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             << "_" << std::setfill('0') << std::setw(3) << ms.count();
         debugDir = oss.str();
         mkdir(debugDir.c_str(), 0755);
-        ocrWrapper.debugDir = debugDir;
+        // ocr_input_*.png crops (one per recognised box) live in a rois/
+        // subdir to keep the parent dir scannable.
+        const std::string roisDir = debugDir + "/rois";
+        mkdir(roisDir.c_str(), 0755);
+        ocrWrapper.debugDir = roisDir;
         platform_log("[DEBUG] output dir: %s\n", debugDir.c_str());
     }
 
@@ -495,6 +499,16 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         ROI_Combined.height);
     roi_combined_warped &= cv::Rect(0, 0, warpedImg.cols, warpedImg.rows);
 
+    // Map a per-field anchor rect (in config-roi coords) into combinedCrop
+    // local coords. Used by the picker below and by the debug renderer.
+    auto fieldInCombinedCrop = [&](const cv::Rect &fieldRoi) -> cv::Rect {
+        cv::Point2d fOff(fieldRoi.x - ROI_Combined.x,
+                         fieldRoi.y - ROI_Combined.y);
+        return cv::Rect(
+            (int)std::round(fOff.x), (int)std::round(fOff.y),
+            fieldRoi.width, fieldRoi.height);
+    };
+
     std::vector<DetectedText> detections;
     if (roi_combined_warped.width > 0 && roi_combined_warped.height > 0)
     {
@@ -507,22 +521,68 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             std::chrono::high_resolution_clock::now() - t0).count();
         platform_log("[TIMER] combined detect+rec: %lld ms, %zu boxes\n",
                      (long long)ms, detections.size());
-    }
 
-    // Map each detection (in combined-crop coords) back to warped-image coords
-    // by shifting by roi_combined_warped.tl(), then translate to the
-    // "config.roi anchor" space the per-field rects live in by undoing the
-    // warped_details_top_left + offset transform — i.e. add ROI_Combined.tl()
-    // and subtract roi_combined_warped.tl() == add ROI_Combined.tl() net.
-    // Simpler: compare each detection rect to the per-field anchor rect after
-    // mapping anchor into combined-crop coords.
-    auto fieldInCombinedCrop = [&](const cv::Rect &fieldRoi) -> cv::Rect {
-        cv::Point2d fOff(fieldRoi.x - ROI_Combined.x,
-                         fieldRoi.y - ROI_Combined.y);
-        return cv::Rect(
-            (int)std::round(fOff.x), (int)std::round(fOff.y),
-            fieldRoi.width, fieldRoi.height);
-    };
+        // When the debug toggle is on, render an annotated view of what
+        // PaddleOCR actually saw: detection boxes (green) with recognised text
+        // + confidence, and the per-field anchor rectangles (cyan) the picker
+        // matches detections against. Written to debugDir as paddle_detect.png
+        // (cv::imwrite directly so it survives NDEBUG release builds).
+        if (debugImageType == DebugImageType::ON && !debugDir.empty())
+        {
+            cv::Mat annotated;
+            if (combinedCrop.channels() == 1)
+                cv::cvtColor(combinedCrop, annotated, cv::COLOR_GRAY2BGR);
+            else
+                annotated = combinedCrop.clone();
+
+            const std::pair<const char *, cv::Rect> anchors[] = {
+                {"score",     fieldInCombinedCrop(ROI_Score)},
+                {"marvelous", fieldInCombinedCrop(ROI_Marvelous)},
+                {"perfect",   fieldInCombinedCrop(ROI_Perfect)},
+                {"great",     fieldInCombinedCrop(ROI_Great)},
+                {"good",      fieldInCombinedCrop(ROI_Good)},
+                {"miss",      fieldInCombinedCrop(ROI_Miss)},
+                {"flare",     fieldInCombinedCrop(ROI_Flare)},
+                {"max_combo", fieldInCombinedCrop(ROI_MaxCombo)},
+            };
+            const cv::Rect cropBounds(0, 0, annotated.cols, annotated.rows);
+            for (const auto &a : anchors)
+            {
+                cv::Rect r = a.second & cropBounds;
+                if (r.width <= 0 || r.height <= 0) continue;
+                cv::rectangle(annotated, r, cv::Scalar(255, 255, 0), 1);
+                cv::putText(annotated, a.first,
+                            cv::Point(r.x + 2, r.y + 12),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.35,
+                            cv::Scalar(255, 255, 0), 1, cv::LINE_AA);
+            }
+
+            for (const auto &d : detections)
+            {
+                cv::rectangle(annotated, d.box, cv::Scalar(0, 255, 0), 2);
+                char label[128];
+                snprintf(label, sizeof(label), "%s (%.2f)",
+                         d.result.text.c_str(), d.result.confidence);
+                int baseline = 0;
+                cv::Size ts = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX,
+                                              0.4, 1, &baseline);
+                int ty = std::max(ts.height + 2, d.box.y - 2);
+                cv::rectangle(annotated,
+                              cv::Rect(d.box.x, ty - ts.height - 2,
+                                       ts.width + 4, ts.height + 4),
+                              cv::Scalar(0, 0, 0), cv::FILLED);
+                cv::putText(annotated, label,
+                            cv::Point(d.box.x + 2, ty),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.4,
+                            cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+            }
+
+            char path[512];
+            snprintf(path, sizeof(path), "%s/paddle_detect.png", debugDir.c_str());
+            cv::imwrite(path, annotated);
+            platform_log("wrote: %s (%zu det boxes)\n", path, detections.size());
+        }
+    }
 
     auto pickBestDetection = [&](const cv::Rect &fieldRoi) -> OCRResult {
         cv::Rect anchor = fieldInCombinedCrop(fieldRoi);

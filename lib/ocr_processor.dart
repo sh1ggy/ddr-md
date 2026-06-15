@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:ffi/ffi.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 enum DifficultyType { None, FFXI }
@@ -375,6 +376,7 @@ class OCRProcessor {
   Future<void> init() async {
     tempDir = await getTemporaryDirectory();
     appDir = await getApplicationDocumentsDirectory();
+    await _loadNativeAssets();
 
     // The native camera session only exists on mobile. The picked-image (FFI)
     // path doesn't need it, so a failure here is non-fatal.
@@ -396,6 +398,26 @@ class OCRProcessor {
       }
     } catch (e) {
       print('Native camera session init failed (picked-image still works): $e');
+    }
+  }
+
+  Future<void> _loadNativeAssets() async {
+    const assets = [
+      'assets/templates/details.png',
+      'assets/models/ppocr_mobile_det.onnx',
+      'assets/models/ppocr_mobile_rec.onnx',
+      'assets/models/ppocrv5_dict.txt',
+    ];
+    for (final assetPath in assets) {
+      final segments = assetPath.split('/');
+      final subdir = Directory(path.join(appDir!.path, segments[1]));
+      if (!await subdir.exists()) {
+        await subdir.create(recursive: true);
+      }
+      final target = File(path.join(subdir.path, segments.last));
+      final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
+      await target.writeAsBytes(bytes, flush: true);
+      print('Copied $assetPath -> ${target.path}');
     }
   }
 

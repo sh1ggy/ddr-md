@@ -163,7 +163,8 @@ extern "C"
             *outputIsDetected = 0;
             return;
         }
-        ProcessImgResult result = instance->process_image(img, static_cast<DetectionSide>(side));
+        ProcessImgResult result = instance->process_image(
+            img, static_cast<DetectionSide>(side), DebugImageType::ON);
         if (!result.isDetected)
         {
             platform_log("No OCR region detected.\n");
