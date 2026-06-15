@@ -148,6 +148,10 @@ final class COCRConfig extends Struct {
   external int morphHeight;
   @Array(12, 6)
   external Array<Array<Int32>> roi;
+  @Array(4)
+  external Array<Int32> combinedRoi;
+  @Double()
+  external double detailsTemplateMinScore;
 }
 
 final class COCRStrings extends Struct {
@@ -217,6 +221,10 @@ Pointer<COCRConfig> _buildOCRConfig() {
     p.ref.roi[r][roiExpandX] = ex;
     p.ref.roi[r][roiExpandY] = ey;
   }
+  for (int c = 0; c < 4; c++) {
+    p.ref.combinedRoi[c] = ocrCombinedRoi[c];
+  }
+  p.ref.detailsTemplateMinScore = ocrDetailsTemplateMinScore;
   return p;
 }
 
