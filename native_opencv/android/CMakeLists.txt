@@ -25,9 +25,11 @@ add_library(native_opencv SHARED
     ../ios/Classes/ocr_onnx.cpp
     ../ios/Classes/ddrocr_instance.cpp
     ../ios/Classes/details_detector.cpp
-    # Native camera capture + OCR pipeline (replaces the Flutter `camera` plugin)
-    src/main/cpp/camera_ocr_session.cpp
-    src/main/cpp/jni_bridge.cpp
+    # Native camera capture + OCR pipeline (replaces the Flutter `camera` plugin).
+    # These live with the other shared sources in ios/Classes/ and are guarded
+    # with #ifdef __ANDROID__ so the iOS pod build skips them.
+    ../ios/Classes/camera_ocr_session.cpp
+    ../ios/Classes/jni_bridge.cpp
 )
 
 target_include_directories(native_opencv PRIVATE
