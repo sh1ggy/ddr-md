@@ -9,7 +9,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:ffi/ffi.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 enum DifficultyType { None, FFXI }
@@ -376,7 +375,6 @@ class OCRProcessor {
   Future<void> init() async {
     tempDir = await getTemporaryDirectory();
     appDir = await getApplicationDocumentsDirectory();
-    await loadTessdata();
 
     // The native camera session only exists on mobile. The picked-image (FFI)
     // path doesn't need it, so a failure here is non-fatal.
@@ -401,42 +399,7 @@ class OCRProcessor {
     }
   }
 
-  Future<void> loadTessdata() async {
-    if (!Platform.isAndroid && !Platform.isIOS) {
-      // Tessdata copying is only needed for mobile platforms.
-      print(
-          'Skipping tessdata copy on unsupported platform: ${Platform.operatingSystem}');
-      return;
-    }
-
-    final tessdataDir = Directory(path.join(appDir!.path, 'tessdata'));
-    if (!await tessdataDir.exists()) {
-      await tessdataDir.create(recursive: true);
-    }
-
-    final tessdataAssets = [
-      'assets/tessdata/eng.best.traineddata',
-      'assets/tessdata/eng.fast.traineddata',
-      'assets/tessdata/jpn.best.traineddata',
-      'assets/tessdata/jpn.fast.traineddata',
-    ];
-
-    for (final assetPath in tessdataAssets) {
-      final targetFile =
-          File(path.join(tessdataDir.path, path.basename(assetPath)));
-      if (await targetFile.exists()) {
-        print('Tessdata already exists, skipping: ${targetFile.path}');
-        continue;
-      }
-      final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
-      await targetFile.writeAsBytes(bytes, flush: true);
-      print('Copied tessdata asset $assetPath -> ${targetFile.path}');
-    }
-
-    print('Tessdata loaded to ${tessdataDir.path}');
-  }
-
-  // Serialises lib/ocr_config.dart into the flat (ints, doubles) arrays the
+// Serialises lib/ocr_config.dart into the flat (ints, doubles) arrays the
   // native camera session reconstructs into a COCRConfig. Field order MUST match
   // config_marshal.h::BuildCOCRConfigFromArrays.
   (Int32List, Float64List) _buildCameraConfigArrays() {
