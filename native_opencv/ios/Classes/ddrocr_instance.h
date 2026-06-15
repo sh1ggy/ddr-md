@@ -4,6 +4,7 @@
 #include <string>
 #include <stdint.h>
 #include "ocr_wrapper.h"
+#include "details_detector.h"
 
 struct bounding_box
 {
@@ -111,6 +112,9 @@ struct COCRConfig
     // panel. Fed to the PaddleOCR detection model; detected boxes are then
     // mapped to the score-panel fields via the per-field roi[] anchors above.
     int32_t combinedRoi[4] = {1648, 2439, 2959, 2848};
+    // DetailsDetector::classify threshold (TM_CCOEFF_NORMED). See
+    // ocr_config.dart::ocrDetailsTemplateMinScore for the source of truth.
+    double  details_template_min_score = 0.55;
 };
 
 enum class DetectionSide
@@ -136,6 +140,7 @@ private:
     COCRConfig config;
     // Helper methods
     OCRWrapper ocrWrapper;
+    DetailsDetector detailsDetector;
     cv::Mat otsuToLogical(const cv::Mat &gray, bool invert = false) const;
     cv::Mat logicalToDisplayU8(const cv::Mat &logical) const;
     cv::Rect expandRoi(cv::Rect roi, cv::Point expand);

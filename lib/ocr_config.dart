@@ -24,6 +24,12 @@ const int ocrTophatKernelSize = 41; // morphological top-hat kernel size (must b
 const int ocrMorphWidth = 360;  // HSV blob morphology opening kernel width
 const int ocrMorphHeight = 90;  // HSV blob morphology opening kernel height
 
+// Minimum normalised correlation (TM_CCOEFF_NORMED) for a candidate HSV blob
+// to be accepted as the "Details" badge by DetailsDetector. Range 0..1.
+// Lower = more permissive (risk false positives), higher = stricter (risk
+// missing the real badge in poor lighting).
+const double ocrDetailsTemplateMinScore = 0.5;
+
 // Combined ROI covering all per-field regions — fed to the PaddleOCR detection
 // model. Coordinates are TL/BR in 4000×5000 warped space.
 // Detection finds text boxes inside this region; each per-field rectangle below

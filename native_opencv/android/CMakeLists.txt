@@ -20,6 +20,7 @@ add_library(native_opencv SHARED
     ../ios/Classes/native_opencv.cpp
     ../ios/Classes/ocr_onnx.cpp
     ../ios/Classes/ddrocr_instance.cpp
+    ../ios/Classes/details_detector.cpp
 )
 
 target_include_directories(native_opencv PRIVATE

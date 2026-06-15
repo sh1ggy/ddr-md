@@ -46,10 +46,11 @@ static const int ROI_IDX_DIFFICULTY = 10;
 static const int ROI_IDX_MAXCOMBO   = 11;
 
 DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg)
-    : dataPath(dataPath), ocrWrapper(dataPath)
+    : dataPath(dataPath), ocrWrapper(dataPath), detailsDetector(dataPath)
 {
     setConfig(cfg);
-    platform_log("DdrocrInstance initialized\n");
+    platform_log("DdrocrInstance initialized (template-based details=%s)\n",
+                 detailsDetector.hasTemplate() ? "ON" : "OFF (fallback)");
 }
 
 DdrocrInstance::~DdrocrInstance()
@@ -245,93 +246,80 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         return result;
     }
 
-    // Full-frame binarization for Details OCR: Gaussian blur → grayscale → Otsu.
-    // Otsu on the full frame finds a global threshold that cleanly separates the
-    // dark tab text from the lighter backgrounds, the same strategy that worked
-    // with Tesseract. Result is white text on black (inverted from Otsu default).
-    cv::Mat frameGray, frameBlurred, frameBin;
-    cv::GaussianBlur(inputImg, frameBlurred, cv::Size(0, 0), 1.0);
-    cv::cvtColor(frameBlurred, frameGray, cv::COLOR_BGR2GRAY);
-    cv::threshold(frameGray, frameBin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    save_img("frameBin", frameBin);
-
     // Debug: hand back the HSV mask as the debug overlay
     if (debugImageType == DebugImageType::ON)
         result.debugMask = BW_HSV;
 
     checkpoint("image preprocessing", t_rolling_timer);
 
-    cv::Mat roi_img = inputImg.clone();
-    int correct_roi_idx = -1;
-    std::vector<int> detectedDetailsIndices;
-
-    std::map<int, cv::Mat> detailsCrops;
-
-    // Create a details_rois subfolder for debug output
+    // ----- Details detection via template matching -----
+    //
+    // Earlier pipelines used Tesseract (eng.fast, PSM_SINGLE_WORD) and then
+    // PaddleOCR rec to recognise the literal word "Details" inside each HSV
+    // blob candidate. Both were expensive and accuracy-fragile for what is a
+    // fixed, visually-constant UI element. DetailsDetector uses cv::matchTemplate
+    // against a stored reference crop — deterministic, ~order of magnitude
+    // faster, and easier to debug.
+    //
+    // If no template ships with the build, classify() returns -1 and we report
+    // "no Details ROI matched" — the same failure mode the previous OCR-based
+    // path produced when nothing matched.
+    //
+    // ALWAYS save every candidate crop to details_rois/ so a failed detection
+    // can be diagnosed by inspecting what was actually fed to matchTemplate.
     std::string detailsRoiDir;
     if (!debugDir.empty())
     {
         detailsRoiDir = debugDir + "/details_rois";
         mkdir(detailsRoiDir.c_str(), 0755);
-    }
-
-    for (size_t i = 0; i < detectedRois.size(); i++)
-    {
-        cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
-        cv::Rect details_roi = detectedRois[i];
-
-        // Crop from full-frame Otsu binary, then 3x upscale with INTER_NEAREST —
-        // same strategy as the old Tesseract pipeline that produced clean results.
-        cv::Mat detailsCrop = inputImg(details_roi);
-        cv::Mat detailsBinCrop = frameBin(details_roi);
-        cv::Mat detailsUpscaled, detailsInput;
-        cv::resize(detailsBinCrop, detailsUpscaled, cv::Size(), 3.0, 3.0, cv::INTER_NEAREST);
-        cv::cvtColor(detailsUpscaled, detailsInput, cv::COLOR_GRAY2BGR);
-
-        // Save every candidate crop for debugging
-        if (!detailsRoiDir.empty())
+        for (size_t i = 0; i < detectedRois.size(); ++i)
         {
+            cv::Rect bound = detectedRois[i] &
+                             cv::Rect(0, 0, inputImg.cols, inputImg.rows);
+            if (bound.width <= 0 || bound.height <= 0) continue;
             char stem[512];
-            snprintf(stem, sizeof(stem), "details_rois/roi_%zu_input", i);
-            save_img(stem, detailsCrop);
-            snprintf(stem, sizeof(stem), "details_rois/roi_%zu_bin", i);
-            save_img(stem, detailsUpscaled);
-        }
-
-        char roiName[32];
-        snprintf(roiName, sizeof(roiName), "details_roi_%zu", i);
-
-        OCRResult roiOcrResult = {};
-
-        auto t_ocr_start = std::chrono::high_resolution_clock::now();
-        roiOcrResult = ocrWrapper.performOCR(detailsInput, OCRType::Details, roiName);
-        auto t_ocr_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - t_ocr_start).count();
-        platform_log("[TIMER] performOCR ROI %zu: %lld ms\n", i, (long long)t_ocr_ms);
-
-        // Strip all non-alphanumeric characters
-        std::string cleanText;
-        for (char c : roiOcrResult.text)
-        {
-            if (std::isalnum(static_cast<unsigned char>(c)))
-                cleanText += std::tolower(static_cast<unsigned char>(c));
-        }
-        platform_log("[DETAILS][ROI %zu] raw='%s' clean='%s'\n", i, roiOcrResult.text.c_str(), cleanText.c_str());
-
-        // Normalize target string: "Details" -> "details"
-        const std::string target = "details";
-        // Check if cleanText contains target as a substring (loose match)
-        if (cleanText.find(target) != std::string::npos)
-        {
-            detectedDetailsIndices.push_back(i);
-            platform_log("Found 'Details' (loose match) with confidence %.2f in ROI %d\n", roiOcrResult.confidence, i);
-
-            if (debugImageType == DebugImageType::ON)
-                detailsCrops[(int)i] = detailsInput.clone();
+            snprintf(stem, sizeof(stem), "details_rois/cand_%zu_input", i);
+            save_img(stem, inputImg(bound));
         }
     }
 
-    checkpoint("details OCR loop", t_rolling_timer);
+    detailsDetector.debugDir = debugDir;
+    const float minScore = (float)config.details_template_min_score;
+    DetailsDetector::Match dmatch =
+        detailsDetector.classify(inputImg, detectedRois, minScore);
+
+    // For DetectionSide::LEFT/RIGHT we need *all* viable matches, not just
+    // the best one. Re-run a small loop to collect every candidate that
+    // cleared the same threshold, then pick by side.
+    std::vector<int> detectedDetailsIndices;
+    if (dmatch.index >= 0)
+    {
+        if (side == DetectionSide::FIRST)
+        {
+            detectedDetailsIndices.push_back(dmatch.index);
+        }
+        else
+        {
+            for (size_t i = 0; i < detectedRois.size(); ++i)
+            {
+                std::vector<cv::Rect> one{detectedRois[i]};
+                auto m = detailsDetector.classify(inputImg, one, minScore);
+                if (m.index == 0)
+                    detectedDetailsIndices.push_back((int)i);
+            }
+            if (detectedDetailsIndices.empty())
+                detectedDetailsIndices.push_back(dmatch.index);
+        }
+    }
+
+    cv::Mat roi_img = inputImg.clone();
+    for (size_t i = 0; i < detectedRois.size(); i++)
+        cv::rectangle(roi_img, detectedRois[i], cv::Scalar(0, 255, 0), 4);
+    save_img("roi_img", roi_img);
+
+    int correct_roi_idx = -1;
+
+    checkpoint("details template match", t_rolling_timer);
 
     auto t_full_details_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - t_total_start).count();
@@ -346,7 +334,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t_total_start).count();
         platform_log("[TIMER] process_image total (no Details found): %lld ms\n", (long long)t_total_ms);
-        platform_log("Failed to find 'Details' in any ROI, defaulting to first detected ROI\n");
+        platform_log("Details template match failed (best score=%.3f). Defaulting to no match.\n", dmatch.score);
         result.detailsRoiIndex = -1;
         return result;
     }
@@ -374,19 +362,18 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     }
     else
     {
-        // FIRST: use the first OCR match found
+        // FIRST: best template match wins.
         correct_roi_idx = detectedDetailsIndices[0];
     }
     result.detailsRoiIndex = correct_roi_idx;
 
-    // Debug ON: a Details ROI was matched, so also return the crop Tesseract read
-    // for it. This is independent of the full-frame mask — the UI persists the
-    // last successful crop and never clears it on a later failed frame.
-    if (debugImageType == DebugImageType::ON)
+    // Debug ON: hand back the matched candidate crop so the UI can show it.
+    if (debugImageType == DebugImageType::ON && correct_roi_idx >= 0)
     {
-        auto it = detailsCrops.find(correct_roi_idx);
-        if (it != detailsCrops.end() && !it->second.empty())
-            result.debugDetailsCrop = it->second;
+        cv::Rect bound = detectedRois[correct_roi_idx] &
+                         cv::Rect(0, 0, inputImg.cols, inputImg.rows);
+        if (bound.width > 0 && bound.height > 0)
+            result.debugDetailsCrop = inputImg(bound).clone();
     }
 
     // Always (regardless of the debug toggle) hand back the full-color frame for

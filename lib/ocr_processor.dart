@@ -166,6 +166,8 @@ final class COCRConfig extends Struct {
   external Array<Array<Int32>> roi;
   @Array(4)
   external Array<Int32> combinedRoi;
+  @Double()
+  external double detailsTemplateMinScore;
 }
 
 final class COCRStrings extends Struct {
@@ -289,6 +291,7 @@ Pointer<COCRConfig> _buildOCRConfig() {
   for (int i = 0; i < 4; i++) {
     p.ref.combinedRoi[i] = ocrCombinedRoi[i];
   }
+  p.ref.detailsTemplateMinScore = ocrDetailsTemplateMinScore;
   return p;
 }
 
@@ -561,27 +564,43 @@ class OCRProcessor {
     if (!await modelsDir.exists()) {
       await modelsDir.create(recursive: true);
     }
+    final templatesDir = Directory(path.join(appDir!.path, 'templates'));
+    if (!await templatesDir.exists()) {
+      await templatesDir.create(recursive: true);
+    }
 
     const modelAssets = [
       'assets/models/ppocr_mobile_rec.onnx',
       'assets/models/ppocr_mobile_det.onnx',
       'assets/models/ppocrv5_dict.txt',
+      // Reference crop used by DetailsDetector::classify for cv::matchTemplate.
+      // Optional: if missing, native side logs a warning and the Details ROI
+      // selection silently fails (no fallback OCR).
+      'assets/templates/details.png',
     ];
 
     for (final assetPath in modelAssets) {
-      final targetFile = File(path.join(modelsDir.path, path.basename(assetPath)));
+      // Route assets to the directory matching their subpath under assets/:
+      // assets/models/*    -> <appDir>/models/
+      // assets/templates/* -> <appDir>/templates/
+      // Anything else falls back to modelsDir.
+      final Directory targetDir = assetPath.startsWith('assets/templates/')
+          ? templatesDir
+          : modelsDir;
+      final targetFile =
+          File(path.join(targetDir.path, path.basename(assetPath)));
       if (await targetFile.exists()) {
-        print('Model already exists, skipping: ${targetFile.path}');
+        print('Asset already exists, skipping: ${targetFile.path}');
         continue;
       }
       try {
         final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
         await targetFile.writeAsBytes(bytes, flush: true);
-        print('Copied model asset $assetPath -> ${targetFile.path}');
+        print('Copied asset $assetPath -> ${targetFile.path}');
       } catch (e) {
-        // Det model is optional; if missing the native side falls back to
-        // per-ROI recognition. Other model assets are required.
-        print('Model asset missing or failed to load: $assetPath ($e)');
+        // Det model + template are optional. If missing the native side
+        // logs and the corresponding feature degrades gracefully.
+        print('Asset missing or failed to load: $assetPath ($e)');
       }
     }
 
