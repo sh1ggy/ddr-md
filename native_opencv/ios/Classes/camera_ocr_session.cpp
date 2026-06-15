@@ -1,0 +1,414 @@
+// Android-only translation unit. This file lives alongside the shared sources
+// in ios/Classes/ (so it's tracked with them), but the iOS podspec globs every
+// .cpp here — the __ANDROID__ guard makes it compile to nothing on iOS.
+#ifdef __ANDROID__
+
+#include "camera_ocr_session.h"
+
+#include <android/log.h>
+#include <opencv2/opencv.hpp>
+
+#include <chrono>
+#include <cstring>
+
+#define LOG_TAG "ddr-cam"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+namespace {
+
+// Encodes a Mat into a byte vector with the given extension; empty on failure.
+std::vector<uint8_t> encodeMat(const cv::Mat &img, const char *ext) {
+    std::vector<uint8_t> out;
+    if (img.empty()) return out;
+    std::vector<uchar> buf;
+    if (cv::imencode(ext, img, buf) && !buf.empty()) {
+        out.assign(buf.begin(), buf.end());
+    }
+    return out;
+}
+
+} // namespace
+
+CameraOcrSession::CameraOcrSession(const std::string &dataPath,
+                                   const COCRConfig &config,
+                                   ANativeWindow *previewWindow,
+                                   ResultCallback callback)
+    : dataPath_(dataPath), previewWindow_(previewWindow),
+      callback_(std::move(callback)) {
+    // config comes from lib/ocr_config.dart via the JNI bridge — not the C++
+    // struct defaults, which diverge from the Dart calibration.
+    instance_ = new DdrocrInstance(dataPath_, config);
+
+    manager_ = ACameraManager_create();
+    if (!pickBackCameraAndSizes()) {
+        LOGE("Failed to find a back camera / YUV size");
+    }
+
+    // Preview is the rotated (portrait) OCR frame down-scaled to a sane width.
+    int rotW = analysisHeight_;
+    int rotH = analysisWidth_;
+    if (rotW > 0 && rotH > 0) {
+        previewWidth_ = std::min(rotW, kPreviewMaxWidth);
+        previewHeight_ = (int)((int64_t)previewWidth_ * rotH / rotW);
+        if (previewWindow_) {
+            ANativeWindow_setBuffersGeometry(previewWindow_, previewWidth_,
+                                             previewHeight_, WINDOW_FORMAT_RGBA_8888);
+        }
+    }
+
+    if (analysisWidth_ > 0 && analysisHeight_ > 0) {
+        AImageReader_new(analysisWidth_, analysisHeight_, AIMAGE_FORMAT_YUV_420_888,
+                         /*maxImages*/ 4, &reader_);
+        AImageReader_getWindow(reader_, &readerWindow_);
+        imageListener_.context = this;
+        imageListener_.onImageAvailable = &CameraOcrSession::onImageAvailable;
+        AImageReader_setImageListener(reader_, &imageListener_);
+    }
+
+    // Start the OCR worker; it idles until frames are queued.
+    workerRunning_ = true;
+    worker_ = std::thread(&CameraOcrSession::workerLoop, this);
+}
+
+CameraOcrSession::~CameraOcrSession() {
+    stop();
+
+    {
+        std::lock_guard<std::mutex> lk(frameMutex_);
+        workerRunning_ = false;
+        frameReady_ = true;
+    }
+    frameCv_.notify_all();
+    if (worker_.joinable()) worker_.join();
+
+    if (reader_) {
+        AImageReader_delete(reader_); // also tears down readerWindow_
+        reader_ = nullptr;
+        readerWindow_ = nullptr;
+    }
+    if (manager_) {
+        ACameraManager_delete(manager_);
+        manager_ = nullptr;
+    }
+    if (previewWindow_) {
+        ANativeWindow_release(previewWindow_);
+        previewWindow_ = nullptr;
+    }
+    delete instance_;
+    instance_ = nullptr;
+}
+
+bool CameraOcrSession::pickBackCameraAndSizes() {
+    ACameraIdList *idList = nullptr;
+    if (ACameraManager_getCameraIdList(manager_, &idList) != ACAMERA_OK) return false;
+
+    bool found = false;
+    for (int i = 0; i < idList->numCameras; i++) {
+        const char *id = idList->cameraIds[i];
+        ACameraMetadata *chars = nullptr;
+        if (ACameraManager_getCameraCharacteristics(manager_, id, &chars) != ACAMERA_OK)
+            continue;
+
+        ACameraMetadata_const_entry facing{};
+        if (ACameraMetadata_getConstEntry(chars, ACAMERA_LENS_FACING, &facing) == ACAMERA_OK &&
+            facing.data.u8[0] == ACAMERA_LENS_FACING_BACK) {
+            cameraId_ = id;
+
+            ACameraMetadata_const_entry orient{};
+            if (ACameraMetadata_getConstEntry(chars, ACAMERA_SENSOR_ORIENTATION, &orient) ==
+                ACAMERA_OK) {
+                sensorOrientation_ = orient.data.i32[0];
+            }
+
+            // Largest YUV_420_888 output size.
+            ACameraMetadata_const_entry streams{};
+            if (ACameraMetadata_getConstEntry(
+                    chars, ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, &streams) ==
+                ACAMERA_OK) {
+                int64_t bestArea = 0;
+                for (uint32_t e = 0; e + 3 < streams.count; e += 4) {
+                    int32_t format = streams.data.i32[e];
+                    int32_t w = streams.data.i32[e + 1];
+                    int32_t h = streams.data.i32[e + 2];
+                    int32_t isInput = streams.data.i32[e + 3];
+                    if (isInput) continue;
+                    if (format != AIMAGE_FORMAT_YUV_420_888) continue;
+                    int64_t area = (int64_t)w * h;
+                    if (area > bestArea) {
+                        bestArea = area;
+                        analysisWidth_ = w;
+                        analysisHeight_ = h;
+                    }
+                }
+            }
+            found = true;
+            ACameraMetadata_free(chars);
+            break;
+        }
+        ACameraMetadata_free(chars);
+    }
+    ACameraManager_deleteCameraIdList(idList);
+    LOGI("Picked camera %s, sensorOrientation=%d, analysis=%dx%d", cameraId_.c_str(),
+         sensorOrientation_, analysisWidth_, analysisHeight_);
+    return found && analysisWidth_ > 0;
+}
+
+// ---- Camera open/close ------------------------------------------------------
+
+bool CameraOcrSession::start(bool debug) {
+    debug_ = debug;
+    std::lock_guard<std::mutex> lk(cameraMutex_);
+    if (running_) return true;
+    if (!reader_ || cameraId_.empty()) {
+        LOGE("start() with no reader/camera");
+        return false;
+    }
+    if (!openCameraLocked()) {
+        closeCameraLocked();
+        return false;
+    }
+    frameCounter_ = 0;
+    busy_ = false;
+    running_ = true;
+    return true;
+}
+
+void CameraOcrSession::stop() {
+    std::lock_guard<std::mutex> lk(cameraMutex_);
+    running_ = false;
+    closeCameraLocked();
+}
+
+bool CameraOcrSession::openCameraLocked() {
+    deviceCallbacks_.context = this;
+    deviceCallbacks_.onDisconnected = [](void *, ACameraDevice *) {
+        LOGE("camera disconnected");
+    };
+    deviceCallbacks_.onError = [](void *, ACameraDevice *, int err) {
+        LOGE("camera device error %d", err);
+    };
+
+    if (ACameraManager_openCamera(manager_, cameraId_.c_str(), &deviceCallbacks_,
+                                  &device_) != ACAMERA_OK ||
+        device_ == nullptr) {
+        LOGE("openCamera failed");
+        return false;
+    }
+
+    // The capture session is created synchronously; onActive/onReady/onClosed
+    // are state notifications only (no onConfigured in the NDK struct).
+    sessionCallbacks_.context = this;
+    sessionCallbacks_.onActive = [](void *, ACameraCaptureSession *) {};
+    sessionCallbacks_.onReady = [](void *, ACameraCaptureSession *) {};
+    sessionCallbacks_.onClosed = [](void *, ACameraCaptureSession *) {};
+
+    ACaptureSessionOutputContainer_create(&outputs_);
+    ACaptureSessionOutput_create(readerWindow_, &readerOutput_);
+    ACaptureSessionOutputContainer_add(outputs_, readerOutput_);
+
+    if (ACameraDevice_createCaptureSession(device_, outputs_, &sessionCallbacks_,
+                                           &session_) != ACAMERA_OK) {
+        LOGE("createCaptureSession failed");
+        return false;
+    }
+
+    if (ACameraDevice_createCaptureRequest(device_, TEMPLATE_PREVIEW, &request_) !=
+        ACAMERA_OK) {
+        LOGE("createCaptureRequest failed");
+        return false;
+    }
+    ACameraOutputTarget_create(readerWindow_, &readerTarget_);
+    ACaptureRequest_addTarget(request_, readerTarget_);
+
+    if (ACameraCaptureSession_setRepeatingRequest(session_, nullptr, 1, &request_,
+                                                  nullptr) != ACAMERA_OK) {
+        LOGE("setRepeatingRequest failed");
+        return false;
+    }
+    LOGI("camera streaming started");
+    return true;
+}
+
+void CameraOcrSession::closeCameraLocked() {
+    if (session_) {
+        ACameraCaptureSession_stopRepeating(session_);
+        ACameraCaptureSession_close(session_);
+        session_ = nullptr;
+    }
+    if (request_) {
+        ACaptureRequest_free(request_);
+        request_ = nullptr;
+    }
+    if (readerTarget_) {
+        ACameraOutputTarget_free(readerTarget_);
+        readerTarget_ = nullptr;
+    }
+    if (outputs_) {
+        ACaptureSessionOutputContainer_free(outputs_);
+        outputs_ = nullptr;
+    }
+    if (readerOutput_) {
+        ACaptureSessionOutput_free(readerOutput_);
+        readerOutput_ = nullptr;
+    }
+    if (device_) {
+        ACameraDevice_close(device_);
+        device_ = nullptr;
+    }
+}
+
+// ---- Frame acquisition ------------------------------------------------------
+
+void CameraOcrSession::onImageAvailable(void *ctx, AImageReader *reader) {
+    static_cast<CameraOcrSession *>(ctx)->handleImage(reader);
+}
+
+void CameraOcrSession::handleImage(AImageReader *reader) {
+    AImage *image = nullptr;
+    if (AImageReader_acquireLatestImage(reader, &image) != AMEDIA_OK || image == nullptr)
+        return;
+
+    if (!running_) {
+        AImage_delete(image);
+        return;
+    }
+
+    // Frame-skip + drop-when-busy backpressure (same policy as before).
+    frameCounter_++;
+    bool process = (frameCounter_ % kFrameThreshold == 0);
+    bool expected = false;
+    if (process && busy_.compare_exchange_strong(expected, true)) {
+        // Pack the YUV_420_888 planes into a contiguous NV21 buffer (Y plane
+        // followed by interleaved V,U) for cv::COLOR_YUV2BGR_NV21.
+        int32_t w = 0, h = 0;
+        AImage_getWidth(image, &w);
+        AImage_getHeight(image, &h);
+
+        uint8_t *yData = nullptr, *uData = nullptr, *vData = nullptr;
+        int yLen = 0, uLen = 0, vLen = 0;
+        int yRowStride = 0, uRowStride = 0, vRowStride = 0;
+        int uPixStride = 0, vPixStride = 0;
+        AImage_getPlaneData(image, 0, &yData, &yLen);
+        AImage_getPlaneData(image, 1, &uData, &uLen);
+        AImage_getPlaneData(image, 2, &vData, &vLen);
+        AImage_getPlaneRowStride(image, 0, &yRowStride);
+        AImage_getPlaneRowStride(image, 1, &uRowStride);
+        AImage_getPlaneRowStride(image, 2, &vRowStride);
+        AImage_getPlanePixelStride(image, 1, &uPixStride);
+        AImage_getPlanePixelStride(image, 2, &vPixStride);
+
+        std::vector<uint8_t> nv21((size_t)w * h * 3 / 2);
+        // Y plane (honour row stride).
+        for (int row = 0; row < h; row++) {
+            memcpy(nv21.data() + (size_t)row * w, yData + (size_t)row * yRowStride, w);
+        }
+        // Interleaved VU plane at half resolution.
+        uint8_t *vu = nv21.data() + (size_t)w * h;
+        for (int row = 0; row < h / 2; row++) {
+            for (int col = 0; col < w / 2; col++) {
+                size_t vIdx = (size_t)row * vRowStride + (size_t)col * vPixStride;
+                size_t uIdx = (size_t)row * uRowStride + (size_t)col * uPixStride;
+                *vu++ = vData[vIdx];
+                *vu++ = uData[uIdx];
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(frameMutex_);
+            queuedNv21_ = std::move(nv21);
+            frameReady_ = true;
+        }
+        frameCv_.notify_one();
+    }
+
+    AImage_delete(image);
+}
+
+// ---- OCR worker -------------------------------------------------------------
+
+void CameraOcrSession::workerLoop() {
+    while (true) {
+        std::vector<uint8_t> nv21;
+        {
+            std::unique_lock<std::mutex> lk(frameMutex_);
+            frameCv_.wait(lk, [&] { return frameReady_; });
+            frameReady_ = false;
+            if (!workerRunning_) break;
+            nv21 = std::move(queuedNv21_);
+        }
+        if (nv21.empty()) {
+            busy_ = false;
+            continue;
+        }
+
+        cv::Mat bgr;
+        try {
+            cv::Mat yuv(analysisHeight_ * 3 / 2, analysisWidth_, CV_8UC1, nv21.data());
+            cv::cvtColor(yuv, bgr, cv::COLOR_YUV2BGR_NV21);
+            cv::rotate(bgr, bgr, cv::ROTATE_90_CLOCKWISE);
+        } catch (cv::Exception &e) {
+            LOGE("yuv convert failed: %s", e.what());
+            busy_ = false;
+            continue;
+        }
+
+        // Preview: blit the (down-scaled) upright frame before the heavy OCR so
+        // the preview stays responsive.
+        blitPreview(bgr);
+
+        DebugImageType dbg = debug_ ? DebugImageType::ON : DebugImageType::NONE;
+        ProcessImgResult res;
+        try {
+            res = instance_->process_image(bgr, DetectionSide::FIRST, dbg);
+        } catch (cv::Exception &e) {
+            LOGE("process_image failed: %s", e.what());
+            busy_ = false;
+            continue;
+        }
+
+        OcrFrameResult out;
+        out.isDetected = res.isDetected != 0;
+        out.detailsRoiIndex = res.detailsRoiIndex;
+        out.width = bgr.cols;
+        out.height = bgr.rows;
+        out.rois.reserve(res.rois.size() * 4);
+        for (const auto &r : res.rois) {
+            out.rois.push_back(r.x);
+            out.rois.push_back(r.y);
+            out.rois.push_back(r.width);
+            out.rois.push_back(r.height);
+        }
+        const auto &o = res.ocrResults;
+        out.ocr = {o.score.text, o.marvelous.text, o.perfect.text,
+                   o.great.text, o.good.text,      o.miss.text};
+        out.maskPng = encodeMat(res.debugMask, ".png");
+        out.cropPng = encodeMat(res.debugDetailsCrop, ".png");
+        out.captureJpg = encodeMat(res.colorCapture, ".jpg");
+
+        if (callback_) callback_(out);
+        busy_ = false;
+    }
+}
+
+void CameraOcrSession::blitPreview(const cv::Mat &bgrRotated) {
+    if (!previewWindow_ || previewWidth_ <= 0 || previewHeight_ <= 0) return;
+
+    cv::Mat small, rgba;
+    cv::resize(bgrRotated, small, cv::Size(previewWidth_, previewHeight_), 0, 0,
+               cv::INTER_AREA);
+    cv::cvtColor(small, rgba, cv::COLOR_BGR2RGBA);
+
+    ANativeWindow_Buffer buf;
+    if (ANativeWindow_lock(previewWindow_, &buf, nullptr) != 0) return;
+    auto *dst = static_cast<uint8_t *>(buf.bits);
+    int copyW = std::min(buf.width, rgba.cols);
+    int copyH = std::min(buf.height, rgba.rows);
+    for (int row = 0; row < copyH; row++) {
+        memcpy(dst + (size_t)row * buf.stride * 4,
+               rgba.ptr(row), (size_t)copyW * 4);
+    }
+    ANativeWindow_unlockAndPost(previewWindow_);
+}
+
+#endif // __ANDROID__
