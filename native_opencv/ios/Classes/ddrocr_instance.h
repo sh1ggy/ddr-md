@@ -52,8 +52,8 @@ struct ProcessImgResult
     OCRResults ocrResults;
     // Debug images captured when process_image is asked for them; empty
     // otherwise. debugMask is the full-frame binarized image (every frame);
-    // debugDetailsCrop is the crop Tesseract matched on (only on a successful
-    // Details match, so the UI can persist the last good one).
+    // debugDetailsCrop is the crop the Details template matched on (only on a
+    // successful Details match, so the UI can persist the last good one).
     cv::Mat debugMask;
     cv::Mat debugDetailsCrop;
     // Full-color frame, set only on a successful "Details" match (independent of

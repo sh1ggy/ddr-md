@@ -59,9 +59,10 @@ class _LoadImageState extends State<LoadImage> {
   }
 
   Future<void> _initLoadImage() async {
-    // init() copies tessdata and prepares the OCR session. The picked-image
-    // path runs the FFI pipeline in a one-shot isolate per pick, so there's no
-    // long-lived actor to spin up here. The button stays disabled until ready.
+    // init() (model asset copy) and initActor() (isolate spawn + create_ocr_instance)
+    // must still be sequential — the isolate needs the app path from init() —
+    // but we kick them off immediately so the page renders while they run in the
+    // background. The button stays disabled until both complete.
     await _ocrProcessor.init();
     if (mounted) setState(() => _isReady = true);
   }
