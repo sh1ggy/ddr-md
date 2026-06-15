@@ -16,8 +16,6 @@ enum DifficultyType { None, FFXI }
 
 enum DetectionSide { first, left, right }
 
-const DetectionSide kDetectionSide = DetectionSide.left;
-
 enum ReturnImageType { None, DirImage, BytesImage }
 
 // Whether the native pipeline should capture debug images for on-device
@@ -73,6 +71,7 @@ class ProcessImageRequestParams {
   // frame is hard-coded to 90° CW. Kept plumbed for future use.
   final int sensorOrientation;
   final DebugImageType debugImageType;
+  final DetectionSide side;
 
   ProcessImageRequestParams({
     required this.bytes,
@@ -80,14 +79,16 @@ class ProcessImageRequestParams {
     required this.height,
     required this.bytesPerRow,
     required this.sensorOrientation,
+    required this.side,
     this.debugImageType = DebugImageType.none,
   });
 }
 
 class ProcessPickedImageRequestParams {
   final String imagePath;
+  final DetectionSide side;
 
-  ProcessPickedImageRequestParams({required this.imagePath});
+  ProcessPickedImageRequestParams({required this.imagePath, required this.side});
 }
 
 enum RequestType { ProcessVideoImage, ProcessPickedImage, Shutdown }
@@ -96,11 +97,13 @@ class Request {
   final RequestType type;
   final ProcessImageRequestParams? cameraParams;
   final String? pickedImagePath;
+  final DetectionSide? pickedImageSide;
 
   Request._({
     required this.type,
     this.cameraParams,
     this.pickedImagePath,
+    this.pickedImageSide,
   });
 
   Request.fromCamera(
@@ -114,9 +117,11 @@ class Request {
   Request.fromFile(
     RequestType type,
     String path,
+    DetectionSide side,
   ) : this._(
           type: type,
           pickedImagePath: path,
+          pickedImageSide: side,
         );
 
   Request.death() : this._(type: RequestType.Shutdown);
@@ -208,7 +213,8 @@ typedef _c_processCameraImage = Void Function(
     Pointer<Pointer<Uint8>> outputDebugCrop,
     Pointer<Int32> outputDebugCropLen,
     Pointer<Pointer<Uint8>> outputCapture,
-    Pointer<Int32> outputCaptureLen);
+    Pointer<Int32> outputCaptureLen,
+    Int32 side);
 
 typedef _c_processPickedImage = Void Function(
   Pointer<Void> handle,
@@ -239,7 +245,8 @@ typedef _dart_processCameraImage = void Function(
     Pointer<Pointer<Uint8>> outputDebugCrop,
     Pointer<Int32> outputDebugCropLen,
     Pointer<Pointer<Uint8>> outputCapture,
-    Pointer<Int32> outputCaptureLen);
+    Pointer<Int32> outputCaptureLen,
+    int side);
 
 typedef _dart_processPickedImage = void Function(
   Pointer<Void> handle,
@@ -428,7 +435,7 @@ Future<ProcessResult> _processPickedImage(
     outputRoisCount,
     outputDetailsRoiIndex,
     outStrings,
-    kDetectionSide.index,
+    params.side.index,
   );
   calloc.free(imagePathPtr);
 
@@ -479,6 +486,7 @@ Future<ProcessResult> _processFrame(
     outputDebugCropLen,
     outputCapturePtr,
     outputCaptureLen,
+    params.side.index,
   );
   calloc.free(imgBuffer);
 
@@ -511,8 +519,10 @@ void isolateEntryPoint(InitialRequest initReq) {
     if (data is Request) {
       switch (data.type) {
         case RequestType.ProcessPickedImage:
-          final params =
-              ProcessPickedImageRequestParams(imagePath: data.pickedImagePath!);
+          final params = ProcessPickedImageRequestParams(
+            imagePath: data.pickedImagePath!,
+            side: data.pickedImageSide!,
+          );
           _processPickedImage(handle, params).then(_toMainThread.send);
           break;
         case RequestType.ProcessVideoImage:
@@ -630,6 +640,7 @@ class OCRProcessor {
   }
 
   DebugImageType debugImageType = DebugImageType.none;
+  DetectionSide side = DetectionSide.left;
 
   int MAX_SKIPPED_FRAMES = 20;
 
@@ -669,6 +680,7 @@ class OCRProcessor {
     final request = Request.fromFile(
       RequestType.ProcessPickedImage,
       image.path,
+      side,
     );
     _isProcessing = true;
     toIsolate?.send(request);
@@ -713,6 +725,7 @@ class OCRProcessor {
       height: image.height,
       bytesPerRow: bytesPerRow,
       sensorOrientation: sensorOrientation,
+      side: side,
       debugImageType: debugImageType,
     );
 

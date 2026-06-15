@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/roi_painter.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -59,6 +60,7 @@ class _OcrPageState extends State<OcrPage>
   CameraImage? _lastFrame;
 
   DebugImageType _debugImageType = DebugImageType.none;
+  DetectionSide _detectionSide = DetectionSide.left;
   bool _histogramsExpanded = false;
   final ValueNotifier<Uint8List?> _debugMaskBytes = ValueNotifier(null);
   final ValueNotifier<Uint8List?> _debugCropBytes = ValueNotifier(null);
@@ -78,7 +80,18 @@ class _OcrPageState extends State<OcrPage>
     // Repaint the ROI overlay every frame from the last-known result.
     _ticker = createTicker((_) => _frameTick.value++)..start();
 
+    final savedSideIndex = Settings.getInt(Settings.detectionSideKey);
+    // Stored as enum index; fall back to left when unset or invalid (the
+    // SharedPreferences default of 0 maps to DetectionSide.first which we
+    // never expose as a user choice).
+    if (savedSideIndex == DetectionSide.right.index) {
+      _detectionSide = DetectionSide.right;
+    } else {
+      _detectionSide = DetectionSide.left;
+    }
+
     _ocrProcessor = OCRProcessor();
+    _ocrProcessor.side = _detectionSide;
     _ocrProcessor.streamResultController.stream.listen((result) {
       final double scale = _camFrameToScreenScale;
 
@@ -320,18 +333,28 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
       appBar: AppBar(
         title: const Text("Camera"),
       ),
-      body: switch (cameraState) {
-        CameraState.notReady =>
-          const Center(child: CircularProgressIndicator()),
-        CameraState.neverRecorded => const Center(
-            child: Text(
-              "Start OCR to begin detection",
-              style: TextStyle(fontSize: 16, color: Colors.black54),
-            ),
+      body: Column(
+        children: [
+          _buildSideSelector(),
+          Expanded(
+            child: switch (cameraState) {
+              CameraState.notReady =>
+                const Center(child: CircularProgressIndicator()),
+              CameraState.neverRecorded => Center(
+                  child: Text(
+                    "Start OCR to begin detection",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              CameraState.inactive => _buildStoppedView(),
+              CameraState.active => _buildActiveView(),
+            },
           ),
-        CameraState.inactive => _buildStoppedView(),
-        CameraState.active => _buildActiveView(),
-      },
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         // Disabled (null onPressed + grey) until both camera and OCR are
         // ready. Stop is always enabled once a session is active.
@@ -375,6 +398,31 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           child: _buildScorePanel(live: true),
         ),
       ],
+    );
+  }
+
+  void _setDetectionSide(DetectionSide side) {
+    if (side == _detectionSide) return;
+    setState(() => _detectionSide = side);
+    _ocrProcessor.side = side;
+    Settings.setInt(Settings.detectionSideKey, side.index);
+  }
+
+  Widget _buildSideSelector() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Center(
+        child: SegmentedButton<DetectionSide>(
+          segments: const [
+            ButtonSegment(
+                value: DetectionSide.left, label: Text('Left (1P)')),
+            ButtonSegment(
+                value: DetectionSide.right, label: Text('Right (2P)')),
+          ],
+          selected: {_detectionSide},
+          onSelectionChanged: (s) => _setDetectionSide(s.first),
+        ),
+      ),
     );
   }
 
@@ -428,7 +476,10 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(label,
-                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                )),
           ),
           ValueListenableBuilder<Uint8List?>(
             valueListenable: notifier,
@@ -439,13 +490,17 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
                   child: Text(
                     emptyText,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black54),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 );
               }
               return DecoratedBox(
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.black26),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                   color: Colors.black,
                 ),
                 child: Image.memory(
@@ -487,11 +542,14 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
                   "Last capture",
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               framed,
@@ -518,20 +576,23 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             final busy =
                 _ocrProcessor.isProcessing.value || _ocrProcessor.isDraining.value;
             if (!busy) return const SizedBox.shrink();
-            return const Padding(
-              padding: EdgeInsets.only(top: 6),
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
+                  const SizedBox(
                     width: 8,
                     height: 8,
                     child: CircularProgressIndicator(strokeWidth: 1.5),
                   ),
-                  SizedBox(width: 6),
+                  const SizedBox(width: 6),
                   Text(
                     "Finalising…",
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -579,7 +640,10 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   "Details detections: ${_aggregator.detailsCount}",
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
@@ -601,7 +665,9 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             child: Text(
               live ? "Reading score…" : "No score captured.",
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.black54),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           )
         else
@@ -669,7 +735,8 @@ class _CandidateBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isWinner ? Colors.green : Colors.grey[400]!;
+    final scheme = Theme.of(context).colorScheme;
+    final color = isWinner ? Colors.green : scheme.surfaceContainerHighest;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -693,7 +760,7 @@ class _CandidateBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(2),
                 child: Stack(
                   children: [
-                    Container(height: 12, color: Colors.black12),
+                    Container(height: 12, color: scheme.surfaceContainerHigh),
                     FractionallySizedBox(
                       widthFactor: candidate.share.clamp(0.0, 1.0),
                       child: Container(height: 12, color: color),
@@ -708,7 +775,10 @@ class _CandidateBar extends StatelessWidget {
             child: Text(
               '${candidate.count} · ${(candidate.share * 100).round()}%',
               textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+              style: TextStyle(
+                fontSize: 11,
+                color: scheme.onSurfaceVariant,
+              ),
             ),
           ),
         ],

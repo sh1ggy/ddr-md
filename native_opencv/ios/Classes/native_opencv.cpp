@@ -226,7 +226,8 @@ extern "C"
         uint8_t **outputDebugCrop,
         int32_t *outputDebugCropLen,
         uint8_t **outputCapture,
-        int32_t *outputCaptureLen)
+        int32_t *outputCaptureLen,
+        int32_t side)
     {
         // Default the out-params so every early-return path leaves Dart a safe
         // (null, 0) to read.
@@ -272,7 +273,7 @@ extern "C"
         try
         {
             ProcessImgResult result = instance->process_image(
-                img, DetectionSide::FIRST, static_cast<DebugImageType>(debugImageType));
+                img, static_cast<DetectionSide>(side), static_cast<DebugImageType>(debugImageType));
             // Debug images can be captured even when no Details ROI is selected
             // (the full-frame mask), so emit them before the isDetected gate.
             encodeDebugImage(result.debugMask, outputDebugMask, outputDebugMaskLen);
