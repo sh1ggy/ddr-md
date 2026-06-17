@@ -174,6 +174,9 @@ static const int kFrameThreshold = 3;
       @"textureId" : @(self->_textureId),
       @"previewWidth" : @(self->_previewWidth),
       @"previewHeight" : @(self->_previewHeight),
+      // iOS forces the capture connection to portrait (see configureSession),
+      // so frames arrive upright — Dart must not rotate them again.
+      @"sensorOrientation" : @(0),
       // Opaque session pointer Dart uses for the FFI camera_* calls. The session
       // is retained by the method-channel handler block for the engine lifetime.
       @"sessionPtr" : @((int64_t)(intptr_t)self),
