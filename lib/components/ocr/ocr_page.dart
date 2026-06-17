@@ -64,6 +64,10 @@ class _OcrPageState extends State<OcrPage>
   final ValueNotifier<int> _frameTick = ValueNotifier(0);
   late final Ticker _ticker;
 
+  final ValueNotifier<double> _fps = ValueNotifier(0);
+  final List<Duration> _frameTimes = [];
+  final Stopwatch _fpsClock = Stopwatch()..start();
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +80,7 @@ class _OcrPageState extends State<OcrPage>
 
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.streamResultController.stream.listen((result) {
+      _recordFrameTime();
       // The native session reports the processed-frame dimensions (the pixel
       // space the ROIs live in). Derive the on-screen scale from those.
       if (result.frameWidth > 0) {
@@ -133,8 +138,26 @@ class _OcrPageState extends State<OcrPage>
     _debugMaskBytes.dispose();
     _debugCropBytes.dispose();
     _captureData.dispose();
+    _fps.dispose();
     _ocrProcessor.dispose();
     super.dispose();
+  }
+
+  void _recordFrameTime() {
+    final now = _fpsClock.elapsed;
+    _frameTimes.add(now);
+    const window = Duration(seconds: 1);
+    while (_frameTimes.isNotEmpty && now - _frameTimes.first > window) {
+      _frameTimes.removeAt(0);
+    }
+    if (_frameTimes.length < 2) {
+      _fps.value = 0;
+      return;
+    }
+    final span = now - _frameTimes.first;
+    _fps.value = span.inMicroseconds <= 0
+        ? 0
+        : (_frameTimes.length - 1) * 1e6 / span.inMicroseconds;
   }
 
   Future<void> _initOcr() async {
@@ -172,6 +195,8 @@ class _OcrPageState extends State<OcrPage>
           _debugMaskBytes.value = null;
           _debugCropBytes.value = null;
           _captureData.value = null;
+          _frameTimes.clear();
+          _fps.value = 0;
         });
         await _ocrProcessor.start();
         print('Camera started. New state: $_isCameraActive');
@@ -268,6 +293,11 @@ class _OcrPageState extends State<OcrPage>
               top: 12,
               right: 12,
               child: _ProcessingDot(isProcessing: _ocrProcessor.isProcessing),
+            ),
+            Positioned(
+              top: 12,
+              left: 12,
+              child: _FpsCounter(fps: _fps),
             ),
           ],
         ),
@@ -672,6 +702,38 @@ class _ProcessingDotState extends State<_ProcessingDot>
                   color: Colors.green,
                   shape: BoxShape.circle,
                 ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FpsCounter extends StatelessWidget {
+  const _FpsCounter({required this.fps});
+
+  final ValueNotifier<double> fps;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: fps,
+      builder: (context, value, _) {
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text(
+              '${value.toStringAsFixed(1)} fps',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontFeatures: [FontFeature.tabularFigures()],
               ),
             ),
           ),

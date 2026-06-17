@@ -19,32 +19,74 @@ The intended usage of this application is to use it while you're playing DDR. Fo
 - Install the appropriate dependencies with `flutter pub get`
 - Either run the project via the debugger or with `flutter run`
 
-### iOS Build Process
+### OCR Pipeline
 
-The iOS build uses the same Tesseract+Leptonica OCR pipeline as Android. The native C++ sources live in `native_opencv/android/src/main/cpp/` (shared between both platforms) and are cross-compiled into static libraries for iOS.
+OCR is implemented in native C++ on top of OpenCV and the ONNX Runtime, calling PaddleOCR's PP-OCRv5 mobile models for text detection and recognition. The score panel runs detection + recognition over a single combined ROI; other fields (title, username, difficulty, details) run recognition only over hand-picked crops. See [docs/paddleocr-migration.md](./docs/paddleocr-migration.md) for the architectural rationale and pipeline diagram.
 
-**Prerequisites:** Xcode with iOS SDK, CMake (`brew install cmake`), CocoaPods.
+#### ONNX Runtime
 
-**Steps:**
+The native module links against the prebuilt **ONNX Runtime iOS xcframework**, vendored at `native_opencv/ios/libs/onnxruntime.xcframework` and referenced as a `vendored_framework` in `native_opencv/ios/native_opencv.podspec`. ORT sessions are created once at startup in [native_opencv/ios/Classes/ocr_onnx.cpp](./native_opencv/ios/Classes/ocr_onnx.cpp) — one for detection (`detSession`, optional) and one for recognition (`recSession`).
 
-1. **Init submodules** — `git submodule update --init --recursive` (pulls `Tesseract4Android` which contains the Tesseract & Leptonica source).
+#### Det & Rec Models
 
-2. **Build static libs** — `bash scripts/build_tesseract_ios.sh`
-   - Uses CMake (`scripts/ios_tesseract_cmake/CMakeLists.txt`) to cross-compile for iOS arm64 (deployment target 13.0).
-   - Produces 2 static libraries in `native_opencv/ios/libs/`: `libtesseract.a`, `libleptonica.a`. (libjpeg and libpng are built during compilation but **not** vendored — `opencv2.framework` already bundles both, and linking duplicates causes symbol collisions that break `imread`.)
-   - Copies public headers to `native_opencv/ios/libs/include/` (including CMake-generated `config_auto.h`).
-   - The `libs/` directory is gitignored — you must run this script before building.
+Both models live under `assets/models/` and are bundled via `pubspec.yaml`:
 
-3. **Pod install** — `cd ios && pod install`
-   - The podspec (`native_opencv/ios/native_opencv.podspec`) references the static libs as `vendored_libraries` and sets up header search paths + preprocessor defines (`OS_IOS`, `HAVE_LIBJPEG`, `HAVE_LIBPNG`, etc.).
+| File | Role | Source |
+|---|---|---|
+| `ppocr_mobile_det.onnx` | DBNet text detector | [PaddlePaddle/PP-OCRv5_mobile_det](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det) |
+| `ppocr_mobile_rec.onnx` | CTC text recogniser | [PaddlePaddle/PP-OCRv5_mobile_rec](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec) |
+| `ppocrv5_dict.txt` | Recogniser character dictionary | PP-OCRv5 release |
 
-4. **Flutter build** — `flutter build ios` or run from Xcode/VS Code.
+They are produced by converting the upstream Paddle inference exports to ONNX with `paddle2onnx`. PP-OCRv5 ships in PIR format, so the model filename is `inference.json` (not the older `inference.pdmodel`):
 
-**Key details:**
-- iOS deployment target is **13.0** (required for `std::filesystem` used by Tesseract).
-- The Vision OCR backend in `ocr_ios.mm` is stubbed out (`#if 0`) — both platforms now use the Tesseract backend via `ocr_android.cpp`.
-- Tessdata files (`eng.best.traineddata`, `jpn.best.traineddata`) are bundled as Flutter assets and copied to the app's documents directory at runtime by `loadTessdata()` in `lib/ocr_processor.dart`.
-- `scripts/init.sh` runs the full setup including the iOS build step.
+```bash
+paddle2onnx --model_dir ./PP-OCRv5_mobile_det \
+  --model_filename inference.json \
+  --params_filename inference.pdiparams \
+  --save_file ppocr_mobile_det.onnx \
+  --opset_version 11 \
+  --enable_onnx_checker True
+
+# same invocation for PP-OCRv5_mobile_rec
+```
+
+Drop the resulting `.onnx` files into `assets/models/`. The recogniser is required; the detector is loaded inside a try/catch and the pipeline degrades to recogniser-only if it's missing.
+
+#### Android Build Steps
+
+**Prerequisites:** Android SDK + NDK (CMake 3.18+), Java 17 (for Gradle), `wget` + `unzip`.
+
+1. `bash scripts/init.sh` — downloads and stages the native dependencies:
+   - **OpenCV 4.12 Android SDK** → `libopencv_java4.so` into `native_opencv/android/src/main/jniLibs/<ABI>/` for all four ABIs (`armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`); OpenCV C++ headers into `native_opencv/android/src/main/jniLibs/include/`.
+   - **ONNX Runtime Android AAR** (`com.microsoft.onnxruntime:onnxruntime-android`, pinned in the script) → `libonnxruntime.so` into the same per-ABI `jniLibs/` folders; ORT C/C++ headers into `native_opencv/android/src/main/cpp/onnxruntime/include/`.
+2. `flutter build apk` (or `flutter run`) — Gradle invokes CMake ([native_opencv/android/CMakeLists.txt](./native_opencv/android/CMakeLists.txt)) to build the `native_opencv` shared library, which links against the per-ABI `.so` files in `jniLibs/` as `IMPORTED` targets.
+
+**`jniLibs/` layout** — Gradle auto-packages anything under `src/main/jniLibs/<ABI>/` into the APK at `lib/<ABI>/`, where the dynamic linker finds it at runtime:
+
+```
+native_opencv/android/src/main/jniLibs/
+├── armeabi-v7a/
+│   ├── libopencv_java4.so
+│   └── libonnxruntime.so
+├── arm64-v8a/
+│   ├── libopencv_java4.so
+│   └── libonnxruntime.so
+├── x86/
+│   └── ...
+└── x86_64/
+    └── ...
+```
+
+The whole `jniLibs/` directory is gitignored — everything in it is produced by `scripts/init.sh`, so re-run the script after a clean checkout or when bumping `OPENCV_VERSION` / `ORT_VERSION` at the top of the script.
+
+#### iOS Build Steps
+
+**Prerequisites:** Xcode with iOS SDK, CocoaPods.
+
+1. `cd ios && pod install` — picks up `opencv2.framework` and `onnxruntime.xcframework` via the podspec.
+2. `flutter build ios` (or run from Xcode/VS Code).
+
+iOS deployment target is **13.0**.
 
 ## Credits
 - This project takes heavy inspiration from the existing [DDR BPM](https://ddrbpm.com/) application, with the data sourced from the process spun up by [xiexingwu](https://github.com/xiexingwu) 

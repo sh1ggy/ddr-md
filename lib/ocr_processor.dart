@@ -34,8 +34,8 @@ class ProcessResult {
   // Full-frame binarized mask (preprocessed_BW1) for every processed frame when
   // debug is on; null otherwise.
   final Uint8List? debugMaskBytes;
-  // Crop the recogniser matched on, present only when this frame matched
-  // "Details". The UI persists the last non-null one across failed frames.
+  // Crop the Details template matched on, present only when this frame matched.
+  // The UI persists the last non-null one across failed frames.
   final Uint8List? debugDetailsCropBytes;
   // Full-color JPEG of the frame, present only when this frame matched
   // "Details" (independent of the debug toggle). The stopped view paints the
@@ -159,6 +159,10 @@ final class COCRConfig extends Struct {
   external int morphHeight;
   @Array(12, 6)
   external Array<Array<Int32>> roi;
+  @Array(4)
+  external Array<Int32> combinedRoi;
+  @Double()
+  external double detailsTemplateMinScore;
 }
 
 final class COCRStrings extends Struct {
@@ -289,6 +293,10 @@ Pointer<COCRConfig> _buildOCRConfig() {
     p.ref.roi[r][roiExpandX] = ex;
     p.ref.roi[r][roiExpandY] = ey;
   }
+  for (int c = 0; c < 4; c++) {
+    p.ref.combinedRoi[c] = ocrCombinedRoi[c];
+  }
+  p.ref.detailsTemplateMinScore = ocrDetailsTemplateMinScore;
   return p;
 }
 
@@ -472,7 +480,7 @@ class OCRProcessor {
   Future<void> init() async {
     tempDir = await getTemporaryDirectory();
     appDir = await getApplicationDocumentsDirectory();
-    await loadTessdata();
+    await _loadNativeAssets();
 
     // The native camera session only exists on mobile. The picked-image (FFI)
     // path doesn't need it, so a failure here is non-fatal.
@@ -506,42 +514,27 @@ class OCRProcessor {
     }
   }
 
-  Future<void> loadTessdata() async {
-    if (!Platform.isAndroid && !Platform.isIOS) {
-      // Tessdata copying is only needed for mobile platforms.
-      print(
-          'Skipping tessdata copy on unsupported platform: ${Platform.operatingSystem}');
-      return;
-    }
-
-    final tessdataDir = Directory(path.join(appDir!.path, 'tessdata'));
-    if (!await tessdataDir.exists()) {
-      await tessdataDir.create(recursive: true);
-    }
-
-    final tessdataAssets = [
-      'assets/tessdata/eng.best.traineddata',
-      'assets/tessdata/eng.fast.traineddata',
-      'assets/tessdata/jpn.best.traineddata',
-      'assets/tessdata/jpn.fast.traineddata',
+  Future<void> _loadNativeAssets() async {
+    const assets = [
+      'assets/templates/details.png',
+      'assets/models/ppocr_mobile_det.onnx',
+      'assets/models/ppocr_mobile_rec.onnx',
+      'assets/models/ppocrv5_dict.txt',
     ];
-
-    for (final assetPath in tessdataAssets) {
-      final targetFile =
-          File(path.join(tessdataDir.path, path.basename(assetPath)));
-      if (await targetFile.exists()) {
-        print('Tessdata already exists, skipping: ${targetFile.path}');
-        continue;
+    for (final assetPath in assets) {
+      final segments = assetPath.split('/');
+      final subdir = Directory(path.join(appDir!.path, segments[1]));
+      if (!await subdir.exists()) {
+        await subdir.create(recursive: true);
       }
+      final target = File(path.join(subdir.path, segments.last));
       final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
-      await targetFile.writeAsBytes(bytes, flush: true);
-      print('Copied tessdata asset $assetPath -> ${targetFile.path}');
+      await target.writeAsBytes(bytes, flush: true);
+      print('Copied $assetPath -> ${target.path}');
     }
-
-    print('Tessdata loaded to ${tessdataDir.path}');
   }
 
-  // Serialises lib/ocr_config.dart into the flat (ints, doubles) arrays the
+// Serialises lib/ocr_config.dart into the flat (ints, doubles) arrays the
   // native camera session reconstructs into a COCRConfig. Field order MUST match
   // config_marshal.h::BuildCOCRConfigFromArrays.
   (Int32List, Float64List) _buildCameraConfigArrays() {
