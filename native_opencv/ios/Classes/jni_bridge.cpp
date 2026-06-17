@@ -21,16 +21,16 @@
 #include "camera_result.h"
 #include "config_marshal.h"
 
-// ---- JNI: texture/Surface handoff + session lifecycle ----------------------
+// ---- JNI: session lifecycle + preview Surface handoff ----------------------
 
-// Returns {sessionPtr, previewWidth, previewHeight}.
+// Creates the session (picks camera sizes, makes the OCR AImageReader). The
+// preview Surface is attached separately via nativeSetPreviewSurface, since its
+// size depends on the camera sizes chosen here.
+// Returns {sessionPtr, previewWidth, previewHeight, sensorOrientation}.
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_example_native_1opencv_NativeOpencvPlugin_nativeCreateSession(
-    JNIEnv *env, jobject /*thiz*/, jobject surface, jstring dataPath,
-    jintArray cfgInts, jdoubleArray cfgDoubles) {
-    ANativeWindow *window =
-        surface ? ANativeWindow_fromSurface(env, surface) : nullptr;
-
+    JNIEnv *env, jobject /*thiz*/, jstring dataPath, jintArray cfgInts,
+    jdoubleArray cfgDoubles) {
     const char *pathChars = env->GetStringUTFChars(dataPath, nullptr);
     std::string path(pathChars ? pathChars : "");
     env->ReleaseStringUTFChars(dataPath, pathChars);
@@ -49,16 +49,31 @@ Java_com_example_native_1opencv_NativeOpencvPlugin_nativeCreateSession(
         if (doubles) env->ReleaseDoubleArrayElements(cfgDoubles, doubles, JNI_ABORT);
     }
 
-    auto *session = new CameraOcrSession(path, config, window);
+    auto *session = new CameraOcrSession(path, config);
 
-    jlong vals[3] = {
+    jlong vals[4] = {
         reinterpret_cast<jlong>(session),
         session->previewWidth(),
         session->previewHeight(),
+        session->sensorOrientation(),
     };
-    jlongArray out = env->NewLongArray(3);
-    env->SetLongArrayRegion(out, 0, 3, vals);
+    jlongArray out = env->NewLongArray(4);
+    env->SetLongArrayRegion(out, 0, 4, vals);
     return out;
+}
+
+// Hands the camera the Flutter preview Surface (SurfaceProducer.getSurface()) as
+// a direct render target. Called on surface-available; pass null on cleanup.
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_native_1opencv_NativeOpencvPlugin_nativeSetPreviewSurface(
+    JNIEnv *env, jobject /*thiz*/, jlong handle, jobject surface) {
+    auto *session = reinterpret_cast<CameraOcrSession *>(handle);
+    if (!session) return;
+    if (surface) {
+        session->setPreviewWindow(ANativeWindow_fromSurface(env, surface));
+    } else {
+        session->onPreviewSurfaceLost();
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -1,9 +1,14 @@
 // Pure-NDK Camera2 capture + OCR pipeline for Android. Replaces the Flutter
-// `camera` plugin's per-frame YUV → Dart → FFI round trip: an AImageReader
-// feeds full-resolution YUV_420_888 frames straight into the existing C++
-// DdrocrInstance::process_image, and the rotated BGR frame the OCR consumes is
-// also down-scaled and blitted into the Flutter preview SurfaceTexture (so the
-// preview and the ROI overlay share one pixel space, upright).
+// `camera` plugin.
+//
+// Two simultaneous Camera2 outputs (the same design the `camera` package uses):
+//   1. The Flutter preview Surface — the camera renders straight into it on the
+//      GPU path, zero CPU copy, full framerate. Orientation is corrected by a
+//      RotatedBox on the Dart side (the preview is delivered sensor-landscape).
+//   2. An AImageReader (YUV_420_888) consumed ONLY by the OCR worker, throttled
+//      (every Nth frame, drop-when-busy). The worker converts to BGR, rotates
+//      upright, runs DdrocrInstance::process_image, and pushes the result to
+//      Dart via the FFI NativeCallable.
 #pragma once
 
 // Android-only (NDK Camera2). Guarded so the iOS build, which globs every
@@ -27,17 +32,28 @@
 
 class CameraOcrSession {
 public:
-    CameraOcrSession(const std::string &dataPath, const COCRConfig &config,
-                     ANativeWindow *previewWindow);
+    // The preview window is supplied later (Java SurfaceProducer), via
+    // setPreviewWindow, since its size depends on the camera sizes this picks.
+    CameraOcrSession(const std::string &dataPath, const COCRConfig &config);
     ~CameraOcrSession();
 
     // Registers the FFI result sink (NativeCallable from Dart). Invoked by the
     // OCR worker once per processed frame; Dart owns/frees the CCameraResult.
     void setResultFn(CameraResultFn fn) { resultFn_ = fn; }
 
-    // Preview surface dimensions (portrait, matching the rotated OCR frame).
+    // Chosen preview output size, in sensor (landscape) orientation. Java sets
+    // the SurfaceProducer to this; Dart applies the rotation for display.
     int previewWidth() const { return previewWidth_; }
     int previewHeight() const { return previewHeight_; }
+    // Sensor mounting rotation (0/90/180/270); Dart turns this into the
+    // RotatedBox quarter-turns for the preview + ROI overlay.
+    int sensorOrientation() const { return sensorOrientation_; }
+
+    // Preview Surface lifecycle (driven by the Java SurfaceProducer callback).
+    // setPreviewWindow takes ownership of an ANativeWindow ref. If the camera is
+    // already running it rebuilds the session to include the new surface.
+    void setPreviewWindow(ANativeWindow *window);
+    void onPreviewSurfaceLost();
 
     // Opens the camera device + session and begins the repeating request.
     // Returns false if the camera could not be opened (caller should surface a
@@ -60,7 +76,6 @@ private:
 
     // OCR worker thread
     void workerLoop();
-    void blitPreview(const cv::Mat &bgrRotated);
 
     std::string dataPath_;
     ANativeWindow *previewWindow_ = nullptr;
@@ -71,9 +86,9 @@ private:
     ACameraManager *manager_ = nullptr;
     std::string cameraId_;
     int sensorOrientation_ = 90;
-    int analysisWidth_ = 0;   // landscape (sensor) dims
+    int analysisWidth_ = 0;   // landscape (sensor) dims, full-res YUV for OCR
     int analysisHeight_ = 0;
-    int previewWidth_ = 0;    // portrait (rotated) preview dims
+    int previewWidth_ = 0;    // landscape preview output size
     int previewHeight_ = 0;
 
     ACameraDevice *device_ = nullptr;
@@ -82,6 +97,8 @@ private:
     ACaptureSessionOutputContainer *outputs_ = nullptr;
     ACaptureSessionOutput *readerOutput_ = nullptr;
     ACameraOutputTarget *readerTarget_ = nullptr;
+    ACaptureSessionOutput *previewOutput_ = nullptr;
+    ACameraOutputTarget *previewTarget_ = nullptr;
     ACaptureRequest *request_ = nullptr;
     ACameraCaptureSession *session_ = nullptr;
 
@@ -105,7 +122,10 @@ private:
     std::atomic<bool> debug_{false};
     int frameCounter_ = 0;
     static constexpr int kFrameThreshold = 3;
-    static constexpr int kPreviewMaxWidth = 720;
+    // Cap the preview output's longer edge. "PRIV preview + YUV maximum" is a
+    // guaranteed Camera2 stream combination on LIMITED+ devices when preview is
+    // <= 1080p, so keep the preview within that bound.
+    static constexpr int kPreviewMaxLongEdge = 1920;
 };
 
 #endif // __ANDROID__

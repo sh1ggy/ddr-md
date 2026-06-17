@@ -3,7 +3,6 @@ package com.example.native_opencv;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
-import android.graphics.SurfaceTexture;
 import android.view.Surface;
 
 import androidx.annotation.NonNull;
@@ -25,14 +24,15 @@ import io.flutter.view.TextureRegistry;
  * Thin Android shim for the native camera + OCR pipeline.
  *
  * Its ONLY jobs are the things that genuinely require the Android embedding:
- *   • mint the Flutter preview texture (TextureRegistry is Java-only) and hand
- *     its Surface to the C++ session,
+ *   • mint the Flutter preview texture via {@link TextureRegistry.SurfaceProducer}
+ *     and hand its {@link Surface} to the C++ session as a DIRECT camera render
+ *     target (GPU path — no CPU copy, full framerate, like the camera package),
  *   • request the runtime CAMERA permission,
- *   • return the texture id + an opaque native session pointer to Dart.
+ *   • forward SurfaceProducer lifecycle (available/cleanup) to native.
  *
  * Everything else — start/stop/setDebug and every per-frame OCR result — goes
- * Dart ↔ C++ over FFI (see ocr_processor.dart + jni_bridge.cpp). No EventChannel
- * and no JNI in the result path.
+ * Dart ↔ C++ over FFI (see ocr_processor.dart + jni_bridge.cpp). No EventChannel,
+ * no JNI in the result path.
  */
 public class NativeOpencvPlugin
     implements FlutterPlugin, MethodCallHandler, ActivityAware,
@@ -46,22 +46,26 @@ public class NativeOpencvPlugin
 
   private MethodChannel methodChannel;
   private TextureRegistry textures;
-  private TextureRegistry.SurfaceTextureEntry textureEntry;
-  private Surface previewSurface;
+  private TextureRegistry.SurfaceProducer producer;
 
   private Activity activity;
   private ActivityPluginBinding activityBinding;
 
   private long nativePtr = 0;
+  private int previewWidth = 0;
+  private int previewHeight = 0;
+  private int sensorOrientation = 90;
 
   // A pending initialize() awaiting the camera-permission decision.
   private Result pendingInitResult;
   private MethodCall pendingInitCall;
 
-  // ---- JNI: texture/Surface handoff + session lifecycle only ----------------
-  // Returns {sessionPtr, previewWidth, previewHeight}.
-  private native long[] nativeCreateSession(Surface surface, String dataPath,
-                                            int[] cfgInts, double[] cfgDoubles);
+  // ---- JNI: session lifecycle + preview Surface handoff ---------------------
+  // Returns {sessionPtr, previewWidth, previewHeight, sensorOrientation}.
+  private native long[] nativeCreateSession(String dataPath, int[] cfgInts,
+                                            double[] cfgDoubles);
+  // Pass the producer's Surface, or null on cleanup.
+  private native void nativeSetPreviewSurface(long handle, Surface surface);
   private native void nativeDestroySession(long handle);
 
   // ---- FlutterPlugin -------------------------------------------------------
@@ -100,8 +104,7 @@ public class NativeOpencvPlugin
       return;
     }
     // Camera permission must be granted before the FFI camera_start opens the
-    // device, so request it here (the only Activity-bound step) before creating
-    // the session.
+    // device, so request it here (the only Activity-bound step) first.
     if (activity != null &&
         activity.checkSelfPermission(Manifest.permission.CAMERA) !=
             PackageManager.PERMISSION_GRANTED) {
@@ -119,26 +122,41 @@ public class NativeOpencvPlugin
     int[] cfgInts = call.argument("cfgInts");
     double[] cfgDoubles = call.argument("cfgDoubles");
 
-    textureEntry = textures.createSurfaceTexture();
-    SurfaceTexture st = textureEntry.surfaceTexture();
-    previewSurface = new Surface(st);
-
-    long[] res = nativeCreateSession(previewSurface, dataPath == null ? "" : dataPath,
-                                     cfgInts, cfgDoubles);
+    long[] res = nativeCreateSession(dataPath == null ? "" : dataPath, cfgInts, cfgDoubles);
     nativePtr = res[0];
-    lastPreviewWidth = (int) res[1];
-    lastPreviewHeight = (int) res[2];
+    previewWidth = (int) res[1];
+    previewHeight = (int) res[2];
+    sensorOrientation = (int) res[3];
+
+    // Producer-side texture: the camera renders directly into getSurface().
+    producer = textures.createSurfaceProducer();
+    producer.setSize(previewWidth, previewHeight);
+    producer.setCallback(new TextureRegistry.SurfaceProducer.Callback() {
+      @Override
+      public void onSurfaceAvailable() {
+        if (nativePtr != 0 && producer != null) {
+          producer.setSize(previewWidth, previewHeight);
+          nativeSetPreviewSurface(nativePtr, producer.getSurface());
+        }
+      }
+
+      @Override
+      public void onSurfaceCleanup() {
+        // The Surface is about to become invalid — drop it native-side.
+        if (nativePtr != 0) nativeSetPreviewSurface(nativePtr, null);
+      }
+    });
+
+    nativeSetPreviewSurface(nativePtr, producer.getSurface());
     result.success(previewInfo());
   }
 
-  private int lastPreviewWidth = 0;
-  private int lastPreviewHeight = 0;
-
   private Map<String, Object> previewInfo() {
     Map<String, Object> info = new HashMap<>();
-    info.put("textureId", textureEntry.id());
-    info.put("previewWidth", lastPreviewWidth);
-    info.put("previewHeight", lastPreviewHeight);
+    info.put("textureId", producer.id());
+    info.put("previewWidth", previewWidth);
+    info.put("previewHeight", previewHeight);
+    info.put("sensorOrientation", sensorOrientation);
     // Opaque pointer Dart uses for the FFI camera_* calls.
     info.put("sessionPtr", nativePtr);
     return info;
@@ -146,16 +164,13 @@ public class NativeOpencvPlugin
 
   private void disposeSession() {
     if (nativePtr != 0) {
+      nativeSetPreviewSurface(nativePtr, null);
       nativeDestroySession(nativePtr);
       nativePtr = 0;
     }
-    if (previewSurface != null) {
-      previewSurface.release();
-      previewSurface = null;
-    }
-    if (textureEntry != null) {
-      textureEntry.release();
-      textureEntry = null;
+    if (producer != null) {
+      producer.release();
+      producer = null;
     }
   }
 

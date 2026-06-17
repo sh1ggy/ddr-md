@@ -8,17 +8,18 @@
 #include <android/log.h>
 #include <opencv2/opencv.hpp>
 
-#include <chrono>
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#include <vector>
 
 #define LOG_TAG "ddr-cam"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 CameraOcrSession::CameraOcrSession(const std::string &dataPath,
-                                   const COCRConfig &config,
-                                   ANativeWindow *previewWindow)
-    : dataPath_(dataPath), previewWindow_(previewWindow) {
+                                   const COCRConfig &config) {
+    dataPath_ = dataPath;
     // config comes from lib/ocr_config.dart via the JNI bridge — not the C++
     // struct defaults, which diverge from the Dart calibration.
     instance_ = new DdrocrInstance(dataPath_, config);
@@ -28,18 +29,8 @@ CameraOcrSession::CameraOcrSession(const std::string &dataPath,
         LOGE("Failed to find a back camera / YUV size");
     }
 
-    // Preview is the rotated (portrait) OCR frame down-scaled to a sane width.
-    int rotW = analysisHeight_;
-    int rotH = analysisWidth_;
-    if (rotW > 0 && rotH > 0) {
-        previewWidth_ = std::min(rotW, kPreviewMaxWidth);
-        previewHeight_ = (int)((int64_t)previewWidth_ * rotH / rotW);
-        if (previewWindow_) {
-            ANativeWindow_setBuffersGeometry(previewWindow_, previewWidth_,
-                                             previewHeight_, WINDOW_FORMAT_RGBA_8888);
-        }
-    }
-
+    // Full-res YUV reader for OCR (the preview is a separate, direct camera
+    // output — see openCameraLocked).
     if (analysisWidth_ > 0 && analysisHeight_ > 0) {
         AImageReader_new(analysisWidth_, analysisHeight_, AIMAGE_FORMAT_YUV_420_888,
                          /*maxImages*/ 4, &reader_);
@@ -104,12 +95,12 @@ bool CameraOcrSession::pickBackCameraAndSizes() {
                 sensorOrientation_ = orient.data.i32[0];
             }
 
-            // Largest YUV_420_888 output size.
+            // Collect all YUV_420_888 output sizes.
+            std::vector<std::pair<int, int>> sizes;
             ACameraMetadata_const_entry streams{};
             if (ACameraMetadata_getConstEntry(
                     chars, ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, &streams) ==
                 ACAMERA_OK) {
-                int64_t bestArea = 0;
                 for (uint32_t e = 0; e + 3 < streams.count; e += 4) {
                     int32_t format = streams.data.i32[e];
                     int32_t w = streams.data.i32[e + 1];
@@ -117,14 +108,50 @@ bool CameraOcrSession::pickBackCameraAndSizes() {
                     int32_t isInput = streams.data.i32[e + 3];
                     if (isInput) continue;
                     if (format != AIMAGE_FORMAT_YUV_420_888) continue;
-                    int64_t area = (int64_t)w * h;
-                    if (area > bestArea) {
-                        bestArea = area;
-                        analysisWidth_ = w;
-                        analysisHeight_ = h;
-                    }
+                    sizes.emplace_back(w, h);
                 }
             }
+
+            // Analysis = largest YUV (the OCR ROI calibration assumes high res).
+            int64_t bestArea = 0;
+            for (auto &s : sizes) {
+                int64_t a = (int64_t)s.first * s.second;
+                if (a > bestArea) {
+                    bestArea = a;
+                    analysisWidth_ = s.first;
+                    analysisHeight_ = s.second;
+                }
+            }
+
+            // Preview = largest size with the SAME aspect ratio as analysis and
+            // long edge <= cap (so "PRIV preview + YUV maximum" stays a
+            // guaranteed stream combination, and so the preview and the OCR
+            // frame share one field of view → the ROI overlay aligns).
+            if (analysisWidth_ > 0) {
+                int64_t prevArea = 0;
+                for (auto &s : sizes) {
+                    int longEdge = std::max(s.first, s.second);
+                    if (longEdge > kPreviewMaxLongEdge) continue;
+                    // aspect match: w1*h2 == w2*h1 (within rounding)
+                    int64_t cross = (int64_t)s.first * analysisHeight_ -
+                                    (int64_t)analysisWidth_ * s.second;
+                    if (std::llabs(cross) >
+                        (int64_t)analysisWidth_ * analysisHeight_ / 100) {
+                        continue; // >1% off the analysis aspect
+                    }
+                    int64_t a = (int64_t)s.first * s.second;
+                    if (a > prevArea) {
+                        prevArea = a;
+                        previewWidth_ = s.first;
+                        previewHeight_ = s.second;
+                    }
+                }
+                if (previewWidth_ == 0) { // nothing under the cap matched
+                    previewWidth_ = analysisWidth_;
+                    previewHeight_ = analysisHeight_;
+                }
+            }
+
             found = true;
             ACameraMetadata_free(chars);
             break;
@@ -132,9 +159,39 @@ bool CameraOcrSession::pickBackCameraAndSizes() {
         ACameraMetadata_free(chars);
     }
     ACameraManager_deleteCameraIdList(idList);
-    LOGI("Picked camera %s, sensorOrientation=%d, analysis=%dx%d", cameraId_.c_str(),
-         sensorOrientation_, analysisWidth_, analysisHeight_);
+    LOGI("camera %s orient=%d analysis=%dx%d preview=%dx%d", cameraId_.c_str(),
+         sensorOrientation_, analysisWidth_, analysisHeight_, previewWidth_,
+         previewHeight_);
     return found && analysisWidth_ > 0;
+}
+
+// ---- Preview surface lifecycle (Java SurfaceProducer callback) --------------
+
+void CameraOcrSession::setPreviewWindow(ANativeWindow *window) {
+    std::lock_guard<std::mutex> lk(cameraMutex_);
+    if (previewWindow_ == window) return;
+    if (previewWindow_) ANativeWindow_release(previewWindow_);
+    previewWindow_ = window; // takes ownership of the fromSurface ref
+    if (running_) {
+        // Rebuild the session so the (new) preview surface becomes a target.
+        if (session_) closeCameraLocked();
+        if (!openCameraLocked()) {
+            closeCameraLocked();
+            running_ = false;
+        }
+    }
+}
+
+void CameraOcrSession::onPreviewSurfaceLost() {
+    std::lock_guard<std::mutex> lk(cameraMutex_);
+    ANativeWindow *old = previewWindow_;
+    previewWindow_ = nullptr;
+    if (running_) {
+        // Tear down the session/device (the surface is invalid) but keep
+        // running_ as the resume intent — setPreviewWindow rebuilds on return.
+        closeCameraLocked();
+    }
+    if (old) ANativeWindow_release(old);
 }
 
 // ---- Camera open/close ------------------------------------------------------
@@ -142,7 +199,7 @@ bool CameraOcrSession::pickBackCameraAndSizes() {
 bool CameraOcrSession::start(bool debug) {
     debug_ = debug;
     std::lock_guard<std::mutex> lk(cameraMutex_);
-    if (running_) return true;
+    if (running_ && session_) return true;
     if (!reader_ || cameraId_.empty()) {
         LOGE("start() with no reader/camera");
         return false;
@@ -189,6 +246,10 @@ bool CameraOcrSession::openCameraLocked() {
     ACaptureSessionOutputContainer_create(&outputs_);
     ACaptureSessionOutput_create(readerWindow_, &readerOutput_);
     ACaptureSessionOutputContainer_add(outputs_, readerOutput_);
+    if (previewWindow_) {
+        ACaptureSessionOutput_create(previewWindow_, &previewOutput_);
+        ACaptureSessionOutputContainer_add(outputs_, previewOutput_);
+    }
 
     if (ACameraDevice_createCaptureSession(device_, outputs_, &sessionCallbacks_,
                                            &session_) != ACAMERA_OK) {
@@ -203,13 +264,17 @@ bool CameraOcrSession::openCameraLocked() {
     }
     ACameraOutputTarget_create(readerWindow_, &readerTarget_);
     ACaptureRequest_addTarget(request_, readerTarget_);
+    if (previewWindow_) {
+        ACameraOutputTarget_create(previewWindow_, &previewTarget_);
+        ACaptureRequest_addTarget(request_, previewTarget_);
+    }
 
     if (ACameraCaptureSession_setRepeatingRequest(session_, nullptr, 1, &request_,
                                                   nullptr) != ACAMERA_OK) {
         LOGE("setRepeatingRequest failed");
         return false;
     }
-    LOGI("camera streaming started");
+    LOGI("camera streaming started (preview=%s)", previewWindow_ ? "yes" : "no");
     return true;
 }
 
@@ -227,6 +292,10 @@ void CameraOcrSession::closeCameraLocked() {
         ACameraOutputTarget_free(readerTarget_);
         readerTarget_ = nullptr;
     }
+    if (previewTarget_) {
+        ACameraOutputTarget_free(previewTarget_);
+        previewTarget_ = nullptr;
+    }
     if (outputs_) {
         ACaptureSessionOutputContainer_free(outputs_);
         outputs_ = nullptr;
@@ -235,13 +304,17 @@ void CameraOcrSession::closeCameraLocked() {
         ACaptureSessionOutput_free(readerOutput_);
         readerOutput_ = nullptr;
     }
+    if (previewOutput_) {
+        ACaptureSessionOutput_free(previewOutput_);
+        previewOutput_ = nullptr;
+    }
     if (device_) {
         ACameraDevice_close(device_);
         device_ = nullptr;
     }
 }
 
-// ---- Frame acquisition ------------------------------------------------------
+// ---- Frame acquisition (OCR only) ------------------------------------------
 
 void CameraOcrSession::onImageAvailable(void *ctx, AImageReader *reader) {
     static_cast<CameraOcrSession *>(ctx)->handleImage(reader);
@@ -257,7 +330,8 @@ void CameraOcrSession::handleImage(AImageReader *reader) {
         return;
     }
 
-    // Frame-skip + drop-when-busy backpressure (same policy as before).
+    // Frame-skip + drop-when-busy backpressure. The preview is unaffected — it
+    // is a separate, direct camera output and runs at full framerate.
     frameCounter_++;
     bool process = (frameCounter_ % kFrameThreshold == 0);
     bool expected = false;
@@ -282,11 +356,9 @@ void CameraOcrSession::handleImage(AImageReader *reader) {
         AImage_getPlanePixelStride(image, 2, &vPixStride);
 
         std::vector<uint8_t> nv21((size_t)w * h * 3 / 2);
-        // Y plane (honour row stride).
         for (int row = 0; row < h; row++) {
             memcpy(nv21.data() + (size_t)row * w, yData + (size_t)row * yRowStride, w);
         }
-        // Interleaved VU plane at half resolution.
         uint8_t *vu = nv21.data() + (size_t)w * h;
         for (int row = 0; row < h / 2; row++) {
             for (int col = 0; col < w / 2; col++) {
@@ -336,10 +408,6 @@ void CameraOcrSession::workerLoop() {
             continue;
         }
 
-        // Preview: blit the (down-scaled) upright frame before the heavy OCR so
-        // the preview stays responsive.
-        blitPreview(bgr);
-
         DebugImageType dbg = debug_ ? DebugImageType::ON : DebugImageType::NONE;
         ProcessImgResult res;
         try {
@@ -358,26 +426,6 @@ void CameraOcrSession::workerLoop() {
         }
         busy_ = false;
     }
-}
-
-void CameraOcrSession::blitPreview(const cv::Mat &bgrRotated) {
-    if (!previewWindow_ || previewWidth_ <= 0 || previewHeight_ <= 0) return;
-
-    cv::Mat small, rgba;
-    cv::resize(bgrRotated, small, cv::Size(previewWidth_, previewHeight_), 0, 0,
-               cv::INTER_AREA);
-    cv::cvtColor(small, rgba, cv::COLOR_BGR2RGBA);
-
-    ANativeWindow_Buffer buf;
-    if (ANativeWindow_lock(previewWindow_, &buf, nullptr) != 0) return;
-    auto *dst = static_cast<uint8_t *>(buf.bits);
-    int copyW = std::min(buf.width, rgba.cols);
-    int copyH = std::min(buf.height, rgba.rows);
-    for (int row = 0; row < copyH; row++) {
-        memcpy(dst + (size_t)row * buf.stride * 4,
-               rgba.ptr(row), (size_t)copyW * 4);
-    }
-    ANativeWindow_unlockAndPost(previewWindow_);
 }
 
 #endif // __ANDROID__

@@ -421,10 +421,23 @@ class OCRProcessor {
   Pointer<Void> _session = nullptr;
 
   int? textureId;
+  // Preview output size in sensor (landscape) orientation, as the camera
+  // renders it. Dart rotates it for display via [previewQuarterTurns].
   int previewWidth = 0;
   int previewHeight = 0;
-  double get previewAspectRatio =>
-      (previewWidth > 0 && previewHeight > 0) ? previewWidth / previewHeight : 0;
+  int sensorOrientation = 90;
+
+  // Quarter-turns to rotate the preview Texture so it displays upright (the
+  // camera delivers sensor-landscape frames; this matches the camera package's
+  // RotatedBox approach).
+  int get previewQuarterTurns => (sensorOrientation ~/ 90) % 4;
+
+  // Aspect ratio of the preview AS DISPLAYED (after rotation).
+  double get previewAspectRatio {
+    if (previewWidth <= 0 || previewHeight <= 0) return 0;
+    final odd = previewQuarterTurns.isOdd;
+    return odd ? previewHeight / previewWidth : previewWidth / previewHeight;
+  }
 
   final streamResultController = StreamController<ProcessResult>.broadcast();
 
@@ -477,6 +490,7 @@ class OCRProcessor {
       textureId = res['textureId'] as int?;
       previewWidth = (res['previewWidth'] as int?) ?? 0;
       previewHeight = (res['previewHeight'] as int?) ?? 0;
+      sensorOrientation = (res['sensorOrientation'] as int?) ?? 90;
       final sessionAddr = (res['sessionPtr'] as int?) ?? 0;
       _session = Pointer<Void>.fromAddress(sessionAddr);
 

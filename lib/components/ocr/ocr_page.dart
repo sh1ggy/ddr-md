@@ -240,9 +240,16 @@ class _OcrPageState extends State<OcrPage>
         child: ColoredBox(color: Colors.black),
       );
     }
+    // The camera renders sensor-landscape frames directly into the texture
+    // (GPU path); rotate the widget to display upright. The ROI overlay is
+    // painted OUTSIDE this RotatedBox (in the upright OCR pixel space), so it
+    // stays aligned as long as preview and analysis share an aspect ratio.
     final ar = _ocrProcessor.previewAspectRatio;
-    final preview = Texture(textureId: id);
-    return ar > 0 ? AspectRatio(aspectRatio: ar, child: preview) : preview;
+    final rotated = RotatedBox(
+      quarterTurns: _ocrProcessor.previewQuarterTurns,
+      child: Texture(textureId: id),
+    );
+    return ar > 0 ? AspectRatio(aspectRatio: ar, child: rotated) : rotated;
   }
 
   Widget _buildActiveView() {
