@@ -520,6 +520,9 @@ class OCRProcessor {
       'assets/models/ppocr_mobile_det.onnx',
       'assets/models/ppocr_mobile_rec.onnx',
       'assets/models/ppocrv5_dict.txt',
+      'assets/models/ppocr_tiny_det.onnx',
+      'assets/models/ppocr_tiny_rec.onnx',
+      'assets/models/ppocrv6_dict.txt',
     ];
     for (final assetPath in assets) {
       final segments = assetPath.split('/');

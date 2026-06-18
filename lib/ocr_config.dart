@@ -37,6 +37,7 @@ const double ocrDetailsTemplateMinScore = 0.5;
 // to which field (score, marvelous, title, etc.).
 const List<int> ocrCombinedRoi = [1648, 2439, 2959, 2848];
 
+
 // New
 const List<(List<int>, (int, int))> ocrRoi = [
   ([2122, 2344, 2448, 2435], (0, 0)), // details

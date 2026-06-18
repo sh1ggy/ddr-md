@@ -89,9 +89,9 @@ namespace
 OCRWrapper::OCRWrapper(const std::string dataPath)
     : dataPath(dataPath)
 {
-    std::string modelPath = dataPath + "/models/ppocr_mobile_rec.onnx";
-    std::string detPath   = dataPath + "/models/ppocr_mobile_det.onnx";
-    std::string dictPath  = dataPath + "/models/ppocrv5_dict.txt";
+    std::string modelPath = dataPath + "/models/ppocr_tiny_rec.onnx";
+    std::string detPath   = dataPath + "/models/ppocr_tiny_det.onnx";
+    std::string dictPath  = dataPath + "/models/ppocrv6_dict.txt";
 
     std::ifstream dictFile(dictPath);
     if (!dictFile.is_open())
@@ -209,8 +209,14 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
     Ort::Value inputOrt = Ort::Value::CreateTensor<float>(
         memInfo, inputTensor.data(), inputTensor.size(), inputShape.data(), inputShape.size());
 
-    const char *inputNames[]  = {"x"};
-    const char *outputNames[] = {"fetch_name_0"};
+    // Discover input/output names at runtime — PP-OCRv6 happens to also use
+    // "x" / "fetch_name_0" but paddle2onnx exports can rename, and there's
+    // no reason to hardcode it.
+    Ort::AllocatorWithDefaultOptions alloc;
+    auto inNamePtr  = session->GetInputNameAllocated(0, alloc);
+    auto outNamePtr = session->GetOutputNameAllocated(0, alloc);
+    const char *inputNames[]  = {inNamePtr.get()};
+    const char *outputNames[] = {outNamePtr.get()};
 
     std::vector<Ort::Value> outputs;
     try
@@ -279,9 +285,9 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
 namespace
 {
     constexpr int   DET_LIMIT_SIDE_LEN = 960;
-    constexpr float DET_BIN_THRESHOLD  = 0.3f;
+    constexpr float DET_BIN_THRESHOLD  = 0.2f;
     constexpr float DET_BOX_MIN_AREA   = 16.0f; // px^2 in det-space
-    constexpr float DET_UNCLIP_RATIO   = 1.6f;
+    constexpr float DET_UNCLIP_RATIO   = 1.4f;
 
     // Resize so max(H,W) ~= limit, both rounded to a multiple of 32.
     // Returns the actual resize dims and the ratios needed to map back.
@@ -347,8 +353,9 @@ std::vector<DetectedText> OCRWrapper::performDetectAndRecognise(
     int H = resized.rows;
     int W = resized.cols;
 
-    // Build NCHW float32 [1,3,H,W] — RGB, ImageNet normalised.
-    // PaddleOCR det normalisation: mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]
+    // Build NCHW float32 [1,3,H,W] — BGR, ImageNet normalised.
+    // PP-OCRv6 tiny det inference.yml: img_mode: BGR, ImageNet mean/std.
+    // (PP-OCRv5 mobile det used RGB; v6 keeps BGR through the model.)
     static const float MEAN[3] = {0.485f, 0.456f, 0.406f};
     static const float STD[3]  = {0.229f, 0.224f, 0.225f};
 
@@ -358,13 +365,11 @@ std::vector<DetectedText> OCRWrapper::performDetectAndRecognise(
         const uchar *src = resized.ptr<uchar>(row);
         for (int col = 0; col < W; ++col)
         {
-            // src is BGR; map to RGB channels of the tensor
-            float b = src[col * 3 + 0] / 255.0f;
-            float g = src[col * 3 + 1] / 255.0f;
-            float r = src[col * 3 + 2] / 255.0f;
-            tensor[0 * H * W + row * W + col] = (r - MEAN[0]) / STD[0];
-            tensor[1 * H * W + row * W + col] = (g - MEAN[1]) / STD[1];
-            tensor[2 * H * W + row * W + col] = (b - MEAN[2]) / STD[2];
+            for (int c = 0; c < 3; ++c)
+            {
+                float v = src[col * 3 + c] / 255.0f;
+                tensor[c * H * W + row * W + col] = (v - MEAN[c]) / STD[c];
+            }
         }
     }
 
