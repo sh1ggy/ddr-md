@@ -13,7 +13,8 @@ extern void platform_log(const char *fmt, ...);
 
 #include "ocr_wrapper.h"
 
-// Dict indexing: blank=0, charList[i] maps to output class i+1, space=18384
+// Dict indexing: blank=0, charList[i] maps to output class i+1. The dict file
+// (and thus its length) is model-specific — keep it in sync with the rec model.
 static constexpr int BLANK_IDX = 0;
 
 namespace
@@ -89,9 +90,9 @@ namespace
 OCRWrapper::OCRWrapper(const std::string dataPath)
     : dataPath(dataPath)
 {
-    std::string modelPath = dataPath + "/models/ppocr_tiny_rec.onnx";
-    std::string detPath   = dataPath + "/models/ppocr_tiny_det.onnx";
-    std::string dictPath  = dataPath + "/models/ppocrv6_dict.txt";
+    std::string modelPath = dataPath + "/models/ppocr_small_rec.onnx";
+    std::string detPath   = dataPath + "/models/ppocr_small_det.onnx";
+    std::string dictPath  = dataPath + "/models/ppocrv6_small_dict.txt";
 
     std::ifstream dictFile(dictPath);
     if (!dictFile.is_open())
