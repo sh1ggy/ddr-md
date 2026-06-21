@@ -24,10 +24,20 @@ struct DetectedText
     OCRResult result; // text + confidence from the recogniser
 };
 
+// Selects which rec/det/dict files (relative to dataPath/models) to load.
+// When null is passed to OCRWrapper, the built-in default triplet is used —
+// keeping the app/FFI path unchanged.
+struct ModelSet
+{
+    std::string recFile;  // e.g. "ppocr_mobile_rec.onnx"
+    std::string detFile;  // e.g. "ppocr_mobile_det.onnx"
+    std::string dictFile; // e.g. "ppocrv5_dict.txt"
+};
+
 class OCRWrapper
 {
 public:
-    OCRWrapper(const std::string dataPath);
+    OCRWrapper(const std::string dataPath, const ModelSet *models = nullptr);
     ~OCRWrapper();
 
     OCRResult performOCR(const cv::Mat& roiMat, OCRType type = OCRType::Eng, const std::string& roiName = "unknown");

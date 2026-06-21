@@ -45,8 +45,9 @@ static const int ROI_IDX_USERNAME   = 9;
 static const int ROI_IDX_DIFFICULTY = 10;
 static const int ROI_IDX_MAXCOMBO   = 11;
 
-DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg)
-    : dataPath(dataPath), ocrWrapper(dataPath), detailsDetector(dataPath)
+DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg,
+                               const ModelSet *models)
+    : dataPath(dataPath), ocrWrapper(dataPath, models), detailsDetector(dataPath)
 {
     setConfig(cfg);
     platform_log("DdrocrInstance initialized (template-based details=%s)\n",
@@ -116,7 +117,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
 {
     ProcessImgResult result;
 
-    // Create a timestamped directory for all debug images from this run
+    // Create a timestamped directory for all debug images from this run.
+    // Only when debug capture is requested — otherwise (e.g. the offline
+    // model-compare harness, which passes NONE) we'd litter dataPath with an
+    // empty timestamped dir on every frame.
+    if (debugImageType != DebugImageType::NONE && diskDebug)
     {
         auto now = std::chrono::system_clock::now();
         auto time_t_now = std::chrono::system_clock::to_time_t(now);
@@ -286,6 +291,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     const float minScore = (float)config.details_template_min_score;
     DetailsDetector::Match dmatch =
         detailsDetector.classify(inputImg, detectedRois, minScore);
+
+    // Surface template-match diagnostics for offline tooling/debug.
+    result.detailsMatchScore     = dmatch.score;
+    result.detailsMatchScale     = dmatch.scale;
+    result.detailsCandidateCount = (int32_t)detectedRois.size();
 
     // For DetectionSide::LEFT/RIGHT we need *all* viable matches, not just
     // the best one. Re-run a small loop to collect every candidate that
@@ -527,7 +537,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         // + confidence, and the per-field anchor rectangles (cyan) the picker
         // matches detections against. Written to debugDir as paddle_detect.png
         // (cv::imwrite directly so it survives NDEBUG release builds).
-        if (debugImageType == DebugImageType::ON && !debugDir.empty())
+        if (debugImageType == DebugImageType::ON)
         {
             cv::Mat annotated;
             if (combinedCrop.channels() == 1)
@@ -577,10 +587,16 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
                             cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
             }
 
-            char path[512];
-            snprintf(path, sizeof(path), "%s/paddle_detect.png", debugDir.c_str());
-            cv::imwrite(path, annotated);
-            platform_log("wrote: %s (%zu det boxes)\n", path, detections.size());
+            // Hand the annotated crop back to the caller (offline harness uses
+            // it). Only write to disk when an app debug dir is configured.
+            result.detectAnnotated = annotated;
+            if (!debugDir.empty())
+            {
+                char path[512];
+                snprintf(path, sizeof(path), "%s/paddle_detect.png", debugDir.c_str());
+                cv::imwrite(path, annotated);
+                platform_log("wrote: %s (%zu det boxes)\n", path, detections.size());
+            }
         }
     }
 

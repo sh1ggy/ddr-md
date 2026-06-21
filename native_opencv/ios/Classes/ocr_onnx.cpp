@@ -87,12 +87,18 @@ namespace
     }
 }
 
-OCRWrapper::OCRWrapper(const std::string dataPath)
+OCRWrapper::OCRWrapper(const std::string dataPath, const ModelSet *models)
     : dataPath(dataPath)
 {
-    std::string modelPath = dataPath + "/models/ppocr_small_rec.onnx";
-    std::string detPath   = dataPath + "/models/ppocr_small_det.onnx";
-    std::string dictPath  = dataPath + "/models/ppocrv6_small_dict.txt";
+    // Default triplet (app/FFI path). Pass a ModelSet to override — used by the
+    // offline model-compare harness to evaluate different rec/det/dict combos.
+    std::string recName  = models ? models->recFile  : "ppocr_small_rec.onnx";
+    std::string detName  = models ? models->detFile  : "ppocr_small_det.onnx";
+    std::string dictName = models ? models->dictFile : "ppocrv6_small_dict.txt";
+
+    std::string modelPath = dataPath + "/models/" + recName;
+    std::string detPath   = dataPath + "/models/" + detName;
+    std::string dictPath  = dataPath + "/models/" + dictName;
 
     std::ifstream dictFile(dictPath);
     if (!dictFile.is_open())

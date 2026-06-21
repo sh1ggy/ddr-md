@@ -50,6 +50,19 @@ struct ProcessImgResult
     std::vector<cv::Rect> rois;
     int32_t detailsRoiIndex;
     OCRResults ocrResults;
+    // Details-badge template-match diagnostics (best match across all HSV
+    // candidate blobs). Populated whenever classify() runs; -1 score means it
+    // never ran (no candidates). detailsMatchScore is TM_CCOEFF_NORMED (0..1),
+    // detailsMatchScale is the template scale of the winning match, and
+    // detailsCandidateCount is how many HSV blobs were considered.
+    float   detailsMatchScore  = -1.0f;
+    float   detailsMatchScale  = 0.0f;
+    int32_t detailsCandidateCount = 0;
+    // Annotated combined-ROI crop: det boxes (green) + recognised text/conf and
+    // per-field anchors (cyan). Populated only when debugImageType != NONE.
+    // Empty when no warp/combined ROI was produced. The offline harness saves
+    // this for high-value images; the app ignores it.
+    cv::Mat detectAnnotated;
     // Debug images captured when process_image is asked for them; empty
     // otherwise. debugMask is the full-frame binarized image (every frame);
     // debugDetailsCrop is the crop the Details template matched on (only on a
@@ -129,7 +142,13 @@ class DdrocrInstance
 public:
     std::string dataPath;
     std::string debugDir; // timestamped output directory for current run
-    DdrocrInstance(std::string dataPath, const COCRConfig &cfg);
+    // When false, process_image skips creating the on-disk debug dir / writing
+    // PNGs even if debugImageType==ON — it still populates in-memory debug
+    // fields on ProcessImgResult (e.g. detectAnnotated). The offline harness
+    // sets this false to get the annotated crop without littering dataPath.
+    bool diskDebug = true;
+    DdrocrInstance(std::string dataPath, const COCRConfig &cfg,
+                   const ModelSet *models = nullptr);
     ~DdrocrInstance();
     // TODO use outputimg path declared in class
     ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST,
