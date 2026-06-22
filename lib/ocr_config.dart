@@ -31,11 +31,7 @@ const int ocrMorphHeight = 90;  // HSV blob morphology opening kernel height
 const double ocrDetailsTemplateMinScore = 0.4;
 
 // ---------------------------------------------------------------------------
-// ROI sets. Two candidate ROI layouts are kept side by side so they can be
-// A/B tested (see native_opencv/tools/model_compare). Each layout has a paired
-// combined ROI — they MUST switch together. To change the active layout, flip
-// the two `ocrRoi` / `ocrCombinedRoi` aliases at the bottom of this block to
-// point at the same suffix (…Reference or …Imperfect).
+// ROI set in native 2554×1442 source-image space.
 //
 // Combined ROI covers all per-field regions — fed to the PaddleOCR detection
 // model. Detection finds text boxes inside it; each per-field rectangle is then
@@ -46,9 +42,8 @@ const double ocrDetailsTemplateMinScore = 0.4;
 // ddrocr_instance.cpp.
 // ---------------------------------------------------------------------------
 
-// Reference layout — native 2554×1442 source-image space.
-const List<int> ocrCombinedRoiReference = [1299, 860, 2296, 1239];
-const List<(List<int>, (int, int))> ocrRoiReference = [
+const List<int> ocrCombinedRoi = [1299, 860, 2296, 1239];
+const List<(List<int>, (int, int))> ocrRoi = [
   ([1669, 864, 1920, 936], (0, 0)), // details
   ([2129, 1005, 2273, 1042], (5, 6)), // score
   ([1540, 1013, 1642, 1050], (0, 0)), // marvelous
@@ -62,32 +57,9 @@ const List<(List<int>, (int, int))> ocrRoiReference = [
   ([1766, 233, 2026, 300], (0, 0)), // difficulty
   ([2098, 1154, 2279, 1202], (0, 0)), // max_combo
 ];
-// Extra rects from the source table not wired into ocrRoiReference above (no
+// Extra rects from the source table not wired into ocrRoi above (no
 // slot in the fixed ROI_IDX_* enum). Kept for reference:
 //   ok                      ([1540, 1157, 1642, 1194], (0, 0))
 //   username_detection_box  ([1616, 160, 2093, 313], (0, 0))
 //   mode                    ([1686, 244, 1794, 292], (0, 0))
-
-// Imperfect layout — 4000×5000 warped space (the previous feature/opencv ROIs).
-const List<int> ocrCombinedRoiImperfect = [1641, 2339, 2936, 2818];
-const List<(List<int>, (int, int))> ocrRoiImperfect = [
-  ([2122, 2344, 2448, 2435], (0, 0)), // details
-  ([2710, 2527, 2933, 2578], (5, 6)), // score
-  ([1986, 2528, 2089, 2576], (0, 0)), // marvelous
-  ([1986, 2576, 2089, 2625], (0, 0)), // perfect
-  ([1986, 2625, 2089, 2680], (0, 0)), // great
-  ([1986, 2680, 2089, 2726], (0, 0)), // good
-  ([1986, 2780, 2089, 2827], (0, 2)), // miss
-  ([1768, 2454, 1768, 2454], (0, 0)), // flare
-  ([1353, 2106, 1849, 2152], (0, 0)), // title
-  ([2215, 1486, 2494, 1535], (0, 0)), // username
-  ([2128, 1559, 2569, 1619], (0, 0)), // difficulty
-  ([2690, 2729, 2797, 2771], (0, 0)), // max_combo
-];
-
-// Active selection — flip both to the same suffix to switch layouts.
-const List<(List<int>, (int, int))> ocrRoi = ocrRoiReference;
-const List<int> ocrCombinedRoi = ocrCombinedRoiReference;
-
-
 

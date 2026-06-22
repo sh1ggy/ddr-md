@@ -49,8 +49,8 @@ struct NamedRoiSet
 
 // Mirrors lib/ocr_config.dart. roi[] rows are {x1,y1,x2,y2,expand_x,expand_y}
 // in ROI_IDX_* order: details, score, marvelous, perfect, great, good, miss,
-// flare, title, username, difficulty, max_combo. Keep these two in sync with
-// ocrRoiReference / ocrRoiImperfect (+ their paired combinedRoi) in Dart.
+// flare, title, username, difficulty, max_combo. Keep in sync with
+// ocrRoi (+ its paired ocrCombinedRoi) in Dart.
 COCRConfig makeReferenceConfig()
 {
     COCRConfig c; // inherits non-ROI defaults (border, thresholds, etc.)
@@ -73,30 +73,6 @@ COCRConfig makeReferenceConfig()
     };
     memcpy(c.roi, roi, sizeof(roi));
     int combined[4] = {1299, 860, 2296, 1239};
-    memcpy(c.combinedRoi, combined, sizeof(combined));
-    return c;
-}
-
-COCRConfig makeImperfectConfig()
-{
-    COCRConfig c;
-    c.details_template_min_score = 0.4; // match app — see makeReferenceConfig
-    int roi[12][6] = {
-        {2122, 2344, 2448, 2435, 0, 0}, // details
-        {2710, 2527, 2933, 2578, 5, 6}, // score
-        {1986, 2528, 2089, 2576, 0, 0}, // marvelous
-        {1986, 2576, 2089, 2625, 0, 0}, // perfect
-        {1986, 2625, 2089, 2680, 0, 0}, // great
-        {1986, 2680, 2089, 2726, 0, 0}, // good
-        {1986, 2780, 2089, 2827, 0, 2}, // miss
-        {1768, 2454, 1768, 2454, 0, 0}, // flare
-        {1353, 2106, 1849, 2152, 0, 0}, // title
-        {2215, 1486, 2494, 1535, 0, 0}, // username
-        {2128, 1559, 2569, 1619, 0, 0}, // difficulty
-        {2690, 2729, 2797, 2771, 0, 0}, // max_combo
-    };
-    memcpy(c.roi, roi, sizeof(roi));
-    int combined[4] = {1641, 2339, 2936, 2818};
     memcpy(c.combinedRoi, combined, sizeof(combined));
     return c;
 }
@@ -208,7 +184,6 @@ int main(int argc, char **argv)
 
     const std::vector<NamedRoiSet> roiSets = {
         {"reference", makeReferenceConfig()},
-        {"imperfect", makeImperfectConfig()},
     };
 
     fprintf(stderr, "Repo root: %s\n", root.c_str());

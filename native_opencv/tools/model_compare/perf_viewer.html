@@ -38,13 +38,10 @@
   main { padding: 16px; }
   h2 { font-size: 13px; color: var(--muted); text-transform: uppercase;
        letter-spacing: 0.5px; margin: 18px 0 8px; }
-  /* ROI-set grouping: colored left bar + matching table header tint. */
-  h2.roi-h { padding: 6px 10px; border-left: 4px solid #555; border-radius: 4px;
+  /* Section header: colored left bar + matching table header tint. */
+  h2.roi-h { padding: 6px 10px; border-left: 4px solid #4a8fd6; border-radius: 4px;
              background: #242424; color: var(--txt); }
-  h2.roi-reference { border-left-color: #4a8fd6; }
-  h2.roi-imperfect { border-left-color: #d6924a; }
-  table.roi-reference th { border-top: 2px solid #4a8fd6; }
-  table.roi-imperfect th { border-top: 2px solid #d6924a; }
+  table.detrec th { border-top: 2px solid #4a8fd6; }
   td.img { color: var(--txt); font-weight: 400; }
   tr.avgrow td { background: #2a2a2a; color: #cde; font-weight: 700; border-top: 2px solid #555; }
   table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
@@ -211,43 +208,36 @@ function render() {
     max column: a value far above the median means that run hit machine contention,
     not a real model cost — re-run quietly for clean numbers.</p>`;
 
-  // ----- Per-image breakdown (detrec ms), grouped by ROI set -----
-  // One table per ROI set so reference vs imperfect are read separately.
-  const roiSets = [...new Set(samples.map(s => s.roi_set))]
-    .sort((a, b) => ({ reference: 0, imperfect: 1 }[a] ?? 9) - ({ reference: 0, imperfect: 1 }[b] ?? 9));
+  // ----- Per-image breakdown (detrec ms) -----
+  const rs = [...samples].sort((a, b) => a.image.localeCompare(b.image));
+  // per-model avg, for a footer summary row
+  const colAvg = models.map(mo => stats(rs.map(s => s.m[mo]?.detrec)));
 
-  for (const roi of roiSets) {
-    const rs = samples.filter(s => s.roi_set === roi)
-      .sort((a, b) => a.image.localeCompare(b.image));
-    // per-model avg within this ROI set, for a footer summary row
-    const colAvg = models.map(mo => stats(rs.map(s => s.m[mo]?.detrec)));
-
-    html += `<h2 class="roi-h roi-${roi}">${roi} — per-image detrec (ms)</h2>`;
-    html += `<table class="roi-${roi}"><thead><tr><th class="l">image</th>`;
-    for (const mo of models) html += `<th>${mo}</th>`;
-    html += `</tr></thead><tbody>`;
-    for (const s of rs) {
-      html += `<tr><td class="l img">${s.image}</td>`;
-      const vals = models.map(mo => s.m[mo]?.detrec).filter(x => Number.isFinite(x) && x >= 0);
-      const rmin = Math.min(...vals), rmax = Math.max(...vals);
-      for (const mo of models) {
-        const v = s.m[mo]?.detrec;
-        if (!Number.isFinite(v) || v < 0) { html += `<td class="muted">—</td>`; continue; }
-        const cls = vals.length > 1 && v === rmin ? "fastest" : vals.length > 1 && v === rmax ? "slowest" : "";
-        html += `<td class="${cls}">${v}</td>`;
-      }
-      html += `</tr>`;
+  html += `<h2 class="roi-h">per-image detrec (ms)</h2>`;
+  html += `<table class="detrec"><thead><tr><th class="l">image</th>`;
+  for (const mo of models) html += `<th>${mo}</th>`;
+  html += `</tr></thead><tbody>`;
+  for (const s of rs) {
+    html += `<tr><td class="l img">${s.image}</td>`;
+    const vals = models.map(mo => s.m[mo]?.detrec).filter(x => Number.isFinite(x) && x >= 0);
+    const rmin = Math.min(...vals), rmax = Math.max(...vals);
+    for (const mo of models) {
+      const v = s.m[mo]?.detrec;
+      if (!Number.isFinite(v) || v < 0) { html += `<td class="muted">—</td>`; continue; }
+      const cls = vals.length > 1 && v === rmin ? "fastest" : vals.length > 1 && v === rmax ? "slowest" : "";
+      html += `<td class="${cls}">${v}</td>`;
     }
-    // footer: per-model average for this ROI set
-    html += `<tr class="avgrow"><td class="l">avg</td>`;
-    for (const a of colAvg) html += `<td>${a ? a.avg.toFixed(0) : "—"}</td>`;
     html += `</tr>`;
-    html += `</tbody></table>`;
   }
+  // footer: per-model average
+  html += `<tr class="avgrow"><td class="l">avg</td>`;
+  for (const a of colAvg) html += `<td>${a ? a.avg.toFixed(0) : "—"}</td>`;
+  html += `</tr>`;
+  html += `</tbody></table>`;
 
   content.innerHTML = html;
   document.getElementById("summary").textContent =
-    `${models.length} models · ${samples.length} image×roi runs · fastest: ${fastest}, slowest: ${slowest}`;
+    `${models.length} models · ${samples.length} image runs · fastest: ${fastest}, slowest: ${slowest}`;
 }
 
 function loadCsvText(text) { rows = toObjects(parseCSV(text)); render(); }
