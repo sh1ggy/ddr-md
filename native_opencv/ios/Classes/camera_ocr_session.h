@@ -22,6 +22,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -74,8 +75,12 @@ private:
     static void onImageAvailable(void *ctx, AImageReader *reader);
     void handleImage(AImageReader *reader);
 
-    // OCR worker thread
-    void workerLoop();
+    // Two-stage OCR worker threads. detectorLoop runs the cheap Details
+    // detection every frame (keeps the overlay live) and, on a match, pushes a
+    // job onto jobStack_. consumerLoop pops the newest job (LIFO) and runs the
+    // expensive PaddleOCR pass.
+    void detectorLoop();
+    void consumerLoop();
 
     std::string dataPath_;
     ANativeWindow *previewWindow_ = nullptr;
@@ -109,13 +114,26 @@ private:
 
     std::mutex cameraMutex_;
 
-    // Frame hand-off: listener thread fills queuedFrame_, worker consumes it.
+    // Frame hand-off: listener thread fills queuedNv21_, detector consumes it.
     std::mutex frameMutex_;
     std::condition_variable frameCv_;
     std::vector<uint8_t> queuedNv21_; // packed NV21 (Y then interleaved VU)
     bool frameReady_ = false;
-    bool workerRunning_ = false;
-    std::thread worker_;
+    // Lifetime flag for both worker threads; read under either mutex, so atomic.
+    std::atomic<bool> workerRunning_{false};
+    std::thread detectorThread_;
+    std::thread consumerThread_;
+
+    // Detector -> consumer hand-off: bounded LIFO stack. detector pushes matched
+    // detections on the back; consumer pops the back (newest first) so the
+    // freshest frame is recognised first. Older frames still carry OCR targets
+    // and are processed too — they feed the Dart-side cross-frame aggregator —
+    // until the stack overflows kJobStackDepth, when the oldest (front) is
+    // evicted. A std::deque (not std::stack) is needed to drop from the front.
+    std::mutex jobMutex_;
+    std::condition_variable jobCv_;
+    std::deque<DetailsDetectResult> jobStack_;
+    static constexpr size_t kJobStackDepth = 5;
 
     std::atomic<bool> busy_{false};
     std::atomic<bool> running_{false};

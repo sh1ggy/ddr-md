@@ -40,9 +40,10 @@ CameraOcrSession::CameraOcrSession(const std::string &dataPath,
         AImageReader_setImageListener(reader_, &imageListener_);
     }
 
-    // Start the OCR worker; it idles until frames are queued.
+    // Start the two-stage OCR workers; they idle until frames/jobs are queued.
     workerRunning_ = true;
-    worker_ = std::thread(&CameraOcrSession::workerLoop, this);
+    detectorThread_ = std::thread(&CameraOcrSession::detectorLoop, this);
+    consumerThread_ = std::thread(&CameraOcrSession::consumerLoop, this);
 }
 
 CameraOcrSession::~CameraOcrSession() {
@@ -54,7 +55,9 @@ CameraOcrSession::~CameraOcrSession() {
         frameReady_ = true;
     }
     frameCv_.notify_all();
-    if (worker_.joinable()) worker_.join();
+    jobCv_.notify_all();
+    if (detectorThread_.joinable()) detectorThread_.join();
+    if (consumerThread_.joinable()) consumerThread_.join();
 
     if (reader_) {
         AImageReader_delete(reader_); // also tears down readerWindow_
@@ -218,6 +221,14 @@ void CameraOcrSession::stop() {
     std::lock_guard<std::mutex> lk(cameraMutex_);
     running_ = false;
     closeCameraLocked();
+    // Abandon queued OCR work: once the camera is closed the detector stops
+    // pushing, so drop every job still on the LIFO stack rather than letting the
+    // consumer grind through stale frames. The one job already in-flight on the
+    // consumer finishes (recognise_details / OpenCV can't be interrupted).
+    {
+        std::lock_guard<std::mutex> jlk(jobMutex_);
+        jobStack_.clear();
+    }
 }
 
 bool CameraOcrSession::openCameraLocked() {
@@ -382,7 +393,11 @@ void CameraOcrSession::handleImage(AImageReader *reader) {
 
 // ---- OCR worker -------------------------------------------------------------
 
-void CameraOcrSession::workerLoop() {
+// Detector thread: converts each queued frame and runs ONLY the cheap Details
+// detection. It always emits a result to Dart (so the ROI overlay tracks at the
+// throttled frame rate, never blocked by OCR), and on a match pushes a job onto
+// jobStack_ for the consumer to recognise.
+void CameraOcrSession::detectorLoop() {
     while (true) {
         std::vector<uint8_t> nv21;
         {
@@ -409,22 +424,65 @@ void CameraOcrSession::workerLoop() {
         }
 
         DebugImageType dbg = debug_ ? DebugImageType::ON : DebugImageType::NONE;
-        ProcessImgResult res;
+        DetailsDetectResult det;
         try {
-            res = instance_->process_image(bgr, DetectionSide::FIRST, dbg);
+            det = instance_->detect_details(bgr, DetectionSide::FIRST, dbg);
         } catch (cv::Exception &e) {
-            LOGE("process_image failed: %s", e.what());
+            LOGE("detect_details failed: %s", e.what());
             busy_ = false;
             continue;
         }
 
-        // Hand the result to Dart over the FFI NativeCallable (same path as
-        // iOS). Dart owns and frees the CCameraResult.
+        // Overlay result every frame: ROIs + detailsRoiIndex, no OCR strings.
+        // BuildCCameraResult tolerates the empty ocrResults; the Dart listener
+        // updates the overlay and only feeds the aggregator on full results.
         if (resultFn_) {
-            CCameraResult *out = BuildCCameraResult(res, bgr.cols, bgr.rows);
+            CCameraResult *out = BuildCCameraResult(det.result, bgr.cols, bgr.rows);
             resultFn_(out);
         }
+
+        // On a match, hand the heavy work to the consumer via the LIFO stack.
+        if (det.matched) {
+            {
+                std::lock_guard<std::mutex> lk(jobMutex_);
+                jobStack_.push_back(std::move(det));
+                while (jobStack_.size() > kJobStackDepth)
+                    jobStack_.pop_front(); // evict oldest on overflow
+            }
+            jobCv_.notify_one();
+        }
         busy_ = false;
+    }
+}
+
+// Consumer thread: pops the newest queued job (LIFO) and runs the expensive
+// PaddleOCR pass, emitting the full result to Dart. Drains older jobs too —
+// each is another vote into the Dart-side cross-frame aggregator.
+void CameraOcrSession::consumerLoop() {
+    while (true) {
+        DetailsDetectResult job;
+        {
+            std::unique_lock<std::mutex> lk(jobMutex_);
+            jobCv_.wait(lk, [&] { return !jobStack_.empty() || !workerRunning_; });
+            if (!workerRunning_ && jobStack_.empty()) break;
+            job = std::move(jobStack_.back()); // newest first
+            jobStack_.pop_back();
+        }
+
+        const int w = job.inputImg.cols;
+        const int h = job.inputImg.rows;
+        ProcessImgResult res;
+        try {
+            res = instance_->recognise_details(job);
+        } catch (cv::Exception &e) {
+            LOGE("recognise_details failed: %s", e.what());
+            continue;
+        }
+
+        if (resultFn_) {
+            CCameraResult *out = BuildCCameraResult(res, w, h);
+            resultFn_(out);
+        }
     }
 }
 

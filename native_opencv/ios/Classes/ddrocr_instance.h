@@ -142,6 +142,30 @@ enum class DetectionSide
     RIGHT = 2, // Pick the spatially rightmost detected ROI
 };
 
+// Output of the cheap "phase 1" Details detection (HSV mask -> blobs ->
+// template match). Carries everything the expensive "phase 2" OCR
+// (recognise_details) needs, so the two can run on separate threads: the
+// detector thread produces this every frame, the consumer thread pops it and
+// runs recognise_details only when a badge was found.
+struct DetailsDetectResult
+{
+    // result holds the phase-1 fields already populated (isDetected, rois,
+    // detailsRoiIndex, detailsMatch* diagnostics, debugMask/debugDetailsCrop,
+    // colorCapture). recognise_details fills in the rest (ocrResults, timings).
+    ProcessImgResult result;
+    // True when a Details badge matched (result.detailsRoiIndex >= 0) AND there
+    // is enough geometry to run phase 2. When false the consumer skips OCR and
+    // the partial `result` is final.
+    bool matched = false;
+    // Phase-2 inputs, valid only when matched. inputImg is a clone owned by this
+    // struct so it survives the hand-off to the consumer thread. chosenHull is
+    // contours_final[correct_roi_idx] — the contour the homography warp uses.
+    cv::Mat inputImg;
+    std::vector<cv::Point> chosenHull;
+    DetectionSide side = DetectionSide::FIRST;
+    DebugImageType debugImageType = DebugImageType::NONE;
+};
+
 class DdrocrInstance
 {
 public:
@@ -156,8 +180,20 @@ public:
                    const ModelSet *models = nullptr);
     ~DdrocrInstance();
     // TODO use outputimg path declared in class
+    // Full pipeline: detect_details followed by recognise_details (when a badge
+    // matched). Kept for the picked-image FFI path and offline tooling.
     ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST,
                                    DebugImageType debugImageType = DebugImageType::NONE);
+    // Phase 1 (cheap, run every frame): HSV mask -> blob filter -> Details
+    // template match. Returns the detected ROIs + chosen index plus the geometry
+    // phase 2 needs. Does NOT run any PaddleOCR.
+    DetailsDetectResult detect_details(cv::Mat inputImg,
+                                       DetectionSide side = DetectionSide::FIRST,
+                                       DebugImageType debugImageType = DebugImageType::NONE);
+    // Phase 2 (expensive, run from the consumer thread): homography warp +
+    // PaddleOCR det/rec over the score panel. Consumes a matched
+    // DetailsDetectResult and returns the completed ProcessImgResult.
+    ProcessImgResult recognise_details(const DetailsDetectResult &det);
     void setConfig(const COCRConfig &cfg);
 
 private:

@@ -112,10 +112,19 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
     return display;
 }
 
-ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side,
-                                               DebugImageType debugImageType)
+// ---------------------------------------------------------------------------
+// Phase 1: cheap Details detection. Runs every frame on the detector thread.
+// Returns a DetailsDetectResult whose `result` holds the overlay/diagnostic
+// fields; when `matched` is true it also carries the geometry recognise_details
+// needs. NO PaddleOCR runs here.
+// ---------------------------------------------------------------------------
+DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSide side,
+                                                   DebugImageType debugImageType)
 {
-    ProcessImgResult result;
+    DetailsDetectResult det;
+    det.side = side;
+    det.debugImageType = debugImageType;
+    ProcessImgResult &result = det.result;
 
     // Create a timestamped directory for all debug images from this run.
     // Only when debug capture is requested — otherwise (e.g. the offline
@@ -252,7 +261,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     {
         platform_log("No OCR ROI detected, defaulting to full image\n");
         result.isDetected = 0;
-        return result;
+        return det;
     }
 
     // Debug: hand back the HSV mask as the debug overlay
@@ -345,7 +354,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         platform_log("[TIMER] process_image total (no Details found): %lld ms\n", (long long)t_total_ms);
         platform_log("Details template match failed (best score=%.3f). Defaulting to no match.\n", dmatch.score);
         result.detailsRoiIndex = -1;
-        return result;
+        return det;
     }
 
     // Pick correct_roi_idx from detectedDetailsIndices based on DetectionSide
@@ -391,6 +400,44 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     if (correct_roi_idx >= 0 && !inputImg.empty())
         result.colorCapture = inputImg.clone();
 
+    // ----- End of phase 1 -----
+    // A badge matched. Phase 2 (recognise_details) needs the chosen contour to
+    // build the homography. If we don't have a usable contour for it, treat this
+    // as detected-but-not-recognisable and let the consumer skip OCR.
+    if (correct_roi_idx >= 0 &&
+        correct_roi_idx < (int)result.rois.size() &&
+        correct_roi_idx < (int)contours_final.size())
+    {
+        det.matched = true;
+        det.inputImg = inputImg.clone(); // owned hand-off to the consumer thread
+        det.chosenHull = contours_final[correct_roi_idx];
+    }
+    else
+    {
+        platform_log("Not enough ROIs detected, defaulting to first detected ROI\n");
+        result.isDetected = 1;
+    }
+    return det;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: expensive homography warp + PaddleOCR det/rec. Runs on the consumer
+// thread from a matched DetailsDetectResult.
+// ---------------------------------------------------------------------------
+ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &det)
+{
+    ProcessImgResult result = det.result;
+    if (!det.matched)
+        return result;
+
+    const cv::Mat &inputImg = det.inputImg;
+    const DetectionSide side = det.side;
+    const DebugImageType debugImageType = det.debugImageType;
+    const int correct_roi_idx = result.detailsRoiIndex;
+    const std::vector<cv::Rect> &detectedRois = result.rois;
+
+    auto t_total_start = std::chrono::high_resolution_clock::now();
+
     // Create offsets for score OCR (driven by config)
     auto roiRect = [&](int i) {
         return offsetToRoi(cv::Point(config.roi[i][0], config.roi[i][1]),
@@ -409,16 +456,10 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     cv::Rect ROI_Difficulty = roiRect(ROI_IDX_DIFFICULTY);
     cv::Rect ROI_MaxCombo   = roiRect(ROI_IDX_MAXCOMBO);
 
-    if (result.rois.size() <= correct_roi_idx)
-    {
-        platform_log("Not enough ROIs detected, defaulting to first detected ROI\n");
-        result.isDetected = 1;
-        return result;
-    }
-
-    // Using regionprops Convex hull method
+    // Using regionprops Convex hull method (det.chosenHull is the contour the
+    // detector picked for the matched Details ROI).
     std::vector<cv::Point> hull;
-    cv::convexHull(contours_final[correct_roi_idx], hull);
+    cv::convexHull(det.chosenHull, hull);
 
     // Approximate polygon
     std::vector<cv::Point> approx;
@@ -713,6 +754,19 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     platform_log("[TIMER] process_image total: %lld ms\n", (long long)t_total_ms);
 
     return result;
+}
+
+// Full pipeline wrapper: phase 1 then (when a badge matched) phase 2. Preserves
+// the original single-call behaviour for the picked-image FFI path and offline
+// tooling. The live camera session calls detect_details / recognise_details on
+// separate threads instead.
+ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side,
+                                               DebugImageType debugImageType)
+{
+    DetailsDetectResult det = detect_details(inputImg, side, debugImageType);
+    if (!det.matched)
+        return det.result;
+    return recognise_details(det);
 }
 
 OCRResult DdrocrInstance::getPreprocessedRoiImage(

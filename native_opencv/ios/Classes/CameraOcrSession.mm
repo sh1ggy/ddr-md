@@ -36,6 +36,8 @@
 #endif
 
 #include <atomic>
+#include <deque>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -43,6 +45,9 @@ extern void platform_log(const char *fmt, ...);
 
 // Matches the Dart-side frame skip: process roughly one of every N frames.
 static const int kFrameThreshold = 3;
+
+// Depth of the detector->consumer LIFO stack. See _jobStack.
+static const size_t kJobStackDepth = 5;
 
 @interface CameraOcrSession () <AVCaptureVideoDataOutputSampleBufferDelegate,
                                 FlutterTexture>
@@ -61,7 +66,8 @@ static const int kFrameThreshold = 3;
   AVCaptureSession *_session;
   AVCaptureVideoDataOutput *_videoOutput;
   dispatch_queue_t _captureQueue; // delegate callback queue
-  dispatch_queue_t _ocrQueue;     // serial OCR worker
+  dispatch_queue_t _ocrQueue;     // serial detector worker (cheap Details detect)
+  dispatch_queue_t _recQueue;     // serial consumer worker (expensive OCR)
 
   // FFI result sink (NativeCallable) the OCR worker invokes per frame.
   CameraResultFn _resultFn;
@@ -75,9 +81,18 @@ static const int kFrameThreshold = 3;
   DdrocrInstance *_instance;
   std::string _dataPath;
 
-  // Backpressure: only one frame in OCR at a time; skip the rest.
+  // Backpressure: only one frame in the detector at a time; skip the rest.
   std::atomic<bool> _ocrBusy;
   int _frameCounter;
+
+  // Detector -> consumer hand-off: bounded LIFO stack (depth kJobStackDepth).
+  // Detector pushes matched detections on the back; consumer pops the back
+  // (newest first). Older frames are still recognised (they feed the Dart-side
+  // aggregator) until the stack overflows, when the oldest (front) is evicted.
+  // std::deque (not std::stack) so we can drop from the front. Guarded by
+  // _jobMutex.
+  std::deque<DetailsDetectResult> _jobStack;
+  std::mutex _jobMutex;
 
   BOOL _debug;
   BOOL _running;
@@ -105,6 +120,7 @@ static const int kFrameThreshold = 3;
     _previewLock = [[NSLock alloc] init];
     _captureQueue = dispatch_queue_create("ddr.camera.capture", DISPATCH_QUEUE_SERIAL);
     _ocrQueue = dispatch_queue_create("ddr.camera.ocr", DISPATCH_QUEUE_SERIAL);
+    _recQueue = dispatch_queue_create("ddr.camera.rec", DISPATCH_QUEUE_SERIAL);
     _ocrBusy = false;
     _frameCounter = 0;
     _debug = NO;
@@ -302,8 +318,20 @@ static const int kFrameThreshold = 3;
       [self->_session stopRunning];
     }
   });
-  // Drain the OCR queue (serial) so any in-flight frame completes.
+  // Drain the detector queue (serial) so any in-flight frame completes and any
+  // matched job has been pushed onto the stack.
   dispatch_sync(_ocrQueue, ^{
+  });
+  // Abandon all queued OCR work: clear the stack BEFORE draining _recQueue so
+  // the consumer's drain loop sees it empty and bails out instead of grinding
+  // through the whole backlog of stale frames. At most the one OCR already
+  // in-flight finishes (OpenCV can't be interrupted mid-call).
+  {
+    std::lock_guard<std::mutex> lk(_jobMutex);
+    _jobStack.clear();
+  }
+  // Wait for that at-most-one in-flight OCR to settle.
+  dispatch_sync(_recQueue, ^{
   });
 }
 
@@ -403,20 +431,66 @@ static const int kFrameThreshold = 3;
   if (bgr.empty()) return;
 
   DebugImageType debugType = debug ? DebugImageType::ON : DebugImageType::NONE;
-  ProcessImgResult res;
+
+  // Phase 1 only: cheap Details detection. Keeps this (detector) queue fast so
+  // the overlay tracks at the throttled frame rate.
+  DetailsDetectResult det;
   try {
-    res = _instance->process_image(bgr, DetectionSide::FIRST, debugType);
+    det = _instance->detect_details(bgr, DetectionSide::FIRST, debugType);
   } catch (cv::Exception &e) {
-    platform_log("[ios-cam] OCR exception: %s\n", e.what());
+    platform_log("[ios-cam] detect_details exception: %s\n", e.what());
     return;
   }
 
-  // Hand the result to Dart over the FFI NativeCallable. The callable's
-  // listener marshals to the Dart isolate, so we can invoke it straight from
-  // the OCR queue; Dart owns and frees the CCameraResult.
+  // Overlay result every frame (ROIs + detailsRoiIndex, no OCR strings). Dart's
+  // listener updates the overlay and only feeds the aggregator on full results.
   if (_resultFn) {
-    CCameraResult *out = BuildCCameraResult(res, bgr.cols, bgr.rows);
+    CCameraResult *out = BuildCCameraResult(det.result, bgr.cols, bgr.rows);
     _resultFn(out);
+  }
+
+  // On a match, push onto the LIFO stack and kick the consumer queue. The
+  // serial _recQueue means at most one OCR runs at a time; the stack absorbs
+  // the rest (newest-first, oldest evicted past kJobStackDepth).
+  if (det.matched) {
+    {
+      std::lock_guard<std::mutex> lk(_jobMutex);
+      _jobStack.push_back(std::move(det));
+      while (_jobStack.size() > kJobStackDepth)
+        _jobStack.pop_front(); // evict oldest on overflow
+    }
+    dispatch_async(_recQueue, ^{
+      [self drainRecQueue];
+    });
+  }
+}
+
+// Consumer: pop the newest queued job (LIFO) and run the expensive OCR, then
+// drain the rest newest-to-oldest. Runs on the serial _recQueue.
+- (void)drainRecQueue {
+  while (true) {
+    DetailsDetectResult job;
+    {
+      std::lock_guard<std::mutex> lk(_jobMutex);
+      if (_jobStack.empty()) return;
+      job = std::move(_jobStack.back()); // newest first
+      _jobStack.pop_back();
+    }
+
+    const int w = job.inputImg.cols;
+    const int h = job.inputImg.rows;
+    ProcessImgResult res;
+    try {
+      res = _instance->recognise_details(job);
+    } catch (cv::Exception &e) {
+      platform_log("[ios-cam] recognise_details exception: %s\n", e.what());
+      continue;
+    }
+
+    if (_resultFn) {
+      CCameraResult *out = BuildCCameraResult(res, w, h);
+      _resultFn(out);
+    }
   }
 }
 
