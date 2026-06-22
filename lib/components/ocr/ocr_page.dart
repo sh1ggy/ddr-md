@@ -573,9 +573,45 @@ class _OcrPageState extends State<OcrPage>
   }
 }
 
+// Fields whose readings are numbers; everything else is tallied as raw text.
+const Set<String> _numericKeys = {
+  'score',
+  'marvelous',
+  'perfect',
+  'great',
+  'good',
+  'miss',
+  'maxCombo',
+};
+
+// Parses a numeric field's reading into its integer value, dropping formatting
+// noise like thousands separators or stray whitespace ("999,940" -> 999940).
+// Returns null when there are no digits to read.
+int? _parseOcrNumber(String raw) {
+  final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return null;
+  return int.tryParse(digits);
+}
+
+// Renders an integer with thousands separators for display ("999940" ->
+// "999,940").
+String _formatOcrNumber(int value) {
+  final s = value.toString();
+  final buf = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+    buf.write(s[i]);
+  }
+  return buf.toString();
+}
+
 // Tallies OCR readings across frames; the modal value per field is the result.
+// Numeric fields ([_numericKeys]) are tallied by their parsed integer, so
+// differently formatted strings for the same number ("999,940" and "999940")
+// count as one value; other fields tally by their raw text.
 class _OcrAggregator {
-  final Map<String, Map<String, int>> _counts = {};
+  // key -> tally value (int for numeric fields, String otherwise) -> count
+  final Map<String, Map<Object, int>> _counts = {};
   int _detailsCount = 0;
 
   int get detailsCount => _detailsCount;
@@ -583,9 +619,12 @@ class _OcrAggregator {
   bool add(Map<String, String> strings) {
     bool anyAdded = false;
     strings.forEach((key, raw) {
-      final value = raw.trim();
-      if (value.isEmpty) return;
-      final tally = _counts.putIfAbsent(key, () => <String, int>{});
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return;
+      final Object? value =
+          _numericKeys.contains(key) ? _parseOcrNumber(trimmed) : trimmed;
+      if (value == null) return;
+      final tally = _counts.putIfAbsent(key, () => {});
       tally[value] = (tally[value] ?? 0) + 1;
       anyAdded = true;
     });
@@ -598,16 +637,25 @@ class _OcrAggregator {
     _detailsCount = 0;
   }
 
+  // Formats a tally value for display: numbers get thousands separators, text
+  // passes through unchanged.
+  static String _display(Object value) =>
+      value is int ? _formatOcrNumber(value) : value as String;
+
   ({String value, double confidence, int count})? best(String key) {
     final tally = _counts[key];
     if (tally == null || tally.isEmpty) return null;
     var total = 0;
-    MapEntry<String, int>? top;
+    MapEntry<Object, int>? top;
     for (final entry in tally.entries) {
       total += entry.value;
       if (top == null || entry.value > top.value) top = entry;
     }
-    return (value: top!.key, confidence: top.value / total, count: top.value);
+    return (
+      value: _display(top!.key),
+      confidence: top.value / total,
+      count: top.value,
+    );
   }
 
   List<({String value, int count, double share})> candidates(String key) {
@@ -618,7 +666,7 @@ class _OcrAggregator {
       ..sort((a, b) => b.value.compareTo(a.value));
     return [
       for (final e in entries)
-        (value: e.key, count: e.value, share: e.value / total),
+        (value: _display(e.key), count: e.value, share: e.value / total),
     ];
   }
 }
