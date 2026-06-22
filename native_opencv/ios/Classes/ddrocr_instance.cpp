@@ -642,6 +642,55 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     ocrResults.flare     = pickBestDetection(ROI_Flare);
     ocrResults.max_combo = pickBestDetection(ROI_MaxCombo);
 
+    // ----- Fixed-ROI fallback for numeric fields the detector missed -----
+    // When pickBestDetection found no overlapping detection box the result
+    // text is empty. Crop the field's anchor rect straight out of warpedImg
+    // (same offset/clamp logic as getPreprocessedRoiImage) and run the
+    // recogniser directly on it.
+    auto fixedRoiFallback = [&](const cv::Rect &ROI_Target,
+                                const std::string &fieldName) -> OCRResult {
+        if (warpedImg.empty()) return OCRResult{};
+
+        cv::Point2d offset(
+            ROI_Target.x - ROI_Details.x,
+            ROI_Target.y - ROI_Details.y);
+
+        cv::Rect roi_warped(
+            warped_details_top_left.x + offset.x,
+            warped_details_top_left.y + offset.y,
+            ROI_Target.width,
+            ROI_Target.height);
+
+        cv::Rect imgBounds(0, 0, warpedImg.cols, warpedImg.rows);
+        roi_warped &= imgBounds;
+
+        if (roi_warped.width <= 0 || roi_warped.height <= 0)
+            return OCRResult{};
+
+        cv::Mat crop = warpedImg(roi_warped);
+        if (crop.empty())
+            return OCRResult{};
+
+        return ocrWrapper.performOCR(crop, OCRType::Digit, fieldName);
+    };
+
+    if (ocrResults.score.text.empty())
+        ocrResults.score = fixedRoiFallback(ROI_Score, "score");
+    if (ocrResults.marvelous.text.empty())
+        ocrResults.marvelous = fixedRoiFallback(ROI_Marvelous, "marvelous");
+    if (ocrResults.perfect.text.empty())
+        ocrResults.perfect = fixedRoiFallback(ROI_Perfect, "perfect");
+    if (ocrResults.great.text.empty())
+        ocrResults.great = fixedRoiFallback(ROI_Great, "great");
+    if (ocrResults.good.text.empty())
+        ocrResults.good = fixedRoiFallback(ROI_Good, "good");
+    if (ocrResults.miss.text.empty())
+        ocrResults.miss = fixedRoiFallback(ROI_Miss, "miss");
+    if (ocrResults.flare.text.empty())
+        ocrResults.flare = fixedRoiFallback(ROI_Flare, "flare");
+    if (ocrResults.max_combo.text.empty())
+        ocrResults.max_combo = fixedRoiFallback(ROI_MaxCombo, "max_combo");
+
     // ----- Outside the combined ROI: per-ROI recogniser-only fallback -----
     // title/username/difficulty/details sit above the score panel.
     ocrResults.title = getPreprocessedRoiImage(
