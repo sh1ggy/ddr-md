@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OCR Model Compare — Perf Viewer</title>
+<style>
+  :root {
+    --bg: #1e1e1e; --panel: #252525; --border: #3a3a3a;
+    --txt: #ddd; --muted: #888; --accent: #4af;
+    --good: #2e7d32; --bad: #5a2020; --warn: #6b5a1a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 10px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+  label.btn, button, a.btn {
+    background: #3a3a3a; color: var(--txt); border: 1px solid #555;
+    padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    text-decoration: none; display: inline-block;
+  }
+  label.btn:hover, button:hover, a.btn:hover { background: #4a4a4a; }
+  a.navlink {
+    color: var(--accent); background: transparent; border: 1px solid transparent;
+    padding: 5px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;
+    text-decoration: none; cursor: pointer; display: inline-block;
+  }
+  a.navlink:hover { text-decoration: underline; border-color: #444; }
+  .meta { color: var(--muted); font-size: 12px; }
+  main { padding: 16px; }
+  h2 { font-size: 13px; color: var(--muted); text-transform: uppercase;
+       letter-spacing: 0.5px; margin: 18px 0 8px; }
+  /* ROI-set grouping: colored left bar + matching table header tint. */
+  h2.roi-h { padding: 6px 10px; border-left: 4px solid #555; border-radius: 4px;
+             background: #242424; color: var(--txt); }
+  h2.roi-reference { border-left-color: #4a8fd6; }
+  h2.roi-imperfect { border-left-color: #d6924a; }
+  table.roi-reference th { border-top: 2px solid #4a8fd6; }
+  table.roi-imperfect th { border-top: 2px solid #d6924a; }
+  td.img { color: var(--txt); font-weight: 400; }
+  tr.avgrow td { background: #2a2a2a; color: #cde; font-weight: 700; border-top: 2px solid #555; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+  th, td {
+    border: 1px solid var(--border); padding: 4px 8px; text-align: right;
+    font-family: "SF Mono", Menlo, monospace; font-size: 12px; white-space: nowrap;
+  }
+  th { background: #2d2d2d; color: #bbb; font-weight: 600; text-align: right; }
+  th.l, td.l { text-align: left; }
+  td.model { color: var(--accent); font-weight: 600; text-align: left; }
+  td.muted { color: var(--muted); }
+  .bar { display: inline-block; height: 10px; background: var(--accent);
+         border-radius: 2px; vertical-align: middle; margin-left: 6px; }
+  .fastest { color: #6f6; } .slowest { color: #f88; }
+  #drop {
+    border: 2px dashed #555; border-radius: 8px; padding: 40px; text-align: center;
+    color: var(--muted); margin: 40px auto; max-width: 600px;
+  }
+  code { background: #111; padding: 1px 5px; border-radius: 3px; color: #9cf; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>OCR Perf Viewer</h1>
+  <span class="meta" id="summary"></span>
+  <div class="controls">
+    <a class="navlink" href="results_viewer.html">← Results</a>
+    <label class="btn">Load results.csv<input type="file" id="csvInput" accept=".csv" hidden></label>
+  </div>
+</header>
+<main>
+  <div id="drop">
+    Drop <code>results.csv</code> here, or click <b>Load results.csv</b>.<br><br>
+    Reads the per-model timing columns (<code>*_total_ms</code>, <code>*_detrec_ms</code>)
+    written by the model-compare harness. <code>results.csv</code> is the single source of truth —
+    this view just summarises it.
+  </div>
+  <div id="content"></div>
+</main>
+
+<script>
+// Models are discovered from the CSV header (any column ending in _detrec_ms),
+// so this viewer adapts automatically when models are added/removed.
+let rows = [];
+
+// ---- CSV parsing (handles quoted fields containing commas/quotes) ----
+function parseCSV(text) {
+  const out = [];
+  let field = "", row = [], inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ""; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        if (field !== "" || row.length) { row.push(field); out.push(row); row = []; field = ""; }
+      } else field += c;
+    }
+  }
+  if (field !== "" || row.length) { row.push(field); out.push(row); }
+  return out;
+}
+function toObjects(grid) {
+  const header = grid[0];
+  return grid.slice(1).filter(r => r.length === header.length).map(r => {
+    const o = {}; header.forEach((h, i) => o[h] = r[i]); return o;
+  });
+}
+
+function discoverModels() {
+  if (!rows.length) return [];
+  return Object.keys(rows[0])
+    .filter(k => k.endsWith("_detrec_ms"))
+    .map(k => k.slice(0, -"_detrec_ms".length));
+}
+
+// Timing repeats across the field rows of one (image, roi_set, model). Collapse
+// to one sample per (image, roi_set, model); ignore -1 (stage didn't run).
+function collectSamples(models) {
+  // key "image||roi_set" -> { model -> {total, detrec} }
+  const byKey = new Map();
+  for (const r of rows) {
+    const key = r.image + "||" + r.roi_set;
+    if (!byKey.has(key)) byKey.set(key, { image: r.image, roi_set: r.roi_set, m: {} });
+    const slot = byKey.get(key).m;
+    for (const mo of models) {
+      if (slot[mo]) continue;
+      const total = parseInt(r[mo + "_total_ms"]);
+      const detrec = parseInt(r[mo + "_detrec_ms"]);
+      slot[mo] = { total, detrec };
+    }
+  }
+  return [...byKey.values()];
+}
+
+function stats(vals) {
+  const v = vals.filter(x => Number.isFinite(x) && x >= 0).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const sum = v.reduce((a, b) => a + b, 0);
+  const med = v[Math.floor(v.length / 2)];
+  return { n: v.length, avg: sum / v.length, med, min: v[0], max: v[v.length - 1] };
+}
+
+function render() {
+  const content = document.getElementById("content");
+  const models = discoverModels();
+  if (!rows.length || !models.length) { content.innerHTML = ""; return; }
+  document.getElementById("drop").classList.add("hidden");
+
+  const samples = collectSamples(models);
+
+  // ----- Summary: per-model avg/median over warped (>=0) samples -----
+  // detrec is the model-dependent hot path; total is end-to-end.
+  const perModel = {};
+  for (const mo of models) {
+    perModel[mo] = {
+      detrec: stats(samples.map(s => s.m[mo]?.detrec)),
+      total:  stats(samples.map(s => s.m[mo]?.total)),
+    };
+  }
+  // Rank on MEDIAN, not mean: a single OS stall (process paused / CPU stolen)
+  // can spike one detrec sample into the seconds and wreck the average, which
+  // would otherwise flip the fastest/slowest verdict. Median ignores outliers.
+  const medDet = mo => perModel[mo].detrec ? perModel[mo].detrec.med : Infinity;
+  const fastest = models.reduce((a, b) => medDet(a) <= medDet(b) ? a : b);
+  const slowest = models.reduce((a, b) => medDet(a) >= medDet(b) ? a : b);
+  const maxMed = Math.max(...models.map(medDet).filter(Number.isFinite));
+  const baseDet = medDet(fastest);
+
+  let html = `<h2>Per-model timing (ms) — over warped runs</h2>`;
+  html += `<table><thead><tr>
+    <th class="l">model</th>
+    <th>detrec avg</th><th>detrec med</th><th>detrec min</th><th>detrec max</th>
+    <th>×fastest</th><th>total avg</th><th>n</th><th class="l"></th></tr></thead><tbody>`;
+  for (const mo of models) {
+    const d = perModel[mo].detrec, t = perModel[mo].total;
+    if (!d) { html += `<tr><td class="model">${mo}</td><td colspan="8" class="muted">no warped runs</td></tr>`; continue; }
+    const cls = mo === fastest ? "fastest" : mo === slowest ? "slowest" : "";
+    const barW = maxMed > 0 ? Math.round(120 * d.med / maxMed) : 0;
+    const mult = baseDet > 0 ? (d.med / baseDet) : 1;
+    html += `<tr>
+      <td class="model">${mo}</td>
+      <td>${d.avg.toFixed(0)}</td>
+      <td class="${cls}">${d.med.toFixed(0)}</td>
+      <td>${d.min}</td>
+      <td>${d.max}</td>
+      <td class="${cls}">${mult.toFixed(1)}×</td>
+      <td>${t ? t.avg.toFixed(0) : "—"}</td>
+      <td class="muted">${d.n}</td>
+      <td class="l"><span class="bar" style="width:${barW}px"></span></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `<p class="meta">detrec = score-panel detect+recognise (the model-dependent cost).
+    total = whole process_image. Fastest/slowest and "×fastest" rank on the
+    <b>median</b> (robust to one-off OS stalls that spike avg/max). Watch the
+    max column: a value far above the median means that run hit machine contention,
+    not a real model cost — re-run quietly for clean numbers.</p>`;
+
+  // ----- Per-image breakdown (detrec ms), grouped by ROI set -----
+  // One table per ROI set so reference vs imperfect are read separately.
+  const roiSets = [...new Set(samples.map(s => s.roi_set))]
+    .sort((a, b) => ({ reference: 0, imperfect: 1 }[a] ?? 9) - ({ reference: 0, imperfect: 1 }[b] ?? 9));
+
+  for (const roi of roiSets) {
+    const rs = samples.filter(s => s.roi_set === roi)
+      .sort((a, b) => a.image.localeCompare(b.image));
+    // per-model avg within this ROI set, for a footer summary row
+    const colAvg = models.map(mo => stats(rs.map(s => s.m[mo]?.detrec)));
+
+    html += `<h2 class="roi-h roi-${roi}">${roi} — per-image detrec (ms)</h2>`;
+    html += `<table class="roi-${roi}"><thead><tr><th class="l">image</th>`;
+    for (const mo of models) html += `<th>${mo}</th>`;
+    html += `</tr></thead><tbody>`;
+    for (const s of rs) {
+      html += `<tr><td class="l img">${s.image}</td>`;
+      const vals = models.map(mo => s.m[mo]?.detrec).filter(x => Number.isFinite(x) && x >= 0);
+      const rmin = Math.min(...vals), rmax = Math.max(...vals);
+      for (const mo of models) {
+        const v = s.m[mo]?.detrec;
+        if (!Number.isFinite(v) || v < 0) { html += `<td class="muted">—</td>`; continue; }
+        const cls = vals.length > 1 && v === rmin ? "fastest" : vals.length > 1 && v === rmax ? "slowest" : "";
+        html += `<td class="${cls}">${v}</td>`;
+      }
+      html += `</tr>`;
+    }
+    // footer: per-model average for this ROI set
+    html += `<tr class="avgrow"><td class="l">avg</td>`;
+    for (const a of colAvg) html += `<td>${a ? a.avg.toFixed(0) : "—"}</td>`;
+    html += `</tr>`;
+    html += `</tbody></table>`;
+  }
+
+  content.innerHTML = html;
+  document.getElementById("summary").textContent =
+    `${models.length} models · ${samples.length} image×roi runs · fastest: ${fastest}, slowest: ${slowest}`;
+}
+
+function loadCsvText(text) { rows = toObjects(parseCSV(text)); render(); }
+
+document.getElementById("csvInput").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(loadCsvText);
+});
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  const f = [...e.dataTransfer.files].find(f => f.name.endsWith(".csv"));
+  if (f) f.text().then(loadCsvText);
+});
+// Auto-load results.csv when served over http alongside it.
+fetch("results.csv").then(r => { if (r.ok) return r.text(); throw 0; })
+  .then(loadCsvText).catch(() => {/* file:// — wait for picker */});
+</script>
+</body>
+</html>

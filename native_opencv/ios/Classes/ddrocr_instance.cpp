@@ -529,6 +529,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             combinedCrop, OCRType::Digit, "combined");
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t0).count();
+        result.combinedDetectRecMs = (int64_t)ms;
         platform_log("[TIMER] combined detect+rec: %lld ms, %zu boxes\n",
                      (long long)ms, detections.size());
 
@@ -659,6 +660,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
 
     auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - t_total_start).count();
+    result.totalMs = (int64_t)t_total_ms;
     platform_log("[TIMER] process_image total: %lld ms\n", (long long)t_total_ms);
 
     return result;

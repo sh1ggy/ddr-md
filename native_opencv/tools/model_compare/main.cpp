@@ -203,6 +203,7 @@ int main(int argc, char **argv)
         {"mobile_v5", {"ppocr_mobile_rec.onnx", "ppocr_mobile_det.onnx", "ppocrv5_dict.txt"}},
         {"small_v6",  {"ppocr_small_rec.onnx",  "ppocr_small_det.onnx",  "ppocrv6_small_dict.txt"}},
         {"tiny_v6",   {"ppocr_tiny_rec.onnx",   "ppocr_tiny_det.onnx",   "ppocrv6_dict.txt"}},
+        {"medium_v6", {"ppocr_medium_rec.onnx", "ppocr_medium_det.onnx", "ppocrv6_medium_dict.txt"}},
     };
 
     const std::vector<NamedRoiSet> roiSets = {
@@ -229,6 +230,8 @@ int main(int argc, char **argv)
     using WarpKey  = std::tuple<std::string, std::string, std::string>;
     std::map<FieldKey, std::map<std::string, OCRResult>> results;
     std::map<WarpKey, int> warpedFlag;
+    // (image, roiSet, model) -> {totalMs, combinedDetectRecMs} for perf compare.
+    std::map<WarpKey, std::pair<int64_t, int64_t>> timingMs;
 
     // Details-badge template match is computed pre-warp on the raw image, so it
     // is independent of roiSet and model — one value per image. Capture it once.
@@ -236,8 +239,8 @@ int main(int argc, char **argv)
     std::map<std::string, DetailsInfo> detailsByImage;
 
     // Annotated combined-ROI crops (det boxes + recognised text + field
-    // anchors), kept in memory keyed by (image, roiSet, model). Only the
-    // high-value subset is written to disk after all runs complete.
+    // anchors), kept in memory keyed by (image, roiSet, model), then written to
+    // disk for every model/image/warped-roiSet after all runs complete.
     std::map<std::tuple<std::string, std::string, std::string>, cv::Mat> annotated;
 
     for (const auto &rs : roiSets)
@@ -271,6 +274,7 @@ int main(int argc, char **argv)
                 // Details badge matched and the warp executed.
                 int warped = (r.detailsRoiIndex >= 0) ? 1 : 0;
                 warpedFlag[{imgName, rs.label, ms.label}] = warped;
+                timingMs[{imgName, rs.label, ms.label}] = {r.totalMs, r.combinedDetectRecMs};
                 for (const auto &f : kFields)
                     results[{imgName, rs.label, f}][ms.label] =
                         fieldResult(r.ocrResults, f);
@@ -313,6 +317,12 @@ int main(int argc, char **argv)
     // warp ran (fields are real reads); 0 = pipeline bailed before warp.
     for (const auto &ms : modelSets)
         fprintf(out, ",%s_warped", ms.label.c_str());
+    // Per-model wall-clock timing (ms), repeated across this image/roiSet's field
+    // rows (timing is per image, not per field). _total_ms = whole process_image;
+    // _detrec_ms = just the score-panel detect+recognise (model-dependent cost).
+    // -1 = stage didn't run (e.g. Details match failed, no warp).
+    for (const auto &ms : modelSets)
+        fprintf(out, ",%s_total_ms,%s_detrec_ms", ms.label.c_str(), ms.label.c_str());
     fprintf(out, "\n");
 
     // Accept threshold is a config constant shared by all runs.
@@ -337,6 +347,11 @@ int main(int argc, char **argv)
                 }
                 for (const auto &ms : modelSets)
                     fprintf(out, ",%d", warpedFlag[{imgName, rs.label, ms.label}]);
+                for (const auto &ms : modelSets)
+                {
+                    auto t = timingMs[{imgName, rs.label, ms.label}];
+                    fprintf(out, ",%lld,%lld", (long long)t.first, (long long)t.second);
+                }
                 fprintf(out, "\n");
             }
         }
@@ -349,80 +364,33 @@ int main(int argc, char **argv)
     else
         fprintf(stderr, "\nWrote CSV: %s\n", outPath.c_str());
 
-    // ----- Save high-value annotated crops (folder per model) -----
-    // Kept deliberately minimal: the only cases worth eyeballing det+rec are
-    // where the models genuinely diverge on the marquee SCORE field's DIGITS
-    // (commas/format stripped, so "998670" vs "998,670" does NOT count), or
-    // where the Details match was a near-miss (within 0.1 below threshold).
-    // Per-field blank-vs-zero noise on good/great/miss is excluded — it's not a
-    // det/rec-quality signal. We save at most ONE roiSet per image (prefer
-    // reference) and one crop per model so the folders line up for compare.
+    // ----- Save annotated combined-ROI crops (folder per model) -----
+    // Save EVERY crop we captured: one per (model, image, warped roiSet). Each
+    // shows what det+rec actually saw — detection boxes (green) with recognised
+    // text/conf, plus the per-field anchor rectangles (cyan) the picker matches
+    // against. Filenames are <image-stem>__<roiSet>.png so the viewer can find
+    // them deterministically. A crop only exists when that roiSet warped.
     const std::string resultsRoot = argValue(argc, argv, "--images-out",
                                              toolDir + "/results_images");
     mkdir(resultsRoot.c_str(), 0755);
     for (const auto &ms : modelSets)
         mkdir((resultsRoot + "/" + ms.label).c_str(), 0755);
 
-    auto digitsOnly = [](const std::string &s) {
-        std::string d;
-        for (char c : s) if (c >= '0' && c <= '9') d += c;
-        return d;
-    };
-    auto scoreDigitsDisagree = [&](const std::string &imgName, const std::string &roi) {
-        auto &pm = results[{imgName, roi, "score"}];
-        std::string a = digitsOnly(pm[modelSets[0].label].text);
-        for (size_t i = 1; i < modelSets.size(); ++i)
-            if (digitsOnly(pm[modelSets[i].label].text) != a) return true;
-        return false;
-    };
-
-    int saved = 0, imagesSaved = 0;
-    for (const auto &imgName : images)
+    int saved = 0;
+    for (const auto &kv : annotated)
     {
-        const DetailsInfo &di = detailsByImage[imgName];
-        bool nearMiss = di.score < (float)detThreshold &&
-                        di.score >= (float)detThreshold - 0.1f;
+        const auto &[imgName, roiSet, model] = kv.first;
+        if (kv.second.empty()) continue;
         std::string imgStem = imgName.substr(0, imgName.find_last_of('.'));
-
-        // Choose at most one roiSet for this image (prefer reference).
-        const NamedRoiSet *chosen = nullptr;
-        bool chosenDisagree = false;
-        for (const auto &rs : roiSets)
-        {
-            bool disagree = scoreDigitsDisagree(imgName, rs.label);
-            if (disagree || nearMiss)
-            {
-                if (!chosen || rs.label == "reference")
-                {
-                    chosen = &rs;
-                    chosenDisagree = disagree;
-                }
-            }
-        }
-        if (!chosen) continue;
-
-        const char *reason = chosenDisagree ? (nearMiss ? "scorediff_nearmiss" : "scorediff")
-                                            : "nearmiss";
-        bool any = false;
-        for (const auto &ms : modelSets)
-        {
-            auto it = annotated.find({imgName, chosen->label, ms.label});
-            if (it == annotated.end() || it->second.empty()) continue;
-            // <root>/<model>/<image>__<roiSet>__<reason>.png
-            std::string fn = resultsRoot + "/" + ms.label + "/" +
-                imgStem + "__" + chosen->label + "__" + reason + ".png";
-            cv::imwrite(fn, it->second);
-            ++saved;
-            any = true;
-        }
-        if (any) ++imagesSaved;
+        // <root>/<model>/<image-stem>__<roiSet>.png
+        std::string fn = resultsRoot + "/" + model + "/" +
+            imgStem + "__" + roiSet + ".png";
+        cv::imwrite(fn, kv.second);
+        ++saved;
     }
-    fprintf(stderr, "High-value images: %d (%d crops across %d model folders)\n",
-            imagesSaved, saved, (int)modelSets.size());
     char imgAbs[4096];
-    if (realpath(resultsRoot.c_str(), imgAbs))
-        fprintf(stderr, "Saved %d high-value annotated crops under: %s\n", saved, imgAbs);
-    else
-        fprintf(stderr, "Saved %d high-value annotated crops under: %s\n", saved, resultsRoot.c_str());
+    const char *rootShown = realpath(resultsRoot.c_str(), imgAbs) ? imgAbs : resultsRoot.c_str();
+    fprintf(stderr, "Saved %d annotated crops (all models/images/warped roiSets) under: %s\n",
+            saved, rootShown);
     return 0;
 }

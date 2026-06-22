@@ -145,6 +145,6 @@ app.*.symbols
 # OpenCV downloaded SDK
 /scripts/download
 
-# model_compare harness output (annotated high-value crops + build dir)
-*__scorediff*.png
+# model_compare harness output (annotated crops + build dir)
+/native_opencv/tools/model_compare/results_images
 /native_opencv/tools/model_compare/build

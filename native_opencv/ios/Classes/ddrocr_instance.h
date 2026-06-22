@@ -58,6 +58,11 @@ struct ProcessImgResult
     float   detailsMatchScore  = -1.0f;
     float   detailsMatchScale  = 0.0f;
     int32_t detailsCandidateCount = 0;
+    // Wall-clock timings (ms) for offline perf comparison. totalMs covers the
+    // whole process_image call; combinedDetectRecMs is just the score-panel
+    // detect+recognise (the model-dependent hot path). -1 = stage didn't run.
+    int64_t totalMs            = -1;
+    int64_t combinedDetectRecMs = -1;
     // Annotated combined-ROI crop: det boxes (green) + recognised text/conf and
     // per-field anchors (cyan). Populated only when debugImageType != NONE.
     // Empty when no warp/combined ROI was produced. The offline harness saves

@@ -292,7 +292,12 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
 namespace
 {
     constexpr int   DET_LIMIT_SIDE_LEN = 960;
-    constexpr float DET_BIN_THRESHOLD  = 0.2f;
+    // 0.1 (down from the PP-OCR 0.2 default) recovers small single-digit boxes
+    // in the score panel's good/miss/great rows. An offline sweep over the test
+    // set showed it was the only DB-postprocess knob that improved both those
+    // fields and overall pass rate; raising side-len / unclip / lowering
+    // min-area each traded a couple of recoveries for regressions elsewhere.
+    constexpr float DET_BIN_THRESHOLD  = 0.1f;
     constexpr float DET_BOX_MIN_AREA   = 16.0f; // px^2 in det-space
     constexpr float DET_UNCLIP_RATIO   = 1.4f;
 
