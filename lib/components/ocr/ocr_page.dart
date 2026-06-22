@@ -50,6 +50,9 @@ class _OcrPageState extends State<OcrPage>
   int _rawFrameHeight = 0;
 
   DebugImageType _debugImageType = DebugImageType.none;
+  // Whether the per-field candidate histograms are revealed (the way the user
+  // picks between detected values in the stopped view).
+  bool _histogramsExpanded = false;
   final ValueNotifier<Uint8List?> _debugMaskBytes = ValueNotifier(null);
   final ValueNotifier<Uint8List?> _debugCropBytes = ValueNotifier(null);
   final ValueNotifier<_CaptureView?> _captureData = ValueNotifier(null);
@@ -518,9 +521,11 @@ class _OcrPageState extends State<OcrPage>
     );
   }
 
-  // Stopped view: editable, prefilled fields with pressable alternative badges
-  // (sorted by frame count) the user can pick from to override a field.
+  // Stopped view: editable, prefilled fields. "Show values" reveals a clickable
+  // candidate histogram per field — the way the user picks between detected
+  // values (tapping a bar sets that field).
   Widget _buildEditableScorePanel() {
+    final bool showHistograms = _histogramsExpanded;
     final rows = <Widget>[
       for (final key in kOcrFieldOrder)
         if (_aggregator.best(key) case final best?)
@@ -530,32 +535,52 @@ class _OcrPageState extends State<OcrPage>
             confidence: best.confidence,
             sampleCount: best.count,
             winnerValue: best.value,
-            candidates: [
-              for (final c in _aggregator.candidates(key))
-                OCRCandidate(c.value, c.count),
-            ],
+            candidates: showHistograms
+                ? [
+                    for (final c in _aggregator.candidates(key))
+                      OCRCandidate(c.value, c.count, c.share),
+                  ]
+                : const [],
             onUserEdit: (_) => _userEditedFields.add(key),
           ),
     ];
     return _scorePanelShell(
       rows: rows,
       emptyText: "No score captured.",
+      showToggle: true,
     );
   }
 
   Widget _scorePanelShell({
     required List<Widget> rows,
     required String emptyText,
+    bool showToggle = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            "Details detections: ${_aggregator.detailsCount}",
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  "Details detections: ${_aggregator.detailsCount}",
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ),
+            ),
+            if (showToggle && rows.isNotEmpty)
+              TextButton.icon(
+                onPressed: () => setState(
+                    () => _histogramsExpanded = !_histogramsExpanded),
+                icon: Icon(
+                  _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                ),
+                label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
+              ),
+          ],
         ),
         if (rows.isEmpty)
           Padding(
@@ -563,7 +588,7 @@ class _OcrPageState extends State<OcrPage>
             child: Text(
               emptyText,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.black54),
+              style: TextStyle(color: Theme.of(context).hintColor),
             ),
           )
         else

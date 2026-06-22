@@ -243,11 +243,11 @@ String ocrFieldLabel(String key) {
   }
 }
 
-// Color for an OCR field key — shared by the read-only and editable widgets.
-Color ocrColorForKey(String k) {
+// Accent color for an OCR field key — shared by the read-only and editable
+// widgets. Returns null for keys with no special color so the caller falls back
+// to the theme's default text color (important for dark mode).
+Color? ocrColorForKey(String k) {
   switch (k.toLowerCase()) {
-    case 'score':
-      return Colors.black;
     case 'marvelous':
       return Colors.grey;
     case 'perfect':
@@ -259,30 +259,32 @@ Color ocrColorForKey(String k) {
     case 'bad':
       return Colors.purpleAccent;
     default:
-      return Colors.black87;
+      return null;
   }
 }
 
-// A single candidate reading for a field, used to render pressable badges in
-// the camera flow (ordered by how many frames detected the value).
+// A single candidate reading for a field, used to render the clickable
+// histogram in the camera flow (ordered by how many frames detected the value).
 class OCRCandidate {
   final String value;
   final int count;
-  const OCRCandidate(this.value, this.count);
+  // Fraction of samples that agreed on this value (0..1), drives the bar width.
+  final double share;
+  const OCRCandidate(this.value, this.count, this.share);
 }
 
 // An editable OCR field: a labelled TextField prefilled with the OCR result.
-// In the camera flow it also renders pressable [candidates] badges (sorted by
-// frame count) that overwrite the field when tapped.
+// In the camera flow it also renders a clickable [candidates] histogram (sorted
+// by frame count); tapping a bar sets the field to that reading.
 class OCREditableField extends StatelessWidget {
   final String keyName;
   final TextEditingController controller;
-  // Optional alternative readings shown as pressable badges below the field.
+  // Optional alternative readings shown as a clickable histogram below the field.
   final List<OCRCandidate> candidates;
-  // The current winning value, highlighted among the badges.
+  // The current winning value, highlighted in the histogram.
   final String? winnerValue;
   // Called when the user changes the value — either by typing in the field or
-  // tapping a badge — so the parent can stop auto-prefilling this field.
+  // tapping a histogram bar — so the parent can stop auto-prefilling this field.
   final ValueChanged<String>? onUserEdit;
   final double? confidence;
   final int? sampleCount;
@@ -354,13 +356,12 @@ class OCREditableField extends StatelessWidget {
           ),
           if (candidates.length > 1)
             Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 2),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 4,
+              padding: const EdgeInsets.only(left: 8, top: 4, bottom: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (final c in candidates)
-                    _CandidateBadge(
+                    _CandidateBar(
                       candidate: c,
                       isWinner: c.value == winnerValue,
                       onTap: () {
@@ -379,8 +380,10 @@ class OCREditableField extends StatelessWidget {
   }
 }
 
-class _CandidateBadge extends StatelessWidget {
-  const _CandidateBadge({
+// A clickable histogram bar for one candidate reading. Tapping it sets the
+// field to this value. The winning (modal) value is highlighted green.
+class _CandidateBar extends StatelessWidget {
+  const _CandidateBar({
     required this.candidate,
     required this.isWinner,
     required this.onTap,
@@ -392,25 +395,55 @@ class _CandidateBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final barColor = isWinner ? Colors.green : Colors.grey[400]!;
+    final labelColor = theme.colorScheme.onSurface;
+    final mutedColor = theme.colorScheme.onSurface.withOpacity(0.6);
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: isWinner ? Colors.green.withOpacity(0.15) : Colors.black12,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isWinner ? Colors.green : Colors.black26,
-          ),
-        ),
-        child: Text(
-          '${candidate.value} · ${candidate.count}',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isWinner ? FontWeight.w600 : FontWeight.w400,
-            color: isWinner ? Colors.green[800] : Colors.black87,
-          ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 90,
+              child: Text(
+                candidate.value,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: labelColor,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  fontWeight: isWinner ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: Stack(
+                    children: [
+                      Container(height: 12, color: theme.dividerColor),
+                      FractionallySizedBox(
+                        widthFactor: candidate.share.clamp(0.0, 1.0),
+                        child: Container(height: 12, color: barColor),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 64,
+              child: Text(
+                '${candidate.count} · ${(candidate.share * 100).round()}%',
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 11, color: mutedColor),
+              ),
+            ),
+          ],
         ),
       ),
     );
