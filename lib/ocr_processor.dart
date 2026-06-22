@@ -12,6 +12,22 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+// Stable display order for the OCR'd fields, shared by the load-image and
+// camera screens. Keys match the maps built in fromNative / _readOcrStrings.
+const List<String> kOcrFieldOrder = [
+  'title',
+  'username',
+  'difficulty',
+  'score',
+  'marvelous',
+  'perfect',
+  'great',
+  'good',
+  'miss',
+  'maxCombo',
+  'flare',
+];
+
 enum DifficultyType { None, FFXI }
 
 enum DetectionSide { first, left, right }
@@ -88,6 +104,11 @@ class ProcessResult {
       'great': rd(r.great),
       'good': rd(r.good),
       'miss': rd(r.miss),
+      'flare': rd(r.flare),
+      'title': rd(r.title),
+      'username': rd(r.username),
+      'difficulty': rd(r.difficulty),
+      'maxCombo': rd(r.maxCombo),
     };
 
     Uint8List? img(Pointer<Uint8> buf, int len) =>
@@ -198,6 +219,11 @@ final class CCameraResult extends Struct {
   external Pointer<Char> great;
   external Pointer<Char> good;
   external Pointer<Char> miss;
+  external Pointer<Char> flare;
+  external Pointer<Char> title;
+  external Pointer<Char> username;
+  external Pointer<Char> difficulty;
+  external Pointer<Char> maxCombo;
   external Pointer<Uint8> mask;
   @Int32()
   external int maskLen;
@@ -312,6 +338,11 @@ Map<String, String> _readOcrStrings(Pointer<COCRStrings> p) {
     'great': read(r.great),
     'good': read(r.good),
     'miss': read(r.miss),
+    'flare': read(r.flare),
+    'title': read(r.title),
+    'username': read(r.username),
+    'difficulty': read(r.difficulty),
+    'maxCombo': read(r.maxCombo),
   };
 }
 

@@ -33,16 +33,6 @@ class OcrPage extends StatefulWidget {
 late Directory tempDir;
 String get tempPath => '${tempDir.path}/temp.jpg';
 
-// Stable display order for the OCR'd score fields.
-const List<String> _ocrKeyOrder = [
-  'score',
-  'marvelous',
-  'perfect',
-  'great',
-  'good',
-  'miss',
-];
-
 class _OcrPageState extends State<OcrPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool _isCameraActive = false;
@@ -50,12 +40,16 @@ class _OcrPageState extends State<OcrPage>
   bool _hasRecorded = false;
   late OCRProcessor _ocrProcessor;
   final _OcrAggregator _aggregator = _OcrAggregator();
+  // Editable controllers per OCR field, prefilled from the rolling average.
+  final Map<String, TextEditingController> _fieldControllers = {};
+  // Fields the user has manually edited or chosen an alternative for; the live
+  // aggregator no longer overwrites these.
+  final Set<String> _userEditedFields = {};
   double _camFrameToScreenScale = 0;
   int _rawFrameWidth = 0;
   int _rawFrameHeight = 0;
 
   DebugImageType _debugImageType = DebugImageType.none;
-  bool _histogramsExpanded = false;
   final ValueNotifier<Uint8List?> _debugMaskBytes = ValueNotifier(null);
   final ValueNotifier<Uint8List?> _debugCropBytes = ValueNotifier(null);
   final ValueNotifier<_CaptureView?> _captureData = ValueNotifier(null);
@@ -121,7 +115,10 @@ class _OcrPageState extends State<OcrPage>
       }
       if (detailsFound && result.ocrStrings.isNotEmpty) {
         final added = _aggregator.add(result.ocrStrings);
-        if (added) setState(() {});
+        if (added) {
+          _prefillFromAggregator();
+          setState(() {});
+        }
       }
     });
 
@@ -139,6 +136,9 @@ class _OcrPageState extends State<OcrPage>
     _debugCropBytes.dispose();
     _captureData.dispose();
     _fps.dispose();
+    for (final c in _fieldControllers.values) {
+      c.dispose();
+    }
     _ocrProcessor.dispose();
     super.dispose();
   }
@@ -158,6 +158,21 @@ class _OcrPageState extends State<OcrPage>
     _fps.value = span.inMicroseconds <= 0
         ? 0
         : (_frameTimes.length - 1) * 1e6 / span.inMicroseconds;
+  }
+
+  TextEditingController _controllerFor(String key) =>
+      _fieldControllers.putIfAbsent(key, () => TextEditingController());
+
+  // Pushes the rolling-average winner into each field's controller, unless the
+  // user has manually edited / chosen an alternative for that field.
+  void _prefillFromAggregator() {
+    for (final key in kOcrFieldOrder) {
+      if (_userEditedFields.contains(key)) continue;
+      final best = _aggregator.best(key);
+      if (best == null) continue;
+      final controller = _controllerFor(key);
+      if (controller.text != best.value) controller.text = best.value;
+    }
   }
 
   Future<void> _initOcr() async {
@@ -191,6 +206,10 @@ class _OcrPageState extends State<OcrPage>
         setState(() {
           _isCameraActive = true;
           _aggregator.clear();
+          _userEditedFields.clear();
+          for (final c in _fieldControllers.values) {
+            c.clear();
+          }
           _roiData.value = ([], null);
           _debugMaskBytes.value = null;
           _debugCropBytes.value = null;
@@ -307,7 +326,7 @@ class _OcrPageState extends State<OcrPage>
         ),
         Padding(
           padding: const EdgeInsets.all(16),
-          child: _buildScorePanel(live: true),
+          child: _buildLiveScorePanel(),
         ),
       ],
     );
@@ -475,66 +494,74 @@ class _OcrPageState extends State<OcrPage>
         ),
         const SizedBox(height: 12),
         _buildCapturePanel(),
-        _buildScorePanel(live: false),
+        _buildEditableScorePanel(),
       ],
     );
   }
 
-  Widget _buildScorePanel({required bool live}) {
-    final bool showHistograms = _histogramsExpanded;
+  // Live (recording) view: read-only rolling-average readout. Editing only
+  // happens once OCR is stopped (see _buildEditableScorePanel).
+  Widget _buildLiveScorePanel() {
     final rows = <Widget>[
-      for (final key in _ocrKeyOrder)
-        if (_aggregator.best(key) case final best?) ...[
+      for (final key in kOcrFieldOrder)
+        if (_aggregator.best(key) case final best?)
           OCRKeyValue(
-            keyName: key.toUpperCase(),
+            keyName: ocrFieldLabel(key),
             value: best.value,
             confidence: best.confidence,
             sampleCount: best.count,
           ),
-          if (showHistograms)
-            Padding(
-              padding: const EdgeInsets.only(left: 8, bottom: 8, top: 2),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final (i, c) in _aggregator.candidates(key).indexed)
-                    _CandidateBar(candidate: c, isWinner: i == 0),
-                ],
-              ),
-            ),
-        ],
     ];
+    return _scorePanelShell(
+      rows: rows,
+      emptyText: "Reading score…",
+    );
+  }
+
+  // Stopped view: editable, prefilled fields with pressable alternative badges
+  // (sorted by frame count) the user can pick from to override a field.
+  Widget _buildEditableScorePanel() {
+    final rows = <Widget>[
+      for (final key in kOcrFieldOrder)
+        if (_aggregator.best(key) case final best?)
+          OCREditableField(
+            keyName: key,
+            controller: _controllerFor(key),
+            confidence: best.confidence,
+            sampleCount: best.count,
+            winnerValue: best.value,
+            candidates: [
+              for (final c in _aggregator.candidates(key))
+                OCRCandidate(c.value, c.count),
+            ],
+            onUserEdit: (_) => _userEditedFields.add(key),
+          ),
+    ];
+    return _scorePanelShell(
+      rows: rows,
+      emptyText: "No score captured.",
+    );
+  }
+
+  Widget _scorePanelShell({
+    required List<Widget> rows,
+    required String emptyText,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  "Details detections: ${_aggregator.detailsCount}",
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ),
-            ),
-            if (rows.isNotEmpty)
-              TextButton.icon(
-                onPressed: () => setState(
-                    () => _histogramsExpanded = !_histogramsExpanded),
-                icon: Icon(
-                  _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
-                ),
-                label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
-              ),
-          ],
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            "Details detections: ${_aggregator.detailsCount}",
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
         ),
         if (rows.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
             child: Text(
-              live ? "Reading score…" : "No score captured.",
+              emptyText,
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.black54),
             ),
@@ -593,62 +620,6 @@ class _OcrAggregator {
       for (final e in entries)
         (value: e.key, count: e.value, share: e.value / total),
     ];
-  }
-}
-
-class _CandidateBar extends StatelessWidget {
-  const _CandidateBar({required this.candidate, required this.isWinner});
-
-  final ({String value, int count, double share}) candidate;
-  final bool isWinner;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isWinner ? Colors.green : Colors.grey[400]!;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              candidate.value,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontFeatures: const [FontFeature.tabularFigures()],
-                fontWeight: isWinner ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: Stack(
-                  children: [
-                    Container(height: 12, color: Colors.black12),
-                    FractionallySizedBox(
-                      widthFactor: candidate.share.clamp(0.0, 1.0),
-                      child: Container(height: 12, color: color),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 64,
-            child: Text(
-              '${candidate.count} · ${(candidate.share * 100).round()}%',
-              textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 11, color: Colors.grey[700]),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

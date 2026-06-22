@@ -32,6 +32,11 @@ struct CCameraResult {
   char *great;
   char *good;
   char *miss;
+  char *flare;
+  char *title;
+  char *username;
+  char *difficulty;
+  char *maxCombo;
   uint8_t *mask;   int32_t maskLen;     // PNG, full-frame binarized (debug)
   uint8_t *crop;   int32_t cropLen;     // PNG, matched Details crop (debug)
   uint8_t *capture; int32_t captureLen; // JPEG, color frame on a match
@@ -90,6 +95,11 @@ static inline CCameraResult *BuildCCameraResult(const ProcessImgResult &r,
   c->great = ccr_dup(o.great.text);
   c->good = ccr_dup(o.good.text);
   c->miss = ccr_dup(o.miss.text);
+  c->flare = ccr_dup(o.flare.text);
+  c->title = ccr_dup(o.title.text);
+  c->username = ccr_dup(o.username.text);
+  c->difficulty = ccr_dup(o.difficulty.text);
+  c->maxCombo = ccr_dup(o.max_combo.text);
   ccr_encode(r.debugMask, ".png", &c->mask, &c->maskLen);
   ccr_encode(r.debugDetailsCrop, ".png", &c->crop, &c->cropLen);
   ccr_encode(r.colorCapture, ".jpg", &c->capture, &c->captureLen);
@@ -105,6 +115,11 @@ static inline void FreeCCameraResult(CCameraResult *c) {
   free(c->great);
   free(c->good);
   free(c->miss);
+  free(c->flare);
+  free(c->title);
+  free(c->username);
+  free(c->difficulty);
+  free(c->maxCombo);
   free(c->mask);
   free(c->crop);
   free(c->capture);
