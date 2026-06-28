@@ -10,11 +10,9 @@
 // picks which (if any) is the Details badge by template matching against a
 // stored reference crop.
 //
-// This intentionally does NOT use any OCR model. Earlier pipelines used
-// Tesseract (eng.fast PSM_SINGLE_WORD) or PaddleOCR rec to recognise the
-// literal text "Details" — both were expensive and accuracy-fragile for what
-// is essentially a fixed, visually-constant UI element. cv::matchTemplate at
-// a handful of scales is faster, deterministic, and trivially debuggable.
+// This intentionally does NOT use any OCR model — the "Details" badge is a
+// fixed, visually-constant UI element, so cv::matchTemplate at a handful of
+// scales is faster, deterministic, and trivially debuggable.
 //
 // Usage:
 //   DetailsDetector det(dataPath);            // loads template from disk

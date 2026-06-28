@@ -5,12 +5,28 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
-import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:ffi/ffi.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+
+// Stable display order for the OCR'd fields, shared by the load-image and
+// camera screens. Keys match the maps built in fromNative / _readOcrStrings.
+const List<String> kOcrFieldOrder = [
+  'title',
+  'username',
+  'difficulty',
+  'score',
+  'marvelous',
+  'perfect',
+  'great',
+  'good',
+  'miss',
+  'maxCombo',
+  'flare',
+];
 
 enum DifficultyType { None, FFXI }
 
@@ -32,7 +48,7 @@ class ProcessResult {
   // Full-frame binarized mask (preprocessed_BW1) for every processed frame when
   // debug is on; null otherwise.
   final Uint8List? debugMaskBytes;
-  // Crop Tesseract matched on, present only when this frame matched "Details".
+  // Crop the Details template matched on, present only when this frame matched.
   // The UI persists the last non-null one across failed frames.
   final Uint8List? debugDetailsCropBytes;
   // Full-color JPEG of the frame, present only when this frame matched
@@ -41,99 +57,92 @@ class ProcessResult {
   final Uint8List? captureBytes;
   final int? detailsRoiIndex;
   final Map<String, String> ocrStrings;
+  // Dimensions of the processed frame (the pixel space the ROIs are expressed
+  // in). The camera path reports these so the UI can scale the ROI overlay to
+  // the on-screen preview; the picked-image path leaves them at 0.
+  final int frameWidth;
+  final int frameHeight;
 
   ProcessResult(
-      this.difficulty,
-      this.roi,
-      this.detectedRois,
-      this.isDetected,
-      this.returnImageType,
-      this.debugMaskBytes,
-      this.debugDetailsCropBytes,
-      this.captureBytes,
-      this.detailsRoiIndex,
-      this.ocrStrings);
-}
-
-// Camera frame bytes are extracted on the main thread and handed to the isolate
-// via TransferableTypedData (zero-copy on receive).
-class ProcessImageRequestParams {
-  final TransferableTypedData bytes;
-  final int width;
-  final int height;
-  // Row stride of the source buffer in bytes. iOS BGRA frames are often padded
-  // (bytesPerRow > width*4); the native layer needs the real stride to read
-  // rows at the right offset. 0 means "tightly packed" (the Android YUV path).
-  final int bytesPerRow;
-  // Camera sensor orientation (0/90/180/270), passed to the native layer for
-  // potential per-device orientation handling. Currently unused there: the iOS
-  // BGRA frame already arrives portrait (no rotation needed) and Android's YUV
-  // frame is hard-coded to 90° CW. Kept plumbed for future use.
-  final int sensorOrientation;
-  final DebugImageType debugImageType;
-  final DetectionSide side;
-
-  ProcessImageRequestParams({
-    required this.bytes,
-    required this.width,
-    required this.height,
-    required this.bytesPerRow,
-    required this.sensorOrientation,
-    required this.side,
-    this.debugImageType = DebugImageType.none,
-  });
-}
-
-class ProcessPickedImageRequestParams {
-  final String imagePath;
-  final DetectionSide side;
-
-  ProcessPickedImageRequestParams({required this.imagePath, required this.side});
-}
-
-enum RequestType { ProcessVideoImage, ProcessPickedImage, Shutdown }
-
-class Request {
-  final RequestType type;
-  final ProcessImageRequestParams? cameraParams;
-  final String? pickedImagePath;
-  final DetectionSide? pickedImageSide;
-
-  Request._({
-    required this.type,
-    this.cameraParams,
-    this.pickedImagePath,
-    this.pickedImageSide,
+    this.difficulty,
+    this.roi,
+    this.detectedRois,
+    this.isDetected,
+    this.returnImageType,
+    this.debugMaskBytes,
+    this.debugDetailsCropBytes,
+    this.captureBytes,
+    this.detailsRoiIndex,
+    this.ocrStrings, {
+    this.frameWidth = 0,
+    this.frameHeight = 0,
   });
 
-  Request.fromCamera(
-    RequestType type,
-    ProcessImageRequestParams params,
-  ) : this._(
-          type: type,
-          cameraParams: params,
-        );
+  // Reads a CCameraResult the native OCR worker handed back over the FFI
+  // NativeCallable. Copies everything out (the native buffer is freed by the
+  // caller right after). Mirrors camera_result.h.
+  factory ProcessResult.fromNative(Pointer<CCameraResult> p) {
+    final r = p.ref;
 
-  Request.fromFile(
-    RequestType type,
-    String path,
-    DetectionSide side,
-  ) : this._(
-          type: type,
-          pickedImagePath: path,
-          pickedImageSide: side,
-        );
+    final detectedRois = <Rectangle<int>>[];
+    if (r.rois != nullptr) {
+      for (int i = 0; i < r.roisCount; i++) {
+        final b = i * 4;
+        detectedRois.add(Rectangle<int>(
+            r.rois[b], r.rois[b + 1], r.rois[b + 2], r.rois[b + 3]));
+      }
+    }
 
-  Request.death() : this._(type: RequestType.Shutdown);
+    String rd(Pointer<Char> s) =>
+        s == nullptr ? '' : s.cast<Utf8>().toDartString();
+    final ocr = {
+      'score': rd(r.score),
+      'marvelous': rd(r.marvelous),
+      'perfect': rd(r.perfect),
+      'great': rd(r.great),
+      'good': rd(r.good),
+      'miss': rd(r.miss),
+      'flare': rd(r.flare),
+      'title': rd(r.title),
+      'username': rd(r.username),
+      'difficulty': rd(r.difficulty),
+      'maxCombo': rd(r.maxCombo),
+    };
+
+    Uint8List? img(Pointer<Uint8> buf, int len) =>
+        (buf != nullptr && len > 0) ? Uint8List.fromList(buf.asTypedList(len)) : null;
+    final mask = img(r.mask, r.maskLen);
+    final crop = img(r.crop, r.cropLen);
+    final capture = img(r.capture, r.captureLen);
+    final imageType = (mask != null || crop != null)
+        ? ReturnImageType.BytesImage
+        : ReturnImageType.None;
+
+    final isDetected = r.isDetected != 0;
+    return ProcessResult(
+      isDetected ? DifficultyType.FFXI : DifficultyType.None,
+      null,
+      detectedRois,
+      isDetected,
+      imageType,
+      mask,
+      crop,
+      capture,
+      r.detailsRoiIndex,
+      ocr,
+      frameWidth: r.width,
+      frameHeight: r.height,
+    );
+  }
 }
 
-class InitialRequest {
-  final SendPort toMainThread;
-  final String tempPath;
-  final String appPath;
-
-  InitialRequest(this.toMainThread, this.tempPath, this.appPath);
-}
+// ---------------------------------------------------------------------------
+// FFI bindings. The live camera path is driven entirely native-side; Dart only
+// (1) gets a texture id + an opaque native session pointer over a thin platform
+// channel (the Flutter texture registry is platform-only), then (2) talks to
+// the C++ session directly over FFI — start/stop and per-frame result delivery
+// (via a NativeCallable) never touch a method/event channel or JNI.
+// ---------------------------------------------------------------------------
 
 final DynamicLibrary _nativeLib = _openDynamicLibrary();
 
@@ -189,32 +198,48 @@ final class COCRStrings extends Struct {
   external Pointer<Char> maxCombo;
 }
 
-typedef _c_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>, Pointer<COCRConfig>);
-typedef _dart_createOcrInstance = Pointer<Void> Function(Pointer<Utf8>, Pointer<COCRConfig>);
+// Layout must match camera_result.h::CCameraResult exactly.
+final class CCameraResult extends Struct {
+  @Int32()
+  external int isDetected;
+  @Int32()
+  external int detailsRoiIndex;
+  @Int32()
+  external int width;
+  @Int32()
+  external int height;
+  @Int32()
+  external int roisCount;
+  external Pointer<Int32> rois;
+  external Pointer<Char> score;
+  external Pointer<Char> marvelous;
+  external Pointer<Char> perfect;
+  external Pointer<Char> great;
+  external Pointer<Char> good;
+  external Pointer<Char> miss;
+  external Pointer<Char> flare;
+  external Pointer<Char> title;
+  external Pointer<Char> username;
+  external Pointer<Char> difficulty;
+  external Pointer<Char> maxCombo;
+  external Pointer<Uint8> mask;
+  @Int32()
+  external int maskLen;
+  external Pointer<Uint8> crop;
+  @Int32()
+  external int cropLen;
+  external Pointer<Uint8> capture;
+  @Int32()
+  external int captureLen;
+}
+
+typedef _c_createOcrInstance = Pointer<Void> Function(
+    Pointer<Utf8>, Pointer<COCRConfig>);
+typedef _dart_createOcrInstance = Pointer<Void> Function(
+    Pointer<Utf8>, Pointer<COCRConfig>);
 
 typedef _c_destroyOcrInstance = Void Function(Pointer<Void>);
 typedef _dart_destroyOcrInstance = void Function(Pointer<Void>);
-
-typedef _c_processCameraImage = Void Function(
-    Pointer<Void> handle,
-    Int32 imgWidth,
-    Int32 imgHeight,
-    Int32 bytesPerRow,
-    Int32 sensorOrientation,
-    Pointer<Uint8> imgBuffer,
-    Pointer<Int32> outputIsDetected,
-    Pointer<Pointer<Int32>> outputRois,
-    Pointer<Int32> outputRoisCount,
-    Pointer<Int32> outputdetailsRoiIndex,
-    Pointer<COCRStrings> outStrings,
-    Int32 debugImageType,
-    Pointer<Pointer<Uint8>> outputDebugMask,
-    Pointer<Int32> outputDebugMaskLen,
-    Pointer<Pointer<Uint8>> outputDebugCrop,
-    Pointer<Int32> outputDebugCropLen,
-    Pointer<Pointer<Uint8>> outputCapture,
-    Pointer<Int32> outputCaptureLen,
-    Int32 side);
 
 typedef _c_processPickedImage = Void Function(
   Pointer<Void> handle,
@@ -227,27 +252,6 @@ typedef _c_processPickedImage = Void Function(
   Int32 side,
 );
 
-typedef _dart_processCameraImage = void Function(
-    Pointer<Void> handle,
-    int imgWidth,
-    int imgHeight,
-    int bytesPerRow,
-    int sensorOrientation,
-    Pointer<Uint8> imgBuffer,
-    Pointer<Int32> outputIsDetected,
-    Pointer<Pointer<Int32>> outputRois,
-    Pointer<Int32> outputRoisCount,
-    Pointer<Int32> outputdetailsRoiIndex,
-    Pointer<COCRStrings> outStrings,
-    int debugImageType,
-    Pointer<Pointer<Uint8>> outputDebugMask,
-    Pointer<Int32> outputDebugMaskLen,
-    Pointer<Pointer<Uint8>> outputDebugCrop,
-    Pointer<Int32> outputDebugCropLen,
-    Pointer<Pointer<Uint8>> outputCapture,
-    Pointer<Int32> outputCaptureLen,
-    int side);
-
 typedef _dart_processPickedImage = void Function(
   Pointer<Void> handle,
   Pointer<Utf8> inputImagePath,
@@ -259,18 +263,42 @@ typedef _dart_processPickedImage = void Function(
   int side,
 );
 
-final _createOcrInstanceFn =
-    _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
-        'create_ocr_instance');
-final _destroyOcrInstanceFn =
-    _nativeLib.lookupFunction<_c_destroyOcrInstance, _dart_destroyOcrInstance>(
-        'destroy_ocr_instance');
-final _processCameraImageFn =
-    _nativeLib.lookupFunction<_c_processCameraImage, _dart_processCameraImage>(
-        'process_camera_image');
-final _processPickedImageFn =
-    _nativeLib.lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
-        'process_picked_image');
+// Camera session FFI (operates on the opaque session pointer from the channel).
+typedef _ResultCallbackNative = Void Function(Pointer<CCameraResult>);
+
+typedef _c_cameraRegister = Void Function(
+    Pointer<Void>, Pointer<NativeFunction<_ResultCallbackNative>>);
+typedef _dart_cameraRegister = void Function(
+    Pointer<Void>, Pointer<NativeFunction<_ResultCallbackNative>>);
+
+typedef _c_cameraStart = Int32 Function(Pointer<Void>, Int32);
+typedef _dart_cameraStart = int Function(Pointer<Void>, int);
+
+typedef _c_cameraVoid = Void Function(Pointer<Void>);
+typedef _dart_cameraVoid = void Function(Pointer<Void>);
+
+typedef _c_cameraSetDebug = Void Function(Pointer<Void>, Int32);
+typedef _dart_cameraSetDebug = void Function(Pointer<Void>, int);
+
+typedef _c_cameraSetSide = Void Function(Pointer<Void>, Int32);
+typedef _dart_cameraSetSide = void Function(Pointer<Void>, int);
+
+final _cameraRegisterFn =
+    _nativeLib.lookupFunction<_c_cameraRegister, _dart_cameraRegister>(
+        'camera_register_callback');
+final _cameraStartFn =
+    _nativeLib.lookupFunction<_c_cameraStart, _dart_cameraStart>('camera_start');
+final _cameraStopFn =
+    _nativeLib.lookupFunction<_c_cameraVoid, _dart_cameraVoid>('camera_stop');
+final _cameraSetDebugFn =
+    _nativeLib.lookupFunction<_c_cameraSetDebug, _dart_cameraSetDebug>(
+        'camera_set_debug');
+final _cameraSetSideFn =
+    _nativeLib.lookupFunction<_c_cameraSetSide, _dart_cameraSetSide>(
+        'camera_set_side');
+final _cameraFreeResultFn =
+    _nativeLib.lookupFunction<_c_cameraVoid, _dart_cameraVoid>(
+        'camera_free_result');
 
 // Caller must calloc.free() the returned pointer.
 Pointer<COCRConfig> _buildOCRConfig() {
@@ -295,8 +323,8 @@ Pointer<COCRConfig> _buildOCRConfig() {
     p.ref.roi[r][roiExpandX] = ex;
     p.ref.roi[r][roiExpandY] = ey;
   }
-  for (int i = 0; i < 4; i++) {
-    p.ref.combinedRoi[i] = ocrCombinedRoi[i];
+  for (int c = 0; c < 4; c++) {
+    p.ref.combinedRoi[c] = ocrCombinedRoi[c];
   }
   p.ref.detailsTemplateMinScore = ocrDetailsTemplateMinScore;
   return p;
@@ -314,6 +342,11 @@ Map<String, String> _readOcrStrings(Pointer<COCRStrings> p) {
     'great': read(r.great),
     'good': read(r.good),
     'miss': read(r.miss),
+    'flare': read(r.flare),
+    'title': read(r.title),
+    'username': read(r.username),
+    'difficulty': read(r.difficulty),
+    'maxCombo': read(r.maxCombo),
   };
 }
 
@@ -337,97 +370,34 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
   calloc.free(p);
 }
 
-Uint8List? _readAndFreeImage(
-  Pointer<Pointer<Uint8>>? outputImagePtr,
-  Pointer<Int32>? outputImageLen,
-) {
-  if (outputImagePtr == null || outputImageLen == null) return null;
-  final buf = outputImagePtr.value;
-  final len = outputImageLen.value;
-  Uint8List? bytes;
-  if (buf != nullptr && len > 0) {
-    bytes = Uint8List.fromList(buf.asTypedList(len));
-    calloc.free(buf);
-  }
-  calloc.free(outputImagePtr);
-  calloc.free(outputImageLen);
-  return bytes;
-}
+// Runs the picked-image FFI path inside a one-shot isolate so the (slow)
+// instance creation + OCR doesn't jank the UI thread. Creates and destroys a
+// transient DdrocrInstance for the single call.
+ProcessResult _runPickedImage(String appPath, String imagePath, int side) {
+  final createFn =
+      _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
+          'create_ocr_instance');
+  final destroyFn = _nativeLib
+      .lookupFunction<_c_destroyOcrInstance, _dart_destroyOcrInstance>(
+          'destroy_ocr_instance');
+  final processFn = _nativeLib
+      .lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
+          'process_picked_image');
 
-ProcessResult _buildAndFreeResult({
-  required Pointer<Int32> outputIsDetected,
-  required Pointer<Pointer<Int32>> outputRoisPtr,
-  required Pointer<Int32> outputRoisCount,
-  required Pointer<Int32> outputDetailsRoiIndex,
-  required Pointer<COCRStrings> outStrings,
-  Pointer<Pointer<Uint8>>? outputDebugMaskPtr,
-  Pointer<Int32>? outputDebugMaskLen,
-  Pointer<Pointer<Uint8>>? outputDebugCropPtr,
-  Pointer<Int32>? outputDebugCropLen,
-  Pointer<Pointer<Uint8>>? outputCapturePtr,
-  Pointer<Int32>? outputCaptureLen,
-}) {
-  final Uint8List? maskBytes =
-      _readAndFreeImage(outputDebugMaskPtr, outputDebugMaskLen);
-  final Uint8List? cropBytes =
-      _readAndFreeImage(outputDebugCropPtr, outputDebugCropLen);
-  final Uint8List? captureBytes =
-      _readAndFreeImage(outputCapturePtr, outputCaptureLen);
-  final ReturnImageType imageType = (maskBytes != null || cropBytes != null)
-      ? ReturnImageType.BytesImage
-      : ReturnImageType.None;
+  final dataPathPtr = appPath.toNativeUtf8();
+  final cfg = _buildOCRConfig();
+  final handle = createFn(dataPathPtr, cfg);
+  calloc.free(dataPathPtr);
+  calloc.free(cfg);
 
-  final Pointer<Int32> outputRois = outputRoisPtr.value;
-
-  if (outputRois == nullptr) {
-    calloc.free(outputRoisPtr);
-    calloc.free(outputIsDetected);
-    calloc.free(outputRoisCount);
-    calloc.free(outputDetailsRoiIndex);
-    _freeOcrStrings(outStrings);
-    return ProcessResult(DifficultyType.None, null, [], false,
-        imageType, maskBytes, cropBytes, captureBytes, -1, {});
-  }
-
-  final detectedRois = <Rectangle<int>>[];
-  for (int i = 0; i < outputRoisCount.value; i++) {
-    final base = i * 4;
-    detectedRois.add(Rectangle<int>(outputRois[base], outputRois[base + 1],
-        outputRois[base + 2], outputRois[base + 3]));
-  }
-
-  final result = ProcessResult(
-    DifficultyType.FFXI,
-    null,
-    detectedRois,
-    outputIsDetected.value != 0,
-    imageType,
-    maskBytes,
-    cropBytes,
-    captureBytes,
-    outputDetailsRoiIndex.value,
-    _readOcrStrings(outStrings),
-  );
-
-  calloc.free(outputRois);
-  calloc.free(outputRoisPtr);
-  calloc.free(outputIsDetected);
-  calloc.free(outputRoisCount);
-  calloc.free(outputDetailsRoiIndex);
-  _freeOcrStrings(outStrings);
-  return result;
-}
-
-Future<ProcessResult> _processPickedImage(
-    Pointer<Void> handle, ProcessPickedImageRequestParams params) async {
   final outputIsDetected = calloc<Int32>();
   final outputRoisCount = calloc<Int32>();
   final outputRoisPtr = calloc<Pointer<Int32>>();
   final outputDetailsRoiIndex = calloc<Int32>();
   final outStrings = calloc<COCRStrings>();
 
-  final imagePathPtr = params.imagePath.toNativeUtf8();
-  _processPickedImageFn(
+  final imagePathPtr = imagePath.toNativeUtf8();
+  processFn(
     handle,
     imagePathPtr,
     outputIsDetected,
@@ -435,316 +405,282 @@ Future<ProcessResult> _processPickedImage(
     outputRoisCount,
     outputDetailsRoiIndex,
     outStrings,
-    params.side.index,
+    side,
   );
   calloc.free(imagePathPtr);
 
-  return _buildAndFreeResult(
-    outputIsDetected: outputIsDetected,
-    outputRoisPtr: outputRoisPtr,
-    outputRoisCount: outputRoisCount,
-    outputDetailsRoiIndex: outputDetailsRoiIndex,
-    outStrings: outStrings,
-  );
-}
-
-Future<ProcessResult> _processFrame(
-    Pointer<Void> handle, ProcessImageRequestParams params) async {
-  final bytes = params.bytes.materialize().asUint8List();
-
-  final imgBuffer = calloc<Uint8>(bytes.length);
-  imgBuffer.asTypedList(bytes.length).setAll(0, bytes);
-
-  final outputIsDetected = calloc<Int32>();
-  final outputRoisCount = calloc<Int32>();
-  final outputRoisPtr = calloc<Pointer<Int32>>();
-  final outputDetailsRoiIndex = calloc<Int32>();
-  final outStrings = calloc<COCRStrings>();
-  final outputDebugMaskPtr = calloc<Pointer<Uint8>>();
-  final outputDebugMaskLen = calloc<Int32>();
-  final outputDebugCropPtr = calloc<Pointer<Uint8>>();
-  final outputDebugCropLen = calloc<Int32>();
-  final outputCapturePtr = calloc<Pointer<Uint8>>();
-  final outputCaptureLen = calloc<Int32>();
-
-  _processCameraImageFn(
-    handle,
-    params.width,
-    params.height,
-    params.bytesPerRow,
-    params.sensorOrientation,
-    imgBuffer,
-    outputIsDetected,
-    outputRoisPtr,
-    outputRoisCount,
-    outputDetailsRoiIndex,
-    outStrings,
-    params.debugImageType.index,
-    outputDebugMaskPtr,
-    outputDebugMaskLen,
-    outputDebugCropPtr,
-    outputDebugCropLen,
-    outputCapturePtr,
-    outputCaptureLen,
-    params.side.index,
-  );
-  calloc.free(imgBuffer);
-
-  return _buildAndFreeResult(
-    outputIsDetected: outputIsDetected,
-    outputRoisPtr: outputRoisPtr,
-    outputRoisCount: outputRoisCount,
-    outputDetailsRoiIndex: outputDetailsRoiIndex,
-    outStrings: outStrings,
-    outputDebugMaskPtr: outputDebugMaskPtr,
-    outputDebugMaskLen: outputDebugMaskLen,
-    outputDebugCropPtr: outputDebugCropPtr,
-    outputDebugCropLen: outputDebugCropLen,
-    outputCapturePtr: outputCapturePtr,
-    outputCaptureLen: outputCaptureLen,
-  );
-}
-
-void isolateEntryPoint(InitialRequest initReq) {
-  SendPort _toMainThread = initReq.toMainThread;
-
-  final dataPathPtr = initReq.appPath.toNativeUtf8();
-  final cfg = _buildOCRConfig();
-  final handle = _createOcrInstanceFn(dataPathPtr, cfg);
-  calloc.free(dataPathPtr);
-  calloc.free(cfg);
-
-  ReceivePort fromMainThread = ReceivePort();
-  fromMainThread.listen((data) {
-    if (data is Request) {
-      switch (data.type) {
-        case RequestType.ProcessPickedImage:
-          final params = ProcessPickedImageRequestParams(
-            imagePath: data.pickedImagePath!,
-            side: data.pickedImageSide!,
-          );
-          _processPickedImage(handle, params).then(_toMainThread.send);
-          break;
-        case RequestType.ProcessVideoImage:
-          _processFrame(handle, data.cameraParams!).then(_toMainThread.send);
-          break;
-        case RequestType.Shutdown:
-          _destroyOcrInstanceFn(handle);
-          fromMainThread.close();
-          Isolate.exit();
-      }
+  final outputRois = outputRoisPtr.value;
+  final detectedRois = <Rectangle<int>>[];
+  if (outputRois != nullptr) {
+    for (int i = 0; i < outputRoisCount.value; i++) {
+      final base = i * 4;
+      detectedRois.add(Rectangle<int>(outputRois[base], outputRois[base + 1],
+          outputRois[base + 2], outputRois[base + 3]));
     }
-  });
+  }
 
-  _toMainThread.send(fromMainThread.sendPort);
+  final result = ProcessResult(
+    outputRois == nullptr ? DifficultyType.None : DifficultyType.FFXI,
+    null,
+    detectedRois,
+    outputIsDetected.value != 0,
+    ReturnImageType.None,
+    null,
+    null,
+    null,
+    outputDetailsRoiIndex.value,
+    outputRois == nullptr ? {} : _readOcrStrings(outStrings),
+  );
+
+  if (outputRois != nullptr) calloc.free(outputRois);
+  calloc.free(outputRoisPtr);
+  calloc.free(outputIsDetected);
+  calloc.free(outputRoisCount);
+  calloc.free(outputDetailsRoiIndex);
+  _freeOcrStrings(outStrings);
+  destroyFn(handle);
+  return result;
 }
+
+// ---------------------------------------------------------------------------
+// OCRProcessor — owns the native camera+OCR session. A thin platform channel
+// hands back the preview texture id + an opaque session pointer; everything
+// after that is FFI: results arrive via a NativeCallable the C++ worker invokes,
+// and start/stop/setDebug are direct C calls. The picked-image path also stays
+// on FFI (run in a one-shot isolate).
+// ---------------------------------------------------------------------------
 
 class OCRProcessor {
+  // The channel exists ONLY to mint the Flutter texture (registry is
+  // platform-only) and hand back the native session pointer; no results flow
+  // through it.
+  static const MethodChannel _method =
+      MethodChannel('native_opencv/camera_ocr');
+
   Directory? tempDir;
   Directory? appDir;
 
-  // TODO: two controllers cos dynamic is gay
+  // Opaque pointer to the native CameraOcrSession, supplied by the channel.
+  Pointer<Void> _session = nullptr;
+
+  int? textureId;
+  // Preview output size in sensor (landscape) orientation, as the camera
+  // renders it. Dart rotates it for display via [previewQuarterTurns].
+  int previewWidth = 0;
+  int previewHeight = 0;
+  int sensorOrientation = 90;
+
+  // Quarter-turns to rotate the preview Texture so it displays upright (the
+  // camera delivers sensor-landscape frames; this matches the camera package's
+  // RotatedBox approach).
+  int get previewQuarterTurns => (sensorOrientation ~/ 90) % 4;
+
+  // Aspect ratio of the preview AS DISPLAYED (after rotation).
+  double get previewAspectRatio {
+    if (previewWidth <= 0 || previewHeight <= 0) return 0;
+    final odd = previewQuarterTurns.isOdd;
+    return odd ? previewHeight / previewWidth : previewWidth / previewHeight;
+  }
+
   final streamResultController = StreamController<ProcessResult>.broadcast();
 
   final ValueNotifier<bool> isProcessing = ValueNotifier(false);
   final ValueNotifier<bool> isDraining = ValueNotifier(false);
 
-  static const Duration _drainQuietWindow = Duration(milliseconds: 600);
-  Timer? _drainTimer;
+  // NativeCallable the C++ OCR worker invokes per processed frame.
+  NativeCallable<_ResultCallbackNative>? _resultCallable;
 
-  bool get _isProcessing => isProcessing.value;
-  set _isProcessing(bool v) => isProcessing.value = v;
-  ReceivePort fromIsolate = ReceivePort();
-  SendPort? toIsolate;
-  Isolate? _isolate;
+  DebugImageType _debugImageType = DebugImageType.none;
+
+  DebugImageType get debugImageType => _debugImageType;
+  set debugImageType(DebugImageType v) {
+    _debugImageType = v;
+    if (_session != nullptr) {
+      _cameraSetDebugFn(_session, v == DebugImageType.on ? 1 : 0);
+    }
+  }
+
+  // Which player's panel to OCR. Plumbed to the native camera session (live
+  // path) and passed per-call on the picked-image path. Settable mid-session.
+  DetectionSide _side = DetectionSide.left;
+
+  DetectionSide get side => _side;
+  set side(DetectionSide v) {
+    _side = v;
+    if (_session != nullptr) {
+      _cameraSetSideFn(_session, v.index);
+    }
+  }
+
+  // Invoked on the main isolate by the NativeCallable.listener. Copies the
+  // result out and frees the native buffer.
+  void _onNativeResult(Pointer<CCameraResult> p) {
+    if (p == nullptr) return;
+    try {
+      final result = ProcessResult.fromNative(p);
+      streamResultController.add(result);
+    } finally {
+      _cameraFreeResultFn(p.cast());
+    }
+  }
 
   Future<void> init() async {
     tempDir = await getTemporaryDirectory();
     appDir = await getApplicationDocumentsDirectory();
-    await loadModels();
-  }
+    await _loadNativeAssets();
 
-  Future<void> loadModels() async {
-    if (!Platform.isAndroid && !Platform.isIOS) {
-      print('Skipping model copy on unsupported platform: ${Platform.operatingSystem}');
-      return;
-    }
-
-    final modelsDir = Directory(path.join(appDir!.path, 'models'));
-    if (!await modelsDir.exists()) {
-      await modelsDir.create(recursive: true);
-    }
-    final templatesDir = Directory(path.join(appDir!.path, 'templates'));
-    if (!await templatesDir.exists()) {
-      await templatesDir.create(recursive: true);
-    }
-
-    const modelAssets = [
-      'assets/models/ppocr_mobile_rec.onnx',
-      'assets/models/ppocr_mobile_det.onnx',
-      'assets/models/ppocrv5_dict.txt',
-      // Reference crop used by DetailsDetector::classify for cv::matchTemplate.
-      // Optional: if missing, native side logs a warning and the Details ROI
-      // selection silently fails (no fallback OCR).
-      'assets/templates/details.png',
-    ];
-
-    for (final assetPath in modelAssets) {
-      // Route assets to the directory matching their subpath under assets/:
-      // assets/models/*    -> <appDir>/models/
-      // assets/templates/* -> <appDir>/templates/
-      // Anything else falls back to modelsDir.
-      final Directory targetDir = assetPath.startsWith('assets/templates/')
-          ? templatesDir
-          : modelsDir;
-      final targetFile =
-          File(path.join(targetDir.path, path.basename(assetPath)));
-      if (await targetFile.exists()) {
-        print('Asset already exists, skipping: ${targetFile.path}');
-        continue;
-      }
-      try {
-        final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
-        await targetFile.writeAsBytes(bytes, flush: true);
-        print('Copied asset $assetPath -> ${targetFile.path}');
-      } catch (e) {
-        // Det model + template are optional. If missing the native side
-        // logs and the corresponding feature degrades gracefully.
-        print('Asset missing or failed to load: $assetPath ($e)');
-      }
-    }
-
-    print('Models loaded to ${modelsDir.path}');
-  }
-
-  Future<void> initActor() {
-    final completer = Completer<void>();
-    final tempPath = tempDir!.path;
-    final appPath = appDir!.path;
-
-    Isolate.spawn(isolateEntryPoint,
-            InitialRequest(fromIsolate.sendPort, tempPath, appPath))
-        .then((isolate) {
-      _isolate = isolate;
-      fromIsolate.listen((data) {
-        if (data is SendPort) {
-          toIsolate = data;
-          completer.complete();
-        } else if (data is ProcessResult) {
-          _isProcessing = false;
-          streamResultController.add(data);
-        }
+    // The native camera session only exists on mobile. The picked-image (FFI)
+    // path doesn't need it, so a failure here is non-fatal.
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    try {
+      // The channel mints the preview texture and the native session, built
+      // with the SAME calibration as the FFI path (lib/ocr_config.dart).
+      final (cfgInts, cfgDoubles) = _buildCameraConfigArrays();
+      final res = await _method.invokeMapMethod<String, dynamic>('initialize', {
+        'dataPath': appDir!.path,
+        'cfgInts': cfgInts,
+        'cfgDoubles': cfgDoubles,
       });
-    });
-    return completer.future;
-  }
+      if (res == null) return;
+      textureId = res['textureId'] as int?;
+      previewWidth = (res['previewWidth'] as int?) ?? 0;
+      previewHeight = (res['previewHeight'] as int?) ?? 0;
+      sensorOrientation = (res['sensorOrientation'] as int?) ?? 90;
+      final sessionAddr = (res['sessionPtr'] as int?) ?? 0;
+      _session = Pointer<Void>.fromAddress(sessionAddr);
 
-  DebugImageType debugImageType = DebugImageType.none;
-  DetectionSide side = DetectionSide.left;
-
-  int MAX_SKIPPED_FRAMES = 20;
-
-  int _cameraFrames = 0;
-  int skippedFrames = 0;
-  int FRAME_THRESHOLD = 3;
-
-  void panicFromNotProcessing() {
-    _isProcessing = false;
-    skippedFrames = 0;
-    print('Panic reset of OCR processing state invoked. Continuing without dispose.');
-  }
-
-  void beginDraining() {
-    isDraining.value = true;
-    _armDrainTimer();
-  }
-
-  void cancelDraining() {
-    _drainTimer?.cancel();
-    isDraining.value = false;
-  }
-
-  void _armDrainTimer() {
-    _drainTimer?.cancel();
-    _drainTimer = Timer(_drainQuietWindow, () {
-      if (_isProcessing) {
-        _armDrainTimer();
-      } else {
-        isDraining.value = false;
+      if (_session != nullptr) {
+        // Register the FFI result callback up-front; the native worker calls it
+        // per processed frame between start() and stop().
+        _resultCallable =
+            NativeCallable<_ResultCallbackNative>.listener(_onNativeResult);
+        _cameraRegisterFn(_session, _resultCallable!.nativeFunction);
+        // Push the side chosen before the session existed (the UI sets it in
+        // initState, ahead of init()).
+        _cameraSetSideFn(_session, _side.index);
       }
-    });
+    } catch (e) {
+      print('Native camera session init failed (picked-image still works): $e');
+    }
+  }
+
+  Future<void> _loadNativeAssets() async {
+    const assets = [
+      'assets/templates/details.png',
+      'assets/models/ppocr_mobile_det.onnx',
+      'assets/models/ppocr_mobile_rec.onnx',
+      'assets/models/ppocrv5_dict.txt',
+      'assets/models/ppocr_tiny_det.onnx',
+      'assets/models/ppocr_tiny_rec.onnx',
+      'assets/models/ppocrv6_dict.txt',
+      'assets/models/ppocr_small_det.onnx',
+      'assets/models/ppocr_small_rec.onnx',
+      'assets/models/ppocrv6_small_dict.txt',
+    ];
+    for (final assetPath in assets) {
+      final segments = assetPath.split('/');
+      final subdir = Directory(path.join(appDir!.path, segments[1]));
+      if (!await subdir.exists()) {
+        await subdir.create(recursive: true);
+      }
+      final target = File(path.join(subdir.path, segments.last));
+      final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
+      await target.writeAsBytes(bytes, flush: true);
+      print('Copied $assetPath -> ${target.path}');
+    }
+  }
+
+// Serialises lib/ocr_config.dart into the flat (ints, doubles) arrays the
+  // native camera session reconstructs into a COCRConfig. Field order MUST match
+  // config_marshal.h::BuildCOCRConfigFromArrays.
+  (Int32List, Float64List) _buildCameraConfigArrays() {
+    final ints = Int32List(83);
+    ints[0] = ocrBorder;
+    ints[1] = ocrPsmEng;
+    ints[2] = ocrPsmEngJP;
+    ints[3] = ocrGaussianBlurSize;
+    ints[4] = ocrTophatKernelSize;
+    ints[5] = ocrMorphWidth;
+    ints[6] = ocrMorphHeight;
+    int k = 7;
+    for (int r = 0; r < 12; r++) {
+      final (rect, (ex, ey)) = ocrRoi[r];
+      ints[k++] = rect[roiX1];
+      ints[k++] = rect[roiY1];
+      ints[k++] = rect[roiX2];
+      ints[k++] = rect[roiY2];
+      ints[k++] = ex;
+      ints[k++] = ey;
+    }
+    for (int c = 0; c < 4; c++) {
+      ints[k++] = ocrCombinedRoi[c];
+    }
+
+    final doubles = Float64List(5);
+    doubles[0] = ocrSimplificationEpsilon;
+    doubles[1] = ocrAreaMinFactor;
+    doubles[2] = ocrAreaMaxFactor;
+    doubles[3] = ocrResolutionScale;
+    doubles[4] = ocrDetailsTemplateMinScore;
+    return (ints, doubles);
+  }
+
+  bool get isReady => textureId != null;
+
+  // Starts the live camera stream + OCR loop (direct FFI). Results flow on the
+  // NativeCallable registered in init().
+  Future<void> start() async {
+    if (_session == nullptr) return;
+    isDraining.value = false;
+    final ok = _cameraStartFn(_session, _debugImageType == DebugImageType.on ? 1 : 0);
+    if (ok == 0) {
+      throw PlatformException(
+          code: 'camera_start_failed', message: 'Could not start camera');
+    }
+    isProcessing.value = true;
+  }
+
+  // Stops the camera stream + OCR worker (direct FFI). camera_stop blocks until
+  // any in-flight frame is flushed, so the result is settled when it returns.
+  Future<void> stop() async {
+    isProcessing.value = false;
+    if (_session == nullptr) return;
+    isDraining.value = true;
+    try {
+      _cameraStopFn(_session);
+    } finally {
+      isDraining.value = false;
+    }
   }
 
   void processPickedImage(XFile image) async {
     print('Processing image from file: ${image.path}');
-    final request = Request.fromFile(
-      RequestType.ProcessPickedImage,
-      image.path,
-      side,
-    );
-    _isProcessing = true;
-    toIsolate?.send(request);
-  }
-
-  void processVideostreamFrame(CameraImage image, int sensorOrientation) {
-    _cameraFrames++;
-    if (_cameraFrames % FRAME_THRESHOLD != 0) {
-      return;
+    isProcessing.value = true;
+    try {
+      final appPath = appDir!.path;
+      final imagePath = image.path;
+      final sideIndex = _side.index;
+      final result =
+          await Isolate.run(() => _runPickedImage(appPath, imagePath, sideIndex));
+      streamResultController.add(result);
+    } catch (e) {
+      print('Picked image processing failed: $e');
+    } finally {
+      isProcessing.value = false;
     }
-
-    if (_isProcessing) {
-      skippedFrames++;
-      if (skippedFrames > MAX_SKIPPED_FRAMES) {
-        panicFromNotProcessing();
-      }
-      return;
-    }
-
-    Uint8List bytes;
-    int bytesPerRow = 0;
-    if (image.format.group == ImageFormatGroup.yuv420) {
-      final planes = image.planes;
-      final yBuffer = planes[0].bytes;
-      final uBuffer = planes[1].bytes;
-      final vBuffer = planes[2].bytes;
-      final totalSize =
-          yBuffer.lengthInBytes + uBuffer.lengthInBytes + vBuffer.lengthInBytes;
-      bytes = Uint8List(totalSize);
-      bytes.setAll(0, yBuffer);
-      // NV21: V before U.
-      bytes.setAll(yBuffer.lengthInBytes, vBuffer);
-      bytes.setAll(yBuffer.lengthInBytes + vBuffer.lengthInBytes, uBuffer);
-    } else {
-      bytes = image.planes.first.bytes;
-      bytesPerRow = image.planes.first.bytesPerRow;
-    }
-
-    final params = ProcessImageRequestParams(
-      bytes: TransferableTypedData.fromList([bytes]),
-      width: image.width,
-      height: image.height,
-      bytesPerRow: bytesPerRow,
-      sensorOrientation: sensorOrientation,
-      side: side,
-      debugImageType: debugImageType,
-    );
-
-    final request = Request.fromCamera(RequestType.ProcessVideoImage, params);
-    _isProcessing = true;
-    if (isDraining.value) _armDrainTimer();
-    toIsolate?.send(request);
   }
 
   void dispose() {
-    _drainTimer?.cancel();
     isProcessing.dispose();
     isDraining.dispose();
-    final request = Request.death();
-    fromIsolate.sendPort.send(request);
-    fromIsolate.close();
-
-    _isolate?.kill(priority: Isolate.immediate);
-
+    // Tear down the native session (channel releases the platform texture and
+    // destroys the C++ session) before closing the callback it could invoke.
+    if (_session != nullptr) {
+      _method.invokeMethod('dispose', {'sessionPtr': _session.address});
+      _session = nullptr;
+    }
+    _resultCallable?.close();
+    _resultCallable = null;
     streamResultController.close();
   }
 }

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OCR Ground-Truth Classifier</title>
+<style>
+  :root {
+    --bg:#1e1e1e; --panel:#252525; --border:#3a3a3a; --txt:#ddd;
+    --muted:#888; --accent:#4af; --good:#2e7d32; --bad:#5a2020;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:13px; }
+  header { position:sticky; top:0; z-index:5; background:var(--panel);
+    border-bottom:1px solid var(--border); padding:10px 16px;
+    display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-left:auto; }
+  label.btn, button { background:#3a3a3a; color:var(--txt); border:1px solid #555;
+    padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px; }
+  label.btn:hover, button:hover { background:#4a4a4a; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:#2e5d8a; border-color:#3a7; }
+  .meta { color:var(--muted); font-size:12px; }
+  main { display:flex; gap:16px; padding:16px; align-items:flex-start; }
+  #imgpane { flex:1; min-width:0; position:sticky; top:64px; }
+  #imgpane img { width:100%; border:1px solid var(--border); border-radius:6px; background:#111; }
+  #imgpane .cap { color:var(--muted); margin-top:6px; font-size:12px;
+    display:flex; justify-content:space-between; align-items:center; }
+  #form { width:380px; background:var(--panel); border:1px solid var(--border);
+    border-radius:6px; padding:14px; }
+  #form h2 { font-size:13px; margin:0 0 10px; color:var(--accent); }
+  .field { margin-bottom:10px; }
+  .field label { display:block; font-size:11px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; }
+  .field input { width:100%; background:#1a1a1a; color:var(--txt);
+    border:1px solid #555; border-radius:4px; padding:7px 9px; font-size:14px;
+    font-family:"SF Mono",Menlo,monospace; }
+  .field input:focus { outline:none; border-color:var(--accent); }
+  .field.done input { border-color:var(--good); }
+  .nav { display:flex; gap:8px; margin-top:12px; }
+  .nav button { flex:1; }
+  #progress { height:6px; background:#111; border-radius:3px; overflow:hidden; margin-top:10px; }
+  #progress > div { height:100%; background:var(--accent); width:0; transition:width .2s; }
+  #imglist { margin-top:14px; max-height:260px; overflow:auto; border-top:1px solid var(--border); padding-top:10px; }
+  .imgrow { display:flex; justify-content:space-between; padding:4px 6px; border-radius:4px;
+    cursor:pointer; font-size:12px; font-family:"SF Mono",Menlo,monospace; }
+  .imgrow:hover { background:#333; }
+  .imgrow.active { background:#2e5d8a; }
+  .imgrow .tick { color:var(--good); }
+  .imgrow .tick.empty { color:#555; }
+  #drop { border:2px dashed #555; border-radius:8px; padding:50px; text-align:center;
+    color:var(--muted); margin:60px auto; max-width:600px; }
+  code { background:#111; padding:1px 5px; border-radius:3px; color:#9cf; }
+  kbd { background:#333; border:1px solid #555; border-bottom-width:2px; border-radius:3px;
+    padding:1px 5px; font-size:11px; }
+  .hint { color:var(--muted); font-size:11px; margin-top:8px; line-height:1.6; }
+</style>
+</head>
+<body>
+<header>
+  <h1>OCR Ground-Truth Classifier</h1>
+  <span class="meta" id="summary">No images loaded</span>
+  <div class="controls">
+    <label class="btn">Load images<input type="file" id="imgInput" accept="image/*" multiple hidden></label>
+    <label class="btn" title="Resume: load an existing classified.csv, then Load images">Load classified.csv<input type="file" id="draftInput" accept=".csv" hidden></label>
+    <button id="exportBtn" class="primary" disabled>Export classified.csv</button>
+  </div>
+</header>
+<main id="main" style="display:none">
+  <div id="imgpane">
+    <img id="curImg" alt="">
+    <div class="cap"><span id="curName"></span><span id="curIdx"></span></div>
+  </div>
+  <div id="form">
+    <h2>Ground truth (leave blank to skip a field)</h2>
+    <div id="fields"></div>
+    <div class="nav">
+      <button id="prevBtn">◀ Prev</button>
+      <button id="nextBtn">Next ▶</button>
+    </div>
+    <div id="progress"><div></div></div>
+    <div class="hint">
+      <kbd>Enter</kbd> next field · <kbd>Tab</kbd> move · <kbd>Alt+→</kbd>/<kbd>Alt+←</kbd> next/prev image.<br>
+      Progress autosaves to this browser; <b>Load draft</b> restores a partial classified.csv.
+    </div>
+    <div id="imglist"></div>
+  </div>
+</main>
+<div id="drop">
+  Click <b>Load images</b> and select your test screenshots (multi-select).<br><br>
+  Label each image's fields, then <b>Export classified.csv</b>.<br>
+  That CSV plugs into <code>results_viewer.html</code> for deterministic pass/fail.<br><br>
+  <b>Resuming?</b> Click <b>Load classified.csv</b> first (or after) to restore
+  previous labels — matching image names auto-fill so you continue where you left off.
+</div>
+
+<script>
+// Fields to label — must match what results_viewer compares against.
+const FIELDS = ["score","marvelous","perfect","great","good","miss","max_combo","title"];
+const NUMERIC = new Set(["score","marvelous","perfect","great","good","miss","max_combo"]);
+const LS_KEY = "ocr_classified_draft_v1";
+
+let imgs = [];        // [{name, url}]
+let truth = {};       // image -> { field -> value }
+let cur = 0;
+
+const $ = id => document.getElementById(id);
+
+// ---- load images ----
+$("imgInput").addEventListener("change", e => {
+  const files = [...e.target.files].filter(f => f.type.startsWith("image/"));
+  if (!files.length) return;
+  imgs.forEach(i => URL.revokeObjectURL(i.url));
+  imgs = files.map(f => ({ name: f.name, url: URL.createObjectURL(f) }))
+              .sort((a,b) => a.name.localeCompare(b.name));
+  // keep any truth we already have for matching names (from draft / prior load)
+  cur = 0;
+  $("drop").style.display = "none";
+  $("main").style.display = "flex";
+  loadDraftFromLS();
+  renderForm();
+  renderList();
+  updateSummary();
+});
+
+// ---- draft persistence ----
+function saveLS() { localStorage.setItem(LS_KEY, JSON.stringify(truth)); }
+function loadDraftFromLS() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    for (const k in d) if (!truth[k]) truth[k] = d[k];
+  } catch {}
+}
+
+$("draftInput").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(text => {
+    const parsed = parseClassifiedCSV(text);
+    if (!parsed) return; // not a classified.csv
+    let rows = 0;
+    for (const k in parsed) {
+      truth[k] = Object.assign(truth[k] || {}, parsed[k]);
+      rows += Object.keys(parsed[k]).length;
+    }
+    saveLS();
+    // Works before OR after images are loaded. If images aren't in yet, the
+    // values are held in `truth` and applied as soon as matching names load.
+    if (imgs.length) { renderForm(); renderList(); updateSummary(); }
+    else {
+      const imgsCount = Object.keys(parsed).length;
+      $("summary").textContent =
+        `Loaded draft: ${rows} truth rows across ${imgsCount} images — now Load images to continue`;
+    }
+  });
+});
+
+// classified.csv -> { image: { field: value } }
+function parseClassifiedCSV(text) {
+  const grid = parseCSV(text);
+  if (!grid.length) return null;
+  const h = grid[0];
+  const iImg = h.indexOf("image"), iField = h.indexOf("field"), iTruth = h.indexOf("truth");
+  if (iImg < 0 || iField < 0 || iTruth < 0) { alert("Not a classified.csv (need image,field,truth)"); return null; }
+  const out = {};
+  for (const r of grid.slice(1)) {
+    if (r.length <= Math.max(iImg,iField,iTruth)) continue;
+    const v = (r[iTruth] || "").trim();
+    if (!v) continue; // skip blanks — only restore fields that were labeled
+    (out[r[iImg]] ||= {})[r[iField]] = v;
+  }
+  return out;
+}
+
+// ---- rendering ----
+function curImage() { return imgs[cur]; }
+
+function renderForm() {
+  const im = curImage(); if (!im) return;
+  $("curImg").src = im.url;
+  $("curName").textContent = im.name;
+  $("curIdx").textContent = `${cur+1} / ${imgs.length}`;
+  const t = truth[im.name] || (truth[im.name] = {});
+  const wrap = $("fields");
+  wrap.innerHTML = "";
+  FIELDS.forEach((f, i) => {
+    const div = document.createElement("div");
+    div.className = "field" + (t[f] ? " done" : "");
+    const isNum = NUMERIC.has(f);
+    div.innerHTML = `<label>${f}${isNum ? "" : "  (text)"}</label>
+      <input data-field="${f}" type="text" inputmode="${isNum ? "numeric" : "text"}"
+             value="${(t[f]||"").replace(/"/g,"&quot;")}" placeholder="${isNum ? "digits" : "text"}">`;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll("input").forEach((inp, i, arr) => {
+    inp.addEventListener("input", () => {
+      const f = inp.dataset.field;
+      const v = inp.value.trim();
+      if (v) t[f] = v; else delete t[f];
+      inp.closest(".field").classList.toggle("done", !!v);
+      saveLS(); updateSummary(); renderListTickOnly();
+    });
+    inp.addEventListener("keydown", ev => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        if (i + 1 < arr.length) arr[i+1].focus();
+        else $("nextBtn").focus();
+      }
+    });
+  });
+  const filled = FIELDS.filter(f => t[f]).length;
+  $("progress").firstElementChild.style.width = `${100*filled/FIELDS.length}%`;
+  arrUpdateNavButtons();
+  // focus first field for fast entry
+  const first = wrap.querySelector("input"); if (first) first.focus();
+}
+
+function arrUpdateNavButtons() {
+  $("prevBtn").disabled = cur === 0;
+  $("nextBtn").disabled = cur === imgs.length - 1;
+}
+
+function renderList() {
+  const list = $("imglist");
+  list.innerHTML = "";
+  imgs.forEach((im, i) => {
+    const row = document.createElement("div");
+    row.className = "imgrow" + (i === cur ? " active" : "");
+    row.dataset.idx = i;
+    const filled = FIELDS.filter(f => (truth[im.name]||{})[f]).length;
+    row.innerHTML = `<span>${im.name}</span>
+      <span class="tick ${filled ? "" : "empty"}">${filled ? filled + "/" + FIELDS.length : "—"}</span>`;
+    row.addEventListener("click", () => { cur = i; renderForm(); renderList(); });
+    list.appendChild(row);
+  });
+}
+// lighter update: just refresh tick counts without rebuilding handlers
+function renderListTickOnly() {
+  $("imglist").querySelectorAll(".imgrow").forEach(row => {
+    const im = imgs[+row.dataset.idx];
+    const filled = FIELDS.filter(f => (truth[im.name]||{})[f]).length;
+    const tick = row.querySelector(".tick");
+    tick.textContent = filled ? filled + "/" + FIELDS.length : "—";
+    tick.classList.toggle("empty", !filled);
+  });
+}
+
+function updateSummary() {
+  const labeled = imgs.filter(im => FIELDS.some(f => (truth[im.name]||{})[f])).length;
+  const rows = imgs.reduce((n, im) => n + FIELDS.filter(f => (truth[im.name]||{})[f]).length, 0);
+  $("summary").textContent = `${labeled}/${imgs.length} images labeled · ${rows} truth rows`;
+  $("exportBtn").disabled = rows === 0;
+}
+
+// ---- nav ----
+function go(delta) {
+  const n = cur + delta;
+  if (n < 0 || n >= imgs.length) return;
+  cur = n; renderForm(); renderList();
+}
+$("prevBtn").addEventListener("click", () => go(-1));
+$("nextBtn").addEventListener("click", () => go(1));
+document.addEventListener("keydown", ev => {
+  if (ev.altKey && ev.key === "ArrowRight") { ev.preventDefault(); go(1); }
+  if (ev.altKey && ev.key === "ArrowLeft")  { ev.preventDefault(); go(-1); }
+});
+
+// ---- export ----
+$("exportBtn").addEventListener("click", () => {
+  let csv = "image,field,truth\n";
+  // Stable order: image (sorted) then FIELDS order. Skip blanks.
+  const names = imgs.map(i => i.name);
+  for (const name of names) {
+    const t = truth[name] || {};
+    for (const f of FIELDS) {
+      const v = (t[f] || "").trim();
+      if (!v) continue;
+      csv += `${csvQuote(name)},${f},${csvQuote(v)}\n`;
+    }
+  }
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "classified.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
+// ---- CSV helpers ----
+function csvQuote(s) {
+  s = String(s);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function parseCSV(text) {
+  const out = []; let field = "", row = [], inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i+1] === "\n") i++;
+        if (field !== "" || row.length) { row.push(field); out.push(row); row = []; field = ""; }
+      } else field += c;
+    }
+  }
+  if (field !== "" || row.length) { row.push(field); out.push(row); }
+  return out;
+}
+</script>
+</body>
+</html>

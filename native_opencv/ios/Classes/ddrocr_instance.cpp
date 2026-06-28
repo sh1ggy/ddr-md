@@ -45,8 +45,9 @@ static const int ROI_IDX_USERNAME   = 9;
 static const int ROI_IDX_DIFFICULTY = 10;
 static const int ROI_IDX_MAXCOMBO   = 11;
 
-DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg)
-    : dataPath(dataPath), ocrWrapper(dataPath), detailsDetector(dataPath)
+DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg,
+                               const ModelSet *models)
+    : dataPath(dataPath), ocrWrapper(dataPath, models), detailsDetector(dataPath)
 {
     setConfig(cfg);
     platform_log("DdrocrInstance initialized (template-based details=%s)\n",
@@ -111,12 +112,25 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
     return display;
 }
 
-ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side,
-                                               DebugImageType debugImageType)
+// ---------------------------------------------------------------------------
+// Phase 1: cheap Details detection. Runs every frame on the detector thread.
+// Returns a DetailsDetectResult whose `result` holds the overlay/diagnostic
+// fields; when `matched` is true it also carries the geometry recognise_details
+// needs. NO PaddleOCR runs here.
+// ---------------------------------------------------------------------------
+DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSide side,
+                                                   DebugImageType debugImageType)
 {
-    ProcessImgResult result;
+    DetailsDetectResult det;
+    det.side = side;
+    det.debugImageType = debugImageType;
+    ProcessImgResult &result = det.result;
 
-    // Create a timestamped directory for all debug images from this run
+    // Create a timestamped directory for all debug images from this run.
+    // Only when debug capture is requested — otherwise (e.g. the offline
+    // model-compare harness, which passes NONE) we'd litter dataPath with an
+    // empty timestamped dir on every frame.
+    if (debugImageType != DebugImageType::NONE && diskDebug)
     {
         auto now = std::chrono::system_clock::now();
         auto time_t_now = std::chrono::system_clock::to_time_t(now);
@@ -132,7 +146,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             << "_" << std::setfill('0') << std::setw(3) << ms.count();
         debugDir = oss.str();
         mkdir(debugDir.c_str(), 0755);
-        ocrWrapper.debugDir = debugDir;
+        // ocr_input_*.png crops (one per recognised box) live in a rois/
+        // subdir to keep the parent dir scannable.
+        const std::string roisDir = debugDir + "/rois";
+        mkdir(roisDir.c_str(), 0755);
+        ocrWrapper.debugDir = roisDir;
         platform_log("[DEBUG] output dir: %s\n", debugDir.c_str());
     }
 
@@ -243,7 +261,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     {
         platform_log("No OCR ROI detected, defaulting to full image\n");
         result.isDetected = 0;
-        return result;
+        return det;
     }
 
     // Debug: hand back the HSV mask as the debug overlay
@@ -253,13 +271,8 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     checkpoint("image preprocessing", t_rolling_timer);
 
     // ----- Details detection via template matching -----
-    //
-    // Earlier pipelines used Tesseract (eng.fast, PSM_SINGLE_WORD) and then
-    // PaddleOCR rec to recognise the literal word "Details" inside each HSV
-    // blob candidate. Both were expensive and accuracy-fragile for what is a
-    // fixed, visually-constant UI element. DetailsDetector uses cv::matchTemplate
-    // against a stored reference crop — deterministic, ~order of magnitude
-    // faster, and easier to debug.
+    // DetailsDetector uses cv::matchTemplate against a stored reference crop —
+    // deterministic and fast, since the "Details" badge is a fixed UI element.
     //
     // If no template ships with the build, classify() returns -1 and we report
     // "no Details ROI matched" — the same failure mode the previous OCR-based
@@ -287,6 +300,11 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     const float minScore = (float)config.details_template_min_score;
     DetailsDetector::Match dmatch =
         detailsDetector.classify(inputImg, detectedRois, minScore);
+
+    // Surface template-match diagnostics for offline tooling/debug.
+    result.detailsMatchScore     = dmatch.score;
+    result.detailsMatchScale     = dmatch.scale;
+    result.detailsCandidateCount = (int32_t)detectedRois.size();
 
     // For DetectionSide::LEFT/RIGHT we need *all* viable matches, not just
     // the best one. Re-run a small loop to collect every candidate that
@@ -336,7 +354,7 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         platform_log("[TIMER] process_image total (no Details found): %lld ms\n", (long long)t_total_ms);
         platform_log("Details template match failed (best score=%.3f). Defaulting to no match.\n", dmatch.score);
         result.detailsRoiIndex = -1;
-        return result;
+        return det;
     }
 
     // Pick correct_roi_idx from detectedDetailsIndices based on DetectionSide
@@ -382,6 +400,44 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     if (correct_roi_idx >= 0 && !inputImg.empty())
         result.colorCapture = inputImg.clone();
 
+    // ----- End of phase 1 -----
+    // A badge matched. Phase 2 (recognise_details) needs the chosen contour to
+    // build the homography. If we don't have a usable contour for it, treat this
+    // as detected-but-not-recognisable and let the consumer skip OCR.
+    if (correct_roi_idx >= 0 &&
+        correct_roi_idx < (int)result.rois.size() &&
+        correct_roi_idx < (int)contours_final.size())
+    {
+        det.matched = true;
+        det.inputImg = inputImg.clone(); // owned hand-off to the consumer thread
+        det.chosenHull = contours_final[correct_roi_idx];
+    }
+    else
+    {
+        platform_log("Not enough ROIs detected, defaulting to first detected ROI\n");
+        result.isDetected = 1;
+    }
+    return det;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: expensive homography warp + PaddleOCR det/rec. Runs on the consumer
+// thread from a matched DetailsDetectResult.
+// ---------------------------------------------------------------------------
+ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &det)
+{
+    ProcessImgResult result = det.result;
+    if (!det.matched)
+        return result;
+
+    const cv::Mat &inputImg = det.inputImg;
+    const DetectionSide side = det.side;
+    const DebugImageType debugImageType = det.debugImageType;
+    const int correct_roi_idx = result.detailsRoiIndex;
+    const std::vector<cv::Rect> &detectedRois = result.rois;
+
+    auto t_total_start = std::chrono::high_resolution_clock::now();
+
     // Create offsets for score OCR (driven by config)
     auto roiRect = [&](int i) {
         return offsetToRoi(cv::Point(config.roi[i][0], config.roi[i][1]),
@@ -400,16 +456,10 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     cv::Rect ROI_Difficulty = roiRect(ROI_IDX_DIFFICULTY);
     cv::Rect ROI_MaxCombo   = roiRect(ROI_IDX_MAXCOMBO);
 
-    if (result.rois.size() <= correct_roi_idx)
-    {
-        platform_log("Not enough ROIs detected, defaulting to first detected ROI\n");
-        result.isDetected = 1;
-        return result;
-    }
-
-    // Using regionprops Convex hull method
+    // Using regionprops Convex hull method (det.chosenHull is the contour the
+    // detector picked for the matched Details ROI).
     std::vector<cv::Point> hull;
-    cv::convexHull(contours_final[correct_roi_idx], hull);
+    cv::convexHull(det.chosenHull, hull);
 
     // Approximate polygon
     std::vector<cv::Point> approx;
@@ -500,6 +550,16 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
         ROI_Combined.height);
     roi_combined_warped &= cv::Rect(0, 0, warpedImg.cols, warpedImg.rows);
 
+    // Map a per-field anchor rect (in config-roi coords) into combinedCrop
+    // local coords. Used by the picker below and by the debug renderer.
+    auto fieldInCombinedCrop = [&](const cv::Rect &fieldRoi) -> cv::Rect {
+        cv::Point2d fOff(fieldRoi.x - ROI_Combined.x,
+                         fieldRoi.y - ROI_Combined.y);
+        return cv::Rect(
+            (int)std::round(fOff.x), (int)std::round(fOff.y),
+            fieldRoi.width, fieldRoi.height);
+    };
+
     std::vector<DetectedText> detections;
     if (roi_combined_warped.width > 0 && roi_combined_warped.height > 0)
     {
@@ -510,24 +570,77 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
             combinedCrop, OCRType::Digit, "combined");
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t0).count();
+        result.combinedDetectRecMs = (int64_t)ms;
         platform_log("[TIMER] combined detect+rec: %lld ms, %zu boxes\n",
                      (long long)ms, detections.size());
-    }
 
-    // Map each detection (in combined-crop coords) back to warped-image coords
-    // by shifting by roi_combined_warped.tl(), then translate to the
-    // "config.roi anchor" space the per-field rects live in by undoing the
-    // warped_details_top_left + offset transform — i.e. add ROI_Combined.tl()
-    // and subtract roi_combined_warped.tl() == add ROI_Combined.tl() net.
-    // Simpler: compare each detection rect to the per-field anchor rect after
-    // mapping anchor into combined-crop coords.
-    auto fieldInCombinedCrop = [&](const cv::Rect &fieldRoi) -> cv::Rect {
-        cv::Point2d fOff(fieldRoi.x - ROI_Combined.x,
-                         fieldRoi.y - ROI_Combined.y);
-        return cv::Rect(
-            (int)std::round(fOff.x), (int)std::round(fOff.y),
-            fieldRoi.width, fieldRoi.height);
-    };
+        // When the debug toggle is on, render an annotated view of what
+        // PaddleOCR actually saw: detection boxes (green) with recognised text
+        // + confidence, and the per-field anchor rectangles (cyan) the picker
+        // matches detections against. Written to debugDir as paddle_detect.png
+        // (cv::imwrite directly so it survives NDEBUG release builds).
+        if (debugImageType == DebugImageType::ON)
+        {
+            cv::Mat annotated;
+            if (combinedCrop.channels() == 1)
+                cv::cvtColor(combinedCrop, annotated, cv::COLOR_GRAY2BGR);
+            else
+                annotated = combinedCrop.clone();
+
+            const std::pair<const char *, cv::Rect> anchors[] = {
+                {"score",     fieldInCombinedCrop(ROI_Score)},
+                {"marvelous", fieldInCombinedCrop(ROI_Marvelous)},
+                {"perfect",   fieldInCombinedCrop(ROI_Perfect)},
+                {"great",     fieldInCombinedCrop(ROI_Great)},
+                {"good",      fieldInCombinedCrop(ROI_Good)},
+                {"miss",      fieldInCombinedCrop(ROI_Miss)},
+                {"flare",     fieldInCombinedCrop(ROI_Flare)},
+                {"max_combo", fieldInCombinedCrop(ROI_MaxCombo)},
+            };
+            const cv::Rect cropBounds(0, 0, annotated.cols, annotated.rows);
+            for (const auto &a : anchors)
+            {
+                cv::Rect r = a.second & cropBounds;
+                if (r.width <= 0 || r.height <= 0) continue;
+                cv::rectangle(annotated, r, cv::Scalar(255, 255, 0), 1);
+                cv::putText(annotated, a.first,
+                            cv::Point(r.x + 2, r.y + 12),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.35,
+                            cv::Scalar(255, 255, 0), 1, cv::LINE_AA);
+            }
+
+            for (const auto &d : detections)
+            {
+                cv::rectangle(annotated, d.box, cv::Scalar(0, 255, 0), 2);
+                char label[128];
+                snprintf(label, sizeof(label), "%s (%.2f)",
+                         d.result.text.c_str(), d.result.confidence);
+                int baseline = 0;
+                cv::Size ts = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX,
+                                              0.4, 1, &baseline);
+                int ty = std::max(ts.height + 2, d.box.y - 2);
+                cv::rectangle(annotated,
+                              cv::Rect(d.box.x, ty - ts.height - 2,
+                                       ts.width + 4, ts.height + 4),
+                              cv::Scalar(0, 0, 0), cv::FILLED);
+                cv::putText(annotated, label,
+                            cv::Point(d.box.x + 2, ty),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.4,
+                            cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+            }
+
+            // Hand the annotated crop back to the caller (offline harness uses
+            // it). Only write to disk when an app debug dir is configured.
+            result.detectAnnotated = annotated;
+            if (!debugDir.empty())
+            {
+                char path[512];
+                snprintf(path, sizeof(path), "%s/paddle_detect.png", debugDir.c_str());
+                cv::imwrite(path, annotated);
+                platform_log("wrote: %s (%zu det boxes)\n", path, detections.size());
+            }
+        }
+    }
 
     auto pickBestDetection = [&](const cv::Rect &fieldRoi) -> OCRResult {
         cv::Rect anchor = fieldInCombinedCrop(fieldRoi);
@@ -570,6 +683,55 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
     ocrResults.flare     = pickBestDetection(ROI_Flare);
     ocrResults.max_combo = pickBestDetection(ROI_MaxCombo);
 
+    // ----- Fixed-ROI fallback for numeric fields the detector missed -----
+    // When pickBestDetection found no overlapping detection box the result
+    // text is empty. Crop the field's anchor rect straight out of warpedImg
+    // (same offset/clamp logic as getPreprocessedRoiImage) and run the
+    // recogniser directly on it.
+    auto fixedRoiFallback = [&](const cv::Rect &ROI_Target,
+                                const std::string &fieldName) -> OCRResult {
+        if (warpedImg.empty()) return OCRResult{};
+
+        cv::Point2d offset(
+            ROI_Target.x - ROI_Details.x,
+            ROI_Target.y - ROI_Details.y);
+
+        cv::Rect roi_warped(
+            warped_details_top_left.x + offset.x,
+            warped_details_top_left.y + offset.y,
+            ROI_Target.width,
+            ROI_Target.height);
+
+        cv::Rect imgBounds(0, 0, warpedImg.cols, warpedImg.rows);
+        roi_warped &= imgBounds;
+
+        if (roi_warped.width <= 0 || roi_warped.height <= 0)
+            return OCRResult{};
+
+        cv::Mat crop = warpedImg(roi_warped);
+        if (crop.empty())
+            return OCRResult{};
+
+        return ocrWrapper.performOCR(crop, OCRType::Digit, fieldName);
+    };
+
+    if (ocrResults.score.text.empty())
+        ocrResults.score = fixedRoiFallback(ROI_Score, "score");
+    if (ocrResults.marvelous.text.empty())
+        ocrResults.marvelous = fixedRoiFallback(ROI_Marvelous, "marvelous");
+    if (ocrResults.perfect.text.empty())
+        ocrResults.perfect = fixedRoiFallback(ROI_Perfect, "perfect");
+    if (ocrResults.great.text.empty())
+        ocrResults.great = fixedRoiFallback(ROI_Great, "great");
+    if (ocrResults.good.text.empty())
+        ocrResults.good = fixedRoiFallback(ROI_Good, "good");
+    if (ocrResults.miss.text.empty())
+        ocrResults.miss = fixedRoiFallback(ROI_Miss, "miss");
+    if (ocrResults.flare.text.empty())
+        ocrResults.flare = fixedRoiFallback(ROI_Flare, "flare");
+    if (ocrResults.max_combo.text.empty())
+        ocrResults.max_combo = fixedRoiFallback(ROI_MaxCombo, "max_combo");
+
     // ----- Outside the combined ROI: per-ROI recogniser-only fallback -----
     // title/username/difficulty/details sit above the score panel.
     ocrResults.title = getPreprocessedRoiImage(
@@ -588,9 +750,23 @@ ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide s
 
     auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now() - t_total_start).count();
+    result.totalMs = (int64_t)t_total_ms;
     platform_log("[TIMER] process_image total: %lld ms\n", (long long)t_total_ms);
 
     return result;
+}
+
+// Full pipeline wrapper: phase 1 then (when a badge matched) phase 2. Preserves
+// the original single-call behaviour for the picked-image FFI path and offline
+// tooling. The live camera session calls detect_details / recognise_details on
+// separate threads instead.
+ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side,
+                                               DebugImageType debugImageType)
+{
+    DetailsDetectResult det = detect_details(inputImg, side, debugImageType);
+    if (!det.matched)
+        return det.result;
+    return recognise_details(det);
 }
 
 OCRResult DdrocrInstance::getPreprocessedRoiImage(
@@ -634,10 +810,8 @@ OCRResult DdrocrInstance::getPreprocessedRoiImage(
         return result;
 
     // PP-OCRv5 expects natural-color BGR crops matching its training
-    // distribution. The previous Tesseract-era pipeline (top-hat → Otsu
-    // BINARY_INV → GRAY2BGR) was out-of-distribution for this model and
-    // caused recognition failures on stylised UI text. performOCR handles
-    // the canonical resize_norm_img preprocessing internally.
+    // distribution. performOCR handles the canonical resize_norm_img
+    // preprocessing internally — pass the raw crop straight through.
     save_img("roi_" + imageName, cropped);
 
     {

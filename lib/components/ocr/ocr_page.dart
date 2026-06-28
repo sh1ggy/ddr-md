@@ -5,7 +5,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:camera/camera.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -35,32 +34,26 @@ class OcrPage extends StatefulWidget {
 late Directory tempDir;
 String get tempPath => '${tempDir.path}/temp.jpg';
 
-// Stable display order for the OCR'd score fields.
-const List<String> _ocrKeyOrder = [
-  'score',
-  'marvelous',
-  'perfect',
-  'great',
-  'good',
-  'miss',
-];
-
 class _OcrPageState extends State<OcrPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   bool _isCameraActive = false;
   bool _isTogglingCamera = false;
   bool _hasRecorded = false;
-  CameraController? _controller;
   late OCRProcessor _ocrProcessor;
   final _OcrAggregator _aggregator = _OcrAggregator();
+  // Editable controllers per OCR field, prefilled from the rolling average.
+  final Map<String, TextEditingController> _fieldControllers = {};
+  // Fields the user has manually edited or chosen an alternative for; the live
+  // aggregator no longer overwrites these.
+  final Set<String> _userEditedFields = {};
   double _camFrameToScreenScale = 0;
   int _rawFrameWidth = 0;
   int _rawFrameHeight = 0;
 
-  CameraImage? _lastFrame;
-
   DebugImageType _debugImageType = DebugImageType.none;
   DetectionSide _detectionSide = DetectionSide.left;
+  // Whether the per-field candidate histograms are revealed (the way the user
+  // picks between detected values in the stopped view).
   bool _histogramsExpanded = false;
   final ValueNotifier<Uint8List?> _debugMaskBytes = ValueNotifier(null);
   final ValueNotifier<Uint8List?> _debugCropBytes = ValueNotifier(null);
@@ -69,6 +62,10 @@ class _OcrPageState extends State<OcrPage>
       ValueNotifier(([], null));
   final ValueNotifier<int> _frameTick = ValueNotifier(0);
   late final Ticker _ticker;
+
+  final ValueNotifier<double> _fps = ValueNotifier(0);
+  final List<Duration> _frameTimes = [];
+  final Stopwatch _fpsClock = Stopwatch()..start();
 
   @override
   void initState() {
@@ -93,6 +90,15 @@ class _OcrPageState extends State<OcrPage>
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.side = _detectionSide;
     _ocrProcessor.streamResultController.stream.listen((result) {
+      _recordFrameTime();
+      // The native session reports the processed-frame dimensions (the pixel
+      // space the ROIs live in). Derive the on-screen scale from those.
+      if (result.frameWidth > 0) {
+        _rawFrameWidth = result.frameWidth;
+        _rawFrameHeight = result.frameHeight;
+        _camFrameToScreenScale =
+            MediaQuery.of(context).size.width / result.frameWidth;
+      }
       final double scale = _camFrameToScreenScale;
 
       final scaled = (result.detectedRois ?? []).map((r) {
@@ -113,24 +119,27 @@ class _OcrPageState extends State<OcrPage>
         _debugCropBytes.value = result.debugDetailsCropBytes;
       }
       if (result.captureBytes != null) {
-        final int srcW = Platform.isAndroid ? _rawFrameHeight : _rawFrameWidth;
-        final int srcH = Platform.isAndroid ? _rawFrameWidth : _rawFrameHeight;
+        // Native reports dims already in the processed (upright) orientation,
+        // so no per-platform swap is needed any more.
         _captureData.value = _CaptureView(
           bytes: result.captureBytes!,
           rois: result.detectedRois ?? const [],
           detailsRoiIndex: result.detailsRoiIndex,
-          frameWidth: srcW,
-          frameHeight: srcH,
+          frameWidth: _rawFrameWidth,
+          frameHeight: _rawFrameHeight,
         );
       }
       if (detailsFound && result.ocrStrings.isNotEmpty) {
         final added = _aggregator.add(result.ocrStrings);
-        if (added) setState(() {});
+        if (added) {
+          _prefillFromAggregator();
+          setState(() {});
+        }
       }
     });
 
     getTemporaryDirectory().then((dir) => tempDir = dir);
-    _initCamera();
+    _initOcr();
   }
 
   @override
@@ -142,130 +151,57 @@ class _OcrPageState extends State<OcrPage>
     _debugMaskBytes.dispose();
     _debugCropBytes.dispose();
     _captureData.dispose();
-    _controller?.dispose();
-    _controller = null;
+    _fps.dispose();
+    for (final c in _fieldControllers.values) {
+      c.dispose();
+    }
     _ocrProcessor.dispose();
     super.dispose();
   }
 
-  Future<void> _initCamera() async {
+  void _recordFrameTime() {
+    final now = _fpsClock.elapsed;
+    _frameTimes.add(now);
+    const window = Duration(seconds: 1);
+    while (_frameTimes.isNotEmpty && now - _frameTimes.first > window) {
+      _frameTimes.removeAt(0);
+    }
+    if (_frameTimes.length < 2) {
+      _fps.value = 0;
+      return;
+    }
+    final span = now - _frameTimes.first;
+    _fps.value = span.inMicroseconds <= 0
+        ? 0
+        : (_frameTimes.length - 1) * 1e6 / span.inMicroseconds;
+  }
+
+  TextEditingController _controllerFor(String key) =>
+      _fieldControllers.putIfAbsent(key, () => TextEditingController());
+
+  // Pushes the rolling-average winner into each field's controller, unless the
+  // user has manually edited / chosen an alternative for that field.
+  void _prefillFromAggregator() {
+    for (final key in kOcrFieldOrder) {
+      if (_userEditedFields.contains(key)) continue;
+      final best = _aggregator.best(key);
+      if (best == null) continue;
+      final controller = _controllerFor(key);
+      if (controller.text != best.value) controller.text = best.value;
+    }
+  }
+
+  Future<void> _initOcr() async {
     try {
-      final ocrFuture = _ocrProcessor.init().then((_) => _ocrProcessor.initActor());
-      final camerasFuture = availableCameras();
-
-      final cameras = await camerasFuture;
-      if (cameras.isEmpty) throw Exception('No cameras available');
-
-      _controller = CameraController(
-        cameras[0],
-        ResolutionPreset.max,
-        enableAudio: false,
-      );
-      await _controller!.initialize();
-
+      // init() copies tessdata, allocates the native preview texture and the
+      // resident OCR instance, and returns the texture id + preview dims.
+      await _ocrProcessor.init();
       if (mounted) setState(() {});
-
-      await ocrFuture;
-
-      print('AS: ${_controller!.value.aspectRatio}'
-          '   SIZE: ${_controller!.value.previewSize}'
-          '   ORIENTATION: ${_controller!.value.deviceOrientation}'
-          '   RES PRESET: ${_controller!.resolutionPreset}'
-          '   IMG FMT GROUP: ${_controller!.imageFormatGroup}'
-          '   CAMERA SENSOR: ${cameras[0].sensorOrientation}');
-
-      if (mounted) setState(() {});
-    } on CameraException catch (e) {
-      print('Error initializing camera: $e');
-      if (!mounted) return;
-      Navigator.pushNamed(context, "/");
     } catch (e) {
+      print('Error initializing OCR session: $e');
       if (!mounted) return;
       Navigator.pushNamed(context, "/");
     }
-  }
-
-  void _requestDump() async {
-    if (_lastFrame == null) {
-      print('No frame to dump.');
-      return;
-    }
-    var image = _lastFrame!;
-
-    Directory? dir = Platform.isAndroid
-        ? await getExternalStorageDirectory()
-        : await getApplicationDocumentsDirectory();
-
-    if (dir == null) {
-      print('no dir');
-      return;
-    }
-    print(dir.path);
-    if (Platform.isAndroid) {
-      _dumpAndroidYuv(image, dir);
-    } else if (Platform.isIOS) {
-      _dumpIos(image, dir);
-    }
-  }
-
-  void _dumpAndroidYuv(CameraImage image, Directory dir) async {
-    // Write Y plane
-    final yFile = File('${dir.path}/yuv_y_plane.raw');
-    await yFile.writeAsBytes(image.planes[0].bytes);
-
-    // Write U plane
-    final uFile = File('${dir.path}/yuv_u_plane.raw');
-    await uFile.writeAsBytes(image.planes[1].bytes);
-
-    // Write V plane
-    final vFile = File('${dir.path}/yuv_v_plane.raw');
-    await vFile.writeAsBytes(image.planes[2].bytes);
-
-    // Write metadata
-    final metaFile = File('${dir.path}/yuv_metadata.txt');
-    await metaFile.writeAsString('''
-Width: ${image.width}
-Height: ${image.height}
-Y size: ${image.planes[0].bytes.length}
-U size: ${image.planes[1].bytes.length}
-V size: ${image.planes[2].bytes.length}
-Format: ${image.format.group}
-    ''');
-    print("ANDROID DUMPED");
-  }
-
-  void _dumpIos(CameraImage image, Directory dir) async {
-    final bgraFile = File('${dir.path}/bgra8888.raw');
-    await bgraFile.writeAsBytes(image.planes[0].bytes);
-
-    final metaFile = File('${dir.path}/metadata.txt');
-    await metaFile.writeAsString('''
-Platform: iOS
-Format: BGRA8888
-Width: ${image.width}
-Height: ${image.height}
-Bytes: ${image.planes[0].bytes.length}
-BytesPerRow: ${image.planes[0].bytesPerRow}
-''');
-    print("iOS DUMPED");
-  }
-
-  // TODO: handle lifecycle events to stop debug from breaking
-  void _processImage(CameraImage image) {
-    int rotation = _controller?.description.sensorOrientation ?? 0;
-    int w = 0;
-    if (Platform.isAndroid) {
-      w = (rotation == 0 || rotation == 180) ? image.width : image.height;
-    } else if (Platform.isIOS) {
-      w = image.width;
-    }
-
-    _camFrameToScreenScale = MediaQuery.of(context).size.width / w;
-    _rawFrameWidth = image.width;
-    _rawFrameHeight = image.height;
-
-    _ocrProcessor.processVideostreamFrame(image, rotation);
-    _lastFrame = image;
   }
 
   Future<void> _toggleCamera() async {
@@ -275,47 +211,43 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     try {
       if (_isCameraActive) {
         print('Stopping camera stream...');
-        _ocrProcessor.beginDraining();
-        if (_controller?.value.isStreamingImages ?? false) {
-          await _controller!.stopImageStream();
-        }
+        await _ocrProcessor.stop();
         setState(() {
           _isCameraActive = false;
           _hasRecorded = true;
         });
         print('Camera stopped. New state: $_isCameraActive');
       } else {
-        // Start the camera
         print('Starting camera stream...');
-        if (_controller != null &&
-            _controller!.value.isInitialized &&
-            !(_controller!.value.isStreamingImages)) {
-          _ocrProcessor.cancelDraining();
-          await _controller!.startImageStream(_processImage);
-          setState(() {
-            _isCameraActive = true;
-            _aggregator.clear();
-            _roiData.value = ([], null);
-            _debugMaskBytes.value = null;
-            _debugCropBytes.value = null;
-            _captureData.value = null;
-          });
-          print('Camera started. New state: $_isCameraActive');
-        } else {
-          print('Controller not initialized, null, or already streaming');
-        }
+        setState(() {
+          _isCameraActive = true;
+          _aggregator.clear();
+          _userEditedFields.clear();
+          for (final c in _fieldControllers.values) {
+            c.clear();
+          }
+          _roiData.value = ([], null);
+          _debugMaskBytes.value = null;
+          _debugCropBytes.value = null;
+          _captureData.value = null;
+          _frameTimes.clear();
+          _fps.value = 0;
+        });
+        await _ocrProcessor.start();
+        print('Camera started. New state: $_isCameraActive');
       }
     } catch (e) {
       print('Error toggling camera: $e');
+      // Roll the UI back if start/stop threw (e.g. permission denied).
+      if (mounted) setState(() => _isCameraActive = !_isCameraActive);
     } finally {
       _isTogglingCamera = false;
     }
   }
 
-  bool get cameraReady =>
-      _controller != null && _controller!.value.isInitialized;
+  bool get cameraReady => _ocrProcessor.isReady;
 
-  bool get _ocrReady => _ocrProcessor.toIsolate != null;
+  bool get _ocrReady => _ocrProcessor.isReady;
 
   CameraState get cameraState {
     if (!cameraReady || !_ocrReady) return CameraState.notReady;
@@ -370,6 +302,26 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
     );
   }
 
+  Widget _buildPreview() {
+    final id = _ocrProcessor.textureId;
+    if (id == null) {
+      return const AspectRatio(
+        aspectRatio: 3 / 4,
+        child: ColoredBox(color: Colors.black),
+      );
+    }
+    // The camera renders sensor-landscape frames directly into the texture
+    // (GPU path); rotate the widget to display upright. The ROI overlay is
+    // painted OUTSIDE this RotatedBox (in the upright OCR pixel space), so it
+    // stays aligned as long as preview and analysis share an aspect ratio.
+    final ar = _ocrProcessor.previewAspectRatio;
+    final rotated = RotatedBox(
+      quarterTurns: _ocrProcessor.previewQuarterTurns,
+      child: Texture(textureId: id),
+    );
+    return ar > 0 ? AspectRatio(aspectRatio: ar, child: rotated) : rotated;
+  }
+
   Widget _buildActiveView() {
     return ListView(
       padding: const EdgeInsets.only(bottom: 96),
@@ -379,13 +331,18 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
             RepaintBoundary(
               child: CustomPaint(
                 foregroundPainter: _CameraRoiPainter(_roiData, _frameTick),
-                child: CameraPreview(_controller!),
+                child: _buildPreview(),
               ),
             ),
             Positioned(
               top: 12,
               right: 12,
               child: _ProcessingDot(isProcessing: _ocrProcessor.isProcessing),
+            ),
+            Positioned(
+              top: 12,
+              left: 12,
+              child: _FpsCounter(fps: _fps),
             ),
           ],
         ),
@@ -395,7 +352,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
         ),
         Padding(
           padding: const EdgeInsets.all(16),
-          child: _buildScorePanel(live: true),
+          child: _buildLiveScorePanel(),
         ),
       ],
     );
@@ -601,35 +558,65 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
         ),
         const SizedBox(height: 12),
         _buildCapturePanel(),
-        _buildScorePanel(live: false),
+        _buildEditableScorePanel(),
       ],
     );
   }
 
-  Widget _buildScorePanel({required bool live}) {
-    final bool showHistograms = _histogramsExpanded;
+  // Live (recording) view: read-only rolling-average readout. Editing only
+  // happens once OCR is stopped (see _buildEditableScorePanel).
+  Widget _buildLiveScorePanel() {
     final rows = <Widget>[
-      for (final key in _ocrKeyOrder)
-        if (_aggregator.best(key) case final best?) ...[
+      for (final key in kOcrFieldOrder)
+        if (_aggregator.best(key) case final best?)
           OCRKeyValue(
-            keyName: key.toUpperCase(),
+            keyName: ocrFieldLabel(key),
             value: best.value,
             confidence: best.confidence,
             sampleCount: best.count,
           ),
-          if (showHistograms)
-            Padding(
-              padding: const EdgeInsets.only(left: 8, bottom: 8, top: 2),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final (i, c) in _aggregator.candidates(key).indexed)
-                    _CandidateBar(candidate: c, isWinner: i == 0),
-                ],
-              ),
-            ),
-        ],
     ];
+    return _scorePanelShell(
+      rows: rows,
+      emptyText: "Reading score…",
+    );
+  }
+
+  // Stopped view: editable, prefilled fields. "Show values" reveals a clickable
+  // candidate histogram per field — the way the user picks between detected
+  // values (tapping a bar sets that field).
+  Widget _buildEditableScorePanel() {
+    final bool showHistograms = _histogramsExpanded;
+    final rows = <Widget>[
+      for (final key in kOcrFieldOrder)
+        if (_aggregator.best(key) case final best?)
+          OCREditableField(
+            keyName: key,
+            controller: _controllerFor(key),
+            confidence: best.confidence,
+            sampleCount: best.count,
+            winnerValue: best.value,
+            candidates: showHistograms
+                ? [
+                    for (final c in _aggregator.candidates(key))
+                      OCRCandidate(c.value, c.count, c.share),
+                  ]
+                : const [],
+            onUserEdit: (_) => _userEditedFields.add(key),
+          ),
+    ];
+    return _scorePanelShell(
+      rows: rows,
+      emptyText: "No score captured.",
+      showToggle: true,
+    );
+  }
+
+  Widget _scorePanelShell({
+    required List<Widget> rows,
+    required String emptyText,
+    bool showToggle = false,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -647,7 +634,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
                 ),
               ),
             ),
-            if (rows.isNotEmpty)
+            if (showToggle && rows.isNotEmpty)
               TextButton.icon(
                 onPressed: () => setState(
                     () => _histogramsExpanded = !_histogramsExpanded),
@@ -663,7 +650,7 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
             child: Text(
-              live ? "Reading score…" : "No score captured.",
+              emptyText,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -677,9 +664,45 @@ BytesPerRow: ${image.planes[0].bytesPerRow}
   }
 }
 
+// Fields whose readings are numbers; everything else is tallied as raw text.
+const Set<String> _numericKeys = {
+  'score',
+  'marvelous',
+  'perfect',
+  'great',
+  'good',
+  'miss',
+  'maxCombo',
+};
+
+// Parses a numeric field's reading into its integer value, dropping formatting
+// noise like thousands separators or stray whitespace ("999,940" -> 999940).
+// Returns null when there are no digits to read.
+int? _parseOcrNumber(String raw) {
+  final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return null;
+  return int.tryParse(digits);
+}
+
+// Renders an integer with thousands separators for display ("999940" ->
+// "999,940").
+String _formatOcrNumber(int value) {
+  final s = value.toString();
+  final buf = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+    buf.write(s[i]);
+  }
+  return buf.toString();
+}
+
 // Tallies OCR readings across frames; the modal value per field is the result.
+// Numeric fields ([_numericKeys]) are tallied by their parsed integer, so
+// differently formatted strings for the same number ("999,940" and "999940")
+// count as one value; other fields tally by their raw text.
 class _OcrAggregator {
-  final Map<String, Map<String, int>> _counts = {};
+  // key -> tally value (int for numeric fields, String otherwise) -> count
+  final Map<String, Map<Object, int>> _counts = {};
   int _detailsCount = 0;
 
   int get detailsCount => _detailsCount;
@@ -687,9 +710,12 @@ class _OcrAggregator {
   bool add(Map<String, String> strings) {
     bool anyAdded = false;
     strings.forEach((key, raw) {
-      final value = raw.trim();
-      if (value.isEmpty) return;
-      final tally = _counts.putIfAbsent(key, () => <String, int>{});
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return;
+      final Object? value =
+          _numericKeys.contains(key) ? _parseOcrNumber(trimmed) : trimmed;
+      if (value == null) return;
+      final tally = _counts.putIfAbsent(key, () => {});
       tally[value] = (tally[value] ?? 0) + 1;
       anyAdded = true;
     });
@@ -702,16 +728,25 @@ class _OcrAggregator {
     _detailsCount = 0;
   }
 
+  // Formats a tally value for display: numbers get thousands separators, text
+  // passes through unchanged.
+  static String _display(Object value) =>
+      value is int ? _formatOcrNumber(value) : value as String;
+
   ({String value, double confidence, int count})? best(String key) {
     final tally = _counts[key];
     if (tally == null || tally.isEmpty) return null;
     var total = 0;
-    MapEntry<String, int>? top;
+    MapEntry<Object, int>? top;
     for (final entry in tally.entries) {
       total += entry.value;
       if (top == null || entry.value > top.value) top = entry;
     }
-    return (value: top!.key, confidence: top.value / total, count: top.value);
+    return (
+      value: _display(top!.key),
+      confidence: top.value / total,
+      count: top.value,
+    );
   }
 
   List<({String value, int count, double share})> candidates(String key) {
@@ -722,68 +757,8 @@ class _OcrAggregator {
       ..sort((a, b) => b.value.compareTo(a.value));
     return [
       for (final e in entries)
-        (value: e.key, count: e.value, share: e.value / total),
+        (value: _display(e.key), count: e.value, share: e.value / total),
     ];
-  }
-}
-
-class _CandidateBar extends StatelessWidget {
-  const _CandidateBar({required this.candidate, required this.isWinner});
-
-  final ({String value, int count, double share}) candidate;
-  final bool isWinner;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = isWinner ? Colors.green : scheme.surfaceContainerHighest;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              candidate.value,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontFeatures: const [FontFeature.tabularFigures()],
-                fontWeight: isWinner ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: Stack(
-                  children: [
-                    Container(height: 12, color: scheme.surfaceContainerHigh),
-                    FractionallySizedBox(
-                      widthFactor: candidate.share.clamp(0.0, 1.0),
-                      child: Container(height: 12, color: color),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 64,
-            child: Text(
-              '${candidate.count} · ${(candidate.share * 100).round()}%',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: 11,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -837,6 +812,38 @@ class _ProcessingDotState extends State<_ProcessingDot>
                   color: Colors.green,
                   shape: BoxShape.circle,
                 ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FpsCounter extends StatelessWidget {
+  const _FpsCounter({required this.fps});
+
+  final ValueNotifier<double> fps;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: fps,
+      builder: (context, value, _) {
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text(
+              '${value.toStringAsFixed(1)} fps',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontFeatures: [FontFeature.tabularFigures()],
               ),
             ),
           ),
