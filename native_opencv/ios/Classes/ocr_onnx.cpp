@@ -128,10 +128,9 @@ OCRWrapper::OCRWrapper(const std::string dataPath, const ModelSet *models)
 
     // Detection model is optional — if absent, performDetectAndRecognise will
     // return empty and the caller can fall back to per-ROI recognition.
-    // Source: PaddleOCR PP-OCRv5_mobile_det (or PP-OCRv3_mobile_det) converted
-    // to ONNX via paddle2onnx. See model card:
-    //   https://huggingface.co/PaddlePaddle/PP-OCRv3_mobile_det
-    // Place the .onnx at assets/models/ppocr_mobile_det.onnx and add to pubspec.
+    // Source: PaddleOCR PP-OCRv6 det (tiny/small/medium), shipped pre-converted
+    // to ONNX on Hugging Face. Default is small v6 (see detName above); place the
+    // .onnx under assets/models/ and copy it via lib/ocr_processor.dart.
     try
     {
         detSession = std::make_unique<Ort::Session>(*env, detPath.c_str(), sessionOpts);

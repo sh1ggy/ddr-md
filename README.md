@@ -21,36 +21,26 @@ The intended usage of this application is to use it while you're playing DDR. Fo
 
 ### OCR Pipeline
 
-OCR is implemented in native C++ on top of OpenCV and the ONNX Runtime, calling PaddleOCR's PP-OCRv5 mobile models for text detection and recognition. The score panel runs detection + recognition over a single combined ROI; other fields (title, username, difficulty, details) run recognition only over hand-picked crops. See [docs/paddleocr-migration.md](./docs/paddleocr-migration.md) for the architectural rationale and pipeline diagram.
+OCR is implemented in native C++ on top of OpenCV and the ONNX Runtime, calling PaddleOCR's PP-OCRv6 models for text detection and recognition. The score panel runs detection + recognition over a single combined ROI; other fields (title, username, difficulty, details) run recognition only over hand-picked crops. If detection fails, the pipeline falls back to recognition over hardcoded ROIs. The migration from the previous Tesseract engine and the v5→v6 model swap are documented in the plan docs under [docs/](./docs/) ([plan-paddle-det-integration.md](./docs/plan-paddle-det-integration.md), [plan-paddle-v6-migration.md](./docs/plan-paddle-v6-migration.md)).
 
 #### ONNX Runtime
 
-The native module links against the prebuilt **ONNX Runtime iOS xcframework**, vendored at `native_opencv/ios/libs/onnxruntime.xcframework` and referenced as a `vendored_framework` in `native_opencv/ios/native_opencv.podspec`. ORT sessions are created once at startup in [native_opencv/ios/Classes/ocr_onnx.cpp](./native_opencv/ios/Classes/ocr_onnx.cpp) — one for detection (`detSession`, optional) and one for recognition (`recSession`).
+The native module links against the prebuilt **ONNX Runtime iOS xcframework**, vendored at `native_opencv/ios/libs/onnxruntime.xcframework` and referenced as a `vendored_framework` in `native_opencv/ios/native_opencv.podspec`. ORT sessions are created once at startup in [native_opencv/ios/Classes/ocr_onnx.cpp](./native_opencv/ios/Classes/ocr_onnx.cpp) — one for detection (`detSession`, optional) and one for recognition (`session`).
 
 #### Det & Rec Models
 
-Both models live under `assets/models/` and are bundled via `pubspec.yaml`:
+All models live under `assets/models/`, are bundled via the `assets/models/` directory entry in `pubspec.yaml`, and copied to the app data dir at startup by the copy list in [lib/ocr_processor.dart](./lib/ocr_processor.dart). Each tier is a `det` + `rec` + `dict` triplet:
 
-| File | Role | Source |
-|---|---|---|
-| `ppocr_mobile_det.onnx` | DBNet text detector | [PaddlePaddle/PP-OCRv5_mobile_det](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det) |
-| `ppocr_mobile_rec.onnx` | CTC text recogniser | [PaddlePaddle/PP-OCRv5_mobile_rec](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec) |
-| `ppocrv5_dict.txt` | Recogniser character dictionary | PP-OCRv5 release |
+| Tier | Rec | Det | Dict |
+|---|---|---|---|
+| tiny | `ppocr_tiny_rec.onnx` | `ppocr_tiny_det.onnx` | `ppocrv6_dict.txt` |
+| **small (default)** | `ppocr_small_rec.onnx` | `ppocr_small_det.onnx` | `ppocrv6_small_dict.txt` |
+| medium | `ppocr_medium_rec.onnx` | `ppocr_medium_det.onnx` | `ppocrv6_medium_dict.txt` |
+| mobile (v5, legacy) | `ppocr_mobile_rec.onnx` | `ppocr_mobile_det.onnx` | `ppocrv5_dict.txt` |
 
-They are produced by converting the upstream Paddle inference exports to ONNX with `paddle2onnx`. PP-OCRv5 ships in PIR format, so the model filename is `inference.json` (not the older `inference.pdmodel`):
+The active triplet is selected in native code — the default is **small v6**, set at [ocr_onnx.cpp:95-97](./native_opencv/ios/Classes/ocr_onnx.cpp#L95-L97). A `ModelSet` override lets the offline `model_compare` harness swap tiers without rebuilding the app. The recogniser is required; the detector is loaded inside a try/catch and the pipeline degrades to recogniser-only (hardcoded ROIs) if it's missing.
 
-```bash
-paddle2onnx --model_dir ./PP-OCRv5_mobile_det \
-  --model_filename inference.json \
-  --params_filename inference.pdiparams \
-  --save_file ppocr_mobile_det.onnx \
-  --opset_version 11 \
-  --enable_onnx_checker True
-
-# same invocation for PP-OCRv5_mobile_rec
-```
-
-Drop the resulting `.onnx` files into `assets/models/`. The recogniser is required; the detector is loaded inside a try/catch and the pipeline degrades to recogniser-only if it's missing.
+The PP-OCRv6 tiny/small/medium variants ship pre-converted to ONNX on Hugging Face, so no `paddle2onnx` step is needed — download the `.onnx` and dict from the corresponding [PaddlePaddle](https://huggingface.co/PaddlePaddle) repo and drop them into `assets/models/`. (The legacy v5 mobile models were produced with `paddle2onnx`; see [docs/plan-paddle-v6-migration.md](./docs/plan-paddle-v6-migration.md) for that history.)
 
 #### Android Build Steps
 
@@ -87,6 +77,36 @@ The whole `jniLibs/` directory is gitignored — everything in it is produced by
 2. `flutter build ios` (or run from Xcode/VS Code).
 
 iOS deployment target is **13.0**.
+
+#### OCR Tooling
+
+A set of offline tools under [native_opencv/tools/](./native_opencv/tools/) supports tuning the OCR pipeline — picking ROIs, comparing model tiers for accuracy, and profiling per-model timing. They chain together: **pick ROIs → run the compare harness → (optionally) hand-label ground truth → view results/perf**.
+
+| Tool | Type | Purpose |
+|---|---|---|
+| [roi_picker.html](./native_opencv/tools/roi_picker.html) | browser | Draw rectangles on a screenshot to pick field ROIs / template crops; copies them out or saves PNGs. |
+| [model_compare](./native_opencv/tools/model_compare/main.cpp) | C++ CLI | Runs the **real** pipeline over a folder of test screenshots, once per model tier, and writes a per-field CSV + annotated crops. |
+| [model_compare/index.html](./native_opencv/tools/model_compare/index.html) | browser | Ground-truth classifier — hand-label each image's fields, export `classified.csv` (autosaves to the browser). |
+| [results_viewer.html](./native_opencv/tools/model_compare/results_viewer.html) | browser | Loads `results.csv` (+ optional `classified.csv`) to show per-field disagreements across models and, with ground truth, per-model accuracy. |
+| [perf_viewer.html](./native_opencv/tools/model_compare/perf_viewer.html) | browser | Loads `results.csv` to show per-model timing (ms) over the warped runs. |
+
+**roi_picker.html** — open the file in a browser, drop a result screenshot in, drag boxes over each field. `Copy ROIs` puts the coordinates on your clipboard (to paste into `ocrRoi` in [lib/ocr_config.dart](./lib/ocr_config.dart) and the mirrored `makeReferenceConfig()` in [model_compare/main.cpp](./native_opencv/tools/model_compare/main.cpp)); `Save all PNGs` exports each crop for use as a matching template.
+
+**model_compare** — a standalone desktop build that links the real pipeline sources ([ddrocr_instance.cpp](./native_opencv/ios/Classes/ddrocr_instance.cpp), [ocr_onnx.cpp](./native_opencv/ios/Classes/ocr_onnx.cpp), [details_detector.cpp](./native_opencv/ios/Classes/details_detector.cpp)) against Homebrew OpenCV + ONNX Runtime.
+
+```bash
+brew install opencv onnxruntime
+cd native_opencv/tools/model_compare
+cmake -B build && cmake --build build
+./build/model_compare               # uses ../assets and ./tests by default
+# overrides: --assets <dir> --tests <dir> --out <results.csv> --images-out <dir>
+```
+
+It sweeps all four model tiers (`mobile_v5`, `small_v6`, `tiny_v6`, `medium_v6` — see [main.cpp:178-183](./native_opencv/tools/model_compare/main.cpp#L178-L183)) over every `.jpg`/`.jpeg` in the tests dir and writes `results.csv` plus annotated crops under `results_images/`. It's built with `NDEBUG` so the pipeline's `save_img()` doesn't spray debug PNGs into `assets/`.
+
+> ⚠️ The ROIs in `makeReferenceConfig()` ([main.cpp:54-78](./native_opencv/tools/model_compare/main.cpp#L54-L78)) mirror `ocrRoi` in [lib/ocr_config.dart](./lib/ocr_config.dart). Keep the two in sync when you re-pick ROIs.
+
+**Reviewing results** — open `results_viewer.html`, load the generated `results.csv`. In results-only mode it highlights fields where the models disagree. To get pass/fail accuracy, first label ground truth in `index.html` (export `classified.csv`), then load that alongside — the viewer expects columns `image,field,truth`. `perf_viewer.html` reads the same `results.csv` for timing.
 
 ## Credits
 - This project takes heavy inspiration from the existing [DDR BPM](https://ddrbpm.com/) application, with the data sourced from the process spun up by [xiexingwu](https://github.com/xiexingwu) 
