@@ -45,6 +45,7 @@ static const int ROI_IDX_USERNAME   = 9;
 static const int ROI_IDX_DIFFICULTY = 10;
 static const int ROI_IDX_MAXCOMBO   = 11;
 
+
 DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg,
                                const ModelSet *models)
     : dataPath(dataPath), ocrWrapper(dataPath, models), detailsDetector(dataPath)
@@ -745,6 +746,144 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
     ocrResults.difficulty = getPreprocessedRoiImage(
         warpedImg, ROI_Difficulty, ROI_Details, warped_details_top_left,
         expand(ROI_IDX_DIFFICULTY), "difficulty", OCRType::Eng);
+
+    // Debug ON: render a single comprehensive debug image on the warped frame,
+    // showing everything the pipeline reasons over so placement/recognition can
+    // be eyeballed against the actual content in one view:
+    //   * green  - per-field OCR ROIs (the crops OCR actually reads), labelled
+    //              with the field key + warped rect
+    //   * cyan   - per-field anchor rects the score-panel picker matches against
+    //   * yellow - the combined ROI fed to PaddleOCR detection
+    //   * magenta- PaddleOCR detection boxes + recognised text/confidence, mapped
+    //              back from combined-crop coords into warped space (== the boxes
+    //              in paddle_detect.png, but in full context)
+    //   * red dot- the warped Details anchor (origin of all the field offsets)
+    // The warped canvas is 4000x5000 but the warp only fills the region the
+    // source frame mapped to; the image is cropped to that content (+margin) so
+    // there is NO black border. Stored on result.debugOverlay (shown in-app) and,
+    // when a disk debug dir exists, also written as roi_overlay.png.
+    if (debugImageType == DebugImageType::ON && !warpedImg.empty())
+    {
+        cv::Mat overlay;
+        if (warpedImg.channels() == 1)
+            cv::cvtColor(warpedImg, overlay, cv::COLOR_GRAY2BGR);
+        else
+            overlay = warpedImg.clone();
+
+        const cv::Rect overlayBounds(0, 0, overlay.cols, overlay.rows);
+
+        auto warpField = [&](const cv::Rect &fieldRoi) -> cv::Rect {
+            return cv::Rect(
+                warped_details_top_left.x + (fieldRoi.x - ROI_Details.x),
+                warped_details_top_left.y + (fieldRoi.y - ROI_Details.y),
+                fieldRoi.width, fieldRoi.height);
+        };
+
+        // Thin cyan anchor rect (what the score-panel picker matches against),
+        // then the green expanded OCR ROI with the field key + warped coords.
+        auto drawField = [&](const cv::Rect &fieldRoi, int idx,
+                             const std::string &name) {
+            cv::Rect anchor = warpField(fieldRoi) & overlayBounds;
+            if (anchor.width > 0 && anchor.height > 0)
+                cv::rectangle(overlay, anchor, cv::Scalar(255, 255, 0), 1);
+            cv::Rect r = expandRoi(warpField(fieldRoi), expand(idx)) & overlayBounds;
+            if (r.width <= 0 || r.height <= 0) return;
+            cv::rectangle(overlay, r, cv::Scalar(0, 255, 0), 3);
+            char label[160];
+            snprintf(label, sizeof(label), "%s [%d,%d %dx%d]", name.c_str(),
+                     r.x, r.y, r.width, r.height);
+            cv::putText(overlay, label, cv::Point(r.x + 4, r.y - 8),
+                        cv::FONT_HERSHEY_SIMPLEX, 1.1, cv::Scalar(0, 255, 0), 3,
+                        cv::LINE_AA);
+        };
+
+        drawField(ROI_Details,    ROI_IDX_DETAILS,    "details");
+        drawField(ROI_Score,      ROI_IDX_SCORE,      "score");
+        drawField(ROI_Marvelous,  ROI_IDX_MARVELOUS,  "marvelous");
+        drawField(ROI_Perfect,    ROI_IDX_PERFECT,    "perfect");
+        drawField(ROI_Great,      ROI_IDX_GREAT,      "great");
+        drawField(ROI_Good,       ROI_IDX_GOOD,       "good");
+        drawField(ROI_Miss,       ROI_IDX_MISS,       "miss");
+        drawField(ROI_Flare,      ROI_IDX_FLARE,      "flare");
+        drawField(ROI_MaxCombo,   ROI_IDX_MAXCOMBO,   "max_combo");
+        drawField(ROI_Title,      ROI_IDX_TITLE,      "title");
+        drawField(ROI_Username,   ROI_IDX_USERNAME,   "username");
+        drawField(ROI_Difficulty, ROI_IDX_DIFFICULTY, "difficulty");
+
+        // PaddleOCR detection boxes (magenta) + recognised text/confidence,
+        // mapped from combined-crop-local coords into warped space.
+        for (const auto &d : detections)
+        {
+            cv::Rect box(d.box.x + roi_combined_warped.x,
+                         d.box.y + roi_combined_warped.y,
+                         d.box.width, d.box.height);
+            box &= overlayBounds;
+            if (box.width <= 0 || box.height <= 0) continue;
+            cv::rectangle(overlay, box, cv::Scalar(255, 0, 255), 2);
+            char lbl[160];
+            snprintf(lbl, sizeof(lbl), "%s (%.2f)", d.result.text.c_str(),
+                     d.result.confidence);
+            cv::putText(overlay, lbl, cv::Point(box.x + 2, box.y + box.height + 28),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.9, cv::Scalar(255, 0, 255), 2,
+                        cv::LINE_AA);
+        }
+
+        // Combined ROI outline (yellow) and the Details anchor point (red).
+        cv::Rect combinedOutline = roi_combined_warped & overlayBounds;
+        if (combinedOutline.width > 0 && combinedOutline.height > 0)
+            cv::rectangle(overlay, combinedOutline, cv::Scalar(0, 255, 255), 2);
+        cv::circle(overlay, warped_details_top_left, 12, cv::Scalar(0, 0, 255), -1);
+
+        // Crop to the warp's filled content (no black border): bounding box of
+        // the source frame's 4 corners pushed through H, intersected with the
+        // canvas. Pad with a small margin.
+        cv::Rect content = overlayBounds;
+        {
+            std::vector<cv::Point2f> srcCorners = {
+                {0.f, 0.f},
+                {(float)inputImg.cols, 0.f},
+                {(float)inputImg.cols, (float)inputImg.rows},
+                {0.f, (float)inputImg.rows}};
+            std::vector<cv::Point2f> warpedCorners;
+            cv::perspectiveTransform(srcCorners, warpedCorners, H);
+            cv::Rect bb = cv::boundingRect(warpedCorners);
+            const int margin = 30;
+            bb.x -= margin; bb.y -= margin;
+            bb.width += margin * 2; bb.height += margin * 2;
+            cv::Rect clipped = bb & overlayBounds;
+            if (clipped.width > 0 && clipped.height > 0)
+                content = clipped;
+        }
+
+        // Legend in the top-left of the cropped view (relative coords).
+        {
+            const struct { const char *t; cv::Scalar c; } legend[] = {
+                {"green: OCR ROI (key)", {0, 255, 0}},
+                {"cyan: field anchor",   {255, 255, 0}},
+                {"yellow: combined ROI", {0, 255, 255}},
+                {"magenta: paddle det",  {255, 0, 255}},
+                {"red: details anchor",  {0, 0, 255}},
+            };
+            int ly = content.y + 36;
+            for (const auto &e : legend)
+            {
+                cv::putText(overlay, e.t, cv::Point(content.x + 12, ly),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.9, e.c, 2, cv::LINE_AA);
+                ly += 34;
+            }
+        }
+
+        result.debugOverlay = overlay(content).clone();
+
+        if (!debugDir.empty())
+        {
+            char path[512];
+            snprintf(path, sizeof(path), "%s/roi_overlay.png", debugDir.c_str());
+            cv::imwrite(path, result.debugOverlay);
+            platform_log("wrote: %s (debug overlay, %dx%d)\n", path,
+                         content.width, content.height);
+        }
+    }
 
     result.ocrResults = ocrResults;
 

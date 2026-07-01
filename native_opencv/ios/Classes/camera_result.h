@@ -40,6 +40,7 @@ struct CCameraResult {
   uint8_t *mask;   int32_t maskLen;     // PNG, full-frame binarized (debug)
   uint8_t *crop;   int32_t cropLen;     // PNG, matched Details crop (debug)
   uint8_t *capture; int32_t captureLen; // JPEG, color frame on a match
+  uint8_t *overlay; int32_t overlayLen; // PNG, all-field warped debug overlay
 };
 
 // Function pointer Dart registers (NativeCallable). Invoked once per processed
@@ -103,6 +104,7 @@ static inline CCameraResult *BuildCCameraResult(const ProcessImgResult &r,
   ccr_encode(r.debugMask, ".png", &c->mask, &c->maskLen);
   ccr_encode(r.debugDetailsCrop, ".png", &c->crop, &c->cropLen);
   ccr_encode(r.colorCapture, ".jpg", &c->capture, &c->captureLen);
+  ccr_encode(r.debugOverlay, ".png", &c->overlay, &c->overlayLen);
   return c;
 }
 
@@ -123,5 +125,6 @@ static inline void FreeCCameraResult(CCameraResult *c) {
   free(c->mask);
   free(c->crop);
   free(c->capture);
+  free(c->overlay);
   free(c);
 }

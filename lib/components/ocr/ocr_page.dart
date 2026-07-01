@@ -57,6 +57,7 @@ class _OcrPageState extends State<OcrPage>
   bool _histogramsExpanded = false;
   final ValueNotifier<Uint8List?> _debugMaskBytes = ValueNotifier(null);
   final ValueNotifier<Uint8List?> _debugCropBytes = ValueNotifier(null);
+  final ValueNotifier<Uint8List?> _debugOverlayBytes = ValueNotifier(null);
   final ValueNotifier<_CaptureView?> _captureData = ValueNotifier(null);
   final ValueNotifier<(List<Rectangle<int>>, int?)> _roiData =
       ValueNotifier(([], null));
@@ -118,6 +119,9 @@ class _OcrPageState extends State<OcrPage>
       if (result.debugDetailsCropBytes != null) {
         _debugCropBytes.value = result.debugDetailsCropBytes;
       }
+      if (result.debugOverlayBytes != null) {
+        _debugOverlayBytes.value = result.debugOverlayBytes;
+      }
       if (result.captureBytes != null) {
         // Native reports dims already in the processed (upright) orientation,
         // so no per-platform swap is needed any more.
@@ -150,6 +154,7 @@ class _OcrPageState extends State<OcrPage>
     _roiData.dispose();
     _debugMaskBytes.dispose();
     _debugCropBytes.dispose();
+    _debugOverlayBytes.dispose();
     _captureData.dispose();
     _fps.dispose();
     for (final c in _fieldControllers.values) {
@@ -229,6 +234,7 @@ class _OcrPageState extends State<OcrPage>
           _roiData.value = ([], null);
           _debugMaskBytes.value = null;
           _debugCropBytes.value = null;
+          _debugOverlayBytes.value = null;
           _captureData.value = null;
           _frameTimes.clear();
           _fps.value = 0;
@@ -390,6 +396,7 @@ class _OcrPageState extends State<OcrPage>
     if (!enabled) {
       _debugMaskBytes.value = null;
       _debugCropBytes.value = null;
+      _debugOverlayBytes.value = null;
     }
   }
 
@@ -414,6 +421,11 @@ class _OcrPageState extends State<OcrPage>
             label: 'Details crop (last match)',
             notifier: _debugCropBytes,
             emptyText: 'No Details matched yet…',
+          ),
+          _buildDebugImagePanel(
+            label: 'ROI overlay (last match)',
+            notifier: _debugOverlayBytes,
+            emptyText: 'No overlay yet…',
           ),
         ],
       ],
@@ -559,6 +571,9 @@ class _OcrPageState extends State<OcrPage>
         const SizedBox(height: 12),
         _buildCapturePanel(),
         _buildEditableScorePanel(),
+        // Latest debug images remain inspectable after stopping (the notifiers
+        // keep their last values); the panel gates internally on the toggle.
+        _buildDebugControls(),
       ],
     );
   }
@@ -620,32 +635,19 @@ class _OcrPageState extends State<OcrPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  "Details detections: ${_aggregator.detailsCount}",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+        if (showToggle && rows.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => setState(
+                  () => _histogramsExpanded = !_histogramsExpanded),
+              icon: Icon(
+                _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
+                size: 18,
               ),
+              label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
             ),
-            if (showToggle && rows.isNotEmpty)
-              TextButton.icon(
-                onPressed: () => setState(
-                    () => _histogramsExpanded = !_histogramsExpanded),
-                icon: Icon(
-                  _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
-                ),
-                label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
-              ),
-          ],
-        ),
+          ),
         if (rows.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
@@ -659,6 +661,16 @@ class _OcrPageState extends State<OcrPage>
           )
         else
           ...rows,
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            "Successful detections: ${_aggregator.detailsCount}",
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
       ],
     );
   }

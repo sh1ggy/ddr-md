@@ -55,6 +55,9 @@ class ProcessResult {
   // "Details" (independent of the debug toggle). The stopped view paints the
   // static ROIs over the last non-null one.
   final Uint8List? captureBytes;
+  // Comprehensive all-field debug overlay (PNG) drawn on the warped frame.
+  // Present only when debug is on and a warp ran; null otherwise.
+  final Uint8List? debugOverlayBytes;
   final int? detailsRoiIndex;
   final Map<String, String> ocrStrings;
   // Dimensions of the processed frame (the pixel space the ROIs are expressed
@@ -76,6 +79,7 @@ class ProcessResult {
     this.ocrStrings, {
     this.frameWidth = 0,
     this.frameHeight = 0,
+    this.debugOverlayBytes,
   });
 
   // Reads a CCameraResult the native OCR worker handed back over the FFI
@@ -114,6 +118,7 @@ class ProcessResult {
     final mask = img(r.mask, r.maskLen);
     final crop = img(r.crop, r.cropLen);
     final capture = img(r.capture, r.captureLen);
+    final overlay = img(r.overlay, r.overlayLen);
     final imageType = (mask != null || crop != null)
         ? ReturnImageType.BytesImage
         : ReturnImageType.None;
@@ -132,6 +137,7 @@ class ProcessResult {
       ocr,
       frameWidth: r.width,
       frameHeight: r.height,
+      debugOverlayBytes: overlay,
     );
   }
 }
@@ -231,6 +237,9 @@ final class CCameraResult extends Struct {
   external Pointer<Uint8> capture;
   @Int32()
   external int captureLen;
+  external Pointer<Uint8> overlay;
+  @Int32()
+  external int overlayLen;
 }
 
 typedef _c_createOcrInstance = Pointer<Void> Function(
