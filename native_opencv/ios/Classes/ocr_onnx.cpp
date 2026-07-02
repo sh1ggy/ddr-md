@@ -252,6 +252,7 @@ OCRResult OCRWrapper::performOCR(const cv::Mat &roiMat, OCRType type, const std:
 
     result.text       = text;
     result.confidence = conf;
+    result.recInput   = resized;
 
     if (!debugDir.empty())
     {

@@ -200,6 +200,10 @@ public:
     // DetailsDetectResult and returns the completed ProcessImgResult.
     ProcessImgResult recognise_details(const DetailsDetectResult &det);
     void setConfig(const COCRConfig &cfg);
+    // Re-read the Details template from disk (see DetailsDetector::reload).
+    // Called on camera start so a template copied/updated after this instance
+    // was constructed takes effect without an app rebuild.
+    void reloadDetailsTemplate() { detailsDetector.reload(); }
 
 private:
     COCRConfig config;

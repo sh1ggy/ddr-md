@@ -18,15 +18,23 @@ namespace
 DetailsDetector::DetailsDetector(const std::string &dataPath)
     : dataPath(dataPath)
 {
+    reload();
+}
+
+void DetailsDetector::reload()
+{
     const std::string templatePath = dataPath + "/templates/details.png";
-    cv::Mat color = cv::imread(templatePath, cv::IMREAD_GRAYSCALE);
-    if (color.empty())
+    cv::Mat gray = cv::imread(templatePath, cv::IMREAD_GRAYSCALE);
+    if (gray.empty())
     {
+        // Keep any previously loaded template rather than clobbering it with
+        // an unreadable file.
         platform_log("[DETAILS_DET] template missing or unreadable: %s\n",
                      templatePath.c_str());
         return;
     }
-    templateGray = color;
+    std::lock_guard<std::mutex> lk(templateMutex);
+    templateGray = gray;
     platform_log("[DETAILS_DET] template loaded %dx%d from %s\n",
                  templateGray.cols, templateGray.rows, templatePath.c_str());
 }
@@ -38,7 +46,14 @@ DetailsDetector::Match DetailsDetector::classify(
 {
     Match best{-1, 0.0f, 0.0f};
 
-    if (templateGray.empty())
+    // Snapshot the template so a concurrent reload() can't swap it mid-match
+    // (cv::Mat copy is a cheap refcounted header copy).
+    cv::Mat tmpl;
+    {
+        std::lock_guard<std::mutex> lk(templateMutex);
+        tmpl = templateGray;
+    }
+    if (tmpl.empty())
     {
         platform_log("[DETAILS_DET] no template loaded — skipping classify\n");
         return best;
@@ -74,12 +89,12 @@ DetailsDetector::Match DetailsDetector::classify(
 
         for (float scale = MIN_SCALE; scale <= MAX_SCALE + 1e-3f; scale += SCALE_STEP)
         {
-            int tw = std::max(4, (int)std::round(templateGray.cols * scale));
-            int th = std::max(4, (int)std::round(templateGray.rows * scale));
+            int tw = std::max(4, (int)std::round(tmpl.cols * scale));
+            int th = std::max(4, (int)std::round(tmpl.rows * scale));
             if (tw > candidate.cols || th > candidate.rows) continue;
 
             cv::Mat scaledTemplate;
-            cv::resize(templateGray, scaledTemplate, cv::Size(tw, th),
+            cv::resize(tmpl, scaledTemplate, cv::Size(tw, th),
                        0, 0, cv::INTER_AREA);
 
             cv::Mat heatmap;

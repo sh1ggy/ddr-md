@@ -2,6 +2,7 @@
 #define DETAILS_DETECTOR_H
 
 #include <opencv2/opencv.hpp>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,12 @@ public:
     // {-1, 0.f, 0.f} — caller can fall back.
     explicit DetailsDetector(const std::string &dataPath);
 
+    // Re-read the template from disk. Call on camera start so a template
+    // replaced after session creation (asset re-copy on hot restart) is picked
+    // up without rebuilding the app. Safe to call while classify() runs on
+    // another thread.
+    void reload();
+
     bool hasTemplate() const { return !templateGray.empty(); }
 
     // Examine each candidate rectangle in inputImg and return the best
@@ -52,6 +59,9 @@ public:
 
 private:
     cv::Mat templateGray; // grayscale, single-channel template
+    // Guards templateGray between reload() (camera thread) and classify()
+    // (detector thread).
+    mutable std::mutex templateMutex;
     std::string dataPath;
 };
 

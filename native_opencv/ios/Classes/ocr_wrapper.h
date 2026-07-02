@@ -13,6 +13,10 @@ struct OCRResult
     std::string text;
     float confidence;
     cv::Rect boundingBox;
+    // The literal image handed to the rec model (after resize_norm to 48px
+    // height, before tensorisation). Debug payload for the overlay's rec
+    // panel; cheap refcounted header, never marshalled over FFI.
+    cv::Mat recInput;
 };
 
 enum class OCRType { Eng, Digit, EngJP, Details };

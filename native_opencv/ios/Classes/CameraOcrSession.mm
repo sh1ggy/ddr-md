@@ -305,6 +305,10 @@ static const size_t kJobStackDepth = 5;
   }
   _debug = debug;
   if (_running) return YES;
+  // Pick up a details template written/updated after session creation (the
+  // Dart side re-copies assets on every init, incl. hot restart, but this
+  // session object outlives that).
+  _instance->reloadDetailsTemplate();
   _frameCounter = 0;
   _ocrBusy = false;
   _running = YES;

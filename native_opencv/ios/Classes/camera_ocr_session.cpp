@@ -203,6 +203,10 @@ bool CameraOcrSession::start(bool debug) {
     debug_ = debug;
     std::lock_guard<std::mutex> lk(cameraMutex_);
     if (running_ && session_) return true;
+    // Pick up a details template written/updated after session creation (the
+    // Dart side re-copies assets on every init, incl. hot restart, but this
+    // session object outlives that).
+    instance_->reloadDetailsTemplate();
     if (!reader_ || cameraId_.empty()) {
         LOGE("start() with no reader/camera");
         return false;
