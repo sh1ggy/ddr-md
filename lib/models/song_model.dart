@@ -1,10 +1,13 @@
 /// Name: SongState -- ChangeNotifier
-/// Description: Model for state relating to the selected song
+/// Description: Model for state relating to the selected song, plus the
+/// master song list ([Songs]) loaded from the bundled song-data assets.
 library;
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class SongState extends ChangeNotifier {
   SongInfo? _songInfo;
@@ -40,7 +43,78 @@ class SongState extends ChangeNotifier {
   }
 }
 
+// A fuzzy title match against the master song list: the closest song and its
+// similarity (1.0 = exact, 0.0 = nothing in common).
+class SongMatch {
+  final SongInfo song;
+  final double similarity;
+  const SongMatch(this.song, this.similarity);
+}
+
+/// Master song list, loaded once at startup from assets/song-data/*.json.
 class Songs {
   static List<String> assets = [];
   static List<SongInfo> list = [];
+
+  // Load song list JSONs from the asset bundle into the static list.
+  static Future<void> load() async {
+    AssetManifest asset = await AssetManifest.loadFromAssetBundle(rootBundle);
+    assets = asset.listAssets();
+
+    List<String> songDataPaths = assets
+        .where((string) => string.startsWith("assets/song-data/"))
+        .where((string) => string.endsWith(".json"))
+        .map((e) => e.substring(0, e.length - 5))
+        .toList();
+
+    for (int i = 0; i < songDataPaths.length; i++) {
+      var response = await rootBundle.loadString('${songDataPaths[i]}.json');
+      SongInfo songInfo;
+      try {
+        songInfo = parseJson(response);
+        list.add(songInfo);
+      } catch (e) {
+        // ignore: avoid_print
+        print("Error parsing JSON for ${songDataPaths[i]}: $e");
+        continue;
+      }
+    }
+  }
+
+  // Lowercase and strip everything but letters/digits (any script) so OCR
+  // punctuation/spacing noise doesn't count against the edit distance.
+  static String _normalize(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), '');
+
+  // Similarity of [query] (already normalized) to a song: the best normalized
+  // Levenshtein score across its title, translit title, and name.
+  static double _similarity(String query, SongInfo song) {
+    double best = 0;
+    for (final candidate in [song.title, song.titletranslit, song.name]) {
+      final normalized = _normalize(candidate);
+      if (normalized.isEmpty) continue;
+      final maxLen =
+          query.length > normalized.length ? query.length : normalized.length;
+      final similarity = 1 - levenshtein(query, normalized) / maxLen;
+      if (similarity > best) best = similarity;
+    }
+    return best;
+  }
+
+  // Finds the song whose title (or translit title) is closest to [ocrTitle]
+  // by normalized Levenshtein distance. Returns null when the list is empty
+  // or the query normalizes to nothing.
+  static SongMatch? matchTitle(String ocrTitle) =>
+      matchTitles(ocrTitle, limit: 1).firstOrNull;
+
+  // The [limit] closest songs to [ocrTitle], best first. Empty when the list
+  // is empty or the query normalizes to nothing.
+  static List<SongMatch> matchTitles(String ocrTitle, {int limit = 10}) {
+    final query = _normalize(ocrTitle);
+    if (query.isEmpty || list.isEmpty) return const [];
+    final matches = [
+      for (final song in list) SongMatch(song, _similarity(query, song)),
+    ]..sort((a, b) => b.similarity.compareTo(a.similarity));
+    return matches.take(limit).toList();
+  }
 }

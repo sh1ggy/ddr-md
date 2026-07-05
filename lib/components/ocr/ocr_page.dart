@@ -6,6 +6,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:ddr_md/components/ocr/load_image.dart';
+import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/ocr_processor.dart';
@@ -571,6 +572,8 @@ class _OcrPageState extends State<OcrPage>
         const SizedBox(height: 12),
         _buildCapturePanel(),
         _buildEditableScorePanel(),
+        if (_aggregator.detailsCount > 0)
+          SaveScorePanel(controllers: _fieldControllers),
         // Latest debug images remain inspectable after stopping (the notifiers
         // keep their last values); the panel gates internally on the toggle.
         _buildDebugControls(),

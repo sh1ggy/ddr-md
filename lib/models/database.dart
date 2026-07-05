@@ -12,14 +12,22 @@ class DatabaseProvider {
     return _database;
   }
 
+  static const String _scoresDdl =
+      'CREATE TABLE IF NOT EXISTS scores(date TEXT PRIMARY KEY, songTitle TEXT, difficulty TEXT, username TEXT, flare TEXT, score INT, marvelous INT, perfect INT, great INT, good INT, miss INT, maxCombo INT)';
+
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 2, onCreate: (db, version) async {
+    return await openDatabase(path, version: 3, onCreate: (db, version) async {
       await db.execute(
         'CREATE TABLE IF NOT EXISTS notes(date TEXT PRIMARY KEY, contents TEXT, songTitle TEXT)',
       );
       await db.execute(
           'CREATE TABLE IF NOT EXISTS favorites(id INTEGER PRIMARY KEY, isFav INT, songTitle TEXT)');
+      await db.execute(_scoresDdl);
+    }, onUpgrade: (db, oldVersion, newVersion) async {
+      if (oldVersion < 3) {
+        await db.execute(_scoresDdl);
+      }
     });
   }
 
@@ -59,6 +67,38 @@ class DatabaseProvider {
     var response = await db.query("favorites",
         where: "songTitle = ?", whereArgs: [songTitleTranslit]);
     var list = response.map((c) => Favorite.fromMap(c)).firstOrNull;
+    return list;
+  }
+
+  // --- SCORES FUNCTIONS
+  // Add score to the database
+  static addScore(Score score) async {
+    final db = await _instance;
+    var raw = await db.insert(
+      "scores",
+      score.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    return raw;
+  }
+
+  // Get all scores from the database for a specific song
+  static Future<List<Score>> getAllScoresBySong(
+      String songTitleTranslit) async {
+    final db = await _instance;
+    var response = await db.query("scores",
+        where: "songTitle = ?",
+        whereArgs: [songTitleTranslit],
+        orderBy: "date DESC");
+    List<Score> list = response.map((c) => Score.fromMap(c)).toList();
+    return list;
+  }
+
+  // Get all scores from the database
+  static Future<List<Score>> getAllScores() async {
+    final db = await _instance;
+    var response = await db.query("scores", orderBy: "date DESC");
+    List<Score> list = response.map((c) => Score.fromMap(c)).toList();
     return list;
   }
 
