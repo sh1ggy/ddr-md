@@ -61,12 +61,14 @@ class _SongListPageState extends State<SongListPage> {
       body: ListView.builder(
           scrollDirection: Axis.vertical,
           itemCount: widget.difficulty.songItemList.length,
-          prototypeItem: SongListItem(
-            songInfo: widget.difficulty.songItemList.first.songInfo,
-            isFav: widget.difficulty.songItemList.first.isFav,
-            isSearch: false,
-            regenFavsCallback: regenFavs,
-          ),
+          prototypeItem: widget.difficulty.songItemList.isEmpty
+              ? null
+              : SongListItem(
+                  songInfo: widget.difficulty.songItemList.first.songInfo,
+                  isFav: widget.difficulty.songItemList.first.isFav,
+                  isSearch: false,
+                  regenFavsCallback: regenFavs,
+                ),
           itemBuilder: (context, index) {
             return SongListItem(
               songInfo: widget.difficulty.songItemList[index].songInfo,

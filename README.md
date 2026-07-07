@@ -19,6 +19,27 @@ The intended usage of this application is to use it while you're playing DDR. Fo
 - Install the appropriate dependencies with `flutter pub get`
 - Either run the project via the debugger or with `flutter run`
 
+### Song Data
+
+Song metadata originates from StepMania `.ssc` files, parsed offline (via the DDR-BPM-prep process) into per-song JSONs committed under `assets/song-data/` — the repo's source of truth. At runtime the app prefers a single merged `assets/songlist.json` (one asset read at startup instead of ~1100), generated with:
+
+```bash
+bash scripts/generate_songlist.sh
+```
+
+The merged file is gitignored and rebuilt from `assets/song-data/` in under a second; when it isn't bundled, the app falls back to loading the per-song JSONs directly. Regenerate it after changing anything under `assets/song-data/` — a stale copy shadows fresher per-song data.
+
+### Lite Builds
+
+`scripts/build_lite.sh` builds the app without the jacket images and per-song JSONs (~430 MB of assets), bundling the merged songlist instead; missing jackets render as placeholder icons.
+
+```bash
+bash scripts/build_lite.sh                # defaults to flutter build apk
+bash scripts/build_lite.sh apk --release  # extra args are passed to flutter build
+```
+
+The script regenerates the songlist, strips the jacket and song-data asset entries from `pubspec.yaml`, runs the build, and restores the pubspec afterwards (even on failure).
+
 ### OCR Pipeline
 
 OCR is implemented in native C++ on top of OpenCV and the ONNX Runtime, calling PaddleOCR's PP-OCRv5 mobile models for text detection and recognition. The score panel runs detection + recognition over a single combined ROI; other fields (title, username, difficulty, details) run recognition only over hand-picked crops. See [docs/paddleocr-migration.md](./docs/paddleocr-migration.md) for the architectural rationale and pipeline diagram.

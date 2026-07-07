@@ -7,7 +7,7 @@ import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
-import 'package:simple_icons/simple_icons.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -126,17 +126,18 @@ class _SettingsPageState extends State<SettingsPage> {
                                 IconButton(
                                     onPressed: () =>
                                         _launchUrl(constants.github),
-                                    icon: const Icon(SimpleIcons.github,
+                                    icon: const FaIcon(FontAwesomeIcons.github,
                                         size: 20)),
                                 IconButton(
                                     onPressed: () =>
                                         _launchUrl(constants.linkedin),
-                                    icon: const Icon(SimpleIcons.linkedin,
+                                    icon: const FaIcon(
+                                        FontAwesomeIcons.linkedin,
                                         size: 20)),
                                 IconButton(
                                     onPressed: () =>
                                         _launchUrl(constants.paypalDono),
-                                    icon: const Icon(SimpleIcons.paypal,
+                                    icon: const FaIcon(FontAwesomeIcons.paypal,
                                         size: 20)),
                               ],
                             ),

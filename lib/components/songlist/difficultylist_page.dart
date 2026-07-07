@@ -45,34 +45,19 @@ class DifficultyListPage extends StatefulWidget {
 
 class _DifficultyListPageState extends State<DifficultyListPage> {
   Future<List<ListDifficulty>>? _songItemsPromise;
-  final List<SongListItem> _searchResultWidgets = [];
+  final List<SongInfo> _searchResults = [];
   int favCount = 0;
 
-  // Search result handler
+  // Search result handler; widgets are built lazily in suggestionsBuilder.
   void getMatch(String value) {
     value = value.toLowerCase().trim();
-    if (value == "") {
-      setState(() {
-        _searchResultWidgets.clear();
-      });
-      return;
-    }
-    _searchResultWidgets.clear();
-    var songListItems = Songs.list
-        .where((SongInfo song) =>
-            song.title.toLowerCase().contains(value) ||
-            song.titletranslit.toLowerCase().contains(value))
-        .map((e) => SongListItem(
-              songInfo: e,
-              isFav: false,
-              isSearch: true,
-              regenFavsCallback: regenFavCount,
-            ));
     setState(() {
-      _searchResultWidgets.addAll(songListItems);
+      _searchResults.clear();
+      if (value == "") return;
+      _searchResults.addAll(Songs.list.where((SongInfo song) =>
+          song.title.toLowerCase().contains(value) ||
+          song.titletranslit.toLowerCase().contains(value)));
     });
-
-    return;
   }
 
   // Populate difficulty folders
@@ -104,23 +89,25 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       }
     }
 
-    // Generate song list.
-    for (int i = 0; i < Songs.list.length; i++) {
-      SongInfo song = Songs.list[i];
+    // Generate song list: drop each song into the folder for each distinct
+    // level it has in the chosen mode (folders are indexed by value - 1).
+    for (SongInfo song in Songs.list) {
       Difficulty songDifficulty =
           mode == Modes.singles ? song.singles : song.doubles;
+      bool isFav =
+          favList.any((Favorite fav) => fav.songTitle == song.titletranslit);
 
-      for (var difficulty in newDiffList) {
-        if (songDifficulty
-            .toJson()
-            .containsValue(difficulty.value.toDouble())) {
-          difficulty.songItemList.add(SongItem(
-              songInfo: song,
-              isFav: favList.any((Favorite fav) {
-                final isFav = fav.songTitle == song.titletranslit;
-                return isFav;
-              })));
-        }
+      for (int? level in {
+        songDifficulty.beginner,
+        songDifficulty.easy,
+        songDifficulty.medium,
+        songDifficulty.hard,
+        songDifficulty.challenge,
+      }) {
+        if (level == null || level < 1 || level > newDiffList.length) continue;
+        newDiffList[level - 1]
+            .songItemList
+            .add(SongItem(songInfo: song, isFav: isFav));
       }
     }
 
@@ -356,10 +343,15 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           },
           suggestionsBuilder:
               (BuildContext context, SearchController controller) {
-            if (_searchResultWidgets.isEmpty || controller.text == "") {
+            if (_searchResults.isEmpty || controller.text == "") {
               return List.empty();
             }
-            return _searchResultWidgets;
+            return _searchResults.map((song) => SongListItem(
+                  songInfo: song,
+                  isFav: false,
+                  isSearch: true,
+                  regenFavsCallback: regenFavCount,
+                ));
           }),
     );
   }

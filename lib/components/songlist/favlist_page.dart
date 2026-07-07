@@ -29,8 +29,12 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
 
     List<SongInfo> tempFavoriteSongList = [];
     for (Favorite fav in favorites) {
-      tempFavoriteSongList.add(Songs.list.firstWhere(
-          (SongInfo songInfo) => fav.songTitle == songInfo.titletranslit));
+      // Skip favourites that no longer resolve against the loaded song list
+      // instead of crashing the page on firstWhere.
+      SongInfo? songInfo = Songs.list
+          .where((SongInfo songInfo) => fav.songTitle == songInfo.titletranslit)
+          .firstOrNull;
+      if (songInfo != null) tempFavoriteSongList.add(songInfo);
     }
     return tempFavoriteSongList;
   }
