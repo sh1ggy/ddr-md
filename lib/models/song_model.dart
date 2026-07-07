@@ -18,6 +18,9 @@ class SongState extends ChangeNotifier {
   Modes _mode = Modes.singles;
   Modes get modes => _mode;
 
+  SortType _sortType = SortType.level;
+  SortType get sortType => _sortType;
+
   int _chosenDifficulty = 0;
   int get chosenDifficulty => _chosenDifficulty;
 
@@ -31,6 +34,11 @@ class SongState extends ChangeNotifier {
 
   void setMode(Modes newMode) {
     _mode = newMode;
+    notifyListeners();
+  }
+
+  void setSortType(SortType newSortType) {
+    _sortType = newSortType;
     notifyListeners();
   }
 

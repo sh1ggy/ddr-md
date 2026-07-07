@@ -5,10 +5,13 @@ library;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
+import 'package:ddr_md/components/songlist/sort_menu_button.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class FavoriteListPage extends StatefulWidget {
   const FavoriteListPage({
@@ -54,6 +57,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
 
   @override
   Widget build(BuildContext context) {
+    var songState = context.watch<SongState>();
     return SafeArea(
         child: Scaffold(
             appBar: AppBar(
@@ -68,6 +72,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                     color: Colors.blueGrey,
                     fontWeight: FontWeight.w600),
               ),
+              actions: const <Widget>[SortMenuButton()],
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
             body: SingleChildScrollView(
@@ -81,8 +86,13 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                           height: MediaQuery.of(context).size.height / 1.5,
                           child: const Center(child: Text('No favourites...')));
                     }
+                    List<SongInfo> favSongs = List.of(snapshot.data!);
+                    if (songState.sortType != SortType.level) {
+                      favSongs.sort(
+                          (a, b) => compareSongInfo(a, b, songState.sortType));
+                    }
                     children =
-                        snapshot.data!.map<SongListItem>((SongInfo songInfo) {
+                        favSongs.map<SongListItem>((SongInfo songInfo) {
                       return SongListItem(
                         songInfo: songInfo,
                         isFav: true,
