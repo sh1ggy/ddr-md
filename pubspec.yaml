@@ -35,7 +35,12 @@ flutter:
     - assets/jackets-lowres/
     - assets/jackets/
     - assets/song-data/
-    - assets/models/
+    # Only the model triple the app loads at runtime (ocr_onnx.cpp defaults).
+    # The other variants in assets/models/ exist for the offline
+    # native_opencv/tools/model_compare harness and must not ship in the bundle.
+    - assets/models/ppocr_small_det.onnx
+    - assets/models/ppocr_small_rec.onnx
+    - assets/models/ppocrv6_small_dict.txt
     - assets/templates/
   fonts:
     - family: Handel

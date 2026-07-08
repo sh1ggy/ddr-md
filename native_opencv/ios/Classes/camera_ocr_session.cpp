@@ -370,11 +370,11 @@ void CameraOcrSession::handleImage(AImageReader *reader) {
         AImage_getPlanePixelStride(image, 1, &uPixStride);
         AImage_getPlanePixelStride(image, 2, &vPixStride);
 
-        std::vector<uint8_t> nv21((size_t)w * h * 3 / 2);
+        packNv21_.resize((size_t)w * h * 3 / 2);
         for (int row = 0; row < h; row++) {
-            memcpy(nv21.data() + (size_t)row * w, yData + (size_t)row * yRowStride, w);
+            memcpy(packNv21_.data() + (size_t)row * w, yData + (size_t)row * yRowStride, w);
         }
-        uint8_t *vu = nv21.data() + (size_t)w * h;
+        uint8_t *vu = packNv21_.data() + (size_t)w * h;
         for (int row = 0; row < h / 2; row++) {
             for (int col = 0; col < w / 2; col++) {
                 size_t vIdx = (size_t)row * vRowStride + (size_t)col * vPixStride;
@@ -386,7 +386,7 @@ void CameraOcrSession::handleImage(AImageReader *reader) {
 
         {
             std::lock_guard<std::mutex> lk(frameMutex_);
-            queuedNv21_ = std::move(nv21);
+            std::swap(queuedNv21_, packNv21_);
             frameReady_ = true;
         }
         frameCv_.notify_one();
@@ -402,14 +402,17 @@ void CameraOcrSession::handleImage(AImageReader *reader) {
 // throttled frame rate, never blocked by OCR), and on a match pushes a job onto
 // jobStack_ for the consumer to recognise.
 void CameraOcrSession::detectorLoop() {
+    // Hoisted out of the loop and swapped (not moved) with queuedNv21_, so the
+    // same buffers cycle between listener and detector with no per-frame
+    // allocation at steady state.
+    std::vector<uint8_t> nv21;
     while (true) {
-        std::vector<uint8_t> nv21;
         {
             std::unique_lock<std::mutex> lk(frameMutex_);
             frameCv_.wait(lk, [&] { return frameReady_; });
             frameReady_ = false;
             if (!workerRunning_) break;
-            nv21 = std::move(queuedNv21_);
+            nv21.swap(queuedNv21_);
         }
         if (nv21.empty()) {
             busy_ = false;
@@ -443,7 +446,7 @@ void CameraOcrSession::detectorLoop() {
         // updates the overlay and only feeds the aggregator on full results.
         if (resultFn_) {
             CCameraResult *out = BuildCCameraResult(det.result, bgr.cols, bgr.rows);
-            resultFn_(out);
+            if (out) resultFn_(out);
         }
 
         // On a match, hand the heavy work to the consumer via the LIFO stack.
@@ -486,7 +489,7 @@ void CameraOcrSession::consumerLoop() {
 
         if (resultFn_) {
             CCameraResult *out = BuildCCameraResult(res, w, h);
-            resultFn_(out);
+            if (out) resultFn_(out);
         }
     }
 }

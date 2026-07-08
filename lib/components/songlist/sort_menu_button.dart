@@ -35,23 +35,16 @@ class SortMenuButton extends StatelessWidget {
 
   PopupMenuItem sortMenuItem(BuildContext context, SongState songState,
       SortType sortType, IconData icon, String label) {
-    return PopupMenuItem(
-      padding: const EdgeInsets.all(0),
-      child: ListTile(
-        contentPadding: const EdgeInsets.only(left: 8, right: 8),
-        hoverColor: Colors.transparent,
-        onTap: () {
-          songState.setSortType(sortType);
-          onSorted?.call();
-          showToast(context, "Sorted by ${label.toLowerCase()}");
-          Navigator.pop(context);
-          return;
-        },
-        leading: Icon(icon),
-        title: Text(label),
-        trailing:
-            songState.sortType == sortType ? const Icon(Icons.check) : null,
-      ),
+    return menuListTileItem(
+      title: label,
+      leading: icon,
+      checked: songState.sortType == sortType,
+      onTap: () {
+        songState.setSortType(sortType);
+        onSorted?.call();
+        showToast(context, "Sorted by ${label.toLowerCase()}");
+        Navigator.pop(context);
+      },
     );
   }
 }

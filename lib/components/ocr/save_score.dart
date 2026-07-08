@@ -35,10 +35,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
 
   String _text(String key) => widget.controllers[key]?.text.trim() ?? '';
 
-  int? _number(String key) {
-    final digits = _text(key).replaceAll(RegExp(r'[^0-9]'), '');
-    return digits.isEmpty ? null : int.tryParse(digits);
-  }
+  int? _number(String key) => parseOcrNumber(_text(key));
 
   Future<void> _save(SongInfo song) async {
     final score = Score(

@@ -122,6 +122,10 @@ private:
     std::mutex frameMutex_;
     std::condition_variable frameCv_;
     std::vector<uint8_t> queuedNv21_; // packed NV21 (Y then interleaved VU)
+    // Listener-side scratch for packing; swapped with queuedNv21_ under the
+    // mutex so the multi-MB buffers are reused across frames instead of
+    // re-allocated per frame.
+    std::vector<uint8_t> packNv21_;
     bool frameReady_ = false;
     // Lifetime flag for both worker threads; read under either mutex, so atomic.
     std::atomic<bool> workerRunning_{false};

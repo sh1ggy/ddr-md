@@ -458,7 +458,7 @@ static const size_t kJobStackDepth = 5;
   // listener updates the overlay and only feeds the aggregator on full results.
   if (_resultFn) {
     CCameraResult *out = BuildCCameraResult(det.result, bgr.cols, bgr.rows);
-    _resultFn(out);
+    if (out) _resultFn(out);
   }
 
   // On a match, push onto the LIFO stack and kick the consumer queue. The
@@ -501,7 +501,7 @@ static const size_t kJobStackDepth = 5;
 
     if (_resultFn) {
       CCameraResult *out = BuildCCameraResult(res, w, h);
-      _resultFn(out);
+      if (out) _resultFn(out);
     }
   }
 }

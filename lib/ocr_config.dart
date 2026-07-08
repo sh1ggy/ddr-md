@@ -30,6 +30,18 @@ const int ocrMorphHeight = 90;  // HSV blob morphology opening kernel height
 // missing the real badge in poor lighting).
 const double ocrDetailsTemplateMinScore = 0.4;
 
+// Side-selection gate: when picking the left/right player's Details badge, a
+// candidate must score within this factor of the best match. Filters the
+// visually similar sibling tabs ("Simple results" / "Play Graph" / "FLARE")
+// whose scores land further from the winner than the other player's badge.
+const double ocrDetailsSideGateFactor = 0.92;
+
+// Minimum corner-quad/hull area ratio for a badge blob to be trusted for
+// homography. A clean badge blob is a convex quad, so the corner quad should
+// cover nearly all of the hull; below this the frame is skipped and the
+// aggregator waits for a clean one.
+const double ocrHomographyMinQuadCoverage = 0.8;
+
 // ---------------------------------------------------------------------------
 // ROI set in native 2554×1442 source-image space.
 //

@@ -205,9 +205,6 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
 
     checkpoint("Blob filtering", t_rolling_timer);
 
-    // double morph_scale_factor = 0.3;
-    // cv::resize(BW2, BW2, cv::Size(), morph_scale_factor, morph_scale_factor, cv::INTER_AREA);
-
     int m = config.morph_width;
     int n = config.morph_height;
 
@@ -326,7 +323,8 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
             // tab. Gate candidates to scores near the best match: the other
             // player's genuine Details badge lands close to the winner, the
             // sibling tabs don't.
-            const float sideMin = std::max(minScore, dmatch.score * 0.92f);
+            const float sideMin = std::max(
+                minScore, dmatch.score * (float)config.details_side_gate_factor);
             for (size_t i = 0; i < detectedRois.size(); ++i)
             {
                 std::vector<cv::Rect> one{detectedRois[i]};
@@ -545,7 +543,8 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
     const double hullArea = cv::contourArea(hull);
     const double quadArea =
         cv::contourArea(std::vector<cv::Point2f>{tl, tr, br, bl});
-    if (hullArea <= 0.0 || quadArea / hullArea < 0.8)
+    if (hullArea <= 0.0 ||
+        quadArea / hullArea < config.homography_min_quad_coverage)
     {
         platform_log("Corner quad covers %.0f%% of hull — rejecting frame for homography\n",
                      hullArea > 0.0 ? quadArea / hullArea * 100.0 : 0.0);

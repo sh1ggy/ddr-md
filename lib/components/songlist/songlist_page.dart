@@ -112,19 +112,13 @@ class _SongListPageState extends State<SongListPage> {
   }
 
   PopupMenuItem versionFilterItem(String? version) {
-    return PopupMenuItem(
-      padding: const EdgeInsets.all(0),
-      child: ListTile(
-        contentPadding: const EdgeInsets.only(left: 8, right: 8),
-        hoverColor: Colors.transparent,
-        onTap: () {
-          setState(() => _versionFilter = version);
-          Navigator.pop(context);
-          return;
-        },
-        title: Text(version ?? 'All versions'),
-        trailing: _versionFilter == version ? const Icon(Icons.check) : null,
-      ),
+    return menuListTileItem(
+      title: version ?? 'All versions',
+      checked: _versionFilter == version,
+      onTap: () {
+        setState(() => _versionFilter = version);
+        Navigator.pop(context);
+      },
     );
   }
 }

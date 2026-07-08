@@ -51,9 +51,10 @@ typedef void (*CameraResultFn)(struct CCameraResult *result);
 
 // ---- marshalling helpers (header-internal) ---------------------------------
 
+// On allocation failure returns nullptr, which the Dart reader maps to ''.
 static inline char *ccr_dup(const std::string &s) {
   char *p = (char *)malloc(s.size() + 1);
-  memcpy(p, s.c_str(), s.size() + 1);
+  if (p) memcpy(p, s.c_str(), s.size() + 1);
   return p;
 }
 
@@ -65,6 +66,7 @@ static inline void ccr_encode(const cv::Mat &img, const char *ext,
   std::vector<uchar> buf;
   if (cv::imencode(ext, img, buf) && !buf.empty()) {
     *out = (uint8_t *)malloc(buf.size());
+    if (*out == nullptr) return;
     memcpy(*out, buf.data(), buf.size());
     *len = (int32_t)buf.size();
   }
@@ -75,6 +77,7 @@ static inline void ccr_encode(const cv::Mat &img, const char *ext,
 static inline CCameraResult *BuildCCameraResult(const ProcessImgResult &r,
                                                 int width, int height) {
   CCameraResult *c = (CCameraResult *)calloc(1, sizeof(CCameraResult));
+  if (c == nullptr) return nullptr;
   c->isDetected = r.isDetected;
   c->detailsRoiIndex = r.detailsRoiIndex;
   c->width = width;
@@ -82,11 +85,15 @@ static inline CCameraResult *BuildCCameraResult(const ProcessImgResult &r,
   c->roisCount = (int32_t)r.rois.size();
   if (c->roisCount > 0) {
     c->rois = (int32_t *)malloc(sizeof(int32_t) * 4 * c->roisCount);
-    for (size_t i = 0; i < r.rois.size(); i++) {
-      c->rois[i * 4 + 0] = r.rois[i].x;
-      c->rois[i * 4 + 1] = r.rois[i].y;
-      c->rois[i * 4 + 2] = r.rois[i].width;
-      c->rois[i * 4 + 3] = r.rois[i].height;
+    if (c->rois == nullptr) {
+      c->roisCount = 0;
+    } else {
+      for (size_t i = 0; i < r.rois.size(); i++) {
+        c->rois[i * 4 + 0] = r.rois[i].x;
+        c->rois[i * 4 + 1] = r.rois[i].y;
+        c->rois[i * 4 + 2] = r.rois[i].width;
+        c->rois[i * 4 + 3] = r.rois[i].height;
+      }
     }
   }
   const auto &o = r.ocrResults;

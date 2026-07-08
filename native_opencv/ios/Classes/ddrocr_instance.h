@@ -98,7 +98,11 @@ struct ProcessImgResult
 // offset 52: morph_width          int32_t  (HSV blob morphology kernel width)
 // offset 56: morph_height         int32_t  (HSV blob morphology kernel height)
 // offset 60: roi[12][6]           int32_t[72]
-// total: 348 bytes
+// offset 348: combinedRoi[4]      int32_t[4]
+// offset 368: details_template_min_score    double (4 bytes padding before)
+// offset 376: details_side_gate_factor      double
+// offset 384: homography_min_quad_coverage  double
+// total: 392 bytes
 //
 // roi row: {x1, y1, x2, y2, expand_x, expand_y}
 // roi order: details(0), score(1), marvelous(2), perfect(3), great(4),
@@ -137,7 +141,14 @@ struct COCRConfig
     int32_t combinedRoi[4] = {1648, 2439, 2959, 2848};
     // DetailsDetector::classify threshold (TM_CCOEFF_NORMED). See
     // ocr_config.dart::ocrDetailsTemplateMinScore for the source of truth.
-    double  details_template_min_score = 0.55;
+    double  details_template_min_score = 0.4;
+    // Side-selection gate: a candidate Details badge must score within this
+    // factor of the best match to count as the other player's badge (filters
+    // the visually similar sibling tabs). See ocr_config.dart.
+    double  details_side_gate_factor = 0.92;
+    // Minimum corner-quad/hull area ratio for a badge blob to be trusted for
+    // homography; below this the frame is skipped. See ocr_config.dart.
+    double  homography_min_quad_coverage = 0.8;
 };
 
 enum class DetectionSide

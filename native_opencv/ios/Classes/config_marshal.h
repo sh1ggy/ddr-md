@@ -21,13 +21,15 @@
 //   doubles[2]  area_max_factor
 //   doubles[3]  resolution_scale
 //   doubles[4]  details_template_min_score
+//   doubles[5]  details_side_gate_factor
+//   doubles[6]  homography_min_quad_coverage
 #pragma once
 
 #include <cstdint>
 #include "ddrocr_instance.h"
 
 static const int kCfgIntCount = 83;
-static const int kCfgDoubleCount = 5;
+static const int kCfgDoubleCount = 7;
 
 // Returns a COCRConfig built from the arrays, or the struct defaults if either
 // array is the wrong size (defensive — keeps a malformed channel call from
@@ -63,5 +65,7 @@ static inline COCRConfig BuildCOCRConfigFromArrays(const int32_t *ints, int ni,
     cfg.area_max_factor = doubles[2];
     cfg.resolution_scale = doubles[3];
     cfg.details_template_min_score = doubles[4];
+    cfg.details_side_gate_factor = doubles[5];
+    cfg.homography_min_quad_coverage = doubles[6];
     return cfg;
 }

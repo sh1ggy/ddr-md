@@ -54,9 +54,8 @@ struct NamedRoiSet
 COCRConfig makeReferenceConfig()
 {
     COCRConfig c; // inherits non-ROI defaults (border, thresholds, etc.)
-    // Match the app: lib/ocr_config.dart ocrDetailsTemplateMinScore = 0.4
-    // (the C++ COCRConfig default is 0.55, but the app sends 0.4 via FFI).
-    c.details_template_min_score = 0.4;
+    // Struct defaults now match lib/ocr_config.dart (the app's FFI source of
+    // truth), so no per-field overrides are needed here.
     int roi[12][6] = {
         {1669, 864, 1920, 936, 0, 0},   // details
         {2129, 1005, 2273, 1042, 5, 6}, // score

@@ -19,6 +19,37 @@ int findNearestReadSpeed(int songBpm, List array, int readSpeed) {
   return nearest;
 }
 
+// Checkable popup-menu row shared by the songlist sort and version-filter
+// menus: a ListTile with an optional leading icon and a trailing check when
+// selected. onTap must handle closing the menu (Navigator.pop).
+PopupMenuItem menuListTileItem({
+  required String title,
+  IconData? leading,
+  required bool checked,
+  required VoidCallback onTap,
+}) {
+  return PopupMenuItem(
+    padding: const EdgeInsets.all(0),
+    child: ListTile(
+      contentPadding: const EdgeInsets.only(left: 8, right: 8),
+      hoverColor: Colors.transparent,
+      onTap: onTap,
+      leading: leading != null ? Icon(leading) : null,
+      title: Text(title),
+      trailing: checked ? const Icon(Icons.check) : null,
+    ),
+  );
+}
+
+// Parses a numeric OCR field reading into its integer value, dropping
+// formatting noise like thousands separators or stray whitespace
+// ("999,940" -> 999940). Returns null when there are no digits to read.
+int? parseOcrNumber(String raw) {
+  final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) return null;
+  return int.tryParse(digits);
+}
+
 // Levenshtein edit distance between two strings (two-row iterative form).
 int levenshtein(String a, String b) {
   if (a == b) return 0;

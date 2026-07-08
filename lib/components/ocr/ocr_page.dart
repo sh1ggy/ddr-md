@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_painter.dart';
+import 'package:ddr_md/helpers.dart' show parseOcrNumber;
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
@@ -199,8 +200,9 @@ class _OcrPageState extends State<OcrPage>
 
   Future<void> _initOcr() async {
     try {
-      // init() copies tessdata, allocates the native preview texture and the
-      // resident OCR instance, and returns the texture id + preview dims.
+      // init() copies the ONNX models + details template to disk, allocates
+      // the native preview texture and the resident OCR instance, and returns
+      // the texture id + preview dims.
       await _ocrProcessor.init();
       if (mounted) setState(() {});
     } catch (e) {
@@ -690,15 +692,6 @@ const Set<String> _numericKeys = {
   'maxCombo',
 };
 
-// Parses a numeric field's reading into its integer value, dropping formatting
-// noise like thousands separators or stray whitespace ("999,940" -> 999940).
-// Returns null when there are no digits to read.
-int? _parseOcrNumber(String raw) {
-  final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
-  if (digits.isEmpty) return null;
-  return int.tryParse(digits);
-}
-
 // Renders an integer with thousands separators for display ("999940" ->
 // "999,940").
 String _formatOcrNumber(int value) {
@@ -728,7 +721,7 @@ class _OcrAggregator {
       final trimmed = raw.trim();
       if (trimmed.isEmpty) return;
       final Object? value =
-          _numericKeys.contains(key) ? _parseOcrNumber(trimmed) : trimmed;
+          _numericKeys.contains(key) ? parseOcrNumber(trimmed) : trimmed;
       if (value == null) return;
       final tally = _counts.putIfAbsent(key, () => {});
       tally[value] = (tally[value] ?? 0) + 1;

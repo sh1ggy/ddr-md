@@ -188,6 +188,10 @@ final class COCRConfig extends Struct {
   external Array<Int32> combinedRoi;
   @Double()
   external double detailsTemplateMinScore;
+  @Double()
+  external double detailsSideGateFactor;
+  @Double()
+  external double homographyMinQuadCoverage;
 }
 
 final class COCRStrings extends Struct {
@@ -336,6 +340,8 @@ Pointer<COCRConfig> _buildOCRConfig() {
     p.ref.combinedRoi[c] = ocrCombinedRoi[c];
   }
   p.ref.detailsTemplateMinScore = ocrDetailsTemplateMinScore;
+  p.ref.detailsSideGateFactor = ocrDetailsSideGateFactor;
+  p.ref.homographyMinQuadCoverage = ocrHomographyMinQuadCoverage;
   return p;
 }
 
@@ -574,14 +580,11 @@ class OCRProcessor {
   }
 
   Future<void> _loadNativeAssets() async {
+    // Only the assets the native pipeline loads at runtime (and which pubspec
+    // bundles). A same-name model swap between app versions is caught by the
+    // length check below, so unchanged files skip the (slow, fsynced) rewrite.
     const assets = [
       'assets/templates/details.png',
-      'assets/models/ppocr_mobile_det.onnx',
-      'assets/models/ppocr_mobile_rec.onnx',
-      'assets/models/ppocrv5_dict.txt',
-      'assets/models/ppocr_tiny_det.onnx',
-      'assets/models/ppocr_tiny_rec.onnx',
-      'assets/models/ppocrv6_dict.txt',
       'assets/models/ppocr_small_det.onnx',
       'assets/models/ppocr_small_rec.onnx',
       'assets/models/ppocrv6_small_dict.txt',
@@ -594,6 +597,9 @@ class OCRProcessor {
       }
       final target = File(path.join(subdir.path, segments.last));
       final bytes = (await rootBundle.load(assetPath)).buffer.asUint8List();
+      if (await target.exists() && await target.length() == bytes.length) {
+        continue;
+      }
       await target.writeAsBytes(bytes, flush: true);
       print('Copied $assetPath -> ${target.path}');
     }
@@ -625,12 +631,14 @@ class OCRProcessor {
       ints[k++] = ocrCombinedRoi[c];
     }
 
-    final doubles = Float64List(5);
+    final doubles = Float64List(7);
     doubles[0] = ocrSimplificationEpsilon;
     doubles[1] = ocrAreaMinFactor;
     doubles[2] = ocrAreaMaxFactor;
     doubles[3] = ocrResolutionScale;
     doubles[4] = ocrDetailsTemplateMinScore;
+    doubles[5] = ocrDetailsSideGateFactor;
+    doubles[6] = ocrHomographyMinQuadCoverage;
     return (ints, doubles);
   }
 
