@@ -16,8 +16,6 @@ import 'package:path_provider/path_provider.dart';
 // camera screens. Keys match the maps built in fromNative / _readOcrStrings.
 const List<String> kOcrFieldOrder = [
   'title',
-  'username',
-  'difficulty',
   'score',
   'marvelous',
   'perfect',
@@ -25,6 +23,8 @@ const List<String> kOcrFieldOrder = [
   'good',
   'miss',
   'maxCombo',
+  'difficulty',
+  'username',
   'flare',
 ];
 

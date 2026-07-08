@@ -91,7 +91,8 @@ int compareSongInfo(SongInfo a, SongInfo b, SortType sortType) {
     case SortType.title:
       return _titleKey(a).compareTo(_titleKey(b));
     case SortType.version:
-      int byVersion = versionIndex(a.version).compareTo(versionIndex(b.version));
+      int byVersion =
+          versionIndex(a.version).compareTo(versionIndex(b.version));
       return byVersion != 0 ? byVersion : _titleKey(a).compareTo(_titleKey(b));
   }
 }
@@ -111,4 +112,30 @@ void showToast(BuildContext context, String message) {
 // Helper function to format date
 String formatDate(DateTime date) {
   return "${date.year}-${date.month}-${date.day} (${date.hour}:${date.minute.toString().length == 1 ? "0${date.minute}" : date.minute})";
+}
+
+// Helper function to format a score with thousands separators
+String formatScore(int score) {
+  return score
+      .toString()
+      .replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
+}
+
+// Accent color for a DDR judgment key. Returns null for unrecognised keys so
+// callers fall back to the theme's default text color (safe in dark mode).
+Color? judgmentColor(String key) {
+  switch (key.toLowerCase()) {
+    case 'marvelous':
+      return Colors.white;
+    case 'perfect':
+      return Colors.yellow[700]!;
+    case 'great':
+      return Colors.green;
+    case 'good':
+      return Colors.blueAccent;
+    case 'bad':
+      return Colors.purpleAccent;
+    default:
+      return null;
+  }
 }

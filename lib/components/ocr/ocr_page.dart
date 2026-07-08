@@ -6,10 +6,10 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:ddr_md/components/ocr/load_image.dart';
+import 'package:ddr_md/components/ocr/ocr_shared.dart';
 import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/helpers.dart' show parseOcrNumber;
-import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -80,15 +80,7 @@ class _OcrPageState extends State<OcrPage>
     // Repaint the ROI overlay every frame from the last-known result.
     _ticker = createTicker((_) => _frameTick.value++)..start();
 
-    final savedSideIndex = Settings.getInt(Settings.detectionSideKey);
-    // Stored as enum index; fall back to left when unset or invalid (the
-    // SharedPreferences default of 0 maps to DetectionSide.first which we
-    // never expose as a user choice).
-    if (savedSideIndex == DetectionSide.right.index) {
-      _detectionSide = DetectionSide.right;
-    } else {
-      _detectionSide = DetectionSide.left;
-    }
+    _detectionSide = savedDetectionSide();
 
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.side = _detectionSide;
@@ -276,7 +268,10 @@ class _OcrPageState extends State<OcrPage>
       ),
       body: Column(
         children: [
-          _buildSideSelector(),
+          DetectionSideSelector(
+            value: _detectionSide,
+            onChanged: _setDetectionSide,
+          ),
           Expanded(
             child: switch (cameraState) {
               CameraState.notReady =>
@@ -371,25 +366,6 @@ class _OcrPageState extends State<OcrPage>
     if (side == _detectionSide) return;
     setState(() => _detectionSide = side);
     _ocrProcessor.side = side;
-    Settings.setInt(Settings.detectionSideKey, side.index);
-  }
-
-  Widget _buildSideSelector() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Center(
-        child: SegmentedButton<DetectionSide>(
-          segments: const [
-            ButtonSegment(
-                value: DetectionSide.left, label: Text('Left (1P)')),
-            ButtonSegment(
-                value: DetectionSide.right, label: Text('Right (2P)')),
-          ],
-          selected: {_detectionSide},
-          onSelectionChanged: (s) => _setDetectionSide(s.first),
-        ),
-      ),
-    );
   }
 
   void _setDebugEnabled(bool enabled) {
@@ -573,9 +549,13 @@ class _OcrPageState extends State<OcrPage>
         ),
         const SizedBox(height: 12),
         _buildCapturePanel(),
-        _buildEditableScorePanel(),
         if (_aggregator.detailsCount > 0)
-          SaveScorePanel(controllers: _fieldControllers),
+          SaveScorePanel(
+            controllers: _fieldControllers,
+            initialTitle: _aggregator.best('title')?.value ?? '',
+            middleChildren: [_buildEditableScorePanel()],
+          ),
+        if (_aggregator.detailsCount == 0) _buildEditableScorePanel(),
         // Latest debug images remain inspectable after stopping (the notifiers
         // keep their last values); the panel gates internally on the toggle.
         _buildDebugControls(),
@@ -588,13 +568,14 @@ class _OcrPageState extends State<OcrPage>
   Widget _buildLiveScorePanel() {
     final rows = <Widget>[
       for (final key in kOcrFieldOrder)
-        if (_aggregator.best(key) case final best?)
-          OCRKeyValue(
-            keyName: ocrFieldLabel(key),
-            value: best.value,
-            confidence: best.confidence,
-            sampleCount: best.count,
-          ),
+        if (key != 'title')
+          if (_aggregator.best(key) case final best?)
+            OCRKeyValue(
+              keyName: ocrFieldLabel(key),
+              value: best.value,
+              confidence: best.confidence,
+              sampleCount: best.count,
+            ),
     ];
     return _scorePanelShell(
       rows: rows,
@@ -609,20 +590,21 @@ class _OcrPageState extends State<OcrPage>
     final bool showHistograms = _histogramsExpanded;
     final rows = <Widget>[
       for (final key in kOcrFieldOrder)
-        if (_aggregator.best(key) case final best?)
-          OCREditableField(
-            keyName: key,
-            controller: _controllerFor(key),
-            confidence: best.confidence,
-            sampleCount: best.count,
-            winnerValue: best.value,
-            candidates: showHistograms
-                ? [
-                    for (final c in _aggregator.candidates(key))
-                      OCRCandidate(c.value, c.count, c.share),
-                  ]
-                : const [],
-            onUserEdit: (_) => _userEditedFields.add(key),
+        if (key != 'title')
+          if (_aggregator.best(key) case final best?)
+            OCREditableField(
+              keyName: key,
+              controller: _controllerFor(key),
+              confidence: best.confidence,
+              sampleCount: best.count,
+              winnerValue: best.value,
+              candidates: showHistograms
+                  ? [
+                      for (final c in _aggregator.candidates(key))
+                        OCRCandidate(c.value, c.count, c.share),
+                    ]
+                  : const [],
+              onUserEdit: (_) => _userEditedFields.add(key),
           ),
     ];
     return _scorePanelShell(

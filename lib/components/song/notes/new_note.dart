@@ -1,5 +1,5 @@
 /// Name: NewNoteField
-/// Parent: NotePage
+/// Parent: NotesTab
 /// Description: Widget that is contained in the BottomSheet called in
 /// the parent for new notes, saving them to the database.
 library;

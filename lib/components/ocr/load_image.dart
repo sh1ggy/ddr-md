@@ -3,8 +3,10 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:ddr_md/components/ocr/ocr_shared.dart';
 import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_overlay.dart';
+import 'package:ddr_md/helpers.dart' show judgmentColor;
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -29,14 +31,18 @@ class _LoadImageState extends State<LoadImage> {
   XFile? _pickedImage;
   ProcessResult? _lastResult;
   double _camFrameToScreenScale = 1.0;
+  DetectionSide _detectionSide = DetectionSide.left;
+  String _ocrTitle = '';
   // Editable controllers per OCR field, prefilled from the result. Created
-  // lazily when a result arrives and reused across results.
+  // lazily when a result arrives and reused across results. Title is excluded.
   final Map<String, TextEditingController> _fieldControllers = {};
 
   // Prefills the editable controllers from the OCR result, creating missing
-  // ones. Only keys present (and non-empty) in [ocrStrings] get a field.
+  // ones. Title is excluded — it drives song matching directly, not a field.
+  // Only keys present (and non-empty) in [ocrStrings] get a field.
   void _syncFieldControllers(Map<String, String> ocrStrings) {
     for (final key in kOcrFieldOrder) {
+      if (key == 'title') continue;
       final value = ocrStrings[key]?.trim() ?? '';
       if (value.isEmpty) continue;
       final controller =
@@ -90,7 +96,9 @@ class _LoadImageState extends State<LoadImage> {
     getApplicationDocumentsDirectory().then((dir) {
       tempDir = dir;
     });
+    _detectionSide = savedDetectionSide();
     _ocrProcessor = OCRProcessor();
+    _ocrProcessor.side = _detectionSide;
     _ocrProcessor.streamResultController.stream.listen((result) async {
       // Try to read the saved temp image and compute a scale so ROI maps to
       // the displayed image width. Falls back to existing scale if file missing.
@@ -137,6 +145,7 @@ class _LoadImageState extends State<LoadImage> {
                 result.captureBytes,
                 result.detailsRoiIndex,
                 result.ocrStrings);
+            _ocrTitle = result.ocrStrings['title']?.trim() ?? '';
             _syncFieldControllers(result.ocrStrings);
           });
         });
@@ -177,11 +186,20 @@ class _LoadImageState extends State<LoadImage> {
         onPressed: _isReady ? _processImage : null,
         child: Text(_isReady ? 'Process photo' : 'Initialising…'),
       ),
-      body: Center(
-        child: _isPicking
-            ? const CircularProgressIndicator()
-            : ListView(
-                shrinkWrap: true,
+      body: Column(
+        children: [
+          DetectionSideSelector(
+            value: _detectionSide,
+            onChanged: (side) => setState(() {
+              _detectionSide = side;
+              _ocrProcessor.side = side;
+            }),
+          ),
+          Expanded(
+            child: _isPicking
+                ? const Center(child: CircularProgressIndicator())
+                : ListView(
+                    shrinkWrap: true,
                 children: [
                   isDetected
                       ? RoiOverlay(
@@ -205,7 +223,7 @@ class _LoadImageState extends State<LoadImage> {
                           padding: EdgeInsets.all(8.0),
                           child: Center(
                               child: Text(
-                            "Details detected!",
+                        "Successfully detected!",
                             style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -216,20 +234,22 @@ class _LoadImageState extends State<LoadImage> {
                   if (hasScore)
                     Padding(
                       padding: const EdgeInsets.all(8.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
+                      child: SaveScorePanel(
+                        controllers: _fieldControllers,
+                        initialTitle: _ocrTitle,
+                        middleChildren: [
                           for (final key in _populatedKeys)
                             OCREditableField(
                               keyName: key,
                               controller: _fieldControllers[key]!,
                             ),
-                          SaveScorePanel(controllers: _fieldControllers),
                         ],
                       ),
                     ),
                 ],
               ),
+          ),
+        ],
       ),
     );
   }
@@ -245,25 +265,6 @@ String ocrFieldLabel(String key) {
   }
 }
 
-// Accent color for an OCR field key — shared by the read-only and editable
-// widgets. Returns null for keys with no special color so the caller falls back
-// to the theme's default text color (important for dark mode).
-Color? ocrColorForKey(String k) {
-  switch (k.toLowerCase()) {
-    case 'marvelous':
-      return Colors.grey;
-    case 'perfect':
-      return Colors.yellow[700]!;
-    case 'great':
-      return Colors.green;
-    case 'good':
-      return Colors.blueAccent;
-    case 'bad':
-      return Colors.purpleAccent;
-    default:
-      return null;
-  }
-}
 
 // A single candidate reading for a field, used to render the clickable
 // histogram in the camera flow (ordered by how many frames detected the value).
@@ -318,7 +319,7 @@ class OCREditableField extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: ocrColorForKey(keyName),
+                    color: judgmentColor(keyName),
                   ),
                 ),
               ),
@@ -479,7 +480,7 @@ class OCRKeyValue extends StatelessWidget {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: ocrColorForKey(keyName),
+              color: judgmentColor(keyName),
             ),
           ),
         ),

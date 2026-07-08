@@ -56,9 +56,9 @@ class DatabaseProvider {
     final db = await _instance;
     Favorite deletedFav =
         Favorite(id: fav.id, isFav: false, songTitle: fav.songTitle);
-    // Favourites is one to one with song so this where condition reflects that. 
-    var raw =
-        await db.delete("favorites", where: "songTitle = ?", whereArgs: [fav.songTitle]);
+    // Favourites is one to one with song so this where condition reflects that.
+    var raw = await db.delete("favorites",
+        where: "songTitle = ?", whereArgs: [fav.songTitle]);
     return deletedFav;
   }
 
@@ -92,6 +92,18 @@ class DatabaseProvider {
         orderBy: "date DESC");
     List<Score> list = response.map((c) => Score.fromMap(c)).toList();
     return list;
+  }
+
+  // Get the most recent score from the database for a specific song
+  static Future<Score?> getLatestScoreBySong(String songTitleTranslit) async {
+    final db = await _instance;
+    var response = await db.query("scores",
+        where: "songTitle = ?",
+        whereArgs: [songTitleTranslit],
+        orderBy: "date DESC",
+        limit: 1);
+    if (response.isEmpty) return null;
+    return Score.fromMap(response.first);
   }
 
   // Get all scores from the database
@@ -152,8 +164,10 @@ class DatabaseProvider {
 
   static Future<Note?> getLatestNoteBySong(String songTitleTranslit) async {
     final db = await _instance;
-    var response = await db
-        .query("notes", where: "songTitle = ?", whereArgs: [songTitleTranslit], orderBy: "date ASC");
+    var response = await db.query("notes",
+        where: "songTitle = ?",
+        whereArgs: [songTitleTranslit],
+        orderBy: "date ASC");
     if (response.isEmpty) return null;
     Note latestNote = response.map((c) => Note.fromMap(c)).toList().last;
     return latestNote;
