@@ -32,8 +32,6 @@ enum DifficultyType { None, FFXI }
 
 enum DetectionSide { first, left, right }
 
-const DetectionSide kDetectionSide = DetectionSide.left;
-
 enum ReturnImageType { None, DirImage, BytesImage }
 
 // Whether the native pipeline should capture debug images for on-device
@@ -57,6 +55,9 @@ class ProcessResult {
   // "Details" (independent of the debug toggle). The stopped view paints the
   // static ROIs over the last non-null one.
   final Uint8List? captureBytes;
+  // Comprehensive all-field debug overlay (PNG) drawn on the warped frame.
+  // Present only when debug is on and a warp ran; null otherwise.
+  final Uint8List? debugOverlayBytes;
   final int? detailsRoiIndex;
   final Map<String, String> ocrStrings;
   // Dimensions of the processed frame (the pixel space the ROIs are expressed
@@ -78,6 +79,7 @@ class ProcessResult {
     this.ocrStrings, {
     this.frameWidth = 0,
     this.frameHeight = 0,
+    this.debugOverlayBytes,
   });
 
   // Reads a CCameraResult the native OCR worker handed back over the FFI
@@ -116,6 +118,7 @@ class ProcessResult {
     final mask = img(r.mask, r.maskLen);
     final crop = img(r.crop, r.cropLen);
     final capture = img(r.capture, r.captureLen);
+    final overlay = img(r.overlay, r.overlayLen);
     final imageType = (mask != null || crop != null)
         ? ReturnImageType.BytesImage
         : ReturnImageType.None;
@@ -134,6 +137,7 @@ class ProcessResult {
       ocr,
       frameWidth: r.width,
       frameHeight: r.height,
+      debugOverlayBytes: overlay,
     );
   }
 }
@@ -233,6 +237,9 @@ final class CCameraResult extends Struct {
   external Pointer<Uint8> capture;
   @Int32()
   external int captureLen;
+  external Pointer<Uint8> overlay;
+  @Int32()
+  external int overlayLen;
 }
 
 typedef _c_createOcrInstance = Pointer<Void> Function(
@@ -282,6 +289,9 @@ typedef _dart_cameraVoid = void Function(Pointer<Void>);
 typedef _c_cameraSetDebug = Void Function(Pointer<Void>, Int32);
 typedef _dart_cameraSetDebug = void Function(Pointer<Void>, int);
 
+typedef _c_cameraSetSide = Void Function(Pointer<Void>, Int32);
+typedef _dart_cameraSetSide = void Function(Pointer<Void>, int);
+
 final _cameraRegisterFn =
     _nativeLib.lookupFunction<_c_cameraRegister, _dart_cameraRegister>(
         'camera_register_callback');
@@ -292,6 +302,9 @@ final _cameraStopFn =
 final _cameraSetDebugFn =
     _nativeLib.lookupFunction<_c_cameraSetDebug, _dart_cameraSetDebug>(
         'camera_set_debug');
+final _cameraSetSideFn =
+    _nativeLib.lookupFunction<_c_cameraSetSide, _dart_cameraSetSide>(
+        'camera_set_side');
 final _cameraFreeResultFn =
     _nativeLib.lookupFunction<_c_cameraVoid, _dart_cameraVoid>(
         'camera_free_result');
@@ -369,7 +382,7 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
 // Runs the picked-image FFI path inside a one-shot isolate so the (slow)
 // instance creation + OCR doesn't jank the UI thread. Creates and destroys a
 // transient DdrocrInstance for the single call.
-ProcessResult _runPickedImage(String appPath, String imagePath) {
+ProcessResult _runPickedImage(String appPath, String imagePath, int side) {
   final createFn =
       _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
           'create_ocr_instance');
@@ -401,7 +414,7 @@ ProcessResult _runPickedImage(String appPath, String imagePath) {
     outputRoisCount,
     outputDetailsRoiIndex,
     outStrings,
-    kDetectionSide.index,
+    side,
   );
   calloc.free(imagePathPtr);
 
@@ -496,6 +509,18 @@ class OCRProcessor {
     }
   }
 
+  // Which player's panel to OCR. Plumbed to the native camera session (live
+  // path) and passed per-call on the picked-image path. Settable mid-session.
+  DetectionSide _side = DetectionSide.left;
+
+  DetectionSide get side => _side;
+  set side(DetectionSide v) {
+    _side = v;
+    if (_session != nullptr) {
+      _cameraSetSideFn(_session, v.index);
+    }
+  }
+
   // Invoked on the main isolate by the NativeCallable.listener. Copies the
   // result out and frees the native buffer.
   void _onNativeResult(Pointer<CCameraResult> p) {
@@ -539,6 +564,9 @@ class OCRProcessor {
         _resultCallable =
             NativeCallable<_ResultCallbackNative>.listener(_onNativeResult);
         _cameraRegisterFn(_session, _resultCallable!.nativeFunction);
+        // Push the side chosen before the session existed (the UI sets it in
+        // initState, ahead of init()).
+        _cameraSetSideFn(_session, _side.index);
       }
     } catch (e) {
       print('Native camera session init failed (picked-image still works): $e');
@@ -640,8 +668,9 @@ class OCRProcessor {
     try {
       final appPath = appDir!.path;
       final imagePath = image.path;
+      final sideIndex = _side.index;
       final result =
-          await Isolate.run(() => _runPickedImage(appPath, imagePath));
+          await Isolate.run(() => _runPickedImage(appPath, imagePath, sideIndex));
       streamResultController.add(result);
     } catch (e) {
       print('Picked image processing failed: $e');

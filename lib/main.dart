@@ -9,7 +9,6 @@ import 'package:ddr_md/components/bpm_page.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
-import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/difficultylist_page.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -18,38 +17,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-// Function to load song list JSONs from asset bundle into static class for global use
-Future<void> loadSongList() async {
-  AssetManifest asset = await AssetManifest.loadFromAssetBundle(rootBundle);
-  Songs.assets = asset.listAssets();
-
-  List<String> songDataPaths = Songs.assets
-      .where((string) => string.startsWith("assets/song-data/"))
-      .where((string) => string.endsWith(".json"))
-      .map((e) => e.substring(0, e.length - 5))
-      .toList();
-
-  for (int i = 0; i < songDataPaths.length; i++) {
-    var response = await rootBundle.loadString('${songDataPaths[i]}.json');
-    SongInfo songInfo;
-    try {
-      songInfo = parseJson(response);
-      Songs.list.add(songInfo);
-    } catch (e) {
-      // ignore: avoid_print
-      print("Error parsing JSON for ${songDataPaths[i]}: $e");
-      continue;
-    }
-  }
-}
-
 void main() async {
   // Avoid errors caused by flutter upgrade.
   WidgetsFlutterBinding.ensureInitialized();
   // Initialise global objects
   await Settings.init();
   await DatabaseProvider.init();
-  await loadSongList();
+  await Songs.load();
 
   // Wrapped app with providers
   runApp(MultiProvider(

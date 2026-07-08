@@ -108,6 +108,10 @@ FFI_EXPORT void camera_set_debug(void *session, int32_t enabled) {
     if (session) static_cast<CameraOcrSession *>(session)->setDebug(enabled != 0);
 }
 
+FFI_EXPORT void camera_set_side(void *session, int32_t side) {
+    if (session) static_cast<CameraOcrSession *>(session)->setSide(side);
+}
+
 FFI_EXPORT void camera_free_result(void *result) {
     FreeCCameraResult(static_cast<CCameraResult *>(result));
 }

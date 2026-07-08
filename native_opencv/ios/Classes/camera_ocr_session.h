@@ -65,6 +65,10 @@ public:
 
     void setDebug(bool debug) { debug_ = debug; }
 
+    // Selects which player's panel the detector targets (DetectionSide ordinal).
+    // Read atomically by the detector thread, so it can change mid-session.
+    void setSide(int side) { side_ = side; }
+
 private:
     // Camera2 lifecycle
     bool openCameraLocked();
@@ -138,6 +142,8 @@ private:
     std::atomic<bool> busy_{false};
     std::atomic<bool> running_{false};
     std::atomic<bool> debug_{false};
+    // Selected DetectionSide ordinal; defaults to FIRST (0). Set from Dart.
+    std::atomic<int> side_{0};
     int frameCounter_ = 0;
     static constexpr int kFrameThreshold = 3;
     // Cap the preview output's longer edge. "PRIV preview + YUV maximum" is a

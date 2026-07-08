@@ -8,6 +8,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/songlist_page.dart';
+import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -16,14 +17,12 @@ import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:provider/provider.dart';
 
-class ListDifficulty {
-  ListDifficulty({
-    required this.value,
-    this.isExpanded = false,
+class SongFolder {
+  SongFolder({
+    required this.name,
     required this.songItemList,
   });
-  int value;
-  bool isExpanded;
+  String name;
   List<SongItem> songItemList = [];
 }
 
@@ -44,44 +43,21 @@ class DifficultyListPage extends StatefulWidget {
 }
 
 class _DifficultyListPageState extends State<DifficultyListPage> {
-  Future<List<ListDifficulty>>? _songItemsPromise;
-  final List<SongListItem> _searchResultWidgets = [];
+  Future<List<SongFolder>>? _songItemsPromise;
+  final List<SongInfo> _searchResults = [];
   int favCount = 0;
 
-  // Search result handler
+  // Search result handler; widgets are built lazily in suggestionsBuilder.
   void getMatch(String value) {
     value = value.toLowerCase().trim();
-    if (value == "") {
-      setState(() {
-        _searchResultWidgets.clear();
-      });
-      return;
-    }
-    _searchResultWidgets.clear();
-    var songListItems = Songs.list
-        .where((SongInfo song) =>
-            song.title.toLowerCase().contains(value) ||
-            song.titletranslit.toLowerCase().contains(value))
-        .map((e) => SongListItem(
-              songInfo: e,
-              isFav: false,
-              isSearch: true,
-              regenFavsCallback: regenFavCount,
-            ));
     setState(() {
-      _searchResultWidgets.addAll(songListItems);
+      _searchResults.clear();
+      if (value == "") return;
+      _searchResults.addAll(Songs.list.where((SongInfo song) =>
+          song.title.toLowerCase().contains(value) ||
+          song.titletranslit.toLowerCase().contains(value)));
     });
-
-    return;
   }
-
-  // Populate difficulty folders
-  List<ListDifficulty> difficultyList = List<ListDifficulty>.generate(
-    constants.maxDifficulty,
-    (index) {
-      return (ListDifficulty(value: 1 + index, songItemList: []));
-    },
-  );
 
   void regenFavCount() async {
     List<Favorite> favList = await DatabaseProvider.getAllFavorites();
@@ -90,49 +66,108 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     });
   }
 
-  Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
-    List<ListDifficulty> newDiffList = difficultyList;
+  // First letter of the (romaji) title, so Japanese titles bucket in with
+  // their romaji equivalent; anything not A-Z goes under '#'.
+  String titleBucket(SongInfo song) {
+    String title = (song.titletranslit.isNotEmpty ? song.titletranslit : song.title)
+        .trim();
+    if (title.isEmpty) return '#';
+    String first = title[0].toUpperCase();
+    return RegExp(r'[A-Z]').hasMatch(first) ? first : '#';
+  }
+
+  Future<List<SongFolder>> generateFolders(Modes mode, SortType sortType) async {
     List<Favorite> favList = await DatabaseProvider.getAllFavorites();
     setState(() {
       favCount = favList.length;
     });
 
-    // Clear list and regenerate if already exists
-    if (newDiffList.first.songItemList.isNotEmpty) {
-      for (var difficulty in newDiffList) {
-        difficulty.songItemList.clear();
+    // Bucket every song into folders keyed by the chosen sort: one folder
+    // per level (a song repeats for each distinct level it has in the
+    // chosen mode), per first title letter, or per game version.
+    Map<String, SongFolder> folders = {};
+    if (sortType == SortType.level) {
+      for (int i = 1; i <= constants.maxDifficulty; i++) {
+        folders['Level $i'] = SongFolder(name: 'Level $i', songItemList: []);
+      }
+    }
+    for (SongInfo song in Songs.list) {
+      bool isFav =
+          favList.any((Favorite fav) => fav.songTitle == song.titletranslit);
+
+      List<String> names = [];
+      switch (sortType) {
+        case SortType.level:
+          Difficulty songDifficulty =
+              mode == Modes.singles ? song.singles : song.doubles;
+          for (int? level in {
+            songDifficulty.beginner,
+            songDifficulty.easy,
+            songDifficulty.medium,
+            songDifficulty.hard,
+            songDifficulty.challenge,
+          }) {
+            if (level == null || level < 1 || level > constants.maxDifficulty) {
+              continue;
+            }
+            names.add('Level $level');
+          }
+          break;
+        case SortType.title:
+          names.add(titleBucket(song));
+          break;
+        case SortType.version:
+          names.add(song.version);
+          break;
+      }
+      for (String name in names) {
+        folders
+            .putIfAbsent(name, () => SongFolder(name: name, songItemList: []))
+            .songItemList
+            .add(SongItem(songInfo: song, isFav: isFav));
       }
     }
 
-    // Generate song list.
-    for (int i = 0; i < Songs.list.length; i++) {
-      SongInfo song = Songs.list[i];
-      Difficulty songDifficulty =
-          mode == Modes.singles ? song.singles : song.doubles;
-
-      for (var difficulty in newDiffList) {
-        if (songDifficulty
-            .toJson()
-            .containsValue(difficulty.value.toDouble())) {
-          difficulty.songItemList.add(SongItem(
-              songInfo: song,
-              isFav: favList.any((Favorite fav) {
-                final isFav = fav.songTitle == song.titletranslit;
-                return isFav;
-              })));
-        }
+    List<SongFolder> folderList = folders.values.toList();
+    switch (sortType) {
+      case SortType.level:
+        break; // Already inserted in level order.
+      case SortType.title:
+        // Alphabetical folders, with the '#' catch-all last.
+        folderList.sort((a, b) => a.name == '#'
+            ? 1
+            : b.name == '#'
+                ? -1
+                : a.name.compareTo(b.name));
+        break;
+      case SortType.version:
+        folderList.sort(
+            (a, b) => versionIndex(a.name).compareTo(versionIndex(b.name)));
+        break;
+    }
+    // Alphabetical contents for title/version folders; level folders keep
+    // the master list's order.
+    if (sortType != SortType.level) {
+      for (SongFolder folder in folderList) {
+        folder.songItemList.sort(
+            (a, b) => compareSongInfo(a.songInfo, b.songInfo, SortType.title));
       }
     }
+    return folderList;
+  }
 
-    return difficultyList;
+  void regenFolders(Modes mode, SortType sortType) {
+    setState(() {
+      _songItemsPromise = generateFolders(mode, sortType);
+    });
   }
 
   @override
   void initState() {
     super.initState();
     SongState songState = Provider.of<SongState>(context, listen: false);
-    _songItemsPromise =
-        Future<List<ListDifficulty>>(() => generateSongItems(songState.modes));
+    _songItemsPromise = Future<List<SongFolder>>(
+        () => generateFolders(songState.modes, songState.sortType));
   }
 
   @override
@@ -154,32 +189,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
               ),
               actions: <Widget>[
-                // TODO: Uncomment when sorting exists.
-                // PopupMenuButton(
-                //   initialValue: 0,
-                //   tooltip: "Sort",
-                //   icon: const Icon(Icons.sort),
-                //   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-                //     const PopupMenuItem(
-                //       child: ListTile(
-                //         leading: Icon(Icons.sort_by_alpha),
-                //         title: Text('Alphabetical'),
-                //       ),
-                //     ),
-                //     const PopupMenuItem(
-                //       child: ListTile(
-                //         leading: Icon(Icons.sports_esports_rounded),
-                //         title: Text('Version'),
-                //       ),
-                //     ),
-                //     const PopupMenuItem(
-                //       child: ListTile(
-                //         leading: Icon(Icons.not_interested_rounded),
-                //         title: Text('None'),
-                //       ),
-                //     ),
-                //   ],
-                // ),
+                SortMenuButton(
+                    onSorted: () =>
+                        regenFolders(songState.modes, songState.sortType)),
                 PopupMenuButton(
                   initialValue: 0,
                   tooltip: "Chart Type",
@@ -193,7 +205,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                         hoverColor: Colors.transparent,
                         onTap: () {
                           songState.setMode(Modes.singles);
-                          generateSongItems(Modes.singles);
+                          regenFolders(Modes.singles, songState.sortType);
                           showToast(context, "Set mode to singles");
                           Navigator.pop(context);
                           return;
@@ -210,7 +222,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                             const EdgeInsets.only(left: 8, right: 8),
                         onTap: () {
                           songState.setMode(Modes.doubles);
-                          generateSongItems(Modes.doubles);
+                          regenFolders(Modes.doubles, songState.sortType);
                           showToast(context, "Set mode to doubles");
                           Navigator.pop(context);
                           return;
@@ -258,7 +270,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                         fontSize: 22),
                     children: <TextSpan>[
                       TextSpan(
-                          text: '$favCount song${favCount == 1 ? 's' : ''}',
+                          text: '$favCount song${favCount == 1 ? '' : 's'}',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 19,
@@ -272,23 +284,24 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                       context,
                       MaterialPageRoute(
                           builder: (context) => const FavoriteListPage()));
-                  generateSongItems(songState.modes);
+                  regenFolders(songState.modes, songState.sortType);
                 },
               ),
             );
-            difficultyFolders.addAll(
-                snapshot.data!.map<ListTile>((ListDifficulty difficulty) {
+            difficultyFolders
+                .addAll(snapshot.data!.map<ListTile>((SongFolder folder) {
               return ListTile(
                 title: RichText(
                   text: TextSpan(
-                    text: 'Level ${difficulty.value}: ',
+                    text: '${folder.name}: ',
                     style: TextStyle(
                         color: Theme.of(context).textTheme.bodyLarge!.color,
                         fontWeight: FontWeight.bold,
                         fontSize: 22),
                     children: <TextSpan>[
                       TextSpan(
-                          text: '${difficulty.songItemList.length} songs',
+                          text:
+                              '${folder.songItemList.length} song${folder.songItemList.length == 1 ? '' : 's'}',
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 19,
@@ -302,9 +315,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                       context,
                       MaterialPageRoute(
                           builder: (context) => SongListPage(
-                                difficulty: difficulty,
+                                folder: folder,
                               )));
-                  generateSongItems(songState.modes);
+                  regenFolders(songState.modes, songState.sortType);
                 },
               );
             }).toList());
@@ -356,10 +369,15 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           },
           suggestionsBuilder:
               (BuildContext context, SearchController controller) {
-            if (_searchResultWidgets.isEmpty || controller.text == "") {
+            if (_searchResults.isEmpty || controller.text == "") {
               return List.empty();
             }
-            return _searchResultWidgets;
+            return _searchResults.map((song) => SongListItem(
+                  songInfo: song,
+                  isFav: false,
+                  isSearch: true,
+                  regenFavsCallback: regenFavCount,
+                ));
           }),
     );
   }

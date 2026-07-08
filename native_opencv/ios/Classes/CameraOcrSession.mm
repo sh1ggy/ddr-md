@@ -57,6 +57,7 @@ static const size_t kJobStackDepth = 5;
 - (BOOL)startCamera:(BOOL)debug;
 - (void)stopCamera;
 - (void)setDebugEnabled:(BOOL)enabled;
+- (void)setSide:(int)side;
 @end
 
 @implementation CameraOcrSession {
@@ -96,6 +97,8 @@ static const size_t kJobStackDepth = 5;
 
   BOOL _debug;
   BOOL _running;
+  // Selected DetectionSide ordinal; defaults to FIRST (0). Set from Dart.
+  std::atomic<int> _side;
 
   int _previewWidth;
   int _previewHeight;
@@ -288,6 +291,10 @@ static const size_t kJobStackDepth = 5;
   _debug = enabled;
 }
 
+- (void)setSide:(int)side {
+  _side = side;
+}
+
 // Synchronous (FFI). Returns NO if the session isn't configured or camera
 // permission isn't granted (permission is requested during initialize).
 - (BOOL)startCamera:(BOOL)debug {
@@ -298,6 +305,10 @@ static const size_t kJobStackDepth = 5;
   }
   _debug = debug;
   if (_running) return YES;
+  // Pick up a details template written/updated after session creation (the
+  // Dart side re-copies assets on every init, incl. hot restart, but this
+  // session object outlives that).
+  _instance->reloadDetailsTemplate();
   _frameCounter = 0;
   _ocrBusy = false;
   _running = YES;
@@ -436,7 +447,8 @@ static const size_t kJobStackDepth = 5;
   // the overlay tracks at the throttled frame rate.
   DetailsDetectResult det;
   try {
-    det = _instance->detect_details(bgr, DetectionSide::FIRST, debugType);
+    det = _instance->detect_details(
+        bgr, static_cast<DetectionSide>(_side.load()), debugType);
   } catch (cv::Exception &e) {
     platform_log("[ios-cam] detect_details exception: %s\n", e.what());
     return;
@@ -515,6 +527,10 @@ FFI_EXPORT int32_t camera_start(void *session, int32_t debug) {
 
 FFI_EXPORT void camera_stop(void *session) {
   if (session) [(__bridge CameraOcrSession *)session stopCamera];
+}
+
+FFI_EXPORT void camera_set_side(void *session, int32_t side) {
+  if (session) [(__bridge CameraOcrSession *)session setSide:side];
 }
 
 FFI_EXPORT void camera_set_debug(void *session, int32_t enabled) {

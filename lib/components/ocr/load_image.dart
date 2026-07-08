@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_overlay.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
@@ -223,6 +224,7 @@ class _LoadImageState extends State<LoadImage> {
                               keyName: key,
                               controller: _fieldControllers[key]!,
                             ),
+                          SaveScorePanel(controllers: _fieldControllers),
                         ],
                       ),
                     ),

@@ -74,6 +74,11 @@ struct ProcessImgResult
     // successful Details match, so the UI can persist the last good one).
     cv::Mat debugMask;
     cv::Mat debugDetailsCrop;
+    // Comprehensive all-field debug overlay drawn on the warped frame (field
+    // ROIs + keys, paddle detections, combined ROI, anchors), cropped to the
+    // warp's filled content. Populated only when debugImageType == ON and a warp
+    // ran. The app shows it below the Details crop; also saved as roi_overlay.png.
+    cv::Mat debugOverlay;
     // Full-color frame, set only on a successful "Details" match (independent of
     // the debug toggle). The stopped view paints the static ROIs over this last
     // good capture; the UI persists it and overwrites it on the next match.
@@ -195,6 +200,10 @@ public:
     // DetailsDetectResult and returns the completed ProcessImgResult.
     ProcessImgResult recognise_details(const DetailsDetectResult &det);
     void setConfig(const COCRConfig &cfg);
+    // Re-read the Details template from disk (see DetailsDetector::reload).
+    // Called on camera start so a template copied/updated after this instance
+    // was constructed takes effect without an app rebuild.
+    void reloadDetailsTemplate() { detailsDetector.reload(); }
 
 private:
     COCRConfig config;

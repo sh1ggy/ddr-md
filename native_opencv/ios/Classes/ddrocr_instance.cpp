@@ -45,6 +45,7 @@ static const int ROI_IDX_USERNAME   = 9;
 static const int ROI_IDX_DIFFICULTY = 10;
 static const int ROI_IDX_MAXCOMBO   = 11;
 
+
 DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg,
                                const ModelSet *models)
     : dataPath(dataPath), ocrWrapper(dataPath, models), detailsDetector(dataPath)
@@ -318,12 +319,24 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
         }
         else
         {
+            // Side selection must only choose between the two players' Details
+            // badges — but the base minScore also lets visually similar sibling
+            // tabs ("Simple results" / "Play Graph" / "FLARE") through, and the
+            // leftmost/rightmost of those anchors the homography on the wrong
+            // tab. Gate candidates to scores near the best match: the other
+            // player's genuine Details badge lands close to the winner, the
+            // sibling tabs don't.
+            const float sideMin = std::max(minScore, dmatch.score * 0.92f);
             for (size_t i = 0; i < detectedRois.size(); ++i)
             {
                 std::vector<cv::Rect> one{detectedRois[i]};
-                auto m = detailsDetector.classify(inputImg, one, minScore);
+                auto m = detailsDetector.classify(inputImg, one, sideMin);
                 if (m.index == 0)
+                {
                     detectedDetailsIndices.push_back((int)i);
+                    platform_log("[DETAILS_DET] side candidate %zu score=%.3f (gate %.3f)\n",
+                                 i, m.score, sideMin);
+                }
             }
             if (detectedDetailsIndices.empty())
                 detectedDetailsIndices.push_back(dmatch.index);
@@ -456,55 +469,89 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
     cv::Rect ROI_Difficulty = roiRect(ROI_IDX_DIFFICULTY);
     cv::Rect ROI_MaxCombo   = roiRect(ROI_IDX_MAXCOMBO);
 
+    // The title is a shared, screen-centred element while the calibration is
+    // anchored on the P2 (right) panel's badge. With the P1/P2 badges mirror-
+    // symmetric about the screen centreline, the P1 title offset is the P2
+    // offset reflected about the badge (the centreline cancels out), so no
+    // extra calibration is needed: newX1 = detailsX2 - (titleX2 - detailsX1).
+    if (side == DetectionSide::LEFT)
+        ROI_Title.x = 2 * ROI_Details.x + ROI_Details.width
+                      - ROI_Title.x - ROI_Title.width;
+
     // Using regionprops Convex hull method (det.chosenHull is the contour the
     // detector picked for the matched Details ROI).
     std::vector<cv::Point> hull;
     cv::convexHull(det.chosenHull, hull);
 
-    // Approximate polygon
-    std::vector<cv::Point> approx;
-    // TODO: This needs tweaking and optim
-    double epsilon = config.simplification_epsilon * cv::arcLength(hull, true);
-    cv::approxPolyDP(hull, approx, epsilon, true);
-
-    cv::Mat approx_img = inputImg.clone();
-    for (size_t i = 0; i < approx.size(); i++)
-    {
-        cv::line(approx_img, approx[i], approx[(i + 1) % approx.size()],
-                 cv::Scalar(0, 255, 0), 4);
-        cv::circle(approx_img, approx[i], 12, cv::Scalar(0, 255, 255), -1);
-    }
-
-    save_img("extrema", approx_img);
-
-    // Get first 4 points and order them
-    std::vector<cv::Point2f> pts;
-    for (int i = 0; i < std::min(4, (int)approx.size()); i++)
-    {
-        pts.push_back(cv::Point2f(approx[i].x, approx[i].y));
-    }
-
-    // Order points: top-left, top-right, bottom-right, bottom-left
-    std::vector<std::pair<float, int>> sums;
-    for (int i = 0; i < pts.size(); i++)
-    {
-        sums.push_back(std::make_pair(pts[i].x + pts[i].y, i));
-    }
-    std::sort(sums.begin(), sums.end());
-
-    if (sums.size() < 4)
+    if (hull.size() < 4)
     {
         platform_log("Not enough points for homography, defaulting to first detected ROI\n");
         result.isDetected = 1;
         return result;
     }
 
-    cv::Point2f tl = pts[sums[0].second];
-    cv::Point2f br = pts[sums[3].second];
+    // Corner extraction, robust to camera roll. Picking extreme points in
+    // image axes (min/max of x+y and x−y) silently mis-assigns corners once
+    // the badge is rotated — handheld camera frames roll freely, which is why
+    // the picked-image path (roughly upright photos) worked while the live
+    // camera warped wildly. De-rotate the hull by the badge's dominant
+    // orientation (minAreaRect long side), take the four extremes there, then
+    // map back to the original points. Assumes |roll| < 90° (the badge still
+    // appears wider than tall), which the portrait-rotated camera guarantees.
+    cv::RotatedRect rr = cv::minAreaRect(hull);
+    float longAngle =
+        (rr.size.width >= rr.size.height) ? rr.angle : rr.angle + 90.0f;
+    // minAreaRect's angle only defines the long-side direction modulo 180°
+    // (an axis-aligned wide rect commonly reports angle=90 with width/height
+    // swapped, making longAngle 180). Normalise into (-90, 90] — a 180°
+    // de-rotation would swap tl<->br and flip the entire warp upside down.
+    while (longAngle > 90.0f) longAngle -= 180.0f;
+    while (longAngle <= -90.0f) longAngle += 180.0f;
+    const float rad = longAngle * (float)CV_PI / 180.0f;
+    const float ca = std::cos(rad), sa = std::sin(rad);
 
-    cv::Point2f remaining[2] = {pts[sums[1].second], pts[sums[2].second]};
-    cv::Point2f tr = remaining[0].x > remaining[1].x ? remaining[0] : remaining[1];
-    cv::Point2f bl = remaining[0].x < remaining[1].x ? remaining[0] : remaining[1];
+    std::vector<cv::Point2f> flat(hull.size());
+    for (size_t i = 0; i < hull.size(); ++i)
+    {
+        float dx = (float)hull[i].x - rr.center.x;
+        float dy = (float)hull[i].y - rr.center.y;
+        flat[i] = cv::Point2f(dx * ca + dy * sa, -dx * sa + dy * ca);
+    }
+
+    size_t tlI = 0, brI = 0, trI = 0, blI = 0;
+    for (size_t i = 1; i < flat.size(); ++i)
+    {
+        if (flat[i].x + flat[i].y < flat[tlI].x + flat[tlI].y) tlI = i;
+        if (flat[i].x + flat[i].y > flat[brI].x + flat[brI].y) brI = i;
+        if (flat[i].x - flat[i].y > flat[trI].x - flat[trI].y) trI = i;
+        if (flat[i].x - flat[i].y < flat[blI].x - flat[blI].y) blI = i;
+    }
+    cv::Point2f tl(hull[tlI]), tr(hull[trI]), br(hull[brI]), bl(hull[blI]);
+
+    cv::Mat approx_img = inputImg.clone();
+    for (size_t i = 0; i < hull.size(); i++)
+        cv::line(approx_img, hull[i], hull[(i + 1) % hull.size()],
+                 cv::Scalar(0, 255, 0), 4);
+    for (const cv::Point2f &p : {tl, tr, br, bl})
+        cv::circle(approx_img, p, 12, cv::Scalar(0, 255, 255), -1);
+    save_img("extrema", approx_img);
+
+    // Reject frames whose corner quad doesn't actually describe the hull
+    // (blob merged with a neighbouring UI element, motion-blur smear, or a
+    // degenerate/repeated corner): a clean badge blob is a convex quad, so
+    // the corner quad should cover nearly all of the hull's area. A garbage
+    // quad here becomes a garbage homography and wrecks every ROI downstream —
+    // better to skip this frame and let the aggregator wait for a clean one.
+    const double hullArea = cv::contourArea(hull);
+    const double quadArea =
+        cv::contourArea(std::vector<cv::Point2f>{tl, tr, br, bl});
+    if (hullArea <= 0.0 || quadArea / hullArea < 0.8)
+    {
+        platform_log("Corner quad covers %.0f%% of hull — rejecting frame for homography\n",
+                     hullArea > 0.0 ? quadArea / hullArea * 100.0 : 0.0);
+        result.isDetected = 1;
+        return result;
+    }
 
     std::vector<cv::Point2f> detailsPoints = {tl, tr, br, bl};
     // Perform homography
@@ -642,7 +689,8 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
         }
     }
 
-    auto pickBestDetection = [&](const cv::Rect &fieldRoi) -> OCRResult {
+    // Returns the index into `detections` of the best box for the field, or -1.
+    auto pickBestDetectionIdx = [&](const cv::Rect &fieldRoi) -> int {
         cv::Rect anchor = fieldInCombinedCrop(fieldRoi);
         // Discard fields whose anchor lies outside the combined ROI (e.g.
         // title/username) — caller will use the per-ROI fallback instead.
@@ -651,7 +699,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
             anchor.x >= roi_combined_warped.width ||
             anchor.y >= roi_combined_warped.height)
         {
-            return OCRResult{};
+            return -1;
         }
         int best = -1;
         double bestScore = 0.0;
@@ -670,18 +718,8 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
                 best = (int)i;
             }
         }
-        if (best < 0) return OCRResult{};
-        return detections[best].result;
+        return best;
     };
-
-    ocrResults.score     = pickBestDetection(ROI_Score);
-    ocrResults.marvelous = pickBestDetection(ROI_Marvelous);
-    ocrResults.perfect   = pickBestDetection(ROI_Perfect);
-    ocrResults.great     = pickBestDetection(ROI_Great);
-    ocrResults.good      = pickBestDetection(ROI_Good);
-    ocrResults.miss      = pickBestDetection(ROI_Miss);
-    ocrResults.flare     = pickBestDetection(ROI_Flare);
-    ocrResults.max_combo = pickBestDetection(ROI_MaxCombo);
 
     // ----- Fixed-ROI fallback for numeric fields the detector missed -----
     // When pickBestDetection found no overlapping detection box the result
@@ -715,22 +753,31 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
         return ocrWrapper.performOCR(crop, OCRType::Digit, fieldName);
     };
 
-    if (ocrResults.score.text.empty())
-        ocrResults.score = fixedRoiFallback(ROI_Score, "score");
-    if (ocrResults.marvelous.text.empty())
-        ocrResults.marvelous = fixedRoiFallback(ROI_Marvelous, "marvelous");
-    if (ocrResults.perfect.text.empty())
-        ocrResults.perfect = fixedRoiFallback(ROI_Perfect, "perfect");
-    if (ocrResults.great.text.empty())
-        ocrResults.great = fixedRoiFallback(ROI_Great, "great");
-    if (ocrResults.good.text.empty())
-        ocrResults.good = fixedRoiFallback(ROI_Good, "good");
-    if (ocrResults.miss.text.empty())
-        ocrResults.miss = fixedRoiFallback(ROI_Miss, "miss");
-    if (ocrResults.flare.text.empty())
-        ocrResults.flare = fixedRoiFallback(ROI_Flare, "flare");
-    if (ocrResults.max_combo.text.empty())
-        ocrResults.max_combo = fixedRoiFallback(ROI_MaxCombo, "max_combo");
+    // Combined-panel fields: pick a det box by anchor overlap, else fall back
+    // to a fixed-ROI recognise. detIdx records which det box supplied the
+    // result (-1 = fallback or nothing) for the debug panel.
+    struct CombinedField { const char *name; const cv::Rect *roi; OCRResult *res; int detIdx; };
+    CombinedField combinedFields[] = {
+        {"score",     &ROI_Score,     &ocrResults.score,     -1},
+        {"marvelous", &ROI_Marvelous, &ocrResults.marvelous, -1},
+        {"perfect",   &ROI_Perfect,   &ocrResults.perfect,   -1},
+        {"great",     &ROI_Great,     &ocrResults.great,     -1},
+        {"good",      &ROI_Good,      &ocrResults.good,      -1},
+        {"miss",      &ROI_Miss,      &ocrResults.miss,      -1},
+        {"flare",     &ROI_Flare,     &ocrResults.flare,     -1},
+        {"max_combo", &ROI_MaxCombo,  &ocrResults.max_combo, -1},
+    };
+    for (auto &f : combinedFields)
+    {
+        f.detIdx = pickBestDetectionIdx(*f.roi);
+        if (f.detIdx >= 0)
+            *f.res = detections[f.detIdx].result;
+        if (f.res->text.empty())
+        {
+            *f.res = fixedRoiFallback(*f.roi, f.name);
+            f.detIdx = -1;
+        }
+    }
 
     // ----- Outside the combined ROI: per-ROI recogniser-only fallback -----
     // title/username/difficulty/details sit above the score panel.
@@ -745,6 +792,254 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
     ocrResults.difficulty = getPreprocessedRoiImage(
         warpedImg, ROI_Difficulty, ROI_Details, warped_details_top_left,
         expand(ROI_IDX_DIFFICULTY), "difficulty", OCRType::Eng);
+
+    // Debug ON: render ONE composite debug image — the single point of
+    // reference for what the pipeline did on this frame.
+    //   Left:  the warped frame, cropped to the warp's filled content and
+    //          downscaled, carrying geometry only (no result text on pixels):
+    //            green   - per-field OCR ROIs, labelled with the field key
+    //            cyan    - per-field anchor rects the det picker matches against
+    //            yellow  - the combined ROI fed to PaddleOCR detection
+    //            magenta - det boxes, numbered #n (text lives in the panel)
+    //            red dot - the warped Details anchor
+    //   Right: a rec panel — per field: which det box (or fallback path)
+    //          supplied the result, confidence, the recognised text, and the
+    //          LITERAL 48px crop the rec model consumed; then every det box's
+    //          #n -> text/confidence.
+    // Stored on result.debugOverlay (shown in-app) and, when a disk debug dir
+    // exists, also written as roi_overlay.png.
+    if (debugImageType == DebugImageType::ON && !warpedImg.empty())
+    {
+        cv::Mat overlay;
+        if (warpedImg.channels() == 1)
+            cv::cvtColor(warpedImg, overlay, cv::COLOR_GRAY2BGR);
+        else
+            overlay = warpedImg.clone();
+
+        const cv::Rect overlayBounds(0, 0, overlay.cols, overlay.rows);
+
+        // Content rect first (bounding box of the source frame's corners pushed
+        // through H): the canvas is 4000x5000 but only this region holds pixels.
+        // Knowing the final downscale up-front lets fonts/line widths be drawn
+        // at full res yet stay legible after the resize to kImgH.
+        cv::Rect content = overlayBounds;
+        {
+            std::vector<cv::Point2f> srcCorners = {
+                {0.f, 0.f},
+                {(float)inputImg.cols, 0.f},
+                {(float)inputImg.cols, (float)inputImg.rows},
+                {0.f, (float)inputImg.rows}};
+            std::vector<cv::Point2f> warpedCorners;
+            cv::perspectiveTransform(srcCorners, warpedCorners, H);
+            cv::Rect bb = cv::boundingRect(warpedCorners);
+            const int margin = 30;
+            bb.x -= margin; bb.y -= margin;
+            bb.width += margin * 2; bb.height += margin * 2;
+            cv::Rect clipped = bb & overlayBounds;
+            if (clipped.width > 0 && clipped.height > 0)
+                content = clipped;
+        }
+
+        const int kImgH = 1400;
+        const double shrink = (double)kImgH / std::max(1, content.height);
+        const double fs = 0.7 / shrink;                                // font scale
+        const int th = std::max(2, (int)std::round(2.0 / shrink));     // line thickness
+
+        auto warpField = [&](const cv::Rect &fieldRoi) -> cv::Rect {
+            return cv::Rect(
+                warped_details_top_left.x + (fieldRoi.x - ROI_Details.x),
+                warped_details_top_left.y + (fieldRoi.y - ROI_Details.y),
+                fieldRoi.width, fieldRoi.height);
+        };
+
+        // Thin cyan anchor rect (what the det picker matches against), then
+        // the green expanded OCR ROI with the field key only.
+        auto drawField = [&](const cv::Rect &fieldRoi, int idx,
+                             const std::string &name) {
+            cv::Rect anchor = warpField(fieldRoi) & overlayBounds;
+            if (anchor.width > 0 && anchor.height > 0)
+                cv::rectangle(overlay, anchor, cv::Scalar(255, 255, 0), th / 2 + 1);
+            cv::Rect r = expandRoi(warpField(fieldRoi), expand(idx)) & overlayBounds;
+            if (r.width <= 0 || r.height <= 0) return;
+            cv::rectangle(overlay, r, cv::Scalar(0, 255, 0), th);
+            cv::putText(overlay, name, cv::Point(r.x + 4, r.y - 8),
+                        cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(0, 255, 0), th,
+                        cv::LINE_AA);
+        };
+
+        drawField(ROI_Details,    ROI_IDX_DETAILS,    "details");
+        drawField(ROI_Score,      ROI_IDX_SCORE,      "score");
+        drawField(ROI_Marvelous,  ROI_IDX_MARVELOUS,  "marvelous");
+        drawField(ROI_Perfect,    ROI_IDX_PERFECT,    "perfect");
+        drawField(ROI_Great,      ROI_IDX_GREAT,      "great");
+        drawField(ROI_Good,       ROI_IDX_GOOD,       "good");
+        drawField(ROI_Miss,       ROI_IDX_MISS,       "miss");
+        drawField(ROI_Flare,      ROI_IDX_FLARE,      "flare");
+        drawField(ROI_MaxCombo,   ROI_IDX_MAXCOMBO,   "max_combo");
+        drawField(ROI_Title,      ROI_IDX_TITLE,      "title");
+        drawField(ROI_Username,   ROI_IDX_USERNAME,   "username");
+        drawField(ROI_Difficulty, ROI_IDX_DIFFICULTY, "difficulty");
+
+        // Only the det boxes a field actually consumed — the rest (stray
+        // detections the picker never matched) are noise for this view and
+        // stay visible in paddle_detect.png if ever needed.
+        std::vector<bool> detChosen(detections.size(), false);
+        for (const auto &f : combinedFields)
+            if (f.detIdx >= 0) detChosen[f.detIdx] = true;
+
+        // Chosen det boxes: numbered on the image; recognised text lives in
+        // the panel so nothing overlaps the pixels being debugged.
+        for (size_t i = 0; i < detections.size(); ++i)
+        {
+            if (!detChosen[i]) continue;
+            cv::Rect box(detections[i].box.x + roi_combined_warped.x,
+                         detections[i].box.y + roi_combined_warped.y,
+                         detections[i].box.width, detections[i].box.height);
+            box &= overlayBounds;
+            if (box.width <= 0 || box.height <= 0) continue;
+            cv::rectangle(overlay, box, cv::Scalar(255, 0, 255), th);
+            char lbl[16];
+            snprintf(lbl, sizeof(lbl), "#%zu", i);
+            cv::putText(overlay, lbl, cv::Point(box.x, box.y - 6),
+                        cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(255, 0, 255), th,
+                        cv::LINE_AA);
+        }
+
+        // Combined ROI outline (yellow) and the Details anchor point (red).
+        cv::Rect combinedOutline = roi_combined_warped & overlayBounds;
+        if (combinedOutline.width > 0 && combinedOutline.height > 0)
+            cv::rectangle(overlay, combinedOutline, cv::Scalar(0, 255, 255), th);
+        cv::circle(overlay, warped_details_top_left,
+                   std::max(6, (int)std::round(6.0 / shrink)), cv::Scalar(0, 0, 255), -1);
+
+        cv::Mat left;
+        int leftW = std::max(1, (int)std::round(content.width * shrink));
+        cv::resize(overlay(content), left, cv::Size(leftW, kImgH), 0, 0,
+                   cv::INTER_AREA);
+
+        // ----- Rec panel -----
+        struct PanelRow { std::string label; std::string text; cv::Mat strip; cv::Scalar color; };
+        std::vector<PanelRow> rows;
+        auto addRow = [&](const char *name, const OCRResult &res, int detIdx,
+                          bool inCombined) {
+            char lbl[128];
+            cv::Scalar color;
+            if (detIdx >= 0)
+            {
+                snprintf(lbl, sizeof(lbl), "%s <- det #%d (%.2f)", name, detIdx,
+                         res.confidence);
+                color = cv::Scalar(0, 255, 0);
+            }
+            else if (inCombined)
+            {
+                snprintf(lbl, sizeof(lbl), "%s <- fixed-ROI fallback (%.2f)", name,
+                         res.confidence);
+                color = cv::Scalar(0, 255, 255);
+            }
+            else
+            {
+                snprintf(lbl, sizeof(lbl), "%s <- rec-only crop (%.2f)", name,
+                         res.confidence);
+                color = cv::Scalar(255, 255, 0);
+            }
+            rows.push_back({lbl, res.text.empty() ? "(empty)" : res.text,
+                            res.recInput, color});
+        };
+        for (const auto &f : combinedFields)
+            addRow(f.name, *f.res, f.detIdx, true);
+        addRow("title",      ocrResults.title,      -1, false);
+        addRow("username",   ocrResults.username,   -1, false);
+        addRow("difficulty", ocrResults.difficulty, -1, false);
+
+        const int panelW = 760, pad = 12;
+        const int stripMaxW = panelW - 2 * pad - 8;
+
+        // Measure the panel so the canvas is tall enough for every row (the
+        // draw loop below MUST mirror these increments).
+        int need = pad + 20 + 20; // section header + legend line
+        for (const auto &r : rows)
+        {
+            need += 22 + 26 + 12;
+            if (!r.strip.empty())
+            {
+                int sw = std::min(stripMaxW, r.strip.cols);
+                need += (int)std::round((double)r.strip.rows * sw /
+                                        std::max(1, r.strip.cols)) + 6;
+            }
+        }
+        int chosenCount = 0;
+        for (size_t i = 0; i < detChosen.size(); ++i)
+            if (detChosen[i]) chosenCount++;
+        need += 24 + 20 + chosenCount * 22 + pad;
+
+        const int canvasH = std::max(kImgH, need);
+        cv::Mat canvas(canvasH, left.cols + panelW, CV_8UC3, cv::Scalar(0, 0, 0));
+        left.copyTo(canvas(cv::Rect(0, 0, left.cols, left.rows)));
+
+        const int x0 = left.cols + pad;
+        int y = pad + 14;
+        cv::putText(canvas, "rec (what the model actually read)",
+                    cv::Point(x0, y), cv::FONT_HERSHEY_SIMPLEX, 0.55,
+                    cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
+        y += 20;
+        cv::putText(canvas,
+                    "green=ROI cyan=anchor yellow=combined magenta=det red=anchor",
+                    cv::Point(x0, y), cv::FONT_HERSHEY_SIMPLEX, 0.4,
+                    cv::Scalar(160, 160, 160), 1, cv::LINE_AA);
+        for (const auto &r : rows)
+        {
+            y += 22;
+            cv::putText(canvas, r.label, cv::Point(x0, y),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5, r.color, 1, cv::LINE_AA);
+            y += 26;
+            cv::putText(canvas, r.text, cv::Point(x0 + 8, y),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.65, cv::Scalar(255, 255, 255),
+                        1, cv::LINE_AA);
+            if (!r.strip.empty())
+            {
+                int sw = std::min(stripMaxW, r.strip.cols);
+                int sh = (int)std::round((double)r.strip.rows * sw /
+                                         std::max(1, r.strip.cols));
+                cv::Mat strip;
+                cv::resize(r.strip, strip, cv::Size(sw, sh));
+                if (strip.channels() == 1)
+                    cv::cvtColor(strip, strip, cv::COLOR_GRAY2BGR);
+                y += 6;
+                if (y + sh <= canvasH)
+                    strip.copyTo(canvas(cv::Rect(x0 + 8, y, sw, sh)));
+                y += sh;
+            }
+            y += 12;
+        }
+        y += 24;
+        cv::putText(canvas, "chosen det boxes (magenta #n)", cv::Point(x0, y),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(255, 255, 255), 1,
+                    cv::LINE_AA);
+        y += 20;
+        for (size_t i = 0; i < detections.size(); ++i)
+        {
+            if (!detChosen[i]) continue;
+            y += 22;
+            if (y >= canvasH - pad) break;
+            char lbl[160];
+            snprintf(lbl, sizeof(lbl), "#%zu '%s' (%.2f)", i,
+                     detections[i].result.text.c_str(),
+                     detections[i].result.confidence);
+            cv::putText(canvas, lbl, cv::Point(x0, y), cv::FONT_HERSHEY_SIMPLEX,
+                        0.5, cv::Scalar(255, 0, 255), 1, cv::LINE_AA);
+        }
+
+        result.debugOverlay = canvas;
+
+        if (!debugDir.empty())
+        {
+            char path[512];
+            snprintf(path, sizeof(path), "%s/roi_overlay.png", debugDir.c_str());
+            cv::imwrite(path, result.debugOverlay);
+            platform_log("wrote: %s (debug overlay, %dx%d)\n", path,
+                         canvas.cols, canvas.rows);
+        }
+    }
 
     result.ocrResults = ocrResults;
 

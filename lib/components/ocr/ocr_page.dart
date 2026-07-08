@@ -6,7 +6,9 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:ddr_md/components/ocr/load_image.dart';
+import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_painter.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -50,11 +52,13 @@ class _OcrPageState extends State<OcrPage>
   int _rawFrameHeight = 0;
 
   DebugImageType _debugImageType = DebugImageType.none;
+  DetectionSide _detectionSide = DetectionSide.left;
   // Whether the per-field candidate histograms are revealed (the way the user
   // picks between detected values in the stopped view).
   bool _histogramsExpanded = false;
   final ValueNotifier<Uint8List?> _debugMaskBytes = ValueNotifier(null);
   final ValueNotifier<Uint8List?> _debugCropBytes = ValueNotifier(null);
+  final ValueNotifier<Uint8List?> _debugOverlayBytes = ValueNotifier(null);
   final ValueNotifier<_CaptureView?> _captureData = ValueNotifier(null);
   final ValueNotifier<(List<Rectangle<int>>, int?)> _roiData =
       ValueNotifier(([], null));
@@ -75,7 +79,18 @@ class _OcrPageState extends State<OcrPage>
     // Repaint the ROI overlay every frame from the last-known result.
     _ticker = createTicker((_) => _frameTick.value++)..start();
 
+    final savedSideIndex = Settings.getInt(Settings.detectionSideKey);
+    // Stored as enum index; fall back to left when unset or invalid (the
+    // SharedPreferences default of 0 maps to DetectionSide.first which we
+    // never expose as a user choice).
+    if (savedSideIndex == DetectionSide.right.index) {
+      _detectionSide = DetectionSide.right;
+    } else {
+      _detectionSide = DetectionSide.left;
+    }
+
     _ocrProcessor = OCRProcessor();
+    _ocrProcessor.side = _detectionSide;
     _ocrProcessor.streamResultController.stream.listen((result) {
       _recordFrameTime();
       // The native session reports the processed-frame dimensions (the pixel
@@ -104,6 +119,9 @@ class _OcrPageState extends State<OcrPage>
       }
       if (result.debugDetailsCropBytes != null) {
         _debugCropBytes.value = result.debugDetailsCropBytes;
+      }
+      if (result.debugOverlayBytes != null) {
+        _debugOverlayBytes.value = result.debugOverlayBytes;
       }
       if (result.captureBytes != null) {
         // Native reports dims already in the processed (upright) orientation,
@@ -137,6 +155,7 @@ class _OcrPageState extends State<OcrPage>
     _roiData.dispose();
     _debugMaskBytes.dispose();
     _debugCropBytes.dispose();
+    _debugOverlayBytes.dispose();
     _captureData.dispose();
     _fps.dispose();
     for (final c in _fieldControllers.values) {
@@ -216,6 +235,7 @@ class _OcrPageState extends State<OcrPage>
           _roiData.value = ([], null);
           _debugMaskBytes.value = null;
           _debugCropBytes.value = null;
+          _debugOverlayBytes.value = null;
           _captureData.value = null;
           _frameTimes.clear();
           _fps.value = 0;
@@ -252,18 +272,28 @@ class _OcrPageState extends State<OcrPage>
       appBar: AppBar(
         title: const Text("Camera"),
       ),
-      body: switch (cameraState) {
-        CameraState.notReady =>
-          const Center(child: CircularProgressIndicator()),
-        CameraState.neverRecorded => const Center(
-            child: Text(
-              "Start OCR to begin detection",
-              style: TextStyle(fontSize: 16, color: Colors.black54),
-            ),
+      body: Column(
+        children: [
+          _buildSideSelector(),
+          Expanded(
+            child: switch (cameraState) {
+              CameraState.notReady =>
+                const Center(child: CircularProgressIndicator()),
+              CameraState.neverRecorded => Center(
+                  child: Text(
+                    "Start OCR to begin detection",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              CameraState.inactive => _buildStoppedView(),
+              CameraState.active => _buildActiveView(),
+            },
           ),
-        CameraState.inactive => _buildStoppedView(),
-        CameraState.active => _buildActiveView(),
-      },
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         // Disabled (null onPressed + grey) until both camera and OCR are
         // ready. Stop is always enabled once a session is active.
@@ -335,6 +365,31 @@ class _OcrPageState extends State<OcrPage>
     );
   }
 
+  void _setDetectionSide(DetectionSide side) {
+    if (side == _detectionSide) return;
+    setState(() => _detectionSide = side);
+    _ocrProcessor.side = side;
+    Settings.setInt(Settings.detectionSideKey, side.index);
+  }
+
+  Widget _buildSideSelector() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Center(
+        child: SegmentedButton<DetectionSide>(
+          segments: const [
+            ButtonSegment(
+                value: DetectionSide.left, label: Text('Left (1P)')),
+            ButtonSegment(
+                value: DetectionSide.right, label: Text('Right (2P)')),
+          ],
+          selected: {_detectionSide},
+          onSelectionChanged: (s) => _setDetectionSide(s.first),
+        ),
+      ),
+    );
+  }
+
   void _setDebugEnabled(bool enabled) {
     final type = enabled ? DebugImageType.on : DebugImageType.none;
     setState(() => _debugImageType = type);
@@ -342,6 +397,7 @@ class _OcrPageState extends State<OcrPage>
     if (!enabled) {
       _debugMaskBytes.value = null;
       _debugCropBytes.value = null;
+      _debugOverlayBytes.value = null;
     }
   }
 
@@ -367,6 +423,11 @@ class _OcrPageState extends State<OcrPage>
             notifier: _debugCropBytes,
             emptyText: 'No Details matched yet…',
           ),
+          _buildDebugImagePanel(
+            label: 'ROI overlay (last match)',
+            notifier: _debugOverlayBytes,
+            emptyText: 'No overlay yet…',
+          ),
         ],
       ],
     );
@@ -385,7 +446,10 @@ class _OcrPageState extends State<OcrPage>
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(label,
-                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                )),
           ),
           ValueListenableBuilder<Uint8List?>(
             valueListenable: notifier,
@@ -396,13 +460,17 @@ class _OcrPageState extends State<OcrPage>
                   child: Text(
                     emptyText,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black54),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 );
               }
               return DecoratedBox(
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.black26),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                   color: Colors.black,
                 ),
                 child: Image.memory(
@@ -444,11 +512,14 @@ class _OcrPageState extends State<OcrPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
                   "Last capture",
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               framed,
@@ -475,20 +546,23 @@ class _OcrPageState extends State<OcrPage>
             final busy =
                 _ocrProcessor.isProcessing.value || _ocrProcessor.isDraining.value;
             if (!busy) return const SizedBox.shrink();
-            return const Padding(
-              padding: EdgeInsets.only(top: 6),
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
+                  const SizedBox(
                     width: 8,
                     height: 8,
                     child: CircularProgressIndicator(strokeWidth: 1.5),
                   ),
-                  SizedBox(width: 6),
+                  const SizedBox(width: 6),
                   Text(
                     "Finalising…",
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -498,6 +572,11 @@ class _OcrPageState extends State<OcrPage>
         const SizedBox(height: 12),
         _buildCapturePanel(),
         _buildEditableScorePanel(),
+        if (_aggregator.detailsCount > 0)
+          SaveScorePanel(controllers: _fieldControllers),
+        // Latest debug images remain inspectable after stopping (the notifiers
+        // keep their last values); the panel gates internally on the toggle.
+        _buildDebugControls(),
       ],
     );
   }
@@ -559,40 +638,42 @@ class _OcrPageState extends State<OcrPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  "Details detections: ${_aggregator.detailsCount}",
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
+        if (showToggle && rows.isNotEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => setState(
+                  () => _histogramsExpanded = !_histogramsExpanded),
+              icon: Icon(
+                _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
+                size: 18,
               ),
+              label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
             ),
-            if (showToggle && rows.isNotEmpty)
-              TextButton.icon(
-                onPressed: () => setState(
-                    () => _histogramsExpanded = !_histogramsExpanded),
-                icon: Icon(
-                  _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
-                ),
-                label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
-              ),
-          ],
-        ),
+          ),
         if (rows.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
             child: Text(
               emptyText,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Theme.of(context).hintColor),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           )
         else
           ...rows,
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            "Successful detections: ${_aggregator.detailsCount}",
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
       ],
     );
   }
