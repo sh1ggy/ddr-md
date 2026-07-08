@@ -279,3 +279,67 @@ class SongChartState extends State<SongChart> {
     );
   }
 }
+
+class SongRadarChart extends StatelessWidget {
+  const SongRadarChart({super.key, required this.chart});
+
+  final Chart chart;
+
+  @override
+  Widget build(BuildContext context) {
+    final labels = <String>['Stream', 'Voltage', 'Air', 'Freeze', 'Chaos'];
+    final values = <double>[
+      chart.radar.stream,
+      chart.radar.voltage,
+      chart.radar.air,
+      chart.radar.freeze,
+      chart.radar.chaos,
+    ];
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Text(
+            'Groove Radar',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 260,
+            child: RadarChart(
+              RadarChartData(
+                radarShape: RadarShape.polygon,
+                tickCount: 5,
+                ticksTextStyle:
+                    TextStyle(color: Colors.grey.shade600, fontSize: 10),
+                tickBorderData: BorderSide(color: Colors.grey.shade300),
+                gridBorderData: BorderSide(color: Colors.grey.shade400),
+                titleTextStyle:
+                    const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                getTitle: (index, angle) {
+                  return RadarChartTitle(text: labels[index]);
+                },
+                dataSets: [
+                  RadarDataSet(
+                    fillColor: Colors.redAccent.withOpacity(0.25),
+                    borderColor: Colors.redAccent,
+                    borderWidth: 2,
+                    entryRadius: 2.5,
+                    dataEntries: values
+                        .map((value) => RadarEntry(value: value))
+                        .toList(),
+                  ),
+                ],
+                radarBackgroundColor: Colors.transparent,
+              ),
+              swapAnimationDuration: const Duration(milliseconds: 300),
+              swapAnimationCurve: Curves.easeOut,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
