@@ -43,8 +43,10 @@ class SongDetails extends StatelessWidget {
               tag: "imgZoom",
               child: Image(
                 image: AssetImage(
-                    'assets/jackets-lowres/${songInfo.name}.png'),
+                    'assets/jackets-lowres/${songInfo.name}-jacket.png'),
                 height: 100,
+                errorBuilder: (context, error, stackTrace) =>
+                    const Icon(Icons.music_note, size: 100),
               ),
             ),
             // Zooming image onTap
@@ -64,6 +66,8 @@ class SongDetails extends StatelessWidget {
                           height: MediaQuery.of(context).size.height * .7,
                           image: AssetImage(
                               'assets/jackets/${songInfo.name}-jacket.png'),
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(Icons.music_note, size: 100),
                         ),
                       ),
                     );

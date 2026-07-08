@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OCR Model Compare — Results Viewer</title>
+<style>
+  :root {
+    --bg: #1e1e1e; --panel: #252525; --border: #3a3a3a;
+    --txt: #ddd; --muted: #888; --accent: #4af;
+    --good: #2e7d32; --bad: #5a2020; --warn: #6b5a1a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 10px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+  label.btn, button, a.btn {
+    background: #3a3a3a; color: var(--txt); border: 1px solid #555;
+    padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    text-decoration: none; display: inline-block;
+  }
+  label.btn:hover, button:hover, a.btn:hover { background: #4a4a4a; }
+  a.navlink {
+    color: var(--accent); background: transparent; border: 1px solid transparent;
+    padding: 5px 10px; border-radius: 4px; font-size: 12px; font-weight: 600;
+    text-decoration: none; cursor: pointer; display: inline-block;
+  }
+  a.navlink:hover { text-decoration: underline; border-color: #444; }
+  input[type=text] {
+    background: #1a1a1a; color: var(--txt); border: 1px solid #555;
+    border-radius: 4px; padding: 5px 8px; font-size: 12px; width: 180px;
+  }
+  .meta { color: var(--muted); font-size: 12px; }
+  main { padding: 16px; }
+  .img-block {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; margin-bottom: 18px; overflow: hidden;
+  }
+  .img-head {
+    padding: 10px 14px; background: #2a2a2a; border-bottom: 1px solid var(--border);
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap; cursor: pointer;
+  }
+  .img-head .name { font-weight: 600; font-size: 14px; color: var(--accent); }
+  .pill {
+    padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+    background: #333; color: #ccc;
+  }
+  .pill.matched { background: var(--good); color: #cfe; }
+  .pill.nomatch { background: var(--bad); color: #fcc; }
+  .pill.nearmiss { background: var(--warn); color: #fe9; }
+  .img-body { padding: 12px 14px; }
+  .roi-section {
+    margin-bottom: 16px; border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden; border-left: 4px solid var(--roi-accent, #555);
+  }
+  .roi-section:last-child { margin-bottom: 0; }
+  /* Per-ROI accent so reference vs imperfect are instantly distinguishable. */
+  .roi-section.roi-reference { --roi-accent: #4a8fd6; }
+  .roi-section.roi-imperfect { --roi-accent: #d6924a; }
+  .roi-title {
+    font-size: 12px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.5px; margin: 0; padding: 7px 12px;
+    background: #2a2a2a; border-bottom: 1px solid var(--border);
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .roi-title b { color: var(--txt); }
+  .roi-chip {
+    font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px;
+    text-transform: none; letter-spacing: 0; color: #fff;
+    background: var(--roi-accent, #555);
+  }
+  .roi-body { padding: 10px 12px; }
+  .roi-body table:last-child, .roi-body .imgs:last-child { margin-bottom: 0; }
+  /* segmented ROI filter in the header */
+  .roiseg { display: inline-flex; border: 1px solid #555; border-radius: 4px; overflow: hidden; }
+  .roiseg .seg {
+    border: 0; border-radius: 0; padding: 5px 9px; font-size: 11px;
+    background: #2a2a2a; color: var(--muted);
+  }
+  .roiseg .seg + .seg { border-left: 1px solid #555; }
+  .roiseg .seg.active { background: var(--accent); color: #04121f; font-weight: 700; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+  th, td {
+    border: 1px solid var(--border); padding: 4px 8px; text-align: left;
+    font-family: "SF Mono", Menlo, monospace; font-size: 12px; white-space: nowrap;
+  }
+  th { background: #2d2d2d; color: #bbb; font-weight: 600; }
+  td.field { color: var(--muted); font-family: inherit; }
+  td.txt { color: #eee; }
+  td.empty { color: #555; }
+  td.truth { color: #ffd27f; font-weight: 600; }
+  tr.disagree td { background: #3a2a2a; }
+  tr.disagree td.field { color: #f99; }
+  tr.agree-blank td { opacity: 0.55; }
+  td.cell-pass { background: #1e3a22 !important; }
+  td.cell-fail { background: #4a1f1f !important; }
+  .badge { font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 3px;
+    vertical-align: middle; letter-spacing: 0.3px; }
+  .badge.pass { background: var(--good); color: #cfe; }
+  .badge.fail { background: #c0392b; color: #fee; }
+  .accpanel { display: block; margin-top: 4px; font-size: 11px; }
+  .accpanel .acc-good { color: #6f6; } .accpanel .acc-mid { color: #fd6; }
+  .accpanel .acc-bad { color: #f88; }
+  .conf { color: var(--muted); font-size: 11px; }
+  .warped0 { color: #f77; }
+  .imgs { display: flex; gap: 12px; flex-wrap: wrap; }
+  .imgcol { flex: 1; min-width: 240px; }
+  .imgcol .lbl { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .imgcol img {
+    width: 100%; border: 1px solid var(--border); border-radius: 4px;
+    image-rendering: auto; background: #111;
+  }
+  .imgcol img.missing { display: none; }
+  .imgcol img { cursor: zoom-in; }
+  .no-imgs { color: #555; font-size: 11px; font-style: italic; }
+  /* Lightbox: click any crop to view it large. */
+  #lightbox {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    background: rgba(0,0,0,0.85); cursor: zoom-out;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+  }
+  #lightbox.open { display: flex; }
+  #lightbox img {
+    max-width: 96vw; max-height: 88vh; image-rendering: auto;
+    border: 1px solid #555; border-radius: 4px; background: #111;
+  }
+  #lightbox .cap { color: #ccc; font-size: 12px; font-family: "SF Mono", Menlo, monospace; }
+  .filter-hint { color: var(--muted); font-size: 11px; }
+  .hidden { display: none; }
+  #drop {
+    border: 2px dashed #555; border-radius: 8px; padding: 40px; text-align: center;
+    color: var(--muted); margin: 40px auto; max-width: 600px;
+  }
+  code { background: #111; padding: 1px 5px; border-radius: 3px; color: #9cf; }
+</style>
+</head>
+<body>
+<header>
+  <h1>OCR Model Compare</h1>
+  <span class="meta" id="summary"></span>
+  <div class="controls">
+    <input type="text" id="search" placeholder="filter by image name…">
+    <span class="roiseg" id="roiSeg" title="show only one ROI set">
+      <button class="seg active" data-roi="all">all ROI</button
+      ><button class="seg" data-roi="reference">reference</button
+      ><button class="seg" data-roi="imperfect">imperfect</button>
+    </span>
+    <label class="btn"><input type="checkbox" id="onlyDisagree"> only disagreements</label>
+    <label class="btn"><input type="checkbox" id="onlyWarped"> only warped</label>
+    <label class="btn" id="onlyFailuresWrap" title="needs classified.csv"><input type="checkbox" id="onlyFailures"> only failures</label>
+    <label class="btn">Load CSV<input type="file" id="csvInput" accept=".csv" hidden></label>
+    <label class="btn" id="truthBtn">Load classified.csv<input type="file" id="truthInput" accept=".csv" hidden></label>
+    <button id="clearTruth" class="hidden">✕ truth</button>
+    <button id="exportScore" class="hidden" title="export pass/fail summary (needs classified.csv)">⤓ pass/fail summary</button>
+    <label class="btn">Image root<input type="file" id="dirInput" webkitdirectory hidden></label>
+    <a class="navlink" href="perf_viewer.html" title="per-model latency from results.csv">⏱ Perf →</a>
+  </div>
+</header>
+<main>
+  <div id="drop">
+    Drop <code>results.csv</code> here, or click <b>Load CSV</b>.<br><br>
+    Images load automatically from <code>results_images/&lt;model&gt;/</code> when this
+    file is opened next to it (served over http). Over <code>file://</code>, use
+    <b>Image root</b> to pick the <code>results_images</code> folder so crops display.
+  </div>
+  <div id="content"></div>
+</main>
+
+<div id="lightbox"><img id="lightboxImg" alt=""><div class="cap" id="lightboxCap"></div></div>
+
+<script>
+const MODELS = ["mobile_v5", "small_v6", "tiny_v6", "medium_v6"];
+// Default relative path to annotated crops (works when served over http
+// alongside the results_images folder).
+const IMG_BASE = "results_images";
+
+const NUMERIC_FIELDS = new Set(
+  ["score","marvelous","perfect","great","good","miss","max_combo"]);
+
+let rows = [];          // parsed CSV rows (objects)
+let imageBlobUrls = {}; // "model/filename.png" -> objectURL (when dir picked)
+let roiFilter = "all";  // "all" | "reference" | "imperfect" — header segmented control
+// Ground truth: "image field" -> truth string. Null/empty => "results only"
+// mode (no pass/fail). Set by Load classified.csv. This is what makes the
+// viewer modular: everything below degrades gracefully when truth is empty.
+let truth = null;
+
+function truthKey(image, field) { return image + " " + field; }
+function hasTruth() { return truth && truth.size > 0; }
+function getTruth(image, field) { return truth ? truth.get(truthKey(image, field)) : undefined; }
+
+// Normalise a value for comparison: digits-only for numeric fields, else
+// case-insensitive trimmed. Mirrors the classifier's field set.
+function normForCompare(value, field) {
+  if (NUMERIC_FIELDS.has(field)) return (value || "").replace(/\D/g, "");
+  return (value || "").trim().toLowerCase();
+}
+// PASS/FAIL of a model's text vs truth for (image, field). Returns
+// "pass" | "fail" | null (null = no truth for this field).
+function verdict(image, field, modelText) {
+  const gt = getTruth(image, field);
+  if (gt === undefined || gt === "") return null;
+  return normForCompare(modelText, field) === normForCompare(gt, field) ? "pass" : "fail";
+}
+
+// ---- CSV parsing (handles quoted fields containing commas/quotes) ----
+function parseCSV(text) {
+  const out = [];
+  let field = "", row = [], inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ""; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        if (field !== "" || row.length) { row.push(field); out.push(row); row = []; field = ""; }
+      } else field += c;
+    }
+  }
+  if (field !== "" || row.length) { row.push(field); out.push(row); }
+  return out;
+}
+
+function toObjects(grid) {
+  const header = grid[0];
+  return grid.slice(1).filter(r => r.length === header.length).map(r => {
+    const o = {};
+    header.forEach((h, i) => o[h] = r[i]);
+    return o;
+  });
+}
+
+// ---- grouping ----
+function groupRows(rows) {
+  // image -> { details:{score,scale,cands,thr,matched}, rois: { roiSet -> [fieldRows] } }
+  const byImage = new Map();
+  for (const r of rows) {
+    if (!byImage.has(r.image)) {
+      byImage.set(r.image, {
+        image: r.image,
+        details: {
+          score: parseFloat(r.details_match_score),
+          scale: parseFloat(r.details_match_scale),
+          cands: parseInt(r.details_candidates),
+          thr: parseFloat(r.details_threshold),
+          matched: r.details_matched === "1",
+        },
+        rois: new Map(),
+      });
+    }
+    const img = byImage.get(r.image);
+    if (!img.rois.has(r.roi_set)) img.rois.set(r.roi_set, []);
+    img.rois.get(r.roi_set).push(r);
+  }
+  return byImage;
+}
+
+function digitsOnly(s) { return (s || "").replace(/\D/g, ""); }
+
+function fieldDisagrees(r) {
+  const vals = MODELS.map(m => r[m + "_text"]);
+  return new Set(vals).size > 1;
+}
+function scoreDigitsDisagree(fieldRows) {
+  const sr = fieldRows.find(r => r.field === "score");
+  if (!sr) return false;
+  const d = MODELS.map(m => digitsOnly(sr[m + "_text"]));
+  return new Set(d).size > 1;
+}
+
+// Resolve an image src for (image, roiSet, model). The crop filename mirrors
+// the C++ harness: <imgStem>__<roiSet>.png (saved for every model/image/warped
+// roiSet). The legacy __<reason> suffixes are kept as fallbacks for old runs.
+function imgCandidates(image, roiSet, model) {
+  const stem = image.replace(/\.[^.]+$/, "");
+  return [
+    `${model}/${stem}__${roiSet}.png`,
+    `${model}/${stem}__${roiSet}__scorediff.png`,
+    `${model}/${stem}__${roiSet}__scorediff_nearmiss.png`,
+    `${model}/${stem}__${roiSet}__nearmiss.png`,
+  ];
+}
+function resolveSrc(rel) {
+  if (imageBlobUrls[rel]) return imageBlobUrls[rel];
+  return `${IMG_BASE}/${rel}`; // http fallback
+}
+
+// ---- rendering ----
+function render() {
+  const content = document.getElementById("content");
+  const search = document.getElementById("search").value.trim().toLowerCase();
+  const onlyDisagree = document.getElementById("onlyDisagree").checked;
+  const onlyWarped = document.getElementById("onlyWarped").checked;
+  const onlyFailures = document.getElementById("onlyFailures").checked;
+
+  const byImage = groupRows(rows);
+  content.innerHTML = "";
+  let shownImages = 0, shownFields = 0;
+  // Per-model accuracy over the WHOLE dataset (not just shown rows), counted
+  // once per (image, roiSet, field) that has a truth value. Split per roi_set
+  // so you can see if a layout helps.
+  const acc = {}; // roiSet -> model -> {pass,total}
+  const accFor = (roi, m) => ((acc[roi] ||= {})[m] ||= { pass: 0, total: 0 });
+  if (hasTruth()) {
+    for (const r of rows) {
+      for (const m of MODELS) {
+        const v = verdict(r.image, r.field, r[m + "_text"]);
+        if (v === null) continue;
+        const a = accFor(r.roi_set, m);
+        a.total++; if (v === "pass") a.pass++;
+      }
+    }
+  }
+
+  for (const [image, img] of byImage) {
+    if (search && !image.toLowerCase().includes(search)) continue;
+
+    // Build roi sections first so we can decide whether the image is shown.
+    const sections = [];
+    for (const [roiSet, fieldRows] of img.rois) {
+      if (roiFilter !== "all" && roiSet !== roiFilter) continue;
+      const anyWarped = MODELS.some(m => fieldRows[0] && fieldRows[0][m + "_warped"] === "1");
+      if (onlyWarped && !anyWarped) continue;
+
+      const dRows = fieldRows.filter(fieldDisagrees);
+      if (onlyDisagree && dRows.length === 0) continue;
+
+      // "only failures" needs truth; a section qualifies if any model fails
+      // any field against ground truth.
+      if (onlyFailures) {
+        const anyFail = fieldRows.some(r =>
+          MODELS.some(m => verdict(image, r.field, r[m + "_text"]) === "fail"));
+        if (!anyFail) continue;
+      }
+
+      sections.push({ roiSet, fieldRows, anyWarped, hasScoreDiff: scoreDigitsDisagree(fieldRows) });
+    }
+    if (sections.length === 0) continue;
+    shownImages++;
+
+    const block = document.createElement("div");
+    block.className = "img-block";
+
+    const d = img.details;
+    const matchPill = d.matched
+      ? `<span class="pill matched">Details ${d.score.toFixed(3)} ≥ ${d.thr.toFixed(2)} ✓</span>`
+      : (d.score >= d.thr - 0.1
+          ? `<span class="pill nearmiss">Details ${d.score.toFixed(3)} (near-miss, thr ${d.thr.toFixed(2)})</span>`
+          : `<span class="pill nomatch">Details ${d.score.toFixed(3)} &lt; ${d.thr.toFixed(2)} ✗</span>`);
+
+    block.innerHTML = `
+      <div class="img-head">
+        <span class="name">${image}</span>
+        ${matchPill}
+        <span class="pill">scale ${d.scale.toFixed(2)}</span>
+        <span class="pill">${d.cands} candidates</span>
+      </div>
+      <div class="img-body"></div>`;
+    const body = block.querySelector(".img-body");
+
+    for (const sec of sections) {
+      const { roiSet, fieldRows, anyWarped, hasScoreDiff } = sec;
+      const section = document.createElement("div");
+      section.className = "roi-section roi-" + roiSet;
+
+      const warpedFlags = MODELS.map(m =>
+        fieldRows[0] && fieldRows[0][m + "_warped"] === "1" ? "1" : "0");
+      const warpedStr = MODELS.map((m, i) =>
+        `${m}=<span class="${warpedFlags[i] === "1" ? "" : "warped0"}">${warpedFlags[i]}</span>`).join("  ");
+
+      // table. Adds a "truth" column only in classification mode.
+      const showTruth = hasTruth();
+      let tbl = `<table><thead><tr><th>field</th>`;
+      if (showTruth) tbl += `<th>truth</th>`;
+      for (const m of MODELS) tbl += `<th>${m}</th>`;
+      tbl += `</tr></thead><tbody>`;
+      for (const r of fieldRows) {
+        const dis = fieldDisagrees(r);
+        if (dis) shownFields++;
+        const allBlank = MODELS.every(m => !r[m + "_text"]);
+        const cls = dis ? "disagree" : (allBlank ? "agree-blank" : "");
+        tbl += `<tr class="${cls}"><td class="field">${r.field}</td>`;
+        if (showTruth) {
+          const gt = getTruth(image, r.field);
+          tbl += (gt !== undefined && gt !== "")
+            ? `<td class="truth">${escapeHtml(gt)}</td>`
+            : `<td class="empty">—</td>`;
+        }
+        for (const m of MODELS) {
+          const t = r[m + "_text"];
+          const conf = parseFloat(r[m + "_conf"]);
+          const confStr = conf > 0 ? ` <span class="conf">${(conf * 100).toFixed(0)}%</span>` : "";
+          const v = showTruth ? verdict(image, r.field, t) : null;
+          const badge = v === "pass" ? ` <span class="badge pass">PASS</span>`
+                      : v === "fail" ? ` <span class="badge fail">FAIL</span>` : "";
+          const tdCls = v === "pass" ? "txt cell-pass"
+                      : v === "fail" ? "txt cell-fail" : (t ? "txt" : "empty");
+          tbl += t
+            ? `<td class="${tdCls}">${escapeHtml(t)}${confStr}${badge}</td>`
+            : `<td class="${v === "fail" ? "empty cell-fail" : "empty"}">∅${badge}</td>`;
+        }
+        tbl += `</tr>`;
+      }
+      tbl += `</tbody></table>`;
+
+      // images (one per model, only if a crop exists)
+      let imgsHtml = `<div class="imgs">`;
+      let anyImg = false;
+      for (const m of MODELS) {
+        const cands = imgCandidates(image, roiSet, m);
+        // <img> with onerror fallback chain through the candidate reasons.
+        const dataCands = cands.map(resolveSrc).join("|");
+        imgsHtml += `
+          <div class="imgcol">
+            <div class="lbl">${m}</div>
+            <img data-cands="${dataCands}" data-cap="${m} · ${escapeHtml(image)} · ${roiSet}" alt="${m}" class="lazy">
+          </div>`;
+        anyImg = true;
+      }
+      imgsHtml += `</div>`;
+
+      section.innerHTML = `
+        <p class="roi-title"><span class="roi-chip">${roiSet}</span>
+           <span>warped: ${warpedStr}</span>
+           ${hasScoreDiff ? '<b style="color:#f99">score digits differ</b>' : ''}</p>
+        <div class="roi-body">${tbl}${imgsHtml}</div>`;
+      body.appendChild(section);
+    }
+    content.appendChild(block);
+  }
+
+  // Summary line + (in classification mode) per-model accuracy panel.
+  let summaryHtml = `${shownImages} images · ${shownFields} disagreeing fields shown`;
+  if (hasTruth()) {
+    const roiOrder = Object.keys(acc);
+    const parts = [];
+    for (const roi of roiOrder) {
+      const segs = MODELS.map(m => {
+        const a = acc[roi][m] || { pass: 0, total: 0 };
+        const pct = a.total ? (100 * a.pass / a.total) : 0;
+        const cls = pct >= 90 ? "acc-good" : pct >= 60 ? "acc-mid" : "acc-bad";
+        return `<span class="${cls}">${m} ${a.pass}/${a.total} (${pct.toFixed(0)}%)</span>`;
+      }).join(" · ");
+      parts.push(`<b>${roi}</b>: ${segs}`);
+    }
+    summaryHtml += `<span class="accpanel">${parts.join(" &nbsp;|&nbsp; ")}</span>`;
+  } else {
+    summaryHtml += ` <span class="meta">· results-only mode (load classified.csv for pass/fail)</span>`;
+  }
+  document.getElementById("summary").innerHTML = summaryHtml;
+
+  // Wire up image fallback chains + click-to-enlarge.
+  content.querySelectorAll("img.lazy").forEach(im => {
+    const cands = im.getAttribute("data-cands").split("|").filter(Boolean);
+    let idx = 0;
+    const tryNext = () => {
+      if (idx >= cands.length) { im.classList.add("missing"); return; }
+      im.src = cands[idx++];
+    };
+    im.onerror = tryNext;
+    tryNext();
+    im.addEventListener("click", () => openLightbox(im.src, im.getAttribute("data-cap") || ""));
+  });
+}
+
+// ---- lightbox (click any crop to view large) ----
+function openLightbox(src, cap) {
+  document.getElementById("lightboxImg").src = src;
+  document.getElementById("lightboxCap").textContent = cap;
+  document.getElementById("lightbox").classList.add("open");
+}
+function closeLightbox() {
+  document.getElementById("lightbox").classList.remove("open");
+  document.getElementById("lightboxImg").src = "";
+}
+document.getElementById("lightbox").addEventListener("click", closeLightbox);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+// ---- inputs ----
+function loadCsvText(text) {
+  rows = toObjects(parseCSV(text));
+  document.getElementById("drop").classList.add("hidden");
+  render();
+}
+
+document.getElementById("csvInput").addEventListener("change", e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  f.text().then(loadCsvText);
+});
+
+// ---- ground truth (classified.csv) ----
+function loadTruthText(text) {
+  const grid = parseCSV(text);
+  if (!grid.length) return;
+  const h = grid[0];
+  const iImg = h.indexOf("image"), iField = h.indexOf("field"), iTruth = h.indexOf("truth");
+  if (iImg < 0 || iField < 0 || iTruth < 0) {
+    alert("Not a classified.csv — expected columns: image,field,truth");
+    return;
+  }
+  truth = new Map();
+  for (const r of grid.slice(1)) {
+    if (r.length <= Math.max(iImg, iField, iTruth)) continue;
+    const t = (r[iTruth] || "").trim();
+    if (t === "") continue; // blank truth = skipped (no pass/fail)
+    truth.set(truthKey(r[iImg], r[iField]), t);
+  }
+  document.getElementById("clearTruth").classList.remove("hidden");
+  document.getElementById("exportScore").classList.remove("hidden");
+  document.getElementById("truthBtn").textContent = `classified.csv (${truth.size})`;
+  render();
+}
+function looksLikeClassified(text) {
+  const firstLine = text.slice(0, text.indexOf("\n") < 0 ? text.length : text.indexOf("\n"));
+  const cols = firstLine.split(",").map(s => s.trim());
+  return cols.includes("image") && cols.includes("field") && cols.includes("truth")
+      && !cols.includes("roi_set");
+}
+
+document.getElementById("truthInput").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(loadTruthText);
+});
+document.getElementById("clearTruth").addEventListener("click", () => {
+  truth = null;
+  document.getElementById("clearTruth").classList.add("hidden");
+  document.getElementById("exportScore").classList.add("hidden");
+  document.getElementById("truthBtn").textContent = "Load classified.csv";
+  document.getElementById("truthInput").value = "";
+  document.getElementById("onlyFailures").checked = false;
+  render();
+});
+
+// ---- pass/fail summary export (classification mode only) ----
+// Aggregates verdicts across the WHOLE dataset (ignores display filters — a
+// scorecard should reflect everything that has ground truth). Emits two tables
+// in one CSV: an overall model×roi_set scorecard, then a per-field breakdown.
+function buildPassFailSummary() {
+  // overall[roi][model] = {pass,fail}; perField[roi][field][model] = {pass,fail}
+  const overall = {}, perField = {};
+  const bump = (obj, roi, model, v) => {
+    const a = ((obj[roi] ||= {})[model] ||= { pass: 0, fail: 0 });
+    a[v]++;
+  };
+  const bumpF = (roi, field, model, v) => {
+    const a = (((perField[roi] ||= {})[field] ||= {})[model] ||= { pass: 0, fail: 0 });
+    a[v]++;
+  };
+  for (const r of rows) {
+    for (const m of MODELS) {
+      const v = verdict(r.image, r.field, r[m + "_text"]);
+      if (v === null) continue;
+      bump(overall, r.roi_set, m, v);
+      bumpF(r.roi_set, r.field, m, v);
+    }
+  }
+  return { overall, perField };
+}
+
+function exportPassFailSummary() {
+  if (!hasTruth()) { alert("Load a classified.csv first."); return; }
+  const { overall, perField } = buildPassFailSummary();
+  const rois = Object.keys(overall);
+  if (!rois.length) { alert("No fields had matching ground truth to score."); return; }
+
+  const pct = a => a && (a.pass + a.fail) ? (100 * a.pass / (a.pass + a.fail)) : 0;
+  let csv = "";
+
+  // Section 1 — overall scorecard
+  csv += "section,roi_set,model,pass,fail,total,pass_rate_pct\n";
+  for (const roi of rois) {
+    for (const m of MODELS) {
+      const a = overall[roi][m] || { pass: 0, fail: 0 };
+      const total = a.pass + a.fail;
+      csv += `overall,${roi},${m},${a.pass},${a.fail},${total},${pct(a).toFixed(1)}\n`;
+    }
+  }
+
+  // Section 2 — per-field breakdown
+  csv += "\nsection,roi_set,field,model,pass,fail,total,pass_rate_pct\n";
+  for (const roi of rois) {
+    const fields = Object.keys(perField[roi]);
+    for (const field of fields) {
+      for (const m of MODELS) {
+        const a = perField[roi][field][m] || { pass: 0, fail: 0 };
+        const total = a.pass + a.fail;
+        if (total === 0) continue;
+        csv += `field,${roi},${field},${m},${a.pass},${a.fail},${total},${pct(a).toFixed(1)}\n`;
+      }
+    }
+  }
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pass_fail_summary.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+document.getElementById("exportScore").addEventListener("click", exportPassFailSummary);
+
+document.getElementById("dirInput").addEventListener("change", e => {
+  // Map picked files under results_images to "model/filename" object URLs.
+  for (const url of Object.values(imageBlobUrls)) URL.revokeObjectURL(url);
+  imageBlobUrls = {};
+  for (const f of e.target.files) {
+    // webkitRelativePath like "results_images/mobile_v5/foo.png" — key by last 2 segs
+    const parts = f.webkitRelativePath.split("/");
+    if (parts.length >= 2) {
+      const key = parts.slice(-2).join("/");
+      imageBlobUrls[key] = URL.createObjectURL(f);
+    }
+  }
+  if (rows.length) render();
+});
+
+["search", "onlyDisagree", "onlyWarped", "onlyFailures"].forEach(id =>
+  document.getElementById(id).addEventListener("input", render));
+
+// ROI-set segmented filter.
+document.getElementById("roiSeg").addEventListener("click", e => {
+  const btn = e.target.closest(".seg");
+  if (!btn) return;
+  roiFilter = btn.dataset.roi;
+  document.querySelectorAll("#roiSeg .seg").forEach(b =>
+    b.classList.toggle("active", b === btn));
+  render();
+});
+
+// Drag & drop a CSV anywhere — routes to results vs ground-truth by its header.
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  const f = [...e.dataTransfer.files].find(f => f.name.endsWith(".csv"));
+  if (!f) return;
+  f.text().then(text => looksLikeClassified(text) ? loadTruthText(text) : loadCsvText(text));
+});
+
+// Auto-load results.csv (and classified.csv if present) when served over http.
+fetch("results.csv").then(r => { if (r.ok) return r.text(); throw 0; })
+  .then(loadCsvText).catch(() => {/* offline file:// — wait for picker */});
+fetch("classified.csv").then(r => { if (r.ok) return r.text(); throw 0; })
+  .then(loadTruthText).catch(() => {/* optional — results-only mode */});
+</script>
+</body>
+</html>

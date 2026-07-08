@@ -209,6 +209,12 @@ enum Modes {
   doubles,
 }
 
+enum SortType {
+  level,
+  title,
+  version,
+}
+
 class Difficulty {
   int? beginner;
   int? easy;

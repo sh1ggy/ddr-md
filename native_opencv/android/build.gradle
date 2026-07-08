@@ -30,13 +30,14 @@ android {
     ndkVersion = android.ndkVersion
 
     defaultConfig {
-        minSdkVersion 21
+        // NDK Camera2 (AImageReader / ACameraManager) requires API 24.
+        minSdkVersion 24
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         externalNativeBuild {
             cmake {
                 // Enabling exception, RTTI and setting C++ standard version
-                cppFlags '-frtti -fexceptions -std=c++11 -g'
+                cppFlags '-frtti -fexceptions -std=c++17 -g'
 
                 // Shared runtime for shared libraries
                 arguments "-DANDROID_STL=c++_shared"
