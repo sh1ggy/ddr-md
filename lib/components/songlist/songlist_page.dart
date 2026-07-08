@@ -12,9 +12,11 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:flutter/material.dart';
 
 class SongListPage extends StatefulWidget {
-  const SongListPage({super.key, required this.folder});
+  const SongListPage(
+      {super.key, required this.folder, this.enableVersionFilter = true});
 
   final SongFolder folder;
+  final bool enableVersionFilter;
 
   @override
   State<SongListPage> createState() => _SongListPageState();
@@ -55,11 +57,13 @@ class _SongListPageState extends State<SongListPage> {
 
   @override
   Widget build(BuildContext context) {
-    List<SongItem> songItems = widget.folder.songItemList
+    List<SongItem> songItems = widget.enableVersionFilter
+      ? widget.folder.songItemList
         .where((SongItem songItem) =>
-            _versionFilter == null ||
-            songItem.songInfo.version == _versionFilter)
-        .toList();
+          _versionFilter == null ||
+          songItem.songInfo.version == _versionFilter)
+        .toList()
+      : widget.folder.songItemList;
     return SafeArea(
         child: Scaffold(
       appBar: AppBar(
@@ -74,19 +78,21 @@ class _SongListPageState extends State<SongListPage> {
               color: Colors.blueGrey,
               fontWeight: FontWeight.w600),
         ),
-        actions: <Widget>[
-          PopupMenuButton(
-            tooltip: "Filter by version",
-            icon: Icon(_versionFilter == null
-                ? Icons.filter_alt_outlined
-                : Icons.filter_alt),
-            itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-              versionFilterItem(null),
-              for (String version in folderVersions())
-                versionFilterItem(version),
-            ],
-          ),
-        ],
+        actions: widget.enableVersionFilter
+            ? <Widget>[
+                PopupMenuButton(
+                  tooltip: "Filter by version",
+                  icon: Icon(_versionFilter == null
+                      ? Icons.filter_alt_outlined
+                      : Icons.filter_alt),
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry>[
+                    versionFilterItem(null),
+                    for (String version in folderVersions())
+                      versionFilterItem(version),
+                  ],
+                ),
+              ]
+            : null,
         iconTheme: const IconThemeData(color: Colors.blueGrey),
       ),
       body: ListView.builder(
