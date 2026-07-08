@@ -3,9 +3,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Merge every assets/song-data/*.json into a single assets/songlist.json array.
+# Merge every assets/songs/*.json into a single assets/songlist.json array.
 # Lite builds (scripts/build_lite.sh) bundle this instead of the per-song files.
-python3 - "$REPO_ROOT/assets/song-data" "$REPO_ROOT/assets/songlist.json" <<'EOF'
+python3 - "$REPO_ROOT/assets/songs" "$REPO_ROOT/assets/songlist.json" <<'EOF'
 import json, pathlib, sys
 
 src, dst = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])

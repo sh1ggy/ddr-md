@@ -187,6 +187,7 @@ class _SongPageState extends State<SongPage> {
                         nearestModIndex: _nearestModIndex,
                         isBpmChange: _isBpmChange,
                         chart: _chart),
+                    SongRadarChart(chart: _chart),
                     if (_isBpmChange || _chart.stops.isNotEmpty)
                       SongChart(
                           context: context,

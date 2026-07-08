@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the app without the jacket images and per-song song-data JSONs.
+# Build the app without the jacket images and per-song songs JSONs.
 # Song metadata still ships via a single merged assets/songlist.json, which
 # the `- assets/` pubspec entry already covers; jackets fall back to a
 # placeholder icon in the UI.
@@ -17,9 +17,9 @@ cp pubspec.yaml pubspec.yaml.orig
 trap 'mv pubspec.yaml.orig pubspec.yaml' EXIT
 
 sed -i '' \
-  -e '\|- assets/jackets-lowres/|d' \
+  -e '\|- assets/jackets-160/|d' \
   -e '\|- assets/jackets/|d' \
-  -e '\|- assets/song-data/|d' \
+  -e '\|- assets/songs/|d' \
   pubspec.yaml
 
 if [ $# -eq 0 ]; then

@@ -32,9 +32,8 @@ dev_dependencies:
 flutter:
   assets:
     - assets/
-    - assets/jackets-lowres/
+    - assets/jackets-160/
     - assets/jackets/
-    - assets/song-data/
     # Only the model triple the app loads at runtime (ocr_onnx.cpp defaults).
     # The other variants in assets/models/ exist for the offline
     # native_opencv/tools/model_compare harness and must not ship in the bundle.

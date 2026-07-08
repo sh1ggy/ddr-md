@@ -1,6 +1,6 @@
 /// Name: SongState -- ChangeNotifier
 /// Description: Model for state relating to the selected song, plus the
-/// master song list ([Songs]) loaded from the bundled song-data assets.
+/// master song list ([Songs]) loaded from the bundled songs assets.
 library;
 
 import 'dart:convert';
@@ -61,7 +61,7 @@ class SongMatch {
   const SongMatch(this.song, this.similarity);
 }
 
-/// Master song list, loaded once at startup from assets/song-data/*.json.
+/// Master song list, loaded once at startup from assets/songs/*.json.
 class Songs {
   static List<String> assets = [];
   static List<SongInfo> list = [];
@@ -92,7 +92,7 @@ class Songs {
     }
 
     List<String> songDataPaths = assets
-        .where((string) => string.startsWith("assets/song-data/"))
+      .where((string) => string.startsWith("assets/songs/"))
         .where((string) => string.endsWith(".json"))
         .map((e) => e.substring(0, e.length - 5))
         .toList();

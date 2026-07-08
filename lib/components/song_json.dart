@@ -81,6 +81,7 @@ class Chart {
   String bpmRange;
   List<Bpm> bpms;
   List<Stop> stops;
+  Radar radar;
 
   Chart({
     required this.dominantBpm,
@@ -89,6 +90,7 @@ class Chart {
     required this.bpmRange,
     required this.bpms,
     required this.stops,
+    required this.radar,
   });
 
   factory Chart.fromJson(Map<String, dynamic> json) => Chart(
@@ -102,6 +104,7 @@ class Chart {
         stops: List<Stop>.from(
           (json["stops"] ?? []).map((x) => Stop.fromJson(x)),
         ),
+        radar: Radar.fromJson(json["radar"] ?? {}),
       );
 
   Map<String, dynamic> toJson() => {
@@ -111,6 +114,39 @@ class Chart {
         "bpm_range": bpmRange,
         "bpms": List<dynamic>.from(bpms.map((x) => x.toJson())),
         "stops": List<dynamic>.from(stops.map((x) => x.toJson())),
+        "radar": radar.toJson(),
+      };
+}
+
+class Radar {
+  double stream;
+  double voltage;
+  double air;
+  double freeze;
+  double chaos;
+
+  Radar({
+    required this.stream,
+    required this.voltage,
+    required this.air,
+    required this.freeze,
+    required this.chaos,
+  });
+
+  factory Radar.fromJson(Map<String, dynamic> json) => Radar(
+        stream: (json["stream"] ?? 0).toDouble(),
+        voltage: (json["voltage"] ?? 0).toDouble(),
+        air: (json["air"] ?? 0).toDouble(),
+        freeze: (json["freeze"] ?? 0).toDouble(),
+        chaos: (json["chaos"] ?? 0).toDouble(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        "stream": stream,
+        "voltage": voltage,
+        "air": air,
+        "freeze": freeze,
+        "chaos": chaos,
       };
 }
 

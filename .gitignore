@@ -138,9 +138,9 @@ app.*.symbols
 !.vscode/settings.json
 
 # assets
-/assets/jackets-lowres
+/assets/jackets-160
 /assets/jackets
-/assets/song-data
+/assets/songs
 
 # OpenCV downloaded SDK
 /scripts/download
