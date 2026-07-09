@@ -84,7 +84,10 @@ class SongChartState extends State<SongChart> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     late SongState songState = Provider.of<SongState>(context);
-    genBpmPoints(songState.songInfo!.charts[songState.chosenDifficulty]);
+    final charts = songState.songInfo!.charts;
+    genBpmPoints(songState.songInfo!.perChart
+        ? charts[songState.chosenDifficulty.clamp(0, charts.length - 1)]
+        : charts.first);
   }
 
   @override
@@ -282,19 +285,21 @@ class SongChartState extends State<SongChart> {
 }
 
 class SongRadarChart extends StatelessWidget {
-  const SongRadarChart({super.key, required this.chart});
+  const SongRadarChart({super.key, required this.radar});
 
-  final Chart chart;
+  final Radar? radar;
 
   @override
   Widget build(BuildContext context) {
+    final radar = this.radar;
+    if (radar == null) return const SizedBox.shrink();
     final labels = <String>['Stream', 'Voltage', 'Air', 'Freeze', 'Chaos'];
     final values = <double>[
-      chart.radar.stream,
-      chart.radar.voltage,
-      chart.radar.air,
-      chart.radar.freeze,
-      chart.radar.chaos,
+      radar.stream,
+      radar.voltage,
+      radar.air,
+      radar.freeze,
+      radar.chaos,
     ];
 
     return Card(
@@ -330,6 +335,22 @@ class SongRadarChart extends StatelessWidget {
                     return RadarChartTitle(text: labels[index]);
                   },
                   dataSets: [
+                    // Invisible dataset pinning the scale to at least 0-100;
+                    // official radar values can exceed 100 (up to ~312) and
+                    // will stretch the scale past it when they do.
+                    RadarDataSet(
+                      fillColor: Colors.transparent,
+                      borderColor: Colors.transparent,
+                      borderWidth: 0,
+                      entryRadius: 0,
+                      dataEntries: const [
+                        RadarEntry(value: 100),
+                        RadarEntry(value: 100),
+                        RadarEntry(value: 100),
+                        RadarEntry(value: 100),
+                        RadarEntry(value: 100),
+                      ],
+                    ),
                     RadarDataSet(
                       fillColor: Colors.redAccent.withOpacity(0.25),
                       borderColor: Colors.redAccent,

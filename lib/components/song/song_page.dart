@@ -95,7 +95,8 @@ class _SongPageState extends State<SongPage> {
       // Set variables based on state
       if (songInfo.perChart) {
         setState(() {
-          _chart = songInfo.charts[chosenDifficulty];
+          _chart = songInfo.charts[
+              chosenDifficulty.clamp(0, songInfo.charts.length - 1)];
         });
       } else {
         setState(() {
@@ -187,7 +188,9 @@ class _SongPageState extends State<SongPage> {
                         nearestModIndex: _nearestModIndex,
                         isBpmChange: _isBpmChange,
                         chart: _chart),
-                    SongRadarChart(chart: _chart),
+                    SongRadarChart(
+                        radar: songState.songInfo!.radarFor(
+                            songState.modes, songState.chosenDifficulty)),
                     if (_isBpmChange || _chart.stops.isNotEmpty)
                       SongChart(
                           context: context,

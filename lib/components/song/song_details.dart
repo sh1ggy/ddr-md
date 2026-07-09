@@ -4,7 +4,6 @@
 library;
 
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
-import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
@@ -127,10 +126,9 @@ class SongDetails extends StatelessWidget {
                     Difficulty songDifficulty = songState.modes == Modes.singles
                         ? songInfo.singles
                         : songInfo.doubles;
-                    if (songInfo.perChart) {
-                      return SongDifficultyPicker(difficulty: songDifficulty);
-                    }
-                    return SongDifficulty(difficulty: songDifficulty);
+                    // Every song has per-difficulty radar data, so the
+                    // difficulty is always selectable.
+                    return SongDifficultyPicker(difficulty: songDifficulty);
                   }()),
             ],
           ),
