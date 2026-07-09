@@ -20,6 +20,8 @@ class SongInfo {
   Difficulty doubles;
   Map<String, Radar> radarSingles;
   Map<String, Radar> radarDoubles;
+  Difficulty singlesNotecounts;
+  Difficulty doublesNotecounts;
   List<Chart> charts;
 
   SongInfo({
@@ -34,6 +36,8 @@ class SongInfo {
     required this.doubles,
     required this.radarSingles,
     required this.radarDoubles,
+    required this.singlesNotecounts,
+    required this.doublesNotecounts,
     required this.charts,
   });
 
@@ -55,6 +59,7 @@ class SongInfo {
   factory SongInfo.fromJson(Map<String, dynamic> json) {
     final levels = json["levels"] as Map<String, dynamic>?;
     final radar = json["radar"] as Map<String, dynamic>?;
+    final notecounts = json["notecounts"] as Map<String, dynamic>?;
 
     Map<String, Radar> parseRadars(dynamic radars) =>
         (radars as Map<String, dynamic>? ?? {}).map(
@@ -81,6 +86,10 @@ class SongInfo {
       radarSingles: parseRadars(radar?["sp"]),
       radarDoubles: parseRadars(radar?["dp"]),
 
+      // Per-difficulty step counts (a jump counts as one step)
+      singlesNotecounts: Difficulty.fromJson(notecounts?["sp"] ?? {}),
+      doublesNotecounts: Difficulty.fromJson(notecounts?["dp"] ?? {}),
+
       // NEW: supports both "charts" and "chart"
       charts: List<Chart>.from(
         (json["charts"] ?? json["chart"] ?? []).map((x) => Chart.fromJson(x)),
@@ -101,6 +110,10 @@ class SongInfo {
         "radar": {
           "sp": radarSingles.map((diff, r) => MapEntry(diff, r.toJson())),
           "dp": radarDoubles.map((diff, r) => MapEntry(diff, r.toJson())),
+        },
+        "notecounts": {
+          "sp": singlesNotecounts.toJson(),
+          "dp": doublesNotecounts.toJson(),
         },
         "chart": List<dynamic>.from(charts.map((x) => x.toJson())),
       };
