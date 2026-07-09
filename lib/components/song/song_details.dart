@@ -78,6 +78,27 @@ class SongDetails extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
+              if (chart != null)
+                RichText(
+                  text: TextSpan(
+                    style: TextStyle(
+                        fontSize: 15.5,
+                        color: DefaultTextStyle.of(context).style.color),
+                    children: <TextSpan>[
+                      TextSpan(
+                        text: "${chart!.dominantBpm} BPM",
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      if (chart!.trueMax != chart!.trueMin) ...[
+                        if (!chart!.bpmRange.contains(chart!.trueMin.toString()))
+                          TextSpan(text: ' (${chart!.trueMin}~) '),
+                        TextSpan(text: ' ${chart!.bpmRange}'),
+                        if (!chart!.bpmRange.contains(chart!.trueMax.toString()))
+                          TextSpan(text: ' (~${chart!.trueMax}) '),
+                      ],
+                    ],
+                  ),
+                ),
               RichText(
                 text: TextSpan(
                   style: TextStyle(

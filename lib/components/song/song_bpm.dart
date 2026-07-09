@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/services.dart';
 
-class SongBpm extends StatelessWidget {
+class SongBpm extends StatefulWidget {
   const SongBpm(
       {super.key,
       required this.nearestModIndex,
@@ -19,154 +19,89 @@ class SongBpm extends StatelessWidget {
   final Chart chart;
 
   @override
+  State<SongBpm> createState() => _SongBpmState();
+}
+
+class _SongBpmState extends State<SongBpm> {
+  late int _modIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _modIndex = widget.nearestModIndex;
+  }
+
+  @override
+  void didUpdateWidget(SongBpm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.nearestModIndex != widget.nearestModIndex) {
+      _modIndex = widget.nearestModIndex;
+    }
+  }
+
+  void _step(int delta) {
+    final newIndex = _modIndex + delta;
+    if (newIndex < 0 || newIndex >= constants.mods.length) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _modIndex = newIndex;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final chart = widget.chart;
+    final mod = constants.mods[_modIndex];
+    final readSpeed = (mod * chart.dominantBpm).round();
+    final readsAt = widget.isBpmChange
+        ? "${(mod * chart.trueMin).round()}"
+            "~$readSpeed"
+            "~${(mod * chart.trueMax).round()}"
+        : "$readSpeed";
+
     return Container(
       padding: const EdgeInsets.all(7.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            "${chart.dominantBpm} BPM",
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          OutlinedButton(
+            onPressed: () => _step(-1),
+            child: const Text("−10"),
           ),
-          if (isBpmChange)
-            // Only show BPM range if there is one
-            RichText(
-              text: TextSpan(
-                style: TextStyle(
-                    fontSize: 18.0,
-                    color: DefaultTextStyle.of(context).style.color),
-                children: <TextSpan>[
-                  if (!chart.bpmRange.contains(chart.trueMin.toString()))
-                    TextSpan(text: ' (${chart.trueMin.toString()}~) '),
-                  TextSpan(
-                      text: chart.bpmRange,
-                      style: const TextStyle(fontWeight: FontWeight.w500)),
-                  if (!chart.bpmRange.contains(chart.trueMax.toString()))
-                    TextSpan(text: ' (~${chart.trueMax.toString()}) '),
-                ],
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: "×${_formatMod(mod)}",
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.primary),
+                    ),
+                    const TextSpan(text: "  →  "),
+                    TextSpan(
+                      text: readsAt,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                textAlign: TextAlign.center,
               ),
             ),
-          const SizedBox(
-            height: 15,
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(
-                  width: 60,
-                  child: Text(
-                    'Avg',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  )),
-              const SizedBox(width: 30),
-              if (isBpmChange == true) ...[
-                const SizedBox(
-                    width: 60,
-                    child: Text(
-                      'Min',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    )),
-                const SizedBox(width: 30),
-                const SizedBox(
-                    width: 60,
-                    child: Text(
-                      'Max',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    )),
-                const SizedBox(width: 30),
-              ],
-              const SizedBox(
-                  width: 60,
-                  child: Text(
-                    'Mod',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  )),
-            ],
+          OutlinedButton(
+            onPressed: () => _step(1),
+            child: const Text("+10"),
           ),
-          SizedBox(
-              height: isBpmChange
-                  ? MediaQuery.of(context).size.height / 9
-                  : MediaQuery.of(context).size.height / 4,
-              child: ListWheelScrollView.useDelegate(
-                physics: const FixedExtentScrollPhysics(),
-                controller:
-                    FixedExtentScrollController(initialItem: nearestModIndex),
-                overAndUnderCenterOpacity: .5,
-                itemExtent: 25,
-                onSelectedItemChanged: (_) {
-                  HapticFeedback.selectionClick();
-                },
-                childDelegate: ListWheelChildListDelegate(
-                  children: constants.mods.map<Widget>((mod) {
-                    var avg = mod * chart.dominantBpm;
-                    var min = mod * chart.trueMin;
-                    var max = mod * chart.trueMax;
-                    return Container(
-                      decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(7),
-                          color: nearestModIndex == constants.mods.indexOf(mod)
-                              ? Colors.redAccent.shade200
-                              : Colors.transparent),
-                      child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SongBpmTextItem(
-                                text: avg.round().toString(),
-                                nearestModIndex: nearestModIndex,
-                                mod: mod),
-                            if (isBpmChange) ...[
-                              SongBpmTextItem(
-                                  text: min.round().toString(),
-                                  nearestModIndex: nearestModIndex,
-                                  mod: mod),
-                              SongBpmTextItem(
-                                  text: max.round().toString(),
-                                  nearestModIndex: nearestModIndex,
-                                  mod: mod),
-                            ],
-                            SongBpmTextItem(
-                                text: mod.toString(),
-                                nearestModIndex: nearestModIndex,
-                                mod: mod),
-                          ]
-                              .expand((x) => [const SizedBox(width: 30), x])
-                              .skip(1)
-                              .toList()),
-                    );
-                  }).toList(),
-                ),
-              )),
         ],
       ),
     );
   }
-}
 
-class SongBpmTextItem extends StatelessWidget {
-  const SongBpmTextItem(
-      {super.key,
-      required this.text,
-      required this.nearestModIndex,
-      required this.mod});
-
-  final String text;
-  final int nearestModIndex;
-  final double mod;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 60,
-      child: Text(text,
-          style: TextStyle(
-              fontSize: 15,
-              fontWeight: nearestModIndex == constants.mods.indexOf(mod)
-                  ? FontWeight.bold
-                  : FontWeight.normal,
-              color: nearestModIndex == constants.mods.indexOf(mod)
-                  ? Colors.white
-                  : DefaultTextStyle.of(context).style.color)),
-    );
-  }
+  String _formatMod(double mod) =>
+      mod == mod.roundToDouble() ? mod.toStringAsFixed(0) : mod.toString();
 }

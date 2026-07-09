@@ -198,6 +198,11 @@ class _SongPageState extends State<SongPage> {
                         onTap: () => openHistory(HistoryPage.scoresTab),
                         child: ScoreCard(
                             score: latestScore!, header: "Latest Score"),
+                      )
+                    else
+                      GestureDetector(
+                        onTap: () => openHistory(HistoryPage.scoresTab),
+                        child: const NoScoreCard(),
                       ),
                     if (latestNote != null)
                       GestureDetector(

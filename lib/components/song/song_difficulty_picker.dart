@@ -23,8 +23,10 @@ class _SongDifficultyPickerState extends State<SongDifficultyPicker> {
   List<bool> selectedDifficulty = [];
   @override
   void initState() {
+    final chosen =
+        Provider.of<SongState>(context, listen: false).chosenDifficulty;
     selectedDifficulty = List<bool>.generate(
-        widget.difficulty.toJson().length, (index) => false);
+        widget.difficulty.toJson().length, (index) => index == chosen);
     super.initState();
   }
 
