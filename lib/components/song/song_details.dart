@@ -11,6 +11,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+/// Builds the BPM range shown after the dominant BPM, e.g. " (75~) 100~200 (~400)".
+/// True min/max only appear when they fall outside the displayed range.
+String _bpmRangeSuffix(Chart chart) {
+  if (chart.trueMax == chart.trueMin) return '';
+  final buffer = StringBuffer();
+  if (!chart.bpmRange.contains('${chart.trueMin}')) {
+    buffer.write(' (${chart.trueMin}~)');
+  }
+  buffer.write(' ${chart.bpmRange}');
+  if (!chart.bpmRange.contains('${chart.trueMax}')) {
+    buffer.write(' (~${chart.trueMax})');
+  }
+  return buffer.toString();
+}
+
 // Method for formatting time from a given time (s)
 formattedTime({required int timeInSecond}) {
   int sec = timeInSecond % 60;
@@ -33,6 +48,7 @@ class SongDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
+    final chart = this.chart;
 
     return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -86,16 +102,10 @@ class SongDetails extends StatelessWidget {
                         color: DefaultTextStyle.of(context).style.color),
                     children: <TextSpan>[
                       TextSpan(
-                        text: "${chart!.dominantBpm} BPM",
+                        text: "${chart.dominantBpm} BPM",
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      if (chart!.trueMax != chart!.trueMin) ...[
-                        if (!chart!.bpmRange.contains(chart!.trueMin.toString()))
-                          TextSpan(text: ' (${chart!.trueMin}~) '),
-                        TextSpan(text: ' ${chart!.bpmRange}'),
-                        if (!chart!.bpmRange.contains(chart!.trueMax.toString()))
-                          TextSpan(text: ' (~${chart!.trueMax}) '),
-                      ],
+                      TextSpan(text: _bpmRangeSuffix(chart)),
                     ],
                   ),
                 ),
