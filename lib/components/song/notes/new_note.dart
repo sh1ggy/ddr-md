@@ -4,6 +4,7 @@
 /// the parent for new notes, saving them to the database.
 library;
 
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -22,7 +23,7 @@ class NewNoteField extends StatefulWidget {
 
   final String? contentsInit;
   final String? date;
-  final void Function(String)? getNotes;
+  final void Function(String, Modes)? getNotes;
 
   @override
   State<NewNoteField> createState() => NewNoteFieldState();
@@ -106,7 +107,9 @@ class NewNoteFieldState extends State<NewNoteField> {
                           await DatabaseProvider.deleteNote(widget.date!);
                           if (!context.mounted) return;
                           Navigator.pop(context, true);
-                          widget.getNotes!(songState.songInfo!.titletranslit);
+                          widget.getNotes!(
+                              songState.songInfo!.titletranslit,
+                              songState.modes);
                           showToast(context, "Note deleted.");
                         },
                       ),
@@ -121,13 +124,15 @@ class NewNoteFieldState extends State<NewNoteField> {
                               Note(
                                   date: widget.date!,
                                   contents: _contents,
-                                  songTitle: songState.songInfo!.titletranslit),
+                                  songTitle: songState.songInfo!.titletranslit,
+                                  mode: songState.modes),
                               _contents);
                         } else {
                           await DatabaseProvider.addNote(Note(
                               date: DateTime.now().toIso8601String(),
                               contents: _contents,
-                              songTitle: songState.songInfo!.titletranslit));
+                              songTitle: songState.songInfo!.titletranslit,
+                              mode: songState.modes));
                         }
                         if (!context.mounted) return;
                         Navigator.pop(context, true);

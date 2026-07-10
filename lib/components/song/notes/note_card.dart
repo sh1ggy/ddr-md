@@ -5,6 +5,7 @@
 library;
 
 import 'package:ddr_md/components/song/notes/new_note.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +21,7 @@ class NoteCard extends StatelessWidget {
 
   final String contents;
   final String date;
-  final void Function(String) getNotes;
+  final void Function(String, Modes) getNotes;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +42,7 @@ class NoteCard extends StatelessWidget {
         );
         // If return is the expected value, execute getNotes and re-render
         if (result == true) {
-          getNotes(songState.songInfo!.titletranslit);
+          getNotes(songState.songInfo!.titletranslit, songState.modes);
         }
       },
       child: Card(

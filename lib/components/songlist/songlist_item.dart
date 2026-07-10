@@ -1,5 +1,5 @@
 /// Name: SongListItem
-/// Parent: SongListPage, FavoriteListPage
+/// Parent: DifficultyListPage, FavoriteListPage
 /// Description: Rendering out the song item itself.
 library;
 

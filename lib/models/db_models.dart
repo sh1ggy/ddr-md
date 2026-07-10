@@ -1,12 +1,20 @@
+import 'package:ddr_md/components/song_json.dart';
+
+// Rows saved before the mode column existed (db v4) default to singles.
+Modes _modeFromMap(Map<String, dynamic> json) =>
+    Modes.values.asNameMap()[json["mode"]] ?? Modes.singles;
+
 class Note {
   final String date;
   final String contents;
   final String songTitle;
+  final Modes mode;
 
   const Note({
     required this.date,
     required this.contents,
     required this.songTitle,
+    required this.mode,
   });
 
   Map<String, Object?> toMap() {
@@ -14,6 +22,7 @@ class Note {
       'date': date,
       'contents': contents,
       'songTitle': songTitle,
+      'mode': mode.name,
     };
   }
 
@@ -21,11 +30,12 @@ class Note {
         date: json["date"],
         contents: json["contents"],
         songTitle: json["songTitle"],
+        mode: _modeFromMap(json),
       );
 
   @override
   String toString() {
-    return 'Note{date: $date, contents: $contents, song: $songTitle}';
+    return 'Note{date: $date, contents: $contents, song: $songTitle, mode: ${mode.name}}';
   }
 }
 
@@ -33,6 +43,7 @@ class Score {
   final String date;
   // titletranslit of the matched song, matching the notes/favorites key.
   final String songTitle;
+  final Modes mode;
   final String difficulty;
   final String username;
   final String flare;
@@ -47,6 +58,7 @@ class Score {
   const Score({
     required this.date,
     required this.songTitle,
+    required this.mode,
     this.difficulty = '',
     this.username = '',
     this.flare = '',
@@ -63,6 +75,7 @@ class Score {
     return {
       'date': date,
       'songTitle': songTitle,
+      'mode': mode.name,
       'difficulty': difficulty,
       'username': username,
       'flare': flare,
@@ -79,6 +92,7 @@ class Score {
   factory Score.fromMap(Map<String, dynamic> json) => Score(
         date: json["date"],
         songTitle: json["songTitle"],
+        mode: _modeFromMap(json),
         difficulty: json["difficulty"] ?? '',
         username: json["username"] ?? '',
         flare: json["flare"] ?? '',
@@ -93,7 +107,7 @@ class Score {
 
   @override
   String toString() {
-    return 'Score{date: $date, song: $songTitle, difficulty: $difficulty, score: $score}';
+    return 'Score{date: $date, song: $songTitle, mode: ${mode.name}, difficulty: $difficulty, score: $score}';
   }
 }
 
@@ -101,17 +115,20 @@ class Favorite {
   final int id;
   final bool isFav;
   final String songTitle;
+  final Modes mode;
 
   const Favorite({
     required this.id,
     required this.isFav,
     required this.songTitle,
+    required this.mode,
   });
 
   Map<String, Object?> toMap() {
     return {
       'isFav': isFav ? 1 : 0,
       'songTitle': songTitle,
+      'mode': mode.name,
     };
   }
 
@@ -119,10 +136,11 @@ class Favorite {
         id: json["id"],
         isFav: (json["isFav"] as int) == 1 ? true : false,
         songTitle: json["songTitle"],
+        mode: _modeFromMap(json),
       );
 
   @override
   String toString() {
-    return 'Favorite{id: $id, isFav: $isFav, song: $songTitle}';
+    return 'Favorite{id: $id, isFav: $isFav, song: $songTitle, mode: ${mode.name}}';
   }
 }

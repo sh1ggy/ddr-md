@@ -12,6 +12,7 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 // Below this similarity the match is shown as a warning and likely wrong;
 // the user can still fix the title field or pick from the list.
@@ -54,6 +55,9 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       date: DateTime.now().toIso8601String(),
       songTitle:
           song.titletranslit.isNotEmpty ? song.titletranslit : song.title,
+      // OCR results don't say which side was played, so file the score
+      // under the app's currently selected mode.
+      mode: Provider.of<SongState>(context, listen: false).modes,
       difficulty: _text('difficulty'),
       username: _text('username'),
       flare: _text('flare'),

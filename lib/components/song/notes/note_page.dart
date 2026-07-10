@@ -8,6 +8,7 @@ library;
 
 import 'package:ddr_md/components/song/notes/new_note.dart';
 import 'package:ddr_md/components/song/notes/note_card.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -27,11 +28,12 @@ class NotesTabState extends State<NotesTab> {
   Future<List<Note>>? _notesPromise;
   final List<NoteCard> _noteWidgets = [];
 
-  // Function to get notes by song in DB
-  void getNotes(String songTitleTranslit) async {
+  // Function to get notes by song and play mode in DB
+  void getNotes(String songTitleTranslit, Modes mode) async {
     // Variable initialisation
     List<Note> notesBySong;
-    notesBySong = await DatabaseProvider.getAllNotesBySong(songTitleTranslit);
+    notesBySong =
+        await DatabaseProvider.getAllNotesBySong(songTitleTranslit, mode);
 
     // Early return if notes list is empty
     if (notesBySong.isEmpty) {
@@ -62,7 +64,7 @@ class NotesTabState extends State<NotesTab> {
       late SongState songState;
       songState = Provider.of<SongState>(context, listen: false);
       setState(() {
-        getNotes(songState.songInfo!.titletranslit);
+        getNotes(songState.songInfo!.titletranslit, songState.modes);
       });
     });
   }
@@ -87,7 +89,7 @@ class NotesTabState extends State<NotesTab> {
             // If return is the expected value, execute getNotes and re-render
             if (result == true) {
               setState(() {
-                getNotes(songState.songInfo!.titletranslit);
+                getNotes(songState.songInfo!.titletranslit, songState.modes);
               });
             }
           }),
