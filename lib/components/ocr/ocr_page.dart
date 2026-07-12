@@ -276,14 +276,10 @@ class _OcrPageState extends State<OcrPage>
             child: switch (cameraState) {
               CameraState.notReady =>
                 const Center(child: CircularProgressIndicator()),
-              CameraState.neverRecorded => Center(
-                  child: Text(
-                    "Start OCR to begin detection",
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+              CameraState.neverRecorded => const OcrEmptyState(
+                  icon: Icons.videocam_outlined,
+                  title: 'Camera is off',
+                  subtitle: 'Start OCR to begin detecting scores',
                 ),
               CameraState.inactive => _buildStoppedView(),
               CameraState.active => _buildActiveView(),
@@ -579,7 +575,16 @@ class _OcrPageState extends State<OcrPage>
     ];
     return _scorePanelShell(
       rows: rows,
-      emptyText: "Reading score…",
+      empty: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Text(
+          "Reading score…",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
     );
   }
 
@@ -609,14 +614,18 @@ class _OcrPageState extends State<OcrPage>
     ];
     return _scorePanelShell(
       rows: rows,
-      emptyText: "No score captured.",
+      empty: const OcrEmptyState(
+        icon: Icons.search_off,
+        title: 'No score detected',
+        subtitle: 'Start OCR again and keep the results screen in view',
+      ),
       showToggle: true,
     );
   }
 
   Widget _scorePanelShell({
     required List<Widget> rows,
-    required String emptyText,
+    required Widget empty,
     bool showToggle = false,
   }) {
     return Column(
@@ -635,19 +644,7 @@ class _OcrPageState extends State<OcrPage>
               label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
             ),
           ),
-        if (rows.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Text(
-              emptyText,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          )
-        else
-          ...rows,
+        if (rows.isEmpty) empty else ...rows,
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(

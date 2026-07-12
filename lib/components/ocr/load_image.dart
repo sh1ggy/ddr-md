@@ -171,8 +171,6 @@ class _LoadImageState extends State<LoadImage> {
       _lastResult != null &&
       _lastResult!.isDetected &&
       _lastResult!.detectedRois != null;
-  bool get detailsRoiIndex =>
-      _lastResult != null && _lastResult!.detailsRoiIndex != -1;
   bool get hasScore =>
       _lastResult != null && _lastResult!.ocrStrings.isNotEmpty;
 
@@ -188,49 +186,54 @@ class _LoadImageState extends State<LoadImage> {
       ),
       body: Column(
         children: [
-          DetectionSideSelector(
-            value: _detectionSide,
-            onChanged: (side) => setState(() {
-              _detectionSide = side;
-              _ocrProcessor.side = side;
-            }),
-          ),
+          // Only shown once an image is picked — switching sides re-runs OCR
+          // on that image, so the toggle is meaningless before one exists.
+          if (pickedImage)
+            DetectionSideSelector(
+              value: _detectionSide,
+              onChanged: (side) {
+                setState(() {
+                  _detectionSide = side;
+                  _ocrProcessor.side = side;
+                  // Re-run OCR on the already-picked image so the result
+                  // reflects the newly selected side.
+                  if (!_isPicking) {
+                    _lastResult = null;
+                    _isProcessing = true;
+                  }
+                });
+                if (!_isPicking) {
+                  _ocrProcessor.processPickedImage(_pickedImage!);
+                }
+              },
+            ),
           Expanded(
-            child: _isPicking
+            child: _isPicking || _isProcessing
                 ? const Center(child: CircularProgressIndicator())
-                : ListView(
-                    shrinkWrap: true,
+                : !pickedImage
+                    ? const OcrEmptyState(
+                        icon: Icons.image_search,
+                        title: 'No image loaded',
+                        subtitle: 'Pick a results screenshot to scan your score',
+                      )
+                    : !isDetected
+                        ? const OcrEmptyState(
+                            icon: Icons.search_off,
+                            title: 'No score detected',
+                            subtitle: 'Please try another image',
+                          )
+                        : ListView(
+                            shrinkWrap: true,
                 children: [
-                  isDetected
-                      ? RoiOverlay(
-                          rois: _lastResult!.detectedRois!,
-                          detailsRoiIndex: _lastResult!.detailsRoiIndex,
-                          child: Image.file(
-                            File(_pickedImage!.path),
-                            width: MediaQuery.of(context).size.width,
-                            fit: BoxFit.fitWidth,
-                          ),
-                        )
-                      : Center(
-                          child: _isProcessing
-                              ? const CircularProgressIndicator()
-                              : Text(_pickedImage == null
-                                  ? "Please pick image"
-                                  : 'No DDR chart detected.\nPlease try another image.'),
-                        ),
-                  detailsRoiIndex
-                      ? const Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Center(
-                              child: Text(
-                        "Successfully detected!",
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.lightGreenAccent),
-                          )),
-                        )
-                      : Container(),
+                  RoiOverlay(
+                    rois: _lastResult!.detectedRois!,
+                    detailsRoiIndex: _lastResult!.detailsRoiIndex,
+                    child: Image.file(
+                      File(_pickedImage!.path),
+                      width: MediaQuery.of(context).size.width,
+                      fit: BoxFit.fitWidth,
+                    ),
+                  ),
                   if (hasScore)
                     Padding(
                       padding: const EdgeInsets.all(8.0),

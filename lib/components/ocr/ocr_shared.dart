@@ -44,6 +44,57 @@ class DetectionSideSelector extends StatelessWidget {
   }
 }
 
+// Muted icon + title (+ optional subtitle) empty state shared by the OCR
+// pages: prompts ("pick an image", "start OCR") and no-result messages.
+// Centers itself within whatever space the parent gives it.
+class OcrEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+
+  const OcrEmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final mutedColor =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 72, color: mutedColor),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: mutedColor,
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle!,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: mutedColor),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // Returns the saved DetectionSide preference, defaulting to left.
 DetectionSide savedDetectionSide() {
   final index = Settings.getInt(Settings.detectionSideKey);
