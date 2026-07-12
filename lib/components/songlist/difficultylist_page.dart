@@ -79,7 +79,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   }
 
   void regenFavCount() async {
-    List<Favorite> favList = await DatabaseProvider.getAllFavorites();
+    Modes mode = Provider.of<SongState>(context, listen: false).modes;
+    List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
     setState(() {
       favCount = favList.length;
     });
@@ -222,7 +223,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   }
 
   Future<List<SongItem>> generateSongItems(Modes mode, SortType sortType) async {
-    List<Favorite> favList = await DatabaseProvider.getAllFavorites();
+    List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
     setState(() {
       favCount = favList.length;
     });

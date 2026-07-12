@@ -1,5 +1,5 @@
 /// Name: SongPage
-/// Parent: SongListPage
+/// Parent: SongListItem
 /// Description: Page that displays selected song information
 library;
 
@@ -37,25 +37,25 @@ class _SongPageState extends State<SongPage> {
   Note? latestNote;
   Score? latestScore;
 
-  void initFav(String songTitleTranslit) async {
+  void initFav(String songTitleTranslit, Modes mode) async {
     Favorite? initFav =
-        await DatabaseProvider.getFavoriteBySong(songTitleTranslit);
+        await DatabaseProvider.getFavoriteBySong(songTitleTranslit, mode);
     setState(() {
       favorite = initFav;
     });
   }
 
-  void initNote(String songTitleTranslit) async {
+  void initNote(String songTitleTranslit, Modes mode) async {
     Note? initNote =
-        await DatabaseProvider.getLatestNoteBySong(songTitleTranslit);
+        await DatabaseProvider.getLatestNoteBySong(songTitleTranslit, mode);
     setState(() {
       latestNote = initNote;
     });
   }
 
-  void initScore(String songTitleTranslit) async {
+  void initScore(String songTitleTranslit, Modes mode) async {
     Score? initScore =
-        await DatabaseProvider.getLatestScoreBySong(songTitleTranslit);
+        await DatabaseProvider.getLatestScoreBySong(songTitleTranslit, mode);
     setState(() {
       latestScore = initScore;
     });
@@ -67,10 +67,11 @@ class _SongPageState extends State<SongPage> {
     await Navigator.push(context,
         MaterialPageRoute(builder: (context) => HistoryPage(initialTab: tab)));
     if (!mounted) return;
-    var songInfo = Provider.of<SongState>(context, listen: false).songInfo;
+    var songState = Provider.of<SongState>(context, listen: false);
+    var songInfo = songState.songInfo;
     if (songInfo == null) return;
-    initNote(songInfo.titletranslit);
-    initScore(songInfo.titletranslit);
+    initNote(songInfo.titletranslit, songState.modes);
+    initScore(songInfo.titletranslit, songState.modes);
   }
 
   // Initialise chosen read speed.
@@ -89,9 +90,9 @@ class _SongPageState extends State<SongPage> {
     int chosenDifficulty = songState.chosenDifficulty;
 
     if (songInfo != null) {
-      initFav(songInfo.titletranslit);
-      initNote(songInfo.titletranslit);
-      initScore(songInfo.titletranslit);
+      initFav(songInfo.titletranslit, songState.modes);
+      initNote(songInfo.titletranslit, songState.modes);
+      initScore(songInfo.titletranslit, songState.modes);
       // Set variables based on state
       if (songInfo.perChart) {
         setState(() {
@@ -149,7 +150,8 @@ class _SongPageState extends State<SongPage> {
                           Favorite fav = Favorite(
                               id: 0,
                               isFav: true,
-                              songTitle: songStateInfo.titletranslit);
+                              songTitle: songStateInfo.titletranslit,
+                              mode: songState.modes);
                           await DatabaseProvider.addFavorite(fav);
                           setState(() {
                             favorite = fav;

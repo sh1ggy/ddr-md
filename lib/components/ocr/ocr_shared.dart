@@ -11,11 +11,15 @@ import 'package:flutter/material.dart';
 class DetectionSideSelector extends StatelessWidget {
   final DetectionSide value;
   final ValueChanged<DetectionSide> onChanged;
+  // Floating variant: no reserved band around the button and a translucent
+  // background, for overlaying on the camera preview / loaded image.
+  final bool overlay;
 
   const DetectionSideSelector({
     super.key,
     required this.value,
     required this.onChanged,
+    this.overlay = false,
   });
 
   void _onSelectionChanged(Set<DetectionSide> s) {
@@ -26,18 +30,75 @@ class DetectionSideSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final button = SegmentedButton<DetectionSide>(
+      style: overlay
+          ? SegmentedButton.styleFrom(
+              backgroundColor: Theme.of(context)
+                  .colorScheme
+                  .surface
+                  .withValues(alpha: 0.8),
+            )
+          : null,
+      segments: const [
+        ButtonSegment(value: DetectionSide.left, label: Text('Left (1P)')),
+        ButtonSegment(value: DetectionSide.right, label: Text('Right (2P)')),
+      ],
+      selected: {value},
+      onSelectionChanged: _onSelectionChanged,
+    );
+    if (overlay) return Center(child: button);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Center(
-        child: SegmentedButton<DetectionSide>(
-          segments: const [
-            ButtonSegment(
-                value: DetectionSide.left, label: Text('Left (1P)')),
-            ButtonSegment(
-                value: DetectionSide.right, label: Text('Right (2P)')),
+      child: Center(child: button),
+    );
+  }
+}
+
+// Muted icon + title (+ optional subtitle) empty state shared by the OCR
+// pages: prompts ("pick an image", "start OCR") and no-result messages.
+// Centers itself within whatever space the parent gives it.
+class OcrEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+
+  const OcrEmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final mutedColor =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 72, color: mutedColor),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: mutedColor,
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle!,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: mutedColor),
+              ),
+            ],
           ],
-          selected: {value},
-          onSelectionChanged: _onSelectionChanged,
         ),
       ),
     );

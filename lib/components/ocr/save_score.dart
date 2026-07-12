@@ -12,6 +12,7 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 // Below this similarity the match is shown as a warning and likely wrong;
 // the user can still fix the title field or pick from the list.
@@ -48,12 +49,48 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
 
   int? _number(String key) => parseOcrNumber(_text(key));
 
+  // The chart's note count for the OCR'd (in-game) difficulty name, keyed to
+  // the StepMania-style fields of [Difficulty]. Null when the difficulty
+  // doesn't resolve or the song has no note-count data.
+  int? _chartNoteCount(SongInfo song, Modes mode) {
+    final counts =
+        mode == Modes.singles ? song.singlesNotecounts : song.doublesNotecounts;
+    return switch (_text('difficulty').toUpperCase()) {
+      'BEGINNER' => counts.beginner,
+      'BASIC' => counts.easy,
+      'DIFFICULT' => counts.medium,
+      'EXPERT' => counts.hard,
+      'CHALLENGE' => counts.challenge,
+      _ => null,
+    };
+  }
+
+  // Max combo renders on screen as "combo/total note count". The OCR pipeline
+  // keeps only the combo, but a misread '/' leaves the two numbers
+  // concatenated — when the value exceeds the chart's note count and its
+  // digits end with that count, strip the suffix to recover the combo.
+  int? _maxCombo(SongInfo song, Modes mode) {
+    final raw = _number('maxCombo');
+    if (raw == null) return null;
+    final noteCount = _chartNoteCount(song, mode);
+    if (noteCount == null || noteCount <= 0 || raw <= noteCount) return raw;
+    final digits = raw.toString();
+    final suffix = noteCount.toString();
+    if (!digits.endsWith(suffix)) return raw;
+    final combo = int.parse(digits.substring(0, digits.length - suffix.length));
+    return combo <= noteCount ? combo : raw;
+  }
+
   Future<void> _save(SongInfo song) async {
     if (_savedOnce) return;
+    // OCR results don't say which side was played, so file the score
+    // under the app's currently selected mode.
+    final mode = Provider.of<SongState>(context, listen: false).modes;
     final score = Score(
       date: DateTime.now().toIso8601String(),
       songTitle:
           song.titletranslit.isNotEmpty ? song.titletranslit : song.title,
+      mode: mode,
       difficulty: _text('difficulty'),
       username: _text('username'),
       flare: _text('flare'),
@@ -63,7 +100,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       great: _number('great'),
       good: _number('good'),
       miss: _number('miss'),
-      maxCombo: _number('maxCombo'),
+      maxCombo: _maxCombo(song, mode),
     );
     await DatabaseProvider.addScore(score);
     if (!mounted) return;
@@ -75,6 +112,9 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
     final picked = await showModalBottomSheet<SongInfo>(
       context: context,
       isScrollControlled: true,
+      // Keep the sheet out of the top notch when the keyboard pushes it up
+      // on small screens.
+      useSafeArea: true,
       builder: (context) =>
           _SongSearchSheet(initialQuery: widget.initialTitle),
     );

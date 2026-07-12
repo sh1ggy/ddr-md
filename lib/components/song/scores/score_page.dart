@@ -30,7 +30,7 @@ class ScoresTabState extends State<ScoresTab> {
       var songState = Provider.of<SongState>(context, listen: false);
       setState(() {
         _scoresPromise = DatabaseProvider.getAllScoresBySong(
-            songState.songInfo!.titletranslit);
+            songState.songInfo!.titletranslit, songState.modes);
       });
     });
   }

@@ -28,7 +28,8 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
 
   // Getting favourite items & returning future for list of SongInfo
   Future<List<SongInfo>> getFavSongInfoList() async {
-    List<Favorite>? favorites = await DatabaseProvider.getAllFavorites();
+    Modes mode = Provider.of<SongState>(context, listen: false).modes;
+    List<Favorite>? favorites = await DatabaseProvider.getAllFavorites(mode);
 
     List<SongInfo> tempFavoriteSongList = [];
     for (Favorite fav in favorites) {
