@@ -32,6 +32,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/
+    - assets/icons/
     - assets/jackets-160/
     - assets/jackets/
     # Only the model triple the app loads at runtime (ocr_onnx.cpp defaults).
