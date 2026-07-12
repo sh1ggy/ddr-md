@@ -3,13 +3,28 @@
 /// Description: Widgets that display base song information.
 library;
 
-import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_difficulties.dart';
+import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+/// Builds the BPM range shown after the dominant BPM, e.g. " (75~) 100~200 (~400)".
+/// True min/max only appear when they fall outside the displayed range.
+String _bpmRangeSuffix(Chart chart) {
+  if (chart.trueMax == chart.trueMin) return '';
+  final buffer = StringBuffer();
+  if (!chart.bpmRange.contains('${chart.trueMin}')) {
+    buffer.write(' (${chart.trueMin}~)');
+  }
+  buffer.write(' ${chart.bpmRange}');
+  if (!chart.bpmRange.contains('${chart.trueMax}')) {
+    buffer.write(' (~${chart.trueMax})');
+  }
+  return buffer.toString();
+}
 
 // Method for formatting time from a given time (s)
 formattedTime({required int timeInSecond}) {
@@ -33,6 +48,7 @@ class SongDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
+    final chart = this.chart;
 
     return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -78,6 +94,21 @@ class SongDetails extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
+              if (chart != null)
+                RichText(
+                  text: TextSpan(
+                    style: TextStyle(
+                        fontSize: 15.5,
+                        color: DefaultTextStyle.of(context).style.color),
+                    children: <TextSpan>[
+                      TextSpan(
+                        text: "${chart.dominantBpm} BPM",
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      TextSpan(text: _bpmRangeSuffix(chart)),
+                    ],
+                  ),
+                ),
               RichText(
                 text: TextSpan(
                   style: TextStyle(
@@ -106,11 +137,17 @@ class SongDetails extends StatelessWidget {
                     Difficulty songDifficulty = songState.modes == Modes.singles
                         ? songInfo.singles
                         : songInfo.doubles;
-                    if (songInfo.perChart) {
-                      return SongDifficultyPicker(difficulty: songDifficulty);
-                    }
-                    return SongDifficulty(difficulty: songDifficulty);
+                    // Every song has per-difficulty radar data, so the
+                    // difficulty is always selectable.
+                    return SongDifficultyPicker(difficulty: songDifficulty);
                   }()),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: SongNotecounts(
+                    notecounts: songState.modes == Modes.singles
+                        ? songInfo.singlesNotecounts
+                        : songInfo.doublesNotecounts),
+              ),
             ],
           ),
         ]);

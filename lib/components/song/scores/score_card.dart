@@ -61,6 +61,40 @@ class ScoreCard extends StatelessWidget {
   }
 }
 
+// Placeholder shown in place of [ScoreCard] when a song has no saved
+// score yet. Mirrors the Card + ListTile + header structure so the
+// song page layout stays consistent whether or not a score exists.
+class NoScoreCard extends StatelessWidget {
+  const NoScoreCard({super.key, this.header = "Latest Score"});
+
+  final String header;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        title: Column(
+          children: [
+            Text(
+              header,
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary),
+            ),
+            Text(
+              "No score recorded",
+              style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ].expand((x) => [const SizedBox(height: 8), x]).skip(1).toList(),
+        ),
+      ),
+    );
+  }
+}
+
 // Row of judgment counts (and max combo), skipping fields the OCR
 // didn't capture.
 class _ScoreJudgments extends StatelessWidget {

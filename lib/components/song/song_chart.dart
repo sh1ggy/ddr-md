@@ -84,7 +84,10 @@ class SongChartState extends State<SongChart> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     late SongState songState = Provider.of<SongState>(context);
-    genBpmPoints(songState.songInfo!.charts[songState.chosenDifficulty]);
+    final charts = songState.songInfo!.charts;
+    genBpmPoints(songState.songInfo!.perChart
+        ? charts[songState.chosenDifficulty.clamp(0, charts.length - 1)]
+        : charts.first);
   }
 
   @override
@@ -114,168 +117,304 @@ class SongChartState extends State<SongChart> {
                     strokeColor: stopLineColor.shade700),
           ))
     ];
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(10, 0, 25, 0),
-          height: MediaQuery.of(context).size.height / 3,
-          child: LineChart(
-            curve: Easing.standard,
-            LineChartData(
-              titlesData: FlTitlesData(
-                  bottomTitles: AxisTitles(
-                    axisNameWidget: const Text(
-                      'Time (s)',
-                      style: TextStyle(fontSize: 10),
-                    ),
-                    sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 26,
-                        interval: 15,
-                        getTitlesWidget: (value, meta) {
-                          Widget axisTitle = Text(value.floor().toString());
-                          // A workaround to hide the max value title as FLChart is overlapping it on top of previous
-                          if (value == meta.max) {
-                            final remainder = value % meta.appliedInterval;
-                            if (remainder != 0.0 &&
-                                remainder / meta.appliedInterval < 0.5) {
-                              axisTitle = const SizedBox.shrink();
-                            }
-                          }
-                          return SideTitleWidget(
-                              axisSide: meta.axisSide, child: axisTitle);
-                        }),
-                  ),
-                  leftTitles: AxisTitles(
-                    axisNameWidget: const Text(
-                      'BPM',
-                      style: TextStyle(fontSize: 10),
-                    ),
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 43,
-                      interval: 100,
-                      getTitlesWidget: (value, meta) {
-                        Widget axisTitle = Text(value.floor().toString());
-                        // A workaround to hide the max value title as FLChart is overlapping it on top of previous
-                        if (value == meta.max) {
-                          final remainder = value % meta.appliedInterval;
-                          if (remainder != 0.0 &&
-                              remainder / meta.appliedInterval < 0.5) {
-                            axisTitle = const SizedBox.shrink();
-                          }
-                        }
-                        return SideTitleWidget(
-                            axisSide: meta.axisSide, child: axisTitle);
-                      },
-                    ),
-                  ),
-                  topTitles: AxisTitles(
-                    axisNameWidget: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.max,
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                              shape: BoxShape.circle, color: bpmLineColor),
-                        ),
-                        const SizedBox(width: 5),
-                        const Text(
-                          "BPM",
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        // Remove the default ExpansionTile top/bottom divider lines so the
+        // expanded state doesn't show a stray line against the card.
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: true,
+          title: const Text(
+            'BPM Graph',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(10, 0, 25, 0),
+              height: MediaQuery.of(context).size.height / 3,
+              child: LineChart(
+                curve: Easing.standard,
+                LineChartData(
+                  titlesData: FlTitlesData(
+                      bottomTitles: AxisTitles(
+                        axisNameWidget: const Text(
+                          'Time (s)',
                           style: TextStyle(fontSize: 10),
                         ),
-                        const SizedBox(width: 10),
-                        if (isShowingStops && hasStops) ...<Widget>[
-                          Container(
-                            width: 10,
-                            decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: stopLineColor.shade200),
-                          ),
-                          const SizedBox(width: 5),
-                          const Text(
-                            "Stops",
-                            style: TextStyle(fontSize: 10),
-                          ),
-                        ],
+                        sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 26,
+                            interval: 15,
+                            getTitlesWidget: (value, meta) {
+                              Widget axisTitle = Text(value.floor().toString());
+                              // A workaround to hide the max value title as FLChart is overlapping it on top of previous
+                              if (value == meta.max) {
+                                final remainder = value % meta.appliedInterval;
+                                if (remainder != 0.0 &&
+                                    remainder / meta.appliedInterval < 0.5) {
+                                  axisTitle = const SizedBox.shrink();
+                                }
+                              }
+                              return SideTitleWidget(
+                                  axisSide: meta.axisSide, child: axisTitle);
+                            }),
+                      ),
+                      leftTitles: AxisTitles(
+                        axisNameWidget: const Text(
+                          'BPM',
+                          style: TextStyle(fontSize: 10),
+                        ),
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 43,
+                          interval: 100,
+                          getTitlesWidget: (value, meta) {
+                            Widget axisTitle = Text(value.floor().toString());
+                            // A workaround to hide the max value title as FLChart is overlapping it on top of previous
+                            if (value == meta.max) {
+                              final remainder = value % meta.appliedInterval;
+                              if (remainder != 0.0 &&
+                                  remainder / meta.appliedInterval < 0.5) {
+                                axisTitle = const SizedBox.shrink();
+                              }
+                            }
+                            return SideTitleWidget(
+                                axisSide: meta.axisSide, child: axisTitle);
+                          },
+                        ),
+                      ),
+                      topTitles: AxisTitles(
+                        axisNameWidget: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                  shape: BoxShape.circle, color: bpmLineColor),
+                            ),
+                            const SizedBox(width: 5),
+                            const Text(
+                              "BPM",
+                              style: TextStyle(fontSize: 10),
+                            ),
+                            const SizedBox(width: 10),
+                            if (isShowingStops && hasStops) ...<Widget>[
+                              Container(
+                                width: 10,
+                                decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: stopLineColor.shade200),
+                              ),
+                              const SizedBox(width: 5),
+                              const Text(
+                                "Stops",
+                                style: TextStyle(fontSize: 10),
+                              ),
+                            ],
+                          ],
+                        ),
+                        sideTitles: const SideTitles(
+                          showTitles: false,
+                        ),
+                      ),
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: false,
+                        ),
+                      )),
+                  lineTouchData: LineTouchData(
+                      touchTooltipData: LineTouchTooltipData(
+                          fitInsideHorizontally: true,
+                          getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                            bool first = true;
+                            return touchedBarSpots.map((barSpot) {
+                              var stopTime = formattedTime(
+                                      timeInSecond: barSpot.x.toInt()) +
+                                  "s";
+                              var bpmY = barSpot.y;
+                              if (first) {
+                                first = false;
+                                return LineTooltipItem(
+                                    ('BPM: $bpmY\nTIME: $stopTime'),
+                                    const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold));
+                              }
+                            }).toList();
+                          },
+                          tooltipBgColor: Colors.grey.shade900,
+                          tooltipPadding: const EdgeInsets.all(2),
+                          tooltipBorder:
+                              const BorderSide(color: Colors.black))),
+                  clipData: const FlClipData.all(),
+                  borderData: FlBorderData(
+                      border:
+                          Border.all(color: Colors.grey.shade600, width: 1)),
+                  gridData: FlGridData(
+                    show: true,
+                    getDrawingHorizontalLine: (value) {
+                      return FlLine(
+                        color: Colors.grey.shade400,
+                        strokeWidth: 1,
+                      );
+                    },
+                    drawVerticalLine: true,
+                    getDrawingVerticalLine: (value) {
+                      return FlLine(
+                        color: Colors.grey.shade400,
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  minX: 0,
+                  minY: 0,
+                  maxX: widget.songInfo!.songLength,
+                  maxY: widget.chart.trueMax.toDouble() + 10,
+                  lineBarsData: lineChartBarData,
+                ),
+              ),
+            ),
+            if (hasStops) ...[
+              CheckboxListTile(
+                title: const Text("Toggle Stops",
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                value: isShowingStops,
+                onChanged: (_) {
+                  HapticFeedback.lightImpact();
+                  setState(() {
+                    isShowingStops = !isShowingStops;
+                  });
+                },
+                controlAffinity: ListTileControlAffinity.trailing,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SongRadarChart extends StatelessWidget {
+  const SongRadarChart({super.key, required this.radar});
+
+  final Radar? radar;
+
+  @override
+  Widget build(BuildContext context) {
+    final radar = this.radar;
+    if (radar == null) return const SizedBox.shrink();
+    final labels = <String>['Stream', 'Voltage', 'Air', 'Freeze', 'Chaos'];
+    final values = <double>[
+      radar.stream,
+      radar.voltage,
+      radar.air,
+      radar.freeze,
+      radar.chaos,
+    ];
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        // Remove the default ExpansionTile top/bottom divider lines so the
+        // expanded state doesn't show a stray line against the card.
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          title: const Text(
+            'Groove Radar',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(28, 8, 28, 16),
+          children: [
+            SizedBox(
+              height: 280,
+              child: RadarChart(
+                RadarChartData(
+                  radarShape: RadarShape.polygon,
+                  // Pull axis titles inward from the polygon edge so the top
+                  // label isn't clipped by the chart's bounds.
+                  titlePositionPercentageOffset: 0.15,
+                  // fl_chart places the chart center at min - (max-min)/tickCount
+                  // rather than zero; with the zero-anchor dataset below, a high
+                  // tick count pushes the center to ~zero so radii stay
+                  // proportional to value/100. Ticks are invisible anyway.
+                  tickCount: 50,
+                  // The built-in grid always scales to the largest data value,
+                  // so hide it entirely; the 100-scale pentagon is drawn as a
+                  // dataset below instead, letting values over 100 burst
+                  // through the frame like the arcade groove radar.
+                  ticksTextStyle:
+                      const TextStyle(color: Colors.transparent, fontSize: 10),
+                  tickBorderData: const BorderSide(color: Colors.transparent),
+                  gridBorderData: const BorderSide(color: Colors.transparent),
+                  radarBorderData: const BorderSide(color: Colors.transparent),
+                  titleTextStyle: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w600),
+                  getTitle: (index, angle) {
+                    return RadarChartTitle(text: labels[index]);
+                  },
+                  dataSets: [
+                    // Invisible zero anchor so the chart's minimum (and thus
+                    // its center, see tickCount above) is pinned at 0 for
+                    // every song rather than at the smallest radar value.
+                    RadarDataSet(
+                      fillColor: Colors.transparent,
+                      borderColor: Colors.transparent,
+                      borderWidth: 0,
+                      entryRadius: 0,
+                      dataEntries: const [
+                        RadarEntry(value: 0),
+                        RadarEntry(value: 0),
+                        RadarEntry(value: 0),
+                        RadarEntry(value: 0),
+                        RadarEntry(value: 0),
                       ],
                     ),
-                    sideTitles: const SideTitles(
-                      showTitles: false,
+                    // The 100-scale pentagon frame. It doubles as the scale
+                    // floor: when every value is <=100 it defines the outer
+                    // bound, and when a value exceeds 100 the chart's bound
+                    // stretches to that value while this frame stays at 100,
+                    // so the data polygon renders outside it.
+                    RadarDataSet(
+                      fillColor: Colors.transparent,
+                      borderColor: Colors.grey.shade400,
+                      borderWidth: 1.5,
+                      entryRadius: 0,
+                      dataEntries: const [
+                        RadarEntry(value: 100),
+                        RadarEntry(value: 100),
+                        RadarEntry(value: 100),
+                        RadarEntry(value: 100),
+                        RadarEntry(value: 100),
+                      ],
                     ),
-                  ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: false,
+                    RadarDataSet(
+                      fillColor: Colors.redAccent.withOpacity(0.25),
+                      borderColor: Colors.redAccent,
+                      borderWidth: 2,
+                      entryRadius: 2.5,
+                      dataEntries: values
+                          .map((value) => RadarEntry(value: value))
+                          .toList(),
                     ),
-                  )),
-              lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                      fitInsideHorizontally: true,
-                      getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-                        bool first = true;
-                        return touchedBarSpots.map((barSpot) {
-                          var stopTime =
-                              formattedTime(timeInSecond: barSpot.x.toInt()) +
-                                  "s";
-                          var bpmY = barSpot.y;
-                          if (first) {
-                            first = false;
-                            return LineTooltipItem(
-                                ('BPM: $bpmY\nTIME: $stopTime'),
-                                const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold));
-                          }
-                        }).toList();
-                      },
-                      tooltipBgColor: Colors.grey.shade900,
-                      tooltipPadding: const EdgeInsets.all(2),
-                      tooltipBorder: const BorderSide(color: Colors.black))),
-              clipData: const FlClipData.all(),
-              borderData: FlBorderData(
-                  border: Border.all(color: Colors.grey.shade600, width: 1)),
-              gridData: FlGridData(
-                show: true,
-                getDrawingHorizontalLine: (value) {
-                  return FlLine(
-                    color: Colors.grey.shade400,
-                    strokeWidth: 1,
-                  );
-                },
-                drawVerticalLine: true,
-                getDrawingVerticalLine: (value) {
-                  return FlLine(
-                    color: Colors.grey.shade400,
-                    strokeWidth: 1,
-                  );
-                },
+                  ],
+                  radarBackgroundColor: Colors.transparent,
+                ),
+                swapAnimationDuration: const Duration(milliseconds: 300),
+                swapAnimationCurve: Curves.easeOut,
               ),
-              minX: 0,
-              minY: 0,
-              maxX: widget.songInfo!.songLength,
-              maxY: widget.chart.trueMax.toDouble() + 10,
-              lineBarsData: lineChartBarData,
             ),
-          ),
+          ],
         ),
-        if (hasStops) ...[
-          CheckboxListTile(
-            title: const Text("Toggle Stops", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            value: isShowingStops,
-            onChanged: (_) {
-              HapticFeedback.lightImpact();
-              setState(() {
-                isShowingStops = !isShowingStops;
-              });
-            },
-            controlAffinity: ListTileControlAffinity.trailing,
-          ),
-        ],
-      ],
+      ),
     );
   }
 }

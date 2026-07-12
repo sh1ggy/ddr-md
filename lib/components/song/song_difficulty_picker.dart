@@ -7,7 +7,7 @@ import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-class SongDifficultyPicker extends StatefulWidget {
+class SongDifficultyPicker extends StatelessWidget {
   const SongDifficultyPicker({
     super.key,
     required this.difficulty,
@@ -16,43 +16,26 @@ class SongDifficultyPicker extends StatefulWidget {
   final Difficulty difficulty;
 
   @override
-  State<SongDifficultyPicker> createState() => _SongDifficultyPickerState();
-}
-
-class _SongDifficultyPickerState extends State<SongDifficultyPicker> {
-  List<bool> selectedDifficulty = [];
-  @override
-  void initState() {
-    selectedDifficulty = List<bool>.generate(
-        widget.difficulty.toJson().length, (index) => false);
-    super.initState();
-  }
-
-  @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
 
+    // One button per difficulty the current mode actually has (e.g. doubles
+    // has no beginner), selection derived from state so mode/song switches
+    // can't leave a stale or out-of-range highlight.
+    final buttons = buildDiffList(difficulty);
+    if (buttons.isEmpty) return const SizedBox.shrink();
+    final chosen = songState.chosenDifficulty.clamp(0, buttons.length - 1);
+
     return Row(children: [
       ToggleButtons(
-          onPressed: (int index) {
-            setState(() {
-              for (int i = 0; i < selectedDifficulty.length; i++) {
-                if (i == index) {
-                  selectedDifficulty[i] = true;
-                  songState.setChosenDifficulty(i);
-                  continue;
-                }
-                selectedDifficulty[i] = false;
-                continue;
-              }
-            });
-          },
+          onPressed: (int index) => songState.setChosenDifficulty(index),
           constraints: const BoxConstraints(
             minHeight: 30.0,
             minWidth: 40.0,
           ),
-          isSelected: selectedDifficulty,
-          children: buildDiffList(widget.difficulty)),
+          isSelected:
+              List<bool>.generate(buttons.length, (index) => index == chosen),
+          children: buttons),
     ]);
   }
 

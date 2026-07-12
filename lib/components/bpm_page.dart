@@ -3,7 +3,6 @@
 /// Description: Page that displays BPM wheel selector
 library;
 
-import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
@@ -181,6 +180,34 @@ class _BpmPageState extends State<BpmPage> {
           ),
         );
       }),
+    );
+  }
+}
+
+class SongBpmTextItem extends StatelessWidget {
+  const SongBpmTextItem(
+      {super.key,
+      required this.text,
+      required this.nearestModIndex,
+      required this.mod});
+
+  final String text;
+  final int nearestModIndex;
+  final double mod;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 60,
+      child: Text(text,
+          style: TextStyle(
+              fontSize: 15,
+              fontWeight: nearestModIndex == constants.mods.indexOf(mod)
+                  ? FontWeight.bold
+                  : FontWeight.normal,
+              color: nearestModIndex == constants.mods.indexOf(mod)
+                  ? Colors.white
+                  : DefaultTextStyle.of(context).style.color)),
     );
   }
 }
