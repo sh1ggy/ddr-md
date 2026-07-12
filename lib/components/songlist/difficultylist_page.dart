@@ -7,7 +7,7 @@ library;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
-import 'package:ddr_md/components/songlist/songlist_page.dart';
+import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -15,17 +15,6 @@ import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:provider/provider.dart';
-
-class ListDifficulty {
-  ListDifficulty({
-    required this.value,
-    this.isExpanded = false,
-    required this.songItemList,
-  });
-  int value;
-  bool isExpanded;
-  List<SongItem> songItemList = [];
-}
 
 class SongItem {
   SongItem({
@@ -37,6 +26,12 @@ class SongItem {
   bool isFav;
 }
 
+enum _ActiveFilterPanel {
+  name,
+  level,
+  version,
+}
+
 class DifficultyListPage extends StatefulWidget {
   const DifficultyListPage({super.key});
   @override
@@ -44,44 +39,44 @@ class DifficultyListPage extends StatefulWidget {
 }
 
 class _DifficultyListPageState extends State<DifficultyListPage> {
-  Future<List<ListDifficulty>>? _songItemsPromise;
-  final List<SongListItem> _searchResultWidgets = [];
+  Future<List<SongItem>>? _songItemsPromise;
+  final List<SongInfo> _searchResults = [];
   int favCount = 0;
+  final Set<int> _selectedLevels = <int>{};
+  final Set<String> _selectedVersionBuckets = <String>{};
+  String? _selectedNameBucket;
+  _ActiveFilterPanel? _activeFilterPanel;
 
-  // Search result handler
+  static const List<String> _versionBuckets = <String>[
+    'Classic (1st - X3)',
+    'White (2013 - A)',
+    'Gold (A20 - World)',
+  ];
+
+  static const List<String> _nameBuckets = <String>[
+    'a (hiragana)',
+    '#',
+    'a-c',
+    'd-f',
+    'g-i',
+    'j-l',
+    'm-o',
+    'p-r',
+    's-u',
+    'v-z',
+  ];
+
+  // Search result handler; widgets are built lazily in suggestionsBuilder.
   void getMatch(String value) {
     value = value.toLowerCase().trim();
-    if (value == "") {
-      setState(() {
-        _searchResultWidgets.clear();
-      });
-      return;
-    }
-    _searchResultWidgets.clear();
-    var songListItems = Songs.list
-        .where((SongInfo song) =>
-            song.title.toLowerCase().contains(value) ||
-            song.titletranslit.toLowerCase().contains(value))
-        .map((e) => SongListItem(
-              songInfo: e,
-              isFav: false,
-              isSearch: true,
-              regenFavsCallback: regenFavCount,
-            ));
     setState(() {
-      _searchResultWidgets.addAll(songListItems);
+      _searchResults.clear();
+      if (value == "") return;
+      _searchResults.addAll(Songs.list.where((SongInfo song) =>
+          song.title.toLowerCase().contains(value) ||
+          song.titletranslit.toLowerCase().contains(value)));
     });
-
-    return;
   }
-
-  // Populate difficulty folders
-  List<ListDifficulty> difficultyList = List<ListDifficulty>.generate(
-    constants.maxDifficulty,
-    (index) {
-      return (ListDifficulty(value: 1 + index, songItemList: []));
-    },
-  );
 
   void regenFavCount() async {
     List<Favorite> favList = await DatabaseProvider.getAllFavorites();
@@ -90,49 +85,193 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     });
   }
 
-  Future<List<ListDifficulty>> generateSongItems(Modes mode) async {
-    List<ListDifficulty> newDiffList = difficultyList;
+  List<int> songLevels(SongInfo song, Modes mode) {
+    final Difficulty songDifficulty =
+        mode == Modes.singles ? song.singles : song.doubles;
+    return <int?>[
+      songDifficulty.beginner,
+      songDifficulty.easy,
+      songDifficulty.medium,
+      songDifficulty.hard,
+      songDifficulty.challenge,
+    ]
+        .whereType<int>()
+        .where((level) => level >= 1 && level <= constants.maxDifficulty)
+        .toSet()
+        .toList();
+  }
+
+  String versionBucketFor(String version) {
+    const classic = <String>{
+      'DDR',
+      'DDR 2nd',
+      'DDR 3rd',
+      'DDR 4th',
+      'DDR 5th',
+      'DDR MAX',
+      'DDR MAX2',
+      'DDR EXTREME',
+      'DDR SuperNOVA',
+      'DDR SuperNOVA2',
+      'DDR X',
+      'DDR X2',
+      'DDR X3',
+    };
+    const white = <String>{
+      'DDR 2013',
+      'DDR 2014',
+      'DDR A',
+    };
+    const gold = <String>{
+      'DDR A20',
+      'DDR A20 PLUS',
+      'DDR A3',
+      'DDR World',
+    };
+
+    if (classic.contains(version)) return 'Classic (1st - X3)';
+    if (white.contains(version)) return 'White (2013 - A)';
+    if (gold.contains(version)) return 'Gold (A20 - World)';
+    return 'Classic (1st - X3)';
+  }
+
+  String nameBucketFor(SongInfo song) {
+    final String title = song.title.trim();
+    // Treat this bucket as "contains Japanese" anywhere in title.
+    if (title.isNotEmpty &&
+        RegExp(r'[\u3040-\u30FF\u4E00-\u9FFF\uFF66-\uFF9F]')
+            .hasMatch(title)) {
+      return 'a (hiragana)';
+    }
+
+    final String key =
+        (song.titletranslit.isNotEmpty ? song.titletranslit : song.title)
+            .trim()
+            .toLowerCase();
+    if (key.isEmpty) return '#';
+
+    final String first = key[0];
+    if (!RegExp(r'[a-z]').hasMatch(first)) return '#';
+    if ('abc'.contains(first)) return 'a-c';
+    if ('def'.contains(first)) return 'd-f';
+    if ('ghi'.contains(first)) return 'g-i';
+    if ('jkl'.contains(first)) return 'j-l';
+    if ('mno'.contains(first)) return 'm-o';
+    if ('pqr'.contains(first)) return 'p-r';
+    if ('stu'.contains(first)) return 's-u';
+    return 'v-z';
+  }
+
+  bool songMatchesFilters(SongInfo song, Modes mode) {
+    final bool levelMatch = _selectedLevels.isEmpty ||
+        songLevels(song, mode).any((int level) => _selectedLevels.contains(level));
+
+    final bool versionMatch = _selectedVersionBuckets.isEmpty ||
+        _selectedVersionBuckets.contains(versionBucketFor(song.version));
+
+    final bool nameMatch =
+        _selectedNameBucket == null || _selectedNameBucket == nameBucketFor(song);
+
+    return levelMatch && versionMatch && nameMatch;
+  }
+
+  String levelFilterSummary() {
+    if (_selectedLevels.isEmpty) return 'All';
+    final sorted = _selectedLevels.toList()..sort();
+    if (sorted.length == 1) return 'Level ${sorted.first}';
+    return '${sorted.length} selected';
+  }
+
+  String versionFilterSummary() {
+    if (_selectedVersionBuckets.isEmpty) return 'All';
+    if (_selectedVersionBuckets.length == 1) {
+      return _selectedVersionBuckets.first;
+    }
+    return '${_selectedVersionBuckets.length} selected';
+  }
+
+  String nameFilterSummary() {
+    return _selectedNameBucket ?? 'All';
+  }
+
+  bool get hasActiveFilters =>
+      _selectedLevels.isNotEmpty ||
+      _selectedVersionBuckets.isNotEmpty ||
+      _selectedNameBucket != null;
+
+  void clearAllFilters(Modes mode, SortType sortType) {
+    setState(() {
+      _selectedLevels.clear();
+      _selectedVersionBuckets.clear();
+      _selectedNameBucket = null;
+    });
+    regenSongItems(mode, sortType);
+  }
+
+  void toggleFilterPanel(_ActiveFilterPanel panel) {
+    setState(() {
+      _activeFilterPanel = _activeFilterPanel == panel ? null : panel;
+    });
+  }
+
+  int primaryLevelFor(SongInfo song, Modes mode) {
+    final levels = songLevels(song, mode);
+    if (levels.isEmpty) return constants.maxDifficulty + 1;
+    levels.sort();
+    return levels.first;
+  }
+
+  Future<List<SongItem>> generateSongItems(Modes mode, SortType sortType) async {
     List<Favorite> favList = await DatabaseProvider.getAllFavorites();
     setState(() {
       favCount = favList.length;
     });
 
-    // Clear list and regenerate if already exists
-    if (newDiffList.first.songItemList.isNotEmpty) {
-      for (var difficulty in newDiffList) {
-        difficulty.songItemList.clear();
+    List<SongItem> songItems = [];
+    for (SongInfo song in Songs.list) {
+      if (!songMatchesFilters(song, mode)) {
+        continue;
       }
+      bool isFav =
+          favList.any((Favorite fav) => fav.songTitle == song.titletranslit);
+
+      songItems.add(SongItem(songInfo: song, isFav: isFav));
     }
 
-    // Generate song list.
-    for (int i = 0; i < Songs.list.length; i++) {
-      SongInfo song = Songs.list[i];
-      Difficulty songDifficulty =
-          mode == Modes.singles ? song.singles : song.doubles;
-
-      for (var difficulty in newDiffList) {
-        if (songDifficulty
-            .toJson()
-            .containsValue(difficulty.value.toDouble())) {
-          difficulty.songItemList.add(SongItem(
-              songInfo: song,
-              isFav: favList.any((Favorite fav) {
-                final isFav = fav.songTitle == song.titletranslit;
-                return isFav;
-              })));
-        }
-      }
+    switch (sortType) {
+      case SortType.level:
+        songItems.sort((a, b) {
+          final byLevel = primaryLevelFor(a.songInfo, mode)
+              .compareTo(primaryLevelFor(b.songInfo, mode));
+          return byLevel != 0
+              ? byLevel
+              : compareSongInfo(a.songInfo, b.songInfo, SortType.title);
+        });
+        break;
+      case SortType.title:
+        songItems.sort(
+            (a, b) => compareSongInfo(a.songInfo, b.songInfo, SortType.title));
+        break;
+      case SortType.version:
+        songItems.sort((a, b) =>
+            compareSongInfo(a.songInfo, b.songInfo, SortType.version));
+        break;
     }
+    return songItems;
+  }
 
-    return difficultyList;
+  void regenSongItems(Modes mode, SortType sortType) {
+    setState(() {
+      _songItemsPromise = generateSongItems(mode, sortType);
+    });
   }
 
   @override
   void initState() {
     super.initState();
     SongState songState = Provider.of<SongState>(context, listen: false);
-    _songItemsPromise =
-        Future<List<ListDifficulty>>(() => generateSongItems(songState.modes));
+    _songItemsPromise = Future<List<SongItem>>(
+      () => generateSongItems(songState.modes, songState.sortType));
   }
 
   @override
@@ -154,32 +293,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
               ),
               actions: <Widget>[
-                // TODO: Uncomment when sorting exists.
-                // PopupMenuButton(
-                //   initialValue: 0,
-                //   tooltip: "Sort",
-                //   icon: const Icon(Icons.sort),
-                //   itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-                //     const PopupMenuItem(
-                //       child: ListTile(
-                //         leading: Icon(Icons.sort_by_alpha),
-                //         title: Text('Alphabetical'),
-                //       ),
-                //     ),
-                //     const PopupMenuItem(
-                //       child: ListTile(
-                //         leading: Icon(Icons.sports_esports_rounded),
-                //         title: Text('Version'),
-                //       ),
-                //     ),
-                //     const PopupMenuItem(
-                //       child: ListTile(
-                //         leading: Icon(Icons.not_interested_rounded),
-                //         title: Text('None'),
-                //       ),
-                //     ),
-                //   ],
-                // ),
+                SortMenuButton(
+                    onSorted: () =>
+                        regenSongItems(songState.modes, songState.sortType)),
                 PopupMenuButton(
                   initialValue: 0,
                   tooltip: "Chart Type",
@@ -193,7 +309,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                         hoverColor: Colors.transparent,
                         onTap: () {
                           songState.setMode(Modes.singles);
-                          generateSongItems(Modes.singles);
+                          regenSongItems(Modes.singles, songState.sortType);
                           showToast(context, "Set mode to singles");
                           Navigator.pop(context);
                           return;
@@ -210,7 +326,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                             const EdgeInsets.only(left: 8, right: 8),
                         onTap: () {
                           songState.setMode(Modes.doubles);
-                          generateSongItems(Modes.doubles);
+                          regenSongItems(Modes.doubles, songState.sortType);
                           showToast(context, "Set mode to doubles");
                           Navigator.pop(context);
                           return;
@@ -224,14 +340,91 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               ],
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
-            body: NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) {
-                return <Widget>[
-                  songSearchBar(),
-                ];
+            body: FutureBuilder<List<SongItem>>(
+              future: _songItemsPromise,
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final List<SongItem> songItems = snapshot.data!;
+                return CustomScrollView(
+                  slivers: <Widget>[
+                    songSearchBar(),
+                    SliverToBoxAdapter(
+                      child: filterPanel(songState),
+                    ),
+                    SliverToBoxAdapter(
+                      child: ListTile(
+                        title: RichText(
+                          text: TextSpan(
+                            text: 'Favourites: ',
+                            style: TextStyle(
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge!
+                                    .color,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 22),
+                            children: <TextSpan>[
+                              TextSpan(
+                                  text:
+                                      '$favCount song${favCount == 1 ? '' : 's'}',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 19,
+                                      color: Colors.grey.shade500)),
+                            ],
+                          ),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) =>
+                                      const FavoriteListPage()));
+                          regenSongItems(songState.modes, songState.sortType);
+                        },
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: ListTile(
+                        title: Text(
+                          '${songItems.length} song${songItems.length == 1 ? '' : 's'}',
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodyLarge!.color,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (songItems.isEmpty)
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('No songs match the selected filters.'),
+                        ),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final SongItem songItem = songItems[index];
+                            return SongListItem(
+                              songInfo: songItem.songInfo,
+                              isFav: songItem.isFav,
+                              isSearch: false,
+                              regenFavsCallback: regenFavCount,
+                            );
+                          },
+                          childCount: songItems.length,
+                        ),
+                      ),
+                  ],
+                );
               },
-              body: CustomScrollView(
-                  slivers: <Widget>[songList(songState, context)]),
             ),
           ),
         );
@@ -239,85 +432,199 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
-  SliverList songList(SongState songState, BuildContext context) {
-    return SliverList(
-        delegate: SliverChildListDelegate([
-      FutureBuilder(
-        future: _songItemsPromise,
-        builder: (context, snapshot) {
-          List<Widget> difficultyFolders = [];
-          if (snapshot.hasData) {
-            difficultyFolders.add(
-              ListTile(
-                title: RichText(
-                  text: TextSpan(
-                    text: 'Favourites: ',
-                    style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge!.color,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22),
-                    children: <TextSpan>[
-                      TextSpan(
-                          text: '$favCount song${favCount == 1 ? 's' : ''}',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 19,
-                              color: Colors.grey.shade500)),
-                    ],
-                  ),
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const FavoriteListPage()));
-                  generateSongItems(songState.modes);
+  Widget filterPanel(SongState songState) {
+    Widget topButton({
+      required String label,
+      required String value,
+      required bool active,
+      required VoidCallback onPressed,
+    }) {
+      return OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          shape: const StadiumBorder(),
+          side: BorderSide(
+              color: active
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).dividerColor),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        ),
+        onPressed: onPressed,
+        child: Text('$label: $value'),
+      );
+    }
+
+    Widget badge({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+      bool compact = false,
+    }) {
+      return FilterChip(
+        label: Text(label),
+        selected: selected,
+        showCheckmark: false,
+        visualDensity:
+            compact ? const VisualDensity(horizontal: -2, vertical: -2) : null,
+        side: BorderSide(
+            color: selected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).dividerColor),
+        onSelected: (_) => onTap(),
+      );
+    }
+
+    Widget filterTray() {
+      if (_activeFilterPanel == null) return const SizedBox.shrink();
+
+      if (_activeFilterPanel == _ActiveFilterPanel.level) {
+        final levels = List<int>.generate(constants.maxDifficulty, (i) => i + 1);
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final level in levels)
+              badge(
+                label: '$level',
+                compact: true,
+                selected: _selectedLevels.contains(level),
+                onTap: () {
+                  setState(() {
+                    if (_selectedLevels.contains(level)) {
+                      _selectedLevels.remove(level);
+                    } else {
+                      _selectedLevels.add(level);
+                    }
+                  });
+                  regenSongItems(songState.modes, songState.sortType);
                 },
               ),
-            );
-            difficultyFolders.addAll(
-                snapshot.data!.map<ListTile>((ListDifficulty difficulty) {
-              return ListTile(
-                title: RichText(
-                  text: TextSpan(
-                    text: 'Level ${difficulty.value}: ',
-                    style: TextStyle(
-                        color: Theme.of(context).textTheme.bodyLarge!.color,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22),
-                    children: <TextSpan>[
-                      TextSpan(
-                          text: '${difficulty.songItemList.length} songs',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 19,
-                              color: Colors.grey.shade500)),
-                    ],
-                  ),
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => SongListPage(
-                                difficulty: difficulty,
-                              )));
-                  generateSongItems(songState.modes);
+            badge(
+              label: 'X',
+              compact: true,
+              selected: false,
+              onTap: () => clearAllFilters(songState.modes, songState.sortType),
+            ),
+          ],
+        );
+      }
+
+      if (_activeFilterPanel == _ActiveFilterPanel.version) {
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final bucket in _versionBuckets)
+              badge(
+                label: bucket,
+                selected: _selectedVersionBuckets.contains(bucket),
+                onTap: () {
+                  setState(() {
+                    if (_selectedVersionBuckets.contains(bucket)) {
+                      _selectedVersionBuckets.remove(bucket);
+                    } else {
+                      _selectedVersionBuckets.add(bucket);
+                    }
+                  });
+                  regenSongItems(songState.modes, songState.sortType);
                 },
-              );
-            }).toList());
-          }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.max,
-            children: difficultyFolders,
-          );
-        },
+              ),
+            badge(
+              label: 'X',
+              selected: false,
+              onTap: () => clearAllFilters(songState.modes, songState.sortType),
+            ),
+          ],
+        );
+      }
+
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: <Widget>[
+          badge(
+            label: 'All',
+            selected: _selectedNameBucket == null,
+            onTap: () {
+              setState(() {
+                _selectedNameBucket = null;
+              });
+              regenSongItems(songState.modes, songState.sortType);
+            },
+          ),
+          for (final bucket in _nameBuckets)
+            badge(
+              label: bucket,
+              selected: _selectedNameBucket == bucket,
+              onTap: () {
+                setState(() {
+                  _selectedNameBucket = bucket;
+                });
+                regenSongItems(songState.modes, songState.sortType);
+              },
+            ),
+        ],
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: <Widget>[
+                topButton(
+                  label: 'Name',
+                  value: nameFilterSummary(),
+                  active: _activeFilterPanel == _ActiveFilterPanel.name,
+                  onPressed: () => toggleFilterPanel(_ActiveFilterPanel.name),
+                ),
+                const SizedBox(width: 8),
+                topButton(
+                  label: 'Level',
+                  value: levelFilterSummary(),
+                  active: _activeFilterPanel == _ActiveFilterPanel.level,
+                  onPressed: () => toggleFilterPanel(_ActiveFilterPanel.level),
+                ),
+                const SizedBox(width: 8),
+                topButton(
+                  label: 'Version',
+                  value: versionFilterSummary(),
+                  active: _activeFilterPanel == _ActiveFilterPanel.version,
+                  onPressed: () => toggleFilterPanel(_ActiveFilterPanel.version),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    shape: const StadiumBorder(),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  onPressed: hasActiveFilters
+                      ? () => clearAllFilters(songState.modes, songState.sortType)
+                      : null,
+                  icon: const Icon(Icons.close),
+                  label: const Text('Clear'),
+                ),
+              ],
+            ),
+          ),
+          if (_activeFilterPanel != null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                border: Border.all(color: Theme.of(context).dividerColor),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: filterTray(),
+            ),
+        ],
       ),
-    ]));
+    );
   }
 
   SliverAppBar songSearchBar() {
@@ -356,10 +663,15 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           },
           suggestionsBuilder:
               (BuildContext context, SearchController controller) {
-            if (_searchResultWidgets.isEmpty || controller.text == "") {
+            if (_searchResults.isEmpty || controller.text == "") {
               return List.empty();
             }
-            return _searchResultWidgets;
+            return _searchResults.map((song) => SongListItem(
+                  songInfo: song,
+                  isFav: false,
+                  isSearch: true,
+                  regenFavsCallback: regenFavCount,
+                ));
           }),
     );
   }

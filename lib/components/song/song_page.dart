@@ -3,7 +3,8 @@
 /// Description: Page that displays selected song information
 library;
 
-import 'package:ddr_md/components/song/notes/note_page.dart';
+import 'package:ddr_md/components/song/history_page.dart';
+import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
@@ -34,6 +35,7 @@ class _SongPageState extends State<SongPage> {
 
   Favorite? favorite;
   Note? latestNote;
+  Score? latestScore;
 
   void initFav(String songTitleTranslit) async {
     Favorite? initFav =
@@ -49,6 +51,26 @@ class _SongPageState extends State<SongPage> {
     setState(() {
       latestNote = initNote;
     });
+  }
+
+  void initScore(String songTitleTranslit) async {
+    Score? initScore =
+        await DatabaseProvider.getLatestScoreBySong(songTitleTranslit);
+    setState(() {
+      latestScore = initScore;
+    });
+  }
+
+  // Navigate to the history page on the given tab, then refresh the
+  // latest note/score cards on return.
+  Future<void> openHistory(int tab) async {
+    await Navigator.push(context,
+        MaterialPageRoute(builder: (context) => HistoryPage(initialTab: tab)));
+    if (!mounted) return;
+    var songInfo = Provider.of<SongState>(context, listen: false).songInfo;
+    if (songInfo == null) return;
+    initNote(songInfo.titletranslit);
+    initScore(songInfo.titletranslit);
   }
 
   // Initialise chosen read speed.
@@ -69,6 +91,7 @@ class _SongPageState extends State<SongPage> {
     if (songInfo != null) {
       initFav(songInfo.titletranslit);
       initNote(songInfo.titletranslit);
+      initScore(songInfo.titletranslit);
       // Set variables based on state
       if (songInfo.perChart) {
         setState(() {
@@ -141,15 +164,9 @@ class _SongPageState extends State<SongPage> {
                         }
                       }),
                   IconButton(
-                    icon: const Icon(Icons.note_add),
-                    tooltip: "Add note",
-                    onPressed: () async {
-                      await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const NotePage()));
-                      initNote(songState.songInfo!.titletranslit);
-                    },
+                    icon: const Icon(Icons.history),
+                    tooltip: "History",
+                    onPressed: () => openHistory(HistoryPage.notesTab),
                   )
                 ]),
             body: SingleChildScrollView(
@@ -175,15 +192,15 @@ class _SongPageState extends State<SongPage> {
                           context: context,
                           songInfo: songState.songInfo,
                           chart: _chart),
+                    if (latestScore != null)
+                      GestureDetector(
+                        onTap: () => openHistory(HistoryPage.scoresTab),
+                        child: ScoreCard(
+                            score: latestScore!, header: "Latest Score"),
+                      ),
                     if (latestNote != null)
                       GestureDetector(
-                        onTap: () async {
-                          await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) => const NotePage()));
-                          initNote(songState.songInfo!.titletranslit);
-                        },
+                        onTap: () => openHistory(HistoryPage.notesTab),
                         child: Card(
                           child: ListTile(
                             title: Column(
@@ -228,37 +245,4 @@ class _SongPageState extends State<SongPage> {
       }),
     );
   }
-}
-
-// TODO: UNUSED
-class NoteScore extends StatelessWidget {
-  const NoteScore({super.key});
-
-  @override
-  Widget build(BuildContext context) => const Column(
-        children: [
-          Text(
-            "Recent Score:",
-            style: TextStyle(fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          Center(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Image(
-                  image: AssetImage('assets/rank_s_aaa.png'),
-                ),
-                Image(
-                  image: AssetImage('assets/full_mar.png'),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '1,000,000',
-            style: TextStyle(fontFamily: 'Handel'),
-          ),
-        ],
-      );
 }

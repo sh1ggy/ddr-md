@@ -36,7 +36,9 @@ class _SongListItemState extends State<SongListItem> {
         children: [
           Image(
             image: AssetImage(
-                'assets/jackets-lowres/${widget.songInfo.name}.png'),
+              'assets/jackets-160/${widget.songInfo.name}.png'),
+            errorBuilder: (context, error, stackTrace) =>
+                const Icon(Icons.music_note, size: 40),
           ),
           if (!widget.isSearch)
             Positioned(

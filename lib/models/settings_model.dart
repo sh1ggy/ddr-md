@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class Settings {
   static const String chosenReadSpeedKey = "chosenReadSpeed";
   static const String rivalCodeSpeedKey = "rivalCode";
+  static const String detectionSideKey = "detectionSide";
 
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();

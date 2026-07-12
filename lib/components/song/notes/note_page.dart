@@ -1,9 +1,9 @@
-/// Name: NotePage
-/// Parent: SongPage
-/// Description: Page that displays timeline of notes
+/// Name: NotesTab
+/// Parent: HistoryPage
+/// Description: Tab that displays timeline of notes
 /// as well as allows you to make new ones. [NewNoteField]
 /// is the widget handling the new note action and is a child of
-/// [NotePage]
+/// [NotesTab]
 library;
 
 import 'package:ddr_md/components/song/notes/new_note.dart';
@@ -14,16 +14,16 @@ import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-class NotePage extends StatefulWidget {
-  const NotePage({
+class NotesTab extends StatefulWidget {
+  const NotesTab({
     super.key,
   });
 
   @override
-  State<NotePage> createState() => NotePageState();
+  State<NotesTab> createState() => NotesTabState();
 }
 
-class NotePageState extends State<NotePage> {
+class NotesTabState extends State<NotesTab> {
   Future<List<Note>>? _notesPromise;
   final List<NoteCard> _noteWidgets = [];
 
@@ -70,24 +70,9 @@ class NotePageState extends State<NotePage> {
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
-    return SafeArea(
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        appBar: AppBar(
-          surfaceTintColor: Colors.black,
-          shadowColor: Colors.black,
-          elevation: 2,
-          centerTitle: true,
-          title: const Text(
-            'Notes',
-            style: TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600),
-          ),
-          iconTheme: const IconThemeData(color: Colors.blueGrey),
-        ),
-        floatingActionButton: FloatingActionButton(
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      floatingActionButton: FloatingActionButton(
           backgroundColor: Colors.red,
           child: const Icon(Icons.edit, color: Colors.white),
           onPressed: () async {
@@ -105,60 +90,57 @@ class NotePageState extends State<NotePage> {
                 getNotes(songState.songInfo!.titletranslit);
               });
             }
-          },
-        ),
-        body: Padding(
-          padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
-          child: Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // NOTES LIST
-                      FutureBuilder(
-                        future: _notesPromise,
-                        builder: (context, snapshot) {
-                          List<Widget> noteWidgets;
-                          if (snapshot.hasData) {
-                            if (snapshot.data!.isEmpty) {
-                              return SizedBox(
-                                  height:
-                                      MediaQuery.of(context).size.height / 1.5,
-                                  child:
-                                      const Center(child: Text('No notes...')));
-                            }
-                            noteWidgets =
-                                snapshot.data!.map<NoteCard>((Note note) {
-                              return NoteCard(
-                                contents: note.contents,
-                                date: note.date,
-                                getNotes: getNotes,
-                              );
-                            }).toList();
-                          } else {
-                            noteWidgets = [
-                              SizedBox(
-                                  height:
-                                      MediaQuery.of(context).size.height / 1.5,
-                                  child:
-                                      const Center(child: Text('Loading...'))),
-                            ];
+          }),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    // NOTES LIST
+                    FutureBuilder(
+                      future: _notesPromise,
+                      builder: (context, snapshot) {
+                        List<Widget> noteWidgets;
+                        if (snapshot.hasData) {
+                          if (snapshot.data!.isEmpty) {
+                            return SizedBox(
+                                height:
+                                    MediaQuery.of(context).size.height / 1.5,
+                                child:
+                                    const Center(child: Text('No notes...')));
                           }
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.max,
-                            children: noteWidgets,
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+                          noteWidgets =
+                              snapshot.data!.map<NoteCard>((Note note) {
+                            return NoteCard(
+                              contents: note.contents,
+                              date: note.date,
+                              getNotes: getNotes,
+                            );
+                          }).toList();
+                        } else {
+                          noteWidgets = [
+                            SizedBox(
+                                height:
+                                    MediaQuery.of(context).size.height / 1.5,
+                                child: const Center(child: Text('Loading...'))),
+                          ];
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.max,
+                          children: noteWidgets,
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -37,6 +37,30 @@ const maxDifficulty = 19;
 const note =
     "The crossovers in this song are surprisingly hard, I keep leading with the wrong first foot in after the jumps. Song should be played with those in mind.";
 
+// DDR releases in chronological order, used for version sorting/filtering.
+const versionOrder = [
+  'DDR World',
+  'DDR A3',
+  'DDR A20 PLUS',
+  'DDR A20',
+  'DDR A',
+  'DDR 2014',
+  'DDR 2013',
+  'DDR X3',
+  'DDR X2',
+  'DDR X',
+  'DDR SuperNOVA2',
+  'DDR SuperNOVA',
+  'DDR EXTREME',
+  'DDR MAX2',
+  'DDR MAX',
+  'DDR 5th',
+  'DDR 4th',
+  'DDR 3rd',
+  'DDR 2nd',
+  'DDR',
+];
+
 const appVer = "v1.0.1";
 
 // Links

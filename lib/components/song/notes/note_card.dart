@@ -1,5 +1,5 @@
 /// Name: NoteCard
-/// Parent: NotePage
+/// Parent: NotesTab
 /// Description: Card to display note information from DB, with
 /// differing action based on the params
 library;
