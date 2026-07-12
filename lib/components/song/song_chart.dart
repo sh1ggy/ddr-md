@@ -342,24 +342,51 @@ class SongRadarChart extends StatelessWidget {
                   // Pull axis titles inward from the polygon edge so the top
                   // label isn't clipped by the chart's bounds.
                   titlePositionPercentageOffset: 0.15,
-                  tickCount: 5,
+                  // fl_chart places the chart center at min - (max-min)/tickCount
+                  // rather than zero; with the zero-anchor dataset below, a high
+                  // tick count pushes the center to ~zero so radii stay
+                  // proportional to value/100. Ticks are invisible anyway.
+                  tickCount: 50,
+                  // The built-in grid always scales to the largest data value,
+                  // so hide it entirely; the 100-scale pentagon is drawn as a
+                  // dataset below instead, letting values over 100 burst
+                  // through the frame like the arcade groove radar.
                   ticksTextStyle:
-                      TextStyle(color: Colors.grey.shade600, fontSize: 10),
-                  tickBorderData: BorderSide(color: Colors.grey.shade300),
-                  gridBorderData: BorderSide(color: Colors.grey.shade400),
+                      const TextStyle(color: Colors.transparent, fontSize: 10),
+                  tickBorderData: const BorderSide(color: Colors.transparent),
+                  gridBorderData: const BorderSide(color: Colors.transparent),
+                  radarBorderData: const BorderSide(color: Colors.transparent),
                   titleTextStyle: const TextStyle(
                       fontSize: 11, fontWeight: FontWeight.w600),
                   getTitle: (index, angle) {
                     return RadarChartTitle(text: labels[index]);
                   },
                   dataSets: [
-                    // Invisible dataset pinning the scale to at least 0-100;
-                    // official radar values can exceed 100 (up to ~312) and
-                    // will stretch the scale past it when they do.
+                    // Invisible zero anchor so the chart's minimum (and thus
+                    // its center, see tickCount above) is pinned at 0 for
+                    // every song rather than at the smallest radar value.
                     RadarDataSet(
                       fillColor: Colors.transparent,
                       borderColor: Colors.transparent,
                       borderWidth: 0,
+                      entryRadius: 0,
+                      dataEntries: const [
+                        RadarEntry(value: 0),
+                        RadarEntry(value: 0),
+                        RadarEntry(value: 0),
+                        RadarEntry(value: 0),
+                        RadarEntry(value: 0),
+                      ],
+                    ),
+                    // The 100-scale pentagon frame. It doubles as the scale
+                    // floor: when every value is <=100 it defines the outer
+                    // bound, and when a value exceeds 100 the chart's bound
+                    // stretches to that value while this frame stays at 100,
+                    // so the data polygon renders outside it.
+                    RadarDataSet(
+                      fillColor: Colors.transparent,
+                      borderColor: Colors.grey.shade400,
+                      borderWidth: 1.5,
                       entryRadius: 0,
                       dataEntries: const [
                         RadarEntry(value: 100),
