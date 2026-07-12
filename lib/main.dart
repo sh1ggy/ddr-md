@@ -116,7 +116,7 @@ class _LayoutState extends State<Layout> {
                 color: Colors.white,
               ),
               icon: Icon(Icons.document_scanner),
-              label: 'Camera',
+              label: 'Scan',
             ),
             NavigationDestination(
               selectedIcon: Icon(
