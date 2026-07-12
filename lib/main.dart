@@ -5,8 +5,6 @@ library;
 
 import 'dart:io';
 
-import 'package:ddr_md/components/bpm_page.dart';
-import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/songlist/difficultylist_page.dart';
@@ -106,19 +104,19 @@ class _LayoutState extends State<Layout> {
           destinations: const <Widget>[
             NavigationDestination(
               selectedIcon: Icon(
-                Icons.onetwothree,
-                color: Colors.white,
-              ),
-              icon: Icon(Icons.onetwothree),
-              label: 'BPM',
-            ),
-            NavigationDestination(
-              selectedIcon: Icon(
                 Icons.music_note,
                 color: Colors.white,
               ),
               icon: Icon(Icons.music_note),
               label: 'Songs',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(
+                Icons.document_scanner,
+                color: Colors.white,
+              ),
+              icon: Icon(Icons.document_scanner),
+              label: 'Camera',
             ),
             NavigationDestination(
               selectedIcon: Icon(
@@ -128,41 +126,16 @@ class _LayoutState extends State<Layout> {
               icon: Icon(Icons.settings),
               label: 'Settings',
             ),
-            NavigationDestination(
-              selectedIcon: Icon(
-                Icons.camera_alt,
-                color: Colors.white,
-              ),
-              icon: Icon(Icons.camera_alt),
-              label: 'Camera',
-            ),
-            NavigationDestination(
-              selectedIcon: Icon(
-                Icons.image,
-                color: Colors.white,
-              ),
-              icon: Icon(Icons.image),
-              label: 'Image',
-            ),
           ],
         ),
         body: <Widget>[
           // Android-specific removal of navigators to make back gesture work
           // Note that this removes the bottom navigator
           if (Platform.isAndroid) ...{
-            const BpmPage(),
             const DifficultyListPage(),
-            const SettingsPage(),
             const OcrPage(),
-            const LoadImage(),
+            const SettingsPage(),
           } else ...{
-            Navigator(
-              key: const Key("Bpm"),
-              onGenerateRoute: (settings) {
-                Widget page = const BpmPage();
-                return MaterialPageRoute(builder: (_) => page);
-              },
-            ),
             Navigator(
               key: const Key("SongList"),
               onGenerateRoute: (settings) {
@@ -171,21 +144,15 @@ class _LayoutState extends State<Layout> {
               },
             ),
             Navigator(
-                key: const Key("Settings"),
-                onGenerateRoute: (settings) {
-                  Widget page = const SettingsPage();
-                  return MaterialPageRoute(builder: (_) => page);
-                }),
-            Navigator(
-                key: const Key("Camera"),
+                key: const Key("Scan"),
                 onGenerateRoute: (settings) {
                   Widget page = const OcrPage();
                   return MaterialPageRoute(builder: (_) => page);
                 }),
             Navigator(
-                key: const Key("Image"),
+                key: const Key("Settings"),
                 onGenerateRoute: (settings) {
-                  Widget page = const LoadImage();
+                  Widget page = const SettingsPage();
                   return MaterialPageRoute(builder: (_) => page);
                 }),
           }

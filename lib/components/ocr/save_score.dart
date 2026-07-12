@@ -112,6 +112,9 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
     final picked = await showModalBottomSheet<SongInfo>(
       context: context,
       isScrollControlled: true,
+      // Keep the sheet out of the top notch when the keyboard pushes it up
+      // on small screens.
+      useSafeArea: true,
       builder: (context) =>
           _SongSearchSheet(initialQuery: widget.initialTitle),
     );

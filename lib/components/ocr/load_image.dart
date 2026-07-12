@@ -86,7 +86,9 @@ class _LoadImageState extends State<LoadImage> {
     // must still be sequential — the isolate needs the app path from init() —
     // but we kick them off immediately so the page renders while they run in the
     // background. The button stays disabled until both complete.
-    await _ocrProcessor.init();
+    // No camera session: this page only runs the picked-image FFI path, and it
+    // is pushed over the live camera page whose session must stay the only one.
+    await _ocrProcessor.init(cameraSession: false);
     if (mounted) setState(() => _isReady = true);
   }
 
@@ -165,6 +167,35 @@ class _LoadImageState extends State<LoadImage> {
     super.dispose();
   }
 
+  void _onSideChanged(DetectionSide side) {
+    setState(() {
+      _detectionSide = side;
+      _ocrProcessor.side = side;
+      // Re-run OCR on the already-picked image so the result
+      // reflects the newly selected side.
+      if (!_isPicking) {
+        _lastResult = null;
+        _isProcessing = true;
+      }
+    });
+    if (!_isPicking) {
+      _ocrProcessor.processPickedImage(_pickedImage!);
+    }
+  }
+
+  // Floats over the loaded screenshot — and over the no-detection empty
+  // state, where switching sides is how you retry the same image.
+  Widget get _floatingSideSelector => Positioned(
+        top: 12,
+        left: 0,
+        right: 0,
+        child: DetectionSideSelector(
+          value: _detectionSide,
+          onChanged: _onSideChanged,
+          overlay: true,
+        ),
+      );
+
   bool get pickedImage => _pickedImage != null;
   bool get isProcessed => _lastResult != null;
   bool get isDetected =>
@@ -178,82 +209,83 @@ class _LoadImageState extends State<LoadImage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Load Image"),
+        surfaceTintColor: Colors.black,
+        shadowColor: Colors.black,
+        elevation: 2,
+        centerTitle: true,
+        title: const Text(
+          'Load Image',
+          style: TextStyle(
+              fontSize: 20,
+              color: Colors.blueGrey,
+              fontWeight: FontWeight.w600),
+        ),
+        iconTheme: const IconThemeData(color: Colors.blueGrey),
       ),
-      bottomNavigationBar: ElevatedButton(
+      floatingActionButton: FloatingActionButton.extended(
+        // Disabled (null onPressed + grey) until OCR init completes,
+        // matching the camera page's Start OCR FAB.
         onPressed: _isReady ? _processImage : null,
-        child: Text(_isReady ? 'Process photo' : 'Initialising…'),
+        backgroundColor: _isReady ? null : Colors.grey.shade400,
+        icon: const Icon(Icons.add_photo_alternate),
+        label: Text(_isReady ? 'Process photo' : 'Initialising…'),
       ),
-      body: Column(
-        children: [
-          // Only shown once an image is picked — switching sides re-runs OCR
-          // on that image, so the toggle is meaningless before one exists.
-          if (pickedImage)
-            DetectionSideSelector(
-              value: _detectionSide,
-              onChanged: (side) {
-                setState(() {
-                  _detectionSide = side;
-                  _ocrProcessor.side = side;
-                  // Re-run OCR on the already-picked image so the result
-                  // reflects the newly selected side.
-                  if (!_isPicking) {
-                    _lastResult = null;
-                    _isProcessing = true;
-                  }
-                });
-                if (!_isPicking) {
-                  _ocrProcessor.processPickedImage(_pickedImage!);
-                }
-              },
-            ),
-          Expanded(
-            child: _isPicking || _isProcessing
-                ? const Center(child: CircularProgressIndicator())
-                : !pickedImage
-                    ? const OcrEmptyState(
-                        icon: Icons.image_search,
-                        title: 'No image loaded',
-                        subtitle: 'Pick a results screenshot to scan your score',
-                      )
-                    : !isDetected
-                        ? const OcrEmptyState(
-                            icon: Icons.search_off,
-                            title: 'No score detected',
-                            subtitle: 'Please try another image',
-                          )
-                        : ListView(
-                            shrinkWrap: true,
-                children: [
-                  RoiOverlay(
-                    rois: _lastResult!.detectedRois!,
-                    detailsRoiIndex: _lastResult!.detailsRoiIndex,
-                    child: Image.file(
-                      File(_pickedImage!.path),
-                      width: MediaQuery.of(context).size.width,
-                      fit: BoxFit.fitWidth,
-                    ),
-                  ),
-                  if (hasScore)
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: SaveScorePanel(
-                        controllers: _fieldControllers,
-                        initialTitle: _ocrTitle,
-                        middleChildren: [
-                          for (final key in _populatedKeys)
-                            OCREditableField(
-                              keyName: key,
-                              controller: _fieldControllers[key]!,
+      body: _isPicking || _isProcessing
+          ? const Center(child: CircularProgressIndicator())
+          : !pickedImage
+              ? const OcrEmptyState(
+                  icon: Icons.image_search,
+                  title: 'No image loaded',
+                  subtitle: 'Pick a results screenshot to scan your score',
+                )
+              : !isDetected
+                  ? Stack(
+                      children: [
+                        const OcrEmptyState(
+                          icon: Icons.search_off,
+                          title: 'No score detected',
+                          subtitle: 'Please try another image',
+                        ),
+                        _floatingSideSelector,
+                      ],
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      // Bottom gap so the score panel's Save button can
+                      // scroll clear of the floating Process photo FAB.
+                      padding: const EdgeInsets.only(bottom: 88),
+                      children: [
+                        Stack(
+                          children: [
+                            RoiOverlay(
+                              rois: _lastResult!.detectedRois!,
+                              detailsRoiIndex: _lastResult!.detailsRoiIndex,
+                              child: Image.file(
+                                File(_pickedImage!.path),
+                                width: MediaQuery.of(context).size.width,
+                                fit: BoxFit.fitWidth,
+                              ),
                             ),
-                        ],
-                      ),
+                            _floatingSideSelector,
+                          ],
+                        ),
+                        if (hasScore)
+                          Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: SaveScorePanel(
+                              controllers: _fieldControllers,
+                              initialTitle: _ocrTitle,
+                              middleChildren: [
+                                for (final key in _populatedKeys)
+                                  OCREditableField(
+                                    keyName: key,
+                                    controller: _fieldControllers[key]!,
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
-                ],
-              ),
-          ),
-        ],
-      ),
     );
   }
 }

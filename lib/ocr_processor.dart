@@ -539,14 +539,18 @@ class OCRProcessor {
     }
   }
 
-  Future<void> init() async {
+  // [cameraSession]: false skips minting the native camera session + preview
+  // texture entirely — the picked-image (FFI) path doesn't use them, and a
+  // processor living alongside the live camera page must not allocate a second
+  // session.
+  Future<void> init({bool cameraSession = true}) async {
     tempDir = await getTemporaryDirectory();
     appDir = await getApplicationDocumentsDirectory();
     await _loadNativeAssets();
 
     // The native camera session only exists on mobile. The picked-image (FFI)
     // path doesn't need it, so a failure here is non-fatal.
-    if (!Platform.isAndroid && !Platform.isIOS) return;
+    if (!cameraSession || (!Platform.isAndroid && !Platform.isIOS)) return;
     try {
       // The channel mints the preview texture and the native session, built
       // with the SAME calibration as the FFI path (lib/ocr_config.dart).

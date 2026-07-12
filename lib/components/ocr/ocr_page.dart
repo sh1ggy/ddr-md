@@ -264,30 +264,50 @@ class _OcrPageState extends State<OcrPage>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Camera"),
-      ),
-      body: Column(
-        children: [
-          DetectionSideSelector(
-            value: _detectionSide,
-            onChanged: _setDetectionSide,
-          ),
-          Expanded(
-            child: switch (cameraState) {
-              CameraState.notReady =>
-                const Center(child: CircularProgressIndicator()),
-              CameraState.neverRecorded => const OcrEmptyState(
-                  icon: Icons.videocam_outlined,
-                  title: 'Camera is off',
-                  subtitle: 'Start OCR to begin detecting scores',
-                ),
-              CameraState.inactive => _buildStoppedView(),
-              CameraState.active => _buildActiveView(),
+        surfaceTintColor: Colors.black,
+        shadowColor: Colors.black,
+        elevation: 2,
+        title: const Text(
+          'Camera',
+          style: TextStyle(
+              fontSize: 20,
+              color: Colors.blueGrey,
+              fontWeight: FontWeight.w600),
+        ),
+        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Load image',
+            icon: const Icon(Icons.photo_library_outlined),
+            onPressed: () async {
+              final navigator = Navigator.of(context);
+              // Stop the live session first — the subpage shouldn't run over
+              // an active camera stream.
+              if (_isCameraActive) await _toggleCamera();
+              if (!mounted) return;
+              navigator.push(
+                  MaterialPageRoute(builder: (_) => const LoadImage()));
             },
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      body: switch (cameraState) {
+        CameraState.notReady =>
+          const Center(child: CircularProgressIndicator()),
+        CameraState.neverRecorded => Stack(
+            children: [
+              const OcrEmptyState(
+                icon: Icons.videocam_outlined,
+                title: 'Camera is off',
+                subtitle: 'Start OCR to begin detecting scores',
+              ),
+              _floatingSideSelector,
+            ],
+          ),
+        CameraState.inactive => _buildStoppedView(),
+        CameraState.active => _buildActiveView(),
+      },
+      floatingActionButton: FloatingActionButton(
         // Disabled (null onPressed + grey) until both camera and OCR are
         // ready. Stop is always enabled once a session is active.
         onPressed: canStart ? _toggleCamera : null,
@@ -296,8 +316,7 @@ class _OcrPageState extends State<OcrPage>
             : canStart
                 ? null // theme default
                 : Colors.grey.shade400,
-        icon: Icon(_isCameraActive ? Icons.stop : Icons.play_arrow),
-        label: Text(_isCameraActive ? 'Stop OCR' : 'Start OCR'),
+        child: Icon(_isCameraActive ? Icons.stop : Icons.play_arrow),
       ),
     );
   }
@@ -344,6 +363,7 @@ class _OcrPageState extends State<OcrPage>
               left: 12,
               child: _FpsCounter(fps: _fps),
             ),
+            _floatingSideSelector,
           ],
         ),
         Padding(
@@ -363,6 +383,19 @@ class _OcrPageState extends State<OcrPage>
     setState(() => _detectionSide = side);
     _ocrProcessor.side = side;
   }
+
+  // Floats top-centre over every camera state (off, live, stopped) so the
+  // side can always be changed before the next session starts.
+  Widget get _floatingSideSelector => Positioned(
+        top: 12,
+        left: 0,
+        right: 0,
+        child: DetectionSideSelector(
+          value: _detectionSide,
+          onChanged: _setDetectionSide,
+          overlay: true,
+        ),
+      );
 
   void _setDebugEnabled(bool enabled) {
     final type = enabled ? DebugImageType.on : DebugImageType.none;
@@ -505,56 +538,50 @@ class _OcrPageState extends State<OcrPage>
   }
 
   Widget _buildStoppedView() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-      children: [
-        const Text(
-          "Camera stopped",
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        ListenableBuilder(
-          listenable: Listenable.merge(
-              [_ocrProcessor.isProcessing, _ocrProcessor.isDraining]),
-          builder: (context, _) {
-            final busy =
-                _ocrProcessor.isProcessing.value || _ocrProcessor.isDraining.value;
-            if (!busy) return const SizedBox.shrink();
-            return Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(
-                    width: 8,
-                    height: 8,
-                    child: CircularProgressIndicator(strokeWidth: 1.5),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    "Finalising…",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        _buildCapturePanel(),
-        if (_aggregator.detailsCount > 0)
-          SaveScorePanel(
-            controllers: _fieldControllers,
-            initialTitle: _aggregator.best('title')?.value ?? '',
-            middleChildren: [_buildEditableScorePanel()],
+    // Nothing detected in the last session: skip the capture/debug chrome
+    // entirely and centre the empty state. The side picker stays on top —
+    // switching side is the likely fix before starting OCR again.
+    if (_aggregator.detailsCount == 0) {
+      return Stack(
+        children: [
+          ListenableBuilder(
+            listenable: Listenable.merge(
+                [_ocrProcessor.isProcessing, _ocrProcessor.isDraining]),
+            builder: (context, _) {
+              final busy = _ocrProcessor.isProcessing.value ||
+                  _ocrProcessor.isDraining.value;
+              // Results can still land while the stop drains in-flight frames.
+              if (busy) return const Center(child: CircularProgressIndicator());
+              return const OcrEmptyState(
+                icon: Icons.search_off,
+                title: 'No score detected',
+                subtitle: 'Start OCR again and keep the results screen in view',
+              );
+            },
           ),
-        if (_aggregator.detailsCount == 0) _buildEditableScorePanel(),
-        // Latest debug images remain inspectable after stopping (the notifiers
-        // keep their last values); the panel gates internally on the toggle.
-        _buildDebugControls(),
+          _floatingSideSelector,
+        ],
+      );
+    }
+    return Stack(
+      children: [
+        ListView(
+          // Top padding clears the floating side picker.
+          padding: const EdgeInsets.fromLTRB(16, 64, 16, 96),
+          children: [
+            _buildCapturePanel(),
+            SaveScorePanel(
+              controllers: _fieldControllers,
+              initialTitle: _aggregator.best('title')?.value ?? '',
+              middleChildren: [_buildEditableScorePanel()],
+            ),
+            // Latest debug images remain inspectable after stopping (the
+            // notifiers keep their last values); the panel gates internally
+            // on the toggle.
+            _buildDebugControls(),
+          ],
+        ),
+        _floatingSideSelector,
       ],
     );
   }
