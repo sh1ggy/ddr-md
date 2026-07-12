@@ -75,13 +75,15 @@ namespace
             s.pop_back();
     }
 
-    // Post-process: strip non-digits for numeric fields
+    // Post-process: strip non-digits for numeric fields. '/' survives because
+    // max_combo renders as "combo/total note count" — the field-assignment
+    // step (ddrocr_instance.cpp) splits on it once boxes are named.
     void postProcess(std::string &text, OCRType type)
     {
         if (type != OCRType::Digit) return;
         std::string out;
         for (char c : text)
-            if ((c >= '0' && c <= '9') || c == ',')
+            if ((c >= '0' && c <= '9') || c == ',' || c == '/')
                 out += c;
         text = out;
     }

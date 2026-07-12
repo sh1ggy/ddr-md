@@ -778,6 +778,21 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
         }
     }
 
+    // The digit recogniser keeps '/' so max_combo's "combo/total note count"
+    // reading can be split here: keep only the combo. Any stray slash in the
+    // other numeric fields is OCR noise — drop it.
+    for (auto &f : combinedFields)
+    {
+        std::string &t = f.res->text;
+        size_t slash = t.find('/');
+        if (slash == std::string::npos)
+            continue;
+        if (std::strcmp(f.name, "max_combo") == 0)
+            t.resize(slash);
+        else
+            t.erase(std::remove(t.begin(), t.end(), '/'), t.end());
+    }
+
     // ----- Outside the combined ROI: per-ROI recogniser-only fallback -----
     // title/username/difficulty/details sit above the score panel.
     ocrResults.title = getPreprocessedRoiImage(
