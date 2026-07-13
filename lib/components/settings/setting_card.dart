@@ -15,6 +15,8 @@ class SettingCard<T> extends StatefulWidget {
   final T chosenValue;
   final String field;
   final int maxLength;
+  // Whether the field only accepts digits (numeric keyboard + digit filter).
+  final bool digitsOnly;
 
   const SettingCard({
     super.key,
@@ -22,6 +24,7 @@ class SettingCard<T> extends StatefulWidget {
     required this.chosenValue,
     required this.field,
     required this.maxLength,
+    this.digitsOnly = true,
   });
 
 
@@ -45,8 +48,12 @@ class _SettingCardState<T> extends State<SettingCard> {
               Expanded(
                 child: TextField(
                   maxLength: widget.maxLength,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  keyboardType: TextInputType.number,
+                  inputFormatters: widget.digitsOnly
+                      ? [FilteringTextInputFormatter.digitsOnly]
+                      : null,
+                  keyboardType: widget.digitsOnly
+                      ? TextInputType.number
+                      : TextInputType.text,
                   textAlign: TextAlign.left,
                   onChanged: (value) => {
                     if (value != "") {setState(() {

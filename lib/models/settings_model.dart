@@ -8,6 +8,7 @@ class Settings {
   static const String chosenReadSpeedKey = "chosenReadSpeed";
   static const String rivalCodeSpeedKey = "rivalCode";
   static const String detectionSideKey = "detectionSide";
+  static const String usernameKey = "username";
 
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();

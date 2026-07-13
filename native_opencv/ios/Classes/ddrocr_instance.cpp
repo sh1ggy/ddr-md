@@ -467,14 +467,33 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
     cv::Rect ROI_Difficulty = roiRect(ROI_IDX_DIFFICULTY);
     cv::Rect ROI_MaxCombo   = roiRect(ROI_IDX_MAXCOMBO);
 
-    // The title is a shared, screen-centred element while the calibration is
-    // anchored on the P2 (right) panel's badge. With the P1/P2 badges mirror-
-    // symmetric about the screen centreline, the P1 title offset is the P2
-    // offset reflected about the badge (the centreline cancels out), so no
-    // extra calibration is needed: newX1 = detailsX2 - (titleX2 - detailsX1).
+    // Calibration is anchored on the P2 (right) panel's badge. Fields inside
+    // the player's own score panel keep the same badge-relative offset on both
+    // sides, but fields that don't travel with the badge — the screen-centred
+    // title and the per-player top-bar username/difficulty plate — need their
+    // P2 offsets reflected about the badge when P1 is the anchor. With the
+    // P1/P2 badges mirror-symmetric about the screen centreline, the
+    // centreline cancels out and no extra calibration is needed:
+    // newX1 = detailsX2 - (x2 - detailsX1).
     if (side == DetectionSide::LEFT)
-        ROI_Title.x = 2 * ROI_Details.x + ROI_Details.width
-                      - ROI_Title.x - ROI_Title.width;
+    {
+        auto mirrorAboutBadge = [&](cv::Rect &r) {
+            r.x = 2 * ROI_Details.x + ROI_Details.width - r.x - r.width;
+        };
+        mirrorAboutBadge(ROI_Title);
+        // The top-bar plate is position-mirrored between P1 and P2, but its
+        // content is laid out identically on both sides (left-aligned), so a
+        // pure rect mirror lands right-aligned within the P1 plate — e.g. the
+        // difficulty crop catches "…STYLE Challen" instead of "Challenge 14".
+        // Mirror the plate box, then re-place each field at its original
+        // offset within the plate. Plate x-bounds are username_detection_box
+        // from the reference table in lib/ocr_config.dart.
+        const int plateX1 = 1616, plateX2 = 2093;
+        cv::Rect plate(plateX1, 0, plateX2 - plateX1, 1);
+        mirrorAboutBadge(plate);
+        ROI_Username.x   = plate.x + (ROI_Username.x - plateX1);
+        ROI_Difficulty.x = plate.x + (ROI_Difficulty.x - plateX1);
+    }
 
     // Using regionprops Convex hull method (det.chosenHull is the contour the
     // detector picked for the matched Details ROI).

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:ddr_md/components/ocr/ocr_shared.dart';
@@ -36,6 +37,34 @@ class _LoadImageState extends State<LoadImage> {
   // Editable controllers per OCR field, prefilled from the result. Created
   // lazily when a result arrives and reused across results. Title is excluded.
   final Map<String, TextEditingController> _fieldControllers = {};
+  // Latest saved ROI-overlay debug render for the processed image, read back
+  // from disk (the picked-image pipeline always runs with debug capture on).
+  final ValueNotifier<Uint8List?> _debugOverlayBytes = ValueNotifier(null);
+
+  // The native picked-image path writes its composite ROI overlay to a
+  // timestamped ocr_debug_* dir under the app documents dir on every run that
+  // warped. Surface the newest one for on-device troubleshooting.
+  Future<void> _loadLatestDebugOverlay() async {
+    try {
+      final dirs = tempDir
+          .listSync()
+          .whereType<Directory>()
+          .where((d) => d.path.split('/').last.startsWith('ocr_debug_'))
+          .toList()
+        // Timestamped names sort lexicographically; newest last.
+        ..sort((a, b) => a.path.compareTo(b.path));
+      for (final d in dirs.reversed) {
+        final f = File('${d.path}/roi_overlay.png');
+        if (await f.exists()) {
+          _debugOverlayBytes.value = await f.readAsBytes();
+          return;
+        }
+      }
+      _debugOverlayBytes.value = null;
+    } catch (_) {
+      _debugOverlayBytes.value = null;
+    }
+  }
 
   // Prefills the editable controllers from the OCR result, creating missing
   // ones. Title is excluded — it drives song matching directly, not a field.
@@ -51,8 +80,11 @@ class _LoadImageState extends State<LoadImage> {
     }
   }
 
-  List<String> get _populatedKeys =>
-      kOcrFieldOrder.where((k) => _fieldControllers.containsKey(k)).toList();
+  // Difficulty is excluded: SaveScorePanel renders it as a dropdown of the
+  // matched song's charts instead of a free-text field.
+  List<String> get _populatedKeys => kOcrFieldOrder
+      .where((k) => k != 'difficulty' && _fieldControllers.containsKey(k))
+      .toList();
 
   Future<void> _processImage() async {
     if (!_isReady || _isPicking || (!Platform.isIOS && !Platform.isAndroid)) {
@@ -61,6 +93,7 @@ class _LoadImageState extends State<LoadImage> {
     setState(() {
       _isPicking = true;
       _lastResult = null; // Clear previous ROI data immediately
+      _debugOverlayBytes.value = null;
       _isProcessing = false;
     });
 
@@ -150,6 +183,14 @@ class _LoadImageState extends State<LoadImage> {
             _ocrTitle = result.ocrStrings['title']?.trim() ?? '';
             _syncFieldControllers(result.ocrStrings);
           });
+          // The overlay PNG is written before the FFI call returns, so the
+          // newest ocr_debug_* dir is this run's. A run that never warped
+          // writes none — clear instead of showing a stale previous overlay.
+          if (result.isDetected) {
+            _loadLatestDebugOverlay();
+          } else {
+            _debugOverlayBytes.value = null;
+          }
         });
       } else {
         setState(() => _isProcessing = false);
@@ -163,6 +204,7 @@ class _LoadImageState extends State<LoadImage> {
     for (final c in _fieldControllers.values) {
       c.dispose();
     }
+    _debugOverlayBytes.dispose();
     _ocrProcessor.dispose();
     super.dispose();
   }
@@ -267,6 +309,14 @@ class _LoadImageState extends State<LoadImage> {
                               ),
                             ),
                             _floatingSideSelector,
+                            Positioned(
+                              bottom: 12,
+                              right: 12,
+                              child: DebugZoomChip(
+                                label: 'ROI overlay',
+                                bytes: _debugOverlayBytes,
+                              ),
+                            ),
                           ],
                         ),
                         if (hasScore)

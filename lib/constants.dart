@@ -32,6 +32,9 @@ const chosenReadSpeed = 600;
 const songBpm = 200; 
 const rivalCode = "";
 const rivalCodeLength = 8;
+const username = "";
+// In-game dancer names are capped at 8 characters.
+const usernameLength = 8;
 const buffer = 25;
 const maxDifficulty = 19;
 const note =
