@@ -16,10 +16,15 @@ class ScoreCard extends StatelessWidget {
     super.key,
     required this.score,
     this.header,
+    this.onTap,
   });
 
   final Score score;
   final String? header;
+  // When given (the scores list), tapping the card opens it — the score
+  // details page. The song page's latest-score card leaves this null and
+  // keeps its own open-history tap handler.
+  final VoidCallback? onTap;
 
   // The full-combo tier is only meaningful when OCR captured every judgment
   // count; a missing field could hide the miss that breaks the combo.
@@ -85,9 +90,15 @@ class ScoreCard extends StatelessWidget {
         Text('Flare ${score.flare}', style: const TextStyle(fontSize: 14)),
       if (score.username.isNotEmpty)
         Text(score.username, style: const TextStyle(fontSize: 14)),
+      // Cue that a proof capture was saved with this score — visible on its
+      // details page.
+      if (score.imagePath.isNotEmpty)
+        Icon(Icons.photo_camera_outlined,
+            size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
     ];
     return Card(
       child: ListTile(
+        onTap: onTap,
         title: Column(
           children: [
             Text(

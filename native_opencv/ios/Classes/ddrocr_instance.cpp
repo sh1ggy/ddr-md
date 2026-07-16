@@ -141,8 +141,12 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
         std::tm tm_buf;
         localtime_r(&time_t_now, &tm_buf);
 
+        // Debug runs live under a debug/ subdir so they don't mix with the
+        // app's own documents (e.g. the scores/ proof images).
+        const std::string debugRoot = dataPath + "/debug";
+        mkdir(debugRoot.c_str(), 0755);
         std::ostringstream oss;
-        oss << dataPath << "/ocr_debug_"
+        oss << debugRoot << "/ocr_debug_"
             << std::put_time(&tm_buf, "%Y%m%d_%H%M%S")
             << "_" << std::setfill('0') << std::setw(3) << ms.count();
         debugDir = oss.str();

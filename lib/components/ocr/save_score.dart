@@ -9,10 +9,13 @@
 /// the song itself is matched-but-overridable.
 library;
 
+import 'dart:typed_data';
+
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/score_images.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
@@ -32,12 +35,17 @@ class SaveScorePanel extends StatefulWidget {
   // Optional content rendered between the match header and save button.
   // Used by OCR pages to place editable fields above the save button.
   final List<Widget> middleChildren;
+  // Called at save time for the proof image to store alongside the score
+  // (the parent page's ROI overlay render or captured frame). Null result
+  // saves the score without an image.
+  final Future<Uint8List?> Function()? proofImageBytes;
 
   const SaveScorePanel({
     super.key,
     required this.controllers,
     required this.initialTitle,
     this.middleChildren = const [],
+    this.proofImageBytes,
   });
 
   @override
@@ -142,8 +150,16 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
     // canonical chart name; only an unresolvable reading with no pick falls
     // back to the raw OCR text.
     final difficulty = _effectiveDifficulty(song, mode) ?? _text('difficulty');
+    final date = DateTime.now().toIso8601String();
+    // The proof image is written first so the row never points at a path
+    // that failed to save; an image that can't be produced isn't fatal.
+    String imagePath = '';
+    final bytes = await widget.proofImageBytes?.call();
+    if (bytes != null) {
+      imagePath = await ScoreImages.save(bytes, date);
+    }
     final score = Score(
-      date: DateTime.now().toIso8601String(),
+      date: date,
       songTitle:
           song.titletranslit.isNotEmpty ? song.titletranslit : song.title,
       mode: mode,
@@ -157,6 +173,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       good: _number('good'),
       miss: _number('miss'),
       maxCombo: _maxCombo(song, mode),
+      imagePath: imagePath,
     );
     await DatabaseProvider.addScore(score);
     if (!mounted) return;

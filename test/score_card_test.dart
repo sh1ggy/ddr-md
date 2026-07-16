@@ -92,4 +92,41 @@ void main() {
     );
     expect(find.text('Flare XYZ'), findsOneWidget);
   });
+
+  testWidgets('camera cue shown only when a proof image was saved',
+      (tester) async {
+    await pumpCard(
+      tester,
+      const Score(
+        date: date,
+        songTitle: 'Test',
+        mode: Modes.singles,
+        imagePath: 'scores/proof.png',
+      ),
+    );
+    expect(find.byIcon(Icons.photo_camera_outlined), findsOneWidget);
+
+    await pumpCard(
+      tester,
+      const Score(date: date, songTitle: 'Test', mode: Modes.singles),
+    );
+    expect(find.byIcon(Icons.photo_camera_outlined), findsNothing);
+  });
+
+  testWidgets('tapping the card fires onTap', (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScoreCard(
+            score: const Score(
+                date: date, songTitle: 'Test', mode: Modes.singles),
+            onTap: () => tapped = true,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(ScoreCard));
+    expect(tapped, isTrue);
+  });
 }

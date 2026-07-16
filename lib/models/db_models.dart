@@ -54,6 +54,11 @@ class Score {
   final int? good;
   final int? miss;
   final int? maxCombo;
+  // Path of the proof image captured when the score was saved, relative to
+  // the app documents dir (e.g. "scores/xxx.png") — the documents dir itself
+  // moves across iOS app updates so only the relative part is stored. Empty
+  // when no image was available at save time (rows from before v5 included).
+  final String imagePath;
 
   const Score({
     required this.date,
@@ -69,6 +74,7 @@ class Score {
     this.good,
     this.miss,
     this.maxCombo,
+    this.imagePath = '',
   });
 
   Map<String, Object?> toMap() {
@@ -86,6 +92,7 @@ class Score {
       'good': good,
       'miss': miss,
       'maxCombo': maxCombo,
+      'imagePath': imagePath,
     };
   }
 
@@ -103,6 +110,7 @@ class Score {
         good: json["good"],
         miss: json["miss"],
         maxCombo: json["maxCombo"],
+        imagePath: json["imagePath"] ?? '',
       );
 
   @override

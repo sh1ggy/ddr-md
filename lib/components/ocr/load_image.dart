@@ -42,11 +42,12 @@ class _LoadImageState extends State<LoadImage> {
   final ValueNotifier<Uint8List?> _debugOverlayBytes = ValueNotifier(null);
 
   // The native picked-image path writes its composite ROI overlay to a
-  // timestamped ocr_debug_* dir under the app documents dir on every run that
-  // warped. Surface the newest one for on-device troubleshooting.
+  // timestamped ocr_debug_* dir under the app documents dir's debug/ subdir
+  // on every run that warped. Surface the newest one for on-device
+  // troubleshooting.
   Future<void> _loadLatestDebugOverlay() async {
     try {
-      final dirs = tempDir
+      final dirs = Directory('${tempDir.path}/debug')
           .listSync()
           .whereType<Directory>()
           .where((d) => d.path.split('/').last.startsWith('ocr_debug_'))
@@ -325,6 +326,17 @@ class _LoadImageState extends State<LoadImage> {
                             child: SaveScorePanel(
                               controllers: _fieldControllers,
                               initialTitle: _ocrTitle,
+                              // Proof image stored with the score: the ROI
+                              // overlay render when this run produced one,
+                              // else the original screenshot.
+                              proofImageBytes: () async {
+                                final overlay = _debugOverlayBytes.value;
+                                if (overlay != null) return overlay;
+                                final f = File(_pickedImage!.path);
+                                return await f.exists()
+                                    ? await f.readAsBytes()
+                                    : null;
+                              },
                               middleChildren: [
                                 for (final key in _populatedKeys)
                                   OCREditableField(

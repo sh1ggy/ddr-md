@@ -612,6 +612,11 @@ class _OcrPageState extends State<OcrPage>
             SaveScorePanel(
               controllers: _fieldControllers,
               initialTitle: _aggregator.best('title')?.value ?? '',
+              // Proof image stored with the score: the ROI overlay render
+              // when the debug toggle produced one this session, else the
+              // last captured full-color frame that matched.
+              proofImageBytes: () async =>
+                  _debugOverlayBytes.value ?? _captureData.value?.bytes,
               middleChildren: [_buildEditableScorePanel()],
             ),
             // Latest debug images remain inspectable after stopping (the
