@@ -313,6 +313,10 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
     // the best one. Re-run a small loop to collect every candidate that
     // cleared the same threshold, then pick by side.
     std::vector<int> detectedDetailsIndices;
+    // Per-candidate solo template scores, filled by the side-gate loop below
+    // (side != FIRST only). Reused by the wrong-side partner check so it
+    // doesn't have to re-run matchTemplate.
+    std::vector<float> candScores(detectedRois.size(), -1.0f);
     if (dmatch.index >= 0)
     {
         if (side == DetectionSide::FIRST)
@@ -334,6 +338,7 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
             {
                 std::vector<cv::Rect> one{detectedRois[i]};
                 auto m = detailsDetector.classify(inputImg, one, sideMin);
+                candScores[i] = m.score; // best score even when below sideMin
                 if (m.index == 0)
                 {
                     detectedDetailsIndices.push_back((int)i);
@@ -343,6 +348,72 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
             }
             if (detectedDetailsIndices.empty())
                 detectedDetailsIndices.push_back(dmatch.index);
+        }
+    }
+
+    // With LEFT/RIGHT requested but only ONE candidate surviving the gate, the
+    // positional pick below degenerates to "best match wins" and the requested
+    // side has no influence — selecting 1P can silently lock onto the 2P badge
+    // whenever the other player's badge scored under the gate. The two badges
+    // sit in the same horizontal band, mirror-separated by several badge
+    // widths, so look for the partner among the remaining HSV blobs on the
+    // requested side of the survivor:
+    //  - a partner that clears the base minScore (only the tighter side gate
+    //    filtered it) gets promoted so the positional pick can choose it;
+    //  - a band blob that is NOT recognisable as a badge means the requested
+    //    side is visible but unreadable this frame — skip the frame rather
+    //    than anchor the homography on the wrong player's panel.
+    // No band blob on the requested side (single-panel framing) keeps the
+    // current best-match behaviour: a lone badge is genuinely ambiguous.
+    bool sideRejected = false;
+    if (side != DetectionSide::FIRST && detectedDetailsIndices.size() == 1)
+    {
+        const int chosenIdx = detectedDetailsIndices[0];
+        const cv::Rect &chosen = detectedRois[chosenIdx];
+        const float cx = chosen.x + chosen.width * 0.5f;
+        const float cy = chosen.y + chosen.height * 0.5f;
+        const bool wantLeft = (side == DetectionSide::LEFT);
+        // Minimum centre-to-centre distance (in badge widths) for a blob to be
+        // the other panel's badge rather than an adjacent sibling tab. The
+        // real pair sits ~4 badge widths apart in the reference layout.
+        const float minPartnerDist = 2.5f * (float)chosen.width;
+        int   bestPartner = -1;
+        float bestPartnerScore = -1.0f;
+        bool  bandBlobOnWantedSide = false;
+        for (size_t i = 0; i < detectedRois.size(); ++i)
+        {
+            if ((int)i == chosenIdx) continue;
+            const cv::Rect &r = detectedRois[i];
+            const float rx = r.x + r.width * 0.5f;
+            const float ry = r.y + r.height * 0.5f;
+            if (wantLeft ? (rx >= cx) : (rx <= cx)) continue;
+            // Same tab-row band and comparable size as the surviving badge.
+            if (std::abs(ry - cy) > (float)chosen.height) continue;
+            if (r.height * 2 < chosen.height || r.height > chosen.height * 2) continue;
+            if (r.width * 2 < chosen.width || r.width > chosen.width * 2) continue;
+            if (std::abs(rx - cx) < minPartnerDist) continue;
+            bandBlobOnWantedSide = true;
+            if (candScores[i] >= minScore && candScores[i] > bestPartnerScore)
+            {
+                bestPartnerScore = candScores[i];
+                bestPartner = (int)i;
+            }
+        }
+        if (bestPartner >= 0)
+        {
+            detectedDetailsIndices.push_back(bestPartner);
+            platform_log("[DETAILS_DET] promoted %s-side partner %d score=%.3f "
+                         "(under side gate, over minScore %.2f)\n",
+                         wantLeft ? "left" : "right", bestPartner,
+                         bestPartnerScore, minScore);
+        }
+        else if (bandBlobOnWantedSide)
+        {
+            sideRejected = true;
+            platform_log("[DETAILS_DET] requested %s side has a band blob but no "
+                         "recognisable badge — skipping frame instead of using "
+                         "wrong-side badge %d\n",
+                         wantLeft ? "left" : "right", chosenIdx);
         }
     }
 
@@ -363,12 +434,15 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
     result.rois = detectedRois;
     save_img("BW3", BW3);
 
-    if (detectedDetailsIndices.empty())
+    if (detectedDetailsIndices.empty() || sideRejected)
     {
         auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t_total_start).count();
         platform_log("[TIMER] process_image total (no Details found): %lld ms\n", (long long)t_total_ms);
-        platform_log("Details template match failed (best score=%.3f). Defaulting to no match.\n", dmatch.score);
+        if (sideRejected)
+            platform_log("Details badge only found on the wrong side (score=%.3f). Skipping frame.\n", dmatch.score);
+        else
+            platform_log("Details template match failed (best score=%.3f). Defaulting to no match.\n", dmatch.score);
         result.detailsRoiIndex = -1;
         return det;
     }
