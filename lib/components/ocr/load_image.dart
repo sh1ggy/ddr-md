@@ -7,7 +7,9 @@ import 'dart:ui' as ui;
 import 'package:ddr_md/components/ocr/ocr_shared.dart';
 import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_overlay.dart';
-import 'package:ddr_md/helpers.dart' show judgmentColor;
+import 'package:ddr_md/grades.dart' show flareRankIcon;
+import 'package:ddr_md/helpers.dart'
+    show judgmentColor, kFlareRanks, resolveOcrFlare;
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -71,6 +73,9 @@ class _LoadImageState extends State<LoadImage> {
   // ones. Title is excluded — it drives song matching directly, not a field.
   // Only keys present (and non-empty) in [ocrStrings] get a field.
   void _syncFieldControllers(Map<String, String> ocrStrings) {
+    // Flare always gets a controller: it renders as a hard-set rank dropdown
+    // that can be set even when OCR read nothing.
+    _fieldControllers.putIfAbsent('flare', () => TextEditingController());
     for (final key in kOcrFieldOrder) {
       if (key == 'title') continue;
       final value = ocrStrings[key]?.trim() ?? '';
@@ -339,10 +344,15 @@ class _LoadImageState extends State<LoadImage> {
                               },
                               middleChildren: [
                                 for (final key in _populatedKeys)
-                                  OCREditableField(
-                                    keyName: key,
-                                    controller: _fieldControllers[key]!,
-                                  ),
+                                  if (key == 'flare')
+                                    FlareDropdownField(
+                                      controller: _fieldControllers[key]!,
+                                    )
+                                  else
+                                    OCREditableField(
+                                      keyName: key,
+                                      controller: _fieldControllers[key]!,
+                                    ),
                               ],
                             ),
                           ),
@@ -476,6 +486,124 @@ class OCREditableField extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+// The flare counterpart of SaveScorePanel's difficulty dropdown: a hard-set
+// dropdown of the canonical flare ranks (I..IX, EX — the DDR World flare
+// gauge), pre-selected by resolving the raw OCR reading (see
+// [resolveOcrFlare]) and overridable by the user. Picking a rank writes the
+// canonical value back into [controller] so the save flow reads it like any
+// other field; the clear button empties it ("no flare"). Shared by the
+// load-image and camera pages.
+class FlareDropdownField extends StatelessWidget {
+  final TextEditingController controller;
+  // Called when the user picks a rank or clears the field, so the camera flow
+  // can stop auto-prefilling it from the rolling average.
+  final ValueChanged<String>? onUserEdit;
+  final double? confidence;
+  final int? sampleCount;
+
+  const FlareDropdownField({
+    super.key,
+    required this.controller,
+    this.onUserEdit,
+    this.confidence,
+    this.sampleCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Listen to the controller so live prefills from the camera aggregator
+    // (which write straight into it) update the selected rank.
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final raw = value.text.trim();
+        final rank = resolveOcrFlare(raw);
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'FLARE',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: rank,
+                        isExpanded: true,
+                        hint: Text(
+                          // No rank matched the reading — show it so the user
+                          // knows what the scan said while they pick.
+                          raw.isEmpty ? 'None' : '"$raw"?',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        items: [
+                          for (final r in kFlareRanks)
+                            DropdownMenuItem(
+                              value: r,
+                              child: Row(
+                                children: [
+                                  Image.asset(flareRankIcon(r), height: 18),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    r,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          controller.text = v;
+                          onUserEdit?.call(v);
+                        },
+                      ),
+                    ),
+                    if (raw.isNotEmpty)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'No flare',
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          controller.clear();
+                          onUserEdit?.call('');
+                        },
+                      ),
+                    if (confidence != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Text(
+                          sampleCount != null
+                              ? '${(confidence! * 100).round()}% ($sampleCount)'
+                              : '${(confidence! * 100).round()}%',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

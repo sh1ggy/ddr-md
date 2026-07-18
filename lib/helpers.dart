@@ -196,6 +196,65 @@ String? resolveOcrDifficulty(
   return byNotes.length == 1 ? byNotes.single.$1 : null;
 }
 
+// Canonical flare ranks in ascending order, as shown on the DDR World
+// results screen: FLARE I..IX, then FLARE EX.
+const List<String> kFlareRanks = [
+  'I',
+  'II',
+  'III',
+  'IV',
+  'V',
+  'VI',
+  'VII',
+  'VIII',
+  'IX',
+  'EX',
+];
+
+// Resolves a noisy OCR flare reading ("FLARE 1X", "vii", "4", "ex") to its
+// canonical rank in [kFlareRanks], or null when it's blank, NONE, or
+// unreadable.
+//
+// Closed-vocabulary correction: the reading is scored against each rank's
+// on-screen forms (the rank alone and its full "FLARE <rank>" label) with an
+// edit distance that counts glyphs OCR confuses in this font as equal
+// (1/l→I, U/Y→V, K→X). The unique nearest rank within one edit wins —
+// misreads inside the label ("FIARE IX") cost nothing extra because the
+// label is a candidate form, not a prefix to strip. A tie (e.g. "X", one
+// edit from both IX and EX) stays unresolved rather than guessing.
+String? resolveOcrFlare(String raw) {
+  final f = raw.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  if (f.isEmpty || f == 'NONE' || f == '0') return null;
+  // A purely numeric reading is a typed level, not a misread numeral —
+  // resolve it exactly or not at all.
+  final level = int.tryParse(f);
+  if (level != null) {
+    return level >= 1 && level <= 9 ? kFlareRanks[level - 1] : null;
+  }
+  String glyphClasses(String s) => s
+      .replaceAll(RegExp(r'[1L]'), 'I')
+      .replaceAll(RegExp(r'[UY]'), 'V')
+      .replaceAll('K', 'X');
+  final reading = glyphClasses(f);
+  String? best;
+  var bestDist = 2;
+  var ambiguous = false;
+  for (final rank in kFlareRanks) {
+    final d = min(
+      levenshtein(reading, glyphClasses(rank)),
+      levenshtein(reading, glyphClasses('FLARE$rank')),
+    );
+    if (d < bestDist) {
+      bestDist = d;
+      best = rank;
+      ambiguous = false;
+    } else if (d == bestDist) {
+      ambiguous = true;
+    }
+  }
+  return ambiguous ? null : best;
+}
+
 // Position of a version in the DDR release order; unknown versions sort last.
 int versionIndex(String version) {
   final index = constants.versionOrder.indexOf(version);

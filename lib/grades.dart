@@ -3,6 +3,8 @@
 /// full-combo tier from judgement counts, plus their assets/icons art.
 library;
 
+import 'package:ddr_md/helpers.dart' show kFlareRanks, resolveOcrFlare;
+
 /// Grades in descending order with their inclusive score floors.
 /// E is a fail (gauge depleted) and is never reached by score alone.
 enum Grade {
@@ -140,18 +142,21 @@ String? fullComboIcon(FullComboTier tier) {
   }
 }
 
+/// Icon asset for a canonical flare rank from [kFlareRanks].
+String flareRankIcon(String rank) => rank == 'EX'
+    ? 'assets/icons/flare_ex.png'
+    : 'assets/icons/flare_${kFlareRanks.indexOf(rank) + 1}.png';
+
 /// Icon for the flare rank as detected by OCR ([Score.flare]). Accepts the
 /// raw reading: an optional FLARE prefix, then a roman numeral I-IX, a digit,
-/// "EX", or "NONE". 1/l misreads of I are normalised before matching, so
-/// "FLARE 1X" still correlates to flare_9.
+/// "EX", or "NONE" (see [resolveOcrFlare], which normalises 1/l misreads of I
+/// so "FLARE 1X" still correlates to flare_9). A blank/NONE reading gets the
+/// empty-slot icon; an unreadable one gets no icon.
 String? flareIcon(String flare) {
-  const romans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'];
+  final rank = resolveOcrFlare(flare);
+  if (rank != null) return flareRankIcon(rank);
   var f = flare.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
   if (f.startsWith('FLARE')) f = f.substring(5);
   if (f.isEmpty || f == 'NONE' || f == '0') return 'assets/icons/icon_0.png';
-  if (f == 'EX') return 'assets/icons/flare_ex.png';
-  final level =
-      int.tryParse(f) ?? romans.indexOf(f.replaceAll(RegExp(r'[1L]'), 'I')) + 1;
-  if (level >= 1 && level <= 9) return 'assets/icons/flare_$level.png';
   return null;
 }

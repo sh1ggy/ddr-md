@@ -83,18 +83,15 @@ class ScoreCard extends StatelessWidget {
     final flareArt = score.flare.isNotEmpty ? flareIcon(score.flare) : null;
     final details = <Widget>[
       if (score.difficulty.isNotEmpty)
-        Text(score.difficulty, style: const TextStyle(fontSize: 14)),
+        Text(score.difficulty,
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: kInGameDifficultyColors[score.difficulty])),
       if (flareArt != null)
         Image.asset(flareArt, height: 18)
       else if (score.flare.isNotEmpty)
         Text('Flare ${score.flare}', style: const TextStyle(fontSize: 14)),
-      if (score.username.isNotEmpty)
-        Text(score.username, style: const TextStyle(fontSize: 14)),
-      // Cue that a proof capture was saved with this score — visible on its
-      // details page.
-      if (score.imagePath.isNotEmpty)
-        Icon(Icons.photo_camera_outlined,
-            size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
     ];
     return Card(
       child: ListTile(

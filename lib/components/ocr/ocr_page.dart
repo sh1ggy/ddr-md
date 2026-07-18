@@ -667,7 +667,7 @@ class _OcrPageState extends State<OcrPage>
     final bool showHistograms = _histogramsExpanded;
     final rows = <Widget>[
       for (final key in kOcrFieldOrder)
-        if (key != 'title' && key != 'difficulty')
+        if (key != 'title' && key != 'difficulty' && key != 'flare')
           if (_aggregator.best(key) case final best?)
             OCREditableField(
               keyName: key,
@@ -684,6 +684,18 @@ class _OcrPageState extends State<OcrPage>
               onUserEdit: (_) => _userEditedFields.add(key),
           ),
     ];
+    // Flare renders as a hard-set rank dropdown (I..IX, EX) instead of a
+    // free-text field, and shows even when no reading landed so the rank can
+    // be set by hand. The dropdown replaces the candidate histogram as the
+    // way to pick between values.
+    if (rows.isNotEmpty) {
+      rows.add(FlareDropdownField(
+        controller: _controllerFor('flare'),
+        confidence: _aggregator.best('flare')?.confidence,
+        sampleCount: _aggregator.best('flare')?.count,
+        onUserEdit: (_) => _userEditedFields.add('flare'),
+      ));
+    }
     return _scorePanelShell(
       rows: rows,
       empty: const OcrEmptyState(

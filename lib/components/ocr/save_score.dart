@@ -165,7 +165,9 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       mode: mode,
       difficulty: difficulty,
       username: _text('username'),
-      flare: _text('flare'),
+      // The dropdown writes canonical ranks into the controller; only an
+      // unresolvable reading the user never touched falls back to raw text.
+      flare: resolveOcrFlare(_text('flare')) ?? _text('flare'),
       score: _number('score'),
       marvelous: _number('marvelous'),
       perfect: _number('perfect'),

@@ -10,7 +10,7 @@ library;
 import 'dart:io';
 
 import 'package:ddr_md/components/ocr/load_image.dart'
-    show OCREditableField;
+    show FlareDropdownField, OCREditableField;
 import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
@@ -95,7 +95,9 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
       mode: _score.mode,
       difficulty: _text('difficulty'),
       username: _text('username'),
-      flare: _text('flare'),
+      // The dropdown writes canonical ranks into the controller; only a
+      // pre-existing unresolvable value left untouched stays raw.
+      flare: resolveOcrFlare(_text('flare')) ?? _text('flare'),
       score: _number('score'),
       marvelous: _number('marvelous'),
       perfect: _number('perfect'),
@@ -176,10 +178,13 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (final key in _kEditableKeys)
-                    OCREditableField(
-                      keyName: key,
-                      controller: _controllers[key]!,
-                    ),
+                    if (key == 'flare')
+                      FlareDropdownField(controller: _controllers[key]!)
+                    else
+                      OCREditableField(
+                        keyName: key,
+                        controller: _controllers[key]!,
+                      ),
                 ],
               ),
             )
