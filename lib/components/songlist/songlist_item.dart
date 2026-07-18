@@ -54,13 +54,30 @@ class _SongListItemState extends State<SongListItem> {
             ),
         ],
       ),
-      title: Text(
-        widget.songInfo.title,
-        style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            overflow:
-                widget.isSearch ? TextOverflow.visible : TextOverflow.ellipsis),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.songInfo.title,
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                overflow: widget.isSearch
+                    ? TextOverflow.visible
+                    : TextOverflow.ellipsis),
+          ),
+          if (widget.songInfo.titletranslit.isNotEmpty &&
+              widget.songInfo.titletranslit != widget.songInfo.title)
+            Text(
+              widget.songInfo.titletranslit,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                  overflow: widget.isSearch
+                      ? TextOverflow.visible
+                      : TextOverflow.ellipsis),
+            ),
+        ],
       ),
       subtitle: SongDifficulty(
           difficulty: songState.modes == Modes.singles

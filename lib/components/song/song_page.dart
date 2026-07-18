@@ -186,6 +186,18 @@ class _SongPageState extends State<SongPage> {
                       ),
                       textAlign: TextAlign.center,
                     ),
+                    if (songState.songInfo!.titletranslit.isNotEmpty &&
+                        songState.songInfo!.titletranslit !=
+                            songState.songInfo!.title)
+                      Text(
+                        songState.songInfo!.titletranslit,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.0,
+                          color: Colors.grey,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     if (songState.songInfo!.artist.isNotEmpty)
                       Text(
                         songState.songInfo!.artist,
