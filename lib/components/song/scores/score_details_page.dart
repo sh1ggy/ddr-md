@@ -235,22 +235,22 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
                 ),
                 const SizedBox(width: 6),
               ],
-              Flexible(
-                child: Text(
-                  // In view mode the ScoreCard below shows the date, so the
-                  // header carries only the mode. While editing (card hidden)
-                  // the date joins it — for a load-image score reflecting the
-                  // working (possibly changed) play date.
-                  _editing
-                      ? '${_score.mode.name} • ${formatDate(_dateEditable ? _editPlayedAt : DateTime.parse(_score.playedAt))}'
-                      : _score.mode.name,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+              if (_editing)
+                Flexible(
+                  child: Text(
+                    // In view mode the ScoreCard below already shows the date.
+                    // While editing (card hidden) it's shown here instead,
+                    // reflecting the working (possibly changed) play date.
+                    formatDate(_dateEditable
+                        ? _editPlayedAt
+                        : DateTime.parse(_score.playedAt)),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 8),

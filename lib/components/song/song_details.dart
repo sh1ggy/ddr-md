@@ -3,7 +3,6 @@
 /// Description: Widgets that display base song information.
 library;
 
-import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -24,6 +23,28 @@ String _bpmRangeSuffix(Chart chart) {
     buffer.write(' (~${chart.trueMax})');
   }
   return buffer.toString();
+}
+
+const _difficultyColors = <String, Color>{
+  "beginner": Colors.cyan,
+  "easy": Colors.orange,
+  "medium": Colors.red,
+  "hard": Colors.green,
+  "challenge": Colors.purple,
+};
+
+/// The difficulty key ("beginner".."challenge") the picker's chosen index
+/// refers to: the picker only shows the mode's non-null levels, so the index
+/// counts across those.
+String? _chosenDifficultyKey(Difficulty difficulty, int chosenIndex) {
+  final keys = difficulty
+      .toJson()
+      .entries
+      .where((entry) => entry.value != null)
+      .map((entry) => entry.key)
+      .toList();
+  if (keys.isEmpty) return null;
+  return keys[chosenIndex.clamp(0, keys.length - 1)];
 }
 
 // Method for formatting time from a given time (s)
@@ -49,6 +70,16 @@ class SongDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
     final chart = this.chart;
+
+    final difficulty =
+        songState.modes == Modes.singles ? songInfo.singles : songInfo.doubles;
+    final notecounts = songState.modes == Modes.singles
+        ? songInfo.singlesNotecounts
+        : songInfo.doublesNotecounts;
+    final chosenKey =
+        _chosenDifficultyKey(difficulty, songState.chosenDifficulty);
+    final chosenNotecount =
+        chosenKey == null ? null : notecounts.toJson()[chosenKey];
 
     return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -109,21 +140,25 @@ class SongDetails extends StatelessWidget {
                     ],
                   ),
                 ),
-              RichText(
-                text: TextSpan(
-                  style: TextStyle(
-                      fontSize: 16.0,
-                      color: DefaultTextStyle.of(context).style.color),
-                  children: <TextSpan>[
-                    TextSpan(
-                      text: (formattedTime(
-                              timeInSecond: songInfo.songLength.toInt()) +
-                          " min"),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
+              Row(children: [
+                Text(
+                  formattedTime(timeInSecond: songInfo.songLength.toInt()) +
+                      " min",
+                  style: const TextStyle(
+                      fontSize: 16.0, fontWeight: FontWeight.bold),
                 ),
-              ),
+                if (chosenNotecount != null) ...[
+                  const SizedBox(width: 8),
+                  const Icon(Icons.music_note, size: 14, color: Colors.grey),
+                  Text(
+                    "$chosenNotecount",
+                    style: TextStyle(
+                        fontSize: 16.0,
+                        color: _difficultyColors[chosenKey],
+                        fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ]),
               Text(
                 songInfo.version,
                 style: const TextStyle(
@@ -131,23 +166,9 @@ class SongDetails extends StatelessWidget {
                     color: Colors.grey,
                     fontStyle: FontStyle.italic),
               ),
-              Align(
-                  alignment: AlignmentDirectional.bottomCenter,
-                  child: () {
-                    Difficulty songDifficulty = songState.modes == Modes.singles
-                        ? songInfo.singles
-                        : songInfo.doubles;
-                    // Every song has per-difficulty radar data, so the
-                    // difficulty is always selectable.
-                    return SongDifficultyPicker(difficulty: songDifficulty);
-                  }()),
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: SongNotecounts(
-                    notecounts: songState.modes == Modes.singles
-                        ? songInfo.singlesNotecounts
-                        : songInfo.doublesNotecounts),
-              ),
+              // Every song has per-difficulty radar data, so the
+              // difficulty is always selectable.
+              SongDifficultyPicker(difficulty: difficulty),
             ],
           ),
         ]);
