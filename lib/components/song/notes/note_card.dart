@@ -15,12 +15,16 @@ class NoteCard extends StatelessWidget {
   const NoteCard({
     super.key,
     required this.contents,
-    required this.date,
+    required this.id,
+    required this.createdAt,
     required this.getNotes,
   });
 
   final String contents;
-  final String date;
+  // Stable identity, threaded to edit/delete actions.
+  final String id;
+  // When the note was created; shown on the card.
+  final String createdAt;
   final void Function(String, Modes) getNotes;
 
   @override
@@ -35,7 +39,8 @@ class NoteCard extends StatelessWidget {
           builder: (BuildContext context) {
             return NewNoteField(
               contentsInit: contents,
-              date: date,
+              id: id,
+              createdAt: createdAt,
               getNotes: getNotes,
             );
           },
@@ -49,7 +54,7 @@ class NoteCard extends StatelessWidget {
         child: ListTile(
           title: Column(
             children: [
-              Text(formatDate(DateTime.parse(date)),
+              Text(formatDate(DateTime.parse(createdAt)),
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,

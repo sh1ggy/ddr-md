@@ -39,6 +39,10 @@ class SaveScorePanel extends StatefulWidget {
   // (the parent page's ROI overlay render or captured frame). Null result
   // saves the score without an image.
   final Future<Uint8List?> Function()? proofImageBytes;
+  // How this score is being captured. A load-image screenshot carries no
+  // capture time, so its play date is user-set here and editable later; a
+  // camera score is stamped with the current time and its date is fixed.
+  final ScoreSource source;
 
   const SaveScorePanel({
     super.key,
@@ -46,6 +50,7 @@ class SaveScorePanel extends StatefulWidget {
     required this.initialTitle,
     this.middleChildren = const [],
     this.proofImageBytes,
+    required this.source,
   });
 
   @override
@@ -60,6 +65,10 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   // picking a different song).
   String? _pickedDifficulty;
   bool _savedOnce = false;
+
+  // The play date for the score. Seeded to now; for load-image scores the user
+  // can change the day via the date row (camera scores keep the capture time).
+  DateTime _playedAt = DateTime.now();
 
   // Username saved in settings, read once — settings can't change while this
   // panel is open. Empty when the user never set one (warning disabled).
@@ -150,16 +159,13 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
     // canonical chart name; only an unresolvable reading with no pick falls
     // back to the raw OCR text.
     final difficulty = _effectiveDifficulty(song, mode) ?? _text('difficulty');
-    final date = DateTime.now().toIso8601String();
-    // The proof image is written first so the row never points at a path
-    // that failed to save; an image that can't be produced isn't fatal.
-    String imagePath = '';
-    final bytes = await widget.proofImageBytes?.call();
-    if (bytes != null) {
-      imagePath = await ScoreImages.save(bytes, date);
-    }
-    final score = Score(
-      date: date,
+    // Build the row first so it owns its generated id; the proof image is then
+    // written under that id and the path folded back in. Writing the image
+    // before the insert means the row never points at a path that failed to
+    // save; an image that can't be produced isn't fatal.
+    var score = Score(
+      playedAt: _playedAt.toIso8601String(),
+      source: widget.source,
       songTitle:
           song.titletranslit.isNotEmpty ? song.titletranslit : song.title,
       mode: mode,
@@ -175,8 +181,12 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       good: _number('good'),
       miss: _number('miss'),
       maxCombo: _maxCombo(song, mode),
-      imagePath: imagePath,
     );
+    final bytes = await widget.proofImageBytes?.call();
+    if (bytes != null) {
+      final imagePath = await ScoreImages.save(bytes, score.id);
+      score = score.copyWith(imagePath: imagePath);
+    }
     await DatabaseProvider.addScore(score);
     if (!mounted) return;
     setState(() => _savedOnce = true);
@@ -230,6 +240,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
             isWeak: state.isWeak,
           ),
           if (state.song != null) _buildDifficultyRow(state.song!, mode),
+          if (widget.source == ScoreSource.loadImage) _buildDateRow(),
           if (widget.middleChildren.isNotEmpty) ...widget.middleChildren,
           _buildUsernameMismatchWarning(),
           buildSaveButton(
@@ -309,6 +320,54 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
         ],
       ),
     );
+  }
+
+  // Editable play-date row, shown only for load-image scores (a screenshot has
+  // no capture time of its own). Day-granularity: tapping opens a calendar
+  // picker and the time is pinned to noon so the stored timestamp can't drift
+  // across a day boundary under a timezone offset.
+  Widget _buildDateRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'PLAY DATE',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _savedOnce ? null : _pickPlayDate,
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: Text(
+                  formatPlayDate(_playedAt),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickPlayDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _playedAt,
+      firstDate: DateTime(2016), // DDR A (2016) is the earliest scoring era.
+      lastDate: now,
+    );
+    if (picked == null) return;
+    // Keep day granularity, pin the time to noon (see _buildDateRow).
+    setState(() =>
+        _playedAt = DateTime(picked.year, picked.month, picked.day, 12));
   }
 
   // Gentle heads-up when the detected player name isn't the username saved in

@@ -17,12 +17,16 @@ class NewNoteField extends StatefulWidget {
   const NewNoteField({
     super.key,
     this.contentsInit = "",
-    this.date,
+    this.id,
+    this.createdAt,
     this.getNotes,
   });
 
   final String? contentsInit;
-  final String? date;
+  // Identity of the note being edited; null when composing a new note.
+  final String? id;
+  // Creation timestamp of the note being edited, shown at the top.
+  final String? createdAt;
   final void Function(String, Modes)? getNotes;
 
   @override
@@ -59,8 +63,8 @@ class NewNoteFieldState extends State<NewNoteField> {
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                if (widget.date != null)
-                  Text(formatDate(DateTime.parse(widget.date!)),
+                if (widget.createdAt != null)
+                  Text(formatDate(DateTime.parse(widget.createdAt!)),
                       style:
                           TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                 Padding(
@@ -97,14 +101,14 @@ class NewNoteFieldState extends State<NewNoteField> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (widget.getNotes != null && widget.date != null)
+                    if (widget.getNotes != null && widget.id != null)
                       IconButton(
                         icon: const Icon(Icons.delete_forever),
                         color: Colors.redAccent,
                         tooltip: "Delete note",
                         onPressed: () async {
                           HapticFeedback.lightImpact();
-                          await DatabaseProvider.deleteNote(widget.date!);
+                          await DatabaseProvider.deleteNote(widget.id!);
                           if (!context.mounted) return;
                           Navigator.pop(context, true);
                           widget.getNotes!(
@@ -119,17 +123,18 @@ class NewNoteFieldState extends State<NewNoteField> {
                       tooltip: "Save note",
                       onPressed: () async {
                         HapticFeedback.lightImpact();
-                        if (widget.contentsInit != "" && widget.date != null) {
+                        if (widget.id != null) {
                           await DatabaseProvider.updateNote(
                               Note(
-                                  date: widget.date!,
+                                  id: widget.id!,
+                                  createdAt: widget.createdAt!,
                                   contents: _contents,
                                   songTitle: songState.songInfo!.titletranslit,
                                   mode: songState.modes),
                               _contents);
                         } else {
                           await DatabaseProvider.addNote(Note(
-                              date: DateTime.now().toIso8601String(),
+                              createdAt: DateTime.now().toIso8601String(),
                               contents: _contents,
                               songTitle: songState.songInfo!.titletranslit,
                               mode: songState.modes));

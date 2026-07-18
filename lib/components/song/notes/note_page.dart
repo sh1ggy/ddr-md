@@ -48,7 +48,8 @@ class NotesTabState extends State<NotesTab> {
       setState(() {
         _noteWidgets.add(NoteCard(
           contents: note.contents,
-          date: note.date,
+          id: note.id,
+          createdAt: note.createdAt,
           getNotes: getNotes,
         ));
       });
@@ -118,7 +119,8 @@ class NotesTabState extends State<NotesTab> {
                               snapshot.data!.map<NoteCard>((Note note) {
                             return NoteCard(
                               contents: note.contents,
-                              date: note.date,
+                              id: note.id,
+                              createdAt: note.createdAt,
                               getNotes: getNotes,
                             );
                           }).toList();

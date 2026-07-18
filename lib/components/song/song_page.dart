@@ -230,7 +230,7 @@ class _SongPageState extends State<SongPage> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 Text(
-                                  formatDate(DateTime.parse(latestNote!.date)),
+                                  formatDate(DateTime.parse(latestNote!.createdAt)),
                                   style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500),

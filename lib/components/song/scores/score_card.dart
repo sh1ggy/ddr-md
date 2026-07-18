@@ -6,10 +6,13 @@
 /// latest-note card layout.
 library;
 
+import 'package:ddr_md/components/song_json.dart' show Modes;
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class ScoreCard extends StatelessWidget {
   const ScoreCard({
@@ -46,8 +49,9 @@ class ScoreCard extends StatelessWidget {
   }
 
   // Money score with the grade computed from it: icon where art exists,
-  // grade label otherwise, plus the full-combo lamp when one was earned.
-  Widget _buildScoreRow() {
+  // grade label otherwise, the full-combo lamp when one was earned, and the
+  // flare rank alongside the score it was earned with.
+  Widget _buildScoreRow(Widget? flare) {
     final grade = gradeForScore(score.score!);
     final gradeArt = gradeIcon(grade);
     final fcArt = switch (_fullComboTier()) {
@@ -73,39 +77,78 @@ class ScoreCard extends StatelessWidget {
           const SizedBox(width: 8),
           Image.asset(fcArt, height: 16),
         ],
+        if (flare != null) ...[
+          const SizedBox(width: 8),
+          flare,
+        ],
       ],
     );
   }
 
+  // The chart level for this score's difficulty, resolved from the song the
+  // page is showing. Null when the difficulty doesn't name one of the song's
+  // charts (raw OCR text) or the card is somehow shown for another song.
+  int? _chartLevel(BuildContext context) {
+    final song = Provider.of<SongState>(context, listen: false).songInfo;
+    if (song == null ||
+        (song.titletranslit != score.songTitle &&
+            song.title != score.songTitle)) {
+      return null;
+    }
+    final levels =
+        score.mode == Modes.singles ? song.singles : song.doubles;
+    for (final (name, level) in difficultyOptions(levels)) {
+      if (name == score.difficulty) return level;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final dateText = formatDate(DateTime.parse(score.date));
+    final dateText = formatDate(DateTime.parse(score.playedAt));
     final flareArt = score.flare.isNotEmpty ? flareIcon(score.flare) : null;
+    final flare = flareArt != null
+        ? Image.asset(flareArt, height: 18)
+        : score.flare.isNotEmpty
+            ? Text('Flare ${score.flare}', style: const TextStyle(fontSize: 14))
+            : null;
+    final level = _chartLevel(context);
     final details = <Widget>[
       if (score.difficulty.isNotEmpty)
-        Text(score.difficulty,
+        Text(level != null ? '${score.difficulty} $level' : score.difficulty,
             style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
                 color: kInGameDifficultyColors[score.difficulty])),
-      if (flareArt != null)
-        Image.asset(flareArt, height: 18)
-      else if (score.flare.isNotEmpty)
-        Text('Flare ${score.flare}', style: const TextStyle(fontSize: 14)),
+      // The flare rank rides with the score row; it only lands here when
+      // there is no score to attach it to.
+      if (flare != null && score.score == null) flare,
     ];
     return Card(
       child: ListTile(
         onTap: onTap,
         title: Column(
           children: [
-            Text(
-              header ?? dateText,
-              style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary),
+            // Header/date line with a small badge marking how the score was
+            // captured — live camera OCR vs an imported screenshot.
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _SourceBadge(source: score.source),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    header ?? dateText,
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary),
+                  ),
+                ),
+              ],
             ),
-            if (score.score != null) _buildScoreRow(),
+            if (score.score != null) _buildScoreRow(flare),
             if (details.isNotEmpty)
               Wrap(
                 alignment: WrapAlignment.center,
@@ -161,6 +204,34 @@ class NoScoreCard extends StatelessWidget {
             ),
           ].expand((x) => [const SizedBox(height: 8), x]).skip(1).toList(),
         ),
+      ),
+    );
+  }
+}
+
+// Small badge marking how a score was captured: live camera OCR vs an
+// imported screenshot (load image). Icons mirror the two entry points on the
+// OCR page (videocam / photo library).
+class _SourceBadge extends StatelessWidget {
+  const _SourceBadge({required this.source});
+
+  final ScoreSource source;
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, tooltip) = switch (source) {
+      ScoreSource.camera => (Icons.videocam_outlined, 'Captured with camera OCR'),
+      ScoreSource.loadImage => (
+          Icons.photo_library_outlined,
+          'Imported from a screenshot'
+        ),
+    };
+    return Tooltip(
+      message: tooltip,
+      child: Icon(
+        icon,
+        size: 16,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
     );
   }
