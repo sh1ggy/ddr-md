@@ -14,6 +14,8 @@ class SongInfo {
   String name;
   String title;
   String titletranslit;
+  String artist;
+  String artisttranslit;
   double songLength;
   bool perChart;
   Difficulty singles;
@@ -30,6 +32,8 @@ class SongInfo {
     required this.name,
     required this.title,
     required this.titletranslit,
+    required this.artist,
+    required this.artisttranslit,
     required this.songLength,
     required this.perChart,
     required this.singles,
@@ -72,6 +76,8 @@ class SongInfo {
       name: json["name"] ?? "",
       title: json["title"] ?? "",
       titletranslit: json["titletranslit"] ?? "",
+      artist: json["artist"] ?? "",
+      artisttranslit: json["artisttranslit"] ?? "",
       songLength: (json["song_length"] ?? 0).toDouble(),
       perChart: json["per_chart"] ?? false,
 
@@ -103,6 +109,8 @@ class SongInfo {
         "name": name,
         "title": title,
         "titletranslit": titletranslit,
+        "artist": artist,
+        "artisttranslit": artisttranslit,
         "song_length": songLength,
         "per_chart": perChart,
         "sp": singles.toJson(),
