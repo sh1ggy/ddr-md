@@ -13,8 +13,8 @@
 //   ints[4]  tophat_kernel_size
 //   ints[5]  morph_width
 //   ints[6]  morph_height
-//   ints[7..78]   roi[12][6]  (row-major)
-//   ints[79..82]  combinedRoi[4]
+//   ints[7..84]   roi[13][6]  (row-major)
+//   ints[85..88]  combinedRoi[4]
 //
 //   doubles[0]  simplification_epsilon
 //   doubles[1]  area_min_factor
@@ -28,7 +28,7 @@
 #include <cstdint>
 #include "ddrocr_instance.h"
 
-static const int kCfgIntCount = 83;
+static const int kCfgIntCount = 89;
 static const int kCfgDoubleCount = 7;
 
 // Returns a COCRConfig built from the arrays, or the struct defaults if either
@@ -51,7 +51,7 @@ static inline COCRConfig BuildCOCRConfigFromArrays(const int32_t *ints, int ni,
     cfg.morph_height = ints[6];
 
     int k = 7;
-    for (int r = 0; r < 12; r++) {
+    for (int r = 0; r < 13; r++) {
         for (int c = 0; c < 6; c++) {
             cfg.roi[r][c] = ints[k++];
         }

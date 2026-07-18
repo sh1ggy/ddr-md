@@ -44,6 +44,7 @@ static const int ROI_IDX_TITLE      = 8;
 static const int ROI_IDX_USERNAME   = 9;
 static const int ROI_IDX_DIFFICULTY = 10;
 static const int ROI_IDX_MAXCOMBO   = 11;
+static const int ROI_IDX_EXSCORE    = 12;
 
 
 DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg,
@@ -470,6 +471,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
     cv::Rect ROI_Username   = roiRect(ROI_IDX_USERNAME);
     cv::Rect ROI_Difficulty = roiRect(ROI_IDX_DIFFICULTY);
     cv::Rect ROI_MaxCombo   = roiRect(ROI_IDX_MAXCOMBO);
+    cv::Rect ROI_ExScore    = roiRect(ROI_IDX_EXSCORE);
 
     // Calibration is anchored on the P2 (right) panel's badge. Fields inside
     // the player's own score panel keep the same badge-relative offset on both
@@ -665,6 +667,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
                 {"miss",      fieldInCombinedCrop(ROI_Miss)},
                 {"flare",     fieldInCombinedCrop(ROI_Flare)},
                 {"max_combo", fieldInCombinedCrop(ROI_MaxCombo)},
+                {"ex_score",  fieldInCombinedCrop(ROI_ExScore)},
             };
             const cv::Rect cropBounds(0, 0, annotated.cols, annotated.rows);
             for (const auto &a : anchors)
@@ -788,6 +791,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
         {"miss",      &ROI_Miss,      &ocrResults.miss,      -1},
         {"flare",     &ROI_Flare,     &ocrResults.flare,     -1},
         {"max_combo", &ROI_MaxCombo,  &ocrResults.max_combo, -1},
+        {"ex_score",  &ROI_ExScore,   &ocrResults.ex_score,  -1},
     };
     for (auto &f : combinedFields)
     {
@@ -913,6 +917,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
         drawField(ROI_Miss,       ROI_IDX_MISS,       "miss");
         drawField(ROI_Flare,      ROI_IDX_FLARE,      "flare");
         drawField(ROI_MaxCombo,   ROI_IDX_MAXCOMBO,   "max_combo");
+        drawField(ROI_ExScore,    ROI_IDX_EXSCORE,    "ex_score");
         drawField(ROI_Title,      ROI_IDX_TITLE,      "title");
         drawField(ROI_Username,   ROI_IDX_USERNAME,   "username");
         drawField(ROI_Difficulty, ROI_IDX_DIFFICULTY, "difficulty");

@@ -70,6 +70,7 @@ typedef struct
     char *username;
     char *difficulty;
     char *maxCombo;
+    char *exScore;
 } COCRStrings;
 
 // Helper function to convert std::string to char* (caller must free the result)
@@ -117,6 +118,7 @@ static void writeResult(
     outStrings->username = allocCString(ocr.username.text);
     outStrings->difficulty = allocCString(ocr.difficulty.text);
     outStrings->maxCombo = allocCString(ocr.max_combo.text);
+    outStrings->exScore = allocCString(ocr.ex_score.text);
 }
 
 // Avoiding name mangling

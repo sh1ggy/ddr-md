@@ -369,6 +369,8 @@ String ocrFieldLabel(String key) {
   switch (key) {
     case 'maxCombo':
       return 'MAX COMBO';
+    case 'exScore':
+      return 'EX SCORE';
     default:
       return key.toUpperCase();
   }

@@ -18,19 +18,21 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/score_images.dart';
 import 'package:flutter/material.dart';
 
-// Editable columns of the scores table, in card display order. Date, song,
-// mode and the image stay fixed — they identify the score being corrected.
+// Editable columns of the scores table, matching the save-panel field order
+// (difficulty, score fields, username, flare). Song, mode and the image stay
+// fixed — they identify the score being corrected.
 const List<String> _kEditableKeys = [
   'difficulty',
-  'username',
-  'flare',
   'score',
+  'exScore',
   'marvelous',
   'perfect',
   'great',
   'good',
   'miss',
   'maxCombo',
+  'username',
+  'flare',
 ];
 
 class ScoreDetailsPage extends StatefulWidget {
@@ -68,6 +70,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
       'username' => _score.username,
       'flare' => _score.flare,
       'score' => _score.score?.toString(),
+      'exScore' => _score.exScore?.toString(),
       'marvelous' => _score.marvelous?.toString(),
       'perfect' => _score.perfect?.toString(),
       'great' => _score.great?.toString(),
@@ -125,6 +128,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
       // pre-existing unresolvable value left untouched stays raw.
       flare: resolveOcrFlare(_text('flare')) ?? _text('flare'),
       score: _number('score'),
+      exScore: _number('exScore'),
       marvelous: _number('marvelous'),
       perfect: _number('perfect'),
       great: _number('great'),
@@ -260,7 +264,6 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_dateEditable) _buildEditDateRow(),
                   for (final key in _kEditableKeys)
                     if (key == 'flare')
                       FlareDropdownField(controller: _controllers[key]!)
@@ -269,6 +272,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
                         keyName: key,
                         controller: _controllers[key]!,
                       ),
+                  if (_dateEditable) _buildEditDateRow(),
                 ],
               ),
             )

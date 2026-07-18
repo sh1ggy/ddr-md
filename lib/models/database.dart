@@ -13,12 +13,12 @@ class DatabaseProvider {
     return _database;
   }
 
-  // v6 schema. `scores` and `notes` carry a UUID `id` as their stable identity,
+  // v7 schema. `scores` and `notes` carry a UUID `id` as their stable identity,
   // with the timestamp demoted to an ordinary editable column (`playedAt` /
   // `createdAt`) used only for display and sorting. `favorites` keeps its
   // integer key and its natural (songTitle, mode) uniqueness.
   static const String _scoresDdl =
-      'CREATE TABLE IF NOT EXISTS scores(id TEXT PRIMARY KEY, playedAt TEXT NOT NULL, source TEXT NOT NULL DEFAULT \'camera\', songTitle TEXT, mode TEXT NOT NULL, difficulty TEXT, username TEXT, flare TEXT, score INT, marvelous INT, perfect INT, great INT, good INT, miss INT, maxCombo INT, imagePath TEXT NOT NULL DEFAULT \'\')';
+      'CREATE TABLE IF NOT EXISTS scores(id TEXT PRIMARY KEY, playedAt TEXT NOT NULL, source TEXT NOT NULL DEFAULT \'camera\', songTitle TEXT, mode TEXT NOT NULL, difficulty TEXT, username TEXT, flare TEXT, score INT, exScore INT, marvelous INT, perfect INT, great INT, good INT, miss INT, maxCombo INT, imagePath TEXT NOT NULL DEFAULT \'\')';
   static const String _notesDdl =
       'CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, contents TEXT, songTitle TEXT, mode TEXT NOT NULL)';
   static const String _favoritesDdl =
@@ -32,7 +32,7 @@ class DatabaseProvider {
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 6, onCreate: (db, version) async {
+    return await openDatabase(path, version: 7, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -44,6 +44,11 @@ class DatabaseProvider {
         await db.execute('DROP TABLE IF EXISTS notes');
         await db.execute('DROP TABLE IF EXISTS favorites');
         await _createSchema(db);
+      }
+      // v7: EX score OCR'd from the results screen. Nullable like the other
+      // count columns; pre-v7 rows simply have no reading.
+      if (oldVersion == 6) {
+        await db.execute('ALTER TABLE scores ADD COLUMN exScore INT');
       }
     });
   }

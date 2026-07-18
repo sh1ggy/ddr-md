@@ -17,6 +17,7 @@ import 'package:path_provider/path_provider.dart';
 const List<String> kOcrFieldOrder = [
   'title',
   'score',
+  'exScore',
   'marvelous',
   'perfect',
   'great',
@@ -111,6 +112,7 @@ class ProcessResult {
       'username': rd(r.username),
       'difficulty': rd(r.difficulty),
       'maxCombo': rd(r.maxCombo),
+      'exScore': rd(r.exScore),
     };
 
     Uint8List? img(Pointer<Uint8> buf, int len) =>
@@ -182,7 +184,7 @@ final class COCRConfig extends Struct {
   external int morphWidth;
   @Int32()
   external int morphHeight;
-  @Array(12, 6)
+  @Array(13, 6)
   external Array<Array<Int32>> roi;
   @Array(4)
   external Array<Int32> combinedRoi;
@@ -206,6 +208,7 @@ final class COCRStrings extends Struct {
   external Pointer<Char> username;
   external Pointer<Char> difficulty;
   external Pointer<Char> maxCombo;
+  external Pointer<Char> exScore;
 }
 
 // Layout must match camera_result.h::CCameraResult exactly.
@@ -232,6 +235,7 @@ final class CCameraResult extends Struct {
   external Pointer<Char> username;
   external Pointer<Char> difficulty;
   external Pointer<Char> maxCombo;
+  external Pointer<Char> exScore;
   external Pointer<Uint8> mask;
   @Int32()
   external int maskLen;
@@ -327,7 +331,7 @@ Pointer<COCRConfig> _buildOCRConfig() {
   p.ref.tophatKernelSize = ocrTophatKernelSize;
   p.ref.morphWidth = ocrMorphWidth;
   p.ref.morphHeight = ocrMorphHeight;
-  for (int r = 0; r < 12; r++) {
+  for (int r = 0; r < ocrRoi.length; r++) {
     final (rect, (ex, ey)) = ocrRoi[r];
     p.ref.roi[r][roiX1] = rect[roiX1];
     p.ref.roi[r][roiY1] = rect[roiY1];
@@ -362,6 +366,7 @@ Map<String, String> _readOcrStrings(Pointer<COCRStrings> p) {
     'username': read(r.username),
     'difficulty': read(r.difficulty),
     'maxCombo': read(r.maxCombo),
+    'exScore': read(r.exScore),
   };
 }
 
@@ -378,7 +383,8 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
     r.title,
     r.username,
     r.difficulty,
-    r.maxCombo
+    r.maxCombo,
+    r.exScore
   ]) {
     if (s != nullptr) calloc.free(s);
   }
@@ -613,7 +619,7 @@ class OCRProcessor {
   // native camera session reconstructs into a COCRConfig. Field order MUST match
   // config_marshal.h::BuildCOCRConfigFromArrays.
   (Int32List, Float64List) _buildCameraConfigArrays() {
-    final ints = Int32List(83);
+    final ints = Int32List(89);
     ints[0] = ocrBorder;
     ints[1] = ocrPsmEng;
     ints[2] = ocrPsmEngJP;
@@ -622,7 +628,7 @@ class OCRProcessor {
     ints[5] = ocrMorphWidth;
     ints[6] = ocrMorphHeight;
     int k = 7;
-    for (int r = 0; r < 12; r++) {
+    for (int r = 0; r < ocrRoi.length; r++) {
       final (rect, (ex, ey)) = ocrRoi[r];
       ints[k++] = rect[roiX1];
       ints[k++] = rect[roiY1];

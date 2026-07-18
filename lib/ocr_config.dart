@@ -68,6 +68,7 @@ const List<(List<int>, (int, int))> ocrRoi = [
   ([1752, 181, 1952, 220], (0, 0)), // username
   ([1766, 233, 2026, 300], (0, 0)), // difficulty
   ([2098, 1154, 2279, 1202], (0, 0)), // max_combo
+  ([2166, 1118, 2279, 1157], (0, 0)), // ex_score
 ];
 // Extra rects from the source table not wired into ocrRoi above (no
 // slot in the fixed ROI_IDX_* enum). Kept for reference:

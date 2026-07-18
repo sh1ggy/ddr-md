@@ -175,6 +175,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       // unresolvable reading the user never touched falls back to raw text.
       flare: resolveOcrFlare(_text('flare')) ?? _text('flare'),
       score: _number('score'),
+      exScore: _number('exScore'),
       marvelous: _number('marvelous'),
       perfect: _number('perfect'),
       great: _number('great'),
@@ -240,8 +241,8 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
             isWeak: state.isWeak,
           ),
           if (state.song != null) _buildDifficultyRow(state.song!, mode),
-          if (widget.source == ScoreSource.loadImage) _buildDateRow(),
           if (widget.middleChildren.isNotEmpty) ...widget.middleChildren,
+          if (widget.source == ScoreSource.loadImage) _buildDateRow(),
           _buildUsernameMismatchWarning(),
           buildSaveButton(
             padding: EdgeInsets.only(top: widget.middleChildren.isEmpty ? 0 : 12),
