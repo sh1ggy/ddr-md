@@ -1,8 +1,11 @@
 /// Shared widgets and utilities for the camera and load-image OCR pages.
 library;
 
+import 'dart:typed_data';
+
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/ocr_processor.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 // Side-selector SegmentedButton shared by the camera and load-image pages.
@@ -101,6 +104,87 @@ class OcrEmptyState extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// Full-screen pinch-zoomable viewer for a debug render (e.g. the ROI
+// overlay). Listens to the same notifier the OCR result stream feeds, so the
+// image keeps updating live while a session runs — the zoom/pan transform is
+// preserved across updates, letting a region stay under inspection frame to
+// frame.
+class DebugImageViewer extends StatelessWidget {
+  final String label;
+  final ValueListenable<Uint8List?> bytes;
+
+  const DebugImageViewer({super.key, required this.label, required this.bytes});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(label, style: const TextStyle(fontSize: 16)),
+      ),
+      body: ValueListenableBuilder<Uint8List?>(
+        valueListenable: bytes,
+        builder: (context, b, _) {
+          if (b == null) {
+            return const Center(
+              child: Text('No image', style: TextStyle(color: Colors.white54)),
+            );
+          }
+          return InteractiveViewer(
+            maxScale: 12,
+            child: Center(
+              child: Image.memory(
+                b,
+                gaplessPlayback: true,
+                fit: BoxFit.contain,
+                // Nearest-neighbour so zoomed-in pixels stay crisp — the point
+                // of the viewer is inspecting exact ROI/crop boundaries.
+                filterQuality: FilterQuality.none,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Small translucent zoom chip for overlaying on an image: hidden while
+// [bytes] is null, otherwise opens [DebugImageViewer] on the same notifier.
+// Shared by the camera (stopped view) and load-image pages.
+class DebugZoomChip extends StatelessWidget {
+  final String label;
+  final ValueListenable<Uint8List?> bytes;
+
+  const DebugZoomChip({super.key, required this.label, required this.bytes});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Uint8List?>(
+      valueListenable: bytes,
+      builder: (context, b, _) {
+        if (b == null) return const SizedBox.shrink();
+        return Material(
+          color: Colors.black54,
+          borderRadius: BorderRadius.circular(4),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(4),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => DebugImageViewer(label: label, bytes: bytes),
+            )),
+            child: const Padding(
+              padding: EdgeInsets.all(6),
+              child: Icon(Icons.zoom_in, size: 18, color: Colors.white),
+            ),
+          ),
+        );
+      },
     );
   }
 }

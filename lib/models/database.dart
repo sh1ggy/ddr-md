@@ -22,9 +22,14 @@ class DatabaseProvider {
       "ADD COLUMN mode TEXT NOT NULL DEFAULT 'singles'";
   static const List<String> _perModeTables = ['notes', 'favorites', 'scores'];
 
+  // Proof image captured with the score (v5), stored relative to the app
+  // documents dir. Empty for rows saved before the column existed.
+  static const String _addImagePathColumnDdl =
+      "ALTER TABLE scores ADD COLUMN imagePath TEXT NOT NULL DEFAULT ''";
+
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 4, onCreate: (db, version) async {
+    return await openDatabase(path, version: 5, onCreate: (db, version) async {
       await db.execute(
         'CREATE TABLE IF NOT EXISTS notes(date TEXT PRIMARY KEY, contents TEXT, songTitle TEXT)',
       );
@@ -34,6 +39,7 @@ class DatabaseProvider {
       for (final table in _perModeTables) {
         await db.execute('ALTER TABLE $table $_addModeColumnDdl');
       }
+      await db.execute(_addImagePathColumnDdl);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       if (oldVersion < 3) {
         await db.execute(_scoresDdl);
@@ -42,6 +48,9 @@ class DatabaseProvider {
         for (final table in _perModeTables) {
           await db.execute('ALTER TABLE $table $_addModeColumnDdl');
         }
+      }
+      if (oldVersion < 5) {
+        await db.execute(_addImagePathColumnDdl);
       }
     });
   }
@@ -99,6 +108,14 @@ class DatabaseProvider {
       score.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    return raw;
+  }
+
+  // Update an existing score in place, keyed by its date (the primary key).
+  static updateScore(Score score) async {
+    final db = await _instance;
+    var raw = await db.update("scores", score.toMap(),
+        where: "date = ?", whereArgs: [score.date]);
     return raw;
   }
 

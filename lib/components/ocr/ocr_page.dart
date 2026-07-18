@@ -397,6 +397,12 @@ class _OcrPageState extends State<OcrPage>
         ),
       );
 
+  void _openDebugViewer(String label, ValueNotifier<Uint8List?> notifier) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => DebugImageViewer(label: label, bytes: notifier),
+    ));
+  }
+
   void _setDebugEnabled(bool enabled) {
     final type = enabled ? DebugImageType.on : DebugImageType.none;
     setState(() => _debugImageType = type);
@@ -473,18 +479,37 @@ class _OcrPageState extends State<OcrPage>
                   ),
                 );
               }
-              return DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
+              // Zoom-in is stopped-view only: pushing the viewer over a live
+              // session would leave the camera streaming behind an opaque
+              // route (same reason Load Image stops the session first).
+              return GestureDetector(
+                onTap: _isCameraActive
+                    ? null
+                    : () => _openDebugViewer(label, notifier),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                    color: Colors.black,
                   ),
-                  color: Colors.black,
-                ),
-                child: Image.memory(
-                  bytes,
-                  gaplessPlayback: true,
-                  fit: BoxFit.contain,
-                  filterQuality: FilterQuality.none,
+                  child: Stack(
+                    children: [
+                      Image.memory(
+                        bytes,
+                        gaplessPlayback: true,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.none,
+                      ),
+                      if (!_isCameraActive)
+                        const Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Icon(Icons.zoom_in,
+                              size: 16, color: Colors.white54),
+                        ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -529,7 +554,21 @@ class _OcrPageState extends State<OcrPage>
                   ),
                 ),
               ),
-              framed,
+              // Quick access to the zoomable ROI overlay without scrolling
+              // down to the debug panels; hidden unless debug produced one.
+              Stack(
+                children: [
+                  framed,
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: DebugZoomChip(
+                      label: 'ROI overlay',
+                      bytes: _debugOverlayBytes,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         );
@@ -573,6 +612,11 @@ class _OcrPageState extends State<OcrPage>
             SaveScorePanel(
               controllers: _fieldControllers,
               initialTitle: _aggregator.best('title')?.value ?? '',
+              // Proof image stored with the score: the ROI overlay render
+              // when the debug toggle produced one this session, else the
+              // last captured full-color frame that matched.
+              proofImageBytes: () async =>
+                  _debugOverlayBytes.value ?? _captureData.value?.bytes,
               middleChildren: [_buildEditableScorePanel()],
             ),
             // Latest debug images remain inspectable after stopping (the
@@ -617,12 +661,13 @@ class _OcrPageState extends State<OcrPage>
 
   // Stopped view: editable, prefilled fields. "Show values" reveals a clickable
   // candidate histogram per field — the way the user picks between detected
-  // values (tapping a bar sets that field).
+  // values (tapping a bar sets that field). Difficulty is excluded:
+  // SaveScorePanel renders it as a dropdown of the matched song's charts.
   Widget _buildEditableScorePanel() {
     final bool showHistograms = _histogramsExpanded;
     final rows = <Widget>[
       for (final key in kOcrFieldOrder)
-        if (key != 'title')
+        if (key != 'title' && key != 'difficulty' && key != 'flare')
           if (_aggregator.best(key) case final best?)
             OCREditableField(
               keyName: key,
@@ -639,6 +684,18 @@ class _OcrPageState extends State<OcrPage>
               onUserEdit: (_) => _userEditedFields.add(key),
           ),
     ];
+    // Flare renders as a hard-set rank dropdown (I..IX, EX) instead of a
+    // free-text field, and shows even when no reading landed so the rank can
+    // be set by hand. The dropdown replaces the candidate histogram as the
+    // way to pick between values.
+    if (rows.isNotEmpty) {
+      rows.add(FlareDropdownField(
+        controller: _controllerFor('flare'),
+        confidence: _aggregator.best('flare')?.confidence,
+        sampleCount: _aggregator.best('flare')?.count,
+        onUserEdit: (_) => _userEditedFields.add('flare'),
+      ));
+    }
     return _scorePanelShell(
       rows: rows,
       empty: const OcrEmptyState(

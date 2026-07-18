@@ -6,6 +6,7 @@
 /// latest-note card layout.
 library;
 
+import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:flutter/material.dart';
@@ -15,21 +16,86 @@ class ScoreCard extends StatelessWidget {
     super.key,
     required this.score,
     this.header,
+    this.onTap,
   });
 
   final Score score;
   final String? header;
+  // When given (the scores list), tapping the card opens it — the score
+  // details page. The song page's latest-score card leaves this null and
+  // keeps its own open-history tap handler.
+  final VoidCallback? onTap;
+
+  // The full-combo tier is only meaningful when OCR captured every judgment
+  // count; a missing field could hide the miss that breaks the combo.
+  FullComboTier? _fullComboTier() {
+    if (score.marvelous == null ||
+        score.perfect == null ||
+        score.great == null ||
+        score.good == null ||
+        score.miss == null) {
+      return null;
+    }
+    return fullComboTier(
+      marvelous: score.marvelous!,
+      perfect: score.perfect!,
+      great: score.great!,
+      good: score.good!,
+      miss: score.miss!,
+    );
+  }
+
+  // Money score with the grade computed from it: icon where art exists,
+  // grade label otherwise, plus the full-combo lamp when one was earned.
+  Widget _buildScoreRow() {
+    final grade = gradeForScore(score.score!);
+    final gradeArt = gradeIcon(grade);
+    final fcArt = switch (_fullComboTier()) {
+      null || FullComboTier.none => null,
+      final tier => fullComboIcon(tier),
+    };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (gradeArt != null)
+          Image.asset(gradeArt, height: 22)
+        else
+          Text(
+            grade.label,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        const SizedBox(width: 8),
+        Text(
+          formatScore(score.score!),
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+        ),
+        if (fcArt != null) ...[
+          const SizedBox(width: 8),
+          Image.asset(fcArt, height: 16),
+        ],
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final dateText = formatDate(DateTime.parse(score.date));
-    final details = [
-      if (score.difficulty.isNotEmpty) score.difficulty,
-      if (score.flare.isNotEmpty) 'Flare ${score.flare}',
-      if (score.username.isNotEmpty) score.username,
-    ].join(' • ');
+    final flareArt = score.flare.isNotEmpty ? flareIcon(score.flare) : null;
+    final details = <Widget>[
+      if (score.difficulty.isNotEmpty)
+        Text(score.difficulty,
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: kInGameDifficultyColors[score.difficulty])),
+      if (flareArt != null)
+        Image.asset(flareArt, height: 18)
+      else if (score.flare.isNotEmpty)
+        Text('Flare ${score.flare}', style: const TextStyle(fontSize: 14)),
+    ];
     return Card(
       child: ListTile(
+        onTap: onTap,
         title: Column(
           children: [
             Text(
@@ -39,14 +105,19 @@ class ScoreCard extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   color: Theme.of(context).colorScheme.primary),
             ),
-            if (score.score != null)
-              Text(
-                formatScore(score.score!),
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-              ),
+            if (score.score != null) _buildScoreRow(),
             if (details.isNotEmpty)
-              Text(details, style: const TextStyle(fontSize: 14)),
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: details
+                    .expand((w) => [
+                          const Text(' • ', style: TextStyle(fontSize: 14)),
+                          w,
+                        ])
+                    .skip(1)
+                    .toList(),
+              ),
             _ScoreJudgments(score: score),
             if (header != null)
               Text(

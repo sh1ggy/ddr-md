@@ -5,6 +5,7 @@
 library;
 
 import 'package:ddr_md/components/song/scores/score_card.dart';
+import 'package:ddr_md/components/song/scores/score_details_page.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -23,16 +24,27 @@ class ScoresTab extends StatefulWidget {
 class ScoresTabState extends State<ScoresTab> {
   Future<List<Score>>? _scoresPromise;
 
+  void _refreshScores() {
+    var songState = Provider.of<SongState>(context, listen: false);
+    setState(() {
+      _scoresPromise = DatabaseProvider.getAllScoresBySong(
+          songState.songInfo!.titletranslit, songState.modes);
+    });
+  }
+
+  // Opens the tapped score's details page; the score may be edited there, so
+  // re-query when the route pops.
+  Future<void> _openDetails(Score score) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ScoreDetailsPage(score: score),
+    ));
+    if (mounted) _refreshScores();
+  }
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      var songState = Provider.of<SongState>(context, listen: false);
-      setState(() {
-        _scoresPromise = DatabaseProvider.getAllScoresBySong(
-            songState.songInfo!.titletranslit, songState.modes);
-      });
-    });
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) => _refreshScores());
   }
 
   @override
@@ -50,7 +62,10 @@ class ScoresTabState extends State<ScoresTab> {
           }
           return ListView(
             children: snapshot.data!
-                .map<Widget>((Score score) => ScoreCard(score: score))
+                .map<Widget>((Score score) => ScoreCard(
+                      score: score,
+                      onTap: () => _openDetails(score),
+                    ))
                 .toList(),
           );
         },

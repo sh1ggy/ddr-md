@@ -19,6 +19,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   int _chosenReadSpeed = 0;
   String _rivalCode = constants.rivalCode;
+  String _username = constants.username;
 
   @override
   void initState() {
@@ -32,6 +33,7 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
       _rivalCode = Settings.getString(Settings.rivalCodeSpeedKey);
+      _username = Settings.getString(Settings.usernameKey);
     });
   }
 
@@ -50,6 +52,16 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       Settings.setString(Settings.rivalCodeSpeedKey, newValue);
       _rivalCode = Settings.getString(Settings.rivalCodeSpeedKey);
+    });
+  }
+
+  /// After setting the username, asynchronously save it to persistent
+  /// storage. Compared against the OCR-detected player name when saving a
+  /// score, to flag screenshots that may belong to someone else.
+  Future<void> _setUsername(String newValue) async {
+    setState(() {
+      Settings.setString(Settings.usernameKey, newValue);
+      _username = Settings.getString(Settings.usernameKey);
     });
   }
 
@@ -110,6 +122,13 @@ class _SettingsPageState extends State<SettingsPage> {
                                     chosenValue: _rivalCode,
                                     field: "Rival Code",
                                     maxLength: 8,
+                                  ),
+                                  SettingCard<String>(
+                                    setValue: _setUsername,
+                                    chosenValue: _username,
+                                    field: "Username",
+                                    maxLength: constants.usernameLength,
+                                    digitsOnly: false,
                                   ),
                                 ],
                               ),
