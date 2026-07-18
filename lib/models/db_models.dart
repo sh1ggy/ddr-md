@@ -1,25 +1,43 @@
 import 'package:ddr_md/components/song_json.dart';
+import 'package:uuid/uuid.dart';
+
+const _uuid = Uuid();
 
 // Rows saved before the mode column existed (db v4) default to singles.
 Modes _modeFromMap(Map<String, dynamic> json) =>
     Modes.values.asNameMap()[json["mode"]] ?? Modes.singles;
 
+// How a score was captured. A screenshot imported via load-image carries no
+// inherent capture time, so its play date is user-set and stays editable; a
+// live camera score is stamped at capture and its date is fixed.
+enum ScoreSource { loadImage, camera }
+
+ScoreSource _sourceFromMap(Map<String, dynamic> json) =>
+    ScoreSource.values.asNameMap()[json["source"]] ?? ScoreSource.camera;
+
 class Note {
-  final String date;
+  // Stable identity, generated once at creation. Separate from [createdAt] so
+  // the note can be edited without its identity changing.
+  final String id;
+  // When the note was first written (ISO-8601). Display and sort only; never
+  // regenerated on edit.
+  final String createdAt;
   final String contents;
   final String songTitle;
   final Modes mode;
 
-  const Note({
-    required this.date,
+  Note({
+    String? id,
+    required this.createdAt,
     required this.contents,
     required this.songTitle,
     required this.mode,
-  });
+  }) : id = id ?? _uuid.v4();
 
   Map<String, Object?> toMap() {
     return {
-      'date': date,
+      'id': id,
+      'createdAt': createdAt,
       'contents': contents,
       'songTitle': songTitle,
       'mode': mode.name,
@@ -27,7 +45,8 @@ class Note {
   }
 
   factory Note.fromMap(Map<String, dynamic> json) => Note(
-        date: json["date"],
+        id: json["id"],
+        createdAt: json["createdAt"],
         contents: json["contents"],
         songTitle: json["songTitle"],
         mode: _modeFromMap(json),
@@ -35,12 +54,20 @@ class Note {
 
   @override
   String toString() {
-    return 'Note{date: $date, contents: $contents, song: $songTitle, mode: ${mode.name}}';
+    return 'Note{id: $id, createdAt: $createdAt, contents: $contents, song: $songTitle, mode: ${mode.name}}';
   }
 }
 
 class Score {
-  final String date;
+  // Stable identity, generated once at creation. Doubles as the proof-image
+  // filename. Separate from [playedAt] so the play date can be corrected in
+  // edit mode without breaking the row identity or orphaning its image.
+  final String id;
+  // When the score was played (ISO-8601). Display and sort. Editable only for
+  // load-image scores (see [source]).
+  final String playedAt;
+  // How the score was captured; gates whether [playedAt] can be edited.
+  final ScoreSource source;
   // titletranslit of the matched song, matching the notes/favorites key.
   final String songTitle;
   final Modes mode;
@@ -60,8 +87,10 @@ class Score {
   // when no image was available at save time (rows from before v5 included).
   final String imagePath;
 
-  const Score({
-    required this.date,
+  Score({
+    String? id,
+    required this.playedAt,
+    required this.source,
     required this.songTitle,
     required this.mode,
     this.difficulty = '',
@@ -75,11 +104,13 @@ class Score {
     this.miss,
     this.maxCombo,
     this.imagePath = '',
-  });
+  }) : id = id ?? _uuid.v4();
 
   Map<String, Object?> toMap() {
     return {
-      'date': date,
+      'id': id,
+      'playedAt': playedAt,
+      'source': source.name,
       'songTitle': songTitle,
       'mode': mode.name,
       'difficulty': difficulty,
@@ -96,8 +127,50 @@ class Score {
     };
   }
 
+  // Returns a copy carrying the same identity ([id]). Every attribute can be
+  // overridden; omitted ones keep this instance's value. Passing null for a
+  // nullable count leaves it unchanged rather than clearing it — the edit flow
+  // always supplies the full set of counts, so it never needs to null one out.
+  Score copyWith({
+    String? playedAt,
+    ScoreSource? source,
+    String? songTitle,
+    Modes? mode,
+    String? difficulty,
+    String? username,
+    String? flare,
+    int? score,
+    int? marvelous,
+    int? perfect,
+    int? great,
+    int? good,
+    int? miss,
+    int? maxCombo,
+    String? imagePath,
+  }) =>
+      Score(
+        id: id,
+        playedAt: playedAt ?? this.playedAt,
+        source: source ?? this.source,
+        songTitle: songTitle ?? this.songTitle,
+        mode: mode ?? this.mode,
+        difficulty: difficulty ?? this.difficulty,
+        username: username ?? this.username,
+        flare: flare ?? this.flare,
+        score: score ?? this.score,
+        marvelous: marvelous ?? this.marvelous,
+        perfect: perfect ?? this.perfect,
+        great: great ?? this.great,
+        good: good ?? this.good,
+        miss: miss ?? this.miss,
+        maxCombo: maxCombo ?? this.maxCombo,
+        imagePath: imagePath ?? this.imagePath,
+      );
+
   factory Score.fromMap(Map<String, dynamic> json) => Score(
-        date: json["date"],
+        id: json["id"],
+        playedAt: json["playedAt"],
+        source: _sourceFromMap(json),
         songTitle: json["songTitle"],
         mode: _modeFromMap(json),
         difficulty: json["difficulty"] ?? '',
@@ -115,7 +188,7 @@ class Score {
 
   @override
   String toString() {
-    return 'Score{date: $date, song: $songTitle, mode: ${mode.name}, difficulty: $difficulty, score: $score}';
+    return 'Score{id: $id, playedAt: $playedAt, song: $songTitle, mode: ${mode.name}, difficulty: $difficulty, score: $score}';
   }
 }
 

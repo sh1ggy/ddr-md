@@ -15,6 +15,7 @@ dependencies:
   shared_preferences: ^2.2.3
   sqflite: ^2.3.3+1
   path: ^1.9.0
+  uuid: ^4.4.0
   url_launcher: ^6.3.0
   ffi: ^2.1.5
   native_opencv:

@@ -13,44 +13,37 @@ class DatabaseProvider {
     return _database;
   }
 
+  // v6 schema. `scores` and `notes` carry a UUID `id` as their stable identity,
+  // with the timestamp demoted to an ordinary editable column (`playedAt` /
+  // `createdAt`) used only for display and sorting. `favorites` keeps its
+  // integer key and its natural (songTitle, mode) uniqueness.
   static const String _scoresDdl =
-      'CREATE TABLE IF NOT EXISTS scores(date TEXT PRIMARY KEY, songTitle TEXT, difficulty TEXT, username TEXT, flare TEXT, score INT, marvelous INT, perfect INT, great INT, good INT, miss INT, maxCombo INT)';
+      'CREATE TABLE IF NOT EXISTS scores(id TEXT PRIMARY KEY, playedAt TEXT NOT NULL, source TEXT NOT NULL DEFAULT \'camera\', songTitle TEXT, mode TEXT NOT NULL, difficulty TEXT, username TEXT, flare TEXT, score INT, marvelous INT, perfect INT, great INT, good INT, miss INT, maxCombo INT, imagePath TEXT NOT NULL DEFAULT \'\')';
+  static const String _notesDdl =
+      'CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, contents TEXT, songTitle TEXT, mode TEXT NOT NULL)';
+  static const String _favoritesDdl =
+      'CREATE TABLE IF NOT EXISTS favorites(id INTEGER PRIMARY KEY, isFav INT, songTitle TEXT, mode TEXT NOT NULL)';
 
-  // Favourites, notes and scores are tracked per play mode (v4); rows saved
-  // before the column existed default to singles.
-  static const String _addModeColumnDdl =
-      "ADD COLUMN mode TEXT NOT NULL DEFAULT 'singles'";
-  static const List<String> _perModeTables = ['notes', 'favorites', 'scores'];
-
-  // Proof image captured with the score (v5), stored relative to the app
-  // documents dir. Empty for rows saved before the column existed.
-  static const String _addImagePathColumnDdl =
-      "ALTER TABLE scores ADD COLUMN imagePath TEXT NOT NULL DEFAULT ''";
+  static Future<void> _createSchema(Database db) async {
+    await db.execute(_notesDdl);
+    await db.execute(_favoritesDdl);
+    await db.execute(_scoresDdl);
+  }
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 5, onCreate: (db, version) async {
-      await db.execute(
-        'CREATE TABLE IF NOT EXISTS notes(date TEXT PRIMARY KEY, contents TEXT, songTitle TEXT)',
-      );
-      await db.execute(
-          'CREATE TABLE IF NOT EXISTS favorites(id INTEGER PRIMARY KEY, isFav INT, songTitle TEXT)');
-      await db.execute(_scoresDdl);
-      for (final table in _perModeTables) {
-        await db.execute('ALTER TABLE $table $_addModeColumnDdl');
-      }
-      await db.execute(_addImagePathColumnDdl);
+    return await openDatabase(path, version: 6, onCreate: (db, version) async {
+      await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
-      if (oldVersion < 3) {
-        await db.execute(_scoresDdl);
-      }
-      if (oldVersion < 4) {
-        for (final table in _perModeTables) {
-          await db.execute('ALTER TABLE $table $_addModeColumnDdl');
-        }
-      }
-      if (oldVersion < 5) {
-        await db.execute(_addImagePathColumnDdl);
+      // The app is not yet released and the pre-v6 tables overloaded their
+      // timestamp as the primary key. Rather than migrate that debt forward,
+      // v6 drops and recreates scores/notes/favorites with the clean schema.
+      // Any local dev rows are discarded.
+      if (oldVersion < 6) {
+        await db.execute('DROP TABLE IF EXISTS scores');
+        await db.execute('DROP TABLE IF EXISTS notes');
+        await db.execute('DROP TABLE IF EXISTS favorites');
+        await _createSchema(db);
       }
     });
   }
@@ -111,11 +104,11 @@ class DatabaseProvider {
     return raw;
   }
 
-  // Update an existing score in place, keyed by its date (the primary key).
+  // Update an existing score in place, keyed by its id (the primary key).
   static updateScore(Score score) async {
     final db = await _instance;
     var raw = await db.update("scores", score.toMap(),
-        where: "date = ?", whereArgs: [score.date]);
+        where: "id = ?", whereArgs: [score.id]);
     return raw;
   }
 
@@ -126,7 +119,7 @@ class DatabaseProvider {
     var response = await db.query("scores",
         where: "songTitle = ? AND mode = ?",
         whereArgs: [songTitleTranslit, mode.name],
-        orderBy: "date DESC");
+        orderBy: "playedAt DESC");
     List<Score> list = response.map((c) => Score.fromMap(c)).toList();
     return list;
   }
@@ -138,7 +131,7 @@ class DatabaseProvider {
     var response = await db.query("scores",
         where: "songTitle = ? AND mode = ?",
         whereArgs: [songTitleTranslit, mode.name],
-        orderBy: "date DESC",
+        orderBy: "playedAt DESC",
         limit: 1);
     if (response.isEmpty) return null;
     return Score.fromMap(response.first);
@@ -147,7 +140,7 @@ class DatabaseProvider {
   // Get all scores from the database (across modes)
   static Future<List<Score>> getAllScores() async {
     final db = await _instance;
-    var response = await db.query("scores", orderBy: "date DESC");
+    var response = await db.query("scores", orderBy: "playedAt DESC");
     List<Score> list = response.map((c) => Score.fromMap(c)).toList();
     return list;
   }
@@ -164,23 +157,19 @@ class DatabaseProvider {
     return raw;
   }
 
-  // Update existing note in the database
+  // Update an existing note's contents in place, keyed by its id. The note's
+  // identity and createdAt are preserved — only the contents change.
   static updateNote(Note note, String newContents) async {
     final db = await _instance;
-    Note updatedNote = Note(
-        contents: newContents,
-        date: DateTime.now().toIso8601String(),
-        songTitle: note.songTitle,
-        mode: note.mode);
-    var raw = await db.update("notes", updatedNote.toMap(),
-        where: "date = ?", whereArgs: [note.date]);
+    var raw = await db.update("notes", {'contents': newContents},
+        where: "id = ?", whereArgs: [note.id]);
     return raw;
   }
 
-  // Delete note from the database
-  static deleteNote(String date) async {
+  // Delete note from the database, keyed by its id.
+  static deleteNote(String id) async {
     final db = await _instance;
-    var raw = await db.delete("notes", where: "date = ?", whereArgs: [date]);
+    var raw = await db.delete("notes", where: "id = ?", whereArgs: [id]);
     return raw;
   }
 
@@ -209,7 +198,7 @@ class DatabaseProvider {
     var response = await db.query("notes",
         where: "songTitle = ? AND mode = ?",
         whereArgs: [songTitleTranslit, mode.name],
-        orderBy: "date ASC");
+        orderBy: "createdAt ASC");
     if (response.isEmpty) return null;
     Note latestNote = response.map((c) => Note.fromMap(c)).toList().last;
     return latestNote;

@@ -10,6 +10,7 @@ import 'package:ddr_md/components/roi_overlay.dart';
 import 'package:ddr_md/grades.dart' show flareRankIcon;
 import 'package:ddr_md/helpers.dart'
     show judgmentColor, kFlareRanks, resolveOcrFlare;
+import 'package:ddr_md/models/db_models.dart' show ScoreSource;
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -331,6 +332,7 @@ class _LoadImageState extends State<LoadImage> {
                             child: SaveScorePanel(
                               controllers: _fieldControllers,
                               initialTitle: _ocrTitle,
+                              source: ScoreSource.loadImage,
                               // Proof image stored with the score: the ROI
                               // overlay render when this run produced one,
                               // else the original screenshot.

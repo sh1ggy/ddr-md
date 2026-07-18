@@ -47,6 +47,12 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
   bool _editing = false;
   late final Future<File?> _imageFile = ScoreImages.resolve(_score.imagePath);
   final Map<String, TextEditingController> _controllers = {};
+  // Working play date while editing; only load-image scores can change it.
+  late DateTime _editPlayedAt;
+
+  // A screenshot import has no inherent capture time, so its play date is
+  // user-set and stays editable here; a camera score's date is fixed.
+  bool get _dateEditable => _score.source == ScoreSource.loadImage;
 
   @override
   void dispose() {
@@ -79,7 +85,22 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
           .putIfAbsent(key, () => TextEditingController())
           .text = _fieldText(key);
     }
+    _editPlayedAt = DateTime.parse(_score.playedAt);
     setState(() => _editing = true);
+  }
+
+  Future<void> _pickPlayDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _editPlayedAt,
+      firstDate: DateTime(2016), // DDR A (2016) is the earliest scoring era.
+      lastDate: DateTime.now(),
+    );
+    if (picked == null) return;
+    // Day granularity; time pinned to noon so the timestamp can't drift across
+    // a day boundary under a timezone offset (mirrors the capture flow).
+    setState(() =>
+        _editPlayedAt = DateTime(picked.year, picked.month, picked.day, 12));
   }
 
   String _text(String key) => _controllers[key]?.text.trim() ?? '';
@@ -90,7 +111,12 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
 
   Future<void> _saveEdits() async {
     final updated = Score(
-      date: _score.date,
+      // Preserve identity and source. The play date changes only for
+      // load-image scores; camera scores keep their capture timestamp.
+      id: _score.id,
+      playedAt:
+          _dateEditable ? _editPlayedAt.toIso8601String() : _score.playedAt,
+      source: _score.source,
       songTitle: _score.songTitle,
       mode: _score.mode,
       difficulty: _text('difficulty'),
@@ -114,6 +140,38 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
       _editing = false;
     });
     showToast(context, 'Score updated');
+  }
+
+  // Tappable play-date row in edit mode, load-image scores only. Matches the
+  // OCREditableField row layout (bold label + value on the right).
+  Widget _buildEditDateRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'PLAY DATE',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _pickPlayDate,
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: Text(
+                  formatPlayDate(_editPlayedAt),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -162,13 +220,38 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
-          Text(
-            '${_score.mode.name} • ${formatDate(DateTime.parse(_score.date))}',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // In view mode the ScoreCard below already carries the source
+              // badge; only show the icon here while editing (card hidden).
+              if (_editing) ...[
+                Icon(
+                  _score.source == ScoreSource.loadImage
+                      ? Icons.photo_library_outlined
+                      : Icons.videocam_outlined,
+                  size: 15,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+              ],
+              if (_editing)
+                Flexible(
+                  child: Text(
+                    // In view mode the ScoreCard below already shows the date.
+                    // While editing (card hidden) it's shown here instead,
+                    // reflecting the working (possibly changed) play date.
+                    formatDate(_dateEditable
+                        ? _editPlayedAt
+                        : DateTime.parse(_score.playedAt)),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
           if (_editing)
@@ -177,6 +260,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (_dateEditable) _buildEditDateRow(),
                   for (final key in _kEditableKeys)
                     if (key == 'flare')
                       FlareDropdownField(controller: _controllers[key]!)

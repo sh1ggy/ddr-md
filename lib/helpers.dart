@@ -299,6 +299,14 @@ String formatDate(DateTime date) {
   return "${date.year}-${date.month}-${date.day} (${date.hour}:${date.minute.toString().length == 1 ? "0${date.minute}" : date.minute})";
 }
 
+// Date-only rendering (no time) for play dates the user sets at day
+// granularity. Zero-pads month and day: 2026-07-08.
+String formatPlayDate(DateTime date) {
+  final m = date.month.toString().padLeft(2, '0');
+  final d = date.day.toString().padLeft(2, '0');
+  return "${date.year}-$m-$d";
+}
+
 // Helper function to format a score with thousands separators
 String formatScore(int score) {
   return score

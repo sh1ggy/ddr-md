@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -15,7 +16,10 @@ class SongState extends ChangeNotifier {
   SongInfo? _songInfo;
   SongInfo? get songInfo => _songInfo;
 
-  Modes _mode = Modes.singles;
+  // Persisted play style, chosen on the settings page.
+  Modes _mode = Settings.getInt(Settings.playModeKey) == Modes.doubles.index
+      ? Modes.doubles
+      : Modes.singles;
   Modes get modes => _mode;
 
   SortType _sortType = SortType.level;
@@ -34,6 +38,7 @@ class SongState extends ChangeNotifier {
 
   void setMode(Modes newMode) {
     _mode = newMode;
+    Settings.setInt(Settings.playModeKey, newMode.index);
     notifyListeners();
   }
 

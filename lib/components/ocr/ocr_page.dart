@@ -10,6 +10,7 @@ import 'package:ddr_md/components/ocr/ocr_shared.dart';
 import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/helpers.dart' show parseOcrNumber;
+import 'package:ddr_md/models/db_models.dart' show ScoreSource;
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -612,6 +613,7 @@ class _OcrPageState extends State<OcrPage>
             SaveScorePanel(
               controllers: _fieldControllers,
               initialTitle: _aggregator.best('title')?.value ?? '',
+              source: ScoreSource.camera,
               // Proof image stored with the score: the ROI overlay render
               // when the debug toggle produced one this session, else the
               // last captured full-color frame that matched.
