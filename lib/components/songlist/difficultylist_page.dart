@@ -267,10 +267,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     });
   }
 
+  Modes? _lastGenMode;
+
   @override
   void initState() {
     super.initState();
     SongState songState = Provider.of<SongState>(context, listen: false);
+    _lastGenMode = songState.modes;
     _songItemsPromise = Future<List<SongItem>>(
       () => generateSongItems(songState.modes, songState.sortType));
   }
@@ -278,6 +281,12 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
+    // Mode is set on the settings page; rebuild the list when it changed
+    // since this page last generated it.
+    if (_lastGenMode != songState.modes) {
+      _lastGenMode = songState.modes;
+      _songItemsPromise = generateSongItems(songState.modes, songState.sortType);
+    }
     return SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
@@ -297,47 +306,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 SortMenuButton(
                     onSorted: () =>
                         regenSongItems(songState.modes, songState.sortType)),
-                PopupMenuButton(
-                  initialValue: 0,
-                  tooltip: "Chart Type",
-                  icon: const Icon(Icons.swap_vert),
-                  itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-                    PopupMenuItem(
-                      padding: const EdgeInsets.all(0),
-                      child: ListTile(
-                        contentPadding:
-                            const EdgeInsets.only(left: 8, right: 8),
-                        hoverColor: Colors.transparent,
-                        onTap: () {
-                          songState.setMode(Modes.singles);
-                          regenSongItems(Modes.singles, songState.sortType);
-                          showToast(context, "Set mode to singles");
-                          Navigator.pop(context);
-                          return;
-                        },
-                        leading: const Icon(Icons.looks_one_rounded),
-                        title: const Text('Singles'),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      padding: const EdgeInsets.all(0),
-                      child: ListTile(
-                        hoverColor: Colors.transparent,
-                        contentPadding:
-                            const EdgeInsets.only(left: 8, right: 8),
-                        onTap: () {
-                          songState.setMode(Modes.doubles);
-                          regenSongItems(Modes.doubles, songState.sortType);
-                          showToast(context, "Set mode to doubles");
-                          Navigator.pop(context);
-                          return;
-                        },
-                        leading: const Icon(Icons.looks_two_rounded),
-                        title: const Text('Doubles'),
-                      ),
-                    ),
-                  ],
-                ),
               ],
               iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),

@@ -4,10 +4,14 @@
 library;
 
 import 'package:ddr_md/components/settings/setting_card.dart';
+import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -130,6 +134,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                     maxLength: constants.usernameLength,
                                     digitsOnly: false,
                                   ),
+                                  const _PlayStyleCard(),
                                 ],
                               ),
                             ),
@@ -177,5 +182,50 @@ class _SettingsPageState extends State<SettingsPage> {
         mode: LaunchMode.externalApplication)) {
       throw Exception('Could not launch ${Uri.parse(urlString)}');
     }
+  }
+}
+
+/// Play style (singles/doubles) selector, persisted via [SongState.setMode].
+class _PlayStyleCard extends StatelessWidget {
+  const _PlayStyleCard();
+
+  Widget _styleOption(BuildContext context, Modes mode, String asset) {
+    var songState = context.watch<SongState>();
+    final selected = songState.modes == mode;
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () {
+        if (selected) return;
+        songState.setMode(mode);
+        showToast(context,
+            "Set play style to ${mode == Modes.singles ? "singles" : "doubles"}");
+      },
+      child: Opacity(
+        opacity: selected ? 1 : 0.3,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Image.asset(asset, height: 15),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        title: const Text("Play Style",
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _styleOption(
+                context, Modes.singles, 'assets/icons/style_single.png'),
+            _styleOption(
+                context, Modes.doubles, 'assets/icons/style_double.png'),
+          ],
+        ),
+      ),
+    );
   }
 }
