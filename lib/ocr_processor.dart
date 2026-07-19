@@ -267,6 +267,8 @@ typedef _c_processPickedImage = Void Function(
   Pointer<Int32> outputdetailsRoiIndex,
   Pointer<COCRStrings> outStrings,
   Int32 side,
+  Int32 tapX,
+  Int32 tapY,
 );
 
 typedef _dart_processPickedImage = void Function(
@@ -278,6 +280,8 @@ typedef _dart_processPickedImage = void Function(
   Pointer<Int32> outputdetailsRoiIndex,
   Pointer<COCRStrings> outStrings,
   int side,
+  int tapX,
+  int tapY,
 );
 
 // Camera session FFI (operates on the opaque session pointer from the channel).
@@ -394,7 +398,8 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
 // Runs the picked-image FFI path inside a one-shot isolate so the (slow)
 // instance creation + OCR doesn't jank the UI thread. Creates and destroys a
 // transient DdrocrInstance for the single call.
-ProcessResult _runPickedImage(String appPath, String imagePath, int side) {
+ProcessResult _runPickedImage(
+    String appPath, String imagePath, int side, int tapX, int tapY) {
   final createFn =
       _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
           'create_ocr_instance');
@@ -427,6 +432,8 @@ ProcessResult _runPickedImage(String appPath, String imagePath, int side) {
     outputDetailsRoiIndex,
     outStrings,
     side,
+    tapX,
+    tapY,
   );
   calloc.free(imagePathPtr);
 
@@ -680,15 +687,20 @@ class OCRProcessor {
     }
   }
 
-  void processPickedImage(XFile image) async {
+  // [tapPoint] (original-image pixels) forces the candidate blob containing it
+  // to be the Details badge, bypassing the side heuristics — the load-image
+  // page sends it when the user taps a detected ROI box.
+  void processPickedImage(XFile image, {Point<int>? tapPoint}) async {
     print('Processing image from file: ${image.path}');
     isProcessing.value = true;
     try {
       final appPath = appDir!.path;
       final imagePath = image.path;
       final sideIndex = _side.index;
-      final result =
-          await Isolate.run(() => _runPickedImage(appPath, imagePath, sideIndex));
+      final tapX = tapPoint?.x ?? -1;
+      final tapY = tapPoint?.y ?? -1;
+      final result = await Isolate.run(
+          () => _runPickedImage(appPath, imagePath, sideIndex, tapX, tapY));
       streamResultController.add(result);
     } catch (e) {
       print('Picked image processing failed: $e');

@@ -121,7 +121,9 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
 // needs. NO PaddleOCR runs here.
 // ---------------------------------------------------------------------------
 DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSide side,
-                                                   DebugImageType debugImageType)
+                                                   DebugImageType debugImageType,
+                                                   cv::Point tapPoint,
+                                                   bool strictSide)
 {
     DetailsDetectResult det;
     det.side = side;
@@ -407,13 +409,58 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
                          wantLeft ? "left" : "right", bestPartner,
                          bestPartnerScore, minScore);
         }
-        else if (bandBlobOnWantedSide)
+        else if (bandBlobOnWantedSide && strictSide)
         {
             sideRejected = true;
             platform_log("[DETAILS_DET] requested %s side has a band blob but no "
                          "recognisable badge — skipping frame instead of using "
                          "wrong-side badge %d\n",
                          wantLeft ? "left" : "right", chosenIdx);
+        }
+        else if (bandBlobOnWantedSide)
+        {
+            // One-shot caller: no next frame to wait for, so keep the best
+            // match auto-selected and let the user tap-correct it.
+            platform_log("[DETAILS_DET] requested %s side unreadable — one-shot "
+                         "caller, falling back to badge %d\n",
+                         wantLeft ? "left" : "right", chosenIdx);
+        }
+    }
+
+    // Manual override: the user tapped a candidate box on the live preview. A
+    // tap is authoritative — it bypasses the template gate and the side
+    // heuristics entirely (the homography only needs the blob's contour, not
+    // its match score). The point is in processed-frame pixels and persists
+    // across frames, so it keeps selecting whatever candidate contains it; if
+    // the framing drifts and no box contains it any more, the heuristics above
+    // stay in charge.
+    if (tapPoint.x >= 0 && tapPoint.y >= 0)
+    {
+        int    tapIdx = -1;
+        double tapDist = 0;
+        for (size_t i = 0; i < detectedRois.size(); ++i)
+        {
+            const cv::Rect &r = detectedRois[i];
+            // Inflate a little so taps just outside a thin box still count.
+            const int mx = r.width / 4, my = r.height / 4;
+            const cv::Rect hit(r.x - mx, r.y - my,
+                               r.width + 2 * mx, r.height + 2 * my);
+            if (!hit.contains(tapPoint)) continue;
+            const double dx = r.x + r.width * 0.5 - tapPoint.x;
+            const double dy = r.y + r.height * 0.5 - tapPoint.y;
+            const double dist = dx * dx + dy * dy;
+            if (tapIdx < 0 || dist < tapDist)
+            {
+                tapIdx = (int)i;
+                tapDist = dist;
+            }
+        }
+        if (tapIdx >= 0)
+        {
+            detectedDetailsIndices.assign(1, tapIdx);
+            sideRejected = false;
+            platform_log("[DETAILS_DET] tap override (%d,%d) -> candidate %d\n",
+                         tapPoint.x, tapPoint.y, tapIdx);
         }
     }
 
@@ -1179,9 +1226,12 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
 // tooling. The live camera session calls detect_details / recognise_details on
 // separate threads instead.
 ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side,
-                                               DebugImageType debugImageType)
+                                               DebugImageType debugImageType,
+                                               cv::Point tapPoint,
+                                               bool strictSide)
 {
-    DetailsDetectResult det = detect_details(inputImg, side, debugImageType);
+    DetailsDetectResult det =
+        detect_details(inputImg, side, debugImageType, tapPoint, strictSide);
     if (!det.matched)
         return det.result;
     return recognise_details(det);

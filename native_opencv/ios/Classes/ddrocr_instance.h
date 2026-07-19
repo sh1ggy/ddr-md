@@ -200,14 +200,27 @@ public:
     // TODO use outputimg path declared in class
     // Full pipeline: detect_details followed by recognise_details (when a badge
     // matched). Kept for the picked-image FFI path and offline tooling.
+    // tapPoint / strictSide: see detect_details.
     ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST,
-                                   DebugImageType debugImageType = DebugImageType::NONE);
+                                   DebugImageType debugImageType = DebugImageType::NONE,
+                                   cv::Point tapPoint = cv::Point(-1, -1),
+                                   bool strictSide = true);
     // Phase 1 (cheap, run every frame): HSV mask -> blob filter -> Details
     // template match. Returns the detected ROIs + chosen index plus the geometry
     // phase 2 needs. Does NOT run any PaddleOCR.
+    // tapPoint (processed-frame pixels, {-1,-1} = none) is a user override: the
+    // candidate blob containing it is chosen as the Details badge, bypassing
+    // the template gate and side heuristics for that frame.
+    // strictSide governs what happens when the requested LEFT/RIGHT side is
+    // visible but its badge isn't recognisable: true (live camera) rejects the
+    // frame — a later frame will do better; false (one-shot callers like the
+    // picked-image path, which have no next frame) falls back to the best
+    // match so something is always auto-selected and the user can tap-correct.
     DetailsDetectResult detect_details(cv::Mat inputImg,
                                        DetectionSide side = DetectionSide::FIRST,
-                                       DebugImageType debugImageType = DebugImageType::NONE);
+                                       DebugImageType debugImageType = DebugImageType::NONE,
+                                       cv::Point tapPoint = cv::Point(-1, -1),
+                                       bool strictSide = true);
     // Phase 2 (expensive, run from the consumer thread): homography warp +
     // PaddleOCR det/rec over the score panel. Consumes a matched
     // DetailsDetectResult and returns the completed ProcessImgResult.
