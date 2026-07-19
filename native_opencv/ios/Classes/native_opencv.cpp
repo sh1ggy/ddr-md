@@ -70,6 +70,7 @@ typedef struct
     char *username;
     char *difficulty;
     char *maxCombo;
+    char *exScore;
 } COCRStrings;
 
 // Helper function to convert std::string to char* (caller must free the result)
@@ -117,6 +118,7 @@ static void writeResult(
     outStrings->username = allocCString(ocr.username.text);
     outStrings->difficulty = allocCString(ocr.difficulty.text);
     outStrings->maxCombo = allocCString(ocr.max_combo.text);
+    outStrings->exScore = allocCString(ocr.ex_score.text);
 }
 
 // Avoiding name mangling
@@ -152,7 +154,9 @@ extern "C"
         int32_t *outputRoisCount,
         int32_t *outputdetailsRoiIndex,
         COCRStrings *outStrings,
-        int32_t side)
+        int32_t side,
+        int32_t tapX,
+        int32_t tapY)
     {
         DdrocrInstance *instance = static_cast<DdrocrInstance *>(handle);
 
@@ -163,8 +167,12 @@ extern "C"
             *outputIsDetected = 0;
             return;
         }
+        // strictSide=false: this is a one-shot run with no next frame, so a
+        // wrong-side situation falls back to the best match (tap-correctable)
+        // instead of returning nothing.
         ProcessImgResult result = instance->process_image(
-            img, static_cast<DetectionSide>(side), DebugImageType::ON);
+            img, static_cast<DetectionSide>(side), DebugImageType::ON,
+            cv::Point(tapX, tapY), /*strictSide=*/false);
         if (!result.isDetected)
         {
             platform_log("No OCR region detected.\n");

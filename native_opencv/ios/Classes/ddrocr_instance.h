@@ -33,6 +33,7 @@ struct OCRResults
     OCRResult username;
     OCRResult difficulty;
     OCRResult max_combo;
+    OCRResult ex_score;
 };
 
 // Whether the pipeline should capture debug images for on-device inspection.
@@ -97,17 +98,17 @@ struct ProcessImgResult
 // offset 48: tophat_kernel_size   int32_t
 // offset 52: morph_width          int32_t  (HSV blob morphology kernel width)
 // offset 56: morph_height         int32_t  (HSV blob morphology kernel height)
-// offset 60: roi[12][6]           int32_t[72]
-// offset 348: combinedRoi[4]      int32_t[4]
-// offset 368: details_template_min_score    double (4 bytes padding before)
-// offset 376: details_side_gate_factor      double
-// offset 384: homography_min_quad_coverage  double
-// total: 392 bytes
+// offset 60: roi[13][6]           int32_t[78]
+// offset 372: combinedRoi[4]      int32_t[4]
+// offset 392: details_template_min_score    double (4 bytes padding before)
+// offset 400: details_side_gate_factor      double
+// offset 408: homography_min_quad_coverage  double
+// total: 416 bytes
 //
 // roi row: {x1, y1, x2, y2, expand_x, expand_y}
 // roi order: details(0), score(1), marvelous(2), perfect(3), great(4),
 //            good(5), miss(6), flare(7), title(8), username(9),
-//            difficulty(10), max_combo(11)
+//            difficulty(10), max_combo(11), ex_score(12)
 struct COCRConfig
 {
     int32_t border                    = 30;
@@ -121,24 +122,25 @@ struct COCRConfig
     int32_t tophat_kernel_size        = 125;     // morphological top-hat kernel size (must be odd)
     int32_t morph_width               = 360;     // HSV blob morphology opening kernel width
     int32_t morph_height              = 90;      // HSV blob morphology opening kernel height
-    int32_t roi[12][6] = {
-        {2054,2348,2418,2450, 0, 0}, // details
-        {2700,2551,2968,2611, 5, 0}, // score
-        {1896,2549,2018,2599, 0, 0}, // marvelous
-        {1896,2608,2018,2657, 0, 4}, // perfect
-        {1896,2664,2018,2702, 0, 6}, // great
-        {1896,2727,2018,2771, 0, 5}, // good
-        {1896,2825,2018,2879, 0, 0}, // miss
-        {1649,2466,1817,2508, 0, 7}, // flare
-        {1210,2075,1744,2133, 0,10}, // title
-        {2180,1388,2465,1439,10,10}, // username
-        {2056,1463,2627,1536,10,10}, // difficulty
-        {2665,2779,2797,2831, 0, 0}, // max_combo
+    int32_t roi[13][6] = {
+        {1669, 864,1920, 936, 0, 0}, // details
+        {2129,1005,2273,1042, 5, 6}, // score
+        {1540,1013,1642,1050, 0, 0}, // marvelous
+        {1540,1049,1642,1086, 0, 0}, // perfect
+        {1540,1085,1642,1122, 0, 0}, // great
+        {1540,1121,1642,1158, 0, 0}, // good
+        {1540,1193,1642,1230, 0, 2}, // miss
+        {1385, 954,1507, 984, 0, 0}, // flare
+        {1051, 669,1506, 719, 0, 0}, // title
+        {1752, 181,1952, 220, 0, 0}, // username
+        {1766, 233,2026, 300, 0, 0}, // difficulty
+        {2098,1154,2279,1202, 0, 0}, // max_combo
+        {2166,1118,2279,1157, 0, 0}, // ex_score
     };
-    // Combined ROI {x1,y1,x2,y2} in warped 4000x5000 space — covers the score
-    // panel. Fed to the PaddleOCR detection model; detected boxes are then
-    // mapped to the score-panel fields via the per-field roi[] anchors above.
-    int32_t combinedRoi[4] = {1648, 2439, 2959, 2848};
+    // Combined ROI {x1,y1,x2,y2} — covers the score panel. Fed to the
+    // PaddleOCR detection model; detected boxes are then mapped to the
+    // score-panel fields via the per-field roi[] anchors above.
+    int32_t combinedRoi[4] = {1299, 860, 2296, 1239};
     // DetailsDetector::classify threshold (TM_CCOEFF_NORMED). See
     // ocr_config.dart::ocrDetailsTemplateMinScore for the source of truth.
     double  details_template_min_score = 0.4;
@@ -198,14 +200,27 @@ public:
     // TODO use outputimg path declared in class
     // Full pipeline: detect_details followed by recognise_details (when a badge
     // matched). Kept for the picked-image FFI path and offline tooling.
+    // tapPoint / strictSide: see detect_details.
     ProcessImgResult process_image(cv::Mat inputImg, DetectionSide side = DetectionSide::FIRST,
-                                   DebugImageType debugImageType = DebugImageType::NONE);
+                                   DebugImageType debugImageType = DebugImageType::NONE,
+                                   cv::Point tapPoint = cv::Point(-1, -1),
+                                   bool strictSide = true);
     // Phase 1 (cheap, run every frame): HSV mask -> blob filter -> Details
     // template match. Returns the detected ROIs + chosen index plus the geometry
     // phase 2 needs. Does NOT run any PaddleOCR.
+    // tapPoint (processed-frame pixels, {-1,-1} = none) is a user override: the
+    // candidate blob containing it is chosen as the Details badge, bypassing
+    // the template gate and side heuristics for that frame.
+    // strictSide governs what happens when the requested LEFT/RIGHT side is
+    // visible but its badge isn't recognisable: true (live camera) rejects the
+    // frame — a later frame will do better; false (one-shot callers like the
+    // picked-image path, which have no next frame) falls back to the best
+    // match so something is always auto-selected and the user can tap-correct.
     DetailsDetectResult detect_details(cv::Mat inputImg,
                                        DetectionSide side = DetectionSide::FIRST,
-                                       DebugImageType debugImageType = DebugImageType::NONE);
+                                       DebugImageType debugImageType = DebugImageType::NONE,
+                                       cv::Point tapPoint = cv::Point(-1, -1),
+                                       bool strictSide = true);
     // Phase 2 (expensive, run from the consumer thread): homography warp +
     // PaddleOCR det/rec over the score panel. Consumes a matched
     // DetailsDetectResult and returns the completed ProcessImgResult.

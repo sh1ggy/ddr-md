@@ -17,6 +17,7 @@ import 'package:path_provider/path_provider.dart';
 const List<String> kOcrFieldOrder = [
   'title',
   'score',
+  'exScore',
   'marvelous',
   'perfect',
   'great',
@@ -111,6 +112,7 @@ class ProcessResult {
       'username': rd(r.username),
       'difficulty': rd(r.difficulty),
       'maxCombo': rd(r.maxCombo),
+      'exScore': rd(r.exScore),
     };
 
     Uint8List? img(Pointer<Uint8> buf, int len) =>
@@ -182,7 +184,7 @@ final class COCRConfig extends Struct {
   external int morphWidth;
   @Int32()
   external int morphHeight;
-  @Array(12, 6)
+  @Array(13, 6)
   external Array<Array<Int32>> roi;
   @Array(4)
   external Array<Int32> combinedRoi;
@@ -206,6 +208,7 @@ final class COCRStrings extends Struct {
   external Pointer<Char> username;
   external Pointer<Char> difficulty;
   external Pointer<Char> maxCombo;
+  external Pointer<Char> exScore;
 }
 
 // Layout must match camera_result.h::CCameraResult exactly.
@@ -232,6 +235,7 @@ final class CCameraResult extends Struct {
   external Pointer<Char> username;
   external Pointer<Char> difficulty;
   external Pointer<Char> maxCombo;
+  external Pointer<Char> exScore;
   external Pointer<Uint8> mask;
   @Int32()
   external int maskLen;
@@ -263,6 +267,8 @@ typedef _c_processPickedImage = Void Function(
   Pointer<Int32> outputdetailsRoiIndex,
   Pointer<COCRStrings> outStrings,
   Int32 side,
+  Int32 tapX,
+  Int32 tapY,
 );
 
 typedef _dart_processPickedImage = void Function(
@@ -274,6 +280,8 @@ typedef _dart_processPickedImage = void Function(
   Pointer<Int32> outputdetailsRoiIndex,
   Pointer<COCRStrings> outStrings,
   int side,
+  int tapX,
+  int tapY,
 );
 
 // Camera session FFI (operates on the opaque session pointer from the channel).
@@ -327,7 +335,7 @@ Pointer<COCRConfig> _buildOCRConfig() {
   p.ref.tophatKernelSize = ocrTophatKernelSize;
   p.ref.morphWidth = ocrMorphWidth;
   p.ref.morphHeight = ocrMorphHeight;
-  for (int r = 0; r < 12; r++) {
+  for (int r = 0; r < ocrRoi.length; r++) {
     final (rect, (ex, ey)) = ocrRoi[r];
     p.ref.roi[r][roiX1] = rect[roiX1];
     p.ref.roi[r][roiY1] = rect[roiY1];
@@ -362,6 +370,7 @@ Map<String, String> _readOcrStrings(Pointer<COCRStrings> p) {
     'username': read(r.username),
     'difficulty': read(r.difficulty),
     'maxCombo': read(r.maxCombo),
+    'exScore': read(r.exScore),
   };
 }
 
@@ -378,7 +387,8 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
     r.title,
     r.username,
     r.difficulty,
-    r.maxCombo
+    r.maxCombo,
+    r.exScore
   ]) {
     if (s != nullptr) calloc.free(s);
   }
@@ -388,7 +398,8 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
 // Runs the picked-image FFI path inside a one-shot isolate so the (slow)
 // instance creation + OCR doesn't jank the UI thread. Creates and destroys a
 // transient DdrocrInstance for the single call.
-ProcessResult _runPickedImage(String appPath, String imagePath, int side) {
+ProcessResult _runPickedImage(
+    String appPath, String imagePath, int side, int tapX, int tapY) {
   final createFn =
       _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
           'create_ocr_instance');
@@ -421,6 +432,8 @@ ProcessResult _runPickedImage(String appPath, String imagePath, int side) {
     outputDetailsRoiIndex,
     outStrings,
     side,
+    tapX,
+    tapY,
   );
   calloc.free(imagePathPtr);
 
@@ -613,7 +626,7 @@ class OCRProcessor {
   // native camera session reconstructs into a COCRConfig. Field order MUST match
   // config_marshal.h::BuildCOCRConfigFromArrays.
   (Int32List, Float64List) _buildCameraConfigArrays() {
-    final ints = Int32List(83);
+    final ints = Int32List(89);
     ints[0] = ocrBorder;
     ints[1] = ocrPsmEng;
     ints[2] = ocrPsmEngJP;
@@ -622,7 +635,7 @@ class OCRProcessor {
     ints[5] = ocrMorphWidth;
     ints[6] = ocrMorphHeight;
     int k = 7;
-    for (int r = 0; r < 12; r++) {
+    for (int r = 0; r < ocrRoi.length; r++) {
       final (rect, (ex, ey)) = ocrRoi[r];
       ints[k++] = rect[roiX1];
       ints[k++] = rect[roiY1];
@@ -674,15 +687,20 @@ class OCRProcessor {
     }
   }
 
-  void processPickedImage(XFile image) async {
+  // [tapPoint] (original-image pixels) forces the candidate blob containing it
+  // to be the Details badge, bypassing the side heuristics — the load-image
+  // page sends it when the user taps a detected ROI box.
+  void processPickedImage(XFile image, {Point<int>? tapPoint}) async {
     print('Processing image from file: ${image.path}');
     isProcessing.value = true;
     try {
       final appPath = appDir!.path;
       final imagePath = image.path;
       final sideIndex = _side.index;
-      final result =
-          await Isolate.run(() => _runPickedImage(appPath, imagePath, sideIndex));
+      final tapX = tapPoint?.x ?? -1;
+      final tapY = tapPoint?.y ?? -1;
+      final result = await Isolate.run(
+          () => _runPickedImage(appPath, imagePath, sideIndex, tapX, tapY));
       streamResultController.add(result);
     } catch (e) {
       print('Picked image processing failed: $e');

@@ -749,6 +749,7 @@ class _OcrPageState extends State<OcrPage>
 // Fields whose readings are numbers; everything else is tallied as raw text.
 const Set<String> _numericKeys = {
   'score',
+  'exScore',
   'marvelous',
   'perfect',
   'great',
@@ -801,10 +802,11 @@ class _OcrAggregator {
     _detailsCount = 0;
   }
 
-  // Formats a tally value for display: numbers get thousands separators, text
-  // passes through unchanged.
-  static String _display(Object value) =>
-      value is int ? _formatOcrNumber(value) : value as String;
+  // Formats a tally value for display: numbers get thousands separators
+  // (except EX score, which the game renders without them), text passes
+  // through unchanged.
+  static String _display(String key, Object value) =>
+      value is int && key != 'exScore' ? _formatOcrNumber(value) : '$value';
 
   ({String value, double confidence, int count})? best(String key) {
     final tally = _counts[key];
@@ -816,7 +818,7 @@ class _OcrAggregator {
       if (top == null || entry.value > top.value) top = entry;
     }
     return (
-      value: _display(top!.key),
+      value: _display(key, top!.key),
       confidence: top.value / total,
       count: top.value,
     );
@@ -830,7 +832,7 @@ class _OcrAggregator {
       ..sort((a, b) => b.value.compareTo(a.value));
     return [
       for (final e in entries)
-        (value: _display(e.key), count: e.value, share: e.value / total),
+        (value: _display(key, e.key), count: e.value, share: e.value / total),
     ];
   }
 }

@@ -75,6 +75,7 @@ class Score {
   final String username;
   final String flare;
   final int? score;
+  final int? exScore;
   final int? marvelous;
   final int? perfect;
   final int? great;
@@ -97,6 +98,7 @@ class Score {
     this.username = '',
     this.flare = '',
     this.score,
+    this.exScore,
     this.marvelous,
     this.perfect,
     this.great,
@@ -117,6 +119,7 @@ class Score {
       'username': username,
       'flare': flare,
       'score': score,
+      'exScore': exScore,
       'marvelous': marvelous,
       'perfect': perfect,
       'great': great,
@@ -140,6 +143,7 @@ class Score {
     String? username,
     String? flare,
     int? score,
+    int? exScore,
     int? marvelous,
     int? perfect,
     int? great,
@@ -158,6 +162,7 @@ class Score {
         username: username ?? this.username,
         flare: flare ?? this.flare,
         score: score ?? this.score,
+        exScore: exScore ?? this.exScore,
         marvelous: marvelous ?? this.marvelous,
         perfect: perfect ?? this.perfect,
         great: great ?? this.great,
@@ -177,6 +182,7 @@ class Score {
         username: json["username"] ?? '',
         flare: json["flare"] ?? '',
         score: json["score"],
+        exScore: json["exScore"],
         marvelous: json["marvelous"],
         perfect: json["perfect"],
         great: json["great"],

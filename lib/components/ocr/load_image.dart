@@ -232,6 +232,32 @@ class _LoadImageState extends State<LoadImage> {
     }
   }
 
+  // Tap-to-pick: when the side heuristics anchor on the wrong box (easy with
+  // 3+ candidates), tapping the correct box re-runs OCR with that blob forced
+  // as the Details badge. Taps outside every box are ignored. [pos] is in the
+  // displayed-image space; the ROIs in _lastResult are already scaled to it,
+  // and dividing by the same scale recovers original-image pixels for native.
+  void _onRoiTap(Offset pos) {
+    final rois = _lastResult?.detectedRois;
+    if (rois == null || _isProcessing || _pickedImage == null) return;
+    final scale = _camFrameToScreenScale;
+    if (scale <= 0) return;
+    const slop = 12.0;
+    final hit = rois.any((r) => Rect.fromLTWH(r.left - slop, r.top - slop,
+            r.width + 2 * slop, r.height + 2 * slop)
+        .contains(pos));
+    if (!hit) return;
+    setState(() {
+      _lastResult = null;
+      _isProcessing = true;
+    });
+    _ocrProcessor.processPickedImage(
+      _pickedImage!,
+      tapPoint:
+          Point<int>((pos.dx / scale).round(), (pos.dy / scale).round()),
+    );
+  }
+
   // Floats over the loaded screenshot — and over the no-detection empty
   // state, where switching sides is how you retry the same image.
   Widget get _floatingSideSelector => Positioned(
@@ -306,13 +332,16 @@ class _LoadImageState extends State<LoadImage> {
                       children: [
                         Stack(
                           children: [
-                            RoiOverlay(
-                              rois: _lastResult!.detectedRois!,
-                              detailsRoiIndex: _lastResult!.detailsRoiIndex,
-                              child: Image.file(
-                                File(_pickedImage!.path),
-                                width: MediaQuery.of(context).size.width,
-                                fit: BoxFit.fitWidth,
+                            GestureDetector(
+                              onTapUp: (d) => _onRoiTap(d.localPosition),
+                              child: RoiOverlay(
+                                rois: _lastResult!.detectedRois!,
+                                detailsRoiIndex: _lastResult!.detailsRoiIndex,
+                                child: Image.file(
+                                  File(_pickedImage!.path),
+                                  width: MediaQuery.of(context).size.width,
+                                  fit: BoxFit.fitWidth,
+                                ),
                               ),
                             ),
                             _floatingSideSelector,
@@ -326,6 +355,16 @@ class _LoadImageState extends State<LoadImage> {
                             ),
                           ],
                         ),
+                        if (_lastResult!.detectedRois!.length > 1)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                            child: Text(
+                              'Wrong box highlighted? Tap the correct Details '
+                              'box to re-scan.',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[600]),
+                            ),
+                          ),
                         if (hasScore)
                           Padding(
                             padding: const EdgeInsets.all(8.0),
@@ -369,6 +408,8 @@ String ocrFieldLabel(String key) {
   switch (key) {
     case 'maxCombo':
       return 'MAX COMBO';
+    case 'exScore':
+      return 'EX SCORE';
     default:
       return key.toUpperCase();
   }
@@ -560,11 +601,14 @@ class FlareDropdownField extends StatelessWidget {
                                 children: [
                                   Image.asset(flareRankIcon(r), height: 18),
                                   const SizedBox(width: 8),
-                                  Text(
-                                    r,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
+                                  Flexible(
+                                    child: Text(
+                                      r,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
                                 ],

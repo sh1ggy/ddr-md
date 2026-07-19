@@ -44,6 +44,7 @@ static const int ROI_IDX_TITLE      = 8;
 static const int ROI_IDX_USERNAME   = 9;
 static const int ROI_IDX_DIFFICULTY = 10;
 static const int ROI_IDX_MAXCOMBO   = 11;
+static const int ROI_IDX_EXSCORE    = 12;
 
 
 DdrocrInstance::DdrocrInstance(std::string dataPath, const COCRConfig &cfg,
@@ -120,7 +121,9 @@ cv::Mat DdrocrInstance::logicalToDisplayU8(const cv::Mat &logical) const
 // needs. NO PaddleOCR runs here.
 // ---------------------------------------------------------------------------
 DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSide side,
-                                                   DebugImageType debugImageType)
+                                                   DebugImageType debugImageType,
+                                                   cv::Point tapPoint,
+                                                   bool strictSide)
 {
     DetailsDetectResult det;
     det.side = side;
@@ -312,6 +315,10 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
     // the best one. Re-run a small loop to collect every candidate that
     // cleared the same threshold, then pick by side.
     std::vector<int> detectedDetailsIndices;
+    // Per-candidate solo template scores, filled by the side-gate loop below
+    // (side != FIRST only). Reused by the wrong-side partner check so it
+    // doesn't have to re-run matchTemplate.
+    std::vector<float> candScores(detectedRois.size(), -1.0f);
     if (dmatch.index >= 0)
     {
         if (side == DetectionSide::FIRST)
@@ -333,6 +340,7 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
             {
                 std::vector<cv::Rect> one{detectedRois[i]};
                 auto m = detailsDetector.classify(inputImg, one, sideMin);
+                candScores[i] = m.score; // best score even when below sideMin
                 if (m.index == 0)
                 {
                     detectedDetailsIndices.push_back((int)i);
@@ -342,6 +350,117 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
             }
             if (detectedDetailsIndices.empty())
                 detectedDetailsIndices.push_back(dmatch.index);
+        }
+    }
+
+    // With LEFT/RIGHT requested but only ONE candidate surviving the gate, the
+    // positional pick below degenerates to "best match wins" and the requested
+    // side has no influence — selecting 1P can silently lock onto the 2P badge
+    // whenever the other player's badge scored under the gate. The two badges
+    // sit in the same horizontal band, mirror-separated by several badge
+    // widths, so look for the partner among the remaining HSV blobs on the
+    // requested side of the survivor:
+    //  - a partner that clears the base minScore (only the tighter side gate
+    //    filtered it) gets promoted so the positional pick can choose it;
+    //  - a band blob that is NOT recognisable as a badge means the requested
+    //    side is visible but unreadable this frame — skip the frame rather
+    //    than anchor the homography on the wrong player's panel.
+    // No band blob on the requested side (single-panel framing) keeps the
+    // current best-match behaviour: a lone badge is genuinely ambiguous.
+    bool sideRejected = false;
+    if (side != DetectionSide::FIRST && detectedDetailsIndices.size() == 1)
+    {
+        const int chosenIdx = detectedDetailsIndices[0];
+        const cv::Rect &chosen = detectedRois[chosenIdx];
+        const float cx = chosen.x + chosen.width * 0.5f;
+        const float cy = chosen.y + chosen.height * 0.5f;
+        const bool wantLeft = (side == DetectionSide::LEFT);
+        // Minimum centre-to-centre distance (in badge widths) for a blob to be
+        // the other panel's badge rather than an adjacent sibling tab. The
+        // real pair sits ~4 badge widths apart in the reference layout.
+        const float minPartnerDist = 2.5f * (float)chosen.width;
+        int   bestPartner = -1;
+        float bestPartnerScore = -1.0f;
+        bool  bandBlobOnWantedSide = false;
+        for (size_t i = 0; i < detectedRois.size(); ++i)
+        {
+            if ((int)i == chosenIdx) continue;
+            const cv::Rect &r = detectedRois[i];
+            const float rx = r.x + r.width * 0.5f;
+            const float ry = r.y + r.height * 0.5f;
+            if (wantLeft ? (rx >= cx) : (rx <= cx)) continue;
+            // Same tab-row band and comparable size as the surviving badge.
+            if (std::abs(ry - cy) > (float)chosen.height) continue;
+            if (r.height * 2 < chosen.height || r.height > chosen.height * 2) continue;
+            if (r.width * 2 < chosen.width || r.width > chosen.width * 2) continue;
+            if (std::abs(rx - cx) < minPartnerDist) continue;
+            bandBlobOnWantedSide = true;
+            if (candScores[i] >= minScore && candScores[i] > bestPartnerScore)
+            {
+                bestPartnerScore = candScores[i];
+                bestPartner = (int)i;
+            }
+        }
+        if (bestPartner >= 0)
+        {
+            detectedDetailsIndices.push_back(bestPartner);
+            platform_log("[DETAILS_DET] promoted %s-side partner %d score=%.3f "
+                         "(under side gate, over minScore %.2f)\n",
+                         wantLeft ? "left" : "right", bestPartner,
+                         bestPartnerScore, minScore);
+        }
+        else if (bandBlobOnWantedSide && strictSide)
+        {
+            sideRejected = true;
+            platform_log("[DETAILS_DET] requested %s side has a band blob but no "
+                         "recognisable badge — skipping frame instead of using "
+                         "wrong-side badge %d\n",
+                         wantLeft ? "left" : "right", chosenIdx);
+        }
+        else if (bandBlobOnWantedSide)
+        {
+            // One-shot caller: no next frame to wait for, so keep the best
+            // match auto-selected and let the user tap-correct it.
+            platform_log("[DETAILS_DET] requested %s side unreadable — one-shot "
+                         "caller, falling back to badge %d\n",
+                         wantLeft ? "left" : "right", chosenIdx);
+        }
+    }
+
+    // Manual override: the user tapped a candidate box on the live preview. A
+    // tap is authoritative — it bypasses the template gate and the side
+    // heuristics entirely (the homography only needs the blob's contour, not
+    // its match score). The point is in processed-frame pixels and persists
+    // across frames, so it keeps selecting whatever candidate contains it; if
+    // the framing drifts and no box contains it any more, the heuristics above
+    // stay in charge.
+    if (tapPoint.x >= 0 && tapPoint.y >= 0)
+    {
+        int    tapIdx = -1;
+        double tapDist = 0;
+        for (size_t i = 0; i < detectedRois.size(); ++i)
+        {
+            const cv::Rect &r = detectedRois[i];
+            // Inflate a little so taps just outside a thin box still count.
+            const int mx = r.width / 4, my = r.height / 4;
+            const cv::Rect hit(r.x - mx, r.y - my,
+                               r.width + 2 * mx, r.height + 2 * my);
+            if (!hit.contains(tapPoint)) continue;
+            const double dx = r.x + r.width * 0.5 - tapPoint.x;
+            const double dy = r.y + r.height * 0.5 - tapPoint.y;
+            const double dist = dx * dx + dy * dy;
+            if (tapIdx < 0 || dist < tapDist)
+            {
+                tapIdx = (int)i;
+                tapDist = dist;
+            }
+        }
+        if (tapIdx >= 0)
+        {
+            detectedDetailsIndices.assign(1, tapIdx);
+            sideRejected = false;
+            platform_log("[DETAILS_DET] tap override (%d,%d) -> candidate %d\n",
+                         tapPoint.x, tapPoint.y, tapIdx);
         }
     }
 
@@ -362,12 +481,15 @@ DetailsDetectResult DdrocrInstance::detect_details(cv::Mat inputImg, DetectionSi
     result.rois = detectedRois;
     save_img("BW3", BW3);
 
-    if (detectedDetailsIndices.empty())
+    if (detectedDetailsIndices.empty() || sideRejected)
     {
         auto t_total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::high_resolution_clock::now() - t_total_start).count();
         platform_log("[TIMER] process_image total (no Details found): %lld ms\n", (long long)t_total_ms);
-        platform_log("Details template match failed (best score=%.3f). Defaulting to no match.\n", dmatch.score);
+        if (sideRejected)
+            platform_log("Details badge only found on the wrong side (score=%.3f). Skipping frame.\n", dmatch.score);
+        else
+            platform_log("Details template match failed (best score=%.3f). Defaulting to no match.\n", dmatch.score);
         result.detailsRoiIndex = -1;
         return det;
     }
@@ -470,6 +592,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
     cv::Rect ROI_Username   = roiRect(ROI_IDX_USERNAME);
     cv::Rect ROI_Difficulty = roiRect(ROI_IDX_DIFFICULTY);
     cv::Rect ROI_MaxCombo   = roiRect(ROI_IDX_MAXCOMBO);
+    cv::Rect ROI_ExScore    = roiRect(ROI_IDX_EXSCORE);
 
     // Calibration is anchored on the P2 (right) panel's badge. Fields inside
     // the player's own score panel keep the same badge-relative offset on both
@@ -665,6 +788,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
                 {"miss",      fieldInCombinedCrop(ROI_Miss)},
                 {"flare",     fieldInCombinedCrop(ROI_Flare)},
                 {"max_combo", fieldInCombinedCrop(ROI_MaxCombo)},
+                {"ex_score",  fieldInCombinedCrop(ROI_ExScore)},
             };
             const cv::Rect cropBounds(0, 0, annotated.cols, annotated.rows);
             for (const auto &a : anchors)
@@ -788,6 +912,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
         {"miss",      &ROI_Miss,      &ocrResults.miss,      -1},
         {"flare",     &ROI_Flare,     &ocrResults.flare,     -1},
         {"max_combo", &ROI_MaxCombo,  &ocrResults.max_combo, -1},
+        {"ex_score",  &ROI_ExScore,   &ocrResults.ex_score,  -1},
     };
     for (auto &f : combinedFields)
     {
@@ -814,6 +939,13 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
             t.resize(slash);
         else
             t.erase(std::remove(t.begin(), t.end(), '/'), t.end());
+    }
+
+    // The game renders EX score without thousands separators (unlike the
+    // money score), so any comma the recogniser emits there is OCR noise.
+    {
+        std::string &t = ocrResults.ex_score.text;
+        t.erase(std::remove(t.begin(), t.end(), ','), t.end());
     }
 
     // ----- Outside the combined ROI: per-ROI recogniser-only fallback -----
@@ -913,6 +1045,7 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
         drawField(ROI_Miss,       ROI_IDX_MISS,       "miss");
         drawField(ROI_Flare,      ROI_IDX_FLARE,      "flare");
         drawField(ROI_MaxCombo,   ROI_IDX_MAXCOMBO,   "max_combo");
+        drawField(ROI_ExScore,    ROI_IDX_EXSCORE,    "ex_score");
         drawField(ROI_Title,      ROI_IDX_TITLE,      "title");
         drawField(ROI_Username,   ROI_IDX_USERNAME,   "username");
         drawField(ROI_Difficulty, ROI_IDX_DIFFICULTY, "difficulty");
@@ -1093,9 +1226,12 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
 // tooling. The live camera session calls detect_details / recognise_details on
 // separate threads instead.
 ProcessImgResult DdrocrInstance::process_image(cv::Mat inputImg, DetectionSide side,
-                                               DebugImageType debugImageType)
+                                               DebugImageType debugImageType,
+                                               cv::Point tapPoint,
+                                               bool strictSide)
 {
-    DetailsDetectResult det = detect_details(inputImg, side, debugImageType);
+    DetailsDetectResult det =
+        detect_details(inputImg, side, debugImageType, tapPoint, strictSide);
     if (!det.matched)
         return det.result;
     return recognise_details(det);

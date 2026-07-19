@@ -49,14 +49,14 @@ struct NamedRoiSet
 
 // Mirrors lib/ocr_config.dart. roi[] rows are {x1,y1,x2,y2,expand_x,expand_y}
 // in ROI_IDX_* order: details, score, marvelous, perfect, great, good, miss,
-// flare, title, username, difficulty, max_combo. Keep in sync with
+// flare, title, username, difficulty, max_combo, ex_score. Keep in sync with
 // ocrRoi (+ its paired ocrCombinedRoi) in Dart.
 COCRConfig makeReferenceConfig()
 {
     COCRConfig c; // inherits non-ROI defaults (border, thresholds, etc.)
     // Struct defaults now match lib/ocr_config.dart (the app's FFI source of
     // truth), so no per-field overrides are needed here.
-    int roi[12][6] = {
+    int roi[13][6] = {
         {1669, 864, 1920, 936, 0, 0},   // details
         {2129, 1005, 2273, 1042, 5, 6}, // score
         {1540, 1013, 1642, 1050, 0, 0}, // marvelous
@@ -69,6 +69,7 @@ COCRConfig makeReferenceConfig()
         {1752, 181, 1952, 220, 0, 0},   // username
         {1766, 233, 2026, 300, 0, 0},   // difficulty
         {2098, 1154, 2279, 1202, 0, 0}, // max_combo
+        {2166, 1118, 2279, 1157, 0, 0}, // ex_score
     };
     memcpy(c.roi, roi, sizeof(roi));
     int combined[4] = {1299, 860, 2296, 1239};
@@ -76,11 +77,11 @@ COCRConfig makeReferenceConfig()
     return c;
 }
 
-// The 12 fields in OCRResults, in a fixed display order.
+// The fields in OCRResults, in a fixed display order.
 const std::vector<std::string> kFields = {
     "score", "marvelous", "perfect", "great", "good", "miss",
-    "flare", "title", "username", "difficulty", "max_combo"};
-// (note: "ok" is not a field in OCRResults; OCRResults has 11 fields total)
+    "flare", "title", "username", "difficulty", "max_combo", "ex_score"};
+// (note: "ok" is not a field in OCRResults; OCRResults has 12 fields total)
 
 // Pull a field's OCRResult out of OCRResults by name.
 const OCRResult &fieldResult(const OCRResults &r, const std::string &f)
@@ -96,6 +97,7 @@ const OCRResult &fieldResult(const OCRResults &r, const std::string &f)
     if (f == "username")   return r.username;
     if (f == "difficulty") return r.difficulty;
     if (f == "max_combo")  return r.max_combo;
+    if (f == "ex_score")   return r.ex_score;
     static OCRResult empty;
     return empty;
 }

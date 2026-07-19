@@ -247,6 +247,7 @@ class _ScoreJudgments extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final judgments = <(String, String, int?)>[
+      ('EX', 'exScore', score.exScore),
       ('MARV.', 'marvelous', score.marvelous),
       ('PERF.', 'perfect', score.perfect),
       ('GREAT', 'great', score.great),
