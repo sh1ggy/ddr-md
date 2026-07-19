@@ -601,11 +601,14 @@ class FlareDropdownField extends StatelessWidget {
                                 children: [
                                   Image.asset(flareRankIcon(r), height: 18),
                                   const SizedBox(width: 8),
-                                  Text(
-                                    r,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
+                                  Flexible(
+                                    child: Text(
+                                      r,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
                                 ],
