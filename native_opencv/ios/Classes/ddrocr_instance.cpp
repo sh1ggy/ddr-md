@@ -894,6 +894,13 @@ ProcessImgResult DdrocrInstance::recognise_details(const DetailsDetectResult &de
             t.erase(std::remove(t.begin(), t.end(), '/'), t.end());
     }
 
+    // The game renders EX score without thousands separators (unlike the
+    // money score), so any comma the recogniser emits there is OCR noise.
+    {
+        std::string &t = ocrResults.ex_score.text;
+        t.erase(std::remove(t.begin(), t.end(), ','), t.end());
+    }
+
     // ----- Outside the combined ROI: per-ROI recogniser-only fallback -----
     // title/username/difficulty/details sit above the score panel.
     ocrResults.title = getPreprocessedRoiImage(
