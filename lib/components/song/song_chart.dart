@@ -5,11 +5,9 @@ library;
 
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/models/song_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 
 class SongChart extends StatefulWidget {
   const SongChart({
@@ -77,17 +75,18 @@ class SongChartState extends State<SongChart> {
     super.initState();
     hasStops = widget.chart.stops.isNotEmpty;
     isShowingStops = true;
+    genBpmPoints(widget.chart);
   }
 
-  // Ensure that we're watching the songInfo.chart for any changes
+  // Regenerate the graph whenever the parent hands us a different chart,
+  // e.g. when the user picks a different difficulty.
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    late SongState songState = Provider.of<SongState>(context);
-    final charts = songState.songInfo!.charts;
-    genBpmPoints(songState.songInfo!.perChart
-        ? charts[songState.chosenDifficulty.clamp(0, charts.length - 1)]
-        : charts.first);
+  void didUpdateWidget(SongChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chart != widget.chart) {
+      hasStops = widget.chart.stops.isNotEmpty;
+      genBpmPoints(widget.chart);
+    }
   }
 
   @override
