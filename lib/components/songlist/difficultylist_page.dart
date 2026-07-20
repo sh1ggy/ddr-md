@@ -70,15 +70,21 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     'v-z',
   ];
 
+  // Below this similarity a result is considered noise and dropped, same
+  // threshold spirit as the OCR title matcher.
+  static const double _kMinSearchSimilarity = 0.3;
+
   // Search result handler; widgets are built lazily in suggestionsBuilder.
+  // Ranks by normalized Levenshtein similarity (same as OCR title matching)
+  // so close-but-not-exact spellings still sort to the top.
   void getMatch(String value) {
-    value = value.toLowerCase().trim();
+    value = value.trim();
     setState(() {
       _searchResults.clear();
       if (value == "") return;
-      _searchResults.addAll(Songs.list.where((SongInfo song) =>
-          song.title.toLowerCase().contains(value) ||
-          song.titletranslit.toLowerCase().contains(value)));
+      _searchResults.addAll(Songs.matchTitles(value, limit: Songs.list.length)
+          .where((match) => match.similarity >= _kMinSearchSimilarity)
+          .map((match) => match.song));
     });
   }
 
