@@ -302,14 +302,23 @@ class SongChartState extends State<SongChart> {
   }
 }
 
-class SongSyncChart extends StatelessWidget {
+class SongSyncChart extends StatefulWidget {
   const SongSyncChart({super.key, required this.songInfo, required this.chart});
 
   final SongInfo songInfo;
   final Chart chart;
 
   @override
+  State<SongSyncChart> createState() => _SongSyncChartState();
+}
+
+class _SongSyncChartState extends State<SongSyncChart> {
+  bool isExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final songInfo = widget.songInfo;
+    final chart = widget.chart;
     final sync = songInfo.displaySyncFor(chart);
     if (sync == null || sync.curve.isEmpty) return const SizedBox.shrink();
     // Cabinet fingerprint when the arcade data covers this song; otherwise
@@ -330,14 +339,20 @@ class SongSyncChart extends StatelessWidget {
     );
     // Theme variants: darker hues for light mode, brighter for dark mode.
     final fastColor =
-      isDark ? const Color(0xFF46FCE7) : const Color(0xFF00A89E);
+        isDark ? const Color(0xFF46FCE7) : const Color(0xFF00A89E);
     final slowColor =
-      isDark ? const Color(0xFFFF45A0) : const Color(0xFFE53886);
+        isDark ? const Color(0xFFFF45A0) : const Color(0xFFE53886);
     final biasColor = sync.biasMs < 0
         ? slowColor
         : sync.biasMs > 0
             ? fastColor
             : Colors.grey.shade600;
+    // Positive bias: chart plays fast (steps land ahead of the beat), which
+    // in-game is corrected by nudging the audio offset negative — so the
+    // suggested adjustment is the bias with its sign flipped.
+    final adjustBy = -sync.biasMs;
+    final adjustLabel =
+        '${adjustBy >= 0 ? '+' : ''}${adjustBy.toStringAsFixed(1)} ms';
     final biasLabel =
         '${sync.biasMs >= 0 ? '+' : ''}${sync.biasMs.toStringAsFixed(1)} ms';
 
@@ -348,15 +363,34 @@ class SongSyncChart extends StatelessWidget {
         // expanded state doesn't show a stray line against the card.
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          title: const Text(
-            'Sync',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          onExpansionChanged: (expanded) =>
+              setState(() => isExpanded = expanded),
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              const Text(
+                'Sync',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                adjustLabel,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: biasColor,
+                ),
+              ),
+            ],
           ),
-          subtitle: Text(
-            '$biasLabel bias · ${(sync.confidence * 100).round()}% confidence'
-            ' · ${isCabinet ? 'cabinet' : 'simfile'}',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
+          subtitle: isExpanded
+              ? Text(
+                  isCabinet ? 'cabinet' : 'simfile',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                )
+              : null,
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(10, 8, 25, 8),
           children: [
@@ -472,7 +506,7 @@ class SongSyncChart extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'feels late',
+                    'chart is slow',
                     style: TextStyle(
                       color: slowColor,
                       fontSize: 11,
@@ -480,7 +514,7 @@ class SongSyncChart extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'feels early',
+                    'chart is fast',
                     style: TextStyle(
                       color: fastColor,
                       fontSize: 11,
