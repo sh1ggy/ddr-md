@@ -20,10 +20,14 @@ class SongItem {
   SongItem({
     required this.songInfo,
     required this.isFav,
+    this.defaultDifficultyIndex,
   });
 
   SongInfo songInfo;
   bool isFav;
+  // chosenDifficulty index to open the song at, when a single level filter
+  // is active and matches one of this song's difficulty types.
+  int? defaultDifficultyIndex;
 }
 
 enum _ActiveFilterPanel {
@@ -228,6 +232,11 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       favCount = favList.length;
     });
 
+    // Only a single selected level unambiguously implies a difficulty type
+    // to default to when opening a song.
+    final int? filteredLevel =
+        _selectedLevels.length == 1 ? _selectedLevels.first : null;
+
     List<SongItem> songItems = [];
     for (SongInfo song in Songs.list) {
       if (!songMatchesFilters(song, mode)) {
@@ -236,7 +245,16 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       bool isFav =
           favList.any((Favorite fav) => fav.songTitle == song.titletranslit);
 
-      songItems.add(SongItem(songInfo: song, isFav: isFav));
+      final songDifficulty = mode == Modes.singles ? song.singles : song.doubles;
+      final defaultDifficultyIndex = filteredLevel == null
+          ? null
+          : songDifficulty.chosenDifficultyForLevel(filteredLevel);
+
+      songItems.add(SongItem(
+        songInfo: song,
+        isFav: isFav,
+        defaultDifficultyIndex: defaultDifficultyIndex,
+      ));
     }
 
     switch (sortType) {
@@ -385,6 +403,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                               songInfo: songItem.songInfo,
                               isFav: songItem.isFav,
                               isSearch: false,
+                              defaultDifficultyIndex:
+                                  songItem.defaultDifficultyIndex,
                               regenFavsCallback: regenFavCount,
                             );
                           },

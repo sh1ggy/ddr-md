@@ -51,11 +51,7 @@ class SongInfo {
   /// highlight when switching modes drops a difficulty.
   Radar? radarFor(Modes mode, int chosenDifficulty) {
     final radars = mode == Modes.singles ? radarSingles : radarDoubles;
-    final levels = (mode == Modes.singles ? singles : doubles).toJson();
-    final available = levels.entries
-        .where((e) => e.value != null)
-        .map((e) => e.key)
-        .toList();
+    final available = (mode == Modes.singles ? singles : doubles).availableTypes;
     if (available.isEmpty) return null;
     return radars[available[chosenDifficulty.clamp(0, available.length - 1)]];
   }
@@ -330,4 +326,24 @@ class Difficulty {
         "hard": hard,
         "challenge": challenge,
       };
+
+  /// Difficulty type keys (beginner..challenge) that have a level, in the
+  /// canonical order used by chosenDifficulty's index (SongDifficultyPicker,
+  /// radarFor).
+  List<String> get availableTypes => toJson()
+      .entries
+      .where((e) => e.value != null)
+      .map((e) => e.key)
+      .toList();
+
+  /// Index into [availableTypes] of the first difficulty type at [level],
+  /// or null if none match.
+  int? chosenDifficultyForLevel(int level) {
+    final types = availableTypes;
+    final levels = toJson();
+    for (int i = 0; i < types.length; i++) {
+      if (levels[types[i]] == level) return i;
+    }
+    return null;
+  }
 }
