@@ -25,6 +25,8 @@ class SongInfo {
   Difficulty singlesNotecounts;
   Difficulty doublesNotecounts;
   List<Chart> charts;
+  Sync? sync;
+  Sync? arcadeSync;
 
   SongInfo({
     required this.ssc,
@@ -43,7 +45,18 @@ class SongInfo {
     required this.singlesNotecounts,
     required this.doublesNotecounts,
     required this.charts,
+    this.sync,
+    this.arcadeSync,
   });
+
+  /// Simfile sync data for [chart]: per_chart songs carry it on the chart
+  /// entry, otherwise the song-level block applies to every chart.
+  Sync? syncFor(Chart chart) => chart.sync ?? sync;
+
+  /// Sync to display for [chart]: the cabinet fingerprint ([arcadeSync],
+  /// always song-wide) when the arcade data covers this song, else the
+  /// simfile fingerprint as a fallback.
+  Sync? displaySyncFor(Chart chart) => arcadeSync ?? syncFor(chart);
 
   /// Radar for the chart at [chosenDifficulty], which indexes the non-null
   /// difficulties of [mode] in beginner..challenge order (as rendered by
@@ -100,6 +113,11 @@ class SongInfo {
       charts: List<Chart>.from(
         (json["charts"] ?? json["chart"] ?? []).map((x) => Chart.fromJson(x)),
       ),
+
+      sync: json["sync"] == null ? null : Sync.fromJson(json["sync"]),
+      arcadeSync: json["arcade_sync"] == null
+          ? null
+          : Sync.fromJson(json["arcade_sync"]),
     );
   }
 
@@ -124,6 +142,8 @@ class SongInfo {
           "dp": doublesNotecounts.toJson(),
         },
         "chart": List<dynamic>.from(charts.map((x) => x.toJson())),
+        if (sync != null) "sync": sync!.toJson(),
+        if (arcadeSync != null) "arcade_sync": arcadeSync!.toJson(),
       };
 }
 
@@ -134,6 +154,7 @@ class Chart {
   String bpmRange;
   List<Bpm> bpms;
   List<Stop> stops;
+  Sync? sync;
 
   Chart({
     required this.dominantBpm,
@@ -142,6 +163,7 @@ class Chart {
     required this.bpmRange,
     required this.bpms,
     required this.stops,
+    this.sync,
   });
 
   factory Chart.fromJson(Map<String, dynamic> json) => Chart(
@@ -155,6 +177,7 @@ class Chart {
         stops: List<Stop>.from(
           (json["stops"] ?? []).map((x) => Stop.fromJson(x)),
         ),
+        sync: json["sync"] == null ? null : Sync.fromJson(json["sync"]),
       );
 
   Map<String, dynamic> toJson() => {
@@ -164,6 +187,44 @@ class Chart {
         "bpm_range": bpmRange,
         "bpms": List<dynamic>.from(bpms.map((x) => x.toJson())),
         "stops": List<dynamic>.from(stops.map((x) => x.toJson())),
+        if (sync != null) "sync": sync!.toJson(),
+      };
+}
+
+/// Audio-vs-chart sync fingerprint produced by the DDR-BPM-prep sync stages
+/// (same shape for the simfile "sync" and the cabinet "arcade_sync" blocks).
+/// [curve] is the beat-attack convolution response normalized to 0..100,
+/// sampled from [curveStartMs] in [curveStepMs] steps; its peak sits at
+/// [biasMs]. Positive bias: the audio attack lands after the charted beat.
+class Sync {
+  double biasMs;
+  double confidence;
+  double curveStartMs;
+  double curveStepMs;
+  List<int> curve;
+
+  Sync({
+    required this.biasMs,
+    required this.confidence,
+    required this.curveStartMs,
+    required this.curveStepMs,
+    required this.curve,
+  });
+
+  factory Sync.fromJson(Map<String, dynamic> json) => Sync(
+        biasMs: (json["bias_ms"] ?? 0).toDouble(),
+        curveStartMs: (json["curve_start_ms"] ?? 0).toDouble(),
+        curveStepMs: (json["curve_step_ms"] ?? 1).toDouble(),
+        confidence: (json["confidence"] ?? 0).toDouble(),
+        curve: List<int>.from(json["curve"] ?? []),
+      );
+
+  Map<String, dynamic> toJson() => {
+        "bias_ms": biasMs,
+        "confidence": confidence,
+        "curve_start_ms": curveStartMs,
+        "curve_step_ms": curveStepMs,
+        "curve": curve,
       };
 }
 

@@ -107,7 +107,7 @@ class SongChartState extends State<SongChart> {
           show: isShowingStops && hasStops,
           barWidth: 0,
           spots: _songStopSpots,
-          color: stopLineColor.withOpacity(.85),
+          color: stopLineColor.withValues(alpha: 0.85),
           dotData: FlDotData(
             getDotPainter: (spot, percent, barData, index) =>
                 FlDotCirclePainter(
@@ -302,6 +302,201 @@ class SongChartState extends State<SongChart> {
   }
 }
 
+class SongSyncChart extends StatelessWidget {
+  const SongSyncChart({super.key, required this.songInfo, required this.chart});
+
+  final SongInfo songInfo;
+  final Chart chart;
+
+  @override
+  Widget build(BuildContext context) {
+    final sync = songInfo.displaySyncFor(chart);
+    if (sync == null || sync.curve.isEmpty) return const SizedBox.shrink();
+    // Cabinet fingerprint when the arcade data covers this song; otherwise
+    // the simfile fallback, which says nothing about how the cab feels.
+    final isCabinet = sync == songInfo.arcadeSync;
+
+    final spots = <FlSpot>[
+      for (var i = 0; i < sync.curve.length; i++)
+        FlSpot(
+          sync.curveStartMs + i * sync.curveStepMs,
+          sync.curve[i].toDouble(),
+        ),
+    ];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final curveColor = Color.alphaBlend(
+      Colors.black.withValues(alpha: isDark ? 0.18 : 0.14),
+      Theme.of(context).cardColor,
+    );
+    // Theme variants: darker hues for light mode, brighter for dark mode.
+    final fastColor =
+      isDark ? const Color(0xFF46FCE7) : const Color(0xFF00A89E);
+    final slowColor =
+      isDark ? const Color(0xFFFF45A0) : const Color(0xFFE53886);
+    final biasColor = sync.biasMs < 0
+        ? slowColor
+        : sync.biasMs > 0
+            ? fastColor
+            : Colors.grey.shade600;
+    final biasLabel =
+        '${sync.biasMs >= 0 ? '+' : ''}${sync.biasMs.toStringAsFixed(1)} ms';
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        // Remove the default ExpansionTile top/bottom divider lines so the
+        // expanded state doesn't show a stray line against the card.
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          title: const Text(
+            'Sync',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(
+            '$biasLabel bias · ${(sync.confidence * 100).round()}% confidence'
+            ' · ${isCabinet ? 'cabinet' : 'simfile'}',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 8, 25, 8),
+          children: [
+            SizedBox(
+              height: MediaQuery.of(context).size.height / 4,
+              child: LineChart(
+                LineChartData(
+                  titlesData: FlTitlesData(
+                    bottomTitles: const AxisTitles(
+                      axisNameWidget: Text(
+                        'offset from beat (ms)',
+                        style: TextStyle(fontSize: 10),
+                      ),
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    // The response curve is normalized (0-100, unitless), so
+                    // the y-axis carries no readable values.
+                    leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                  ),
+                  lineTouchData: LineTouchData(
+                      touchTooltipData: LineTouchTooltipData(
+                          fitInsideHorizontally: true,
+                          getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                            return touchedBarSpots.map((barSpot) {
+                              return LineTooltipItem(
+                                  '${barSpot.x >= 0 ? '+' : ''}${barSpot.x.toStringAsFixed(0)} ms',
+                                  const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold));
+                            }).toList();
+                          },
+                          tooltipBgColor: Colors.grey.shade900,
+                          tooltipPadding: const EdgeInsets.all(2),
+                          tooltipBorder:
+                              const BorderSide(color: Colors.black))),
+                  extraLinesData: ExtraLinesData(
+                    verticalLines: [
+                      // On-beat reference (0 ms)
+                      VerticalLine(
+                        x: 0,
+                        color: Colors.grey.shade600,
+                        strokeWidth: 1,
+                        dashArray: [4, 4],
+                      ),
+                      // Detected attack (sync bias)
+                      VerticalLine(
+                        x: sync.biasMs,
+                        color: biasColor,
+                        strokeWidth: 1.5,
+                        label: VerticalLineLabel(
+                          show: true,
+                          alignment: sync.biasMs >= 0
+                              ? Alignment.topRight
+                              : Alignment.topLeft,
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: biasColor,
+                          ),
+                          labelResolver: (_) => biasLabel,
+                        ),
+                      ),
+                    ],
+                  ),
+                  clipData: const FlClipData.all(),
+                  borderData: FlBorderData(
+                      border:
+                          Border.all(color: Colors.grey.shade600, width: 1)),
+                  gridData: FlGridData(
+                    show: true,
+                    drawHorizontalLine: false,
+                    drawVerticalLine: false,
+                    getDrawingVerticalLine: (value) {
+                      return FlLine(
+                        color: Colors.grey.shade400,
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  minX: sync.curveStartMs,
+                  maxX: sync.curveStartMs +
+                      (sync.curve.length - 1) * sync.curveStepMs,
+                  minY: 0,
+                  maxY: 108,
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      barWidth: 0.6,
+                      color: curveColor,
+                      isCurved: false,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: curveColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'feels late',
+                    style: TextStyle(
+                      color: slowColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'feels early',
+                    style: TextStyle(
+                      color: fastColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class SongRadarChart extends StatelessWidget {
   const SongRadarChart({super.key, required this.radar});
 
@@ -397,7 +592,7 @@ class SongRadarChart extends StatelessWidget {
                       ],
                     ),
                     RadarDataSet(
-                      fillColor: Colors.redAccent.withOpacity(0.25),
+                      fillColor: Colors.redAccent.withValues(alpha: 0.25),
                       borderColor: Colors.redAccent,
                       borderWidth: 2,
                       entryRadius: 2.5,

@@ -268,7 +268,7 @@ class _ScoreJudgments extends StatelessWidget {
                 Text(label,
                     style: TextStyle(
                         fontSize: 11,
-                        color: judgmentColor(colorKey) ??
+                    color: judgmentColor(colorKey, context: context) ??
                             Theme.of(context).colorScheme.onSurfaceVariant)),
                 Text('$value',
                     style: const TextStyle(
