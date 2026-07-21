@@ -12,7 +12,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 
-class ChartPreviewPage extends StatelessWidget {
+class ChartPreviewPage extends StatefulWidget {
   const ChartPreviewPage({
     super.key,
     required this.stepsFuture,
@@ -21,6 +21,8 @@ class ChartPreviewPage extends StatelessWidget {
     required this.title,
     required this.songLength,
     required this.chartBpm,
+    required this.bpms,
+    required this.stops,
   });
 
   /// The (already in-flight) lazy load of the song's step file, shared with the
@@ -32,10 +34,22 @@ class ChartPreviewPage extends StatelessWidget {
   final double songLength;
   final int chartBpm;
 
+  /// BPM segments and stops for this chart, in seconds (from [Chart]). Rendered
+  /// as timing markers in the scroller so the preview reflects tempo shifts.
+  final List<Bpm> bpms;
+  final List<Stop> stops;
+
+  @override
+  State<ChartPreviewPage> createState() => _ChartPreviewPageState();
+}
+
+class _ChartPreviewPageState extends State<ChartPreviewPage> {
+  bool _showFootGuide = true;
+
   @override
   Widget build(BuildContext context) {
-    final modeLabel = mode == Modes.singles ? "SP" : "DP";
-    final diffColor = difficultyColor(difficultyKey);
+    final modeLabel = widget.mode == Modes.singles ? "SP" : "DP";
+    final diffColor = difficultyColor(widget.difficultyKey);
     return Scaffold(
       appBar: AppBar(
         surfaceTintColor: Colors.black,
@@ -52,7 +66,7 @@ class ChartPreviewPage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              title,
+              widget.title,
               style: const TextStyle(
                   fontSize: 18,
                   color: Colors.blueGrey,
@@ -60,7 +74,7 @@ class ChartPreviewPage extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              "$modeLabel · ${_pretty(difficultyKey)}",
+              "$modeLabel · ${_pretty(widget.difficultyKey)}",
               style: TextStyle(
                   fontSize: 12,
                   color: diffColor,
@@ -68,15 +82,27 @@ class ChartPreviewPage extends StatelessWidget {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: _showFootGuide ? "Hide foot guide" : "Show foot guide",
+            onPressed: () => setState(() => _showFootGuide = !_showFootGuide),
+            icon: Icon(
+              _showFootGuide
+                  ? Icons.directions_walk
+                  : Icons.directions_walk_outlined,
+              color: _showFootGuide ? diffColor : Colors.blueGrey,
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: FutureBuilder<SongSteps?>(
-          future: stepsFuture,
+          future: widget.stepsFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
             }
-            final steps = snapshot.data?.chartFor(mode, difficultyKey);
+            final steps = snapshot.data?.chartFor(widget.mode, widget.difficultyKey);
             if (steps == null || steps.notes.isEmpty) {
               return const Center(
                 child: Padding(
@@ -92,11 +118,15 @@ class ChartPreviewPage extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.all(10),
               child: ChartScroller(
-                key: ValueKey("$title-${mode.name}-$difficultyKey"),
+                key: ValueKey(
+                    "${widget.title}-${widget.mode.name}-${widget.difficultyKey}"),
                 steps: steps,
-                mode: mode,
-                songLength: songLength,
-                chartBpm: chartBpm,
+                mode: widget.mode,
+                songLength: widget.songLength,
+                chartBpm: widget.chartBpm,
+                bpms: widget.bpms,
+                stops: widget.stops,
+                showFootGuide: _showFootGuide,
               ),
             );
           },
