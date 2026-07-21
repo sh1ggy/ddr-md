@@ -111,8 +111,8 @@ class _SongPageState extends State<SongPage> {
       // Set variables based on state
       if (songInfo.perChart) {
         setState(() {
-          _chart = songInfo.charts[
-              chosenDifficulty.clamp(0, songInfo.charts.length - 1)];
+          _chart = songInfo
+              .charts[chosenDifficulty.clamp(0, songInfo.charts.length - 1)];
         });
       } else {
         setState(() {
@@ -163,6 +163,10 @@ class _SongPageState extends State<SongPage> {
                     stepsFuture: _stepsFuture!,
                     mode: mode,
                     difficultyKey: diffKey,
+                    difficultyLevel: (mode == Modes.singles
+                            ? songInfo.singles
+                            : songInfo.doubles)
+                        .toJson()[diffKey] as int?,
                     title: songInfo.title,
                     songLength: songInfo.songLength,
                     chartBpm: _chart.dominantBpm,
@@ -196,169 +200,173 @@ class _SongPageState extends State<SongPage> {
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
-    return SafeArea(
-      child: LayoutBuilder(builder: (context, constraints) {
-        return Directionality(
-          textDirection: TextDirection.ltr,
-          child: Scaffold(
-            appBar: AppBar(
-                surfaceTintColor: Colors.black,
-                shadowColor: Colors.black,
-                elevation: 2,
-                centerTitle: true,
-                title: const Text(
-                  "Song",
-                  style: TextStyle(
-                      fontSize: 20,
-                      color: Colors.blueGrey,
-                      fontWeight: FontWeight.w600),
-                ),
-                iconTheme: const IconThemeData(color: Colors.blueGrey),
-                actions: <Widget>[
-                  IconButton(
-                      icon: Icon(
-                        favorite == null ? Icons.star_border : Icons.star,
-                      ),
-                      tooltip: favorite == null ? "Favourite" : "Unfavourite",
-                      onPressed: () async {
-                        HapticFeedback.lightImpact();
-                        SongInfo? songStateInfo = songState.songInfo;
-                        if (songStateInfo == null) {
-                          return;
-                        }
-                        if (favorite == null) {
-                          Favorite fav = Favorite(
-                              id: 0,
-                              isFav: true,
-                              songTitle: songStateInfo.titletranslit,
-                              mode: songState.modes);
-                          await DatabaseProvider.addFavorite(fav);
-                          setState(() {
-                            favorite = fav;
-                          });
-                        } else {
-                          await DatabaseProvider.deleteFavorite(favorite!);
-                          setState(() {
-                            favorite = null;
-                          });
-                        }
-                        if (context.mounted) {
-                          showToast(context, "Favourite updated");
-                        }
-                      }),
-                  IconButton(
-                    icon: const Icon(Icons.history),
-                    tooltip: "History",
-                    onPressed: () => openHistory(HistoryPage.notesTab),
-                  )
-                ]),
-            body: SingleChildScrollView(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                child: Column(
-                  children: [
-                    Text(
-                      songState.songInfo!.title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        height: 1.1,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    if (songState.songInfo!.titletranslit.isNotEmpty &&
-                        songState.songInfo!.titletranslit !=
-                            songState.songInfo!.title)
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark,
+      child: SafeArea(
+        child: LayoutBuilder(builder: (context, constraints) {
+          return Directionality(
+            textDirection: TextDirection.ltr,
+            child: Scaffold(
+              appBar: AppBar(
+                  surfaceTintColor: Colors.black,
+                  shadowColor: Colors.black,
+                  elevation: 2,
+                  centerTitle: true,
+                  title: const Text(
+                    "Song",
+                    style: TextStyle(
+                        fontSize: 20,
+                        color: Colors.blueGrey,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  iconTheme: const IconThemeData(color: Colors.blueGrey),
+                  actions: <Widget>[
+                    IconButton(
+                        icon: Icon(
+                          favorite == null ? Icons.star_border : Icons.star,
+                        ),
+                        tooltip: favorite == null ? "Favourite" : "Unfavourite",
+                        onPressed: () async {
+                          HapticFeedback.lightImpact();
+                          SongInfo? songStateInfo = songState.songInfo;
+                          if (songStateInfo == null) {
+                            return;
+                          }
+                          if (favorite == null) {
+                            Favorite fav = Favorite(
+                                id: 0,
+                                isFav: true,
+                                songTitle: songStateInfo.titletranslit,
+                                mode: songState.modes);
+                            await DatabaseProvider.addFavorite(fav);
+                            setState(() {
+                              favorite = fav;
+                            });
+                          } else {
+                            await DatabaseProvider.deleteFavorite(favorite!);
+                            setState(() {
+                              favorite = null;
+                            });
+                          }
+                          if (context.mounted) {
+                            showToast(context, "Favourite updated");
+                          }
+                        }),
+                    IconButton(
+                      icon: const Icon(Icons.history),
+                      tooltip: "History",
+                      onPressed: () => openHistory(HistoryPage.notesTab),
+                    )
+                  ]),
+              body: SingleChildScrollView(
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                  child: Column(
+                    children: [
                       Text(
-                        songState.songInfo!.titletranslit,
+                        songState.songInfo!.title,
                         style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.0,
-                          color: Colors.grey,
+                          fontSize: 18,
+                          height: 1.1,
+                          fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                    if (songState.songInfo!.artist.isNotEmpty)
-                      Text(
-                        songState.songInfo!.artist,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.0,
-                          color: Colors.grey,
+                      if (songState.songInfo!.titletranslit.isNotEmpty &&
+                          songState.songInfo!.titletranslit !=
+                              songState.songInfo!.title)
+                        Text(
+                          songState.songInfo!.titletranslit,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.0,
+                            color: Colors.grey,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    const SizedBox(height: 10),
-                    SongDetails(songInfo: songState.songInfo!, chart: _chart),
-                    SongBpm(
-                        nearestModIndex: _nearestModIndex,
-                        isBpmChange: _isBpmChange,
-                        chart: _chart),
-                    _buildChartPreviewButton(songState),
-                    SongRadarChart(
-                      radar: songState.songInfo!.radarFor(
-                        songState.modes, songState.chosenDifficulty)),
-                    if (_isBpmChange || _chart.stops.isNotEmpty)
-                      SongChart(
-                          context: context,
-                          songInfo: songState.songInfo,
+                      if (songState.songInfo!.artist.isNotEmpty)
+                        Text(
+                          songState.songInfo!.artist,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.0,
+                            color: Colors.grey,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      const SizedBox(height: 10),
+                      SongDetails(songInfo: songState.songInfo!, chart: _chart),
+                      SongBpm(
+                          nearestModIndex: _nearestModIndex,
+                          isBpmChange: _isBpmChange,
                           chart: _chart),
-                    if (latestScore != null)
-                      GestureDetector(
-                        onTap: () => openHistory(HistoryPage.scoresTab),
-                        child: ScoreCard(
-                            score: latestScore!, header: "Latest Score"),
-                      )
-                    else
-                      GestureDetector(
-                        onTap: () => openHistory(HistoryPage.scoresTab),
-                        child: const NoScoreCard(),
-                      ),
-                    if (latestNote != null)
-                      GestureDetector(
-                        onTap: () => openHistory(HistoryPage.notesTab),
-                        child: Card(
-                          child: ListTile(
-                            title: Column(
-                              children: [
-                                Text(
-                                  "Latest Note",
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .primary),
-                                ),
-                                Text(
-                                  latestNote!.contents,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  formatDate(DateTime.parse(latestNote!.createdAt)),
-                                  style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500),
-                                ),
-                              ]
-                                  .expand(
-                                      (x) => [const SizedBox(height: 10), x])
-                                  .skip(1)
-                                  .toList(),
+                      _buildChartPreviewButton(songState),
+                      SongRadarChart(
+                          radar: songState.songInfo!.radarFor(
+                              songState.modes, songState.chosenDifficulty)),
+                      if (_isBpmChange || _chart.stops.isNotEmpty)
+                        SongChart(
+                            context: context,
+                            songInfo: songState.songInfo,
+                            chart: _chart),
+                      if (latestScore != null)
+                        GestureDetector(
+                          onTap: () => openHistory(HistoryPage.scoresTab),
+                          child: ScoreCard(
+                              score: latestScore!, header: "Latest Score"),
+                        )
+                      else
+                        GestureDetector(
+                          onTap: () => openHistory(HistoryPage.scoresTab),
+                          child: const NoScoreCard(),
+                        ),
+                      if (latestNote != null)
+                        GestureDetector(
+                          onTap: () => openHistory(HistoryPage.notesTab),
+                          child: Card(
+                            child: ListTile(
+                              title: Column(
+                                children: [
+                                  Text(
+                                    "Latest Note",
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary),
+                                  ),
+                                  Text(
+                                    latestNote!.contents,
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    formatDate(
+                                        DateTime.parse(latestNote!.createdAt)),
+                                    style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500),
+                                  ),
+                                ]
+                                    .expand(
+                                        (x) => [const SizedBox(height: 10), x])
+                                    .skip(1)
+                                    .toList(),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ]
-                      .expand((x) => [const SizedBox(height: 10), x])
-                      .skip(1)
-                      .toList(),
+                    ]
+                        .expand((x) => [const SizedBox(height: 10), x])
+                        .skip(1)
+                        .toList(),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
     );
   }
 }

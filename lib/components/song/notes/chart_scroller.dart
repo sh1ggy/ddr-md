@@ -222,11 +222,16 @@ class ChartScroller extends StatefulWidget {
     required this.chartBpm,
     this.bpms = const [],
     this.stops = const [],
-    this.showFootGuide = true,
+    this.showFootGuide = false,
+    this.header,
   });
 
   final ChartSteps steps;
   final Modes mode;
+
+  /// Optional floating header (title / back / actions) laid over the top of the
+  /// full-bleed field. Shown and hidden together with the transport controls.
+  final Widget? header;
 
   /// Timing markers, in seconds (from [Chart]). [bpms] carry a [Bpm.st] start
   /// second and target [Bpm.val]; [stops] carry a [Stop.st] start and [Stop.dur]
@@ -258,6 +263,12 @@ class _ChartScrollerState extends State<ChartScroller>
   double _second = 0;
   bool _playing = false;
 
+  // Whether the floating controls (header + transport) are shown. The field is
+  // full-bleed underneath; hiding the controls hands the whole screen to the
+  // chart. Toggled by a small always-visible handle, never by tapping the field
+  // (that stays play/pause).
+  bool _controlsVisible = true;
+
   // Scroll rate multiplier (visual speed-mod feel). 1.0 = default spacing.
   double _rate = 1.0;
   int _modIndex = 3; // 1.0x in constants.mods
@@ -267,7 +278,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // read-speed (note-spacing) mod above.
   double _playbackRate = 1.0;
   static const double _minPlaybackRate = 0.25;
-  static const double _maxPlaybackRate = 3.0;
+  static const double _maxPlaybackRate = 1.0;
 
   // Notes that are part of a shock row are drawn as bars, not mines, so the
   // painter skips them and draws [_shocks] instead.
@@ -671,73 +682,137 @@ class _ChartScrollerState extends State<ChartScroller>
     super.dispose();
   }
 
+  void _toggleControls() {
+    HapticFeedback.selectionClick();
+    setState(() => _controlsVisible = !_controlsVisible);
+  }
+
   @override
   Widget build(BuildContext context) {
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
-      return Column(
+      return Stack(
+        fit: StackFit.expand,
         children: [
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              // Tap the field to play/pause; drag up/down to scrub with a
-              // momentum fling that coasts to a stop.
-              onTap: () => _togglePlay(showOverlay: true),
-              onVerticalDragStart: _onDragStart,
-              onVerticalDragUpdate: _onDragUpdate,
-              onVerticalDragEnd: _onDragEnd,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CustomPaint(
-                      painter: _ChartPainter(
-                        notes: widget.steps.notes,
-                        shockNotes: _shockNotes,
-                        shocks: _shocks,
-                        bpmMarkers: _bpmMarkers,
-                        stopMarkers: _stopMarkers,
-                        feet: widget.showFootGuide ? _feet : const {},
-                        dirs: dirs,
-                        second: _second,
-                        pxPerSecond: _pxPerSecond,
-                        pxPerBeat: _pxPerBeat,
-                        timing: _timing,
-                        columnCount: dirs.length,
-                        skin: _skin,
-                        playing: _playing,
-                      ),
-                      size: Size.infinite,
-                    ),
-                    IgnorePointer(
-                      child: AnimatedOpacity(
-                        opacity: _showTapOverlay ? 1 : 0,
-                        duration: const Duration(milliseconds: 130),
-                        child: Center(
-                          child: Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.26),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              _tapOverlayIcon,
-                              color: Colors.white.withOpacity(0.88),
-                              size: 32,
-                            ),
-                          ),
+          // Full-bleed scrolling field. Tap = play/pause, drag = scrub.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _togglePlay(showOverlay: true),
+            onVerticalDragStart: _onDragStart,
+            onVerticalDragUpdate: _onDragUpdate,
+            onVerticalDragEnd: _onDragEnd,
+            onHorizontalDragUpdate: (d) =>
+                _onPlaybackRateDrag(d.primaryDelta ?? 0),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CustomPaint(
+                  painter: _ChartPainter(
+                    notes: widget.steps.notes,
+                    shockNotes: _shockNotes,
+                    shocks: _shocks,
+                    bpmMarkers: _bpmMarkers,
+                    stopMarkers: _stopMarkers,
+                    feet: widget.showFootGuide ? _feet : const {},
+                    dirs: dirs,
+                    second: _second,
+                    pxPerSecond: _pxPerSecond,
+                    pxPerBeat: _pxPerBeat,
+                    timing: _timing,
+                    columnCount: dirs.length,
+                    skin: _skin,
+                    playing: _playing,
+                    topInset: MediaQuery.of(context).padding.top,
+                  ),
+                  size: Size.infinite,
+                ),
+                IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _showTapOverlay ? 1 : 0,
+                    duration: const Duration(milliseconds: 130),
+                    child: Center(
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.26),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _tapOverlayIcon,
+                          color: Colors.white.withOpacity(0.88),
+                          size: 32,
                         ),
                       ),
                     ),
-                  ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Floating header, slides up out of view when controls are hidden.
+          if (widget.header != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                ignoring: !_controlsVisible,
+                child: AnimatedSlide(
+                  offset: _controlsVisible ? Offset.zero : const Offset(0, -1),
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: AnimatedOpacity(
+                    opacity: _controlsVisible ? 1 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: widget.header!,
+                  ),
+                ),
+              ),
+            ),
+
+          // Floating transport, slides down out of view when controls hidden.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              ignoring: !_controlsVisible,
+              child: AnimatedSlide(
+                offset: _controlsVisible ? Offset.zero : const Offset(0, 1),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                child: AnimatedOpacity(
+                  opacity: _controlsVisible ? 1 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                      child: _buildTransport(context),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          _buildTransport(context),
+
+          // Always-visible handle to show/hide the controls: a small tab pinned
+          // to the right edge, vertically centred so it never collides with the
+          // full-width header or transport. Its chevron points the way the
+          // controls will move (up-into-view vs down-out-of-view).
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _ControlsToggle(
+                visible: _controlsVisible,
+                onTap: _toggleControls,
+              ),
+            ),
+          ),
         ],
       );
     });
@@ -964,6 +1039,41 @@ class _ControlPane extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// A small edge tab that shows/hides the floating controls. Reads as a pull-tab
+/// against the right edge; the chevron points down (hide) when controls are up
+/// and up (show) when they're stowed.
+class _ControlsToggle extends StatelessWidget {
+  const _ControlsToggle({
+    required this.visible,
+    required this.onTap,
+  });
+
+  final bool visible;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 30,
+        height: 52,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.42),
+          borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          visible ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+          color: Colors.white.withOpacity(0.9),
+          size: 22,
         ),
       ),
     );
@@ -1233,6 +1343,7 @@ class _ChartPainter extends CustomPainter {
     required this.columnCount,
     required this.skin,
     required this.playing,
+    this.topInset = 0,
   });
 
   final List<StepNote> notes;
@@ -1255,9 +1366,15 @@ class _ChartPainter extends CustomPainter {
   final Noteskin skin;
   final bool playing;
 
+  // Top safe-area inset (status bar / notch). The field is full-bleed, so the
+  // receptor line is pushed down by this much to clear the system chrome.
+  final double topInset;
+
   // Receptors sit near the TOP; arrows scroll up into them. Notes are drawn
   // ON TOP OF (z-above) the receptors so an arrow reaching the line covers it.
-  static const double _receptorTop = 56;
+  // [_receptorBase] is the gap below the (inset-adjusted) top edge.
+  static const double _receptorBase = 56;
+  double get _receptorTop => _receptorBase + topInset;
   static const double _laneTighten = 0.92;
 
   @override
@@ -1623,5 +1740,6 @@ class _ChartPainter extends CustomPainter {
       old.feet != feet ||
       old.columnCount != columnCount ||
       old.skin != skin ||
-      old.playing != playing;
+      old.playing != playing ||
+      old.topInset != topInset;
 }
