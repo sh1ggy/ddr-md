@@ -122,16 +122,27 @@ class Songs {
   static String _normalize(String s) =>
       s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), '');
 
-  // Similarity of [query] (already normalized) to a song: the best normalized
-  // Levenshtein score across its title, translit title, and name.
+  // Similarity of [query] (already normalized) to a song: the best score
+  // across its title, translit title, and name. An exact substring hit (e.g.
+  // typing a prefix of a long title) always wins, so short partial queries
+  // aren't drowned out by whole-string edit distance; otherwise falls back to
+  // normalized Levenshtein so typos still rank sensibly.
   static double _similarity(String query, SongInfo song) {
     double best = 0;
     for (final candidate in [song.title, song.titletranslit, song.name]) {
       final normalized = _normalize(candidate);
       if (normalized.isEmpty) continue;
-      final maxLen =
-          query.length > normalized.length ? query.length : normalized.length;
-      final similarity = 1 - levenshtein(query, normalized) / maxLen;
+      double similarity;
+      if (normalized.contains(query)) {
+        // Floor of 0.5 so a short substring match (e.g. a prefix of a long
+        // title) still ranks as a strong hit, not a weak one.
+        similarity = 0.5 + 0.5 * (query.length / normalized.length);
+      } else {
+        final maxLen = query.length > normalized.length
+            ? query.length
+            : normalized.length;
+        similarity = 1 - levenshtein(query, normalized) / maxLen;
+      }
       if (similarity > best) best = similarity;
     }
     return best;

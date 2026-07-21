@@ -16,10 +16,13 @@ class SongListItem extends StatefulWidget {
       required this.songInfo,
       required this.isFav,
       required this.isSearch,
+      this.defaultDifficultyIndex,
       this.regenFavsCallback});
   final SongInfo songInfo;
   final bool isFav;
   final bool isSearch;
+  // chosenDifficulty index to open this song at, from an active level filter.
+  final int? defaultDifficultyIndex;
   final void Function()? regenFavsCallback; // callback function for navigator
 
   @override
@@ -93,7 +96,7 @@ class _SongListItemState extends State<SongListItem> {
       ),
       onTap: () async {
         songState.setSongInfo(widget.songInfo);
-        songState.setChosenDifficulty(0);
+        songState.setChosenDifficulty(widget.defaultDifficultyIndex ?? 0);
         await Navigator.push(context,
                 MaterialPageRoute(builder: (context) => const SongPage()))
             .then((_) {
