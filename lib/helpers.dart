@@ -8,6 +8,26 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/material.dart';
 
+/// Canonical DDR difficulty colour for a difficulty key (beginner..challenge),
+/// matching the in-game palette used by SongDifficultyPicker. Unknown keys fall
+/// back to grey.
+Color difficultyColor(String difficultyKey) {
+  switch (difficultyKey) {
+    case "beginner":
+      return Colors.cyan;
+    case "easy":
+      return Colors.orange;
+    case "medium":
+      return Colors.red;
+    case "hard":
+      return Colors.green;
+    case "challenge":
+      return Colors.purple;
+    default:
+      return Colors.grey;
+  }
+}
+
 int findNearestReadSpeed(int songBpm, List array, int readSpeed) {
   var nearest = 0;
   array.asMap().entries.forEach((entry) {

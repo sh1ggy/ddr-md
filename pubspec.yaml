@@ -36,6 +36,10 @@ flutter:
     - assets/icons/
     - assets/jackets-160/
     - assets/jackets/
+    - assets/steps/
+    # Sprite noteskin extracted from a DDR World dump (git-ignored,
+    # copyrighted). Absent by default; the app falls back to a vector skin.
+    - assets/noteskin/
     # Only the model triple the app loads at runtime (ocr_onnx.cpp defaults).
     # The other variants in assets/models/ exist for the offline
     # native_opencv/tools/model_compare harness and must not ship in the bundle.

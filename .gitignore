@@ -141,6 +141,8 @@ app.*.symbols
 /assets/jackets-160
 /assets/jackets
 /assets/songs
+/assets/steps
+/assets/noteskin
 
 # OpenCV downloaded SDK
 /scripts/download

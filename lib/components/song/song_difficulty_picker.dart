@@ -3,6 +3,7 @@
 library;
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -54,28 +55,8 @@ class SongDifficultyPicker extends StatelessWidget {
       if (diff.value == null) {
         continue;
       }
-      switch (diff.key) {
-        case ("beginner"):
-          widgets.add(
-              diffTextSpan(text: "${difficulty.beginner}", color: Colors.cyan));
-          break;
-        case ("easy"):
-          widgets.add(
-              diffTextSpan(text: "${difficulty.easy}", color: Colors.orange));
-          break;
-        case ("medium"):
-          widgets.add(
-              diffTextSpan(text: "${difficulty.medium}", color: Colors.red));
-          break;
-        case ("hard"):
-          widgets.add(
-              diffTextSpan(text: "${difficulty.hard}", color: Colors.green));
-          break;
-        case ("challenge"):
-          widgets.add(diffTextSpan(
-              text: "${difficulty.challenge}", color: Colors.purple));
-          break;
-      }
+      widgets.add(diffTextSpan(
+          text: "${diff.value}", color: difficultyColor(diff.key)));
     }
     return widgets;
   }

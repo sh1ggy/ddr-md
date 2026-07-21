@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/history_page.dart';
+import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
@@ -14,6 +15,7 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/services.dart';
@@ -36,6 +38,18 @@ class _SongPageState extends State<SongPage> {
   Favorite? favorite;
   Note? latestNote;
   Score? latestScore;
+
+  // Lazily-loaded per-song note streams for the scrolling chart preview. Keyed
+  // by song name so it reloads only when the song changes, not on every
+  // difficulty/mode toggle (one file holds all difficulties).
+  String? _stepsSongName;
+  Future<SongSteps?>? _stepsFuture;
+
+  void _loadStepsFor(SongInfo songInfo) {
+    if (_stepsSongName == songInfo.name) return;
+    _stepsSongName = songInfo.name;
+    _stepsFuture = StepsLoader.load(songInfo.name);
+  }
 
   void initFav(String songTitleTranslit, Modes mode) async {
     Favorite? initFav =
@@ -90,6 +104,7 @@ class _SongPageState extends State<SongPage> {
     int chosenDifficulty = songState.chosenDifficulty;
 
     if (songInfo != null) {
+      _loadStepsFor(songInfo);
       initFav(songInfo.titletranslit, songState.modes);
       initNote(songInfo.titletranslit, songState.modes);
       initScore(songInfo.titletranslit, songState.modes);
@@ -111,6 +126,69 @@ class _SongPageState extends State<SongPage> {
             _chart.dominantBpm, constants.mods, _chosenReadSpeed);
       });
     }
+  }
+
+  // Button that opens the scrolling chart preview on its own page for the
+  // currently selected mode + difficulty. Stays hidden until the (lazily
+  // loaded) step file resolves and confirms this difficulty actually has notes,
+  // so songs the pipeline hasn't generated steps for show no button.
+  Widget _buildChartPreviewButton(SongState songState) {
+    final songInfo = songState.songInfo;
+    if (songInfo == null) return const SizedBox.shrink();
+
+    final mode = songState.modes;
+    final available =
+        (mode == Modes.singles ? songInfo.singles : songInfo.doubles)
+            .availableTypes;
+    if (available.isEmpty) return const SizedBox.shrink();
+    final diffKey =
+        available[songState.chosenDifficulty.clamp(0, available.length - 1)];
+
+    return FutureBuilder<SongSteps?>(
+      future: _stepsFuture,
+      builder: (context, snapshot) {
+        final steps = snapshot.data?.chartFor(mode, diffKey);
+        if (steps == null || steps.notes.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChartPreviewPage(
+                    stepsFuture: _stepsFuture!,
+                    mode: mode,
+                    difficultyKey: diffKey,
+                    title: songInfo.title,
+                    songLength: songInfo.songLength,
+                    chartBpm: _chart.dominantBpm,
+                  ),
+                ),
+              );
+            },
+            child: ListTile(
+              leading: Icon(
+                Icons.play_circle_outline,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              title: const Text(
+                "Chart Preview",
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                "Open scrolling chart for this difficulty",
+                style: TextStyle(color: Theme.of(context).hintColor),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -214,9 +292,10 @@ class _SongPageState extends State<SongPage> {
                         nearestModIndex: _nearestModIndex,
                         isBpmChange: _isBpmChange,
                         chart: _chart),
+                    _buildChartPreviewButton(songState),
                     SongRadarChart(
-                        radar: songState.songInfo!.radarFor(
-                            songState.modes, songState.chosenDifficulty)),
+                      radar: songState.songInfo!.radarFor(
+                        songState.modes, songState.chosenDifficulty)),
                     if (_isBpmChange || _chart.stops.isNotEmpty)
                       SongChart(
                           context: context,
