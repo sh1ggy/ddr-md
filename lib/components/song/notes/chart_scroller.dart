@@ -306,10 +306,9 @@ class ChartScroller extends StatefulWidget {
 
   /// Optional floating header (title / back / actions) laid over the top of the
   /// full-bleed field. Shown and hidden together with the transport controls.
-  /// Built with a callback that opens the settings shade, so the parent can put
-  /// a "settings" action in the header without owning the shade's state.
-  final Widget Function(BuildContext context, VoidCallback onSettingsTap)?
-      headerBuilder;
+  /// The settings shade is opened by the scroller's own left-edge pull-tab, so
+  /// the header carries no settings affordance.
+  final Widget Function(BuildContext context)? headerBuilder;
 
   /// Timing markers, in seconds (from [Chart]). [bpms] carry a [Bpm.st] start
   /// second and target [Bpm.val]; [stops] carry a [Stop.st] start and [Stop.dur]
@@ -348,13 +347,28 @@ class _ChartScrollerState extends State<ChartScroller>
   bool _controlsVisible = true;
 
   // Whether the top settings shade (chart-viewing modifiers) is pulled down.
-  // Opened from the header's gear button; auto-closed when playback starts, and
+  // Opened from the left-edge pull-tab; auto-closed when playback starts, and
   // never shown while playing (it's a paused-browsing surface).
   bool _shadeOpen = false;
 
   // Scroll rate multiplier (visual speed-mod feel). 1.0 = default spacing.
   double _rate = 1.0;
   int _modIndex = 3; // 1.0x in constants.mods
+
+  // Pinch-to-zoom: a purely visual multiplier on the vertical note spacing,
+  // independent of the read-speed mod. <1 zooms OUT (compresses more beats into
+  // the viewport so you can study long chunks at once); zooming in beyond 1x is
+  // disallowed since READ SPEED already covers that. It scales
+  // [_pxPerBeat]/[_pxPerSecond] on top of [_rate], so the whole render — the
+  // cull window, CONSTANT, markers, foot paths — stretches with it for free and
+  // the READ SPEED number the user dialled in is left untouched. Reset to 1.0
+  // whenever a new chart loads (a study lens, not a persisted setting).
+  static const double _minZoom = 0.25;
+  static const double _maxZoom = 1.0;
+  double _zoom = 1.0;
+  // Zoom captured at the start of a pinch, so mid-gesture updates scale from the
+  // level the fingers landed on rather than compounding each frame.
+  double _pinchStartZoom = 1.0;
 
   // DDR CONSTANT modifier: fade arrows in a fixed wall-clock time before they
   // reach the receptor, independent of BPM/read speed. Off by default (NORMAL).
@@ -421,7 +435,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // rather than sparse; the speed slider scales this either way.
   static const double _basePxPerSecond = 200;
 
-  double get _pxPerSecond => _basePxPerSecond * _rate;
+  double get _pxPerSecond => _basePxPerSecond * _rate * _zoom;
 
   // Beat-locked spacing: pixels per chart beat. In DDR the scroll VELOCITY is the
   // read speed (BPM × mod), so faster songs fly and slower ones crawl at the same
@@ -436,10 +450,66 @@ class _ChartScrollerState extends State<ChartScroller>
   // crept by at the same pixels/second as a 120-BPM one — the read speed became a
   // pure spacing knob with no bearing on actual vertical velocity.
   static const double _pxPerReadSpeedUnit = 1.0;
-  double get _pxPerBeat => _pxPerReadSpeedUnit * _rate * 60.0;
+  double get _pxPerBeat => _pxPerReadSpeedUnit * _rate * 60.0 * _zoom;
 
   int get _effectiveChartBpm => widget.chartBpm > 0 ? widget.chartBpm : constants.songBpm;
   int get _currentReadSpeed => (_effectiveChartBpm * _rate).round();
+
+  // BPM of the tempo section under the playhead — NOT the dominant chart BPM.
+  // Looked up on the raw [Bpm] segments rather than [ChartTiming]'s slope, which
+  // flattens to zero inside a stop and would read "BPM 0" mid-halt instead of
+  // the enclosing tempo. Charts without segments fall back to the dominant BPM.
+  int get _localBpm {
+    final bpms = widget.bpms;
+    if (bpms.isEmpty) return _effectiveChartBpm;
+    // Last segment whose start is at or before the playhead (segments sorted).
+    int lo = 0, hi = bpms.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (bpms[mid].st <= _second) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return bpms[lo].val;
+  }
+
+  // Receptor-to-bottom-edge run of the field in px at zoom 1, captured each
+  // build from the layout. This is the distance an arrow is visible for when
+  // nothing hides it, which is what converts CONSTANT's wall-clock window into
+  // an equivalent read speed. Zero until first layout.
+  double _receptorRunPx = 0;
+
+  // CONSTANT expressed as a read speed: the read speed whose full-field travel
+  // time equals the CONSTANT window. Velocity at read speed R is
+  // R × [_pxPerReadSpeedUnit] px/s (see [_pxPerBeat]), so R = 1000·H / (unit·ms)
+  // for a run of H px. Deliberately ignores [_zoom] — like the READ SPEED knob,
+  // this describes the dialled-in setting, not the temporary study lens.
+  // Null when CONSTANT is off or the field hasn't laid out yet.
+  int? get _constantReadSpeed {
+    final c = _effectiveConstantMs;
+    if (c == null || _receptorRunPx <= 0) return null;
+    return (1000.0 * _receptorRunPx / (_pxPerReadSpeedUnit * c)).round();
+  }
+
+  // Read speed the CURRENT tempo section actually reads at. Without CONSTANT
+  // this is just localBpm × mod. With CONSTANT it's the max of that and the
+  // window's equivalent read speed: CONSTANT only hides arrows still beyond its
+  // window, so slow sections are clamped up to a uniform read while sections
+  // already faster than the window pass through unchanged.
+  int get _liveReadSpeed {
+    final local = _localBpm * _rate;
+    final rc = _constantReadSpeed;
+    return math.max(local, (rc ?? 0).toDouble()).round();
+  }
+
+  // Whether the CONSTANT window (not the section's own tempo) is what bounds
+  // the live read speed — i.e. CONSTANT is actively hiding arrows here.
+  bool get _constantBinds {
+    final rc = _constantReadSpeed;
+    return rc != null && rc > _localBpm * _rate;
+  }
 
   double get _endSecond =>
       widget.songLength > 0 ? widget.songLength : _lastNoteSecond();
@@ -480,7 +550,10 @@ class _ChartScrollerState extends State<ChartScroller>
       _assignFeet();
       _buildTimingMarkers();
       _buildDensity();
-      setState(() => _second = 0);
+      setState(() {
+        _second = 0;
+        _zoom = 1.0; // the study lens is per-chart; snap back on a new chart
+      });
     }
     if (old.chartBpm != widget.chartBpm) {
       _syncRateToSavedReadSpeed();
@@ -552,8 +625,16 @@ class _ChartScrollerState extends State<ChartScroller>
     Settings.setInt(Settings.constantOnKey, _constantOn ? 1 : 0);
     _flashScrubOverlay(
       _constantOn ? "${_constantMs.round()}ms" : "OFF",
-      "CONSTANT",
+      _constantCaption,
     );
+  }
+
+  // Overlay caption for CONSTANT flashes: carries the window's equivalent read
+  // speed (see [_constantReadSpeed]) so dialling a wall-clock time immediately
+  // reads in the unit players actually think in.
+  String get _constantCaption {
+    final eq = _constantReadSpeed;
+    return eq != null ? "CONSTANT ≈ C$eq" : "CONSTANT";
   }
 
   // Drag horizontally on the CONSTANT chip to sweep the display time, snapped to
@@ -574,7 +655,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (changed) HapticFeedback.selectionClick();
     Settings.setInt(Settings.constantMsKey, snapped.round());
     Settings.setInt(Settings.constantOnKey, 1);
-    _flashScrubOverlay("${snapped.round()}ms", "CONSTANT");
+    _flashScrubOverlay("${snapped.round()}ms", _constantCaption);
   }
 
   static const List<Color> _minimapPalette = [
@@ -959,12 +1040,6 @@ class _ChartScrollerState extends State<ChartScroller>
     return beat.floor();
   }
 
-  void _onDragStart(DragStartDetails _) {
-    _pause();
-    _flingVel = 0; // catch any ongoing fling
-    _lastScrubBeat = _beatIndexAt(_second);
-  }
-
   // Convert a vertical pixel distance to chart-seconds at the playhead, so a
   // drag/fling moves the field by exactly the pixels the finger travelled. In
   // beat-locked mode a pixel is a fixed slice of a beat, stretching/compressing
@@ -1000,31 +1075,105 @@ class _ChartScrollerState extends State<ChartScroller>
     return (lo + hi) / 2;
   }
 
-  void _onDragUpdate(DragUpdateDetails d) {
-    // Drag up (negative dy) advances the chart; down rewinds. Notes descend, so
-    // pulling the field up pulls future notes down toward the receptor.
+  // --- unified scale gesture (pan + pinch on the field) ---
+  //
+  // A single ScaleGestureRecognizer handles all field drags because Flutter
+  // forbids a pinch recognizer from coexisting with the pan/drag recognizers in
+  // one detector. With one finger down it behaves exactly like the old
+  // vertical-scrub / horizontal-song-speed drags; with two it becomes
+  // pinch-to-zoom on the vertical note spacing. The mode is decided on the first
+  // move of the gesture and held for its duration so a scrub never mutates into
+  // a zoom (or vice-versa) mid-drag.
+  static const int _gestureNone = 0;
+  static const int _gestureScrub = 1;
+  static const int _gestureSpeed = 2;
+  static const int _gestureZoom = 3;
+  int _gestureMode = _gestureNone;
+  Offset _lastScaleFocal = Offset.zero;
+
+  void _onScaleStart(ScaleStartDetails d) {
+    _gestureMode = _gestureNone; // decided on first movement
+    _lastScaleFocal = d.localFocalPoint;
+    _pinchStartZoom = _zoom;
+    if (d.pointerCount >= 2) {
+      // Two fingers land at once: it's a pinch from the outset.
+      _gestureMode = _gestureZoom;
+    }
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    // Promote to a pinch the moment a second finger joins, even mid-drag.
+    if (d.pointerCount >= 2 && _gestureMode != _gestureZoom) {
+      _gestureMode = _gestureZoom;
+      _pinchStartZoom = _zoom;
+    }
+
+    if (_gestureMode == _gestureZoom) {
+      _applyPinchZoom(d.scale);
+      _lastScaleFocal = d.localFocalPoint;
+      return;
+    }
+
+    final delta = d.localFocalPoint - _lastScaleFocal;
+    _lastScaleFocal = d.localFocalPoint;
+
+    // First single-finger movement picks the axis: a steeper move scrubs the
+    // field, a flatter one drives song speed — and that choice sticks.
+    if (_gestureMode == _gestureNone) {
+      if (delta == Offset.zero) return;
+      _gestureMode =
+          delta.dy.abs() >= delta.dx.abs() ? _gestureScrub : _gestureSpeed;
+      if (_gestureMode == _gestureScrub) _onScrubStart();
+    }
+
+    if (_gestureMode == _gestureScrub) {
+      _onScrubMove(delta.dy);
+    } else if (_gestureMode == _gestureSpeed) {
+      _onPlaybackRateDrag(delta.dx);
+    }
+  }
+
+  void _onScaleEnd(ScaleEndDetails d) {
+    if (_gestureMode == _gestureScrub) {
+      // Coast a fling from the release velocity, as the old vertical drag did.
+      final vPx = d.velocity.pixelsPerSecond.dy;
+      _flingVel = -_pxToSeconds(vPx);
+      if (_flingVel.abs() < _flingMin) {
+        _flingVel = 0;
+      } else {
+        _ensureTicking();
+      }
+    }
+    _gestureMode = _gestureNone;
+  }
+
+  // Map a live pinch scale (1.0 at gesture start) onto the zoom multiplier,
+  // anchored to the level the fingers landed on. Pinching apart zooms in (denser
+  // spacing), together zooms out (see more chart). Flashes the current factor.
+  void _applyPinchZoom(double scale) {
+    final next = (_pinchStartZoom * scale).clamp(_minZoom, _maxZoom);
+    if (next == _zoom) return;
+    setState(() => _zoom = next);
+    _flashScrubOverlay("${next.toStringAsFixed(2)}×", "ZOOM");
+  }
+
+  // Single-finger vertical scrub, split out of the old onVerticalDrag* so the
+  // unified scale handler can drive the same beat-detented scrubbing.
+  void _onScrubStart() {
+    _pause();
+    _flingVel = 0;
+    _lastScrubBeat = _beatIndexAt(_second);
+  }
+
+  void _onScrubMove(double dy) {
     setState(() {
-      _second =
-          (_second - _pxToSeconds(d.primaryDelta!)).clamp(0.0, _endSecond);
+      _second = (_second - _pxToSeconds(dy)).clamp(0.0, _endSecond);
     });
-    // One detent per beat crossed, so scrubbing the field ticks to the rhythm.
     final beat = _beatIndexAt(_second);
     if (_lastScrubBeat != null && beat != _lastScrubBeat) {
       HapticFeedback.selectionClick();
     }
     _lastScrubBeat = beat;
-  }
-
-  void _onDragEnd(DragEndDetails d) {
-    // Convert the fling's pixel velocity into chart-seconds velocity and let the
-    // ticker coast it to a smooth stop.
-    final vPx = d.primaryVelocity ?? 0;
-    _flingVel = -_pxToSeconds(vPx);
-    if (_flingVel.abs() < _flingMin) {
-      _flingVel = 0;
-      return;
-    }
-    _ensureTicking();
   }
 
   @override
@@ -1045,11 +1194,20 @@ class _ChartScrollerState extends State<ChartScroller>
   Widget build(BuildContext context) {
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
+      final topInset = MediaQuery.of(context).padding.top;
+      // Refresh the receptor→bottom run for the CONSTANT ⇄ read-speed
+      // conversion. Plain assignment: a size change already rebuilds via
+      // LayoutBuilder, so no setState needed.
+      _receptorRunPx =
+          constraints.maxHeight - _ChartPainter._receptorBase - topInset;
       return Stack(
         fit: StackFit.expand,
         children: [
-          // Full-bleed scrolling field. Tap = play/pause, drag = scrub,
-          // double-tap left/right = seek ±5s, press-and-hold = 2x speed.
+          // Full-bleed scrolling field. Tap = play/pause, 1-finger drag = scrub
+          // (vertical) / song speed (horizontal), 2-finger pinch = zoom the note
+          // spacing, double-tap left/right = seek ±5s, press-and-hold = 2x speed.
+          // A single scale recognizer owns pan AND pinch because Flutter won't let
+          // a pinch coexist with separate pan/drag recognizers on one detector.
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => _togglePlay(showOverlay: true),
@@ -1058,11 +1216,9 @@ class _ChartScrollerState extends State<ChartScroller>
             onLongPressStart: (_) => _onHoldSpeedStart(),
             onLongPressEnd: (_) => _onHoldSpeedEnd(),
             onLongPressCancel: _onHoldSpeedEnd,
-            onVerticalDragStart: _onDragStart,
-            onVerticalDragUpdate: _onDragUpdate,
-            onVerticalDragEnd: _onDragEnd,
-            onHorizontalDragUpdate: (d) =>
-                _onPlaybackRateDrag(d.primaryDelta ?? 0),
+            onScaleStart: _onScaleStart,
+            onScaleUpdate: _onScaleUpdate,
+            onScaleEnd: _onScaleEnd,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -1083,6 +1239,7 @@ class _ChartScrollerState extends State<ChartScroller>
                     columnCount: dirs.length,
                     skin: _skin,
                     playing: _playing,
+                    zoom: _zoom,
                     constantMs: _effectiveConstantMs,
                     topInset: MediaQuery.of(context).padding.top,
                   ),
@@ -1252,8 +1409,7 @@ class _ChartScrollerState extends State<ChartScroller>
             ),
           ),
 
-          // Floating header, slides up out of view when controls are hidden. Its
-          // gear button pulls down the settings shade below.
+          // Floating header, slides up out of view when controls are hidden.
           if (widget.headerBuilder != null)
             Positioned(
               top: 0,
@@ -1268,14 +1424,14 @@ class _ChartScrollerState extends State<ChartScroller>
                   child: AnimatedOpacity(
                     opacity: _controlsVisible ? 1 : 0,
                     duration: const Duration(milliseconds: 180),
-                    child: widget.headerBuilder!(context, _toggleShade),
+                    child: widget.headerBuilder!(context),
                   ),
                 ),
               ),
             ),
 
           // Settings shade: a top "pull-down" sheet of chart-viewing modifiers,
-          // hidden by default behind the header's gear button. Kept out of the
+          // hidden by default behind the left-edge pull-tab. Kept out of the
           // way (unlike an always-on strip) so it has room to grow to the full
           // DDR option set; force-closed while playing since it's a browsing
           // surface, and tapping the scrim behind it dismisses it.
@@ -1296,6 +1452,20 @@ class _ChartScrollerState extends State<ChartScroller>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Always-visible tempo readout: the BPM of the section under
+                    // the playhead and the read speed it actually scrolls at
+                    // (CONSTANT-aware). Centred over the bottom controls and kept
+                    // on screen in fullscreen too — the one place the current
+                    // tempo stays legible once its BPM marker has scrolled past.
+                    // IgnorePointer so taps fall through to the field below.
+                    IgnorePointer(
+                      child: _TempoBadge(
+                        bpm: _localBpm,
+                        readSpeed: _liveReadSpeed,
+                        constantBound: _constantBinds,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     // Transport (times, read/song speed): hides with the controls.
                     IgnorePointer(
                       ignoring: !_controlsVisible,
@@ -1328,17 +1498,39 @@ class _ChartScrollerState extends State<ChartScroller>
           ),
 
           // Always-visible handle to show/hide the controls: a small tab pinned
-          // to the right edge, vertically centred so it never collides with the
-          // full-width header or transport. Its chevron points the way the
-          // controls will move (up-into-view vs down-out-of-view).
+          // to the right edge. Its chevron points the way the controls will
+          // move (up-into-view vs down-out-of-view).
           Positioned(
             right: 0,
             top: 0,
             bottom: 0,
             child: Center(
-              child: _ControlsToggle(
-                visible: _controlsVisible,
+              child: _EdgeTab(
+                leftEdge: false,
+                icon: _controlsVisible
+                    ? Icons.keyboard_arrow_down
+                    : Icons.keyboard_arrow_up,
                 onTap: _toggleControls,
+              ),
+            ),
+          ),
+
+          // The settings-shade handle: the left-edge mirror of the controls
+          // tab, replacing the old gear tucked in the header's corner. Its
+          // chevron points the way the shade will move (down-into-view when
+          // closed, up-out-of-view when open). Tapping it mid-play pauses
+          // first — the shade is a paused-browsing surface (see [_toggleShade]).
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _EdgeTab(
+                leftEdge: true,
+                icon: _shadeOpen && !_playing
+                    ? Icons.keyboard_arrow_up
+                    : Icons.keyboard_arrow_down,
+                onTap: _toggleShade,
               ),
             ),
           ),
@@ -1349,39 +1541,72 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // The density scrubber track — always shown, even when the transport is
   // hidden in fullscreen. Its own rounded surface so it reads as a control
-  // when it stands alone under the collapsed transport.
+  // when it stands alone under the collapsed transport. The elapsed/total time
+  // labels sit directly above it (not the read/song-speed row) since they
+  // describe the same seconds axis the scrubber seeks on.
   Widget _buildScrubBar(BuildContext context) {
     final progress = _endSecond <= 0
         ? 0.0
         : (_second / _endSecond).clamp(0.0, 1.0);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.12),
-        padding: const EdgeInsets.symmetric(horizontal: 3),
-        child: _DensityScrubBar(
-          buckets: _minimap,
-          progress: progress,
-          accent: Theme.of(context).colorScheme.primary,
-          bpmFractions: _markerFractions(_bpmMarkers.map((m) => m.second)),
-          stopFractions: _markerFractions(_stopMarkers.map((m) => m.second)),
-          onSeek: (frac) {
-            _pause();
-            final next = (frac * _endSecond).clamp(0.0, _endSecond);
-            // Detent per whole second dragged across, so the minimap seek ticks
-            // under the finger without firing on every sub-pixel move.
-            if (next.floor() != _second.floor()) {
-              HapticFeedback.selectionClick();
-            }
-            setState(() => _second = next);
-          },
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _fmtTime(_second),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontFeatures: const [FontFeature.tabularFigures()]),
+              ),
+              Text(
+                _fmtTime(_endSecond),
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontFeatures: const [FontFeature.tabularFigures()]),
+              ),
+            ],
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.12),
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: _DensityScrubBar(
+              buckets: _minimap,
+              progress: progress,
+              accent: Theme.of(context).colorScheme.primary,
+              bpmFractions: _markerFractions(_bpmMarkers.map((m) => m.second)),
+              stopFractions:
+                  _markerFractions(_stopMarkers.map((m) => m.second)),
+              onSeek: (frac) {
+                _pause();
+                final next = (frac * _endSecond).clamp(0.0, _endSecond);
+                // Detent per whole second dragged across, so the minimap seek
+                // ticks under the finger without firing on every sub-pixel move.
+                if (next.floor() != _second.floor()) {
+                  HapticFeedback.selectionClick();
+                }
+                setState(() => _second = next);
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   // The settings shade: a top "pull-down" sheet of chart-viewing modifiers,
-  // hidden behind the header's gear until opened. A tap-scrim behind it dismisses
+  // hidden behind the left-edge pull-tab until opened. A tap-scrim behind it dismisses
   // it; the sheet itself is a scrollable column of titled sections so it has room
   // to grow toward the full DDR option set (arrows, lane, scroll, assist …).
   // Never shown while playing — [_play] force-closes it.
@@ -1441,6 +1666,7 @@ class _ChartScrollerState extends State<ChartScroller>
             _ConstantChip(
               on: _constantOn,
               ms: _constantMs,
+              equivalentReadSpeed: _constantReadSpeed,
               onTap: _toggleConstant,
               onDrag: _onConstantDrag,
             ),
@@ -1450,7 +1676,9 @@ class _ChartScrollerState extends State<ChartScroller>
                 Expanded(
                   child: _TurnTile(
                     label: "MIRROR",
-                    icon: Icons.flip,
+                    // DDR's MIRROR glyph is an up/down arrow pair (180° flip);
+                    // swap_vert conveys the same reflected-pair idea.
+                    icon: Icons.swap_vert,
                     selected: _turn == _Turn.mirror,
                     onTap: () => _setTurn(_Turn.mirror),
                   ),
@@ -1478,12 +1706,6 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
-      // Reserved for the remaining DDR World appearance options, added later:
-      // arrow color scheme / design, scroll direction & motion, lane cover,
-      // guideline, step-zone, assist (freeze/jump removal), etc.
-      const _ShadeSection(title: "SCROLL", comingSoon: true),
-      const _ShadeSection(title: "LANE", comingSoon: true),
-      const _ShadeSection(title: "ASSIST", comingSoon: true),
     ];
   }
 
@@ -1496,24 +1718,6 @@ class _ChartScrollerState extends State<ChartScroller>
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _fmtTime(_second),
-                style: const TextStyle(
-                    fontSize: 11,
-                    fontFeatures: [FontFeature.tabularFigures()]),
-              ),
-              Text(
-                _fmtTime(_endSecond),
-                style: const TextStyle(
-                    fontSize: 11,
-                    fontFeatures: [FontFeature.tabularFigures()]),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
           SizedBox(
             height: 56,
             child: Row(
@@ -1538,6 +1742,76 @@ class _ChartScrollerState extends State<ChartScroller>
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Always-visible pill showing the tempo section under the playhead: its BPM
+/// and the read speed it actually reads at. The READ value is CONSTANT-aware —
+/// when the CONSTANT window is what bounds visibility in this section (hiding
+/// arrows a fixed wall-clock time out), the value takes a "C" prefix and shows
+/// the window's equivalent read speed; in sections already faster than the
+/// window (where CONSTANT hides nothing) the prefix drops and the plain
+/// localBpm × mod value shows through. Styled after the fast-forward badge so
+/// the floating overlays read as one family.
+class _TempoBadge extends StatelessWidget {
+  const _TempoBadge({
+    required this.bpm,
+    required this.readSpeed,
+    required this.constantBound,
+  });
+
+  final int bpm;
+  final int readSpeed;
+  final bool constantBound;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget stat(String label, String value) => Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w600,
+                color: Colors.white.withValues(alpha: 0.55),
+              ),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.white.withValues(alpha: 0.92),
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          stat("BPM", "$bpm"),
+          Container(
+            width: 1,
+            height: 14,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            color: Colors.white.withValues(alpha: 0.22),
+          ),
+          stat("READ", constantBound ? "C$readSpeed" : "$readSpeed"),
         ],
       ),
     );
@@ -1689,17 +1963,13 @@ class _ControlPane extends StatelessWidget {
 }
 
 /// One titled group of modifier controls inside the settings shade. [content] is
-/// the section's laid-out body (tiles/rows); [comingSoon] marks a reserved
-/// category with no wired controls yet, so the shade already shows the shape of
-/// the full option set.
+/// the section's laid-out body (tiles/rows).
 class _ShadeSection {
   final String title;
   final Widget? content;
-  final bool comingSoon;
   const _ShadeSection({
     required this.title,
     this.content,
-    this.comingSoon = false,
   });
 }
 
@@ -1814,17 +2084,7 @@ class _SettingsShade extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          if (s.comingSoon)
-            Text(
-              "Coming soon",
-              style: TextStyle(
-                fontSize: 12,
-                fontStyle: FontStyle.italic,
-                color: onSurface.withValues(alpha: 0.3),
-              ),
-            )
-          else if (s.content != null)
-            s.content!,
+          if (s.content != null) s.content!,
         ],
       ),
     );
@@ -1860,12 +2120,19 @@ class _ConstantChip extends StatelessWidget {
   const _ConstantChip({
     required this.on,
     required this.ms,
+    required this.equivalentReadSpeed,
     required this.onTap,
     required this.onDrag,
   });
 
   final bool on;
   final double ms;
+
+  /// The read speed whose full-field travel time equals the window — what the
+  /// chart "reads at" everywhere the window binds. Null when off or unknown
+  /// (field not laid out); shown muted next to the ms value.
+  final int? equivalentReadSpeed;
+
   final VoidCallback onTap;
   final void Function(double dx) onDrag;
 
@@ -1890,7 +2157,11 @@ class _ConstantChip extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.timelapse, size: 16, color: c.fgMuted),
+              // CONSTANT = a fixed arrow display *time*, so a stopwatch reads
+              // the concept better than a generic clock. DDR World has no
+              // CONSTANT glyph (it's not one of the option-icon categories), so
+              // the closest conceptual Material icon stands in here.
+              Icon(Icons.timer_outlined, size: 16, color: c.fgMuted),
               const SizedBox(width: 8),
               Text(
                 "CONSTANT",
@@ -1902,6 +2173,18 @@ class _ConstantChip extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              if (on && equivalentReadSpeed != null) ...[
+                Text(
+                  "≈ C$equivalentReadSpeed",
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: c.fgMuted,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Text(
                 on ? "${ms.round()}ms" : "OFF",
                 style: TextStyle(
@@ -1932,6 +2215,10 @@ class _TurnTile extends StatelessWidget {
   });
 
   final String label;
+
+  // A conceptual Material glyph standing in for DDR's turn icon: swap_vert for
+  // MIRROR's up/down flip pair, rotate_left/right for the 90° turns. Keeps the
+  // shade free of copyrighted arcade art while reading the same at a glance.
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
@@ -1943,29 +2230,28 @@ class _TurnTile extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Container(
-        height: 44,
-        alignment: Alignment.center,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
           color: c.fill,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: c.border, width: 1),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: c.fg),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  letterSpacing: 0.6,
-                  fontWeight: FontWeight.w700,
-                  color: c.fg,
-                ),
+            Icon(icon, size: 22, color: c.fg),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                letterSpacing: 0.5,
+                fontWeight: FontWeight.w700,
+                color: c.fg,
               ),
             ),
           ],
@@ -1975,16 +2261,20 @@ class _TurnTile extends StatelessWidget {
   }
 }
 
-/// A small edge tab that shows/hides the floating controls. Reads as a pull-tab
-/// against the right edge; the chevron points down (hide) when controls are up
-/// and up (show) when they're stowed.
-class _ControlsToggle extends StatelessWidget {
-  const _ControlsToggle({
-    required this.visible,
+/// A small always-visible pull-tab pinned to a screen edge, vertically centred
+/// so it never collides with the full-width header or transport. Two mirrored
+/// instances exist: the RIGHT tab shows/hides the floating controls, the LEFT
+/// tab pulls the settings shade down/up. [leftEdge] flips the shape so the
+/// rounded corners always face away from the edge the tab hangs off.
+class _EdgeTab extends StatelessWidget {
+  const _EdgeTab({
+    required this.leftEdge,
+    required this.icon,
     required this.onTap,
   });
 
-  final bool visible;
+  final bool leftEdge;
+  final IconData icon;
   final VoidCallback onTap;
 
   @override
@@ -1997,11 +2287,14 @@ class _ControlsToggle extends StatelessWidget {
         height: 52,
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.42),
-          borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+          borderRadius: BorderRadius.horizontal(
+            left: leftEdge ? Radius.zero : const Radius.circular(12),
+            right: leftEdge ? const Radius.circular(12) : Radius.zero,
+          ),
         ),
         alignment: Alignment.center,
         child: Icon(
-          visible ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+          icon,
           color: Colors.white.withValues(alpha: 0.9),
           size: 22,
         ),
@@ -2274,6 +2567,7 @@ class _ChartPainter extends CustomPainter {
     required this.columnCount,
     required this.skin,
     required this.playing,
+    this.zoom = 1.0,
     this.constantMs,
     this.topInset = 0,
   });
@@ -2304,59 +2598,44 @@ class _ChartPainter extends CustomPainter {
   final Noteskin skin;
   final bool playing;
 
+  // Pinch-to-zoom factor. Applied to the horizontal field geometry (arrow size
+  // and lane spacing) so that zooming out shrinks the arrows in step with the
+  // vertical compression already baked into [pxPerBeat]/[pxPerSecond]. The result
+  // is a uniform "map zoom": at <1 the field pulls in from both edges and the
+  // arrows get smaller, so more of the chart is legibly on screen instead of the
+  // notes just piling together.
+  final double zoom;
+
   // DDR CONSTANT modifier: when non-null, every arrow is only visible for this
   // many milliseconds of WALL-CLOCK time before it reaches the receptor,
   // regardless of BPM or read speed — a note is invisible until it is this far
-  // (in real seconds) from the line, then fades in and travels the rest of the
-  // way solid. Null = NORMAL (arrows always visible in the field). The fade is
-  // keyed on real seconds-to-receptor, not beat distance, so its span in
+  // (in real seconds) from the line, then appears at full opacity and travels
+  // the rest of the way solid. Null = NORMAL (arrows always visible). The window
+  // is keyed on real seconds-to-receptor, not beat distance, so its span in
   // pixels/beats stretches and compresses with the local tempo, exactly as
-  // in-game. See [_constantAlpha].
+  // in-game. See [_constantHides].
   final double? constantMs;
-
-  // Short fade-in ramp at the far edge of the CONSTANT window: an arrow ramps
-  // 0→1 opacity over these many seconds as it crosses the visibility threshold,
-  // rather than fading linearly across the whole window (which reads as a dim
-  // arrow the entire way). ~120ms matches the quick pop-in of the arcade.
-  static const double _constantFadeSeconds = 0.12;
 
   // Top safe-area inset (status bar / notch). The field is full-bleed, so the
   // receptor line is pushed down by this much to clear the system chrome.
   final double topInset;
 
-  // Opacity for a note at chart-second [t] under the CONSTANT modifier. Returns
-  // 1 when CONSTANT is off (or the note is at/past the receptor), 0 when the
-  // note is still beyond the visibility window, and a quick 0→1 ramp as it
-  // enters the window. Driven by real seconds-to-receptor (`t - second`), so the
-  // window is a fixed time no matter the tempo. For a held note whose head has
-  // already reached the line, [t] should be the head's own second (<= playhead),
-  // yielding full opacity — the body doesn't re-fade while being held.
-  double _constantAlpha(double t) {
+  // Whether the note at chart-second [t] is hidden by the CONSTANT modifier: a
+  // hard visibility gate, not a fade. False when CONSTANT is off, or the note is
+  // within its display window (or at/past the receptor); true when it's still
+  // beyond the window. This matches the arcade, where CONSTANT is part of the
+  // same appearance/cover machinery as HIDDEN/SUDDEN (ddr::player::Option, the
+  // `display_type` family in gamemdx.dll) — the arrow snaps to full opacity the
+  // instant it enters its fixed display time, rather than ramping in. Driven by
+  // real seconds-to-receptor (`t - second`), so the window is a fixed wall-clock
+  // time no matter the tempo. For a held note whose head has already reached the
+  // line, [t] should be the head's own second (<= playhead), yielding false.
+  bool _constantHides(double t) {
     final c = constantMs;
-    if (c == null) return 1;
+    if (c == null) return false;
     final timeToReceptor = t - second;
-    if (timeToReceptor <= 0) return 1; // at or past the line
-    final window = c / 1000.0;
-    if (timeToReceptor >= window) return 0; // beyond the visibility window
-    // Ramp up over the last [_constantFadeSeconds] of the window's far edge.
-    return ((window - timeToReceptor) / _constantFadeSeconds).clamp(0.0, 1.0);
-  }
-
-  // Run [draw] with a uniform [alpha] applied to everything it paints, via a
-  // save-layer so the skin's own multi-paint arrows/holds fade as one unit
-  // (rather than compositing their internal overlaps at partial opacity). Skips
-  // the layer entirely at alpha 1 (the common case) so NORMAL pays nothing.
-  void _withAlpha(Canvas canvas, double alpha, Size size, VoidCallback draw) {
-    if (alpha >= 1) {
-      draw();
-      return;
-    }
-    canvas.saveLayer(
-      Offset.zero & size,
-      Paint()..color = Colors.white.withValues(alpha: alpha),
-    );
-    draw();
-    canvas.restore();
+    if (timeToReceptor <= 0) return false; // at or past the line
+    return timeToReceptor >= c / 1000.0; // beyond the fixed display window
   }
 
   // Receptors sit near the TOP; arrows scroll up into them. Notes are drawn
@@ -2371,12 +2650,17 @@ class _ChartPainter extends CustomPainter {
     _paintBackground(canvas, size);
 
     final laneW = size.width / columnCount;
-    final laneStride = laneW * _laneTighten;
+    // Pinch zoom pulls the lanes in toward the field's centre (and shrinks the
+    // arrows below), so zooming out narrows the field AND the glyphs uniformly —
+    // the "map zoom" that actually fits more chart, rather than only tightening
+    // the vertical gaps (which just stacks the arrows on top of each other).
+    final laneStride = laneW * _laneTighten * zoom;
     final fieldLeft = (size.width - laneStride * columnCount) / 2;
     // DDR World arrows fill nearly the whole lane (the atlas glyph is ~0.94 of
     // its cell). No small upper clamp — arrows scale with the lane so they read
-    // at the arcade's size instead of shrinking on wide fields.
-    final arrowSize = laneW * 0.92;
+    // at the arcade's size instead of shrinking on wide fields. Zoom shrinks them
+    // in lockstep with the lane stride so their proportion within a lane holds.
+    final arrowSize = laneW * 0.92 * zoom;
 
     double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
 
@@ -2409,7 +2693,7 @@ class _ChartPainter extends CustomPainter {
       return y;
     }
 
-    _paintLanes(canvas, size, laneW, _receptorTop);
+    _paintLanes(canvas, size, fieldLeft, laneStride, _receptorTop);
 
     // Visible window's far edge, in seconds. Notes draw on-screen until they
     // align with the receptor, then disappear immediately. Holds are the
@@ -2453,17 +2737,16 @@ class _ChartPainter extends CustomPainter {
       if (!n.isHold) continue;
       final endS = n.endSecond ?? n.second;
       if (endS < second || n.second > maxT) continue;
+      // A freeze appears as one piece under CONSTANT, keyed on its head's second
+      // — until the head enters its display window the whole body is hidden.
+      if (_constantHides(n.second)) continue;
       final headY =
           n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
-      // Fade the whole freeze (body + tail) together with its head's opacity, so
-      // an incoming hold pops in as one piece under CONSTANT.
       final col = turned(n.col);
-      _withAlpha(canvas, _constantAlpha(n.second), size, () {
-        skin.paintHoldBody(canvas, laneCenterX(col), headY, yFor(endS),
-            arrowSize, dirs[col], n.type == StepType.roll);
-        skin.paintHoldTail(canvas, laneCenterX(col), yFor(endS), arrowSize,
-            dirs[col], n.type == StepType.roll);
-      });
+      skin.paintHoldBody(canvas, laneCenterX(col), headY, yFor(endS),
+          arrowSize, dirs[col], n.type == StepType.roll);
+      skin.paintHoldTail(canvas, laneCenterX(col), yFor(endS), arrowSize,
+          dirs[col], n.type == StepType.roll);
     }
 
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
@@ -2476,12 +2759,12 @@ class _ChartPainter extends CustomPainter {
     // spanning the whole row (also vanishes once hit).
     for (final s in shocks) {
       if (s.second < second || s.second > maxT) continue;
+      if (_constantHides(s.second)) continue; // hidden by CONSTANT
       final y = yFor(s.second);
       final lanes = [
         for (final c in s.cols) (laneCenterX(turned(c)), dirs[turned(c)]),
       ];
-      _withAlpha(canvas, _constantAlpha(s.second), size,
-          () => skin.paintShock(canvas, lanes, y, arrowSize));
+      skin.paintShock(canvas, lanes, y, arrowSize);
     }
 
     // 3) Taps, mines (non-shock), and hold heads — drawn last so they sit above
@@ -2492,21 +2775,19 @@ class _ChartPainter extends CustomPainter {
       if (!held && (n.second < second || n.second > maxT)) {
         continue;
       }
+      // A held head sits on the receptor, so treat it as fully arrived rather
+      // than re-gating it; otherwise CONSTANT hides it until it enters its window.
+      if (!held && _constantHides(n.second)) continue;
       final col = turned(n.col);
       final x = laneCenterX(col);
       final y = held ? _receptorTop.toDouble() : yFor(n.second);
-      // A held head sits on the receptor, so treat it as fully arrived (opacity
-      // 1) rather than re-fading it; otherwise fade by its seconds-to-receptor.
-      final alpha = held ? 1.0 : _constantAlpha(n.second);
       if (n.type == StepType.mine) {
         if (shockNotes.contains(n)) continue; // drawn in the shock pass
-        _withAlpha(canvas, alpha, size, () => skin.paintMine(canvas, x, y, arrowSize));
+        skin.paintMine(canvas, x, y, arrowSize);
       } else {
-        _withAlpha(canvas, alpha, size, () {
-          skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
-          final foot = feet[n];
-          if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
-        });
+        skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
+        final foot = feet[n];
+        if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
       }
     }
 
@@ -2750,13 +3031,15 @@ class _ChartPainter extends CustomPainter {
     );
   }
 
-  void _paintLanes(Canvas canvas, Size size, double laneW, double receptorY) {
-    // Subtle lane dividers.
+  void _paintLanes(Canvas canvas, Size size, double fieldLeft,
+      double laneStride, double receptorY) {
+    // Subtle lane dividers, tracking the (zoom-scaled) field so they sit between
+    // the lanes rather than drifting away from the arrows when zoomed out.
     final div = Paint()
       ..color = Colors.white.withValues(alpha: 0.04)
       ..strokeWidth = 1;
     for (int c = 1; c < columnCount; c++) {
-      final x = laneW * c;
+      final x = fieldLeft + laneStride * c;
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), div);
     }
     // Receptor line highlight.
@@ -2786,6 +3069,7 @@ class _ChartPainter extends CustomPainter {
       !listEquals(old.colMap, colMap) ||
       old.skin != skin ||
       old.playing != playing ||
+      old.zoom != zoom ||
       old.constantMs != constantMs ||
       old.topInset != topInset;
 }
