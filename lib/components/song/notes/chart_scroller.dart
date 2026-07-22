@@ -52,11 +52,18 @@ class ChartTiming {
   final List<double> _seconds;
   final List<double> _beats;
 
-  const ChartTiming._(this._seconds, this._beats);
+  // Cumulative stop-seconds absorbed at or before each breakpoint: the running
+  // total of flat (beat-held) time up to `_seconds[i]`. Lets the paused/scroll
+  // view give stops real vertical extent (a note past a stop is pushed down by
+  // the stop's duration) even though beat-locked scrolling collapses them to a
+  // line. Parallel to `_seconds`/`_beats`.
+  final List<double> _stopAccum;
+
+  const ChartTiming._(this._seconds, this._beats, this._stopAccum);
 
   /// Empty map — used when a chart carries no BPM data; the caller then draws in
   /// the plain constant-time mode instead of consulting this.
-  static const ChartTiming empty = ChartTiming._([], []);
+  static const ChartTiming empty = ChartTiming._([], [], []);
 
   bool get isEmpty => _seconds.isEmpty;
 
@@ -73,16 +80,20 @@ class ChartTiming {
 
     final seconds = <double>[];
     final beats = <double>[];
+    final stopAccum = <double>[];
     double beat = 0; // musical beat accumulated so far
+    double stopped = 0; // cumulative stop-seconds absorbed so far
     void add(double s, double b) {
       // Keep seconds strictly increasing; coincident points (a stop exactly on a
       // segment edge) collapse to one, preserving the later (post-event) beat.
       if (seconds.isNotEmpty && (s - seconds.last).abs() < 1e-6) {
         beats[beats.length - 1] = b;
+        stopAccum[stopAccum.length - 1] = stopped;
         return;
       }
       seconds.add(s);
       beats.add(b);
+      stopAccum.add(stopped);
     }
 
     int si = 0;
@@ -97,7 +108,9 @@ class ChartTiming {
           // Advance to the stop start, accruing beats over the moving time.
           beat += (stop.st - cursor) * bps;
           add(stop.st, beat);
-          // The halt: real time advances by dur, beat stays flat.
+          // The halt: real time advances by dur, beat stays flat. Record the
+          // absorbed stop-time so the paused view can re-expand it vertically.
+          stopped += stop.dur;
           add(stop.st + stop.dur, beat);
           cursor = stop.st + stop.dur;
         }
@@ -108,7 +121,33 @@ class ChartTiming {
       add(seg.ed, beat);
     }
     if (seconds.length < 2) return empty;
-    return ChartTiming._(seconds, beats);
+    return ChartTiming._(seconds, beats, stopAccum);
+  }
+
+  /// Cumulative stop-seconds absorbed at or before wall-clock [second]: the
+  /// total flat (beat-held) time up to that point. Within a stop it grows
+  /// linearly to the stop's full duration, so differencing this across two
+  /// seconds yields the stop-time strictly between them — what the paused view
+  /// uses to give stops real vertical height while beat-locked scroll collapses
+  /// them. Extrapolates flat past the ends (no stops outside the timeline).
+  double stopSecondsAt(double second) {
+    final n = _seconds.length;
+    if (n == 0) return 0;
+    if (second <= _seconds.first) return _stopAccum.first;
+    if (second >= _seconds.last) return _stopAccum.last;
+    int lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+      final mid = (lo + hi) >> 1;
+      if (_seconds[mid] <= second) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    final ds = _seconds[lo + 1] - _seconds[lo];
+    if (ds.abs() < 1e-9) return _stopAccum[lo + 1];
+    final f = (second - _seconds[lo]) / ds;
+    return _stopAccum[lo] + f * (_stopAccum[lo + 1] - _stopAccum[lo]);
   }
 
   /// Beat at wall-clock [second], interpolating between breakpoints and
@@ -280,6 +319,16 @@ class _ChartScrollerState extends State<ChartScroller>
   static const double _minPlaybackRate = 0.25;
   static const double _maxPlaybackRate = 1.0;
 
+  // Tap-and-hold fast-forward: while the finger is held down on the field
+  // without dragging, playback temporarily doubles. Releasing (or the hold
+  // losing the gesture arena to a drag) restores the rate that was active
+  // before the hold started, not a hardcoded 1.0 — so it composes with the
+  // song-speed control instead of clobbering it.
+  static const double _holdSpeedMultiplier = 2.0;
+  static const double _maxHoldPlaybackRate = 2.0;
+  double? _preHoldPlaybackRate;
+  bool _holdFastForward = false;
+
   // Notes that are part of a shock row are drawn as bars, not mines, so the
   // painter skips them and draws [_shocks] instead.
   final Set<StepNote> _shockNotes = {};
@@ -315,11 +364,20 @@ class _ChartScrollerState extends State<ChartScroller>
 
   double get _pxPerSecond => _basePxPerSecond * _rate;
 
-  // Beat-locked spacing: pixels per chart beat. Anchored so that at the chart's
-  // dominant BPM one beat spans the same pixels a beat did under the old
-  // constant-time scroll, keeping the read-speed mod feel unchanged; other
-  // tempos then read faster/slower relative to it, exactly as in-game.
-  double get _pxPerBeat => _pxPerSecond * 60.0 / _effectiveChartBpm;
+  // Beat-locked spacing: pixels per chart beat. In DDR the scroll VELOCITY is the
+  // read speed (BPM × mod), so faster songs fly and slower ones crawl at the same
+  // x-mod. A beat spans 60/localBpm seconds, so to make velocity = localBpm × rate
+  // px/s the per-beat pixels must be (localBpm × rate) × (60/localBpm) = 60 × rate
+  // — chart- and tempo-independent. This is why a note's on-screen speed then
+  // tracks the LOCAL tempo (via [ChartTiming]'s slope), not the dominant BPM: a
+  // 360-BPM stretch scrolls twice as fast as a 180-BPM one at the same read speed.
+  //
+  // Anchoring instead to the dominant BPM (the old behaviour) collapsed every
+  // chart to _basePxPerSecond × rate px/s at its dominant tempo, so a 360-BPM song
+  // crept by at the same pixels/second as a 120-BPM one — the read speed became a
+  // pure spacing knob with no bearing on actual vertical velocity.
+  static const double _pxPerReadSpeedUnit = 1.0;
+  double get _pxPerBeat => _pxPerReadSpeedUnit * _rate * 60.0;
 
   int get _effectiveChartBpm => widget.chartBpm > 0 ? widget.chartBpm : constants.songBpm;
   int get _currentReadSpeed => (_effectiveChartBpm * _rate).round();
@@ -517,6 +575,22 @@ class _ChartScrollerState extends State<ChartScroller>
   bool _showTapOverlay = false;
   Timer? _tapOverlayTimer;
 
+  // Scrub feedback: a large centred value that flashes while horizontally
+  // scrubbing a control (song speed / read speed), fading out shortly after the
+  // gesture settles so the change reads at a glance without watching the pane.
+  String? _scrubOverlayLabel;
+  String? _scrubOverlayCaption;
+  bool _showScrubOverlay = false;
+  Timer? _scrubOverlayTimer;
+
+  // Double-tap seek feedback: a YouTube-style flash on the side of the field
+  // that was tapped, showing the skip direction and amount. `_seekOverlayLeft`
+  // picks which half lights up; re-tapping the same side while the flash is
+  // still up restarts the timer so rapid double-taps keep it lit.
+  bool _showSeekOverlay = false;
+  bool _seekOverlayLeft = false;
+  Timer? _seekOverlayTimer;
+
   void _onTick(Duration elapsed) {
     final dt = (elapsed - _lastTick).inMicroseconds / 1e6;
     _lastTick = elapsed;
@@ -586,11 +660,87 @@ class _ChartScrollerState extends State<ChartScroller>
     });
   }
 
+  // Flash the big centred scrub value. Kept up while the drag is live (each
+  // update re-arms the timer), then fades a short beat after the finger lifts.
+  void _flashScrubOverlay(String label, String caption) {
+    _scrubOverlayTimer?.cancel();
+    setState(() {
+      _scrubOverlayLabel = label;
+      _scrubOverlayCaption = caption;
+      _showScrubOverlay = true;
+    });
+    _scrubOverlayTimer = Timer(const Duration(milliseconds: 550), () {
+      if (!mounted) return;
+      setState(() => _showScrubOverlay = false);
+    });
+  }
+
   void _togglePlay({bool showOverlay = false}) {
     HapticFeedback.selectionClick();
     final willPlay = !_playing;
     _playing ? _pause() : _play();
     if (showOverlay) _flashTapOverlay(willPlay);
+  }
+
+  static const double _seekStepSeconds = 5.0;
+
+  // Double-tap seek: jump ±5s and flash an indicator on the tapped side. Works
+  // whether paused or playing — seeking while playing just relocates the
+  // playhead and playback continues from there.
+  void _seek(bool forward) {
+    HapticFeedback.mediumImpact();
+    final delta = forward ? _seekStepSeconds : -_seekStepSeconds;
+    setState(() => _second = (_second + delta).clamp(0.0, _endSecond));
+    _flashSeekOverlay(!forward);
+  }
+
+  void _flashSeekOverlay(bool left) {
+    _seekOverlayTimer?.cancel();
+    setState(() {
+      _seekOverlayLeft = left;
+      _showSeekOverlay = true;
+    });
+    _seekOverlayTimer = Timer(const Duration(milliseconds: 420), () {
+      if (!mounted) return;
+      setState(() => _showSeekOverlay = false);
+    });
+  }
+
+  // Tap-and-hold fast-forward: doubles playback rate for as long as the finger
+  // stays down without turning into a drag. `_preHoldPlaybackRate` remembers
+  // the rate to restore, since the song-speed control may have already set it
+  // away from 1.0. Holding while paused starts playback for the duration of
+  // the hold; `_resumeFromHold` tracks that so releasing returns to paused
+  // rather than leaving playback running.
+  bool _resumeFromHold = false;
+
+  void _onHoldSpeedStart() {
+    if (_holdFastForward) return;
+    _preHoldPlaybackRate = _playbackRate;
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _holdFastForward = true;
+      _playbackRate = (_playbackRate * _holdSpeedMultiplier)
+          .clamp(_minPlaybackRate, _maxHoldPlaybackRate);
+    });
+    if (!_playing) {
+      _resumeFromHold = true;
+      _play();
+    }
+  }
+
+  void _onHoldSpeedEnd() {
+    if (!_holdFastForward) return;
+    final restore = _preHoldPlaybackRate ?? 1.0;
+    _preHoldPlaybackRate = null;
+    setState(() {
+      _holdFastForward = false;
+      _playbackRate = restore;
+    });
+    if (_resumeFromHold) {
+      _resumeFromHold = false;
+      _pause();
+    }
   }
 
   void _stepReadSpeed(int delta) {
@@ -601,6 +751,7 @@ class _ChartScrollerState extends State<ChartScroller>
       _modIndex = newIndex;
       _rate = constants.mods[_modIndex];
     });
+    _flashScrubOverlay("$_currentReadSpeed", "READ SPEED");
   }
 
   // Drag on the read-speed pane: horizontal movement steps through the mod list.
@@ -623,11 +774,17 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   // Drag on the song-speed pane: horizontal movement scales the playback rate.
+  // Fire a detent haptic each time the rate crosses one of the 0.05× steps the
+  // value snaps to on-screen, so the sweep ticks under the finger.
   void _onPlaybackRateDrag(double dx) {
     final next = (_playbackRate + dx / 260)
         .clamp(_minPlaybackRate, _maxPlaybackRate);
     if (next == _playbackRate) return;
+    final crossedStep =
+        (next * 20).round() != (_playbackRate * 20).round();
     setState(() => _playbackRate = next);
+    if (crossedStep) HapticFeedback.selectionClick();
+    _flashScrubOverlay("${next.toStringAsFixed(2)}×", "SONG SPEED");
   }
 
   void _resetPlaybackRate() {
@@ -638,20 +795,57 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // --- drag-to-scrub with momentum ---
 
+  // Whole-beat index of the playhead at the last scrub tick, so a manual
+  // vertical scrub can fire one detent haptic per beat crossed as notes pass the
+  // receptor — the field feels "notched" to the rhythm instead of glassy.
+  int? _lastScrubBeat;
+
+  int _beatIndexAt(double second) {
+    final beat = _timing.isEmpty
+        ? second * _effectiveChartBpm / 60.0
+        : _timing.beatAt(second);
+    return beat.floor();
+  }
+
   void _onDragStart(DragStartDetails _) {
     _pause();
     _flingVel = 0; // catch any ongoing fling
+    _lastScrubBeat = _beatIndexAt(_second);
   }
 
-  // Convert a vertical pixel distance to chart-seconds at the playhead. In
-  // beat-locked mode a pixel is a fixed slice of a beat, so its second-equivalent
-  // stretches/compresses with the local tempo (and a pixel over a stop maps to
-  // ~0 seconds); otherwise it's the flat constant-time ratio.
+  // Convert a vertical pixel distance to chart-seconds at the playhead, so a
+  // drag/fling moves the field by exactly the pixels the finger travelled. In
+  // beat-locked mode a pixel is a fixed slice of a beat, stretching/compressing
+  // with the local tempo. Scrubbing always happens paused, where stops are given
+  // real vertical extent ([expandStops] in the painter), so we invert that SAME
+  // combined mapping here — otherwise a pixel over a stop would map to ~0 seconds
+  // and the finger would slide across the (now visible) stop band without moving
+  // the playhead through it.
   double _pxToSeconds(double px) {
     if (_timing.isEmpty) return px / _pxPerSecond;
-    final beat = _timing.beatAt(_second);
-    final s2 = _timing.secondAt(beat + px / _pxPerBeat);
-    return s2 - _second;
+    // Combined on-screen pixel offset from the playhead for a note at second t:
+    // beat-distance plus the re-expanded stop-time between them.
+    final baseBeat = _timing.beatAt(_second);
+    final baseStop = _timing.stopSecondsAt(_second);
+    double offsetPx(double t) =>
+        (_timing.beatAt(t) - baseBeat) * _pxPerBeat +
+        (_timing.stopSecondsAt(t) - baseStop) * _pxPerSecond;
+
+    // offsetPx is monotone non-decreasing in t; binary-search the second whose
+    // combined offset matches `px`. Bracket with a generous beat-only estimate
+    // (which ignores stop pixels, so it always over-reaches in seconds), padded.
+    final rough = _timing.secondAt(baseBeat + px / _pxPerBeat) - _second;
+    double lo = math.min(0.0, rough) - 0.5;
+    double hi = math.max(0.0, rough) + 0.5;
+    for (int i = 0; i < 40; i++) {
+      final mid = (lo + hi) / 2;
+      if (offsetPx(_second + mid) < px) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return (lo + hi) / 2;
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
@@ -661,6 +855,12 @@ class _ChartScrollerState extends State<ChartScroller>
       _second =
           (_second - _pxToSeconds(d.primaryDelta!)).clamp(0.0, _endSecond);
     });
+    // One detent per beat crossed, so scrubbing the field ticks to the rhythm.
+    final beat = _beatIndexAt(_second);
+    if (_lastScrubBeat != null && beat != _lastScrubBeat) {
+      HapticFeedback.selectionClick();
+    }
+    _lastScrubBeat = beat;
   }
 
   void _onDragEnd(DragEndDetails d) {
@@ -678,6 +878,8 @@ class _ChartScrollerState extends State<ChartScroller>
   @override
   void dispose() {
     _tapOverlayTimer?.cancel();
+    _scrubOverlayTimer?.cancel();
+    _seekOverlayTimer?.cancel();
     _ticker.dispose();
     super.dispose();
   }
@@ -694,10 +896,16 @@ class _ChartScrollerState extends State<ChartScroller>
       return Stack(
         fit: StackFit.expand,
         children: [
-          // Full-bleed scrolling field. Tap = play/pause, drag = scrub.
+          // Full-bleed scrolling field. Tap = play/pause, drag = scrub,
+          // double-tap left/right = seek ±5s, press-and-hold = 2x speed.
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => _togglePlay(showOverlay: true),
+            onDoubleTapDown: (d) =>
+                _seek(d.localPosition.dx >= constraints.maxWidth / 2),
+            onLongPressStart: (_) => _onHoldSpeedStart(),
+            onLongPressEnd: (_) => _onHoldSpeedEnd(),
+            onLongPressCancel: _onHoldSpeedEnd,
             onVerticalDragStart: _onDragStart,
             onVerticalDragUpdate: _onDragUpdate,
             onVerticalDragEnd: _onDragEnd,
@@ -735,13 +943,152 @@ class _ChartScrollerState extends State<ChartScroller>
                         width: 56,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.26),
+                          color: Colors.black.withValues(alpha: 0.26),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
                           _tapOverlayIcon,
-                          color: Colors.white.withOpacity(0.88),
+                          color: Colors.white.withValues(alpha: 0.88),
                           size: 32,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Double-tap seek flash: lights up the tapped half of the field
+                // with a skip icon + "±5s", YouTube-style.
+                IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _showSeekOverlay ? 1 : 0,
+                    duration: const Duration(milliseconds: 100),
+                    child: Align(
+                      alignment: _seekOverlayLeft
+                          ? Alignment.centerLeft
+                          : Alignment.centerRight,
+                      child: FractionallySizedBox(
+                        widthFactor: 0.42,
+                        heightFactor: 1,
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.horizontal(
+                              left: _seekOverlayLeft
+                                  ? Radius.zero
+                                  : const Radius.circular(80),
+                              right: _seekOverlayLeft
+                                  ? const Radius.circular(80)
+                                  : Radius.zero,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _seekOverlayLeft
+                                    ? Icons.fast_rewind_rounded
+                                    : Icons.fast_forward_rounded,
+                                color: Colors.white.withValues(alpha: 0.9),
+                                size: 30,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _seekOverlayLeft
+                                    ? "-${_seekStepSeconds.toInt()}s"
+                                    : "+${_seekStepSeconds.toInt()}s",
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Big centred value while horizontally scrubbing a control, so
+                // the change reads on the field without watching the pane.
+                IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _showScrubOverlay ? 1 : 0,
+                    duration: const Duration(milliseconds: 120),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 22, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.34),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _scrubOverlayCaption ?? "",
+                              style: TextStyle(
+                                fontSize: 11,
+                                letterSpacing: 1.0,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.6),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _scrubOverlayLabel ?? "",
+                              style: TextStyle(
+                                fontSize: 40,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white.withValues(alpha: 0.92),
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Persistent badge while press-and-hold fast-forward is active,
+                // so the 2x state reads at a glance for as long as it's held.
+                IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _holdFastForward ? 1 : 0,
+                    duration: const Duration(milliseconds: 100),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          top: MediaQuery.of(context).padding.top + 12,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.fast_forward_rounded,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  size: 16),
+                              const SizedBox(width: 4),
+                              Text(
+                                "${_holdSpeedMultiplier.toInt()}x",
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -772,27 +1119,47 @@ class _ChartScrollerState extends State<ChartScroller>
               ),
             ),
 
-          // Floating transport, slides down out of view when controls hidden.
+          // Bottom controls, pinned to the bottom edge. The density scrubber
+          // stays visible even in "fullscreen" (controls hidden) — only the
+          // transport pane above it slides down out of view. Laid out bottom-up
+          // so the scrubber holds its position while the transport collapses.
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            child: IgnorePointer(
-              ignoring: !_controlsVisible,
-              child: AnimatedSlide(
-                offset: _controlsVisible ? Offset.zero : const Offset(0, 1),
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                child: AnimatedOpacity(
-                  opacity: _controlsVisible ? 1 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  child: SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                      child: _buildTransport(context),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Transport (times, read/song speed): hides with the controls.
+                    IgnorePointer(
+                      ignoring: !_controlsVisible,
+                      child: AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.bottomCenter,
+                        child: AnimatedSlide(
+                          offset:
+                              _controlsVisible ? Offset.zero : const Offset(0, 1),
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          child: AnimatedOpacity(
+                            opacity: _controlsVisible ? 1 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            child: _controlsVisible
+                                ? _buildTransport(context)
+                                : const SizedBox(width: double.infinity),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    // Density scrubber: always visible, even in fullscreen.
+                    _buildScrubBar(context),
+                  ],
                 ),
               ),
             ),
@@ -818,15 +1185,44 @@ class _ChartScrollerState extends State<ChartScroller>
     });
   }
 
-  Widget _buildTransport(BuildContext context) {
+  // The density scrubber track — always shown, even when the transport is
+  // hidden in fullscreen. Its own rounded surface so it reads as a control
+  // when it stands alone under the collapsed transport.
+  Widget _buildScrubBar(BuildContext context) {
     final progress = _endSecond <= 0
         ? 0.0
         : (_second / _endSecond).clamp(0.0, 1.0);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.12),
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: _DensityScrubBar(
+          buckets: _minimap,
+          progress: progress,
+          accent: Theme.of(context).colorScheme.primary,
+          bpmFractions: _markerFractions(_bpmMarkers.map((m) => m.second)),
+          stopFractions: _markerFractions(_stopMarkers.map((m) => m.second)),
+          onSeek: (frac) {
+            _pause();
+            final next = (frac * _endSecond).clamp(0.0, _endSecond);
+            // Detent per whole second dragged across, so the minimap seek ticks
+            // under the finger without firing on every sub-pixel move.
+            if (next.floor() != _second.floor()) {
+              HapticFeedback.selectionClick();
+            }
+            setState(() => _second = next);
+          },
+        ),
+      ),
+    );
+  }
 
+  Widget _buildTransport(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.4),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -847,28 +1243,6 @@ class _ChartScrollerState extends State<ChartScroller>
                     fontFeatures: [FontFeature.tabularFigures()]),
               ),
             ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              color: Colors.black.withOpacity(0.12),
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: _DensityScrubBar(
-                buckets: _minimap,
-                progress: progress,
-                accent: Theme.of(context).colorScheme.primary,
-                bpmFractions: _markerFractions(
-                    _bpmMarkers.map((m) => m.second)),
-                stopFractions: _markerFractions(
-                    _stopMarkers.map((m) => m.second)),
-                onSeek: (frac) {
-                  _pause();
-                  setState(() => _second = (frac * _endSecond)
-                      .clamp(0.0, _endSecond));
-                },
-              ),
-            ),
           ),
           const SizedBox(height: 8),
           SizedBox(
@@ -941,7 +1315,7 @@ class _ReadSpeedPane extends StatelessWidget {
                     fontSize: 9,
                     letterSpacing: 0.6,
                     fontWeight: FontWeight.w600,
-                    color: scheme.onSurface.withOpacity(0.5),
+                    color: scheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
                 Text(
@@ -994,7 +1368,7 @@ class _SongSpeedPane extends StatelessWidget {
               fontSize: 9,
               letterSpacing: 0.6,
               fontWeight: FontWeight.w600,
-              color: scheme.onSurface.withOpacity(0.5),
+              color: scheme.onSurface.withValues(alpha: 0.5),
             ),
           ),
           Text(
@@ -1035,7 +1409,7 @@ class _ControlPane extends StatelessWidget {
         onHorizontalDragUpdate: onDragUpdate,
         child: Container(
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest.withOpacity(0.5),
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(10),
           ),
           child: child,
@@ -1066,13 +1440,13 @@ class _ControlsToggle extends StatelessWidget {
         width: 30,
         height: 52,
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.42),
+          color: Colors.black.withValues(alpha: 0.42),
           borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
         ),
         alignment: Alignment.center,
         child: Icon(
           visible ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-          color: Colors.white.withOpacity(0.9),
+          color: Colors.white.withValues(alpha: 0.9),
           size: 22,
         ),
       ),
@@ -1109,8 +1483,8 @@ class _EdgeButton extends StatelessWidget {
             fontSize: 13,
             fontWeight: FontWeight.w700,
             color: enabled
-                ? scheme.onSurface.withOpacity(0.85)
-                : scheme.onSurface.withOpacity(0.25),
+                ? scheme.onSurface.withValues(alpha: 0.85)
+                : scheme.onSurface.withValues(alpha: 0.25),
           ),
         ),
       ),
@@ -1229,14 +1603,14 @@ class _DensityPainter extends CustomPainter {
             RRect.fromRectAndRadius(holdRect, const Radius.circular(1.2)),
             Paint()
               ..color = played
-                  ? const Color(0xFF39C46B).withOpacity(0.36)
-                  : const Color(0xFF39C46B).withOpacity(0.18),
+                  ? const Color(0xFF39C46B).withValues(alpha: 0.36)
+                  : const Color(0xFF39C46B).withValues(alpha: 0.18),
           );
         }
         if (bucket.segments.isEmpty) {
           canvas.drawRect(
             rect,
-            Paint()..color = played ? accent : accent.withOpacity(0.28),
+            Paint()..color = played ? accent : accent.withValues(alpha: 0.28),
           );
         } else {
           double top = rect.top;
@@ -1248,7 +1622,7 @@ class _DensityPainter extends CustomPainter {
               Paint()
                 ..color = played
                     ? segment.color
-                    : segment.color.withOpacity(0.34),
+                    : segment.color.withValues(alpha: 0.34),
             );
             top += segH;
           }
@@ -1264,8 +1638,8 @@ class _DensityPainter extends CustomPainter {
             RRect.fromRectAndRadius(shockRect, const Radius.circular(1.2)),
             Paint()
               ..color = played
-                  ? const Color(0xFF79E7FF).withOpacity(0.95)
-                  : const Color(0xFF79E7FF).withOpacity(0.55),
+                  ? const Color(0xFF79E7FF).withValues(alpha: 0.95)
+                  : const Color(0xFF79E7FF).withValues(alpha: 0.55),
           );
         }
       }
@@ -1285,18 +1659,18 @@ class _DensityPainter extends CustomPainter {
       }
     }
 
-    drawTicks(bpmFractions, const Color(0xFF8AB4FF).withOpacity(0.9), true);
-    drawTicks(stopFractions, const Color(0xFFFFB454).withOpacity(0.9), false);
+    drawTicks(bpmFractions, const Color(0xFF8AB4FF).withValues(alpha: 0.9), true);
+    drawTicks(stopFractions, const Color(0xFFFFB454).withValues(alpha: 0.9), false);
 
     // Playhead: vertical needle plus a layered knob for stronger visibility.
     canvas.drawRect(
       Rect.fromLTWH(playedX - 1, 0, 2, size.height),
-      Paint()..color = Colors.white.withOpacity(0.92),
+      Paint()..color = Colors.white.withValues(alpha: 0.92),
     );
     canvas.drawCircle(
       Offset(playedX, midY),
       10,
-      Paint()..color = accent.withOpacity(0.22),
+      Paint()..color = accent.withValues(alpha: 0.22),
     );
     canvas.drawCircle(
       Offset(playedX, midY),
@@ -1314,7 +1688,7 @@ class _DensityPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.8
-        ..color = Colors.white.withOpacity(0.95),
+        ..color = Colors.white.withValues(alpha: 0.95),
     );
   }
 
@@ -1397,9 +1771,22 @@ class _ChartPainter extends CustomPainter {
     // the original constant-time scroll so they still render.
     final bool beatLocked = !timing.isEmpty;
     final double currentBeat = beatLocked ? timing.beatAt(second) : 0;
-    double yFor(double t) => beatLocked
-        ? _receptorTop + (timing.beatAt(t) - currentBeat) * pxPerBeat
-        : _receptorTop + (t - second) * pxPerSecond;
+    // While playing, the field is strictly beat-locked (stops freeze it to a
+    // line). While paused/scrolling we re-expand each stop to real pixels — a
+    // note past a stop is pushed further down by the stop's duration — so the
+    // halt reads as a physical gap you can scroll through instead of a collapsed
+    // seam. This deliberately shifts the layout between play and scroll.
+    final bool expandStops = beatLocked && !playing;
+    final double currentStop =
+        expandStops ? timing.stopSecondsAt(second) : 0;
+    double yFor(double t) {
+      if (!beatLocked) return _receptorTop + (t - second) * pxPerSecond;
+      var y = _receptorTop + (timing.beatAt(t) - currentBeat) * pxPerBeat;
+      if (expandStops) {
+        y += (timing.stopSecondsAt(t) - currentStop) * pxPerSecond;
+      }
+      return y;
+    }
 
     _paintLanes(canvas, size, laneW, _receptorTop);
 
@@ -1432,9 +1819,11 @@ class _ChartPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
 
-    // 0) Timing markers (BPM changes and stops): drawn first inside the clip so
-    // notes, holds and foot paths all render on top of them.
-    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked);
+    // 0) Timing markers (BPM changes and stops), base layer: lines/bands drawn
+    // first inside the clip so notes, holds and foot paths render on top. Their
+    // pill labels come later (after the notes) so they stay legible.
+    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
+        labels: false);
 
     // 1) Freeze/hold bodies (behind arrowheads). While a hold is being held its
     // head has reached the receptor, so clamp the head to the line; the body
@@ -1488,6 +1877,11 @@ class _ChartPainter extends CustomPainter {
       }
     }
 
+    // 4) Timing-marker labels, top layer: drawn last so the STOP/BPM pills sit
+    // above the note stream instead of being buried under passing arrows.
+    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
+        labels: true);
+
     canvas.restore(); // end note clip
   }
 
@@ -1530,13 +1924,13 @@ class _ChartPainter extends CustomPainter {
       ..strokeWidth = arrowSize * 0.10
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
-      ..color = _leftFootColor.withOpacity(0.42);
+      ..color = _leftFootColor.withValues(alpha: 0.42);
     final rightPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = arrowSize * 0.10
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
-      ..color = _rightFootColor.withOpacity(0.42);
+      ..color = _rightFootColor.withValues(alpha: 0.42);
 
     StepNote? prevLeft;
     StepNote? prevRight;
@@ -1571,60 +1965,76 @@ class _ChartPainter extends CustomPainter {
   // Draw full-width markers for stops (a band spanning the halt's duration) and
   // BPM changes (a line + label), positioned on the same seconds axis the notes
   // scroll on. Only markers within the visible time window are drawn.
+  // Draws timing markers in two z-layers. The lines/bands are the base layer
+  // ([labels] = false), painted before the notes so arrows scroll over them; the
+  // pill labels are the top layer ([labels] = true), painted after the notes so
+  // they stay legible instead of being buried under a stream of arrows.
   void _paintTimingMarkers(
     Canvas canvas,
     Size size,
     double Function(double) yFor,
     double maxT,
     bool beatLocked,
-  ) {
-    // Stops. Beat-locked, a stop occupies zero beat-space (the field freezes on
-    // it), so it draws as a single bold line carrying its duration in the label.
-    // In the constant-time fallback it draws as a band spanning the halt so its
-    // length still reads vertically.
+    bool expandStops, {
+    required bool labels,
+  }) {
+    // Stops. Beat-locked while PLAYING, a stop occupies zero beat-space (the
+    // field freezes on it), so it draws as a single bold line carrying its
+    // duration in the label. Paused/scrolling ([expandStops]) — and in the
+    // constant-time fallback — the stop is given real vertical extent and draws
+    // as a band spanning the halt so its length reads at a glance.
     for (final s in stopMarkers) {
       final endSec = s.second + s.dur;
       if (endSec < second || s.second > maxT) continue;
-      if (beatLocked) {
+      if (beatLocked && !expandStops) {
         final y = yFor(s.second);
-        canvas.drawLine(
-          Offset(0, y),
-          Offset(size.width, y),
-          Paint()
-            ..color = _stopColor.withOpacity(0.85)
-            ..strokeWidth = 2.5,
-        );
-        _paintMarkerLabel(
-            canvas, size, y, "STOP ${_fmtDur(s.dur)}", _stopColor,
-            alignBottom: true);
+        if (labels) {
+          _paintMarkerLabel(
+              canvas, size, y, "STOP ${_fmtDur(s.dur)}", _stopColor,
+              alignBottom: true);
+        } else {
+          canvas.drawLine(
+            Offset(0, y),
+            Offset(size.width, y),
+            Paint()
+              ..color = _stopColor.withValues(alpha: 0.85)
+              ..strokeWidth = 2.5,
+          );
+        }
         continue;
       }
       final yTop = yFor(s.second);
+      if (labels) {
+        _paintMarkerLabel(canvas, size, yTop, "STOP", _stopColor,
+            alignBottom: true);
+        continue;
+      }
       final yBot = yFor(endSec);
       final band = Rect.fromLTRB(0, yBot, size.width, yTop);
-      canvas.drawRect(band, Paint()..color = _stopColor.withOpacity(0.12));
+      canvas.drawRect(band, Paint()..color = _stopColor.withValues(alpha: 0.12));
       // Edges of the band, brighter, so even a near-instant stop stays visible.
       final edge = Paint()
-        ..color = _stopColor.withOpacity(0.7)
+        ..color = _stopColor.withValues(alpha: 0.7)
         ..strokeWidth = 1.5;
       canvas.drawLine(Offset(0, yTop), Offset(size.width, yTop), edge);
       canvas.drawLine(Offset(0, yBot), Offset(size.width, yBot), edge);
-      _paintMarkerLabel(canvas, size, yTop, "STOP", _stopColor,
-          alignBottom: true);
     }
 
     // BPM changes: a thin cool line with the new tempo labelled at the edge.
     for (final b in bpmMarkers) {
       if (b.second < second || b.second > maxT) continue;
       final y = yFor(b.second);
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
-        Paint()
-          ..color = _bpmColor.withOpacity(0.75)
-          ..strokeWidth = 1.5,
-      );
-      _paintMarkerLabel(canvas, size, y, "${b.bpm} BPM", _bpmColor);
+      if (labels) {
+        _paintMarkerLabel(canvas, size, y, "${b.bpm} BPM", _bpmColor);
+      } else {
+        canvas.drawLine(
+          Offset(0, y),
+          Offset(size.width, y),
+          Paint()
+            ..color = _bpmColor.withValues(alpha: 0.75)
+            ..strokeWidth = 1.5,
+        );
+      }
     }
   }
 
@@ -1661,7 +2071,7 @@ class _ChartPainter extends CustomPainter {
       Rect.fromLTWH(left, top, boxW, boxH),
       const Radius.circular(4),
     );
-    canvas.drawRRect(rect, Paint()..color = Colors.black.withOpacity(0.55));
+    canvas.drawRRect(rect, Paint()..color = Colors.black.withValues(alpha: 0.55));
     tp.paint(canvas, Offset(left + padX, top + padY));
   }
 
@@ -1672,7 +2082,7 @@ class _ChartPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(x, y),
       r,
-      Paint()..color = Colors.black.withOpacity(0.55),
+      Paint()..color = Colors.black.withValues(alpha: 0.55),
     );
     final tp = TextPainter(
       text: TextSpan(
@@ -1709,7 +2119,7 @@ class _ChartPainter extends CustomPainter {
   void _paintLanes(Canvas canvas, Size size, double laneW, double receptorY) {
     // Subtle lane dividers.
     final div = Paint()
-      ..color = Colors.white.withOpacity(0.04)
+      ..color = Colors.white.withValues(alpha: 0.04)
       ..strokeWidth = 1;
     for (int c = 1; c < columnCount; c++) {
       final x = laneW * c;
@@ -1719,9 +2129,9 @@ class _ChartPainter extends CustomPainter {
     final line = Paint()
       ..shader = LinearGradient(
         colors: [
-          Colors.white.withOpacity(0),
-          Colors.white.withOpacity(0.18),
-          Colors.white.withOpacity(0),
+          Colors.white.withValues(alpha: 0),
+          Colors.white.withValues(alpha: 0.18),
+          Colors.white.withValues(alpha: 0),
         ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, 1));
     canvas.drawRect(
