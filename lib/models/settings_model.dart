@@ -12,6 +12,11 @@ class Settings {
   // is set. Stored as an int of milliseconds.
   static const String constantMsKey = "chartPreviewConstantMs";
   static const String constantOnKey = "chartPreviewConstantOn";
+
+  // DDR TURN modifier for the chart preview: which column-permutation is applied
+  // to the notes (receptors stay fixed). Stored as an int: 0 = OFF, 1 = MIRROR,
+  // 2 = LEFT, 3 = RIGHT. See [_Turn] in chart_scroller.
+  static const String chartPreviewTurnKey = "chartPreviewTurn";
   static const String rivalCodeSpeedKey = "rivalCode";
   static const String detectionSideKey = "detectionSide";
   static const String usernameKey = "username";

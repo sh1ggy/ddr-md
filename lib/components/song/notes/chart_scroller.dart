@@ -18,9 +18,45 @@ import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+
+/// DDR "TURN" appearance modifier: a column permutation applied to the notes
+/// while the receptors/panels stay in their fixed L-D-U-R positions. Matches the
+/// DDR World option list — MIRROR is a 180° turn, LEFT/RIGHT are 90° turns.
+/// (https://p.eagate.573.jp/game/ddr/ddrworld/howto/option_list.html)
+enum _Turn { off, mirror, left, right }
+
+/// Column map for [turn] over a [columnCount]-wide field: `map[oldCol]` is the
+/// column the note now appears in. Receptors are unaffected. The single-panel
+/// turns follow the standard StepMania tables (L D U R = 0 1 2 3):
+///   MIRROR L↔R, U↔D  ·  LEFT (90° CCW) L→D→R→U→L  ·  RIGHT (90° CW) L→U→R→D→L.
+/// For doubles, MIRROR reverses the whole 8-panel row; LEFT/RIGHT turn each pad
+/// half on its own, which keeps the per-foot motion intact.
+List<int> _turnColumnMap(_Turn turn, int columnCount) {
+  if (turn == _Turn.off) {
+    return [for (int c = 0; c < columnCount; c++) c];
+  }
+  // Per-4-panel single turns, as offsets within a pad (L D U R = 0 1 2 3).
+  const single = {
+    _Turn.mirror: [3, 2, 1, 0],
+    _Turn.left: [1, 3, 0, 2],
+    _Turn.right: [2, 0, 3, 1],
+  };
+  if (columnCount == 4) return single[turn]!;
+  if (columnCount == 8) {
+    if (turn == _Turn.mirror) {
+      return [for (int c = 7; c >= 0; c--) c]; // full 180° across both pads
+    }
+    final pad = single[turn]!;
+    // Apply the single turn independently to each 4-panel half.
+    return [for (final c in pad) c, for (final c in pad) c + 4];
+  }
+  // Unknown width: identity (no turn) rather than risk an out-of-range map.
+  return [for (int c = 0; c < columnCount; c++) c];
+}
 
 /// A row of simultaneous mines spanning most/all columns — a DDR shock arrow,
 /// which is drawn as a single bar per lane rather than individual mines.
@@ -331,6 +367,10 @@ class _ChartScrollerState extends State<ChartScroller>
   bool _constantOn = false;
   double _constantMs = _constantDefaultMs;
 
+  // DDR TURN modifier: permutes which panel each note lands on (receptors stay
+  // put). OFF by default; persisted across previews. See [_Turn].
+  _Turn _turn = _Turn.off;
+
   // Playback-rate multiplier: how fast the chart plays back in wall-clock time.
   // 1.0 = true speed; <1 slows the song, >1 speeds it up. Independent of the
   // read-speed (note-spacing) mod above.
@@ -416,6 +456,7 @@ class _ChartScrollerState extends State<ChartScroller>
     _ticker = createTicker(_onTick);
     _syncRateToSavedReadSpeed();
     _loadConstant();
+    _loadTurn();
     _detectShocks();
     _assignFeet();
     _buildTimingMarkers();
@@ -472,6 +513,37 @@ class _ChartScrollerState extends State<ChartScroller>
   // The ms value handed to the painter: null (NORMAL, arrows always visible)
   // unless the modifier is switched on.
   double? get _effectiveConstantMs => _constantOn ? _constantMs : null;
+
+  // Restore the TURN modifier from settings (0=OFF,1=MIRROR,2=LEFT,3=RIGHT).
+  void _loadTurn() {
+    final saved = Settings.getInt(Settings.chartPreviewTurnKey);
+    _turn = (saved >= 0 && saved < _Turn.values.length)
+        ? _Turn.values[saved]
+        : _Turn.off;
+  }
+
+  // The column permutation handed to the painter for the current turn + mode.
+  List<int> get _colMap => _turnColumnMap(
+        _turn,
+        widget.mode == Modes.singles ? kSingleDirs.length : kDoubleDirs.length,
+      );
+
+  // Select a TURN modifier; tapping the active one turns it OFF (except MIRROR,
+  // which is its own toggle). Persisted so it carries across previews.
+  void _setTurn(_Turn turn) {
+    HapticFeedback.selectionClick();
+    final next = _turn == turn ? _Turn.off : turn;
+    setState(() => _turn = next);
+    Settings.setInt(Settings.chartPreviewTurnKey, next.index);
+    _flashScrubOverlay(_turnLabel(next), "TURN");
+  }
+
+  String _turnLabel(_Turn turn) => switch (turn) {
+        _Turn.off => "OFF",
+        _Turn.mirror => "MIRROR",
+        _Turn.left => "LEFT",
+        _Turn.right => "RIGHT",
+      };
 
   // Tap the CONSTANT chip to switch the modifier on/off (no separate switch).
   void _toggleConstant() {
@@ -1003,6 +1075,7 @@ class _ChartScrollerState extends State<ChartScroller>
                     stopMarkers: _stopMarkers,
                     feet: widget.showFootGuide ? _feet : const {},
                     dirs: dirs,
+                    colMap: _colMap,
                     second: _second,
                     pxPerSecond: _pxPerSecond,
                     pxPerBeat: _pxPerBeat,
@@ -1340,7 +1413,6 @@ class _ChartScrollerState extends State<ChartScroller>
                   opacity: open ? 1 : 0,
                   duration: const Duration(milliseconds: 160),
                   child: _SettingsShade(
-                    accent: Theme.of(context).colorScheme.primary,
                     onClose: _toggleShade,
                     sections: _buildShadeSections(context),
                   ),
@@ -1358,26 +1430,60 @@ class _ChartScrollerState extends State<ChartScroller>
   // shade already reads as the full options screen and new controls slot in
   // without a layout rethink. Mirrors the DDR World option categories.
   List<_ShadeSection> _buildShadeSections(BuildContext context) {
-    final accent = Theme.of(context).colorScheme.primary;
     return [
       _ShadeSection(
         title: "ARROWS",
-        chips: [
-          _ConstantChip(
-            on: _constantOn,
-            ms: _constantMs,
-            accent: accent,
-            onTap: _toggleConstant,
-            onDrag: _onConstantDrag,
-          ),
-        ],
+        // Tiled: CONSTANT spans the full top row; below it a row split three
+        // ways — MIRROR (flip L↔R), LEFT and RIGHT turns — mirroring DDR World's
+        // appearance options.
+        content: Column(
+          children: [
+            _ConstantChip(
+              on: _constantOn,
+              ms: _constantMs,
+              onTap: _toggleConstant,
+              onDrag: _onConstantDrag,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _TurnTile(
+                    label: "MIRROR",
+                    icon: Icons.flip,
+                    selected: _turn == _Turn.mirror,
+                    onTap: () => _setTurn(_Turn.mirror),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _TurnTile(
+                    label: "LEFT",
+                    icon: Icons.rotate_left,
+                    selected: _turn == _Turn.left,
+                    onTap: () => _setTurn(_Turn.left),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _TurnTile(
+                    label: "RIGHT",
+                    icon: Icons.rotate_right,
+                    selected: _turn == _Turn.right,
+                    onTap: () => _setTurn(_Turn.right),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
       // Reserved for the remaining DDR World appearance options, added later:
       // arrow color scheme / design, scroll direction & motion, lane cover,
       // guideline, step-zone, assist (freeze/jump removal), etc.
-      const _ShadeSection(title: "SCROLL", chips: [], comingSoon: true),
-      const _ShadeSection(title: "LANE", chips: [], comingSoon: true),
-      const _ShadeSection(title: "ASSIST", chips: [], comingSoon: true),
+      const _ShadeSection(title: "SCROLL", comingSoon: true),
+      const _ShadeSection(title: "LANE", comingSoon: true),
+      const _ShadeSection(title: "ASSIST", comingSoon: true),
     ];
   }
 
@@ -1582,16 +1688,17 @@ class _ControlPane extends StatelessWidget {
   }
 }
 
-/// One titled group of modifier chips inside the settings shade. [comingSoon]
-/// marks a reserved category with no wired controls yet, so the shade already
-/// shows the shape of the full option set.
+/// One titled group of modifier controls inside the settings shade. [content] is
+/// the section's laid-out body (tiles/rows); [comingSoon] marks a reserved
+/// category with no wired controls yet, so the shade already shows the shape of
+/// the full option set.
 class _ShadeSection {
   final String title;
-  final List<Widget> chips;
+  final Widget? content;
   final bool comingSoon;
   const _ShadeSection({
     required this.title,
-    required this.chips,
+    this.content,
     this.comingSoon = false,
   });
 }
@@ -1602,26 +1709,34 @@ class _ShadeSection {
 /// the option set outgrows the cap.
 class _SettingsShade extends StatelessWidget {
   const _SettingsShade({
-    required this.accent,
     required this.onClose,
     required this.sections,
   });
 
-  final Color accent;
   final VoidCallback onClose;
   final List<_ShadeSection> sections;
 
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    // Neutral surface matching the bottom transport, not the accent. The shade
+    // reads as the same material as the rest of the chrome — a slightly raised,
+    // opaque panel — instead of a purple sheet.
+    final onSurface = scheme.onSurface;
     return Container(
       width: double.infinity,
       constraints: BoxConstraints(maxHeight: media.size.height * 0.66),
       decoration: BoxDecoration(
-        color: const Color(0xFF12161D).withValues(alpha: 0.98),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.98),
         borderRadius:
             const BorderRadius.vertical(bottom: Radius.circular(20)),
-        border: Border(bottom: BorderSide(color: accent, width: 2)),
+        border: Border(
+          bottom: BorderSide(
+            color: onSurface.withValues(alpha: 0.12),
+            width: 1,
+          ),
+        ),
       ),
       child: SafeArea(
         bottom: false,
@@ -1633,23 +1748,24 @@ class _SettingsShade extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
               child: Row(
                 children: [
-                  Icon(Icons.tune, size: 18, color: accent),
+                  Icon(Icons.tune,
+                      size: 18, color: onSurface.withValues(alpha: 0.85)),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       "VIEW OPTIONS",
                       style: TextStyle(
                         fontSize: 13,
                         letterSpacing: 1.2,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                        color: onSurface,
                       ),
                     ),
                   ),
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     icon: Icon(Icons.close,
-                        color: Colors.white.withValues(alpha: 0.7), size: 20),
+                        color: onSurface.withValues(alpha: 0.7), size: 20),
                     onPressed: onClose,
                   ),
                 ],
@@ -1661,7 +1777,7 @@ class _SettingsShade extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final s in sections) _sectionBlock(s),
+                    for (final s in sections) _sectionBlock(s, onSurface),
                   ],
                 ),
               ),
@@ -1672,7 +1788,7 @@ class _SettingsShade extends StatelessWidget {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.25),
+                color: onSurface.withValues(alpha: 0.25),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1682,7 +1798,7 @@ class _SettingsShade extends StatelessWidget {
     );
   }
 
-  Widget _sectionBlock(_ShadeSection s) {
+  Widget _sectionBlock(_ShadeSection s, Color onSurface) {
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
@@ -1694,53 +1810,69 @@ class _SettingsShade extends StatelessWidget {
               fontSize: 10,
               letterSpacing: 1.1,
               fontWeight: FontWeight.w700,
-              color: accent.withValues(alpha: 0.85),
+              color: onSurface.withValues(alpha: 0.55),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           if (s.comingSoon)
             Text(
               "Coming soon",
               style: TextStyle(
                 fontSize: 12,
                 fontStyle: FontStyle.italic,
-                color: Colors.white.withValues(alpha: 0.3),
+                color: onSurface.withValues(alpha: 0.3),
               ),
             )
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: s.chips,
-            ),
+          else if (s.content != null)
+            s.content!,
         ],
       ),
     );
   }
 }
 
-/// A CONSTANT-modifier chip for the settings shade, styled like the transport
-/// panes. Tap toggles the modifier on/off (no separate switch); dragging
-/// horizontally sweeps the display time. When on, the chip fills with [accent]
-/// and shows the current ms; when off it reads "OFF" in a muted surface.
+/// Neutral fill/border/foreground for a shade control, keyed on whether it's
+/// active. Kept deliberately monochrome (theme surface + onSurface tints) so the
+/// shade reads as the same material as the bottom config, never a purple accent.
+({Color fill, Color border, Color fg, Color fgMuted}) _tileColors(
+    ColorScheme scheme, bool active) {
+  final onSurface = scheme.onSurface;
+  return active
+      ? (
+          fill: onSurface.withValues(alpha: 0.14),
+          border: onSurface.withValues(alpha: 0.45),
+          fg: onSurface,
+          fgMuted: onSurface.withValues(alpha: 0.7),
+        )
+      : (
+          fill: onSurface.withValues(alpha: 0.05),
+          border: onSurface.withValues(alpha: 0.12),
+          fg: onSurface.withValues(alpha: 0.85),
+          fgMuted: onSurface.withValues(alpha: 0.55),
+        );
+}
+
+/// The CONSTANT-modifier tile: the full-width top row of the ARROWS section.
+/// Tap toggles the modifier on/off (no separate switch); dragging horizontally
+/// sweeps the display time. Styled neutrally like the rest of the shade — when
+/// on it reads a touch brighter and shows the current ms, off it reads "OFF".
 class _ConstantChip extends StatelessWidget {
   const _ConstantChip({
     required this.on,
     required this.ms,
-    required this.accent,
     required this.onTap,
     required this.onDrag,
   });
 
   final bool on;
   final double ms;
-  final Color accent;
   final VoidCallback onTap;
   final void Function(double dx) onDrag;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final c = _tileColors(scheme, on);
     return MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
       child: GestureDetector(
@@ -1748,42 +1880,95 @@ class _ConstantChip extends StatelessWidget {
         onTap: onTap,
         onHorizontalDragUpdate: (d) => onDrag(d.primaryDelta ?? 0),
         child: Container(
+          width: double.infinity,
           height: 44,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            color: on
-                ? accent.withValues(alpha: 0.9)
-                : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            color: c.fill,
             borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: c.border, width: 1),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
+              Icon(Icons.timelapse, size: 16, color: c.fgMuted),
+              const SizedBox(width: 8),
               Text(
                 "CONSTANT",
                 style: TextStyle(
                   fontSize: 11,
                   letterSpacing: 0.8,
                   fontWeight: FontWeight.w700,
-                  color: on
-                      ? Colors.white
-                      : scheme.onSurface.withValues(alpha: 0.6),
+                  color: c.fgMuted,
                 ),
               ),
-              const SizedBox(width: 8),
+              const Spacer(),
               Text(
                 on ? "${ms.round()}ms" : "OFF",
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: on
-                      ? Colors.white
-                      : scheme.onSurface.withValues(alpha: 0.85),
+                  color: c.fg,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A single TURN tile (MIRROR / LEFT / RIGHT) in the split second row of the
+/// ARROWS section. Neutral like [_ConstantChip]; the selected turn reads a touch
+/// brighter with a stronger border. Tapping the active one turns it off (handled
+/// by the caller).
+class _TurnTile extends StatelessWidget {
+  const _TurnTile({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final c = _tileColors(scheme, selected);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: c.fill,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: c.border, width: 1),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: c.fg),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  letterSpacing: 0.6,
+                  fontWeight: FontWeight.w700,
+                  color: c.fg,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2081,6 +2266,7 @@ class _ChartPainter extends CustomPainter {
     required this.stopMarkers,
     required this.feet,
     required this.dirs,
+    required this.colMap,
     required this.second,
     required this.pxPerSecond,
     required this.pxPerBeat,
@@ -2099,6 +2285,12 @@ class _ChartPainter extends CustomPainter {
   final List<_StopMarker> stopMarkers;
   final Map<StepNote, Foot> feet;
   final List<NoteDir> dirs;
+
+  // DDR TURN permutation: `colMap[originalCol]` is the column the note is drawn
+  // in (and the glyph orientation it takes). Receptors/lanes stay in their fixed
+  // positions, so a turn only moves the notes. Identity when TURN is OFF.
+  final List<int> colMap;
+
   final double second;
   final double pxPerSecond;
 
@@ -2188,6 +2380,12 @@ class _ChartPainter extends CustomPainter {
 
     double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
 
+    // TURN modifier: a note originally in column `c` is drawn in `turned(c)`,
+    // taking that panel's glyph orientation. Bounds-guarded so a mismatched map
+    // (e.g. mode/width change mid-frame) falls back to the note's own column.
+    int turned(int c) =>
+        (c >= 0 && c < colMap.length) ? colMap[c] : c;
+
     // Beat-locked scroll (true DDR): a note's screen position is its beat
     // distance from the playhead's beat, so BPM changes speed the field up/down
     // and stops freeze it. Charts without BPM data (empty [timing]) fall back to
@@ -2259,11 +2457,12 @@ class _ChartPainter extends CustomPainter {
           n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
       // Fade the whole freeze (body + tail) together with its head's opacity, so
       // an incoming hold pops in as one piece under CONSTANT.
+      final col = turned(n.col);
       _withAlpha(canvas, _constantAlpha(n.second), size, () {
-        skin.paintHoldBody(canvas, laneCenterX(n.col), headY, yFor(endS),
-            arrowSize, dirs[n.col], n.type == StepType.roll);
-        skin.paintHoldTail(canvas, laneCenterX(n.col), yFor(endS), arrowSize,
-            dirs[n.col], n.type == StepType.roll);
+        skin.paintHoldBody(canvas, laneCenterX(col), headY, yFor(endS),
+            arrowSize, dirs[col], n.type == StepType.roll);
+        skin.paintHoldTail(canvas, laneCenterX(col), yFor(endS), arrowSize,
+            dirs[col], n.type == StepType.roll);
       });
     }
 
@@ -2279,7 +2478,7 @@ class _ChartPainter extends CustomPainter {
       if (s.second < second || s.second > maxT) continue;
       final y = yFor(s.second);
       final lanes = [
-        for (final c in s.cols) (laneCenterX(c), dirs[c]),
+        for (final c in s.cols) (laneCenterX(turned(c)), dirs[turned(c)]),
       ];
       _withAlpha(canvas, _constantAlpha(s.second), size,
           () => skin.paintShock(canvas, lanes, y, arrowSize));
@@ -2293,7 +2492,8 @@ class _ChartPainter extends CustomPainter {
       if (!held && (n.second < second || n.second > maxT)) {
         continue;
       }
-      final x = laneCenterX(n.col);
+      final col = turned(n.col);
+      final x = laneCenterX(col);
       final y = held ? _receptorTop.toDouble() : yFor(n.second);
       // A held head sits on the receptor, so treat it as fully arrived (opacity
       // 1) rather than re-fading it; otherwise fade by its seconds-to-receptor.
@@ -2303,7 +2503,7 @@ class _ChartPainter extends CustomPainter {
         _withAlpha(canvas, alpha, size, () => skin.paintMine(canvas, x, y, arrowSize));
       } else {
         _withAlpha(canvas, alpha, size, () {
-          skin.paintArrow(canvas, x, y, arrowSize, dirs[n.col], n.beat);
+          skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
           final foot = feet[n];
           if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
         });
@@ -2341,7 +2541,8 @@ class _ChartPainter extends CustomPainter {
       final endS = n.endSecond ?? n.second;
       final held = n.isHold && n.second < second && endS >= second;
       final y = held ? _receptorTop.toDouble() : yFor(n.second);
-      return Offset(laneCenterX(n.col), y);
+      final col = (n.col >= 0 && n.col < colMap.length) ? colMap[n.col] : n.col;
+      return Offset(laneCenterX(col), y);
     }
 
     // Whether a note contributes to the visible window (same test the arrow pass
@@ -2582,6 +2783,7 @@ class _ChartPainter extends CustomPainter {
       old.stopMarkers != stopMarkers ||
       old.feet != feet ||
       old.columnCount != columnCount ||
+      !listEquals(old.colMap, colMap) ||
       old.skin != skin ||
       old.playing != playing ||
       old.constantMs != constantMs ||

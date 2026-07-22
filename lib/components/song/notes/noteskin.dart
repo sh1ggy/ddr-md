@@ -136,7 +136,7 @@ class VectorNoteskin implements Noteskin {
     canvas.drawPath(
       path.shift(const Offset(0, 1.5)),
       Paint()
-        ..color = Colors.black.withOpacity(0.35)
+        ..color = Colors.black.withValues(alpha: 0.35)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
     );
 
@@ -158,14 +158,14 @@ class VectorNoteskin implements Noteskin {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = size * 0.05
-        ..color = Colors.black.withOpacity(0.55),
+        ..color = Colors.black.withValues(alpha: 0.55),
     );
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = size * 0.03
-        ..color = Colors.white.withOpacity(0.35),
+        ..color = Colors.white.withValues(alpha: 0.35),
     );
     canvas.restore();
   }
@@ -194,7 +194,7 @@ class VectorNoteskin implements Noteskin {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.2
-        ..color = Colors.black.withOpacity(0.4),
+        ..color = Colors.black.withValues(alpha: 0.4),
     );
   }
 
@@ -210,7 +210,7 @@ class VectorNoteskin implements Noteskin {
     canvas.drawPath(
       path.shift(const Offset(0, 1.2)),
       Paint()
-        ..color = Colors.black.withOpacity(0.30)
+        ..color = Colors.black.withValues(alpha: 0.30)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
     );
     canvas.drawPath(
@@ -228,14 +228,14 @@ class VectorNoteskin implements Noteskin {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = size * 0.05
-        ..color = Colors.black.withOpacity(0.50),
+        ..color = Colors.black.withValues(alpha: 0.50),
     );
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = size * 0.025
-        ..color = Colors.white.withOpacity(0.22),
+        ..color = Colors.white.withValues(alpha: 0.22),
     );
     canvas.restore();
   }
@@ -296,7 +296,7 @@ class VectorNoteskin implements Noteskin {
     canvas.drawPath(
       path,
       Paint()
-        ..color = glow.withOpacity(0.75)
+        ..color = glow.withValues(alpha: 0.75)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
     );
     // Dark-blue energy interior with a bright top-lit gradient.
@@ -352,7 +352,7 @@ class VectorNoteskin implements Noteskin {
         ..style = PaintingStyle.stroke
         ..strokeWidth = size * 0.12
         ..strokeJoin = StrokeJoin.round
-        ..color = glow.withOpacity(0.7)
+        ..color = glow.withValues(alpha: 0.7)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
     canvas.drawPath(
@@ -387,7 +387,7 @@ class VectorNoteskin implements Noteskin {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = size * 0.045
-        ..color = Colors.white.withOpacity(0.10 + 0.25 * glow),
+        ..color = Colors.white.withValues(alpha: 0.10 + 0.25 * glow),
     );
     canvas.restore();
   }
@@ -541,7 +541,7 @@ class SpriteNoteskin implements Noteskin {
     _drawImage(canvas, _note, dst,
       paint: Paint()
         ..colorFilter = ColorFilter.mode(
-          Color.lerp(tailColor, Colors.black, 0.12)!.withOpacity(0.38),
+          Color.lerp(tailColor, Colors.black, 0.12)!.withValues(alpha: 0.38),
           BlendMode.modulate)
         ..filterQuality = FilterQuality.high);
     canvas.restore();
@@ -581,7 +581,7 @@ class SpriteNoteskin implements Noteskin {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..strokeWidth = shockSize * 0.11
-          ..color = glow.withOpacity(0.20)
+          ..color = glow.withValues(alpha: 0.20)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
       );
       canvas.drawPath(
@@ -591,7 +591,7 @@ class SpriteNoteskin implements Noteskin {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..strokeWidth = shockSize * 0.028
-          ..color = Colors.white.withOpacity(0.56),
+          ..color = Colors.white.withValues(alpha: 0.56),
       );
     }
 
@@ -607,7 +607,7 @@ class SpriteNoteskin implements Noteskin {
       _drawImage(canvas, _note, glowDst,
           paint: Paint()
             ..colorFilter = ColorFilter.mode(
-                glow.withOpacity(0.42), BlendMode.modulate)
+                glow.withValues(alpha: 0.42), BlendMode.modulate)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4)
             ..filterQuality = FilterQuality.high);
       final dst = Rect.fromCenter(
@@ -615,7 +615,7 @@ class SpriteNoteskin implements Noteskin {
       _drawImage(canvas, _note, dst,
           paint: Paint()
             ..colorFilter = ColorFilter.mode(
-                glow.withOpacity(0.74), BlendMode.modulate)
+                glow.withValues(alpha: 0.74), BlendMode.modulate)
             ..filterQuality = FilterQuality.high);
       canvas.restore();
     }

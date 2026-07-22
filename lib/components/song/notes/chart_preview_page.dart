@@ -130,12 +130,12 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.black.withOpacity(0.72),
-            Colors.black.withOpacity(0.0),
+            Colors.black.withValues(alpha: 0.72),
+            Colors.black.withValues(alpha: 0.0),
           ],
         ),
         border: Border(
-          bottom: BorderSide(color: diffColor.withOpacity(0.9), width: 2),
+          bottom: BorderSide(color: diffColor.withValues(alpha: 0.9), width: 2),
         ),
       ),
       child: SafeArea(
