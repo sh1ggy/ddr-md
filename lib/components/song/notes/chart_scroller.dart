@@ -475,22 +475,24 @@ class _ChartScrollerState extends State<ChartScroller>
     return bpms[lo].val;
   }
 
-  // Receptor-to-bottom-edge run of the field in px at zoom 1, captured each
-  // build from the layout. This is the distance an arrow is visible for when
-  // nothing hides it, which is what converts CONSTANT's wall-clock window into
-  // an equivalent read speed. Zero until first layout.
-  double _receptorRunPx = 0;
+  // The cabinet's receptor→screen-edge lookahead in read-speed × seconds:
+  // community measurements of DDR WORLD's CONSTANT guideline fit
+  // display time ms ≈ 370000 / SPEED (925ms ↔ 400, 740ms ↔ 500, 1000ms ↔ 370),
+  // i.e. at read speed R an arrow is on the cabinet's screen ~370/R seconds.
+  static const double _cabinetRunSpeedSeconds = 370;
 
-  // CONSTANT expressed as a read speed: the read speed whose full-field travel
-  // time equals the CONSTANT window. Velocity at read speed R is
-  // R × [_pxPerReadSpeedUnit] px/s (see [_pxPerBeat]), so R = 1000·H / (unit·ms)
-  // for a run of H px. Deliberately ignores [_zoom] — like the READ SPEED knob,
-  // this describes the dialled-in setting, not the temporary study lens.
-  // Null when CONSTANT is off or the field hasn't laid out yet.
+  // CONSTANT expressed as its ARCADE-equivalent read speed: the read speed
+  // whose on-cab travel time equals the window, R = 370000 / ms (see
+  // [_cabinetRunSpeedSeconds]). Anchored to the cabinet's lookahead rather
+  // than this field's own pixel run so the C number matches on-cab intuition;
+  // the painter still fades on the raw wall-clock window, so a window between
+  // the arcade's lookahead and this (taller) field's simply makes arrows
+  // materialise where the cabinet's screen edge would be. Null when CONSTANT
+  // is off.
   int? get _constantReadSpeed {
     final c = _effectiveConstantMs;
-    if (c == null || _receptorRunPx <= 0) return null;
-    return (1000.0 * _receptorRunPx / (_pxPerReadSpeedUnit * c)).round();
+    if (c == null) return null;
+    return (_cabinetRunSpeedSeconds * 1000.0 / c).round();
   }
 
   // Read speed the CURRENT tempo section actually reads at. Without CONSTANT
@@ -860,10 +862,12 @@ class _ChartScrollerState extends State<ChartScroller>
     _flingVel = 0;
     _ensureTicking();
     // The settings shade is a paused-browsing surface — starting playback tucks
-    // it away so it never overlays the running chart.
+    // it away so it never overlays the running chart. The bottom transport
+    // collapses too, echoing the same "get out of the way while playing" move.
     setState(() {
       _playing = true;
       _shadeOpen = false;
+      _controlsVisible = false;
     });
   }
 
@@ -1194,12 +1198,6 @@ class _ChartScrollerState extends State<ChartScroller>
   Widget build(BuildContext context) {
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
-      final topInset = MediaQuery.of(context).padding.top;
-      // Refresh the receptor→bottom run for the CONSTANT ⇄ read-speed
-      // conversion. Plain assignment: a size change already rebuilds via
-      // LayoutBuilder, so no setState needed.
-      _receptorRunPx =
-          constraints.maxHeight - _ChartPainter._receptorBase - topInset;
       return Stack(
         fit: StackFit.expand,
         children: [
@@ -1606,45 +1604,34 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   // The settings shade: a top "pull-down" sheet of chart-viewing modifiers,
-  // hidden behind the left-edge pull-tab until opened. A tap-scrim behind it dismisses
-  // it; the sheet itself is a scrollable column of titled sections so it has room
-  // to grow toward the full DDR option set (arrows, lane, scroll, assist …).
+  // hidden behind the left-edge pull-tab until opened. Operationally it mirrors
+  // the bottom transport: a panel pinned to its edge with pointer-handling
+  // scoped to its own bounds, so it never blocks the full-bleed chart's
+  // tap-to-play gesture and is only dismissed via its own tab/close button —
+  // never by tapping elsewhere on the field. The sheet itself is a scrollable
+  // column of titled sections so it has room to grow toward the full DDR
+  // option set (arrows, lane, scroll, assist …).
   // Never shown while playing — [_play] force-closes it.
   Widget _buildSettingsShade(BuildContext context) {
     final open = _shadeOpen && !_playing;
-    return Positioned.fill(
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: 0,
       child: IgnorePointer(
         ignoring: !open,
-        child: Stack(
-          children: [
-            // Dimming scrim: tap anywhere outside the sheet to close.
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _toggleShade,
-              child: AnimatedOpacity(
-                opacity: open ? 1 : 0,
-                duration: const Duration(milliseconds: 180),
-                child: Container(color: Colors.black.withValues(alpha: 0.45)),
-              ),
+        child: AnimatedSlide(
+          offset: open ? Offset.zero : const Offset(0, -1),
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: open ? 1 : 0,
+            duration: const Duration(milliseconds: 160),
+            child: _SettingsShade(
+              onClose: _toggleShade,
+              sections: _buildShadeSections(context),
             ),
-            // The sheet, pinned to the top and sliding down into view.
-            Align(
-              alignment: Alignment.topCenter,
-              child: AnimatedSlide(
-                offset: open ? Offset.zero : const Offset(0, -1),
-                duration: const Duration(milliseconds: 240),
-                curve: Curves.easeOutCubic,
-                child: AnimatedOpacity(
-                  opacity: open ? 1 : 0,
-                  duration: const Duration(milliseconds: 160),
-                  child: _SettingsShade(
-                    onClose: _toggleShade,
-                    sections: _buildShadeSections(context),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -2609,33 +2596,59 @@ class _ChartPainter extends CustomPainter {
   // DDR CONSTANT modifier: when non-null, every arrow is only visible for this
   // many milliseconds of WALL-CLOCK time before it reaches the receptor,
   // regardless of BPM or read speed — a note is invisible until it is this far
-  // (in real seconds) from the line, then appears at full opacity and travels
-  // the rest of the way solid. Null = NORMAL (arrows always visible). The window
-  // is keyed on real seconds-to-receptor, not beat distance, so its span in
-  // pixels/beats stretches and compresses with the local tempo, exactly as
-  // in-game. See [_constantHides].
+  // (in real seconds) from the line, then FADES IN over the leading slice of
+  // the window and travels the rest of the way solid. Null = NORMAL (arrows
+  // always visible). The window is keyed on real seconds-to-receptor, not beat
+  // distance, so its span in pixels/beats stretches and compresses with the
+  // local tempo, exactly as in-game. See [_constantAlpha].
   final double? constantMs;
 
   // Top safe-area inset (status bar / notch). The field is full-bleed, so the
   // receptor line is pushed down by this much to clear the system chrome.
   final double topInset;
 
-  // Whether the note at chart-second [t] is hidden by the CONSTANT modifier: a
-  // hard visibility gate, not a fade. False when CONSTANT is off, or the note is
-  // within its display window (or at/past the receptor); true when it's still
-  // beyond the window. This matches the arcade, where CONSTANT is part of the
-  // same appearance/cover machinery as HIDDEN/SUDDEN (ddr::player::Option, the
-  // `display_type` family in gamemdx.dll) — the arrow snaps to full opacity the
-  // instant it enters its fixed display time, rather than ramping in. Driven by
-  // real seconds-to-receptor (`t - second`), so the window is a fixed wall-clock
-  // time no matter the tempo. For a held note whose head has already reached the
-  // line, [t] should be the head's own second (<= playhead), yielding false.
-  bool _constantHides(double t) {
+  // Leading slice of the CONSTANT window over which an arrow ramps from
+  // invisible to solid. The arcade fades arrows in as they enter their display
+  // window (RemyWiki/DDR wiki both describe CONSTANT as arrows that "fade in as
+  // they reach the Step Zone", and the modifier's origin — 鳳 as A3's
+  // BABY-LON'S GALAXY encore — visibly fades); the exact curve isn't published,
+  // so this fraction is eyeballed from footage and tunable. Unlike HIDDEN/
+  // SUDDEN, which are drawn lane covers (CoverActor in gamemdx.dll), CONSTANT
+  // is per-arrow alpha.
+  static const double _constantFadeFrac = 0.2;
+
+  // Opacity of the note at chart-second [t] under the CONSTANT modifier: 1 when
+  // CONSTANT is off, the note is at/past the receptor, or it's solidly inside
+  // its display window; 0 while it's still beyond the window; ramping linearly
+  // across the first [_constantFadeFrac] of the window in between. Driven by
+  // real seconds-to-receptor (`t - second`), so the window is a fixed
+  // wall-clock time no matter the tempo. For a held note whose head has already
+  // reached the line, [t] should be the head's own second (<= playhead),
+  // yielding 1.
+  double _constantAlpha(double t) {
     final c = constantMs;
-    if (c == null) return false;
+    if (c == null) return 1;
     final timeToReceptor = t - second;
-    if (timeToReceptor <= 0) return false; // at or past the line
-    return timeToReceptor >= c / 1000.0; // beyond the fixed display window
+    if (timeToReceptor <= 0) return 1; // at or past the line
+    final window = c / 1000.0;
+    if (timeToReceptor >= window) return 0; // beyond the display window
+    // Seconds since the note entered its window, as a share of the fade band.
+    final sinceAppear = window - timeToReceptor;
+    return (sinceAppear / (window * _constantFadeFrac)).clamp(0.0, 1.0);
+  }
+
+  // Draws [draw] composited at [alpha] via a save layer over [bounds]. Full
+  // opacity skips the layer entirely, so only the handful of notes inside the
+  // CONSTANT fade band pay for compositing.
+  void _fadeLayer(
+      Canvas canvas, double alpha, Rect bounds, void Function() draw) {
+    if (alpha >= 1) {
+      draw();
+      return;
+    }
+    canvas.saveLayer(bounds, Paint()..color = Colors.white.withValues(alpha: alpha));
+    draw();
+    canvas.restore();
   }
 
   // Receptors sit near the TOP; arrows scroll up into them. Notes are drawn
@@ -2738,15 +2751,24 @@ class _ChartPainter extends CustomPainter {
       final endS = n.endSecond ?? n.second;
       if (endS < second || n.second > maxT) continue;
       // A freeze appears as one piece under CONSTANT, keyed on its head's second
-      // — until the head enters its display window the whole body is hidden.
-      if (_constantHides(n.second)) continue;
+      // — the whole body fades in together as the head enters its window.
+      final holdAlpha = _constantAlpha(n.second);
+      if (holdAlpha <= 0) continue;
       final headY =
           n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
       final col = turned(n.col);
-      skin.paintHoldBody(canvas, laneCenterX(col), headY, yFor(endS),
-          arrowSize, dirs[col], n.type == StepType.roll);
-      skin.paintHoldTail(canvas, laneCenterX(col), yFor(endS), arrowSize,
-          dirs[col], n.type == StepType.roll);
+      final holdX = laneCenterX(col);
+      final tailY = yFor(endS);
+      _fadeLayer(
+          canvas,
+          holdAlpha,
+          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize,
+              holdX + arrowSize, tailY + arrowSize), () {
+        skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
+            n.type == StepType.roll);
+        skin.paintHoldTail(
+            canvas, holdX, tailY, arrowSize, dirs[col], n.type == StepType.roll);
+      });
     }
 
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
@@ -2759,12 +2781,16 @@ class _ChartPainter extends CustomPainter {
     // spanning the whole row (also vanishes once hit).
     for (final s in shocks) {
       if (s.second < second || s.second > maxT) continue;
-      if (_constantHides(s.second)) continue; // hidden by CONSTANT
+      final shockAlpha = _constantAlpha(s.second); // fades in under CONSTANT
+      if (shockAlpha <= 0) continue;
       final y = yFor(s.second);
       final lanes = [
         for (final c in s.cols) (laneCenterX(turned(c)), dirs[turned(c)]),
       ];
-      skin.paintShock(canvas, lanes, y, arrowSize);
+      _fadeLayer(canvas, shockAlpha,
+          Rect.fromLTRB(0, y - arrowSize, size.width, y + arrowSize), () {
+        skin.paintShock(canvas, lanes, y, arrowSize);
+      });
     }
 
     // 3) Taps, mines (non-shock), and hold heads — drawn last so they sit above
@@ -2776,19 +2802,28 @@ class _ChartPainter extends CustomPainter {
         continue;
       }
       // A held head sits on the receptor, so treat it as fully arrived rather
-      // than re-gating it; otherwise CONSTANT hides it until it enters its window.
-      if (!held && _constantHides(n.second)) continue;
+      // than re-fading it; otherwise CONSTANT fades it in over its window.
+      final noteAlpha = held ? 1.0 : _constantAlpha(n.second);
+      if (noteAlpha <= 0) continue;
       final col = turned(n.col);
       final x = laneCenterX(col);
       final y = held ? _receptorTop.toDouble() : yFor(n.second);
-      if (n.type == StepType.mine) {
-        if (shockNotes.contains(n)) continue; // drawn in the shock pass
-        skin.paintMine(canvas, x, y, arrowSize);
-      } else {
-        skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
-        final foot = feet[n];
-        if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
+      if (n.type == StepType.mine && shockNotes.contains(n)) {
+        continue; // drawn in the shock pass
       }
+      _fadeLayer(
+          canvas,
+          noteAlpha,
+          Rect.fromLTRB(
+              x - arrowSize, y - arrowSize, x + arrowSize, y + arrowSize), () {
+        if (n.type == StepType.mine) {
+          skin.paintMine(canvas, x, y, arrowSize);
+        } else {
+          skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
+          final foot = feet[n];
+          if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
+        }
+      });
     }
 
     // 4) Timing-marker labels, top layer: drawn last so the STOP/BPM pills sit
