@@ -6,6 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class Settings {
   static const String chosenReadSpeedKey = "chosenReadSpeed";
+
+  // DDR CONSTANT modifier for the chart preview: the arrow display time in ms
+  // (100–3000, 10ms steps; DDR default 1000). Only applied when [constantOnKey]
+  // is set. Stored as an int of milliseconds.
+  static const String constantMsKey = "chartPreviewConstantMs";
+  static const String constantOnKey = "chartPreviewConstantOn";
   static const String rivalCodeSpeedKey = "rivalCode";
   static const String detectionSideKey = "detectionSide";
   static const String usernameKey = "username";

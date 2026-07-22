@@ -262,7 +262,7 @@ class ChartScroller extends StatefulWidget {
     this.bpms = const [],
     this.stops = const [],
     this.showFootGuide = false,
-    this.header,
+    this.headerBuilder,
   });
 
   final ChartSteps steps;
@@ -270,7 +270,10 @@ class ChartScroller extends StatefulWidget {
 
   /// Optional floating header (title / back / actions) laid over the top of the
   /// full-bleed field. Shown and hidden together with the transport controls.
-  final Widget? header;
+  /// Built with a callback that opens the settings shade, so the parent can put
+  /// a "settings" action in the header without owning the shade's state.
+  final Widget Function(BuildContext context, VoidCallback onSettingsTap)?
+      headerBuilder;
 
   /// Timing markers, in seconds (from [Chart]). [bpms] carry a [Bpm.st] start
   /// second and target [Bpm.val]; [stops] carry a [Stop.st] start and [Stop.dur]
@@ -308,9 +311,25 @@ class _ChartScrollerState extends State<ChartScroller>
   // (that stays play/pause).
   bool _controlsVisible = true;
 
+  // Whether the top settings shade (chart-viewing modifiers) is pulled down.
+  // Opened from the header's gear button; auto-closed when playback starts, and
+  // never shown while playing (it's a paused-browsing surface).
+  bool _shadeOpen = false;
+
   // Scroll rate multiplier (visual speed-mod feel). 1.0 = default spacing.
   double _rate = 1.0;
   int _modIndex = 3; // 1.0x in constants.mods
+
+  // DDR CONSTANT modifier: fade arrows in a fixed wall-clock time before they
+  // reach the receptor, independent of BPM/read speed. Off by default (NORMAL).
+  // [_constantMs] is the display time in ms (100–3000, snapped to 10ms); it's
+  // handed to the painter only while [_constantOn]. Persisted across previews.
+  static const double _constantMinMs = 100;
+  static const double _constantMaxMs = 3000;
+  static const double _constantStepMs = 10;
+  static const double _constantDefaultMs = 1000;
+  bool _constantOn = false;
+  double _constantMs = _constantDefaultMs;
 
   // Playback-rate multiplier: how fast the chart plays back in wall-clock time.
   // 1.0 = true speed; <1 slows the song, >1 speeds it up. Independent of the
@@ -396,6 +415,7 @@ class _ChartScrollerState extends State<ChartScroller>
     super.initState();
     _ticker = createTicker(_onTick);
     _syncRateToSavedReadSpeed();
+    _loadConstant();
     _detectShocks();
     _assignFeet();
     _buildTimingMarkers();
@@ -436,6 +456,53 @@ class _ChartScrollerState extends State<ChartScroller>
     );
     _modIndex = nextIndex.clamp(0, constants.mods.length - 1);
     _rate = constants.mods[_modIndex];
+  }
+
+  // Restore the CONSTANT modifier from settings. A saved ms of 0 means "never
+  // set", so fall back to the DDR default; the on/off flag is stored as 0/1
+  // (the Settings API has no bool getter).
+  void _loadConstant() {
+    final savedMs = Settings.getInt(Settings.constantMsKey);
+    _constantMs = savedMs > 0
+        ? savedMs.toDouble().clamp(_constantMinMs, _constantMaxMs)
+        : _constantDefaultMs;
+    _constantOn = Settings.getInt(Settings.constantOnKey) == 1;
+  }
+
+  // The ms value handed to the painter: null (NORMAL, arrows always visible)
+  // unless the modifier is switched on.
+  double? get _effectiveConstantMs => _constantOn ? _constantMs : null;
+
+  // Tap the CONSTANT chip to switch the modifier on/off (no separate switch).
+  void _toggleConstant() {
+    HapticFeedback.selectionClick();
+    setState(() => _constantOn = !_constantOn);
+    Settings.setInt(Settings.constantOnKey, _constantOn ? 1 : 0);
+    _flashScrubOverlay(
+      _constantOn ? "${_constantMs.round()}ms" : "OFF",
+      "CONSTANT",
+    );
+  }
+
+  // Drag horizontally on the CONSTANT chip to sweep the display time, snapped to
+  // the 10ms grid. Mirrors the song-speed pane's drag feel; fires a detent
+  // haptic each time the value crosses a step. Dragging implicitly turns the
+  // modifier on so the change is visible while adjusting.
+  void _onConstantDrag(double dx) {
+    final next = (_constantMs + dx / 260 * (_constantMaxMs - _constantMinMs))
+        .clamp(_constantMinMs, _constantMaxMs);
+    final snapped =
+        ((next / _constantStepMs).round() * _constantStepMs).toDouble();
+    final changed = snapped != _constantMs;
+    if (!changed && _constantOn) return;
+    setState(() {
+      _constantMs = snapped;
+      _constantOn = true;
+    });
+    if (changed) HapticFeedback.selectionClick();
+    Settings.setInt(Settings.constantMsKey, snapped.round());
+    Settings.setInt(Settings.constantOnKey, 1);
+    _flashScrubOverlay("${snapped.round()}ms", "CONSTANT");
   }
 
   static const List<Color> _minimapPalette = [
@@ -639,7 +706,20 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_second >= _endSecond) _second = 0;
     _flingVel = 0;
     _ensureTicking();
-    setState(() => _playing = true);
+    // The settings shade is a paused-browsing surface — starting playback tucks
+    // it away so it never overlays the running chart.
+    setState(() {
+      _playing = true;
+      _shadeOpen = false;
+    });
+  }
+
+  void _toggleShade() {
+    HapticFeedback.selectionClick();
+    // Opening the shade pauses playback so the modifiers are adjusted against a
+    // still field, matching the arcade's option screen.
+    if (!_shadeOpen) _pause();
+    setState(() => _shadeOpen = !_shadeOpen);
   }
 
   void _pause() {
@@ -930,6 +1010,7 @@ class _ChartScrollerState extends State<ChartScroller>
                     columnCount: dirs.length,
                     skin: _skin,
                     playing: _playing,
+                    constantMs: _effectiveConstantMs,
                     topInset: MediaQuery.of(context).padding.top,
                   ),
                   size: Size.infinite,
@@ -1098,8 +1179,9 @@ class _ChartScrollerState extends State<ChartScroller>
             ),
           ),
 
-          // Floating header, slides up out of view when controls are hidden.
-          if (widget.header != null)
+          // Floating header, slides up out of view when controls are hidden. Its
+          // gear button pulls down the settings shade below.
+          if (widget.headerBuilder != null)
             Positioned(
               top: 0,
               left: 0,
@@ -1113,11 +1195,18 @@ class _ChartScrollerState extends State<ChartScroller>
                   child: AnimatedOpacity(
                     opacity: _controlsVisible ? 1 : 0,
                     duration: const Duration(milliseconds: 180),
-                    child: widget.header!,
+                    child: widget.headerBuilder!(context, _toggleShade),
                   ),
                 ),
               ),
             ),
+
+          // Settings shade: a top "pull-down" sheet of chart-viewing modifiers,
+          // hidden by default behind the header's gear button. Kept out of the
+          // way (unlike an always-on strip) so it has room to grow to the full
+          // DDR option set; force-closed while playing since it's a browsing
+          // surface, and tapping the scrim behind it dismisses it.
+          _buildSettingsShade(context),
 
           // Bottom controls, pinned to the bottom edge. The density scrubber
           // stays visible even in "fullscreen" (controls hidden) — only the
@@ -1216,6 +1305,80 @@ class _ChartScrollerState extends State<ChartScroller>
         ),
       ),
     );
+  }
+
+  // The settings shade: a top "pull-down" sheet of chart-viewing modifiers,
+  // hidden behind the header's gear until opened. A tap-scrim behind it dismisses
+  // it; the sheet itself is a scrollable column of titled sections so it has room
+  // to grow toward the full DDR option set (arrows, lane, scroll, assist …).
+  // Never shown while playing — [_play] force-closes it.
+  Widget _buildSettingsShade(BuildContext context) {
+    final open = _shadeOpen && !_playing;
+    return Positioned.fill(
+      child: IgnorePointer(
+        ignoring: !open,
+        child: Stack(
+          children: [
+            // Dimming scrim: tap anywhere outside the sheet to close.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _toggleShade,
+              child: AnimatedOpacity(
+                opacity: open ? 1 : 0,
+                duration: const Duration(milliseconds: 180),
+                child: Container(color: Colors.black.withValues(alpha: 0.45)),
+              ),
+            ),
+            // The sheet, pinned to the top and sliding down into view.
+            Align(
+              alignment: Alignment.topCenter,
+              child: AnimatedSlide(
+                offset: open ? Offset.zero : const Offset(0, -1),
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                child: AnimatedOpacity(
+                  opacity: open ? 1 : 0,
+                  duration: const Duration(milliseconds: 160),
+                  child: _SettingsShade(
+                    accent: Theme.of(context).colorScheme.primary,
+                    onClose: _toggleShade,
+                    sections: _buildShadeSections(context),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // The modifier sections shown in the shade. Only the Arrows section (CONSTANT)
+  // is wired for now; the rest are placeholders reserving their place so the
+  // shade already reads as the full options screen and new controls slot in
+  // without a layout rethink. Mirrors the DDR World option categories.
+  List<_ShadeSection> _buildShadeSections(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return [
+      _ShadeSection(
+        title: "ARROWS",
+        chips: [
+          _ConstantChip(
+            on: _constantOn,
+            ms: _constantMs,
+            accent: accent,
+            onTap: _toggleConstant,
+            onDrag: _onConstantDrag,
+          ),
+        ],
+      ),
+      // Reserved for the remaining DDR World appearance options, added later:
+      // arrow color scheme / design, scroll direction & motion, lane cover,
+      // guideline, step-zone, assist (freeze/jump removal), etc.
+      const _ShadeSection(title: "SCROLL", chips: [], comingSoon: true),
+      const _ShadeSection(title: "LANE", chips: [], comingSoon: true),
+      const _ShadeSection(title: "ASSIST", chips: [], comingSoon: true),
+    ];
   }
 
   Widget _buildTransport(BuildContext context) {
@@ -1413,6 +1576,214 @@ class _ControlPane extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// One titled group of modifier chips inside the settings shade. [comingSoon]
+/// marks a reserved category with no wired controls yet, so the shade already
+/// shows the shape of the full option set.
+class _ShadeSection {
+  final String title;
+  final List<Widget> chips;
+  final bool comingSoon;
+  const _ShadeSection({
+    required this.title,
+    required this.chips,
+    this.comingSoon = false,
+  });
+}
+
+/// The pull-down settings sheet: a rounded top panel carrying a grab-handle, a
+/// title row with a close button, and a scrollable list of [_ShadeSection]s.
+/// Height-capped so it never covers the whole field, and its body scrolls when
+/// the option set outgrows the cap.
+class _SettingsShade extends StatelessWidget {
+  const _SettingsShade({
+    required this.accent,
+    required this.onClose,
+    required this.sections,
+  });
+
+  final Color accent;
+  final VoidCallback onClose;
+  final List<_ShadeSection> sections;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(maxHeight: media.size.height * 0.66),
+      decoration: BoxDecoration(
+        color: const Color(0xFF12161D).withValues(alpha: 0.98),
+        borderRadius:
+            const BorderRadius.vertical(bottom: Radius.circular(20)),
+        border: Border(bottom: BorderSide(color: accent, width: 2)),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Title row: a settings glyph, "VIEW OPTIONS", and a close button.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
+              child: Row(
+                children: [
+                  Icon(Icons.tune, size: 18, color: accent),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      "VIEW OPTIONS",
+                      style: TextStyle(
+                        fontSize: 13,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.close,
+                        color: Colors.white.withValues(alpha: 0.7), size: 20),
+                    onPressed: onClose,
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final s in sections) _sectionBlock(s),
+                  ],
+                ),
+              ),
+            ),
+            // Grab-handle at the very bottom edge, echoing a pull-down shade.
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionBlock(_ShadeSection s) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            s.title,
+            style: TextStyle(
+              fontSize: 10,
+              letterSpacing: 1.1,
+              fontWeight: FontWeight.w700,
+              color: accent.withValues(alpha: 0.85),
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (s.comingSoon)
+            Text(
+              "Coming soon",
+              style: TextStyle(
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+                color: Colors.white.withValues(alpha: 0.3),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: s.chips,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A CONSTANT-modifier chip for the settings shade, styled like the transport
+/// panes. Tap toggles the modifier on/off (no separate switch); dragging
+/// horizontally sweeps the display time. When on, the chip fills with [accent]
+/// and shows the current ms; when off it reads "OFF" in a muted surface.
+class _ConstantChip extends StatelessWidget {
+  const _ConstantChip({
+    required this.on,
+    required this.ms,
+    required this.accent,
+    required this.onTap,
+    required this.onDrag,
+  });
+
+  final bool on;
+  final double ms;
+  final Color accent;
+  final VoidCallback onTap;
+  final void Function(double dx) onDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        onHorizontalDragUpdate: (d) => onDrag(d.primaryDelta ?? 0),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: on
+                ? accent.withValues(alpha: 0.9)
+                : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "CONSTANT",
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 0.8,
+                  fontWeight: FontWeight.w700,
+                  color: on
+                      ? Colors.white
+                      : scheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                on ? "${ms.round()}ms" : "OFF",
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: on
+                      ? Colors.white
+                      : scheme.onSurface.withValues(alpha: 0.85),
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1717,6 +2088,7 @@ class _ChartPainter extends CustomPainter {
     required this.columnCount,
     required this.skin,
     required this.playing,
+    this.constantMs,
     this.topInset = 0,
   });
 
@@ -1740,9 +2112,60 @@ class _ChartPainter extends CustomPainter {
   final Noteskin skin;
   final bool playing;
 
+  // DDR CONSTANT modifier: when non-null, every arrow is only visible for this
+  // many milliseconds of WALL-CLOCK time before it reaches the receptor,
+  // regardless of BPM or read speed — a note is invisible until it is this far
+  // (in real seconds) from the line, then fades in and travels the rest of the
+  // way solid. Null = NORMAL (arrows always visible in the field). The fade is
+  // keyed on real seconds-to-receptor, not beat distance, so its span in
+  // pixels/beats stretches and compresses with the local tempo, exactly as
+  // in-game. See [_constantAlpha].
+  final double? constantMs;
+
+  // Short fade-in ramp at the far edge of the CONSTANT window: an arrow ramps
+  // 0→1 opacity over these many seconds as it crosses the visibility threshold,
+  // rather than fading linearly across the whole window (which reads as a dim
+  // arrow the entire way). ~120ms matches the quick pop-in of the arcade.
+  static const double _constantFadeSeconds = 0.12;
+
   // Top safe-area inset (status bar / notch). The field is full-bleed, so the
   // receptor line is pushed down by this much to clear the system chrome.
   final double topInset;
+
+  // Opacity for a note at chart-second [t] under the CONSTANT modifier. Returns
+  // 1 when CONSTANT is off (or the note is at/past the receptor), 0 when the
+  // note is still beyond the visibility window, and a quick 0→1 ramp as it
+  // enters the window. Driven by real seconds-to-receptor (`t - second`), so the
+  // window is a fixed time no matter the tempo. For a held note whose head has
+  // already reached the line, [t] should be the head's own second (<= playhead),
+  // yielding full opacity — the body doesn't re-fade while being held.
+  double _constantAlpha(double t) {
+    final c = constantMs;
+    if (c == null) return 1;
+    final timeToReceptor = t - second;
+    if (timeToReceptor <= 0) return 1; // at or past the line
+    final window = c / 1000.0;
+    if (timeToReceptor >= window) return 0; // beyond the visibility window
+    // Ramp up over the last [_constantFadeSeconds] of the window's far edge.
+    return ((window - timeToReceptor) / _constantFadeSeconds).clamp(0.0, 1.0);
+  }
+
+  // Run [draw] with a uniform [alpha] applied to everything it paints, via a
+  // save-layer so the skin's own multi-paint arrows/holds fade as one unit
+  // (rather than compositing their internal overlaps at partial opacity). Skips
+  // the layer entirely at alpha 1 (the common case) so NORMAL pays nothing.
+  void _withAlpha(Canvas canvas, double alpha, Size size, VoidCallback draw) {
+    if (alpha >= 1) {
+      draw();
+      return;
+    }
+    canvas.saveLayer(
+      Offset.zero & size,
+      Paint()..color = Colors.white.withValues(alpha: alpha),
+    );
+    draw();
+    canvas.restore();
+  }
 
   // Receptors sit near the TOP; arrows scroll up into them. Notes are drawn
   // ON TOP OF (z-above) the receptors so an arrow reaching the line covers it.
@@ -1834,10 +2257,14 @@ class _ChartPainter extends CustomPainter {
       if (endS < second || n.second > maxT) continue;
       final headY =
           n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
-      skin.paintHoldBody(canvas, laneCenterX(n.col), headY, yFor(endS),
-          arrowSize, dirs[n.col], n.type == StepType.roll);
-      skin.paintHoldTail(canvas, laneCenterX(n.col), yFor(endS), arrowSize,
-          dirs[n.col], n.type == StepType.roll);
+      // Fade the whole freeze (body + tail) together with its head's opacity, so
+      // an incoming hold pops in as one piece under CONSTANT.
+      _withAlpha(canvas, _constantAlpha(n.second), size, () {
+        skin.paintHoldBody(canvas, laneCenterX(n.col), headY, yFor(endS),
+            arrowSize, dirs[n.col], n.type == StepType.roll);
+        skin.paintHoldTail(canvas, laneCenterX(n.col), yFor(endS), arrowSize,
+            dirs[n.col], n.type == StepType.roll);
+      });
     }
 
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
@@ -1854,7 +2281,8 @@ class _ChartPainter extends CustomPainter {
       final lanes = [
         for (final c in s.cols) (laneCenterX(c), dirs[c]),
       ];
-      skin.paintShock(canvas, lanes, y, arrowSize);
+      _withAlpha(canvas, _constantAlpha(s.second), size,
+          () => skin.paintShock(canvas, lanes, y, arrowSize));
     }
 
     // 3) Taps, mines (non-shock), and hold heads — drawn last so they sit above
@@ -1867,13 +2295,18 @@ class _ChartPainter extends CustomPainter {
       }
       final x = laneCenterX(n.col);
       final y = held ? _receptorTop.toDouble() : yFor(n.second);
+      // A held head sits on the receptor, so treat it as fully arrived (opacity
+      // 1) rather than re-fading it; otherwise fade by its seconds-to-receptor.
+      final alpha = held ? 1.0 : _constantAlpha(n.second);
       if (n.type == StepType.mine) {
         if (shockNotes.contains(n)) continue; // drawn in the shock pass
-        skin.paintMine(canvas, x, y, arrowSize);
+        _withAlpha(canvas, alpha, size, () => skin.paintMine(canvas, x, y, arrowSize));
       } else {
-        skin.paintArrow(canvas, x, y, arrowSize, dirs[n.col], n.beat);
-        final foot = feet[n];
-        if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
+        _withAlpha(canvas, alpha, size, () {
+          skin.paintArrow(canvas, x, y, arrowSize, dirs[n.col], n.beat);
+          final foot = feet[n];
+          if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
+        });
       }
     }
 
@@ -2151,5 +2584,6 @@ class _ChartPainter extends CustomPainter {
       old.columnCount != columnCount ||
       old.skin != skin ||
       old.playing != playing ||
+      old.constantMs != constantMs ||
       old.topInset != topInset;
 }

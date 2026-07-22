@@ -105,7 +105,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               bpms: widget.bpms,
               stops: widget.stops,
               showFootGuide: _showFootGuide,
-              header: _buildHeader(context, diffColor),
+              headerBuilder: (context, onSettingsTap) =>
+                  _buildHeader(context, diffColor, onSettingsTap),
             );
           },
         ),
@@ -113,10 +114,13 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     );
   }
 
-  // The floating top bar laid over the field: back, title + mode/difficulty, and
-  // the foot-guide toggle. A translucent gradient keeps it legible against the
-  // scrolling arrows, and a difficulty-coloured hairline seats it.
-  Widget _buildHeader(BuildContext context, Color diffColor) {
+  // The floating top bar laid over the field: back, title + mode/difficulty, the
+  // foot-guide toggle, and the gear that pulls down the settings shade. A
+  // translucent gradient keeps it legible against the scrolling arrows, and a
+  // difficulty-coloured hairline seats it. [onSettingsTap] is provided by the
+  // scroller so the header can open the shade without owning its state.
+  Widget _buildHeader(
+      BuildContext context, Color diffColor, VoidCallback onSettingsTap) {
     final difficultyLabel = widget.difficultyLevel != null
         ? "${_pretty(widget.difficultyKey)} ${widget.difficultyLevel}"
         : _pretty(widget.difficultyKey);
@@ -178,6 +182,11 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                       : Icons.directions_walk_outlined,
                   color: _showFootGuide ? diffColor : Colors.blueGrey,
                 ),
+              ),
+              IconButton(
+                tooltip: "View options",
+                onPressed: onSettingsTap,
+                icon: const Icon(Icons.tune, color: Colors.blueGrey),
               ),
             ],
           ),
