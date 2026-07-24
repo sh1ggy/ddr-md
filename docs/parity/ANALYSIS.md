@@ -4,6 +4,11 @@ This is a study of your current `FootAssigner` ([steps_model.dart:149](../../lib
 against SMEditor's parity engine (files downloaded to this folder). The goal: understand *why*
 crossovers and footswitches come out wrong, and what a port would need.
 
+> **See also:** [LANDPADDLE-SIGNALS.md](./LANDPADDLE-SIGNALS.md) — signals from a
+> different set of chart-analysis scripts (turn-magnitude stats, a crossover-vs-doublestep
+> reading-style toggle, and an ambiguity/confidence overlay) that ride *on top of* the
+> SMEditor port below rather than replacing it.
+
 ---
 
 ## 1. The root cause in one sentence
