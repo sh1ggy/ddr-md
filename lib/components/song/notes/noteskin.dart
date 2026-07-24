@@ -108,35 +108,83 @@ class VectorNoteskin implements Noteskin {
   static const Color _holdColor = Color(0xFF39C46B);
   static const Color _rollColor = Color(0xFFF2A03B);
 
+  // Arrow paths keyed by size. A handful of sizes are live at once (notes,
+  // receptors, shock arrows); rebuilding the Path per glyph per frame was pure
+  // allocation churn.
+  static final Map<double, Path> _pathCache = {};
+
   Path _arrowPath(double s) {
-    final half = s / 2;
-    // A chevron-style arrow pointing left (rotated per lane). Slightly chunkier
-    // than a plain triangle so it reads as a DDR arrow, not a play button.
-    return Path()
-      ..moveTo(-half, 0)
-      ..lineTo(-half * 0.15, -half * 0.95)
-      ..lineTo(-half * 0.15, -half * 0.42)
-      ..lineTo(half, -half * 0.42)
-      ..lineTo(half, half * 0.42)
-      ..lineTo(-half * 0.15, half * 0.42)
-      ..lineTo(-half * 0.15, half * 0.95)
-      ..close();
+    if (_pathCache.length > 8) _pathCache.clear();
+    return _pathCache.putIfAbsent(s, () {
+      final half = s / 2;
+      // A chevron-style arrow pointing left (rotated per lane). Slightly
+      // chunkier than a plain triangle so it reads as a DDR arrow, not a play
+      // button.
+      return Path()
+        ..moveTo(-half, 0)
+        ..lineTo(-half * 0.15, -half * 0.95)
+        ..lineTo(-half * 0.15, -half * 0.42)
+        ..lineTo(half, -half * 0.42)
+        ..lineTo(half, half * 0.42)
+        ..lineTo(-half * 0.15, half * 0.42)
+        ..lineTo(-half * 0.15, half * 0.95)
+        ..close();
+    });
   }
 
-  @override
-  void paintArrow(Canvas canvas, double x, double y, double size, NoteDir dir,
-      double beat) {
-    final color = QuantColors.forBeat(beat);
-    canvas.save();
-    canvas.translate(x, y);
-    canvas.rotate(rotationForDir(dir));
+  // --- rasterised tap/tail glyphs -----------------------------------------
+  //
+  // The full vector arrow costs a blurred shadow (a GPU blur!), two gradient
+  // shaders and two strokes PER NOTE PER FRAME — by far the painter's biggest
+  // line item at stream densities. Instead each (colour, tap/tail) glyph is
+  // drawn once at a fixed reference size into a texture via toImageSync, and
+  // every note becomes a single rotated image blit. The texture is rendered at
+  // the device pixel ratio and sampled with mipmapped (medium) filtering, so
+  // drawing it at any note size — including mid-pinch zoom — stays crisp
+  // without ever regenerating the cache. Only 7 quant colours + 2 tail colours
+  // exist, so the whole cache is 9 small textures.
+  static const double _glyphBaseSize = 96;
+  static const double _glyphPadFrac = 0.14; // room for the baked shadow blur
+  static final Map<int, ui.Image> _glyphCache = {};
+  static double _glyphCacheDpr = -1;
+  static final Paint _glyphPaint = Paint()
+    ..filterQuality = FilterQuality.medium;
+
+  ui.Image _glyphImage(Color color, {required bool tail}) {
+    final dpr =
+        ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ?? 2.0;
+    if (dpr != _glyphCacheDpr) {
+      _glyphCache.clear();
+      _glyphCacheDpr = dpr;
+    }
+    final key = (color.toARGB32() << 1) | (tail ? 1 : 0);
+    final cached = _glyphCache[key];
+    if (cached != null) return cached;
+    const pad = _glyphBaseSize * _glyphPadFrac;
+    const span = _glyphBaseSize + pad * 2;
+    final rec = ui.PictureRecorder();
+    final canvas = Canvas(rec);
+    canvas.scale(dpr);
+    canvas.translate(span / 2, span / 2);
+    _drawArrowGlyph(canvas, _glyphBaseSize, color, tail: tail);
+    final pic = rec.endRecording();
+    final img = pic.toImageSync((span * dpr).ceil(), (span * dpr).ceil());
+    pic.dispose();
+    _glyphCache[key] = img;
+    return img;
+  }
+
+  // The original vector arrow, centred on the origin pointing left — now only
+  // executed when baking a glyph texture, not per note.
+  void _drawArrowGlyph(Canvas canvas, double size, Color color,
+      {required bool tail}) {
     final path = _arrowPath(size);
 
     // Soft drop shadow for depth.
     canvas.drawPath(
-      path.shift(const Offset(0, 1.5)),
+      path.shift(Offset(0, tail ? 1.2 : 1.5)),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.35)
+        ..color = Colors.black.withValues(alpha: tail ? 0.30 : 0.35)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
     );
 
@@ -158,15 +206,38 @@ class VectorNoteskin implements Noteskin {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = size * 0.05
-        ..color = Colors.black.withValues(alpha: 0.55),
+        ..color = Colors.black.withValues(alpha: tail ? 0.50 : 0.55),
     );
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = size * 0.03
-        ..color = Colors.white.withValues(alpha: 0.35),
+        ..strokeWidth = size * (tail ? 0.025 : 0.03)
+        ..color = Colors.white.withValues(alpha: tail ? 0.22 : 0.35),
     );
+  }
+
+  // Stamp a cached glyph texture centred on the (already translated/rotated)
+  // origin so the glyph body spans [size]; the baked-in shadow padding scales
+  // with it.
+  void _stampGlyph(Canvas canvas, ui.Image img, double size) {
+    final half = size * (0.5 + _glyphPadFrac);
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromLTRB(-half, -half, half, half),
+      _glyphPaint,
+    );
+  }
+
+  @override
+  void paintArrow(Canvas canvas, double x, double y, double size, NoteDir dir,
+      double beat) {
+    final img = _glyphImage(QuantColors.forBeat(beat), tail: false);
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.rotate(rotationForDir(dir));
+    _stampGlyph(canvas, img, size);
     canvas.restore();
   }
 
@@ -201,42 +272,11 @@ class VectorNoteskin implements Noteskin {
   @override
   void paintHoldTail(
       Canvas canvas, double x, double y, double size, NoteDir dir, bool isRoll) {
-    final color = isRoll ? _rollColor : _holdColor;
+    final img = _glyphImage(isRoll ? _rollColor : _holdColor, tail: true);
     canvas.save();
     canvas.translate(x, y);
     canvas.rotate(rotationForDir(dir));
-    final path = _arrowPath(size);
-    final rect = Rect.fromCircle(center: Offset.zero, radius: size / 2);
-    canvas.drawPath(
-      path.shift(const Offset(0, 1.2)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..shader = ui.Gradient.linear(
-          rect.topCenter,
-          rect.bottomCenter,
-          [_lighten(color, 0.28), color, _darken(color, 0.22)],
-          [0.0, 0.5, 1.0],
-        ),
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = size * 0.05
-        ..color = Colors.black.withValues(alpha: 0.50),
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = size * 0.025
-        ..color = Colors.white.withValues(alpha: 0.22),
-    );
+    _stampGlyph(canvas, img, size);
     canvas.restore();
   }
 
@@ -410,30 +450,41 @@ class SpriteNoteskin implements Noteskin {
   SpriteNoteskin._(
     this._note,
     this._holdBody,
-    this._holdTail,
   );
 
   final ui.Image _note;
   final ui.Image _holdBody;
-  final ui.Image? _holdTail;
 
   // Vector skin handles the elements we didn't extract sprites for.
   static const VectorNoteskin _vector = VectorNoteskin();
 
-  static Future<Noteskin?> tryLoad() async {
+  // Loaded once per app run. Decoding the PNGs is async, so without memoising
+  // every chart preview would open on the vector fallback for a frame or two
+  // and visibly swap skins. After the first resolve, [resolved]/[resolvedSkin]
+  // answer synchronously and previews start on the right skin immediately.
+  static Future<Noteskin?>? _loadFuture;
+  static Noteskin? _loadedSkin;
+  static bool _resolved = false;
+
+  /// Whether [tryLoad] has completed (either outcome) this app run.
+  static bool get resolved => _resolved;
+
+  /// The completed load's result: the sprite skin, or null when the sprites
+  /// aren't bundled. Only meaningful once [resolved] is true.
+  static Noteskin? get resolvedSkin => _loadedSkin;
+
+  static Future<Noteskin?> tryLoad() => _loadFuture ??= _doLoad();
+
+  static Future<Noteskin?> _doLoad() async {
     try {
       final note = await _load('assets/noteskin/note.png');
       final body = await _load('assets/noteskin/hold_body.png');
-      ui.Image? tail;
-      try {
-        tail = await _load('assets/noteskin/hold_tail.png');
-      } catch (_) {
-        tail = null;
-      }
-      return SpriteNoteskin._(note, body, tail);
+      _loadedSkin = SpriteNoteskin._(note, body);
     } catch (_) {
-      return null; // sprites absent -> vector fallback
+      _loadedSkin = null; // sprites absent -> vector fallback
     }
+    _resolved = true;
+    return _loadedSkin;
   }
 
   static Future<ui.Image> _load(String asset) async {
@@ -444,10 +495,29 @@ class SpriteNoteskin implements Noteskin {
     return frame.image;
   }
 
+  static final Paint _plainPaint = Paint();
+
+  // Tint paints cached per colour: ColorFilter + Paint allocation per note per
+  // frame is measurable at stream density, and only a handful of tints exist
+  // (7 quant colours, hold/roll tails, receptor greys). Medium filter quality
+  // (bilinear + mipmaps) instead of high (bicubic): visually identical at
+  // note sizes, notably cheaper per blit.
+  static final Map<int, Paint> _tintPaints = {};
+
+  static Paint _tintPaint(Color color) {
+    if (_tintPaints.length > 96) _tintPaints.clear();
+    return _tintPaints.putIfAbsent(
+      color.toARGB32(),
+      () => Paint()
+        ..colorFilter = ColorFilter.mode(color, BlendMode.modulate)
+        ..filterQuality = FilterQuality.medium,
+    );
+  }
+
   void _drawImage(Canvas canvas, ui.Image img, Rect dst, {Paint? paint}) {
     final src = Rect.fromLTWH(
         0, 0, img.width.toDouble(), img.height.toDouble());
-    canvas.drawImageRect(img, src, dst, paint ?? Paint());
+    canvas.drawImageRect(img, src, dst, paint ?? _plainPaint);
   }
 
   @override
@@ -459,10 +529,7 @@ class SpriteNoteskin implements Noteskin {
     canvas.rotate(rotationForDir(dir));
     final dst = Rect.fromCenter(center: Offset.zero, width: size, height: size);
     // modulate: grey (~0.5) * tint keeps shading while colouring the arrow.
-    _drawImage(canvas, _note, dst,
-        paint: Paint()
-          ..colorFilter = ColorFilter.mode(color, BlendMode.modulate)
-          ..filterQuality = FilterQuality.high);
+    _drawImage(canvas, _note, dst, paint: _tintPaint(color));
     canvas.restore();
   }
 
@@ -478,7 +545,7 @@ class SpriteNoteskin implements Noteskin {
     canvas.save();
     canvas.clipRect(bodyRect);
     final tileH = w * _holdBody.height / _holdBody.width;
-    final paint = Paint()..filterQuality = FilterQuality.high;
+    final paint = Paint()..filterQuality = FilterQuality.medium;
     if (isRoll) {
       paint.colorFilter = const ColorFilter.mode(
           Color(0xFFF2A03B), BlendMode.modulate);
@@ -496,54 +563,16 @@ class SpriteNoteskin implements Noteskin {
   @override
   void paintHoldTail(
       Canvas canvas, double x, double y, double size, NoteDir dir, bool isRoll) {
-    if (_holdTail != null) {
-      canvas.save();
-      canvas.translate(x, y);
-      canvas.rotate(rotationForDir(dir));
-      final dst =
-          Rect.fromCenter(center: Offset.zero, width: size, height: size);
-      final paint = Paint()..filterQuality = FilterQuality.high;
-      if (isRoll) {
-        paint.colorFilter = const ColorFilter.mode(
-            Color(0xFFF2A03B), BlendMode.modulate);
-      }
-      _drawImage(canvas, _holdTail, dst, paint: paint);
-      canvas.restore();
-      return;
-    }
+    // End-cap: the ordinary note sprite (keeps its texture/shading), tinted to
+    // the tail colour. No hold-body texture.
+    final tailColor = isRoll
+      ? const Color(0xFFF2A03B)
+      : const Color(0xFF39C46B);
     canvas.save();
     canvas.translate(x, y);
     canvas.rotate(rotationForDir(dir));
     final dst = Rect.fromCenter(center: Offset.zero, width: size, height: size);
-    final layerRect = Rect.fromCenter(
-      center: Offset.zero,
-      width: size * 1.1,
-      height: size * 1.1,
-    );
-    canvas.saveLayer(layerRect, Paint());
-    final bodyPaint = Paint()..filterQuality = FilterQuality.high;
-    if (isRoll) {
-      bodyPaint.colorFilter = const ColorFilter.mode(
-          Color(0xFFF2A03B), BlendMode.modulate);
-    }
-    _drawImage(canvas, _holdBody, dst, paint: bodyPaint);
-    _drawImage(canvas, _note, dst,
-        paint: Paint()
-          ..blendMode = BlendMode.dstIn
-          ..filterQuality = FilterQuality.high);
-    canvas.restore();
-    final tailColor = isRoll
-      ? const Color(0xFFF2A03B)
-      : const Color(0xFF39C46B);
-    // Reintroduce just enough arrow shading to make the tail read as a note
-    // end marker, but stay strictly inside the note sprite alpha so no tinted
-    // background halo appears.
-    _drawImage(canvas, _note, dst,
-      paint: Paint()
-        ..colorFilter = ColorFilter.mode(
-          Color.lerp(tailColor, Colors.black, 0.12)!.withValues(alpha: 0.38),
-          BlendMode.modulate)
-        ..filterQuality = FilterQuality.high);
+    _drawImage(canvas, _note, dst, paint: _tintPaint(tailColor));
     canvas.restore();
   }
 
@@ -632,13 +661,12 @@ class SpriteNoteskin implements Noteskin {
     final dst = Rect.fromCenter(center: Offset.zero, width: size, height: size);
     // Dim the grey arrow to a faint receptacle; brighten slightly on the beat
     // pulse. modulate by a grey scales all channels + alpha down uniformly.
-    final v = (0.30 + 0.25 * glow).clamp(0.0, 1.0);
+    // The glow is quantised to 1/64 steps so the pulse reuses a bounded set of
+    // cached tint paints instead of minting a ColorFilter per receptor per
+    // frame (the step is far below what the eye can pick out of the pulse).
+    final v = ((0.30 + 0.25 * glow).clamp(0.0, 1.0) * 64).round() / 64;
     _drawImage(canvas, _note, dst,
-        paint: Paint()
-          ..colorFilter = ColorFilter.mode(
-              Color.from(alpha: 1, red: v, green: v, blue: v),
-              BlendMode.modulate)
-          ..filterQuality = FilterQuality.high);
+        paint: _tintPaint(Color.from(alpha: 1, red: v, green: v, blue: v)));
     canvas.restore();
   }
 }

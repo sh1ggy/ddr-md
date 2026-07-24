@@ -9,6 +9,7 @@ library;
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -51,6 +52,15 @@ class ChartPreviewPage extends StatefulWidget {
 
 class _ChartPreviewPageState extends State<ChartPreviewPage> {
   bool _showFootGuide = false;
+
+  // Assist tick: audible tick as each note row crosses the receptors during
+  // playback (chart-derived, no song audio involved). Persisted across previews.
+  bool _assistTick = Settings.getInt(Settings.assistTickOnKey) == 1;
+
+  void _toggleAssistTick() {
+    setState(() => _assistTick = !_assistTick);
+    Settings.setInt(Settings.assistTickOnKey, _assistTick ? 1 : 0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +115,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               bpms: widget.bpms,
               stops: widget.stops,
               showFootGuide: _showFootGuide,
+              assistTickOn: _assistTick,
               headerBuilder: (context) => _buildHeader(context, diffColor),
             );
           },
@@ -167,6 +178,14 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                           fontWeight: FontWeight.w900),
                     ),
                   ],
+                ),
+              ),
+              IconButton(
+                tooltip: _assistTick ? "Mute assist tick" : "Assist tick",
+                onPressed: _toggleAssistTick,
+                icon: Icon(
+                  _assistTick ? Icons.volume_up : Icons.volume_off_outlined,
+                  color: _assistTick ? diffColor : Colors.blueGrey,
                 ),
               ),
               IconButton(

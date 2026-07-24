@@ -11,11 +11,12 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'tick_clock.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
-import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
@@ -298,6 +299,7 @@ class ChartScroller extends StatefulWidget {
     this.bpms = const [],
     this.stops = const [],
     this.showFootGuide = false,
+    this.assistTickOn = false,
     this.headerBuilder,
   });
 
@@ -320,6 +322,9 @@ class ChartScroller extends StatefulWidget {
   /// Overlay an L/R parity guide on each arrow (best-effort, computed on load).
   final bool showFootGuide;
 
+  /// Play a short tick as each note row crosses the receptors during playback.
+  final bool assistTickOn;
+
   /// Song length in seconds; bounds the scrub slider and the auto-stop point.
   final double songLength;
 
@@ -337,23 +342,76 @@ class _ChartScrollerState extends State<ChartScroller>
   Duration _lastTick = Duration.zero;
 
   // Virtual playhead in seconds. Notes at this second sit on the receptor line.
-  double _second = 0;
+  // Backed by a ValueNotifier so per-frame motion (playback, flings, scrubs)
+  // repaints ONLY the listeners that ride the playhead — the chart canvas, the
+  // minimap needle and the HUD readouts — via CustomPainter.repaint /
+  // ValueListenableBuilder, without rebuilding the whole widget tree at 60+Hz.
+  // setState is reserved for real state flips (play/pause, panel visibility).
+  final ValueNotifier<double> _playhead = ValueNotifier(0);
+  double get _second => _playhead.value;
+  set _second(double v) => _playhead.value = v;
   bool _playing = false;
 
-  // Whether the floating controls (header + transport) are shown. The field is
-  // full-bleed underneath; hiding the controls hands the whole screen to the
-  // chart. Toggled by a small always-visible handle, never by tapping the field
-  // (that stays play/pause).
-  bool _controlsVisible = true;
+  // Whether the bottom transport pane (read/song speed) is shown. The field is
+  // full-bleed underneath; hiding it hands more of the screen to the chart.
+  // Toggled by the right-edge handle, never by tapping the field (that stays
+  // play/pause). The top header (title) is NOT gated by this — it follows the
+  // paused state instead, so the song title is always up while paused.
+  bool _transportVisible = true;
 
   // Whether the top settings shade (chart-viewing modifiers) is pulled down.
   // Opened from the left-edge pull-tab; auto-closed when playback starts, and
   // never shown while playing (it's a paused-browsing surface).
   bool _shadeOpen = false;
 
-  // Scroll rate multiplier (visual speed-mod feel). 1.0 = default spacing.
-  double _rate = 1.0;
-  int _modIndex = 3; // 1.0x in constants.mods
+  // DDR WORLD SPEED TYPE (semantics verified against the WORLD binary's
+  // ddr::player::Option): the cabinet stores TWO independent speed values
+  // plus a type selector, and the pane's tap toggles between them.
+  //
+  // HI-SPEED — a raw multiplier in hundredths, 25–800 (x0.25–x8.00). The
+  // cabinet dial moves in x0.05: its setter snaps to multiples of 5, with
+  // the quirk that snapped values below x1.00 round UP (see [_snapHispeed]).
+  //
+  // SCROLL SPEED (shown as REAL SPEED) — a target scroll rate, 10–1000 in
+  // steps of 10 (the cabinet builds exactly that choice list). The effective
+  // multiplier is derived per chart as round(scroll × 100 / maxBPM) clamped
+  // to the same 25–800 — deliberately NOT 0.05-snapped, so this mode reaches
+  // x0.01 multipliers HI-SPEED can't (see [_derivedHundredths]).
+  //
+  // Each type keeps its own dialled value across the toggle, like the
+  // cabinet's separate option fields. All persisted across previews.
+  bool _hispeedType = false;
+  int _hispeedHundredths = 100;
+  int _scrollSpeed = constants.chosenReadSpeed;
+
+  static const int _hispeedMin = 25, _hispeedMax = 800, _hispeedStep = 5;
+  static const int _scrollMin = 10, _scrollMax = 1000, _scrollStep = 10;
+
+  // The effective multiplier for the active speed type.
+  double get _rate => _activeHundredths / 100.0;
+
+  int get _activeHundredths =>
+      _hispeedType ? _hispeedHundredths : _derivedHundredths;
+
+  // The cabinet's ScrollSpeed→multiplier derivation. It hands the option its
+  // (min, core, max) BPMs and divides by MAX, so the dialled real speed pins
+  // the chart's fastest section and slower sections read proportionally
+  // below it. Charts without a usable BPM fall back to x1.00 as the cabinet
+  // does.
+  int get _derivedHundredths {
+    final bpm = _maxChartBpm;
+    if (bpm <= 0) return 100;
+    return ((_scrollSpeed * 100) / bpm).round().clamp(_hispeedMin, _hispeedMax);
+  }
+
+  int get _maxChartBpm {
+    var max = 0;
+    for (final b in widget.bpms) {
+      if (b.val > max) max = b.val;
+    }
+    return max > 0 ? max : _effectiveChartBpm;
+  }
+
 
   // Pinch-to-zoom: a purely visual multiplier on the vertical note spacing,
   // independent of the read-speed mod. <1 zooms OUT (compresses more beats into
@@ -407,6 +465,17 @@ class _ChartScrollerState extends State<ChartScroller>
   final Set<StepNote> _shockNotes = {};
   final List<_ShockRow> _shocks = [];
 
+  // Assist tick: distinct row seconds (taps + hold/roll heads, mines excluded),
+  // sorted, that get an audible tick as the playhead crosses them. Scheduling
+  // is owned by [TickClock], which fires each row against SoLoud's audio-thread
+  // clock rather than this render loop — dense streams jank the frame rate
+  // exactly when notes are closest, so a frame-driven tick drops or smears
+  // them. We hand the clock the row list and, on every play/seek/rate change,
+  // the current chart position + rate; it does the rest. Null-safe: if the
+  // engine or sample fails to load the clock simply never fires.
+  List<double> _tickSeconds = const [];
+  final TickClock _tickClock = TickClock();
+
   // Tempo-change and stop markers, in chart seconds, built once from the chart's
   // timing so the field and minimap can show where the song shifts speed / halts.
   List<_BpmMarker> _bpmMarkers = const [];
@@ -421,9 +490,67 @@ class _ChartScrollerState extends State<ChartScroller>
   // (client-side, so the heuristic is tunable without regenerating assets).
   Map<StepNote, Foot> _feet = const {};
 
-  // Real DDR World sprites when bundled (assets/noteskin/), else vector. The
-  // sprite skin loads asynchronously; until then (or if absent) we draw vector.
-  Noteskin _skin = const VectorNoteskin();
+  // Chart notes guaranteed ascending by second (charts already ship sorted;
+  // a defensive one-time sort covers any that don't), plus the holds alone in
+  // the same order. Sorted input is what lets the painter binary-search the
+  // visible window each frame instead of walking every note in the chart.
+  List<StepNote> _notes = const [];
+  List<StepNote> _holds = const [];
+
+  // Previous same-foot note for each footed note, precomputed once per chart so
+  // the foot-path pass only touches on-screen notes instead of replaying the
+  // whole chart's L/R walk every frame.
+  Map<StepNote, StepNote> _footPrev = const {};
+
+  void _prepareNotes() {
+    final src = widget.steps.notes;
+    bool sorted = true;
+    for (int i = 1; i < src.length; i++) {
+      if (src[i].second < src[i - 1].second) {
+        sorted = false;
+        break;
+      }
+    }
+    _notes = sorted
+        ? src
+        : ([...src]..sort((a, b) => a.second.compareTo(b.second)));
+    _holds = [
+      for (final n in _notes)
+        if (n.isHold) n,
+    ];
+  }
+
+  // Chain each footed note to the previous note struck by the same foot —
+  // exactly the walk the painter used to do per frame. Mines and shock rows
+  // don't take a foot, same as the draw pass.
+  void _buildFootLinks() {
+    final links = <StepNote, StepNote>{};
+    StepNote? prevLeft;
+    StepNote? prevRight;
+    for (final n in _notes) {
+      if (n.type == StepType.mine) continue;
+      if (_shockNotes.contains(n)) continue;
+      final foot = _feet[n];
+      if (foot == null) continue;
+      final prev = foot == Foot.left ? prevLeft : prevRight;
+      if (prev != null) links[n] = prev;
+      if (foot == Foot.left) {
+        prevLeft = n;
+      } else {
+        prevRight = n;
+      }
+    }
+    _footPrev = links;
+  }
+
+  // Real DDR World sprites when bundled (assets/noteskin/), else vector. Null
+  // until the one-time sprite load resolves; the field paints nothing for that
+  // moment rather than flashing vector receptors that the sprite skin then
+  // replaces. The resolve is cached statically, so only the app's very first
+  // preview ever waits — later ones start on the right skin synchronously.
+  Noteskin? _skin = SpriteNoteskin.resolved
+      ? SpriteNoteskin.resolvedSkin ?? const VectorNoteskin()
+      : null;
 
   // Note-density histogram with per-bucket rhythm-color composition for the
   // scrub minimap, built once from the chart so seeking shows both intensity
@@ -453,7 +580,6 @@ class _ChartScrollerState extends State<ChartScroller>
   double get _pxPerBeat => _pxPerReadSpeedUnit * _rate * 60.0 * _zoom;
 
   int get _effectiveChartBpm => widget.chartBpm > 0 ? widget.chartBpm : constants.songBpm;
-  int get _currentReadSpeed => (_effectiveChartBpm * _rate).round();
 
   // BPM of the tempo section under the playhead — NOT the dominant chart BPM.
   // Looked up on the raw [Bpm] segments rather than [ChartTiming]'s slope, which
@@ -479,6 +605,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // community measurements of DDR WORLD's CONSTANT guideline fit
   // display time ms ≈ 370000 / SPEED (925ms ↔ 400, 740ms ↔ 500, 1000ms ↔ 370),
   // i.e. at read speed R an arrow is on the cabinet's screen ~370/R seconds.
+  // Fixed — this is the real cabinet number, not a preference.
   static const double _cabinetRunSpeedSeconds = 370;
 
   // CONSTANT expressed as its ARCADE-equivalent read speed: the read speed
@@ -517,8 +644,8 @@ class _ChartScrollerState extends State<ChartScroller>
       widget.songLength > 0 ? widget.songLength : _lastNoteSecond();
 
   double _lastNoteSecond() {
-    if (widget.steps.notes.isEmpty) return 0;
-    final n = widget.steps.notes.last;
+    if (_notes.isEmpty) return 0;
+    final n = _notes.last;
     return (n.endSecond ?? n.second) + 1;
   }
 
@@ -526,16 +653,34 @@ class _ChartScrollerState extends State<ChartScroller>
   void initState() {
     super.initState();
     _ticker = createTicker(_onTick);
-    _syncRateToSavedReadSpeed();
+    _loadSpeedSettings();
     _loadConstant();
     _loadTurn();
+    _prepareNotes();
     _detectShocks();
     _assignFeet();
+    _buildFootLinks();
+    _buildTickTimes();
     _buildTimingMarkers();
     _buildDensity();
     // Prefer real DDR World sprites if they're bundled; repaint once loaded.
-    SpriteNoteskin.tryLoad().then((skin) {
-      if (skin != null && mounted) setState(() => _skin = skin);
+    if (_skin == null) {
+      SpriteNoteskin.tryLoad().then((skin) {
+        if (mounted) setState(() => _skin = skin ?? const VectorNoteskin());
+      });
+    }
+    _tickClock.load("assets/audio/assist_tick.wav").then((_) {
+      if (!mounted) {
+        _tickClock.dispose();
+        return;
+      }
+      _tickClock.setRows(_tickSeconds);
+      // If the user hit play before the engine finished loading, anchor now.
+      if (_playing) {
+        _tickClock.start(chartSecond: _second, rate: _playbackRate);
+      }
+    }).catchError((_) {
+      // Engine/sample failed to load: the tick is simply silent.
     });
   }
 
@@ -548,8 +693,11 @@ class _ChartScrollerState extends State<ChartScroller>
         old.bpms != widget.bpms ||
         old.stops != widget.stops) {
       _pause();
+      _prepareNotes();
       _detectShocks();
       _assignFeet();
+      _buildFootLinks();
+      _buildTickTimes();
       _buildTimingMarkers();
       _buildDensity();
       setState(() {
@@ -557,21 +705,44 @@ class _ChartScrollerState extends State<ChartScroller>
         _zoom = 1.0; // the study lens is per-chart; snap back on a new chart
       });
     }
-    if (old.chartBpm != widget.chartBpm) {
-      _syncRateToSavedReadSpeed();
+    // Toggling the assist tick mid-play starts or silences the clock at once.
+    if (old.assistTickOn != widget.assistTickOn) {
+      _resyncTickClock();
     }
   }
 
-  void _syncRateToSavedReadSpeed() {
-    final saved = Settings.getInt(Settings.chosenReadSpeedKey);
-    final desired = saved > 0 ? saved : constants.chosenReadSpeed;
-    final nextIndex = findNearestReadSpeed(
-      _effectiveChartBpm,
-      constants.mods,
-      desired,
-    );
-    _modIndex = nextIndex.clamp(0, constants.mods.length - 1);
-    _rate = constants.mods[_modIndex];
+  // Restore the DDR WORLD speed options: the SPEED TYPE selector plus each
+  // type's own dialled value. First-run fallbacks: SCROLL SPEED starts from
+  // the app-wide read-speed preference; HI-SPEED from that same target
+  // converted at this chart's max BPM and snapped to the cabinet's x0.05
+  // grid, so both types open near the speed the user is used to.
+  void _loadSpeedSettings() {
+    _hispeedType = Settings.getInt(Settings.chartPreviewSpeedTypeKey) == 1;
+    final savedScroll = Settings.getInt(Settings.chartPreviewScrollSpeedKey);
+    final appReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
+    _scrollSpeed = _snapScroll(savedScroll > 0
+        ? savedScroll
+        : (appReadSpeed > 0 ? appReadSpeed : constants.chosenReadSpeed));
+    final savedHispeed = Settings.getInt(Settings.chartPreviewHispeedKey);
+    _hispeedHundredths =
+        _snapHispeed(savedHispeed > 0 ? savedHispeed : _derivedHundredths);
+  }
+
+  int _snapScroll(int v) =>
+      ((v / _scrollStep).round() * _scrollStep).clamp(_scrollMin, _scrollMax);
+
+  // The cabinet's SetHispeed snap: clamp to 25–800, then floor to a multiple
+  // of 5 (x0.05) — except a floored value below x1.00 bumps back up one step,
+  // so sub-x1 multipliers round UP. Ported behaviour-for-behaviour from the
+  // WORLD binary.
+  int _snapHispeed(int h) {
+    h = h.clamp(_hispeedMin, _hispeedMax);
+    final r = h % _hispeedStep;
+    if (r != 0) {
+      h -= r;
+      if (h < 100) h += _hispeedStep;
+    }
+    return h;
   }
 
   // Restore the CONSTANT modifier from settings. A saved ms of 0 means "never
@@ -784,7 +955,39 @@ class _ChartScrollerState extends State<ChartScroller>
         _shockNotes.addAll(mines);
       }
     });
+    // Ascending by second (the map iterates in hash order) so the painter can
+    // stop at the first row beyond the visible window.
+    _shocks.sort((a, b) => a.second.compareTo(b.second));
   }
+
+  // Distinct row seconds for the assist tick: taps and hold/roll heads tick,
+  // mines don't (shock rows are mines, so they drop out with them). Chords
+  // collapse to one tick via the same 1ms rounding [_detectShocks] uses.
+  void _buildTickTimes() {
+    final Set<int> keys = {};
+    for (final n in widget.steps.notes) {
+      if (n.type == StepType.mine) continue;
+      keys.add((n.second * 1000).round());
+    }
+    _tickSeconds = [for (final k in keys) k / 1000.0]..sort();
+    _tickClock.setRows(_tickSeconds); // no-op before the engine finishes loading
+  }
+
+  // (Re)anchor the tick clock to the live playhead + rate, so upcoming rows are
+  // scheduled from where we actually are. Called whenever the chart→clock
+  // mapping changes: play start, seek/scrub, and playback-rate changes. If the
+  // engine isn't loaded yet the clock ignores this; initState re-anchors on load.
+  void _resyncTickClock() {
+    if (_playing && widget.assistTickOn) {
+      _tickClock.start(chartSecond: _second, rate: _playbackRate);
+    } else {
+      _tickClock.stop();
+    }
+  }
+
+  // Silence and unschedule everything: pause, chart switch, tick toggled off,
+  // dispose. Cheap and idempotent.
+  void _cancelPendingTicks() => _tickClock.stop();
 
   // Momentum for drag-flings: seconds-of-chart per real second, decaying by
   // [_flingDecay] each real second until it dies out. Separate from playback.
@@ -818,29 +1021,35 @@ class _ChartScrollerState extends State<ChartScroller>
     _lastTick = elapsed;
     if (dt <= 0) return;
 
-    setState(() {
-      if (_playing) {
-        _second += dt * _playbackRate;
-      } else if (_flingVel != 0) {
-        // Inertial scrub: advance by the current velocity, then decay it.
-        _second += _flingVel * dt;
-        _flingVel *= math.exp(-_flingDecay * dt);
-        if (_flingVel.abs() < _flingMin) {
-          _flingVel = 0;
-          _stopTickerIfIdle();
-        }
-      }
-      if (_second >= _endSecond) {
-        _second = _endSecond;
-        _flingVel = 0;
-        _pause();
-        _stopTickerIfIdle();
-      } else if (_second <= 0) {
-        _second = 0;
+    // No setState here: writing the playhead notifier repaints the canvas and
+    // the HUD listeners directly. Only the end-of-song auto-pause (inside
+    // [_pause]) flips real widget state.
+    double next = _second;
+    if (_playing) {
+      next += dt * _playbackRate;
+    } else if (_flingVel != 0) {
+      // Inertial scrub: advance by the current velocity, then decay it.
+      next += _flingVel * dt;
+      _flingVel *= math.exp(-_flingDecay * dt);
+      if (_flingVel.abs() < _flingMin) {
         _flingVel = 0;
         _stopTickerIfIdle();
       }
-    });
+    }
+    if (next >= _endSecond) {
+      next = _endSecond;
+      _flingVel = 0;
+      _pause();
+      _stopTickerIfIdle();
+    } else if (next <= 0) {
+      next = 0;
+      _flingVel = 0;
+      _stopTickerIfIdle();
+    }
+    _second = next;
+    // The render loop no longer schedules ticks — [_tickClock] fires them off
+    // SoLoud's audio-thread clock, immune to this loop's jank. Playback state
+    // changes (play/pause/seek/rate) drive the clock via [_resyncTickClock].
   }
 
   // The ticker runs whenever there's motion (playback OR a live fling). Stop it
@@ -861,26 +1070,30 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_second >= _endSecond) _second = 0;
     _flingVel = 0;
     _ensureTicking();
-    // The settings shade is a paused-browsing surface — starting playback tucks
-    // it away so it never overlays the running chart. The bottom transport
-    // collapses too, echoing the same "get out of the way while playing" move.
+    // Starting playback tucks both edge panels away so the running chart owns
+    // the screen — the options card and the bottom transport collapse together.
+    // Either tab brings its panel back mid-play (neither pauses). The header
+    // (title) rides the paused state, so it slides away on its own.
     setState(() {
       _playing = true;
       _shadeOpen = false;
-      _controlsVisible = false;
+      _transportVisible = false;
     });
+    _resyncTickClock(); // anchor the audio clock to this start position + rate
   }
 
   void _toggleShade() {
     HapticFeedback.selectionClick();
-    // Opening the shade pauses playback so the modifiers are adjusted against a
-    // still field, matching the arcade's option screen.
-    if (!_shadeOpen) _pause();
+    // Purely a visibility toggle, like the right-edge transport tab — it never
+    // touches playback. (The shade is still auto-hidden while playing via the
+    // `!_playing` gate in [_buildSettingsShade], but tapping the tab won't
+    // pause a running chart.)
     setState(() => _shadeOpen = !_shadeOpen);
   }
 
   void _pause() {
     if (!_playing) return;
+    _cancelPendingTicks(); // scheduled rows ahead of the playhead go silent
     setState(() => _playing = false);
     _stopTickerIfIdle();
   }
@@ -927,7 +1140,9 @@ class _ChartScrollerState extends State<ChartScroller>
   void _seek(bool forward) {
     HapticFeedback.mediumImpact();
     final delta = forward ? _seekStepSeconds : -_seekStepSeconds;
-    setState(() => _second = (_second + delta).clamp(0.0, _endSecond));
+    // Playhead-only change: the notifier repaints every playhead listener.
+    _second = (_second + delta).clamp(0.0, _endSecond);
+    _resyncTickClock(); // re-anchor: the playhead jumped out from under the clock
     _flashSeekOverlay(!forward);
   }
 
@@ -962,7 +1177,9 @@ class _ChartScrollerState extends State<ChartScroller>
     });
     if (!_playing) {
       _resumeFromHold = true;
-      _play();
+      _play(); // _play re-anchors the clock at the new rate
+    } else {
+      _resyncTickClock(); // re-anchor at the sped-up rate
     }
   }
 
@@ -976,37 +1193,80 @@ class _ChartScrollerState extends State<ChartScroller>
     });
     if (_resumeFromHold) {
       _resumeFromHold = false;
-      _pause();
+      _pause(); // stops the clock
+    } else {
+      _resyncTickClock(); // re-anchor at the restored rate
     }
   }
 
-  void _stepReadSpeed(int delta) {
-    final newIndex = _modIndex + delta;
-    if (newIndex < 0 || newIndex >= constants.mods.length) return;
-    HapticFeedback.selectionClick();
-    setState(() {
-      _modIndex = newIndex;
-      _rate = constants.mods[_modIndex];
-    });
-    _flashScrubOverlay("$_currentReadSpeed", "READ SPEED");
+  // One detent of the active speed dial — the ∓ buttons and the drag both
+  // come through here with dir ±1, so they step identically: HI-SPEED moves
+  // x0.05 (the cabinet dial's grid), SCROLL SPEED moves 10 (the cabinet's
+  // choice-list spacing). Each change persists its own type's value.
+  void _stepSpeed(int dir) {
+    if (_hispeedType) {
+      final next = (_hispeedHundredths + dir * _hispeedStep)
+          .clamp(_hispeedMin, _hispeedMax);
+      if (next == _hispeedHundredths) return;
+      HapticFeedback.selectionClick();
+      setState(() => _hispeedHundredths = next);
+      Settings.setInt(Settings.chartPreviewHispeedKey, next);
+      _flashScrubOverlay(_fmtXMod(_rate), "HI-SPEED");
+    } else {
+      final next =
+          (_scrollSpeed + dir * _scrollStep).clamp(_scrollMin, _scrollMax);
+      if (next == _scrollSpeed) return;
+      HapticFeedback.selectionClick();
+      setState(() => _scrollSpeed = next);
+      Settings.setInt(Settings.chartPreviewScrollSpeedKey, next);
+      _flashScrubOverlay("$_scrollSpeed", "REAL SPEED");
+    }
   }
 
-  // Drag on the read-speed pane: horizontal movement steps through the mod list.
-  // Accumulate sub-step pixels so a slow drag still lands on each mod in turn.
+  // Tap on the pane: switch SPEED TYPE. Each type keeps its own dialled
+  // value, so toggling back restores the previous speed exactly — matching
+  // the cabinet's separate Hispeed/ScrollSpeed fields.
+  void _toggleSpeedType() {
+    HapticFeedback.selectionClick();
+    setState(() => _hispeedType = !_hispeedType);
+    Settings.setInt(Settings.chartPreviewSpeedTypeKey, _hispeedType ? 1 : 0);
+    _flashScrubOverlay(
+      _hispeedType ? _fmtXMod(_rate) : "$_scrollSpeed",
+      _hispeedType ? "HI-SPEED" : "REAL SPEED",
+    );
+  }
+
+  // The resulting min–max scroll speeds for the current multiplier, mirroring
+  // the cabinet's num_min/num_max readouts beside the speed option. Null when
+  // the chart holds a single tempo (nothing beyond the main number).
+  (int, int)? get _scrollSpeedRange {
+    final vals = [
+      for (final b in widget.bpms)
+        if (b.val > 0) b.val
+    ];
+    if (vals.isEmpty) return null;
+    final lo = vals.reduce(math.min), hi = vals.reduce(math.max);
+    if (lo == hi) return null;
+    return ((lo * _rate).round(), (hi * _rate).round());
+  }
+
+  // Drag on the speed pane: horizontal movement turns the active dial one
+  // detent per ~7px, so a full-width sweep covers a useful chunk of either
+  // range. Accumulate sub-step pixels so a slow drag still lands each detent.
   double _readSpeedDragAccum = 0;
-  static const double _pxPerReadSpeedStep = 22;
+  static const double _pxPerReadSpeedStep = 7;
 
   void _onReadSpeedDrag(double dx) {
     _readSpeedDragAccum += dx;
     while (_readSpeedDragAccum.abs() >= _pxPerReadSpeedStep) {
       final dir = _readSpeedDragAccum > 0 ? 1 : -1;
       _readSpeedDragAccum -= dir * _pxPerReadSpeedStep;
-      final next = _modIndex + dir;
-      if (next < 0 || next >= constants.mods.length) {
-        _readSpeedDragAccum = 0;
+      final before = _activeHundredths;
+      _stepSpeed(dir);
+      if (_activeHundredths == before) {
+        _readSpeedDragAccum = 0; // pinned at an end of the dial
         break;
       }
-      _stepReadSpeed(dir);
     }
   }
 
@@ -1020,6 +1280,7 @@ class _ChartScrollerState extends State<ChartScroller>
     final crossedStep =
         (next * 20).round() != (_playbackRate * 20).round();
     setState(() => _playbackRate = next);
+    _resyncTickClock(); // re-anchor at the new rate
     if (crossedStep) HapticFeedback.selectionClick();
     _flashScrubOverlay("${next.toStringAsFixed(2)}×", "SONG SPEED");
   }
@@ -1028,6 +1289,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_playbackRate == 1.0) return;
     HapticFeedback.selectionClick();
     setState(() => _playbackRate = 1.0);
+    _resyncTickClock(); // re-anchor at 1.0×
   }
 
   // --- drag-to-scrub with momentum ---
@@ -1170,9 +1432,8 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   void _onScrubMove(double dy) {
-    setState(() {
-      _second = (_second - _pxToSeconds(dy)).clamp(0.0, _endSecond);
-    });
+    // Playhead-only change — no setState; the notifier drives the repaint.
+    _second = (_second - _pxToSeconds(dy)).clamp(0.0, _endSecond);
     final beat = _beatIndexAt(_second);
     if (_lastScrubBeat != null && beat != _lastScrubBeat) {
       HapticFeedback.selectionClick();
@@ -1186,12 +1447,14 @@ class _ChartScrollerState extends State<ChartScroller>
     _scrubOverlayTimer?.cancel();
     _seekOverlayTimer?.cancel();
     _ticker.dispose();
+    _tickClock.dispose();
+    _playhead.dispose();
     super.dispose();
   }
 
-  void _toggleControls() {
+  void _toggleTransport() {
     HapticFeedback.selectionClick();
-    setState(() => _controlsVisible = !_controlsVisible);
+    setState(() => _transportVisible = !_transportVisible);
   }
 
   @override
@@ -1220,28 +1483,43 @@ class _ChartScrollerState extends State<ChartScroller>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                CustomPaint(
-                  painter: _ChartPainter(
-                    notes: widget.steps.notes,
-                    shockNotes: _shockNotes,
-                    shocks: _shocks,
-                    bpmMarkers: _bpmMarkers,
-                    stopMarkers: _stopMarkers,
-                    feet: widget.showFootGuide ? _feet : const {},
-                    dirs: dirs,
-                    colMap: _colMap,
-                    second: _second,
-                    pxPerSecond: _pxPerSecond,
-                    pxPerBeat: _pxPerBeat,
-                    timing: _timing,
-                    columnCount: dirs.length,
-                    skin: _skin,
-                    playing: _playing,
-                    zoom: _zoom,
-                    constantMs: _effectiveConstantMs,
-                    topInset: MediaQuery.of(context).padding.top,
+                // RepaintBoundary so the per-frame canvas repaint (driven by
+                // the playhead notifier) never invalidates the overlay/control
+                // layers around it; willChange hints the compositor not to
+                // bother caching a layer that changes every frame.
+                // Until the skin resolves (first preview of the app run only)
+                // paint nothing: a blank frame is invisible, a receptor-skin
+                // swap is not.
+                if (_skin == null)
+                  const SizedBox.expand()
+                else
+                RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _ChartPainter(
+                      notes: _notes,
+                      holds: _holds,
+                      shockNotes: _shockNotes,
+                      shocks: _shocks,
+                      bpmMarkers: _bpmMarkers,
+                      stopMarkers: _stopMarkers,
+                      feet: widget.showFootGuide ? _feet : const {},
+                      footPrev: widget.showFootGuide ? _footPrev : const {},
+                      dirs: dirs,
+                      colMap: _colMap,
+                      playhead: _playhead,
+                      pxPerSecond: _pxPerSecond,
+                      pxPerBeat: _pxPerBeat,
+                      timing: _timing,
+                      columnCount: dirs.length,
+                      skin: _skin!,
+                      playing: _playing,
+                      zoom: _zoom,
+                      constantMs: _effectiveConstantMs,
+                      topInset: MediaQuery.of(context).padding.top,
+                    ),
+                    size: Size.infinite,
+                    willChange: true,
                   ),
-                  size: Size.infinite,
                 ),
                 IgnorePointer(
                   child: AnimatedOpacity(
@@ -1407,20 +1685,23 @@ class _ChartScrollerState extends State<ChartScroller>
             ),
           ),
 
-          // Floating header, slides up out of view when controls are hidden.
+          // Floating header (song title / difficulty): shown whenever paused,
+          // slides up out of view once playback starts so the running chart owns
+          // the top of the screen. Not tied to the transport handle — the title
+          // is always up while paused.
           if (widget.headerBuilder != null)
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: IgnorePointer(
-                ignoring: !_controlsVisible,
+                ignoring: _playing,
                 child: AnimatedSlide(
-                  offset: _controlsVisible ? Offset.zero : const Offset(0, -1),
+                  offset: _playing ? const Offset(0, -1) : Offset.zero,
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
                   child: AnimatedOpacity(
-                    opacity: _controlsVisible ? 1 : 0,
+                    opacity: _playing ? 0 : 1,
                     duration: const Duration(milliseconds: 180),
                     child: widget.headerBuilder!(context),
                   ),
@@ -1456,30 +1737,39 @@ class _ChartScrollerState extends State<ChartScroller>
                     // on screen in fullscreen too — the one place the current
                     // tempo stays legible once its BPM marker has scrolled past.
                     // IgnorePointer so taps fall through to the field below.
+                    // Rides the playhead notifier (the local BPM changes as the
+                    // playhead crosses tempo sections) inside its own repaint
+                    // boundary, so per-frame updates stay off the widget tree.
                     IgnorePointer(
-                      child: _TempoBadge(
-                        bpm: _localBpm,
-                        readSpeed: _liveReadSpeed,
-                        constantBound: _constantBinds,
+                      child: RepaintBoundary(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: _playhead,
+                          builder: (_, __, ___) => _TempoBadge(
+                            bpm: _localBpm,
+                            readSpeed: _liveReadSpeed,
+                            constantBound: _constantBinds,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 6),
-                    // Transport (times, read/song speed): hides with the controls.
+                    // Transport (read/song speed): hidden by the right-edge tab.
                     IgnorePointer(
-                      ignoring: !_controlsVisible,
+                      ignoring: !_transportVisible,
                       child: AnimatedSize(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,
                         alignment: Alignment.bottomCenter,
                         child: AnimatedSlide(
-                          offset:
-                              _controlsVisible ? Offset.zero : const Offset(0, 1),
+                          offset: _transportVisible
+                              ? Offset.zero
+                              : const Offset(0, 1),
                           duration: const Duration(milliseconds: 220),
                           curve: Curves.easeOutCubic,
                           child: AnimatedOpacity(
-                            opacity: _controlsVisible ? 1 : 0,
+                            opacity: _transportVisible ? 1 : 0,
                             duration: const Duration(milliseconds: 180),
-                            child: _controlsVisible
+                            child: _transportVisible
                                 ? _buildTransport(context)
                                 : const SizedBox(width: double.infinity),
                           ),
@@ -1495,9 +1785,10 @@ class _ChartScrollerState extends State<ChartScroller>
             ),
           ),
 
-          // Always-visible handle to show/hide the controls: a small tab pinned
-          // to the right edge. Its chevron points the way the controls will
-          // move (up-into-view vs down-out-of-view).
+          // Always-visible handle to show/hide the bottom transport: a small tab
+          // pinned to the right edge. Its chevron points the way the transport
+          // will move (up-into-view vs down-out-of-view). Only affects the
+          // bottom config — the title header rides the paused state instead.
           Positioned(
             right: 0,
             top: 0,
@@ -1505,19 +1796,19 @@ class _ChartScrollerState extends State<ChartScroller>
             child: Center(
               child: _EdgeTab(
                 leftEdge: false,
-                icon: _controlsVisible
+                icon: _transportVisible
                     ? Icons.keyboard_arrow_down
                     : Icons.keyboard_arrow_up,
-                onTap: _toggleControls,
+                onTap: _toggleTransport,
               ),
             ),
           ),
 
-          // The settings-shade handle: the left-edge mirror of the controls
+          // The settings-shade handle: the left-edge mirror of the transport
           // tab, replacing the old gear tucked in the header's corner. Its
           // chevron points the way the shade will move (down-into-view when
-          // closed, up-out-of-view when open). Tapping it mid-play pauses
-          // first — the shade is a paused-browsing surface (see [_toggleShade]).
+          // closed, up-out-of-view when open). Purely a visibility toggle — it
+          // never pauses the chart (see [_toggleShade]).
           Positioned(
             left: 0,
             top: 0,
@@ -1525,7 +1816,7 @@ class _ChartScrollerState extends State<ChartScroller>
             child: Center(
               child: _EdgeTab(
                 leftEdge: true,
-                icon: _shadeOpen && !_playing
+                icon: _shadeOpen
                     ? Icons.keyboard_arrow_up
                     : Icons.keyboard_arrow_down,
                 onTap: _toggleShade,
@@ -1543,34 +1834,38 @@ class _ChartScrollerState extends State<ChartScroller>
   // labels sit directly above it (not the read/song-speed row) since they
   // describe the same seconds axis the scrubber seeks on.
   Widget _buildScrubBar(BuildContext context) {
-    final progress = _endSecond <= 0
-        ? 0.0
-        : (_second / _endSecond).clamp(0.0, 1.0);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _fmtTime(_second),
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontFeatures: const [FontFeature.tabularFigures()]),
+          // The elapsed label tracks the playhead; keep its per-frame updates
+          // inside their own boundary instead of rebuilding the whole bar.
+          child: RepaintBoundary(
+            child: ValueListenableBuilder<double>(
+              valueListenable: _playhead,
+              builder: (_, s, __) => Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _fmtTime(s),
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontFeatures: const [FontFeature.tabularFigures()]),
+                  ),
+                  Text(
+                    _fmtTime(_endSecond),
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontFeatures: const [FontFeature.tabularFigures()]),
+                  ),
+                ],
               ),
-              Text(
-                _fmtTime(_endSecond),
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontFeatures: const [FontFeature.tabularFigures()]),
-              ),
-            ],
+            ),
           ),
         ),
         const SizedBox(height: 4),
@@ -1581,7 +1876,8 @@ class _ChartScrollerState extends State<ChartScroller>
             padding: const EdgeInsets.symmetric(horizontal: 3),
             child: _DensityScrubBar(
               buckets: _minimap,
-              progress: progress,
+              playhead: _playhead,
+              endSecond: _endSecond,
               accent: Theme.of(context).colorScheme.primary,
               bpmFractions: _markerFractions(_bpmMarkers.map((m) => m.second)),
               stopFractions:
@@ -1594,7 +1890,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 if (next.floor() != _second.floor()) {
                   HapticFeedback.selectionClick();
                 }
-                setState(() => _second = next);
+                _second = next;
               },
             ),
           ),
@@ -1603,21 +1899,29 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
-  // The settings shade: a top "pull-down" sheet of chart-viewing modifiers,
+  // The settings shade: a top "pull-down" card of chart-viewing modifiers,
   // hidden behind the left-edge pull-tab until opened. Operationally it mirrors
   // the bottom transport: a panel pinned to its edge with pointer-handling
   // scoped to its own bounds, so it never blocks the full-bleed chart's
-  // tap-to-play gesture and is only dismissed via its own tab/close button —
-  // never by tapping elsewhere on the field. The sheet itself is a scrollable
-  // column of titled sections so it has room to grow toward the full DDR
-  // option set (arrows, lane, scroll, assist …).
-  // Never shown while playing — [_play] force-closes it.
+  // tap-to-play gesture and is only dismissed via its own tab — never by tapping
+  // elsewhere on the field. Its body scrolls so it has room to grow toward the
+  // full DDR option set (arrows, lane, scroll, assist …).
   Widget _buildSettingsShade(BuildContext context) {
-    final open = _shadeOpen && !_playing;
-    return Positioned(
+    final open = _shadeOpen;
+    final topInset = MediaQuery.of(context).padding.top;
+    // The card's top is dynamic: when the floating header is on screen (there is
+    // a headerBuilder AND we're paused) it seats just below the title (~64px: a
+    // 48px icon-button row in 4/12 padding); otherwise there is no title above
+    // it, so it hugs the status-bar inset. Animated so it glides down/up as the
+    // header appears/disappears on pause/play.
+    final headerShowing = widget.headerBuilder != null && !_playing;
+    final top = topInset + (headerShowing ? 64 : 8);
+    return AnimatedPositioned(
       left: 0,
       right: 0,
-      top: 0,
+      top: top,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
       child: IgnorePointer(
         ignoring: !open,
         child: AnimatedSlide(
@@ -1628,7 +1932,6 @@ class _ChartScrollerState extends State<ChartScroller>
             opacity: open ? 1 : 0,
             duration: const Duration(milliseconds: 160),
             child: _SettingsShade(
-              onClose: _toggleShade,
               sections: _buildShadeSections(context),
             ),
           ),
@@ -1637,14 +1940,14 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
-  // The modifier sections shown in the shade. Only the Arrows section (CONSTANT)
-  // is wired for now; the rest are placeholders reserving their place so the
-  // shade already reads as the full options screen and new controls slot in
-  // without a layout rethink. Mirrors the DDR World option categories.
+  // The modifier sections shown in the shade. Only the arrows modifiers
+  // (CONSTANT + TURN) are wired for now; the rest are placeholders reserving
+  // their place so the shade already reads as the full options screen and new
+  // controls slot in without a layout rethink. Mirrors the DDR World option
+  // categories. The section carries no label — the controls read on their own.
   List<_ShadeSection> _buildShadeSections(BuildContext context) {
     return [
       _ShadeSection(
-        title: "ARROWS",
         // Tiled: CONSTANT spans the full top row; below it a row split three
         // ways — MIRROR (flip L↔R), LEFT and RIGHT turns — mirroring DDR World's
         // appearance options.
@@ -1710,12 +2013,22 @@ class _ChartScrollerState extends State<ChartScroller>
             child: Row(
               children: [
                 Expanded(
-                  child: _ReadSpeedPane(
-                    readSpeed: _currentReadSpeed,
-                    canDecrement: _modIndex > 0,
-                    canIncrement: _modIndex < constants.mods.length - 1,
-                    onStep: _stepReadSpeed,
+                  child: _SpeedPane(
+                    label: _hispeedType ? "HI-SPEED" : "REAL SPEED",
+                    value:
+                        _hispeedType ? _fmtXMod(_rate) : "$_scrollSpeed",
+                    range: _scrollSpeedRange,
+                    decLabel: _hispeedType ? "−.05" : "−10",
+                    incLabel: _hispeedType ? "+.05" : "+10",
+                    canDecrement: _hispeedType
+                        ? _hispeedHundredths > _hispeedMin
+                        : _scrollSpeed > _scrollMin,
+                    canIncrement: _hispeedType
+                        ? _hispeedHundredths < _hispeedMax
+                        : _scrollSpeed < _scrollMax,
+                    onStep: _stepSpeed,
                     onDrag: _onReadSpeedDrag,
+                    onToggleType: _toggleSpeedType,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1805,33 +2118,50 @@ class _TempoBadge extends StatelessWidget {
   }
 }
 
-/// Left half of the control row: the DDR read speed (derived from the chart's
-/// BPM × the current x-mod). Drag horizontally to sweep through mods, or tap the
-/// ∓ ends to nudge by one step (~±10 read speed).
-class _ReadSpeedPane extends StatelessWidget {
-  const _ReadSpeedPane({
-    required this.readSpeed,
+/// Left half of the control row: the DDR WORLD speed option. Shows the
+/// active SPEED TYPE — REAL SPEED (the cabinet's ScrollSpeed: the dialled
+/// target scroll rate, with the resulting min–max speeds alongside on
+/// BPM-change charts like the cabinet's num_min/num_max readouts) or
+/// HI-SPEED (the raw multiplier, printed "x %.2lf" as the cabinet does).
+/// Tap to switch type; drag or tap the ∓ ends to turn the active dial —
+/// buttons and drag share one detent (x0.05 for HI-SPEED, 10 for REAL
+/// SPEED), and each type keeps its own dialled value.
+class _SpeedPane extends StatelessWidget {
+  const _SpeedPane({
+    required this.label,
+    required this.value,
+    required this.range,
+    required this.decLabel,
+    required this.incLabel,
     required this.canDecrement,
     required this.canIncrement,
     required this.onStep,
     required this.onDrag,
+    required this.onToggleType,
   });
 
-  final int readSpeed;
+  final String label;
+  final String value;
+  final (int, int)? range;
+  final String decLabel;
+  final String incLabel;
   final bool canDecrement;
   final bool canIncrement;
-  final void Function(int delta) onStep;
+  final void Function(int dir) onStep;
   final void Function(double dx) onDrag;
+  final VoidCallback onToggleType;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final r = range;
     return _ControlPane(
+      onTap: onToggleType,
       onDragUpdate: (d) => onDrag(d.primaryDelta ?? 0),
       child: Row(
         children: [
           _EdgeButton(
-            label: "−10",
+            label: decLabel,
             enabled: canDecrement,
             onTap: () => onStep(-1),
           ),
@@ -1840,7 +2170,7 @@ class _ReadSpeedPane extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  "READ SPEED",
+                  label,
                   style: TextStyle(
                     fontSize: 9,
                     letterSpacing: 0.6,
@@ -1848,19 +2178,38 @@ class _ReadSpeedPane extends StatelessWidget {
                     color: scheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
-                Text(
-                  "$readSpeed",
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    if (r != null) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        "${r.$1}–${r.$2}",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface.withValues(alpha: 0.55),
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
           ),
           _EdgeButton(
-            label: "+10",
+            label: incLabel,
             enabled: canIncrement,
             onTap: () => onStep(1),
           ),
@@ -1949,104 +2298,67 @@ class _ControlPane extends StatelessWidget {
   }
 }
 
-/// One titled group of modifier controls inside the settings shade. [content] is
-/// the section's laid-out body (tiles/rows).
+/// One group of modifier controls inside the settings shade. [content] is the
+/// section's laid-out body (tiles/rows). Sections carry no caption — the
+/// controls read on their own.
 class _ShadeSection {
-  final String title;
   final Widget? content;
   const _ShadeSection({
-    required this.title,
     this.content,
   });
 }
 
-/// The pull-down settings sheet: a rounded top panel carrying a grab-handle, a
-/// title row with a close button, and a scrollable list of [_ShadeSection]s.
-/// Height-capped so it never covers the whole field, and its body scrolls when
-/// the option set outgrows the cap.
+/// The pull-down options card: a rounded panel of chart-viewing modifiers that
+/// floats inset from the screen edges (never a full-width sheet — it must not
+/// dominate the field). Styled like the bottom transport — same padding, fill
+/// and radius, with filled tiles inside matching the read/song-speed panes — so
+/// the two chrome surfaces read as one family. Height-capped with a scrollable
+/// body for when the option set outgrows the cap. Its top is positioned by the
+/// caller ([_buildSettingsShade]) so it seats under the title when the header is
+/// up, or at the status bar when it isn't.
 class _SettingsShade extends StatelessWidget {
   const _SettingsShade({
-    required this.onClose,
     required this.sections,
   });
 
-  final VoidCallback onClose;
   final List<_ShadeSection> sections;
 
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final scheme = Theme.of(context).colorScheme;
-    // Neutral surface matching the bottom transport, not the accent. The shade
-    // reads as the same material as the rest of the chrome — a slightly raised,
-    // opaque panel — instead of a purple sheet.
-    final onSurface = scheme.onSurface;
-    return Container(
-      width: double.infinity,
-      constraints: BoxConstraints(maxHeight: media.size.height * 0.66),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.98),
-        borderRadius:
-            const BorderRadius.vertical(bottom: Radius.circular(20)),
-        border: Border(
-          bottom: BorderSide(
-            color: onSurface.withValues(alpha: 0.12),
-            width: 1,
-          ),
+    return Padding(
+      // Inset from the screen edges so the card doesn't span the full width —
+      // matching how the transport floats above the bottom edge.
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Container(
+        // Same framing as the bottom transport ([_buildTransport]) so the top
+        // and bottom chrome read as one surface: identical padding, fill and
+        // corner radius. The solidity comes from the filled tiles inside (like
+        // the transport's read/song-speed panes), not the thin outer wash.
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        constraints: BoxConstraints(maxHeight: media.size.height * 0.4),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(12),
         ),
-      ),
-      child: SafeArea(
-        bottom: false,
+        // No close button — the left-edge pull-tab dismisses the card.
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Title row: a settings glyph, "VIEW OPTIONS", and a close button.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
-              child: Row(
-                children: [
-                  Icon(Icons.tune,
-                      size: 18, color: onSurface.withValues(alpha: 0.85)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      "VIEW OPTIONS",
-                      style: TextStyle(
-                        fontSize: 13,
-                        letterSpacing: 1.2,
-                        fontWeight: FontWeight.w800,
-                        color: onSurface,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(Icons.close,
-                        color: onSurface.withValues(alpha: 0.7), size: 20),
-                    onPressed: onClose,
-                  ),
-                ],
-              ),
-            ),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final s in sections) _sectionBlock(s, onSurface),
+                    for (int i = 0; i < sections.length; i++)
+                      if (sections[i].content != null)
+                        Padding(
+                          padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+                          child: sections[i].content!,
+                        ),
                   ],
                 ),
-              ),
-            ),
-            // Grab-handle at the very bottom edge, echoing a pull-down shade.
-            Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: onSurface.withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(2),
               ),
             ),
           ],
@@ -2054,46 +2366,28 @@ class _SettingsShade extends StatelessWidget {
       ),
     );
   }
-
-  Widget _sectionBlock(_ShadeSection s, Color onSurface) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            s.title,
-            style: TextStyle(
-              fontSize: 10,
-              letterSpacing: 1.1,
-              fontWeight: FontWeight.w700,
-              color: onSurface.withValues(alpha: 0.55),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (s.content != null) s.content!,
-        ],
-      ),
-    );
-  }
 }
 
-/// Neutral fill/border/foreground for a shade control, keyed on whether it's
-/// active. Kept deliberately monochrome (theme surface + onSurface tints) so the
-/// shade reads as the same material as the bottom config, never a purple accent.
+/// Fill/border/foreground for a shade control, keyed on whether it's active.
+/// The inactive state deliberately matches the read/song-speed panes
+/// ([_ControlPane]: `surfaceContainerHighest` at α 0.5, no border) so the shade
+/// tiles read as the same buttons as the bottom config. The active state lifts
+/// the same surface brighter with a hairline border to mark the selection —
+/// still monochrome, never a purple accent.
 ({Color fill, Color border, Color fg, Color fgMuted}) _tileColors(
     ColorScheme scheme, bool active) {
   final onSurface = scheme.onSurface;
+  final surface = scheme.surfaceContainerHighest;
   return active
       ? (
-          fill: onSurface.withValues(alpha: 0.14),
+          fill: surface.withValues(alpha: 0.9),
           border: onSurface.withValues(alpha: 0.45),
           fg: onSurface,
           fgMuted: onSurface.withValues(alpha: 0.7),
         )
       : (
-          fill: onSurface.withValues(alpha: 0.05),
-          border: onSurface.withValues(alpha: 0.12),
+          fill: surface.withValues(alpha: 0.5),
+          border: Colors.transparent,
           fg: onSurface.withValues(alpha: 0.85),
           fgMuted: onSurface.withValues(alpha: 0.55),
         );
@@ -2328,6 +2622,11 @@ class _EdgeButton extends StatelessWidget {
   }
 }
 
+// A HI-SPEED multiplier as DDR WORLD prints it — the cabinet's own format
+// string is "x %.2lf" (sans the space here): always two decimals, and in
+// SCROLL SPEED mode the derived multiplier genuinely uses the hundredths.
+String _fmtXMod(double mod) => "x${mod.toStringAsFixed(2)}";
+
 String _fmtTime(double s) {
   final m = (s ~/ 60).toString();
   final sec = (s % 60).floor().toString().padLeft(2, '0');
@@ -2339,11 +2638,14 @@ String _fmtDur(double s) => "${s.toStringAsFixed(2)}s";
 
 /// A scrub bar whose track is a note-density minimap of the whole chart (busy
 /// sections show taller bars), with a played/unplayed split and a draggable
-/// playhead. Tap or drag anywhere to seek. [progress] and [onSeek] are 0..1.
+/// playhead. Tap or drag anywhere to seek. [onSeek] is 0..1. The needle rides
+/// [playhead] directly (via the painter's repaint listenable) so seeking and
+/// playback never rebuild this widget.
 class _DensityScrubBar extends StatelessWidget {
   const _DensityScrubBar({
     required this.buckets,
-    required this.progress,
+    required this.playhead,
+    required this.endSecond,
     required this.accent,
     required this.bpmFractions,
     required this.stopFractions,
@@ -2351,7 +2653,8 @@ class _DensityScrubBar extends StatelessWidget {
   });
 
   final List<_MinimapBucket> buckets;
-  final double progress;
+  final ValueListenable<double> playhead;
+  final double endSecond;
   final Color accent;
 
   /// 0..1 positions of BPM-change and stop markers along the track.
@@ -2373,15 +2676,19 @@ class _DensityScrubBar extends StatelessWidget {
           cursor: SystemMouseCursors.click,
           child: SizedBox(
             height: 40,
-            child: CustomPaint(
-              painter: _DensityPainter(
-                buckets: buckets,
-                progress: progress,
-                accent: accent,
-                bpmFractions: bpmFractions,
-                stopFractions: stopFractions,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _DensityPainter(
+                  buckets: buckets,
+                  playhead: playhead,
+                  endSecond: endSecond,
+                  accent: accent,
+                  bpmFractions: bpmFractions,
+                  stopFractions: stopFractions,
+                ),
+                size: Size.infinite,
+                willChange: true,
               ),
-              size: Size.infinite,
             ),
           ),
         ),
@@ -2393,22 +2700,121 @@ class _DensityScrubBar extends StatelessWidget {
 class _DensityPainter extends CustomPainter {
   _DensityPainter({
     required this.buckets,
-    required this.progress,
+    required this.playhead,
+    required this.endSecond,
     required this.accent,
     required this.bpmFractions,
     required this.stopFractions,
-  });
+  }) : super(repaint: playhead);
 
   final List<_MinimapBucket> buckets;
-  final double progress;
+  final ValueListenable<double> playhead;
+  final double endSecond;
   final Color accent;
   final List<double> bpmFractions;
   final List<double> stopFractions;
 
+  // The track (bars, hold underlay, shock and timing ticks) is static per
+  // layout: record it once into two pictures — played styling and unplayed
+  // styling — and per frame just replay each clipped at the needle. That
+  // reduces the per-frame cost from ~200 buckets × several Paint allocations
+  // to two drawPicture calls plus the needle.
+  ui.Picture? _playedPic;
+  ui.Picture? _unplayedPic;
+  Size? _picSize;
+
+  ui.Picture _recordTrack(Size size, {required bool played}) {
+    final rec = ui.PictureRecorder();
+    final canvas = Canvas(rec);
+    final midY = size.height / 2;
+    final maxBar = size.height * 0.42;
+    final barW = size.width / buckets.length;
+    final paint = Paint();
+    final holdColor = const Color(0xFF39C46B)
+        .withValues(alpha: played ? 0.36 : 0.18);
+    final shockColor = const Color(0xFF79E7FF)
+        .withValues(alpha: played ? 0.95 : 0.55);
+    for (int i = 0; i < buckets.length; i++) {
+      final x = i * barW;
+      final bucket = buckets[i];
+      // Minimum stub so silent gaps still read as a track.
+      final h = (0.10 + 0.90 * bucket.level) * maxBar;
+      final rect = Rect.fromLTWH(x, midY - h, barW + 0.6, h * 2);
+      if (bucket.holdLevel > 0) {
+        final holdH = (0.16 + 0.34 * bucket.holdLevel) * size.height;
+        final holdRect = Rect.fromLTWH(
+          rect.left,
+          midY - holdH / 2,
+          rect.width,
+          holdH,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(holdRect, const Radius.circular(1.2)),
+          paint..color = holdColor,
+        );
+      }
+      if (bucket.segments.isEmpty) {
+        canvas.drawRect(
+          rect,
+          paint..color = played ? accent : accent.withValues(alpha: 0.28),
+        );
+      } else {
+        double top = rect.top;
+        for (final segment in bucket.segments) {
+          final segH = rect.height * segment.weight;
+          final segRect = Rect.fromLTWH(rect.left, top, rect.width, segH);
+          canvas.drawRect(
+            segRect,
+            paint
+              ..color = played
+                  ? segment.color
+                  : segment.color.withValues(alpha: 0.34),
+          );
+          top += segH;
+        }
+      }
+      if (bucket.hasShock) {
+        final shockRect = Rect.fromLTWH(
+          rect.left,
+          rect.top - 2,
+          rect.width,
+          4,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(shockRect, const Radius.circular(1.2)),
+          paint..color = shockColor,
+        );
+      }
+    }
+
+    // Timing ticks: stops along the bottom edge, BPM changes along the top, so
+    // both are locatable when seeking without colliding with each other. The
+    // same colour in both variants; baking them into each picture keeps them
+    // continuous across the needle's clip seam.
+    void drawTicks(List<double> fractions, Color color, bool atTop) {
+      final tickPaint = Paint()
+        ..color = color
+        ..strokeWidth = 1.5;
+      final y0 = atTop ? 0.0 : size.height - 6;
+      final y1 = atTop ? 6.0 : size.height;
+      for (final f in fractions) {
+        final x = (size.width * f).clamp(0.0, size.width).toDouble();
+        canvas.drawLine(Offset(x, y0), Offset(x, y1), tickPaint);
+      }
+    }
+
+    drawTicks(
+        bpmFractions, const Color(0xFF8AB4FF).withValues(alpha: 0.9), true);
+    drawTicks(
+        stopFractions, const Color(0xFFFFB454).withValues(alpha: 0.9), false);
+    return rec.endRecording();
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final midY = size.height / 2;
-    final maxBar = size.height * 0.42;
+    final progress =
+        endSecond <= 0 ? 0.0 : (playhead.value / endSecond).clamp(0.0, 1.0);
     final playedX = (size.width * progress).clamp(0.0, size.width).toDouble();
 
     if (buckets.isEmpty) {
@@ -2419,84 +2825,21 @@ class _DensityPainter extends CustomPainter {
               const Radius.circular(3)),
           Paint()..color = Colors.white24);
     } else {
-      final barW = size.width / buckets.length;
-      for (int i = 0; i < buckets.length; i++) {
-        final x = i * barW;
-        final bucket = buckets[i];
-        // Minimum stub so silent gaps still read as a track.
-        final h = (0.10 + 0.90 * bucket.level) * maxBar;
-        final played = x < playedX;
-        final rect = Rect.fromLTWH(x, midY - h, barW + 0.6, h * 2);
-        if (bucket.holdLevel > 0) {
-          final holdH = (0.16 + 0.34 * bucket.holdLevel) * size.height;
-          final holdRect = Rect.fromLTWH(
-            rect.left,
-            midY - holdH / 2,
-            rect.width,
-            holdH,
-          );
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(holdRect, const Radius.circular(1.2)),
-            Paint()
-              ..color = played
-                  ? const Color(0xFF39C46B).withValues(alpha: 0.36)
-                  : const Color(0xFF39C46B).withValues(alpha: 0.18),
-          );
-        }
-        if (bucket.segments.isEmpty) {
-          canvas.drawRect(
-            rect,
-            Paint()..color = played ? accent : accent.withValues(alpha: 0.28),
-          );
-        } else {
-          double top = rect.top;
-          for (final segment in bucket.segments) {
-            final segH = rect.height * segment.weight;
-            final segRect = Rect.fromLTWH(rect.left, top, rect.width, segH);
-            canvas.drawRect(
-              segRect,
-              Paint()
-                ..color = played
-                    ? segment.color
-                    : segment.color.withValues(alpha: 0.34),
-            );
-            top += segH;
-          }
-        }
-        if (bucket.hasShock) {
-          final shockRect = Rect.fromLTWH(
-            rect.left,
-            rect.top - 2,
-            rect.width,
-            4,
-          );
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(shockRect, const Radius.circular(1.2)),
-            Paint()
-              ..color = played
-                  ? const Color(0xFF79E7FF).withValues(alpha: 0.95)
-                  : const Color(0xFF79E7FF).withValues(alpha: 0.55),
-          );
-        }
+      if (_picSize != size) {
+        _playedPic = _recordTrack(size, played: true);
+        _unplayedPic = _recordTrack(size, played: false);
+        _picSize = size;
       }
+      canvas.save();
+      canvas.clipRect(Rect.fromLTWH(0, -4, playedX, size.height + 8));
+      canvas.drawPicture(_playedPic!);
+      canvas.restore();
+      canvas.save();
+      canvas.clipRect(Rect.fromLTWH(
+          playedX, -4, size.width - playedX, size.height + 8));
+      canvas.drawPicture(_unplayedPic!);
+      canvas.restore();
     }
-
-    // Timing ticks: stops along the bottom edge, BPM changes along the top, so
-    // both are locatable when seeking without colliding with each other.
-    void drawTicks(List<double> fractions, Color color, bool atTop) {
-      final paint = Paint()
-        ..color = color
-        ..strokeWidth = 1.5;
-      final y0 = atTop ? 0.0 : size.height - 6;
-      final y1 = atTop ? 6.0 : size.height;
-      for (final f in fractions) {
-        final x = (size.width * f).clamp(0.0, size.width).toDouble();
-        canvas.drawLine(Offset(x, y0), Offset(x, y1), paint);
-      }
-    }
-
-    drawTicks(bpmFractions, const Color(0xFF8AB4FF).withValues(alpha: 0.9), true);
-    drawTicks(stopFractions, const Color(0xFFFFB454).withValues(alpha: 0.9), false);
 
     // Playhead: vertical needle plus a layered knob for stronger visibility.
     canvas.drawRect(
@@ -2530,8 +2873,8 @@ class _DensityPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DensityPainter old) =>
-      old.progress != progress ||
       old.buckets != buckets ||
+      old.endSecond != endSecond ||
       old.accent != accent ||
       old.bpmFractions != bpmFractions ||
       old.stopFractions != stopFractions;
@@ -2540,14 +2883,16 @@ class _DensityPainter extends CustomPainter {
 class _ChartPainter extends CustomPainter {
   _ChartPainter({
     required this.notes,
+    required this.holds,
     required this.shockNotes,
     required this.shocks,
     required this.bpmMarkers,
     required this.stopMarkers,
     required this.feet,
+    required this.footPrev,
     required this.dirs,
     required this.colMap,
-    required this.second,
+    required this.playhead,
     required this.pxPerSecond,
     required this.pxPerBeat,
     required this.timing,
@@ -2557,14 +2902,27 @@ class _ChartPainter extends CustomPainter {
     this.zoom = 1.0,
     this.constantMs,
     this.topInset = 0,
-  });
+  }) : super(repaint: playhead);
 
+  /// All notes ascending by second (see [_ChartScrollerState._prepareNotes]) —
+  /// sorted order is what the per-frame binary-search culling relies on.
   final List<StepNote> notes;
+
+  /// Just the holds/rolls, same order — a hold's body must draw while its head
+  /// second is already behind the playhead, so it can't be found by
+  /// binary-searching [notes] on second.
+  final List<StepNote> holds;
+
   final Set<StepNote> shockNotes;
   final List<_ShockRow> shocks;
   final List<_BpmMarker> bpmMarkers;
   final List<_StopMarker> stopMarkers;
   final Map<StepNote, Foot> feet;
+
+  /// Previous same-foot note per footed note (precomputed once per chart), so
+  /// foot paths draw from the visible window alone.
+  final Map<StepNote, StepNote> footPrev;
+
   final List<NoteDir> dirs;
 
   // DDR TURN permutation: `colMap[originalCol]` is the column the note is drawn
@@ -2572,7 +2930,12 @@ class _ChartPainter extends CustomPainter {
   // positions, so a turn only moves the notes. Identity when TURN is OFF.
   final List<int> colMap;
 
-  final double second;
+  /// The moving playhead. Registered as this painter's repaint listenable, so
+  /// per-frame motion repaints the canvas without a widget rebuild; everything
+  /// else about the painter is per-build configuration.
+  final ValueListenable<double> playhead;
+  double get second => playhead.value;
+
   final double pxPerSecond;
 
   // Beat-locked scroll: [pxPerBeat] is the pixels-per-beat spacing and [timing]
@@ -2651,8 +3014,11 @@ class _ChartPainter extends CustomPainter {
     canvas.restore();
   }
 
-  // Receptors sit near the TOP; arrows scroll up into them. Notes are drawn
-  // ON TOP OF (z-above) the receptors so an arrow reaching the line covers it.
+  // Receptors sit near the TOP; arrows scroll up into them. Tap/hold-head
+  // arrows draw ON TOP OF (z-above) the receptors so an arrow reaching the
+  // line covers it, but hold bodies/tails draw BEHIND the receptor (matching
+  // DDR/StepMania) so a sustain passing through or ending at the line slides
+  // under the receptor frame instead of covering it.
   // [_receptorBase] is the gap below the (inset-adjusted) top edge.
   static const double _receptorBase = 56;
   double get _receptorTop => _receptorBase + topInset;
@@ -2717,18 +3083,13 @@ class _ChartPainter extends CustomPainter {
             1
         : second + ((size.height - _receptorTop) / pxPerSecond) + 1;
 
-    // Receptors FIRST (behind the notes) so an arrow at the line covers its
-    // receptacle rather than being hidden by it.
     // Receptors only pulse while playing; static (dim, steady) when paused. The
     // pulse rides the beat (freezing on stops, quickening with the tempo) when
-    // beat-locked, else falls back to a fixed half-second cadence.
-    final glow = playing
-        ? 1.0 - ((beatLocked ? currentBeat : second * 2) % 1.0)
-        : 0.0;
-    for (int c = 0; c < columnCount; c++) {
-      skin.paintReceptor(
-          canvas, laneCenterX(c), _receptorTop, arrowSize, dirs[c], glow * 0.9);
-    }
+    // beat-locked, else falls back to a fixed half-second cadence. Use a
+    // triangle wave (peak on the beat, easing symmetrically to the trough) so
+    // the glow never snaps back discontinuously — a sawtooth flashed each beat.
+    final phase = (beatLocked ? currentBeat : second * 2) % 1.0;
+    final glow = playing ? 1.0 - (2.0 * phase - 1.0).abs() : 0.0;
 
     // Clip only the far top of the field (above where a note centred on the
     // receptor would reach), so a note sitting ON the receptor draws in full
@@ -2743,13 +3104,14 @@ class _ChartPainter extends CustomPainter {
     _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
         labels: false);
 
-    // 1) Freeze/hold bodies (behind arrowheads). While a hold is being held its
-    // head has reached the receptor, so clamp the head to the line; the body
-    // then shrinks upward into it and vanishes at the tail.
-    for (final n in notes) {
-      if (!n.isHold) continue;
+    // 1) Freeze/hold bodies (behind the receptor and arrowheads). While a hold
+    // is being held its head has reached the receptor, so clamp the head to
+    // the line; the body then shrinks upward into it and vanishes at the tail.
+    // Walks the (much smaller) holds list and stops at the window's far edge.
+    for (final n in holds) {
+      if (n.second > maxT) break; // sorted: nothing later can be visible
       final endS = n.endSecond ?? n.second;
-      if (endS < second || n.second > maxT) continue;
+      if (endS < second) continue;
       // A freeze appears as one piece under CONSTANT, keyed on its head's second
       // — the whole body fades in together as the head enters its window.
       final holdAlpha = _constantAlpha(n.second);
@@ -2771,6 +3133,15 @@ class _ChartPainter extends CustomPainter {
       });
     }
 
+    // 1.2) Receptors, drawn on top of hold bodies/tails but under taps and
+    // held hold-heads (below) — a sustain slides under the receptor frame as
+    // it passes through or ends at the line, matching DDR/StepMania, while an
+    // arrow landing on the line still covers its receptacle.
+    for (int c = 0; c < columnCount; c++) {
+      skin.paintReceptor(
+          canvas, laneCenterX(c), _receptorTop, arrowSize, dirs[c], glow * 0.9);
+    }
+
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
     // same foot, so the chart's left/right movement reads as two flowing lines.
     if (feet.isNotEmpty) {
@@ -2780,7 +3151,8 @@ class _ChartPainter extends CustomPainter {
     // 2) Shock rows: a light-blue arrow in every lit lane linked by electricity,
     // spanning the whole row (also vanishes once hit).
     for (final s in shocks) {
-      if (s.second < second || s.second > maxT) continue;
+      if (s.second > maxT) break; // sorted by second
+      if (s.second < second) continue;
       final shockAlpha = _constantAlpha(s.second); // fades in under CONSTANT
       if (shockAlpha <= 0) continue;
       final y = yFor(s.second);
@@ -2795,21 +3167,20 @@ class _ChartPainter extends CustomPainter {
 
     // 3) Taps, mines (non-shock), and hold heads — drawn last so they sit above
     // the receptors. A held freeze keeps its head pinned to the receptor line.
-    for (final n in notes) {
-      final endS = n.endSecond ?? n.second;
-      final held = n.isHold && n.second < second && endS >= second;
-      if (!held && (n.second < second || n.second > maxT)) {
-        continue;
-      }
+    // Two culled sources replace the old full-chart walk: active holds (head
+    // already behind the playhead, pinned to the receptor) from the holds list,
+    // then the binary-searched [second, maxT] slice of the sorted note list —
+    // the same set, and the same sorted draw order, the full walk produced.
+    void drawHead(StepNote n, bool held) {
       // A held head sits on the receptor, so treat it as fully arrived rather
       // than re-fading it; otherwise CONSTANT fades it in over its window.
       final noteAlpha = held ? 1.0 : _constantAlpha(n.second);
-      if (noteAlpha <= 0) continue;
+      if (noteAlpha <= 0) return;
       final col = turned(n.col);
       final x = laneCenterX(col);
       final y = held ? _receptorTop.toDouble() : yFor(n.second);
       if (n.type == StepType.mine && shockNotes.contains(n)) {
-        continue; // drawn in the shock pass
+        return; // drawn in the shock pass
       }
       _fadeLayer(
           canvas,
@@ -2826,6 +3197,19 @@ class _ChartPainter extends CustomPainter {
       });
     }
 
+    for (final n in holds) {
+      if (n.second >= second) break; // at/after the playhead: scrolls normally
+      if ((n.endSecond ?? n.second) < second) continue;
+      drawHead(n, true);
+    }
+    for (int i = _lowerBoundBySecond(notes, second);
+        i < notes.length;
+        i++) {
+      final n = notes[i];
+      if (n.second > maxT) break;
+      drawHead(n, false);
+    }
+
     // 4) Timing-marker labels, top layer: drawn last so the STOP/BPM pills sit
     // above the note stream instead of being buried under passing arrows.
     _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
@@ -2839,10 +3223,43 @@ class _ChartPainter extends CustomPainter {
   static const Color _leftFootColor = Color(0xFFFF5D73);
   static const Color _rightFootColor = Color(0xFF3FA9FF);
 
+  // First index in [notes] (ascending by second) whose second is >= [t].
+  static int _lowerBoundBySecond(List<StepNote> notes, double t) {
+    int lo = 0, hi = notes.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (notes[mid].second < t) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  // Reused stroke paints for the two foot-path polylines; only the width (which
+  // tracks the zoomed arrow size) is touched per frame.
+  static final Paint _leftFootPathPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round
+    ..color = _leftFootColor.withValues(alpha: 0.42);
+  static final Paint _rightFootPathPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round
+    ..color = _rightFootColor.withValues(alpha: 0.42);
+
   // Connect each note to the previous note struck by the same foot, drawing two
   // flowing polylines (one per foot) so the chart's movement pattern reads at a
   // glance. Drawn behind the arrowheads. Held notes anchor to the receptor while
   // active, matching where their head is actually drawn.
+  //
+  // The same-foot chaining is precomputed per chart ([footPrev]), so this only
+  // touches the visible window: every visible note draws its incoming link, the
+  // active holds draw theirs (their heads are pinned on the receptor), and the
+  // first note per foot beyond the window closes the outgoing link — exactly
+  // the segments the old whole-chart walk drew with `visible(prev)||visible(n)`.
   void _paintFootPaths(
     Canvas canvas,
     double Function(int) laneCenterX,
@@ -2861,49 +3278,53 @@ class _ChartPainter extends CustomPainter {
       return Offset(laneCenterX(col), y);
     }
 
-    // Whether a note contributes to the visible window (same test the arrow pass
-    // uses), so path segments only exist where at least one endpoint is drawn.
-    bool visible(StepNote n) {
-      final endS = n.endSecond ?? n.second;
-      final held = n.isHold && n.second < second && endS >= second;
-      return held || (n.second >= second && n.second <= maxT);
-    }
+    bool heldNow(StepNote n) =>
+        n.isHold && n.second < second && (n.endSecond ?? n.second) >= second;
+    bool visible(StepNote n) =>
+        heldNow(n) || (n.second >= second && n.second <= maxT);
 
-    final leftPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = arrowSize * 0.10
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..color = _leftFootColor.withValues(alpha: 0.42);
-    final rightPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = arrowSize * 0.10
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..color = _rightFootColor.withValues(alpha: 0.42);
+    final leftPaint = _leftFootPathPaint..strokeWidth = arrowSize * 0.10;
+    final rightPaint = _rightFootPathPaint..strokeWidth = arrowSize * 0.10;
 
-    StepNote? prevLeft;
-    StepNote? prevRight;
-    for (final n in notes) {
-      if (n.type == StepType.mine) continue;
-      if (shockNotes.contains(n)) continue;
-      final foot = feet[n];
-      if (foot == null) continue;
-      final prev = foot == Foot.left ? prevLeft : prevRight;
-      // Draw a segment to the previous same-foot note when either endpoint is in
-      // the visible window (so a segment scrolling in from below still shows).
-      if (prev != null && (visible(prev) || visible(n))) {
-        canvas.drawLine(
+    void drawLink(StepNote prev, StepNote n, Foot foot) => canvas.drawLine(
           anchor(prev),
           anchor(n),
           foot == Foot.left ? leftPaint : rightPaint,
         );
+
+    // Links into the receptor-pinned heads of active holds (their own seconds
+    // sit behind the playhead, so the window scan below won't reach them).
+    for (final h in holds) {
+      if (h.second >= second) break;
+      if (!heldNow(h)) continue;
+      final foot = feet[h];
+      final prev = footPrev[h];
+      if (foot != null && prev != null) drawLink(prev, h, foot);
+    }
+
+    // Visible-window scan; past the far edge, only the first same-foot note
+    // still owes a link back to a visible predecessor, then we're done.
+    bool leftClosed = false, rightClosed = false;
+    for (int i = _lowerBoundBySecond(notes, second); i < notes.length; i++) {
+      final n = notes[i];
+      final foot = feet[n];
+      if (foot == null) continue; // mines/shocks never take a foot
+      if (n.second > maxT) {
+        final closed = foot == Foot.left ? leftClosed : rightClosed;
+        if (!closed) {
+          final prev = footPrev[n];
+          if (prev != null && visible(prev)) drawLink(prev, n, foot);
+          if (foot == Foot.left) {
+            leftClosed = true;
+          } else {
+            rightClosed = true;
+          }
+        }
+        if (leftClosed && rightClosed) break;
+        continue;
       }
-      if (foot == Foot.left) {
-        prevLeft = n;
-      } else {
-        prevRight = n;
-      }
+      final prev = footPrev[n];
+      if (prev != null) drawLink(prev, n, foot);
     }
   }
 
@@ -2911,6 +3332,22 @@ class _ChartPainter extends CustomPainter {
   // as a cool line, so the two never get confused with the arrow palette.
   static const Color _stopColor = Color(0xFFFFB454);
   static const Color _bpmColor = Color(0xFF8AB4FF);
+
+  // Reused marker paints (fixed colours/widths — no reason to allocate per
+  // marker per frame).
+  static final Paint _stopLinePaint = Paint()
+    ..color = _stopColor.withValues(alpha: 0.85)
+    ..strokeWidth = 2.5;
+  static final Paint _stopBandPaint = Paint()
+    ..color = _stopColor.withValues(alpha: 0.12);
+  static final Paint _stopEdgePaint = Paint()
+    ..color = _stopColor.withValues(alpha: 0.7)
+    ..strokeWidth = 1.5;
+  static final Paint _bpmLinePaint = Paint()
+    ..color = _bpmColor.withValues(alpha: 0.75)
+    ..strokeWidth = 1.5;
+  static final Paint _labelPillPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.55);
 
   // Draw full-width markers for stops (a band spanning the halt's duration) and
   // BPM changes (a line + label), positioned on the same seconds axis the notes
@@ -2946,9 +3383,7 @@ class _ChartPainter extends CustomPainter {
           canvas.drawLine(
             Offset(0, y),
             Offset(size.width, y),
-            Paint()
-              ..color = _stopColor.withValues(alpha: 0.85)
-              ..strokeWidth = 2.5,
+            _stopLinePaint,
           );
         }
         continue;
@@ -2961,13 +3396,10 @@ class _ChartPainter extends CustomPainter {
       }
       final yBot = yFor(endSec);
       final band = Rect.fromLTRB(0, yBot, size.width, yTop);
-      canvas.drawRect(band, Paint()..color = _stopColor.withValues(alpha: 0.12));
+      canvas.drawRect(band, _stopBandPaint);
       // Edges of the band, brighter, so even a near-instant stop stays visible.
-      final edge = Paint()
-        ..color = _stopColor.withValues(alpha: 0.7)
-        ..strokeWidth = 1.5;
-      canvas.drawLine(Offset(0, yTop), Offset(size.width, yTop), edge);
-      canvas.drawLine(Offset(0, yBot), Offset(size.width, yBot), edge);
+      canvas.drawLine(Offset(0, yTop), Offset(size.width, yTop), _stopEdgePaint);
+      canvas.drawLine(Offset(0, yBot), Offset(size.width, yBot), _stopEdgePaint);
     }
 
     // BPM changes: a thin cool line with the new tempo labelled at the edge.
@@ -2980,12 +3412,35 @@ class _ChartPainter extends CustomPainter {
         canvas.drawLine(
           Offset(0, y),
           Offset(size.width, y),
-          Paint()
-            ..color = _bpmColor.withValues(alpha: 0.75)
-            ..strokeWidth = 1.5,
+          _bpmLinePaint,
         );
       }
     }
+  }
+
+  // Laid-out TextPainters are cached across frames — text shaping is far too
+  // expensive to redo per marker/badge per frame. Keys carry everything the
+  // glyphs depend on; the caps keep a long session (many charts, zoom levels)
+  // from accumulating stale entries.
+  static final Map<String, TextPainter> _labelTpCache = {};
+  static final Map<int, TextPainter> _footTpCache = {};
+
+  static TextPainter _labelTp(String text, Color color) {
+    if (_labelTpCache.length > 64) _labelTpCache.clear();
+    return _labelTpCache.putIfAbsent("${color.toARGB32()}|$text", () {
+      return TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            height: 1,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+    });
   }
 
   // A small pill label pinned to the right edge of a marker line. [alignBottom]
@@ -2998,18 +3453,7 @@ class _ChartPainter extends CustomPainter {
     Color color, {
     bool alignBottom = false,
   }) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: color,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          height: 1,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+    final tp = _labelTp(text, color);
     const padX = 5.0;
     const padY = 3.0;
     const margin = 6.0;
@@ -3021,85 +3465,100 @@ class _ChartPainter extends CustomPainter {
       Rect.fromLTWH(left, top, boxW, boxH),
       const Radius.circular(4),
     );
-    canvas.drawRRect(rect, Paint()..color = Colors.black.withValues(alpha: 0.55));
+    canvas.drawRRect(rect, _labelPillPaint);
     tp.paint(canvas, Offset(left + padX, top + padY));
   }
+
+  static final Paint _footBadgeBgPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.55);
 
   void _paintFootBadge(
       Canvas canvas, double x, double y, double arrowSize, Foot foot) {
     final isLeft = foot == Foot.left;
     final r = arrowSize * 0.24;
-    canvas.drawCircle(
-      Offset(x, y),
-      r,
-      Paint()..color = Colors.black.withValues(alpha: 0.55),
-    );
-    final tp = TextPainter(
-      text: TextSpan(
-        text: isLeft ? "L" : "R",
-        style: TextStyle(
-          color: isLeft ? _leftFootColor : _rightFootColor,
-          fontSize: arrowSize * 0.34,
-          fontWeight: FontWeight.w800,
-          height: 1,
+    canvas.drawCircle(Offset(x, y), r, _footBadgeBgPaint);
+    // Font size quantised to quarter-pixels for the cache key: visually exact
+    // enough, and pinch-zoom then reuses a bounded set of layouts.
+    final sizeKey = (arrowSize * 0.34 * 4).round();
+    if (_footTpCache.length > 64) _footTpCache.clear();
+    final tp = _footTpCache.putIfAbsent((sizeKey << 1) | (isLeft ? 1 : 0), () {
+      return TextPainter(
+        text: TextSpan(
+          text: isLeft ? "L" : "R",
+          style: TextStyle(
+            color: isLeft ? _leftFootColor : _rightFootColor,
+            fontSize: sizeKey / 4.0,
+            fontWeight: FontWeight.w800,
+            height: 1,
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+        textDirection: TextDirection.ltr,
+      )..layout();
+    });
     tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
   }
+
+  // Frame-static paints/shaders, cached across paints (the shaders only depend
+  // on the field size, which changes on rotation/resize, not per frame).
+  static final Paint _bgPaint = Paint();
+  static Size _bgPaintSize = Size.zero;
+  static final Paint _receptorLinePaint = Paint();
+  static double _receptorLineWidth = -1;
+  static final Paint _laneDividerPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.04)
+    ..strokeWidth = 1;
 
   void _paintBackground(Canvas canvas, Size size) {
     // Vertical stage gradient: darker at the bottom, lifting toward the
     // receptors so incoming notes read clearly.
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFF11151C),
-            Color(0xFF080A0E),
-          ],
-        ).createShader(Offset.zero & size),
-    );
+    if (_bgPaintSize != size) {
+      _bgPaint.shader = const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xFF11151C),
+          Color(0xFF080A0E),
+        ],
+      ).createShader(Offset.zero & size);
+      _bgPaintSize = size;
+    }
+    canvas.drawRect(Offset.zero & size, _bgPaint);
   }
 
   void _paintLanes(Canvas canvas, Size size, double fieldLeft,
       double laneStride, double receptorY) {
     // Subtle lane dividers, tracking the (zoom-scaled) field so they sit between
     // the lanes rather than drifting away from the arrows when zoomed out.
-    final div = Paint()
-      ..color = Colors.white.withValues(alpha: 0.04)
-      ..strokeWidth = 1;
     for (int c = 1; c < columnCount; c++) {
       final x = fieldLeft + laneStride * c;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), div);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), _laneDividerPaint);
     }
     // Receptor line highlight.
-    final line = Paint()
-      ..shader = LinearGradient(
+    if (_receptorLineWidth != size.width) {
+      _receptorLinePaint.shader = LinearGradient(
         colors: [
           Colors.white.withValues(alpha: 0),
           Colors.white.withValues(alpha: 0.18),
           Colors.white.withValues(alpha: 0),
         ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, 1));
+      _receptorLineWidth = size.width;
+    }
     canvas.drawRect(
-        Rect.fromLTWH(0, receptorY - 0.5, size.width, 1), line);
+        Rect.fromLTWH(0, receptorY - 0.5, size.width, 1), _receptorLinePaint);
   }
 
   @override
   bool shouldRepaint(_ChartPainter old) =>
-      old.second != second ||
       old.pxPerSecond != pxPerSecond ||
       old.pxPerBeat != pxPerBeat ||
       old.timing != timing ||
       old.notes != notes ||
+      old.holds != holds ||
       old.bpmMarkers != bpmMarkers ||
       old.stopMarkers != stopMarkers ||
       old.feet != feet ||
+      old.footPrev != footPrev ||
       old.columnCount != columnCount ||
       !listEquals(old.colMap, colMap) ||
       old.skin != skin ||

@@ -2,40 +2,19 @@
 /// Description: A file to store constant values
 library;
 
-const mods = [
-  0.25,
-  0.5,
-  0.75,
-  1.0,
-  1.25,
-  1.5,
-  1.75,
-  2.0,
-  2.25,
-  2.5,
-  2.75,
-  3.0,
-  3.25,
-  3.5,
-  3.75,
-  4.0,
-  4.5,
-  5.0,
-  5.5,
-  6.0,
-  6.5,
-  7.0,
-  7.5,
-  8.0
-];
+// DDR WORLD's HI-SPEED ladder: the SPEED option was reworked into HI-SPEED,
+// x0.25–x8.00 dialled in x0.05 increments (per-song SPEED changes at a song's
+// start still move in x0.25 — see _buttonModSteps in chart_scroller). This
+// replaces the pre-WORLD x0.25-step ladder. Generated as i/20 so each entry is
+// the correctly-rounded double for its decimal (5/20 = 0.25 … 160/20 = 8.0).
+final mods = [for (var i = 5; i <= 160; i++) i / 20];
 const chosenReadSpeed = 600;
-const songBpm = 200; 
+const songBpm = 200;
 const rivalCode = "";
 const rivalCodeLength = 8;
 const username = "";
 // In-game dancer names are capped at 8 characters.
 const usernameLength = 8;
-const buffer = 25;
 const maxDifficulty = 19;
 const note =
     "The crossovers in this song are surprisingly hard, I keep leading with the wrong first foot in after the jumps. Song should be played with those in mind.";

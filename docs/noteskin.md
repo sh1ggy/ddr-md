@@ -10,26 +10,33 @@ Two implementations exist:
   external is bundled, so the preview looks good out of the box and there is no
   copyright question. Used whenever the sprite assets are absent.
 - **`SpriteNoteskin`** — renders real DDR World arrow art from
-  `assets/noteskin/` when present: the grey `note.png` tinted per quantisation,
-  and `hold_body.png` / `hold_head.png` for freezes. Mines/shock/receptors fall
-  back to the vector skin. `SpriteNoteskin.tryLoad()` returns `null` when the
-  sprites aren't bundled (fresh clone / lite build), and `ChartScroller` uses
-  the vector skin in that case.
+  `assets/noteskin/` when present: four pre-coloured down-facing tap arrows
+  (`arrow-note-down-{red,blue,yellow,green}.png`, rotated per lane), four
+  direction-oriented freeze bodies/tails (`hold-{left,down,up,right}-{body,
+  tail}.png`), and four direction-oriented shock arrows
+  (`arrow-shock-{left,down,up,right}.png`). The freeze **tail** sprite is
+  modulated to the freeze green (roll orange for rolls) so its end cap matches
+  the hold body's colour. Mines/receptors fall back to the vector skin.
+  `SpriteNoteskin.tryLoad()` returns `null` when the sprites aren't bundled
+  (fresh clone / lite build), and `ChartScroller` uses the vector skin in that
+  case.
 
 ## Arrow colouring
 
 Arrows are coloured by **note quantisation** (the fraction of a beat they land
-on), the standard DDR/ITG reading palette — see `QuantColors`:
+on), the standard DDR/ITG reading palette — see `QuantColors`. Only 4 sprite
+colours are extracted, so `SpriteNoteskin` maps the finer subdivisions onto
+the nearest sprite (`_nearestSpriteColor`):
 
-| Subdivision | Colour |
-|---|---|
-| 4th  | red |
-| 8th  | blue |
-| 12th | purple |
-| 16th | yellow |
-| 24th | pink |
-| 32nd | orange |
-| finer | green |
+| Subdivision | Colour | Sprite used |
+|---|---|---|
+| 4th  | red | red |
+| 8th  | blue | blue |
+| 12th | purple | blue |
+| 16th | yellow | yellow |
+| 24th | pink | yellow |
+| 32nd | orange | green |
+| finer | green | green |
 
 ## Note data
 
@@ -40,54 +47,37 @@ not a distinct type — they are a full row of mines sharing one second, and the
 scroller detects them (`_detectShocks`, 3+ mines at the same time) and draws
 them as lightning bars instead of individual mines.
 
-## Official DDR World sprites (extraction)
-
-The real arrow textures live in a DDR World arcade dump under
-`data/arc/2d/2d_arrow00.arc … 2d_arrow07.arc`. Each is a Konami `.arc`
-container (magic `0x19751120`) wrapping a **BEMANI/firebeat LZ77**-compressed
-32-bit BGRA `.dds`. `DDR-BPM-prep/src/classes/ArcExtractor.py` decompresses and
-decodes these with no external image deps (clean-room, stdlib only).
-
-Findings from the real assets:
-
-- Every `2d_arrow0N.arc` is a **768×192 atlas**, a grid of 96×96 cells.
-- The 8 files are **animation/state variants, all one green palette** — DDR
-  World colours arrows **by direction** in-game, *not* by note quantisation.
-  So there is no per-quantisation sprite to pull; instead cell **(0,0) is a
-  colourless GREY arrow**, which the app tints per quantisation.
-- Cell **(4,0)** is the tiled freeze **body**; cell **(0,1)** is the freeze
-  **tail/end cap** used to mark where the hold releases. The arrow points
-  **left**; the app rotates it per lane.
-
-### Extracting
-
-With a dump symlinked/copied into `DDR-BPM-prep/data/arcade/`:
-
-```
-make noteskin        # -> DDR-BPM-prep/build/noteskin/{note,hold_body,hold_tail}.png
-```
-
-(No dump → polite no-op.) Then copy the three PNGs into the app's
-**git-ignored** `assets/noteskin/`:
-
-```
-cp DDR-BPM-prep/build/noteskin/*.png <app>/assets/noteskin/
-```
+## Official DDR World sprites
 
 `assets/noteskin/` is registered in `pubspec.yaml` and git-ignored (copyrighted
 Konami art, like the step charts and jackets). Present → `SpriteNoteskin`
 renders real arrows; absent → `VectorNoteskin`. No runtime `.arc` parsing is
 involved — the app only ever loads PNGs.
 
+An older extraction path (`DDR-BPM-prep/src/extract_noteskin.py`, `make
+noteskin`) pulls a single **colourless grey** arrow plus a green hold body/tail
+out of a DDR World arcade dump's `2d_arrow00.arc` atlas (see that script's
+docstring for the `.arc`/`.dds` format details) and tints it per quantisation
+at runtime. `SpriteNoteskin` no longer consumes that output — the sprites
+below are the current, better-fidelity set (pre-coloured, pre-shaded, matching
+the in-game glossy chevron look) and must be sourced by hand.
+
 ### Sprite files the app consumes
 
 ```
 assets/noteskin/
-  note.png       # 96x96 grey left arrow, tinted per quantisation in-app
-                 # (used for taps AND freeze heads)
-  hold_body.png  # 96x96 green freeze body, tiled down the lane
-  hold_tail.png  # 96x96 freeze tail/end cap from the atlas
+  arrow-note-down-red.png     # 60x60 down-facing tap arrow, one per
+  arrow-note-down-blue.png    # quantisation colour; rotated per lane for
+  arrow-note-down-yellow.png  # left/up/right (see the colour table above)
+  arrow-note-down-green.png
+  hold-left-body.png   hold-left-tail.png    # 120x256 / 120x120 freeze
+  hold-down-body.png   hold-down-tail.png    # body (tiled down the lane) and
+  hold-up-body.png     hold-up-tail.png      # end cap, pre-oriented per
+  hold-right-body.png  hold-right-tail.png   # direction. The tail is modulated
+                                             # to the freeze green (roll orange)
+                                             # so its cap matches the body.
+  arrow-shock-left.png   arrow-shock-down.png    # 60x60 shock arrows,
+  arrow-shock-up.png     arrow-shock-right.png   # pre-oriented per direction
 ```
 
-Shock arrows (`data/arc/bm2d/dance_shock_arrow_v*.arc`, an uncompressed `.ifs`)
-and mines/receptors are not extracted; the vector skin draws those.
+Mines and receptors are not covered by this set; the vector skin draws those.
