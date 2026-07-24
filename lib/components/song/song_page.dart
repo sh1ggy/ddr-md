@@ -144,6 +144,13 @@ class _SongPageState extends State<SongPage> {
     final diffKey =
         available[songState.chosenDifficulty.clamp(0, available.length - 1)];
 
+    final difficultyLevel =
+        (mode == Modes.singles ? songInfo.singles : songInfo.doubles)
+            .toJson()[diffKey] as int?;
+    final diffColor = difficultyColor(diffKey);
+    final diffLabel =
+        diffKey.isEmpty ? "" : diffKey[0].toUpperCase() + diffKey.substring(1);
+
     return FutureBuilder<SongSteps?>(
       future: _stepsFuture,
       builder: (context, snapshot) {
@@ -153,6 +160,10 @@ class _SongPageState extends State<SongPage> {
         }
         return Card(
           clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: diffColor.withValues(alpha: 0.6), width: 1),
+          ),
           child: InkWell(
             onTap: () {
               HapticFeedback.selectionClick();
@@ -163,10 +174,7 @@ class _SongPageState extends State<SongPage> {
                     stepsFuture: _stepsFuture!,
                     mode: mode,
                     difficultyKey: diffKey,
-                    difficultyLevel: (mode == Modes.singles
-                            ? songInfo.singles
-                            : songInfo.doubles)
-                        .toJson()[diffKey] as int?,
+                    difficultyLevel: difficultyLevel,
                     title: songInfo.title,
                     songLength: songInfo.songLength,
                     chartBpm: _chart.dominantBpm,
@@ -177,13 +185,40 @@ class _SongPageState extends State<SongPage> {
               );
             },
             child: ListTile(
-              leading: Icon(
-                Icons.play_circle_outline,
-                color: Theme.of(context).colorScheme.primary,
+              leading: CircleAvatar(
+                backgroundColor: diffColor.withValues(alpha: 0.15),
+                foregroundColor: diffColor,
+                child: difficultyLevel != null
+                    ? Text(
+                        "$difficultyLevel",
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      )
+                    : const Icon(Icons.play_arrow),
               ),
-              title: const Text(
-                "Chart Preview",
-                style: TextStyle(fontWeight: FontWeight.w700),
+              title: Row(
+                children: [
+                  const Text(
+                    "Chart Preview",
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: diffColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      diffLabel,
+                      style: TextStyle(
+                        color: diffColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               subtitle: Text(
                 "Open scrolling chart for this difficulty",
