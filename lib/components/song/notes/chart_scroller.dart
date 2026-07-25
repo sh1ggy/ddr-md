@@ -325,10 +325,9 @@ class ChartScroller extends StatefulWidget {
 
   /// The chart's authored BPM extremes (`true_min`/`true_max` from [Chart]),
   /// bracketing [chartBpm] (the dominant/core tempo). Together they are the
-  /// (min, core, max) trio the WORLD cabinet hands its speed option, and
-  /// [maxBpm] is the divisor REAL SPEED derives its multiplier from. 0 means
-  /// "not supplied" — the note stream is used as a fallback. See
-  /// docs/ddr-world-speed.md.
+  /// (min, core, max) trio the cabinet hands its speed option, and [maxBpm] is
+  /// the divisor REAL SPEED derives its multiplier from. 0 means "not supplied"
+  /// — the note stream is used as a fallback.
   final int minBpm;
   final int maxBpm;
 
@@ -383,9 +382,9 @@ class _ChartScrollerState extends State<ChartScroller>
   // never shown while playing (it's a paused-browsing surface).
   bool _shadeOpen = false;
 
-  // DDR WORLD SPEED TYPE (semantics verified against the WORLD binary's
-  // ddr::player::Option): the cabinet stores TWO independent speed values
-  // plus a type selector, and the pane's tap toggles between them.
+  // DDR WORLD SPEED TYPE: the cabinet stores TWO independent speed values
+  // plus a type selector, and the pane's tap toggles between them. (Semantics
+  // notes kept locally; see the gitignored _private/ archive.)
   //
   // HI-SPEED — a raw multiplier in hundredths, 25–800 (x0.25–x8.00). The
   // cabinet dial moves in x0.05: its setter snaps to multiples of 5, with
@@ -416,36 +415,32 @@ class _ChartScrollerState extends State<ChartScroller>
   // divisorBpm), clamped to the same 25–800 as HI-SPEED. Charts without a
   // usable BPM fall back to x1.00 as the cabinet does.
   //
-  // The divisor is the cabinet's own `bpmmax`. Verified against the WORLD dump's
-  // data/gamedata/musicdb.xml: each record carries only `bpmmin`/`bpmmax` (both
-  // u16), and SetScrollSpeed's divisor reads the music-record struct those
-  // populate. Crucially `bpmmax` is NOT the note stream's raw peak — for SMASH
-  // the cabinet stores 160 even though the chart soflans to 320, so REAL SPEED
-  // 600 there is round(600 × 100 / 160)=x3.75 and reads 600, matching HI-SPEED
-  // x3.75. See [_scrollDivisorBpm] for how the app reconstructs bpmmax, and
-  // docs/ddr-world-speed.md.
+  // The divisor is the cabinet's own curated headline BPM (its `bpmmax`), which
+  // is NOT the note stream's raw peak: a soflan song can spike well above its
+  // headline tempo yet still divide by the headline. So REAL SPEED reads the
+  // same number at the headline section and genuinely faster on an uncapped
+  // soflan spike. See [_scrollDivisorBpm] for how the app reconstructs it.
   int get _derivedHundredths {
     final bpm = _scrollDivisorBpm;
     if (bpm <= 0) return 100;
     return ((_scrollSpeed * 100) / bpm).round().clamp(_hispeedMin, _hispeedMax);
   }
 
-  // Minimum seconds a tempo must be held to count toward the cabinet's bpmmax.
+  // Minimum seconds a tempo must be held to count toward the headline BPM.
   // Transient gimmick spikes (a one-beat 4× flash) are excluded; anything the
-  // chart actually sits at is kept. 2s reproduces the cabinet's bpmmax on 98%
-  // of songs it shares with this repo (measured against musicdb.xml).
+  // chart actually sits at is kept. 2s reproduces the cabinet's headline tempo
+  // on the large majority of songs.
   static const double _sustainedBpmMinSeconds = 2.0;
 
   // The REAL SPEED divisor: the app's reconstruction of the cabinet's `bpmmax`.
   //
-  // Rule (derived empirically, not hand-tuned): bpmmax = the highest BPM the
-  // chart SUSTAINS for at least [_sustainedBpmMinSeconds], i.e. the fastest
+  // Rule (derived empirically, not hand-tuned): headline BPM = the highest BPM
+  // the chart SUSTAINS for at least [_sustainedBpmMinSeconds], i.e. the fastest
   // tempo you actually read at, ignoring momentary soflan spikes. This beats
-  // both prior attempts — dominant alone (95%) missed songs whose sustained
-  // peak isn't the most-common tempo, and the raw note-stream max (which halved
-  // SMASH by dividing by its 320 spike). It matches the cabinet on 98% of
-  // shared songs; the residual is BPM-octave notation differences and a few
-  // gimmick charts. See docs/ddr-world-speed.md.
+  // both prior attempts — dominant_bpm alone missed songs whose sustained peak
+  // isn't the most-common tempo, and the raw note-stream max halved big soflans
+  // by dividing by a sub-2s spike. The residual misses are BPM-octave notation
+  // differences and a few gimmick charts.
   //
   // Computed from [widget.bpms] segment durations. NOTE this is independent of
   // [widget.maxBpm]/`true_max`, which is deliberately preserved untouched: it's
@@ -637,8 +632,8 @@ class _ChartScrollerState extends State<ChartScroller>
   //
   // Anchored to the ARCADE's own speed↔time law rather than a tuned feel
   // number. DDR WORLD's CONSTANT option is defined as "an arrow is visible
-  // for N milliseconds" (100–3000ms, step 10 — verified in the WORLD binary,
-  // see docs/ddr-world-speed.md), which fixes the relationship between a
+  // for N milliseconds" (100–3000ms, step 10), which fixes the relationship
+  // between a
   // scroll speed and how long an arrow is on screen. Matching CONSTANT's
   // definition to normal play at read speed R gives
   //
@@ -670,14 +665,12 @@ class _ChartScrollerState extends State<ChartScroller>
   // So at read speed 600 an arrow is visible ~0.62s, and CONSTANT's 1000ms
   // default reads like SPEED 370.
   //
-  // This constant CANNOT come from the binary: WORLD stores the CONSTANT
-  // option value (100–3000ms) and the speed multiplier, but the geometry
-  // that turns those into a travel time — receptor Y and field height —
-  // lives in the .arc layout blobs, not in gamemdx.dll. An earlier revision
-  // briefly used k = 180 on the reasoning that "370 isn't in the binary";
-  // that was wrong twice over (the binary can't contain it, and 180 makes
-  // arrows ~2× too fast), and it is why the field scrolled visibly quicker
-  // than a cabinet. See docs/ddr-world-speed.md.
+  // k is necessarily MEASURED from the running game, not read from any config:
+  // the cabinet stores the CONSTANT option (100–3000ms) and the speed
+  // multiplier, but the on-screen geometry that turns those into a travel time
+  // (receptor position and field height) isn't a stored number. An earlier
+  // revision used k = 180 and made arrows ~2× too fast (travel 0.30s at
+  // R = 600); 370 is the value the three measured points above agree on.
   static const double _arcadeTravelConstant = 370.0;
 
   // Vertical distance an arrow actually travels in THIS field: bottom edge
@@ -752,15 +745,14 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // Read speed the CURRENT tempo section reads at: localBpm × mod, full stop.
   //
-  // CONSTANT is deliberately NOT folded in. Verified against the WORLD binary:
-  // its speed readout (num_min/core/max @ 0x10116240) never references the
-  // CONSTANT display-time value (Option+0x28), and the play-side effective
+  // CONSTANT is deliberately NOT folded in: the cabinet's speed readout never
+  // references the CONSTANT display-time value, and the effective scroll
   // multiplier is identical whether CONSTANT is on or off — CONSTANT changes
   // arrow VISIBILITY (a fixed wall-clock display window, see [_constantAlpha]),
   // not scroll velocity. An earlier revision clamped slow sections up to the
   // window's "equivalent read speed" and showed a "C###" badge; that speed
-  // floor does not exist on a cabinet, which is why CONSTANT + a speed type
-  // read wrong here. See docs/ddr-world-speed.md.
+  // floor is not a cabinet behaviour, which is why CONSTANT + a speed type read
+  // wrong here.
   int get _liveReadSpeed => (_localBpm * _rate).round();
 
   double get _endSecond =>
@@ -858,8 +850,8 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // The cabinet's SetHispeed snap: clamp to 25–800, then floor to a multiple
   // of 5 (x0.05) — except a floored value below x1.00 bumps back up one step,
-  // so sub-x1 multipliers round UP. Ported behaviour-for-behaviour from the
-  // WORLD binary.
+  // so sub-x1 multipliers round UP. Reproduces the cabinet's dial snap
+  // behaviour-for-behaviour.
   int _snapHispeed(int h) {
     h = h.clamp(_hispeedMin, _hispeedMax);
     final r = h % _hispeedStep;
@@ -1362,9 +1354,8 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
-  // The cabinet's num_min / num_core / num_max readouts (display fn @
-  // 0x10116240): each of the chart's three BPM fields times the active
-  // multiplier, rounded.
+  // The cabinet's num_min / num_core / num_max readouts: each of the chart's
+  // three BPM fields times the active multiplier, rounded.
   //
   //   min  = bpmmin       (this repo's true_min)
   //   core = the core BPM (this repo's dominant_bpm)
@@ -3181,8 +3172,7 @@ class _ChartPainter extends CustomPainter {
   // they reach the Step Zone", and the modifier's origin — 鳳 as A3's
   // BABY-LON'S GALAXY encore — visibly fades); the exact curve isn't published,
   // so this fraction is eyeballed from footage and tunable. Unlike HIDDEN/
-  // SUDDEN, which are drawn lane covers (CoverActor in gamemdx.dll), CONSTANT
-  // is per-arrow alpha.
+  // SUDDEN, which are drawn lane covers, CONSTANT is per-arrow alpha.
   static const double _constantFadeFrac = 0.2;
 
   // Opacity of the note at chart-second [t] under the CONSTANT modifier: 1 when

@@ -1,15 +1,16 @@
 /// Tests the DDR WORLD SPEED TYPE derivation — REAL SPEED (the cabinet's
-/// ScrollSpeed) divides the dialled number by the song's `bpmmax`, which the app
-/// reconstructs as the highest BPM the chart SUSTAINS for >= 2 seconds. Brief
-/// soflan spikes are excluded, so they don't shrink the multiplier.
+/// ScrollSpeed) divides the dialled number by the song's curated headline BPM,
+/// which the app reconstructs as the highest BPM the chart SUSTAINS for >= 2
+/// seconds. Brief soflan spikes are excluded, so they don't shrink the
+/// multiplier.
 ///
-/// Worked example is SMASH: the WORLD cabinet stores bpmmin=80 / bpmmax=160,
-/// even though the chart flashes 320 momentarily. Because that 320 isn't
-/// sustained, the divisor is 160, and REAL SPEED 600 reads:
+/// Worked example is a SMASH-like chart: headline 80-160 with a momentary 320
+/// flash. Because that 320 isn't sustained, the divisor is 160, and REAL SPEED
+/// 600 reads:
 ///   round(600 * 100 / 160) = x3.75  ->  main section 160 * 3.75 = 600,
 /// matching HI-SPEED x3.75 exactly — the arcade-correct feel. A prior revision
 /// divided by the raw note-stream peak (320), halving the read speed to ~300, a
-/// value the cabinet has no data for. See docs/ddr-world-speed.md.
+/// value the cabinet has no data for.
 library;
 
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';

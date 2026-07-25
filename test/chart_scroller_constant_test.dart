@@ -8,7 +8,7 @@
 /// so the badge's READ value is always localBpm × mod. An earlier revision
 /// clamped slow sections up to the window's "equivalent read speed" and showed
 /// a "C###" badge; that speed floor is a fabrication and is what made
-/// CONSTANT + a speed type feel wrong. See docs/ddr-world-speed.md.
+/// CONSTANT + a speed type feel wrong.
 library;
 
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';

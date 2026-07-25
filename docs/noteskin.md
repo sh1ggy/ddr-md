@@ -55,12 +55,11 @@ renders real arrows; absent → `VectorNoteskin`. No runtime `.arc` parsing is
 involved — the app only ever loads PNGs.
 
 An older extraction path (`DDR-BPM-prep/src/extract_noteskin.py`, `make
-noteskin`) pulls a single **colourless grey** arrow plus a green hold body/tail
-out of a DDR World arcade dump's `2d_arrow00.arc` atlas (see that script's
-docstring for the `.arc`/`.dds` format details) and tints it per quantisation
-at runtime. `SpriteNoteskin` no longer consumes that output — the sprites
-below are the current, better-fidelity set (pre-coloured, pre-shaded, matching
-the in-game glossy chevron look) and must be sourced by hand.
+noteskin`) produced a single **colourless grey** arrow plus a green hold
+body/tail and tinted it per quantisation at runtime. `SpriteNoteskin` no
+longer consumes that output — the sprites below are the current,
+better-fidelity set (pre-coloured, pre-shaded, matching the in-game glossy
+chevron look) and must be sourced by hand.
 
 ### Sprite files the app consumes
 

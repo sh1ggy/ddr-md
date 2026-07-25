@@ -45,9 +45,8 @@ class ChartPreviewPage extends StatefulWidget {
 
   /// The chart's authored BPM extremes (`true_min`/`true_max` from [Chart]),
   /// with [chartBpm] as the core (dominant) tempo between them. This is the
-  /// same (min, core, max) trio the WORLD cabinet hands its speed option, and
-  /// [maxBpm] is the divisor REAL SPEED derives its multiplier from — see
-  /// docs/ddr-world-speed.md.
+  /// same (min, core, max) trio the cabinet hands its speed option, and
+  /// [maxBpm] is the divisor REAL SPEED derives its multiplier from.
   final int minBpm;
   final int maxBpm;
 
