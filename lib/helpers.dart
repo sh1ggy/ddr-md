@@ -316,10 +316,16 @@ String formatScore(int score) {
 
 // Accent color for a DDR judgment key. Returns null for unrecognised keys so
 // callers fall back to the theme's default text color (safe in dark mode).
-Color? judgmentColor(String key) {
+Color? judgmentColor(String key, {BuildContext? context}) {
+  final isDark = context != null
+      ? Theme.of(context).brightness == Brightness.dark
+      : WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+          Brightness.dark;
+
   switch (key.toLowerCase()) {
     case 'marvelous':
-      return Colors.white;
+      // A near-white cyan in dark mode, and a deep cyan in light mode.
+      return isDark ? const Color(0xFFB6FFF7) : const Color(0xFF006F67);
     case 'perfect':
       return Colors.yellow[700]!;
     case 'great':

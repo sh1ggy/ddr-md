@@ -469,7 +469,7 @@ class OCREditableField extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: judgmentColor(keyName),
+                    color: judgmentColor(keyName, context: context),
                   ),
                 ),
               ),
@@ -751,7 +751,7 @@ class OCRKeyValue extends StatelessWidget {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: judgmentColor(keyName),
+              color: judgmentColor(keyName, context: context),
             ),
           ),
         ),
