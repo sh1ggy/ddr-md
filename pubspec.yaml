@@ -24,18 +24,31 @@ dependencies:
   image_picker: ^1.2.1
   get: ^4.7.3
   font_awesome_flutter: ^11.0.0
+  # Low-latency audio engine (SoLoud). Drives the assist tick so it can be
+  # scheduled against the engine's own audio-thread clock instead of the
+  # render loop — dense streams need every tick on time, and the old
+  # audioplayers backend had no scheduling API. See
+  # lib/components/song/notes/tick_clock.dart.
+  flutter_soloud: ^4.0.13
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
   flutter_lints: ^3.0.0
 
 flutter:
   assets:
     - assets/
+    - assets/audio/
     - assets/icons/
     - assets/jackets-160/
     - assets/jackets/
+    - assets/steps/
+    # Sprite noteskin (git-ignored, copyrighted Konami art). Absent by
+    # default; the app falls back to a vector skin.
+    - assets/noteskin/
     # Only the model triple the app loads at runtime (ocr_onnx.cpp defaults).
     # The other variants in assets/models/ exist for the offline
     # native_opencv/tools/model_compare harness and must not ship in the bundle.
