@@ -346,6 +346,9 @@ class _SongPageState extends State<SongPage> {
                             context: context,
                             songInfo: songState.songInfo,
                             chart: _chart),
+                      if (songState.songInfo!.syncFor(_chart) != null)
+                        SongSyncChart(
+                            songInfo: songState.songInfo!, chart: _chart),
                       if (latestScore != null)
                         GestureDetector(
                           onTap: () => openHistory(HistoryPage.scoresTab),
