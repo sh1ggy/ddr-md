@@ -2,6 +2,18 @@
 /// Description: A file to store constant values
 library;
 
+import 'package:flutter/material.dart';
+
+// FAST/SLOW timing palette, shared by every surface that reports a timing bias:
+// the song page's sync card and the chart preview's ARCADE SYNC dials. FAST
+// (early / ahead of the beat) reads teal, SLOW (late) reads magenta — one pair
+// of colours meaning one pair of things across the app. Each has a darker
+// light-mode variant and a brighter dark-mode one so both stay legible.
+Color kFastColor(bool isDark) =>
+    isDark ? const Color(0xFF46FCE7) : const Color(0xFF00A89E);
+Color kSlowColor(bool isDark) =>
+    isDark ? const Color(0xFFFF45A0) : const Color(0xFFE53886);
+
 // DDR WORLD's HI-SPEED ladder: the SPEED option was reworked into HI-SPEED,
 // x0.25–x8.00 dialled in x0.05 increments (per-song SPEED changes at a song's
 // start still move in x0.25 — see _buttonModSteps in chart_scroller). This

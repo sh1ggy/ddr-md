@@ -5,6 +5,7 @@ library;
 
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/constants.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -336,11 +337,10 @@ class _SongSyncChartState extends State<SongSyncChart> {
       Colors.black.withValues(alpha: isDark ? 0.18 : 0.14),
       Theme.of(context).cardColor,
     );
-    // Theme variants: darker hues for light mode, brighter for dark mode.
-    final fastColor =
-        isDark ? const Color(0xFF46FCE7) : const Color(0xFF00A89E);
-    final slowColor =
-        isDark ? const Color(0xFFFF45A0) : const Color(0xFFE53886);
+    // Shared app-wide FAST/SLOW palette (see constants.dart) — the chart
+    // preview's ARCADE SYNC dials tint from the same pair.
+    final fastColor = kFastColor(isDark);
+    final slowColor = kSlowColor(isDark);
     final biasColor = sync.biasMs < 0
         ? slowColor
         : sync.biasMs > 0
