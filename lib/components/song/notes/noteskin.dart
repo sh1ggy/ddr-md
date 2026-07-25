@@ -437,23 +437,29 @@ class VectorNoteskin implements Noteskin {
   static Color _darken(Color c, double amt) => Color.lerp(c, Colors.black, amt)!;
 }
 
-/// Sprite-backed noteskin using real DDR World arrow art extracted into
-/// assets/noteskin/ (grey `note.png`, `hold_body.png`, `hold_head.png` — see
-/// DDR-BPM-prep/src/extract_noteskin.py and docs/noteskin.md). The grey note is
-/// tinted per note quantisation so the authentic arrow shape still reads its
-/// rhythm at a glance. Mines, shock arrows and receptors fall back to the
-/// vector skin, which already looks good for those.
+/// Sprite-backed noteskin using real DDR World arrow art from assets/noteskin/
+/// (grey `note.png` rotated + tinted per quantisation for taps; direction-
+/// oriented `hold-{left,down,up,right}-{body,tail}.png` for freezes — see
+/// docs/noteskin.md). The grey note is tinted per note quantisation so the
+/// authentic arrow shape still reads its rhythm at a glance. Mines, shock arrows
+/// and receptors fall back to the vector skin, which already looks good for
+/// those.
 ///
 /// [tryLoad] returns null when the sprites aren't bundled (fresh clone / lite
 /// build) so the caller uses [VectorNoteskin] everywhere instead.
 class SpriteNoteskin implements Noteskin {
   SpriteNoteskin._(
     this._note,
-    this._holdBody,
+    this._holdBodies,
   );
 
   final ui.Image _note;
-  final ui.Image _holdBody;
+  // Per-direction freeze body sprites, keyed by NoteDir.index. Unlike the note
+  // glyph (one down-facing arrow rotated per lane), the DDR World freeze body art
+  // is authored already oriented for each of L/D/U/R, so we pick the matching
+  // sprite and draw it upright rather than rotating a single one. The tail
+  // end-cap reuses the tinted note sprite instead.
+  final List<ui.Image> _holdBodies;
 
   // Vector skin handles the elements we didn't extract sprites for.
   static const VectorNoteskin _vector = VectorNoteskin();
@@ -478,8 +484,11 @@ class SpriteNoteskin implements Noteskin {
   static Future<Noteskin?> _doLoad() async {
     try {
       final note = await _load('assets/noteskin/note.png');
-      final body = await _load('assets/noteskin/hold_body.png');
-      _loadedSkin = SpriteNoteskin._(note, body);
+      // NoteDir order: left, down, up, right (see enum NoteDir).
+      const dirNames = ['left', 'down', 'up', 'right'];
+      final bodies = await Future.wait(
+          dirNames.map((d) => _load('assets/noteskin/hold-$d-body.png')));
+      _loadedSkin = SpriteNoteskin._(note, bodies);
     } catch (_) {
       _loadedSkin = null; // sprites absent -> vector fallback
     }
@@ -541,17 +550,18 @@ class SpriteNoteskin implements Noteskin {
     // quantisation), capped by the note arrow itself. Use full note width so the
     // freeze reads as the same thickness as the note itself.
     final w = size;
+    final body = _holdBodies[dir.index];
     final bodyRect = Rect.fromLTRB(x - w / 2, yHead, x + w / 2, yTail);
     canvas.save();
     canvas.clipRect(bodyRect);
-    final tileH = w * _holdBody.height / _holdBody.width;
+    final tileH = w * body.height / body.width;
     final paint = Paint()..filterQuality = FilterQuality.medium;
     if (isRoll) {
       paint.colorFilter = const ColorFilter.mode(
           Color(0xFFF2A03B), BlendMode.modulate);
     }
     for (double ty = yHead; ty < yTail; ty += tileH) {
-      _drawImage(canvas, _holdBody, Rect.fromLTWH(x - w / 2, ty, w, tileH),
+      _drawImage(canvas, body, Rect.fromLTWH(x - w / 2, ty, w, tileH),
           paint: paint);
     }
     canvas.restore();
