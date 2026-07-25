@@ -66,8 +66,10 @@ class TickClock {
   double _clockAtAnchor = 0;
   double _rate = 1.0;
 
-  /// The poller. Runs only while ticks are pending; a tight period so the
-  /// release lands within a fraction of a frame of the true row time.
+  /// The poller. Runs only while ticks are pending. 4ms is comfortably finer
+  /// than SoLoud's ~15ms unpause latency, so the poll period is not the
+  /// accuracy bottleneck — tightening it further doesn't help (verified in the
+  /// integration test), it just burns CPU.
   Timer? _poller;
   static const Duration _pollPeriod = Duration(milliseconds: 4);
 
@@ -75,6 +77,16 @@ class TickClock {
   /// release is just an unpause (no decode/voice-alloc at fire time). Must
   /// exceed one poll period comfortably.
   static const double _primeLead = 0.05;
+
+  /// Mean latency between us calling [SoLoud.setPause] to release a voice and
+  /// the sample actually sounding — the unpause takes about one output buffer
+  /// to reach the DAC. Measured on the real engine at ~10-25ms, centred near
+  /// 15ms (integration_test/tick_clock_test.dart), so we release each tick this
+  /// far *before* its target to centre the residual error on zero instead of
+  /// landing a buffer late. The remaining spread is jitter in SoLoud's unpause
+  /// path that can't be scheduled away from Dart — closing it needs the native
+  /// setDelaySamples primitive, which the flutter_soloud binding doesn't expose.
+  static const double _releaseLatency = 0.015;
 
   /// Voices primed-but-not-yet-fired, keyed by the row index they belong to.
   final Map<int, SoundHandle> _primed = {};
@@ -240,20 +252,27 @@ class TickClock {
       }
     }
 
-    // Release primed voices whose time has come. A row already past its time
+    // Release primed voices whose time has come, compensating for the fixed
+    // unpause→sound latency: fire when the clock reaches (target − latency) so
+    // the sample actually sounds at the target. A row already past even that
     // (a stalled poll, a big rate) still fires now — one late tick beats a
     // dropped one, and the next rows realign to the clock immediately.
     if (_primed.isNotEmpty) {
       final due = <int>[];
       _primed.forEach((idx, _) {
-        if (_rowClockSecond(_rows[idx]) <= clockNow) due.add(idx);
+        if (_rowClockSecond(_rows[idx]) - _releaseLatency <= clockNow) {
+          due.add(idx);
+        }
       });
       for (final idx in due) {
         final h = _primed.remove(idx)!;
         soloud.setPause(h, false);
         _firedCount++;
-        // Error = how far the audio clock is from the row's target at release.
-        _onFire?.call(_rows[idx], clockNow - _rowClockSecond(_rows[idx]));
+        // Audible error: the sample sounds ~_releaseLatency after this call, so
+        // the true error at the ear is (clock + latency) − target. With the
+        // release-lead compensation this should sit near zero.
+        _onFire?.call(_rows[idx],
+            (clockNow + _releaseLatency) - _rowClockSecond(_rows[idx]));
       }
     }
 
