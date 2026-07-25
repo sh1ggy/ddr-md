@@ -5,6 +5,7 @@
 library;
 
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
+import 'package:ddr_md/components/song/notes/chart_timing.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';

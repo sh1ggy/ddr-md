@@ -28,6 +28,7 @@ class ChartPreviewPage extends StatefulWidget {
     required this.maxBpm,
     required this.bpms,
     required this.stops,
+    this.sync,
   });
 
   /// The (already in-flight) lazy load of the song's step file, shared with the
@@ -54,6 +55,12 @@ class ChartPreviewPage extends StatefulWidget {
   /// as timing markers in the scroller so the preview reflects tempo shifts.
   final List<Bpm> bpms;
   final List<Stop> stops;
+
+  /// The song's measured audio-vs-chart sync — the same block the song page's
+  /// Sync card displays (cabinet when available, else simfile). Surfaced under
+  /// ARCADE SYNC so the offsets are dialled against the song's known bias
+  /// rather than in the dark. Null when the song ships no sync data.
+  final Sync? sync;
 
   @override
   State<ChartPreviewPage> createState() => _ChartPreviewPageState();
@@ -125,6 +132,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               maxBpm: widget.maxBpm,
               bpms: widget.bpms,
               stops: widget.stops,
+              sync: widget.sync,
               showFootGuide: _showFootGuide,
               assistTickOn: _assistTick,
               onToggleFootGuide: () =>

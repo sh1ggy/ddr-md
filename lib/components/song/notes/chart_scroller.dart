@@ -11,15 +11,28 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
+import 'chart_chrome.dart';
+import 'chart_models.dart';
+// The chrome's test handles (tempoBadgeKey, shadeTabKey, the offset chip keys)
+// are re-exported so tests and callers keep importing them from this file, the
+// preview's entry point, rather than reaching into the split-out parts.
+export 'chart_chrome.dart'
+    show
+        tempoBadgeKey,
+        shadeTabKey,
+        arcadeSyncTileKey,
+        visualOffsetChipKey,
+        audioOffsetChipKey;
+import 'chart_painter.dart';
+import 'chart_timing.dart';
+import 'density_scrub_bar.dart';
 import 'tick_clock.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -58,237 +71,6 @@ List<int> _turnColumnMap(_Turn turn, int columnCount) {
   // Unknown width: identity (no turn) rather than risk an out-of-range map.
   return [for (int c = 0; c < columnCount; c++) c];
 }
-
-/// A row of simultaneous mines spanning most/all columns — a DDR shock arrow,
-/// which is drawn as a single bar per lane rather than individual mines.
-class _ShockRow {
-  final double second;
-  final Set<int> cols;
-  const _ShockRow(this.second, this.cols);
-}
-
-class _MinimapSegment {
-  final Color color;
-  final double weight;
-  const _MinimapSegment(this.color, this.weight);
-}
-
-/// Maps wall-clock seconds to chart beats so the field can scroll beat-locked
-/// (true DDR): arrows are spaced by beat, so a BPM rise speeds them up and a
-/// stop freezes the field. Built once per chart from the note stream's exact
-/// (second, beat) anchors plus the explicit stop intervals.
-///
-/// The curve is piecewise-linear in (second, beat): between anchors the BPM is
-/// constant, so beat advances linearly with time; across a stop, beat is held
-/// flat for the stop's duration. [beatAt] binary-searches the breakpoints.
-class ChartTiming {
-  // Parallel, strictly-increasing-in-second breakpoint arrays. `_beats` is
-  // non-decreasing (flat across a stop). Beat is linearly interpolated between
-  // consecutive breakpoints, and extrapolated past the ends at the adjacent
-  // segment's slope so notes before the first / after the last anchor still map.
-  final List<double> _seconds;
-  final List<double> _beats;
-
-  // Cumulative stop-seconds absorbed at or before each breakpoint: the running
-  // total of flat (beat-held) time up to `_seconds[i]`. Lets the paused/scroll
-  // view give stops real vertical extent (a note past a stop is pushed down by
-  // the stop's duration) even though beat-locked scrolling collapses them to a
-  // line. Parallel to `_seconds`/`_beats`.
-  final List<double> _stopAccum;
-
-  const ChartTiming._(this._seconds, this._beats, this._stopAccum);
-
-  /// Empty map — used when a chart carries no BPM data; the caller then draws in
-  /// the plain constant-time mode instead of consulting this.
-  static const ChartTiming empty = ChartTiming._([], [], []);
-
-  bool get isEmpty => _seconds.isEmpty;
-
-  /// Build the second→beat curve analytically from the chart's BPM segments and
-  /// stops (both in real wall-clock seconds, stops already baked into the BPM
-  /// segment seconds). Walks each constant-tempo segment, inserting any stop
-  /// inside it as a flat (beat-held) interval, so BPM changes localize exactly
-  /// where they occur and stops freeze for precisely their duration.
-  factory ChartTiming.build(List<Bpm> bpms, List<Stop> stops) {
-    if (bpms.isEmpty) return empty;
-    // Stops sorted by start second; consumed in order as we sweep the timeline.
-    final sortedStops = [...stops.where((s) => s.dur > 0)]
-      ..sort((a, b) => a.st.compareTo(b.st));
-
-    final seconds = <double>[];
-    final beats = <double>[];
-    final stopAccum = <double>[];
-    double beat = 0; // musical beat accumulated so far
-    double stopped = 0; // cumulative stop-seconds absorbed so far
-    void add(double s, double b) {
-      // Keep seconds strictly increasing; coincident points (a stop exactly on a
-      // segment edge) collapse to one, preserving the later (post-event) beat.
-      if (seconds.isNotEmpty && (s - seconds.last).abs() < 1e-6) {
-        beats[beats.length - 1] = b;
-        stopAccum[stopAccum.length - 1] = stopped;
-        return;
-      }
-      seconds.add(s);
-      beats.add(b);
-      stopAccum.add(stopped);
-    }
-
-    int si = 0;
-    for (final seg in bpms) {
-      final bps = seg.val / 60.0; // beats per (musical) second at this tempo
-      double cursor = seg.st; // real-second cursor inside this segment
-      add(cursor, beat);
-      // Fold in any stops that begin within this segment, in order.
-      while (si < sortedStops.length && sortedStops[si].st < seg.ed - 1e-9) {
-        final stop = sortedStops[si];
-        if (stop.st >= cursor - 1e-9) {
-          // Advance to the stop start, accruing beats over the moving time.
-          beat += (stop.st - cursor) * bps;
-          add(stop.st, beat);
-          // The halt: real time advances by dur, beat stays flat. Record the
-          // absorbed stop-time so the paused view can re-expand it vertically.
-          stopped += stop.dur;
-          add(stop.st + stop.dur, beat);
-          cursor = stop.st + stop.dur;
-        }
-        si++;
-      }
-      // Remainder of the segment after the last contained stop.
-      beat += (seg.ed - cursor) * bps;
-      add(seg.ed, beat);
-    }
-    if (seconds.length < 2) return empty;
-    return ChartTiming._(seconds, beats, stopAccum);
-  }
-
-  /// Cumulative stop-seconds absorbed at or before wall-clock [second]: the
-  /// total flat (beat-held) time up to that point. Within a stop it grows
-  /// linearly to the stop's full duration, so differencing this across two
-  /// seconds yields the stop-time strictly between them — what the paused view
-  /// uses to give stops real vertical height while beat-locked scroll collapses
-  /// them. Extrapolates flat past the ends (no stops outside the timeline).
-  double stopSecondsAt(double second) {
-    final n = _seconds.length;
-    if (n == 0) return 0;
-    if (second <= _seconds.first) return _stopAccum.first;
-    if (second >= _seconds.last) return _stopAccum.last;
-    int lo = 0, hi = n - 1;
-    while (hi - lo > 1) {
-      final mid = (lo + hi) >> 1;
-      if (_seconds[mid] <= second) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    final ds = _seconds[lo + 1] - _seconds[lo];
-    if (ds.abs() < 1e-9) return _stopAccum[lo + 1];
-    final f = (second - _seconds[lo]) / ds;
-    return _stopAccum[lo] + f * (_stopAccum[lo + 1] - _stopAccum[lo]);
-  }
-
-  /// Beat at wall-clock [second], interpolating between breakpoints and
-  /// extrapolating at the end slopes so out-of-range seconds still map linearly.
-  double beatAt(double second) {
-    final n = _seconds.length;
-    if (n == 0) return second;
-    if (second <= _seconds.first) {
-      return _extrapolate(second, 0, 1, fallbackSlope: _slope(0, 1));
-    }
-    if (second >= _seconds.last) {
-      return _extrapolate(second, n - 2, n - 1, fallbackSlope: _slope(n - 2, n - 1));
-    }
-    // Binary search for the segment [lo, lo+1] containing `second`.
-    int lo = 0, hi = n - 1;
-    while (hi - lo > 1) {
-      final mid = (lo + hi) >> 1;
-      if (_seconds[mid] <= second) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    return _interp(second, lo, lo + 1);
-  }
-
-  /// Largest wall-clock second at or below [beat] — the inverse of [beatAt],
-  /// resolving a stop (many seconds share one beat) to the stop's END so it
-  /// serves as a conservative lower cull bound for the visible window.
-  double secondAt(double beat) {
-    final n = _beats.length;
-    if (n == 0) return beat;
-    if (beat <= _beats.first) {
-      final s = _slope(0, 1);
-      return s.abs() < 1e-9 ? _seconds.first : _seconds.first + (beat - _beats.first) / s;
-    }
-    if (beat >= _beats.last) {
-      final s = _slope(n - 2, n - 1);
-      return s.abs() < 1e-9 ? _seconds.last : _seconds.last + (beat - _beats.last) / s;
-    }
-    // Upper-bound search: last index whose beat <= target (beats non-decreasing).
-    int lo = 0, hi = n - 1;
-    while (hi - lo > 1) {
-      final mid = (lo + hi) >> 1;
-      if (_beats[mid] <= beat) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    final db = _beats[lo + 1] - _beats[lo];
-    if (db.abs() < 1e-9) return _seconds[lo + 1];
-    final f = (beat - _beats[lo]) / db;
-    return _seconds[lo] + f * (_seconds[lo + 1] - _seconds[lo]);
-  }
-
-  double _slope(int i, int j) {
-    final ds = _seconds[j] - _seconds[i];
-    if (ds.abs() < 1e-9) return 0;
-    return (_beats[j] - _beats[i]) / ds;
-  }
-
-  double _interp(double second, int i, int j) {
-    final ds = _seconds[j] - _seconds[i];
-    if (ds.abs() < 1e-9) return _beats[i];
-    final f = (second - _seconds[i]) / ds;
-    return _beats[i] + f * (_beats[j] - _beats[i]);
-  }
-
-  double _extrapolate(double second, int i, int j,
-          {required double fallbackSlope}) =>
-      _beats[i] + (second - _seconds[i]) * fallbackSlope;
-}
-
-/// A tempo change at [second], to [bpm]. Only real transitions are kept (the
-/// song's opening BPM is not a "change"), so the field isn't cluttered with a
-/// marker at t=0 on every chart.
-class _BpmMarker {
-  final double second;
-  final int bpm;
-  const _BpmMarker(this.second, this.bpm);
-}
-
-/// A stop of [dur] seconds starting at [second]. Rendered as a band spanning its
-/// duration on the scroll field so its length reads at a glance.
-class _StopMarker {
-  final double second;
-  final double dur;
-  const _StopMarker(this.second, this.dur);
-}
-
-class _MinimapBucket {
-  final double level;
-  final List<_MinimapSegment> segments;
-  final double holdLevel;
-  final bool hasShock;
-  const _MinimapBucket({
-    required this.level,
-    required this.segments,
-    required this.holdLevel,
-    required this.hasShock,
-  });
-}
-
 class ChartScroller extends StatefulWidget {
   const ChartScroller({
     super.key,
@@ -300,6 +82,7 @@ class ChartScroller extends StatefulWidget {
     this.maxBpm = 0,
     this.bpms = const [],
     this.stops = const [],
+    this.sync,
     this.showFootGuide = false,
     this.assistTickOn = false,
     this.onToggleFootGuide,
@@ -322,6 +105,11 @@ class ChartScroller extends StatefulWidget {
   /// they render at true position without any extra timing reconstruction.
   final List<Bpm> bpms;
   final List<Stop> stops;
+
+  /// The song's measured audio-vs-chart sync (the block the song page's Sync
+  /// card shows). Reported under ARCADE SYNC so the dials are set against the
+  /// song's known bias instead of blind. Null when the song has no sync data.
+  final Sync? sync;
 
   /// The chart's authored BPM extremes (`true_min`/`true_max` from [Chart]),
   /// bracketing [chartBpm] (the dominant/core tempo). Together they are the
@@ -514,6 +302,65 @@ class _ChartScrollerState extends State<ChartScroller>
   // put). OFF by default; persisted across previews. See [_Turn].
   _Turn _turn = _Turn.off;
 
+  // ARCADE SYNC: master switch for the cabinet timing simulation. While off,
+  // both offsets below are ignored entirely and their controls stay hidden, so
+  // the default preview behaves exactly as it did before they existed. Turning
+  // it on also forces the assist tick on (restoring the previous tick state on
+  // the way out), because an AUDIO OFFSET is inaudible without it — the whole
+  // point of the mode is hearing the tick move against the arrows.
+  bool _arcadeSyncOn = false;
+  bool? _tickBeforeArcadeSync;
+
+  // The cabinet's two TIMING dials. They are NOT the same unit or scale — the
+  // cabinet expresses them differently, and so do players:
+  //
+  //   VISUAL (表示タイミング) — a -5.0..+5.0 dial in 0.1 steps. It moves the
+  //     arrows' aiming position, NOT the judgement position against the music.
+  //     Correction direction: many FAST → PLUS, many SLOW → MINUS.
+  //   AUDIO (判定タイミング) — natively in MILLISECONDS, where players work in
+  //     roughly ±10-20ms (more on badly-synced songs). Kept in ms here rather
+  //     than converted to the visual dial's unit, so a number that means
+  //     something on a cabinet means the same thing in the preview.
+  //
+  // The preview has no judgement or input, so neither dial can be validated
+  // from FAST/SLOW counts in-app: they reproduce the settings so their effect
+  // can be seen and heard, they can't tell you your offset.
+  static const double _visualOffsetMin = -5.0;
+  static const double _visualOffsetMax = 5.0;
+  static const double _visualOffsetStep = 0.1;
+
+  static const double _audioOffsetMinMs = -50;
+  static const double _audioOffsetMaxMs = 50;
+
+  /// Seconds of arrow travel per whole VISUAL dial unit.
+  ///
+  /// The cabinet's dial is published as a bare number — no source gives its ms
+  /// or frame equivalent — so this is the preview's own calibration, not a
+  /// cabinet fact. One unit = one 60fps frame (16.67ms) is the natural reading
+  /// given DDR judges on frames, and it puts the full ±5.0 dial at ±83ms, the
+  /// right order of magnitude for a display-lag correction. Notes kept locally.
+  static const double _visualOffsetUnitSeconds = 1.0 / 60.0;
+
+  double _visualOffset = 0; // dial units, -5.0..+5.0
+  double _audioOffsetMs = 0; // milliseconds, -50..+50
+
+  /// Seconds fed to the painter / tick clock. Both collapse to zero unless
+  /// ARCADE SYNC is engaged, so the gate is enforced here rather than at each
+  /// use site — no caller can apply an offset while the mode is off. The gate
+  /// itself lives in the [debugGatedVisualOffsetSeconds] /
+  /// [debugGatedAudioOffsetSeconds] free functions so tests exercise this exact
+  /// logic (the field painter is unobservable in a widget test — the scroller
+  /// paints nothing until the noteskin future resolves, which never happens
+  /// under the test harness).
+  double get _visualOffsetSeconds => debugGatedVisualOffsetSeconds(
+        arcadeSyncOn: _arcadeSyncOn,
+        units: _visualOffset,
+      );
+  double get _audioOffsetSeconds => debugGatedAudioOffsetSeconds(
+        arcadeSyncOn: _arcadeSyncOn,
+        ms: _audioOffsetMs,
+      );
+
   // Playback-rate multiplier: how fast the chart plays back in wall-clock time.
   // 1.0 = true speed; <1 slows the song, >1 speeds it up. Independent of the
   // read-speed (note-spacing) mod above.
@@ -534,7 +381,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // Notes that are part of a shock row are drawn as bars, not mines, so the
   // painter skips them and draws [_shocks] instead.
   final Set<StepNote> _shockNotes = {};
-  final List<_ShockRow> _shocks = [];
+  final List<ShockRow> _shocks = [];
 
   // Assist tick: distinct row seconds (taps + hold/roll heads, mines excluded),
   // sorted, that get an audible tick as the playhead crosses them. Scheduling
@@ -549,8 +396,8 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // Tempo-change and stop markers, in chart seconds, built once from the chart's
   // timing so the field and minimap can show where the song shifts speed / halts.
-  List<_BpmMarker> _bpmMarkers = const [];
-  List<_StopMarker> _stopMarkers = const [];
+  List<BpmMarker> _bpmMarkers = const [];
+  List<StopMarker> _stopMarkers = const [];
 
   // Second→beat map for beat-locked scrolling: arrows are spaced by beat, so
   // BPM changes speed the field up/down and stops freeze it. Empty when the
@@ -626,7 +473,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // Note-density histogram with per-bucket rhythm-color composition for the
   // scrub minimap, built once from the chart so seeking shows both intensity
   // and the kinds of notes waiting there.
-  List<_MinimapBucket> _minimap = const [];
+  List<MinimapBucket> _minimap = const [];
 
   // Pixels a note travels per second of chart time, before [_rate].
   //
@@ -771,6 +618,7 @@ class _ChartScrollerState extends State<ChartScroller>
     _loadSpeedSettings();
     _loadConstant();
     _loadTurn();
+    _loadTimingOffsets();
     _prepareNotes();
     _detectShocks();
     _assignFeet();
@@ -821,6 +669,12 @@ class _ChartScrollerState extends State<ChartScroller>
         _second = 0;
         _zoom = 1.0; // the study lens is per-chart; snap back on a new chart
       });
+    }
+    // A different sync reading means the stored offsets belong to another
+    // chart's bias — re-seed so the new one still opens near zero.
+    if (old.sync?.biasMs != widget.sync?.biasMs) {
+      _loadTimingOffsets();
+      setState(() {});
     }
     // Toggling the assist tick mid-play starts or silences the clock at once.
     if (old.assistTickOn != widget.assistTickOn) {
@@ -876,6 +730,264 @@ class _ChartScrollerState extends State<ChartScroller>
   // The ms value handed to the painter: null (NORMAL, arrows always visible)
   // unless the modifier is switched on.
   double? get _effectiveConstantMs => _constantOn ? _constantMs : null;
+
+  // Restore ARCADE SYNC and both TIMING offsets. VISUAL is stored as tenths of
+  // a dial unit so its 0.1 step round-trips exactly through the int-only
+  // Settings API; AUDIO is already whole ms. For both, the "never set" value of
+  // 0 is the neutral default.
+  void _loadTimingOffsets() {
+    _arcadeSyncOn = Settings.getInt(Settings.arcadeSyncOnKey) == 1;
+    _visualOffset = _clampVisualOffset(
+        Settings.getInt(Settings.chartPreviewVisualOffsetKey) / 10.0);
+    _audioOffsetMs = _clampAudioOffsetMs(
+        Settings.getInt(Settings.chartPreviewAudioOffsetMsKey).toDouble());
+
+    // The stored offsets cancel a PER-SONG bias, so they are only meaningful for
+    // the song they were seeded against. Re-seed whenever the saved values were
+    // computed for a different sync reading than this song's — otherwise the
+    // previous song's correction rides along and lands the new song off by the
+    // difference between the two biases (e.g. a +9ms correction carried onto a
+    // +1.5ms song reads "FAST by 10.5ms" instead of opening near zero).
+    if (_arcadeSyncOn && !_offsetsMatchThisSong()) {
+      _seedOffsetsFromSync();
+    }
+    _tickClock.audioOffset = _audioOffsetSeconds;
+  }
+
+  /// Whether the stored offsets were seeded against THIS song's bias. Compares
+  /// the bias they were computed for (persisted alongside them) with the one the
+  /// song actually carries, so a user's own manual dialling on this song is
+  /// preserved while another song's correction is not.
+  bool _offsetsMatchThisSong() {
+    final storedFor =
+        Settings.getInt(Settings.chartPreviewOffsetForBiasKey) / 100.0;
+    return (storedFor - _songBiasMs).abs() < 0.005;
+  }
+
+  // Snap the VISUAL dial to its 0.1 grid inside the cabinet's ±5.0 range.
+  static double _clampVisualOffset(double units) {
+    final clamped = units.clamp(_visualOffsetMin, _visualOffsetMax);
+    return (clamped / _visualOffsetStep).round() * _visualOffsetStep;
+  }
+
+  // AUDIO is whole milliseconds — no sub-ms dial, players talk in integers.
+  static double _clampAudioOffsetMs(double ms) =>
+      ms.roundToDouble().clamp(_audioOffsetMinMs, _audioOffsetMaxMs);
+
+  // The VISUAL dial reads like the cabinet's: always signed, one decimal, so
+  // "+0.0" reads as deliberately neutral rather than unset.
+  static String _visualOffsetLabel(double units) =>
+      "${units >= 0 ? "+" : "-"}${units.abs().toStringAsFixed(1)}";
+
+  // AUDIO reads in the unit players actually use ("+10ms").
+  static String _audioOffsetLabel(double ms) =>
+      "${ms >= 0 ? "+" : "-"}${ms.abs().round()}ms";
+
+  // The song's measured sync bias in ms, exactly as the song page's Sync card
+  // reads it: POSITIVE means the chart plays FAST (steps land ahead of the
+  // audio), negative means SLOW. 0 when the song ships no sync data.
+  double get _songBiasMs => widget.sync?.biasMs ?? 0;
+
+  // ARCADE SYNC treats the song's own bias as the STARTING POINT and the two
+  // dials as adjustments from it, matching how you'd actually sync on a cabinet:
+  // the song is already off by some amount, and you dial against that. So a song
+  // measured at +9.0ms reads "+9.0ms" the moment the mode is switched on, and a
+  // dialled -2.0ms takes the effective figure to +7.0ms.
+  //
+  // Both dials are folded into one effective millisecond figure — VISUAL is
+  // converted from its dial units so the two are commensurable.
+  double get _effectiveSyncMs =>
+      _songBiasMs +
+      _visualOffset * _visualOffsetUnitSeconds * 1000 +
+      _audioOffsetMs;
+
+  // Pre-dial the offsets that cancel the song's measured bias, so engaging
+  // ARCADE SYNC opens already corrected. The correction is the bias with its
+  // sign flipped (a chart running +9ms FAST is fixed by −9ms), the same
+  // adjustment the song page's Sync card suggests.
+  //
+  // The bias is split across the two dials by granularity, not arbitrarily: the
+  // VISUAL dial is coarse (one unit ≈ 16.67ms) so it takes as many WHOLE units
+  // as fit without overshooting, and the finer AUDIO dial (1ms) mops up the
+  // remainder. A ±9ms bias therefore lands entirely on AUDIO, while a large one
+  // uses both. Each is clamped to its own range, so a bias beyond their combined
+  // reach is corrected as far as the dials allow.
+  void _seedOffsetsFromSync() {
+    const msPerVisualUnit = _visualOffsetUnitSeconds * 1000;
+    final correctionMs = -_songBiasMs;
+
+    // The AUDIO dial is exact in whole milliseconds while VISUAL only lands on
+    // multiples of ~1.67ms (0.1 of a 16.67ms unit), so AUDIO carries the
+    // correction wherever it can — that's what keeps typical songs landing at
+    // 0.0-0.5ms. VISUAL only picks up the overflow past AUDIO's ±50ms range,
+    // which real data never reaches (measured max |bias| is ~50ms).
+    final audioShare = _clampAudioOffsetMs(correctionMs);
+    _visualOffset = _clampVisualOffset(
+        (correctionMs - audioShare) / msPerVisualUnit);
+    // Re-derive AUDIO from what VISUAL actually landed on, so the 0.1-grid
+    // rounding is absorbed here rather than left as residue.
+    _audioOffsetMs =
+        _clampAudioOffsetMs(correctionMs - _visualOffset * msPerVisualUnit);
+
+    Settings.setInt(
+        Settings.chartPreviewVisualOffsetKey, (_visualOffset * 10).round());
+    Settings.setInt(
+        Settings.chartPreviewAudioOffsetMsKey, _audioOffsetMs.round());
+    _stampOffsetBias();
+  }
+
+  /// Record which song bias the current offsets were dialled against, so a later
+  /// preview can tell whether they belong to its song. Called on every write to
+  /// either dial — including manual drags, which adopt this song's bias so a
+  /// user's hand-tuned values are kept when they come back to it.
+  void _stampOffsetBias() => Settings.setInt(
+      Settings.chartPreviewOffsetForBiasKey, (_songBiasMs * 100).round());
+
+  /// Below this the effective sync is reported as "on the beat" — half of the
+  /// AUDIO dial's 1ms resolution, so a reading only counts as off-beat when a
+  /// dial could actually do something about it.
+  static const double _onBeatEpsilonMs = 0.05;
+
+  /// True when the song has nothing to report: no sync block AND no dialled
+  /// offset that would make an effective figure meaningful.
+  bool get _hasNoSyncReading =>
+      widget.sync == null && _visualOffset == 0 && _audioOffsetMs == 0;
+
+  /// FAST/SLOW hue for the current effective sync, or null when it's on the beat
+  /// (or unknown). Shared by the ARCADE SYNC caption and the tempo badge so the
+  /// two never disagree about which way the song leans.
+  Color? _syncAccent(BuildContext context) {
+    if (_hasNoSyncReading) return null;
+    final ms = _effectiveSyncMs;
+    return timingAccent(
+      ms.abs() < _onBeatEpsilonMs ? 0 : ms,
+      Theme.of(context).brightness == Brightness.dark,
+    );
+  }
+
+  /// Compact effective sync for the tempo badge: a signed millisecond figure
+  /// only ("+9.0ms" / "-4.5ms" / "0.0ms"). The FAST/SLOW direction is carried by
+  /// the value's COLOUR rather than spelled out — the badge sits over the field
+  /// where space is tight, and the sign already says which way it leans. Same
+  /// number as [_arcadeSyncSummary], which does spell it out. Null when there is
+  /// nothing to report, hiding the segment.
+  String? get _syncBadgeLabel {
+    if (_hasNoSyncReading) return null;
+    final ms = _effectiveSyncMs;
+    if (ms.abs() < _onBeatEpsilonMs) return "0.0ms";
+    return "${ms > 0 ? "+" : "-"}${ms.abs().toStringAsFixed(1)}ms";
+  }
+
+  // The ARCADE SYNC caption: the effective sync after both dials, in the same
+  // terms and sign convention as the previous page's Sync card. Reads as the
+  // song's raw bias until a dial is moved, then tracks the adjustment.
+  String get _arcadeSyncSummary {
+    if (_hasNoSyncReading) return "no sync data for this song";
+    final ms = _effectiveSyncMs;
+    final magnitude = "${ms.abs().toStringAsFixed(1)}ms";
+    if (ms.abs() < _onBeatEpsilonMs) return "on the beat";
+    return ms > 0 ? "FAST by $magnitude" : "SLOW by $magnitude";
+  }
+
+  // Toggle ARCADE SYNC. Engaging it forces the assist tick on so an AUDIO
+  // OFFSET is audible immediately (remembering the prior tick state to restore
+  // on the way out) — the mode exists to hear the tick move against the arrows,
+  // and silently doing nothing would read as broken.
+  void _toggleArcadeSync() {
+    HapticFeedback.selectionClick();
+    final next = !_arcadeSyncOn;
+    setState(() {
+      _arcadeSyncOn = next;
+      // Engaging the mode pre-dials the correction that cancels the song's own
+      // bias, so it opens already in sync rather than at a bare zero the user
+      // has to discover and dial themselves. Skipped only when the stored
+      // offsets were already dialled against THIS song (seeded or hand-tuned) —
+      // keyed on the recorded bias, not on the dials being zero, because zero is
+      // itself a valid hand-tuned value AND a leftover from another song is not.
+      if (next && !_offsetsMatchThisSong()) {
+        _seedOffsetsFromSync();
+      }
+    });
+    Settings.setInt(Settings.arcadeSyncOnKey, next ? 1 : 0);
+
+    final toggleTick = widget.onToggleAssistTick;
+    if (toggleTick != null) {
+      if (next) {
+        _tickBeforeArcadeSync = widget.assistTickOn;
+        if (!widget.assistTickOn) toggleTick();
+      } else {
+        // Restore whatever the tick was before we forced it, if we changed it.
+        final before = _tickBeforeArcadeSync;
+        if (before != null && before != widget.assistTickOn) toggleTick();
+        _tickBeforeArcadeSync = null;
+      }
+    }
+
+    // Both offsets change effect the instant the gate flips (they read through
+    // it), so the tick schedule has to be re-seated either way.
+    _tickClock.audioOffset = _audioOffsetSeconds;
+    _resyncTickClock();
+    _flashScrubOverlay(next ? "ON" : "OFF", "ARCADE SYNC");
+  }
+
+  // Drag horizontally on either TIMING chip to sweep that offset. Same drag feel
+  // as the CONSTANT chip (260px sweeps the full range), with a detent haptic per
+  // step. The visual offset needs no explicit repaint: it reaches the painter on
+  // the next build and setState covers that.
+  void _onTimingOffsetDrag({required bool visual, required double dx}) {
+    if (visual) {
+      final next = _clampVisualOffset(_visualOffset +
+          dx / 260 * (_visualOffsetMax - _visualOffsetMin));
+      if (next == _visualOffset) return;
+      HapticFeedback.selectionClick();
+      setState(() => _visualOffset = next);
+      Settings.setInt(
+          Settings.chartPreviewVisualOffsetKey, (next * 10).round());
+      _stampOffsetBias(); // hand-tuned for THIS song — don't re-seed over it
+      _flashScrubOverlay(_visualOffsetLabel(next), "VISUAL OFFSET");
+      return;
+    }
+    final next = _clampAudioOffsetMs(
+        _audioOffsetMs + dx / 260 * (_audioOffsetMaxMs - _audioOffsetMinMs));
+    if (next == _audioOffsetMs) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _audioOffsetMs = next;
+      // Re-seat the schedule so the new offset applies from here rather than
+      // only to rows beyond the current prime window.
+      _tickClock.audioOffset = _audioOffsetSeconds;
+    });
+    _resyncTickClock();
+    Settings.setInt(Settings.chartPreviewAudioOffsetMsKey, next.round());
+    _stampOffsetBias(); // hand-tuned for THIS song — don't re-seed over it
+    _flashScrubOverlay(_audioOffsetLabel(next), "AUDIO OFFSET");
+  }
+
+  // Tap either TIMING chip to reset that offset to neutral — the dial is fiddly
+  // to land back on zero by dragging, and "back to no offset" is the common reset.
+  void _resetTimingOffset({required bool visual}) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (visual) {
+        _visualOffset = 0;
+      } else {
+        _audioOffsetMs = 0;
+        _tickClock.audioOffset = _audioOffsetSeconds;
+      }
+    });
+    if (!visual) _resyncTickClock();
+    Settings.setInt(
+      visual
+          ? Settings.chartPreviewVisualOffsetKey
+          : Settings.chartPreviewAudioOffsetMsKey,
+      0,
+    );
+    _stampOffsetBias(); // a deliberate zero is also a choice for THIS song
+    _flashScrubOverlay(
+      visual ? _visualOffsetLabel(0) : _audioOffsetLabel(0),
+      visual ? "VISUAL OFFSET" : "AUDIO OFFSET",
+    );
+  }
 
   // Restore the TURN modifier from settings (0=OFF,1=MIRROR,2=LEFT,3=RIGHT).
   void _loadTurn() {
@@ -1002,17 +1114,17 @@ class _ChartScrollerState extends State<ChartScroller>
     }
     final peak = counts.fold<double>(0, (m, v) => v > m ? v : m);
     final holdPeak = holdCounts.fold<double>(0, (m, v) => v > m ? v : m);
-    _minimap = List<_MinimapBucket>.generate(buckets, (i) {
+    _minimap = List<MinimapBucket>.generate(buckets, (i) {
       final total = counts[i];
-      final segments = <_MinimapSegment>[];
+      final segments = <MinimapSegment>[];
       if (total > 0) {
         for (int j = 0; j < _minimapPalette.length; j++) {
           final count = colorCounts[i][j];
           if (count == 0) continue;
-          segments.add(_MinimapSegment(_minimapPalette[j], count / total));
+          segments.add(MinimapSegment(_minimapPalette[j], count / total));
         }
       }
-      return _MinimapBucket(
+      return MinimapBucket(
         level: peak > 0 ? total / peak : 0,
         segments: segments,
         holdLevel: holdPeak > 0 ? holdCounts[i] / holdPeak : 0,
@@ -1030,19 +1142,19 @@ class _ChartScrollerState extends State<ChartScroller>
   // the one before it, so the leading segment (and any coalesced duplicates)
   // don't plant a redundant marker at the start of the field.
   void _buildTimingMarkers() {
-    final bpm = <_BpmMarker>[];
+    final bpm = <BpmMarker>[];
     int? prev;
     for (final b in widget.bpms) {
       final v = b.val;
       if (prev != null && v != prev) {
-        bpm.add(_BpmMarker(b.st, v));
+        bpm.add(BpmMarker(b.st, v));
       }
       prev = v;
     }
     _bpmMarkers = bpm;
     _stopMarkers = [
       for (final s in widget.stops)
-        if (s.dur > 0) _StopMarker(s.st, s.dur),
+        if (s.dur > 0) StopMarker(s.st, s.dur),
     ];
     _timing = ChartTiming.build(widget.bpms, widget.stops);
   }
@@ -1069,7 +1181,7 @@ class _ChartScrollerState extends State<ChartScroller>
     }
     byTime.forEach((_, mines) {
       if (mines.length >= 3) {
-        _shocks.add(_ShockRow(mines.first.second, {for (final m in mines) m.col}));
+        _shocks.add(ShockRow(mines.first.second, {for (final m in mines) m.col}));
         _shockNotes.addAll(mines);
       }
     });
@@ -1329,7 +1441,7 @@ class _ChartScrollerState extends State<ChartScroller>
       HapticFeedback.selectionClick();
       setState(() => _hispeedHundredths = next);
       Settings.setInt(Settings.chartPreviewHispeedKey, next);
-      _flashScrubOverlay(_fmtXMod(_rate), "HI-SPEED");
+      _flashScrubOverlay(fmtXMod(_rate), "HI-SPEED");
     } else {
       final next =
           (_scrollSpeed + dir * _scrollStep).clamp(_scrollMin, _scrollMax);
@@ -1349,7 +1461,7 @@ class _ChartScrollerState extends State<ChartScroller>
     setState(() => _hispeedType = !_hispeedType);
     Settings.setInt(Settings.chartPreviewSpeedTypeKey, _hispeedType ? 1 : 0);
     _flashScrubOverlay(
-      _hispeedType ? _fmtXMod(_rate) : "$_scrollSpeed",
+      _hispeedType ? fmtXMod(_rate) : "$_scrollSpeed",
       _hispeedType ? "HI-SPEED" : "REAL SPEED",
     );
   }
@@ -1599,12 +1711,12 @@ class _ChartScrollerState extends State<ChartScroller>
     return LayoutBuilder(builder: (context, constraints) {
       // Feed the real field geometry into the speed law: an arrow's travel is
       // the bottom edge up to the receptor line (which the painter places at
-      // _ChartPainter.receptorBase below the top safe-area inset). Keeping
+      // ChartPainter.receptorBase below the top safe-area inset). Keeping
       // this in sync means a taller phone scrolls FASTER in px/s so the
       // arcade's travel TIME at a given read speed is preserved, rather than
       // every device sharing one px/s and giving tall screens a longer read.
       final travel = constraints.maxHeight -
-          (_ChartPainter.receptorBase + MediaQuery.of(context).padding.top);
+          (ChartPainter.receptorBase + MediaQuery.of(context).padding.top);
       if (travel > 0) _travelPx = travel;
       return Stack(
         fit: StackFit.expand,
@@ -1640,7 +1752,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 else
                 RepaintBoundary(
                   child: CustomPaint(
-                    painter: _ChartPainter(
+                    painter: ChartPainter(
                       notes: _notes,
                       holds: _holds,
                       shockNotes: _shockNotes,
@@ -1661,6 +1773,7 @@ class _ChartScrollerState extends State<ChartScroller>
                       zoom: _zoom,
                       constantMs: _effectiveConstantMs,
                       topInset: MediaQuery.of(context).padding.top,
+                      visualOffset: _visualOffsetSeconds,
                     ),
                     size: Size.infinite,
                     willChange: true,
@@ -1889,9 +2002,15 @@ class _ChartScrollerState extends State<ChartScroller>
                       child: RepaintBoundary(
                         child: ValueListenableBuilder<double>(
                           valueListenable: _playhead,
-                          builder: (_, __, ___) => _TempoBadge(
+                          builder: (_, __, ___) => TempoBadge(
                             bpm: _localBpm,
                             readSpeed: _liveReadSpeed,
+                            // Same numbers and hue as the ARCADE SYNC caption —
+                            // both read [_effectiveSyncMs], so they can't drift
+                            // apart. Unlike BPM/READ this doesn't vary with the
+                            // playhead, so it's computed from the outer context.
+                            syncLabel: _syncBadgeLabel,
+                            syncAccent: _syncAccent(context),
                           ),
                         ),
                       ),
@@ -1938,7 +2057,7 @@ class _ChartScrollerState extends State<ChartScroller>
             top: 0,
             bottom: 0,
             child: Center(
-              child: _EdgeTab(
+              child: EdgeTab(
                 leftEdge: false,
                 icon: _transportVisible
                     ? Icons.keyboard_arrow_down
@@ -1958,7 +2077,8 @@ class _ChartScrollerState extends State<ChartScroller>
             top: 0,
             bottom: 0,
             child: Center(
-              child: _EdgeTab(
+              child: EdgeTab(
+                key: shadeTabKey,
                 leftEdge: true,
                 icon: _shadeOpen
                     ? Icons.keyboard_arrow_up
@@ -1992,7 +2112,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    _fmtTime(s),
+                    fmtTime(s),
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -2000,7 +2120,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         fontFeatures: const [FontFeature.tabularFigures()]),
                   ),
                   Text(
-                    _fmtTime(_endSecond),
+                    fmtTime(_endSecond),
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -2018,7 +2138,7 @@ class _ChartScrollerState extends State<ChartScroller>
           child: Container(
             color: Colors.black.withValues(alpha: 0.12),
             padding: const EdgeInsets.symmetric(horizontal: 3),
-            child: _DensityScrubBar(
+            child: DensityScrubBar(
               buckets: _minimap,
               playhead: _playhead,
               endSecond: _endSecond,
@@ -2076,7 +2196,7 @@ class _ChartScrollerState extends State<ChartScroller>
           child: AnimatedOpacity(
             opacity: open ? 1 : 0,
             duration: const Duration(milliseconds: 160),
-            child: _SettingsShade(
+            child: SettingsShade(
               sections: _buildShadeSections(context),
             ),
           ),
@@ -2090,15 +2210,15 @@ class _ChartScrollerState extends State<ChartScroller>
   // their place so the shade already reads as the full options screen and new
   // controls slot in without a layout rethink. Mirrors the DDR World option
   // categories. The section carries no label — the controls read on their own.
-  List<_ShadeSection> _buildShadeSections(BuildContext context) {
+  List<ShadeSection> _buildShadeSections(BuildContext context) {
     return [
-      _ShadeSection(
+      ShadeSection(
         // Tiled: CONSTANT spans the full top row; below it a row split three
         // ways — MIRROR (flip L↔R), LEFT and RIGHT turns — mirroring DDR World's
         // appearance options.
         content: Column(
           children: [
-            _ConstantChip(
+            ConstantChip(
               on: _constantOn,
               ms: _constantMs,
               equivalentReadSpeed: _constantVisibleReadSpeed,
@@ -2109,7 +2229,7 @@ class _ChartScrollerState extends State<ChartScroller>
             Row(
               children: [
                 Expanded(
-                  child: _TurnTile(
+                  child: TurnTile(
                     label: "MIRROR",
                     // DDR's MIRROR glyph is an up/down arrow pair (180° flip);
                     // swap_vert conveys the same reflected-pair idea.
@@ -2120,7 +2240,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _TurnTile(
+                  child: TurnTile(
                     label: "LEFT",
                     icon: Icons.rotate_left,
                     selected: _turn == _Turn.left,
@@ -2129,7 +2249,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _TurnTile(
+                  child: TurnTile(
                     label: "RIGHT",
                     icon: Icons.rotate_right,
                     selected: _turn == _Turn.right,
@@ -2146,12 +2266,12 @@ class _ChartScrollerState extends State<ChartScroller>
       // header so it carries only title/back — the toggles read the same as the
       // TURN tiles, so they slot in as one more row of the options card.
       if (widget.onToggleAssistTick != null || widget.onToggleFootGuide != null)
-        _ShadeSection(
+        ShadeSection(
           content: Row(
             children: [
               if (widget.onToggleAssistTick != null)
                 Expanded(
-                  child: _TurnTile(
+                  child: TurnTile(
                     label: "ASSIST TICK",
                     icon: widget.assistTickOn
                         ? Icons.volume_up
@@ -2165,7 +2285,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 const SizedBox(width: 8),
               if (widget.onToggleFootGuide != null)
                 Expanded(
-                  child: _TurnTile(
+                  child: TurnTile(
                     label: "FOOT GUIDE",
                     icon: widget.showFootGuide
                         ? Icons.directions_walk
@@ -2177,6 +2297,65 @@ class _ChartScrollerState extends State<ChartScroller>
             ],
           ),
         ),
+      // ARCADE SYNC: the cabinet timing simulation. The master toggle always
+      // shows; its two dials appear only while it's engaged, so the shade stays
+      // uncluttered for the common case and the offsets can't be dialled into a
+      // mode that ignores them. Sits under the playback aids because engaging it
+      // drives the assist tick (an AUDIO OFFSET is inaudible without it).
+      ShadeSection(
+        content: Column(
+          children: [
+            ArcadeSyncHeader(
+              key: arcadeSyncTileKey,
+              on: _arcadeSyncOn,
+              // The song's sync shows whether the mode is engaged or not — it's
+              // a property of the song, and seeing it is often the reason to
+              // turn ARCADE SYNC on in the first place.
+              summary: _arcadeSyncSummary,
+              // Tracks the EFFECTIVE sync, so dialling a bias back toward zero
+              // visibly drains the colour out of the label — the feedback that
+              // tells you when you've corrected it.
+              summaryAccent: _syncAccent(context),
+              onTap: _toggleArcadeSync,
+            ),
+            if (_arcadeSyncOn) ...[
+              const SizedBox(height: 8),
+              // The two dials split the row evenly, reading as the pair they are
+              // (and matching the TURN tiles' split-row rhythm) rather than two
+              // stacked full-width bars.
+              Row(
+                children: [
+                  Expanded(
+                    child: TimingOffsetChip(
+                      key: visualOffsetChipKey,
+                      label: "VISUAL",
+                      icon: Icons.visibility_outlined,
+                      value: _visualOffset,
+                      valueLabel: _visualOffsetLabel(_visualOffset),
+                      onTap: () => _resetTimingOffset(visual: true),
+                      onDrag: (dx) =>
+                          _onTimingOffsetDrag(visual: true, dx: dx),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TimingOffsetChip(
+                      key: audioOffsetChipKey,
+                      label: "AUDIO",
+                      icon: Icons.graphic_eq,
+                      value: _audioOffsetMs,
+                      valueLabel: _audioOffsetLabel(_audioOffsetMs),
+                      onTap: () => _resetTimingOffset(visual: false),
+                      onDrag: (dx) =>
+                          _onTimingOffsetDrag(visual: false, dx: dx),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
     ];
   }
 
@@ -2194,10 +2373,10 @@ class _ChartScrollerState extends State<ChartScroller>
             child: Row(
               children: [
                 Expanded(
-                  child: _SpeedPane(
+                  child: SpeedPane(
                     label: _hispeedType ? "HI-SPEED" : "REAL SPEED",
                     value:
-                        _hispeedType ? _fmtXMod(_rate) : "$_scrollSpeed",
+                        _hispeedType ? fmtXMod(_rate) : "$_scrollSpeed",
                     // The min–core–max scroll-speed trio (cabinet
                     // num_min/num_core/num_max) belongs to REAL SPEED, where
                     // the dial is a scroll rate. HI-SPEED shows a bare
@@ -2218,7 +2397,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _SongSpeedPane(
+                  child: SongSpeedPane(
                     rate: _playbackRate,
                     onDrag: _onPlaybackRateDrag,
                     onReset: _resetPlaybackRate,
@@ -2236,1530 +2415,85 @@ class _ChartScrollerState extends State<ChartScroller>
 /// Always-visible pill showing the tempo section under the playhead: its BPM
 /// and the read speed it reads at (localBpm × mod). CONSTANT is intentionally
 /// absent — like the cabinet, CONSTANT is a separate display-time setting that
-/// doesn't alter the scroll speed, so it lives on its own chip rather than
-/// mutating this number. Styled after the fast-forward badge so the floating
-/// overlays read as one family.
-/// Identifies the tempo badge for tests reading its BPM/READ values.
+double debugGatedVisualOffsetSeconds({
+  required bool arcadeSyncOn,
+  required double units,
+}) =>
+    arcadeSyncOn ? units * _ChartScrollerState._visualOffsetUnitSeconds : 0;
+
+/// The same gate for the AUDIO dial, in seconds (its dial is milliseconds).
 @visibleForTesting
-const Key tempoBadgeKey = Key('chart-preview-tempo-badge');
+double debugGatedAudioOffsetSeconds({
+  required bool arcadeSyncOn,
+  required double ms,
+}) =>
+    arcadeSyncOn ? ms / 1000.0 : 0;
 
-class _TempoBadge extends StatelessWidget {
-  const _TempoBadge({
-    required this.bpm,
-    required this.readSpeed,
-  });
+/// The VISUAL dial unit → seconds of arrow travel. The cabinet publishes this
+/// dial as a bare number, so the conversion is the preview's own calibration
+/// (one unit = one 60fps frame); exposed so tests pin it rather than re-deriving.
+@visibleForTesting
+double visualOffsetSeconds(double units) =>
+    units * _ChartScrollerState._visualOffsetUnitSeconds;
 
-  final int bpm;
-  final int readSpeed;
+/// Formats each dial the way its chip does — they use different units, so the
+/// VISUAL dial reads "+1.5" while AUDIO reads "-10ms".
+@visibleForTesting
+String visualOffsetLabel(double units) =>
+    _ChartScrollerState._visualOffsetLabel(units);
+@visibleForTesting
+String audioOffsetLabel(double ms) =>
+    _ChartScrollerState._audioOffsetLabel(ms);
 
-  @override
-  Widget build(BuildContext context) {
-    Widget stat(String label, String value) => Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w600,
-                color: Colors.white.withValues(alpha: 0.55),
-              ),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.white.withValues(alpha: 0.92),
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ],
-        );
-    return Container(
-      // Stable handle so tests can read THIS badge's numbers rather than
-      // matching bare text that the transport pane also shows.
-      key: tempoBadgeKey,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          stat("BPM", "$bpm"),
-          Container(
-            width: 1,
-            height: 14,
-            margin: const EdgeInsets.symmetric(horizontal: 10),
-            color: Colors.white.withValues(alpha: 0.22),
-          ),
-          stat("READ", "$readSpeed"),
-        ],
-      ),
-    );
-  }
-}
+/// Clamps/snaps each dial to its own range: VISUAL to ±5.0 on the 0.1 grid,
+/// AUDIO to ±50 whole milliseconds.
+@visibleForTesting
+double visualOffsetClamp(double units) =>
+    _ChartScrollerState._clampVisualOffset(units);
+@visibleForTesting
+double audioOffsetClampMs(double ms) =>
+    _ChartScrollerState._clampAudioOffsetMs(ms);
 
-/// Left half of the control row: the DDR WORLD speed option. Shows the
-/// active SPEED TYPE — REAL SPEED (the cabinet's ScrollSpeed: the dialled
-/// target scroll rate, with the resulting min–max speeds alongside on
-/// BPM-change charts like the cabinet's num_min/num_max readouts) or
-/// HI-SPEED (the raw multiplier, printed "x %.2lf" as the cabinet does).
-/// Tap to switch type; drag or tap the ∓ ends to turn the active dial —
-/// buttons and drag share one detent (x0.05 for HI-SPEED, 10 for REAL
-/// SPEED), and each type keeps its own dialled value.
-class _SpeedPane extends StatelessWidget {
-  const _SpeedPane({
-    required this.label,
-    required this.value,
-    required this.range,
-    required this.decLabel,
-    required this.incLabel,
-    required this.canDecrement,
-    required this.canIncrement,
-    required this.onStep,
-    required this.onDrag,
-    required this.onToggleType,
-  });
-
-  final String label;
-  final String value;
-
-  /// The min–core–max scroll speeds for the current multiplier, preformatted
-  /// as "min–core–max" (matching the cabinet's num_min/num_core/num_max),
-  /// folded to a single number only when all three coincide (true constant
-  /// BPM). Null hides the row — used for HI-SPEED, which shows a bare
-  /// multiplier instead.
-  final String? range;
-  final String decLabel;
-  final String incLabel;
-  final bool canDecrement;
-  final bool canIncrement;
-  final void Function(int dir) onStep;
-  final void Function(double dx) onDrag;
-  final VoidCallback onToggleType;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final r = range;
-    return _ControlPane(
-      onTap: onToggleType,
-      onDragUpdate: (d) => onDrag(d.primaryDelta ?? 0),
-      child: Row(
-        children: [
-          _EdgeButton(
-            label: decLabel,
-            enabled: canDecrement,
-            onTap: () => onStep(-1),
-          ),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 9,
-                    height: 1.0,
-                    letterSpacing: 0.6,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    height: 1.1,
-                    fontWeight: FontWeight.bold,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-                // The BPM-change min–core–max range (cabinet
-                // num_min/num_core/num_max) sits on its own line UNDER the
-                // value, not beside it: on wide-range charts "150–300–602" is
-                // wider than the big number, and baseline-aligned alongside it
-                // collided with the value and crowded the ∓ edge buttons.
-                // Stacking keeps the value centred and gives the range its own
-                // uncramped row.
-                if (r != null)
-                  Text(
-                    r,
-                    style: TextStyle(
-                      fontSize: 10,
-                      height: 1.0,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurface.withValues(alpha: 0.55),
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          _EdgeButton(
-            label: incLabel,
-            enabled: canIncrement,
-            onTap: () => onStep(1),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Right half of the control row: playback speed (how fast the chart plays in
-/// real time). Drag horizontally to speed up / slow down; tap to reset to 1.0×.
-class _SongSpeedPane extends StatelessWidget {
-  const _SongSpeedPane({
-    required this.rate,
-    required this.onDrag,
-    required this.onReset,
-  });
-
-  final double rate;
-  final void Function(double dx) onDrag;
-  final VoidCallback onReset;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return _ControlPane(
-      onTap: onReset,
-      onDragUpdate: (d) => onDrag(d.primaryDelta ?? 0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            "SONG SPEED",
-            style: TextStyle(
-              fontSize: 9,
-              letterSpacing: 0.6,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurface.withValues(alpha: 0.5),
-            ),
-          ),
-          Text(
-            "${rate.toStringAsFixed(2)}×",
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Shared framing for the two control panes: a rounded, tappable/draggable
-/// surface with a horizontal-drag gesture and a subtle grab cursor.
-class _ControlPane extends StatelessWidget {
-  const _ControlPane({
-    required this.child,
-    required this.onDragUpdate,
-    this.onTap,
-  });
-
-  final Widget child;
-  final GestureDragUpdateCallback onDragUpdate;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return MouseRegion(
-      cursor: SystemMouseCursors.resizeLeftRight,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        onHorizontalDragUpdate: onDragUpdate,
-        child: Container(
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-/// One group of modifier controls inside the settings shade. [content] is the
-/// section's laid-out body (tiles/rows). Sections carry no caption — the
-/// controls read on their own.
-class _ShadeSection {
-  final Widget? content;
-  const _ShadeSection({
-    this.content,
-  });
-}
-
-/// The pull-down options card: a rounded panel of chart-viewing modifiers that
-/// floats inset from the screen edges (never a full-width sheet — it must not
-/// dominate the field). Styled like the bottom transport — same padding, fill
-/// and radius, with filled tiles inside matching the read/song-speed panes — so
-/// the two chrome surfaces read as one family. Height-capped with a scrollable
-/// body for when the option set outgrows the cap. Its top is positioned by the
-/// caller ([_buildSettingsShade]) so it seats under the title when the header is
-/// up, or at the status bar when it isn't.
-class _SettingsShade extends StatelessWidget {
-  const _SettingsShade({
-    required this.sections,
-  });
-
-  final List<_ShadeSection> sections;
-
-  @override
-  Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      // Inset from the screen edges so the card doesn't span the full width —
-      // matching how the transport floats above the bottom edge.
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: Container(
-        // Same framing as the bottom transport ([_buildTransport]) so the top
-        // and bottom chrome read as one surface: identical padding, fill and
-        // corner radius. The solidity comes from the filled tiles inside (like
-        // the transport's read/song-speed panes), not the thin outer wash.
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        constraints: BoxConstraints(maxHeight: media.size.height * 0.4),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        // No close button — the left-edge pull-tab dismisses the card.
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (int i = 0; i < sections.length; i++)
-                      if (sections[i].content != null)
-                        Padding(
-                          padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
-                          child: sections[i].content!,
-                        ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Fill/border/foreground for a shade control, keyed on whether it's active.
-/// The inactive state deliberately matches the read/song-speed panes
-/// ([_ControlPane]: `surfaceContainerHighest` at α 0.5, no border) so the shade
-/// tiles read as the same buttons as the bottom config. The active state lifts
-/// the same surface brighter with a hairline border to mark the selection —
-/// still monochrome, never a purple accent.
-({Color fill, Color border, Color fg, Color fgMuted}) _tileColors(
-    ColorScheme scheme, bool active) {
-  final onSurface = scheme.onSurface;
-  final surface = scheme.surfaceContainerHighest;
-  return active
-      ? (
-          fill: surface.withValues(alpha: 0.9),
-          border: onSurface.withValues(alpha: 0.45),
-          fg: onSurface,
-          fgMuted: onSurface.withValues(alpha: 0.7),
-        )
-      : (
-          fill: surface.withValues(alpha: 0.5),
-          border: Colors.transparent,
-          fg: onSurface.withValues(alpha: 0.85),
-          fgMuted: onSurface.withValues(alpha: 0.55),
-        );
-}
-
-/// The CONSTANT-modifier tile: the full-width top row of the ARROWS section.
-/// Tap toggles the modifier on/off (no separate switch); dragging horizontally
-/// sweeps the display time. Styled neutrally like the rest of the shade — when
-/// on it reads a touch brighter and shows the current ms, off it reads "OFF".
-class _ConstantChip extends StatelessWidget {
-  const _ConstantChip({
-    required this.on,
-    required this.ms,
-    required this.equivalentReadSpeed,
-    required this.onTap,
-    required this.onDrag,
-  });
-
-  final bool on;
-  final double ms;
-
-  /// The read speed the chart effectively READS at with this window at the
-  /// current scroll: the faster of the dialled read speed and the window's
-  /// equivalent, so it tracks the live speed type/multiplier rather than being
-  /// a fixed property of the window. Null when off; shown muted next to ms.
-  final int? equivalentReadSpeed;
-
-  final VoidCallback onTap;
-  final void Function(double dx) onDrag;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final c = _tileColors(scheme, on);
-    return MouseRegion(
-      cursor: SystemMouseCursors.resizeLeftRight,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        onHorizontalDragUpdate: (d) => onDrag(d.primaryDelta ?? 0),
-        child: Container(
-          width: double.infinity,
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: c.fill,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: c.border, width: 1),
-          ),
-          child: Row(
-            children: [
-              // CONSTANT = a fixed arrow display *time*, so a stopwatch reads
-              // the concept better than a generic clock. DDR World has no
-              // CONSTANT glyph (it's not one of the option-icon categories), so
-              // the closest conceptual Material icon stands in here.
-              Icon(Icons.timer_outlined, size: 16, color: c.fgMuted),
-              const SizedBox(width: 8),
-              Text(
-                "CONSTANT",
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: 0.8,
-                  fontWeight: FontWeight.w700,
-                  color: c.fgMuted,
-                ),
-              ),
-              const Spacer(),
-              if (on && equivalentReadSpeed != null) ...[
-                Text(
-                  "≈ C$equivalentReadSpeed",
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: c.fgMuted,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                on ? "${ms.round()}ms" : "OFF",
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: c.fg,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A single TURN tile (MIRROR / LEFT / RIGHT) in the split second row of the
-/// ARROWS section. Neutral like [_ConstantChip]; the selected turn reads a touch
-/// brighter with a stronger border. Tapping the active one turns it off (handled
-/// by the caller).
-class _TurnTile extends StatelessWidget {
-  const _TurnTile({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-
-  // A conceptual Material glyph standing in for DDR's turn icon: swap_vert for
-  // MIRROR's up/down flip pair, rotate_left/right for the 90° turns. Keeps the
-  // shade free of copyrighted arcade art while reading the same at a glance.
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final c = _tileColors(scheme, selected);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        decoration: BoxDecoration(
-          color: c.fill,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: c.border, width: 1),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 22, color: c.fg),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                letterSpacing: 0.5,
-                fontWeight: FontWeight.w700,
-                color: c.fg,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A small always-visible pull-tab pinned to a screen edge, vertically centred
-/// so it never collides with the full-width header or transport. Two mirrored
-/// instances exist: the RIGHT tab shows/hides the floating controls, the LEFT
-/// tab pulls the settings shade down/up. [leftEdge] flips the shape so the
-/// rounded corners always face away from the edge the tab hangs off.
-class _EdgeTab extends StatelessWidget {
-  const _EdgeTab({
-    required this.leftEdge,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final bool leftEdge;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        width: 30,
-        height: 52,
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.42),
-          borderRadius: BorderRadius.horizontal(
-            left: leftEdge ? Radius.zero : const Radius.circular(12),
-            right: leftEdge ? const Radius.circular(12) : Radius.zero,
-          ),
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          icon,
-          color: Colors.white.withValues(alpha: 0.9),
-          size: 22,
-        ),
-      ),
-    );
-  }
-}
-
-/// A tappable ∓ end-cap inside the read-speed pane. Dimmed when its step would
-/// run off the end of the mod list.
-class _EdgeButton extends StatelessWidget {
-  const _EdgeButton({
-    required this.label,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled ? onTap : null,
-      child: Container(
-        width: 40,
-        height: double.infinity,
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: enabled
-                ? scheme.onSurface.withValues(alpha: 0.85)
-                : scheme.onSurface.withValues(alpha: 0.25),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// A HI-SPEED multiplier as DDR WORLD prints it — the cabinet's own format
-// string is "x %.2lf" (sans the space here): always two decimals, and in
-// SCROLL SPEED mode the derived multiplier genuinely uses the hundredths.
-String _fmtXMod(double mod) => "x${mod.toStringAsFixed(2)}";
-
-String _fmtTime(double s) {
-  final m = (s ~/ 60).toString();
-  final sec = (s % 60).floor().toString().padLeft(2, '0');
-  return "$m:$sec";
-}
-
-// A compact seconds label for a stop's duration, e.g. "0.16s".
-String _fmtDur(double s) => "${s.toStringAsFixed(2)}s";
-
-/// A scrub bar whose track is a note-density minimap of the whole chart (busy
-/// sections show taller bars), with a played/unplayed split and a draggable
-/// playhead. Tap or drag anywhere to seek. [onSeek] is 0..1. The needle rides
-/// [playhead] directly (via the painter's repaint listenable) so seeking and
-/// playback never rebuild this widget.
-class _DensityScrubBar extends StatelessWidget {
-  const _DensityScrubBar({
-    required this.buckets,
-    required this.playhead,
-    required this.endSecond,
-    required this.accent,
-    required this.bpmFractions,
-    required this.stopFractions,
-    required this.onSeek,
-  });
-
-  final List<_MinimapBucket> buckets;
-  final ValueListenable<double> playhead;
-  final double endSecond;
-  final Color accent;
-
-  /// 0..1 positions of BPM-change and stop markers along the track.
-  final List<double> bpmFractions;
-  final List<double> stopFractions;
-  final ValueChanged<double> onSeek;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      void seekAt(double dx) =>
-          onSeek((dx / constraints.maxWidth).clamp(0.0, 1.0));
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (d) => seekAt(d.localPosition.dx),
-        onHorizontalDragStart: (d) => seekAt(d.localPosition.dx),
-        onHorizontalDragUpdate: (d) => seekAt(d.localPosition.dx),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: SizedBox(
-            height: 40,
-            child: RepaintBoundary(
-              child: CustomPaint(
-                painter: _DensityPainter(
-                  buckets: buckets,
-                  playhead: playhead,
-                  endSecond: endSecond,
-                  accent: accent,
-                  bpmFractions: bpmFractions,
-                  stopFractions: stopFractions,
-                ),
-                size: Size.infinite,
-                willChange: true,
-              ),
-            ),
-          ),
-        ),
+/// Builds two field painters differing ONLY in their VISUAL OFFSET (in frames)
+/// and reports whether the renderer treats that as a repaint-worthy change, plus
+/// the receptor-relative second each one puts the playhead at.
+///
+/// Exposed because the painter is private and the difference has to be isolated:
+/// rebuilding the widget to change the dial also churns note/colMap identities,
+/// which invalidate the painter for unrelated reasons and would make a
+/// shouldRepaint assertion pass even if the offset were ignored entirely.
+@visibleForTesting
+({bool repaints, double neutralSecond, double offsetSecond})
+    debugVisualOffsetEffect(double units) {
+  final playhead = ValueNotifier<double>(1.0);
+  ChartPainter painterAt(double dialUnits) => ChartPainter(
+        notes: const [],
+        holds: const [],
+        shockNotes: const {},
+        shocks: const [],
+        bpmMarkers: const [],
+        stopMarkers: const [],
+        feet: const {},
+        footPrev: const {},
+        dirs: kSingleDirs,
+        colMap: const [0, 1, 2, 3],
+        playhead: playhead,
+        pxPerSecond: 300,
+        pxPerBeat: 150,
+        timing: ChartTiming.empty,
+        columnCount: 4,
+        skin: const VectorNoteskin(),
+        playing: false,
+        visualOffset:
+            dialUnits * _ChartScrollerState._visualOffsetUnitSeconds,
       );
-    });
-  }
-}
-
-class _DensityPainter extends CustomPainter {
-  _DensityPainter({
-    required this.buckets,
-    required this.playhead,
-    required this.endSecond,
-    required this.accent,
-    required this.bpmFractions,
-    required this.stopFractions,
-  }) : super(repaint: playhead);
-
-  final List<_MinimapBucket> buckets;
-  final ValueListenable<double> playhead;
-  final double endSecond;
-  final Color accent;
-  final List<double> bpmFractions;
-  final List<double> stopFractions;
-
-  // The track (bars, hold underlay, shock and timing ticks) is static per
-  // layout: record it once into two pictures — played styling and unplayed
-  // styling — and per frame just replay each clipped at the needle. That
-  // reduces the per-frame cost from ~200 buckets × several Paint allocations
-  // to two drawPicture calls plus the needle.
-  ui.Picture? _playedPic;
-  ui.Picture? _unplayedPic;
-  Size? _picSize;
-
-  ui.Picture _recordTrack(Size size, {required bool played}) {
-    final rec = ui.PictureRecorder();
-    final canvas = Canvas(rec);
-    final midY = size.height / 2;
-    final maxBar = size.height * 0.42;
-    final barW = size.width / buckets.length;
-    final paint = Paint();
-    final holdColor = const Color(0xFF39C46B)
-        .withValues(alpha: played ? 0.36 : 0.18);
-    final shockColor = const Color(0xFF79E7FF)
-        .withValues(alpha: played ? 0.95 : 0.55);
-    for (int i = 0; i < buckets.length; i++) {
-      final x = i * barW;
-      final bucket = buckets[i];
-      // Minimum stub so silent gaps still read as a track.
-      final h = (0.10 + 0.90 * bucket.level) * maxBar;
-      final rect = Rect.fromLTWH(x, midY - h, barW + 0.6, h * 2);
-      if (bucket.holdLevel > 0) {
-        final holdH = (0.16 + 0.34 * bucket.holdLevel) * size.height;
-        final holdRect = Rect.fromLTWH(
-          rect.left,
-          midY - holdH / 2,
-          rect.width,
-          holdH,
-        );
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(holdRect, const Radius.circular(1.2)),
-          paint..color = holdColor,
-        );
-      }
-      if (bucket.segments.isEmpty) {
-        canvas.drawRect(
-          rect,
-          paint..color = played ? accent : accent.withValues(alpha: 0.28),
-        );
-      } else {
-        double top = rect.top;
-        for (final segment in bucket.segments) {
-          final segH = rect.height * segment.weight;
-          final segRect = Rect.fromLTWH(rect.left, top, rect.width, segH);
-          canvas.drawRect(
-            segRect,
-            paint
-              ..color = played
-                  ? segment.color
-                  : segment.color.withValues(alpha: 0.34),
-          );
-          top += segH;
-        }
-      }
-      if (bucket.hasShock) {
-        final shockRect = Rect.fromLTWH(
-          rect.left,
-          rect.top - 2,
-          rect.width,
-          4,
-        );
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(shockRect, const Radius.circular(1.2)),
-          paint..color = shockColor,
-        );
-      }
-    }
-
-    // Timing ticks: stops along the bottom edge, BPM changes along the top, so
-    // both are locatable when seeking without colliding with each other. The
-    // same colour in both variants; baking them into each picture keeps them
-    // continuous across the needle's clip seam.
-    void drawTicks(List<double> fractions, Color color, bool atTop) {
-      final tickPaint = Paint()
-        ..color = color
-        ..strokeWidth = 1.5;
-      final y0 = atTop ? 0.0 : size.height - 6;
-      final y1 = atTop ? 6.0 : size.height;
-      for (final f in fractions) {
-        final x = (size.width * f).clamp(0.0, size.width).toDouble();
-        canvas.drawLine(Offset(x, y0), Offset(x, y1), tickPaint);
-      }
-    }
-
-    drawTicks(
-        bpmFractions, const Color(0xFF8AB4FF).withValues(alpha: 0.9), true);
-    drawTicks(
-        stopFractions, const Color(0xFFFFB454).withValues(alpha: 0.9), false);
-    return rec.endRecording();
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final midY = size.height / 2;
-    final progress =
-        endSecond <= 0 ? 0.0 : (playhead.value / endSecond).clamp(0.0, 1.0);
-    final playedX = (size.width * progress).clamp(0.0, size.width).toDouble();
-
-    if (buckets.isEmpty) {
-      // Fallback: a plain rounded track.
-      canvas.drawRRect(
-          RRect.fromRectAndRadius(
-              Rect.fromLTWH(0, midY - 2.5, size.width, 5),
-              const Radius.circular(3)),
-          Paint()..color = Colors.white24);
-    } else {
-      if (_picSize != size) {
-        _playedPic = _recordTrack(size, played: true);
-        _unplayedPic = _recordTrack(size, played: false);
-        _picSize = size;
-      }
-      canvas.save();
-      canvas.clipRect(Rect.fromLTWH(0, -4, playedX, size.height + 8));
-      canvas.drawPicture(_playedPic!);
-      canvas.restore();
-      canvas.save();
-      canvas.clipRect(Rect.fromLTWH(
-          playedX, -4, size.width - playedX, size.height + 8));
-      canvas.drawPicture(_unplayedPic!);
-      canvas.restore();
-    }
-
-    // Playhead: vertical needle plus a layered knob for stronger visibility.
-    canvas.drawRect(
-      Rect.fromLTWH(playedX - 1, 0, 2, size.height),
-      Paint()..color = Colors.white.withValues(alpha: 0.92),
-    );
-    canvas.drawCircle(
-      Offset(playedX, midY),
-      10,
-      Paint()..color = accent.withValues(alpha: 0.22),
-    );
-    canvas.drawCircle(
-      Offset(playedX, midY),
-      6,
-      Paint()..color = accent,
-    );
-    canvas.drawCircle(
-      Offset(playedX, midY),
-      2.4,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawCircle(
-      Offset(playedX, midY),
-      6,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8
-        ..color = Colors.white.withValues(alpha: 0.95),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_DensityPainter old) =>
-      old.buckets != buckets ||
-      old.endSecond != endSecond ||
-      old.accent != accent ||
-      old.bpmFractions != bpmFractions ||
-      old.stopFractions != stopFractions;
-}
-
-class _ChartPainter extends CustomPainter {
-  _ChartPainter({
-    required this.notes,
-    required this.holds,
-    required this.shockNotes,
-    required this.shocks,
-    required this.bpmMarkers,
-    required this.stopMarkers,
-    required this.feet,
-    required this.footPrev,
-    required this.dirs,
-    required this.colMap,
-    required this.playhead,
-    required this.pxPerSecond,
-    required this.pxPerBeat,
-    required this.timing,
-    required this.columnCount,
-    required this.skin,
-    required this.playing,
-    this.zoom = 1.0,
-    this.constantMs,
-    this.topInset = 0,
-  }) : super(repaint: playhead);
-
-  /// All notes ascending by second (see [_ChartScrollerState._prepareNotes]) —
-  /// sorted order is what the per-frame binary-search culling relies on.
-  final List<StepNote> notes;
-
-  /// Just the holds/rolls, same order — a hold's body must draw while its head
-  /// second is already behind the playhead, so it can't be found by
-  /// binary-searching [notes] on second.
-  final List<StepNote> holds;
-
-  final Set<StepNote> shockNotes;
-  final List<_ShockRow> shocks;
-  final List<_BpmMarker> bpmMarkers;
-  final List<_StopMarker> stopMarkers;
-  final Map<StepNote, Foot> feet;
-
-  /// Previous same-foot note per footed note (precomputed once per chart), so
-  /// foot paths draw from the visible window alone.
-  final Map<StepNote, StepNote> footPrev;
-
-  final List<NoteDir> dirs;
-
-  // DDR TURN permutation: `colMap[originalCol]` is the column the note is drawn
-  // in (and the glyph orientation it takes). Receptors/lanes stay in their fixed
-  // positions, so a turn only moves the notes. Identity when TURN is OFF.
-  final List<int> colMap;
-
-  /// The moving playhead. Registered as this painter's repaint listenable, so
-  /// per-frame motion repaints the canvas without a widget rebuild; everything
-  /// else about the painter is per-build configuration.
-  final ValueListenable<double> playhead;
-  double get second => playhead.value;
-
-  final double pxPerSecond;
-
-  // Beat-locked scroll: [pxPerBeat] is the pixels-per-beat spacing and [timing]
-  // maps a note's second to its beat. When [timing] is empty the painter falls
-  // back to [pxPerSecond] constant-time scrolling (charts with no BPM data).
-  final double pxPerBeat;
-  final ChartTiming timing;
-
-  final int columnCount;
-  final Noteskin skin;
-  final bool playing;
-
-  // Pinch-to-zoom factor. Applied to the horizontal field geometry (arrow size
-  // and lane spacing) so that zooming out shrinks the arrows in step with the
-  // vertical compression already baked into [pxPerBeat]/[pxPerSecond]. The result
-  // is a uniform "map zoom": at <1 the field pulls in from both edges and the
-  // arrows get smaller, so more of the chart is legibly on screen instead of the
-  // notes just piling together.
-  final double zoom;
-
-  // DDR CONSTANT modifier: when non-null, every arrow is only visible for this
-  // many milliseconds of WALL-CLOCK time before it reaches the receptor,
-  // regardless of BPM or read speed — a note is invisible until it is this far
-  // (in real seconds) from the line, then FADES IN over the leading slice of
-  // the window and travels the rest of the way solid. Null = NORMAL (arrows
-  // always visible). The window is keyed on real seconds-to-receptor, not beat
-  // distance, so its span in pixels/beats stretches and compresses with the
-  // local tempo, exactly as in-game. See [_constantAlpha].
-  final double? constantMs;
-
-  // Top safe-area inset (status bar / notch). The field is full-bleed, so the
-  // receptor line is pushed down by this much to clear the system chrome.
-  final double topInset;
-
-  // Leading slice of the CONSTANT window over which an arrow ramps from
-  // invisible to solid. The arcade fades arrows in as they enter their display
-  // window (RemyWiki/DDR wiki both describe CONSTANT as arrows that "fade in as
-  // they reach the Step Zone", and the modifier's origin — 鳳 as A3's
-  // BABY-LON'S GALAXY encore — visibly fades); the exact curve isn't published,
-  // so this fraction is eyeballed from footage and tunable. Unlike HIDDEN/
-  // SUDDEN, which are drawn lane covers, CONSTANT is per-arrow alpha.
-  static const double _constantFadeFrac = 0.2;
-
-  // Opacity of the note at chart-second [t] under the CONSTANT modifier: 1 when
-  // CONSTANT is off, the note is at/past the receptor, or it's solidly inside
-  // its display window; 0 while it's still beyond the window; ramping linearly
-  // across the first [_constantFadeFrac] of the window in between. Driven by
-  // real seconds-to-receptor (`t - second`), so the window is a fixed
-  // wall-clock time no matter the tempo. For a held note whose head has already
-  // reached the line, [t] should be the head's own second (<= playhead),
-  // yielding 1.
-  double _constantAlpha(double t) {
-    final c = constantMs;
-    if (c == null) return 1;
-    final timeToReceptor = t - second;
-    if (timeToReceptor <= 0) return 1; // at or past the line
-    final window = c / 1000.0;
-    if (timeToReceptor >= window) return 0; // beyond the display window
-    // Seconds since the note entered its window, as a share of the fade band.
-    final sinceAppear = window - timeToReceptor;
-    return (sinceAppear / (window * _constantFadeFrac)).clamp(0.0, 1.0);
-  }
-
-  // Draws [draw] composited at [alpha] via a save layer over [bounds]. Full
-  // opacity skips the layer entirely, so only the handful of notes inside the
-  // CONSTANT fade band pay for compositing.
-  void _fadeLayer(
-      Canvas canvas, double alpha, Rect bounds, void Function() draw) {
-    if (alpha >= 1) {
-      draw();
-      return;
-    }
-    canvas.saveLayer(bounds, Paint()..color = Colors.white.withValues(alpha: alpha));
-    draw();
-    canvas.restore();
-  }
-
-  // Receptors sit near the TOP; arrows scroll up into them. Tap/hold-head
-  // arrows draw ON TOP OF (z-above) the receptors so an arrow reaching the
-  // line covers it, but hold bodies/tails draw BEHIND the receptor (matching
-  // DDR/StepMania) so a sustain passing through or ending at the line slides
-  // under the receptor frame instead of covering it.
-  // [receptorBase] is the gap below the (inset-adjusted) top edge. Read by
-  // the state to derive the field's travel distance for the speed law.
-  static const double receptorBase = 56;
-  double get _receptorTop => receptorBase + topInset;
-  static const double _laneTighten = 0.92;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    _paintBackground(canvas, size);
-
-    final laneW = size.width / columnCount;
-    // Pinch zoom pulls the lanes in toward the field's centre (and shrinks the
-    // arrows below), so zooming out narrows the field AND the glyphs uniformly —
-    // the "map zoom" that actually fits more chart, rather than only tightening
-    // the vertical gaps (which just stacks the arrows on top of each other).
-    final laneStride = laneW * _laneTighten * zoom;
-    final fieldLeft = (size.width - laneStride * columnCount) / 2;
-    // DDR World arrows fill nearly the whole lane (the atlas glyph is ~0.94 of
-    // its cell). No small upper clamp — arrows scale with the lane so they read
-    // at the arcade's size instead of shrinking on wide fields. Zoom shrinks them
-    // in lockstep with the lane stride so their proportion within a lane holds.
-    final arrowSize = laneW * 0.92 * zoom;
-
-    double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
-
-    // TURN modifier: a note originally in column `c` is drawn in `turned(c)`,
-    // taking that panel's glyph orientation. Bounds-guarded so a mismatched map
-    // (e.g. mode/width change mid-frame) falls back to the note's own column.
-    int turned(int c) =>
-        (c >= 0 && c < colMap.length) ? colMap[c] : c;
-
-    // Beat-locked scroll (true DDR): a note's screen position is its beat
-    // distance from the playhead's beat, so BPM changes speed the field up/down
-    // and stops freeze it. Charts without BPM data (empty [timing]) fall back to
-    // the original constant-time scroll so they still render.
-    final bool beatLocked = !timing.isEmpty;
-    final double currentBeat = beatLocked ? timing.beatAt(second) : 0;
-    // While playing, the field is strictly beat-locked (stops freeze it to a
-    // line). While paused/scrolling we re-expand each stop to real pixels — a
-    // note past a stop is pushed further down by the stop's duration — so the
-    // halt reads as a physical gap you can scroll through instead of a collapsed
-    // seam. This deliberately shifts the layout between play and scroll.
-    final bool expandStops = beatLocked && !playing;
-    final double currentStop =
-        expandStops ? timing.stopSecondsAt(second) : 0;
-    double yFor(double t) {
-      if (!beatLocked) return _receptorTop + (t - second) * pxPerSecond;
-      var y = _receptorTop + (timing.beatAt(t) - currentBeat) * pxPerBeat;
-      if (expandStops) {
-        y += (timing.stopSecondsAt(t) - currentStop) * pxPerSecond;
-      }
-      return y;
-    }
-
-    _paintLanes(canvas, size, fieldLeft, laneStride, _receptorTop);
-
-    // Visible window's far edge, in seconds. Notes draw on-screen until they
-    // align with the receptor, then disappear immediately. Holds are the
-    // exception: a held head stays pinned to the receptor while the body drains.
-    final double maxT = beatLocked
-        ? timing.secondAt(
-                currentBeat + (size.height - _receptorTop) / pxPerBeat) +
-            1
-        : second + ((size.height - _receptorTop) / pxPerSecond) + 1;
-
-    // Receptors only pulse while playing; static (dim, steady) when paused. The
-    // pulse rides the beat (freezing on stops, quickening with the tempo) when
-    // beat-locked, else falls back to a fixed half-second cadence. Use a
-    // triangle wave (peak on the beat, easing symmetrically to the trough) so
-    // the glow never snaps back discontinuously — a sawtooth flashed each beat.
-    final phase = (beatLocked ? currentBeat : second * 2) % 1.0;
-    final glow = playing ? 1.0 - (2.0 * phase - 1.0).abs() : 0.0;
-
-    // Clip only the far top of the field (above where a note centred on the
-    // receptor would reach), so a note sitting ON the receptor draws in full
-    // (z-above it) while notes that have scrolled well past are hidden.
-    final clipTop = _receptorTop - arrowSize / 2 - 2;
-    canvas.save();
-    canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
-
-    // 0) Timing markers (BPM changes and stops), base layer: lines/bands drawn
-    // first inside the clip so notes, holds and foot paths render on top. Their
-    // pill labels come later (after the notes) so they stay legible.
-    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
-        labels: false);
-
-    // 1) Freeze/hold bodies (behind the receptor and arrowheads). While a hold
-    // is being held its head has reached the receptor, so clamp the head to
-    // the line; the body then shrinks upward into it and vanishes at the tail.
-    // Walks the (much smaller) holds list and stops at the window's far edge.
-    for (final n in holds) {
-      if (n.second > maxT) break; // sorted: nothing later can be visible
-      final endS = n.endSecond ?? n.second;
-      if (endS < second) continue;
-      // A freeze appears as one piece under CONSTANT, keyed on its head's second
-      // — the whole body fades in together as the head enters its window.
-      final holdAlpha = _constantAlpha(n.second);
-      if (holdAlpha <= 0) continue;
-      final headY =
-          n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
-      final col = turned(n.col);
-      final holdX = laneCenterX(col);
-      final tailY = yFor(endS);
-      _fadeLayer(
-          canvas,
-          holdAlpha,
-          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize,
-              holdX + arrowSize, tailY + arrowSize), () {
-        skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
-            n.type == StepType.roll);
-        skin.paintHoldTail(
-            canvas, holdX, tailY, arrowSize, dirs[col], n.type == StepType.roll);
-      });
-    }
-
-    // 1.2) Receptors, drawn on top of hold bodies/tails but under taps and
-    // held hold-heads (below) — a sustain slides under the receptor frame as
-    // it passes through or ends at the line, matching DDR/StepMania, while an
-    // arrow landing on the line still covers its receptacle.
-    for (int c = 0; c < columnCount; c++) {
-      skin.paintReceptor(
-          canvas, laneCenterX(c), _receptorTop, arrowSize, dirs[c], glow * 0.9);
-    }
-
-    // 1.5) Foot-flow paths: connect each note to the previous note struck by the
-    // same foot, so the chart's left/right movement reads as two flowing lines.
-    if (feet.isNotEmpty) {
-      _paintFootPaths(canvas, laneCenterX, yFor, arrowSize, second, maxT);
-    }
-
-    // 2) Shock rows: a light-blue arrow in every lit lane linked by electricity,
-    // spanning the whole row (also vanishes once hit).
-    for (final s in shocks) {
-      if (s.second > maxT) break; // sorted by second
-      if (s.second < second) continue;
-      final shockAlpha = _constantAlpha(s.second); // fades in under CONSTANT
-      if (shockAlpha <= 0) continue;
-      final y = yFor(s.second);
-      final lanes = [
-        for (final c in s.cols) (laneCenterX(turned(c)), dirs[turned(c)]),
-      ];
-      _fadeLayer(canvas, shockAlpha,
-          Rect.fromLTRB(0, y - arrowSize, size.width, y + arrowSize), () {
-        skin.paintShock(canvas, lanes, y, arrowSize);
-      });
-    }
-
-    // 3) Taps, mines (non-shock), and hold heads — drawn last so they sit above
-    // the receptors. A held freeze keeps its head pinned to the receptor line.
-    // Two culled sources replace the old full-chart walk: active holds (head
-    // already behind the playhead, pinned to the receptor) from the holds list,
-    // then the binary-searched [second, maxT] slice of the sorted note list —
-    // the same set, and the same sorted draw order, the full walk produced.
-    void drawHead(StepNote n, bool held) {
-      // A held head sits on the receptor, so treat it as fully arrived rather
-      // than re-fading it; otherwise CONSTANT fades it in over its window.
-      final noteAlpha = held ? 1.0 : _constantAlpha(n.second);
-      if (noteAlpha <= 0) return;
-      final col = turned(n.col);
-      final x = laneCenterX(col);
-      final y = held ? _receptorTop.toDouble() : yFor(n.second);
-      if (n.type == StepType.mine && shockNotes.contains(n)) {
-        return; // drawn in the shock pass
-      }
-      _fadeLayer(
-          canvas,
-          noteAlpha,
-          Rect.fromLTRB(
-              x - arrowSize, y - arrowSize, x + arrowSize, y + arrowSize), () {
-        if (n.type == StepType.mine) {
-          skin.paintMine(canvas, x, y, arrowSize);
-        } else {
-          skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
-          final foot = feet[n];
-          if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
-        }
-      });
-    }
-
-    for (final n in holds) {
-      if (n.second >= second) break; // at/after the playhead: scrolls normally
-      if ((n.endSecond ?? n.second) < second) continue;
-      drawHead(n, true);
-    }
-    for (int i = _lowerBoundBySecond(notes, second);
-        i < notes.length;
-        i++) {
-      final n = notes[i];
-      if (n.second > maxT) break;
-      drawHead(n, false);
-    }
-
-    // 4) Timing-marker labels, top layer: drawn last so the STOP/BPM pills sit
-    // above the note stream instead of being buried under passing arrows.
-    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
-        labels: true);
-
-    canvas.restore(); // end note clip
-  }
-
-  // A small L/R parity badge centred on the arrow. Left = warm, right = cool,
-  // so the two feet read apart at a glance without a legend.
-  static const Color _leftFootColor = Color(0xFFFF5D73);
-  static const Color _rightFootColor = Color(0xFF3FA9FF);
-
-  // First index in [notes] (ascending by second) whose second is >= [t].
-  static int _lowerBoundBySecond(List<StepNote> notes, double t) {
-    int lo = 0, hi = notes.length;
-    while (lo < hi) {
-      final mid = (lo + hi) >> 1;
-      if (notes[mid].second < t) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-    return lo;
-  }
-
-  // Reused stroke paints for the two foot-path polylines; only the width (which
-  // tracks the zoomed arrow size) is touched per frame.
-  static final Paint _leftFootPathPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeCap = StrokeCap.round
-    ..strokeJoin = StrokeJoin.round
-    ..color = _leftFootColor.withValues(alpha: 0.42);
-  static final Paint _rightFootPathPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeCap = StrokeCap.round
-    ..strokeJoin = StrokeJoin.round
-    ..color = _rightFootColor.withValues(alpha: 0.42);
-
-  // Connect each note to the previous note struck by the same foot, drawing two
-  // flowing polylines (one per foot) so the chart's movement pattern reads at a
-  // glance. Drawn behind the arrowheads. Held notes anchor to the receptor while
-  // active, matching where their head is actually drawn.
-  //
-  // The same-foot chaining is precomputed per chart ([footPrev]), so this only
-  // touches the visible window: every visible note draws its incoming link, the
-  // active holds draw theirs (their heads are pinned on the receptor), and the
-  // first note per foot beyond the window closes the outgoing link — exactly
-  // the segments the old whole-chart walk drew with `visible(prev)||visible(n)`.
-  void _paintFootPaths(
-    Canvas canvas,
-    double Function(int) laneCenterX,
-    double Function(double) yFor,
-    double arrowSize,
-    double second,
-    double maxT,
-  ) {
-    // On-screen anchor for a note: pinned to the receptor while a hold is held,
-    // else its scrolling position.
-    Offset anchor(StepNote n) {
-      final endS = n.endSecond ?? n.second;
-      final held = n.isHold && n.second < second && endS >= second;
-      final y = held ? _receptorTop.toDouble() : yFor(n.second);
-      final col = (n.col >= 0 && n.col < colMap.length) ? colMap[n.col] : n.col;
-      return Offset(laneCenterX(col), y);
-    }
-
-    bool heldNow(StepNote n) =>
-        n.isHold && n.second < second && (n.endSecond ?? n.second) >= second;
-    bool visible(StepNote n) =>
-        heldNow(n) || (n.second >= second && n.second <= maxT);
-
-    final leftPaint = _leftFootPathPaint..strokeWidth = arrowSize * 0.10;
-    final rightPaint = _rightFootPathPaint..strokeWidth = arrowSize * 0.10;
-
-    void drawLink(StepNote prev, StepNote n, Foot foot) => canvas.drawLine(
-          anchor(prev),
-          anchor(n),
-          foot == Foot.left ? leftPaint : rightPaint,
-        );
-
-    // Links into the receptor-pinned heads of active holds (their own seconds
-    // sit behind the playhead, so the window scan below won't reach them).
-    for (final h in holds) {
-      if (h.second >= second) break;
-      if (!heldNow(h)) continue;
-      final foot = feet[h];
-      final prev = footPrev[h];
-      if (foot != null && prev != null) drawLink(prev, h, foot);
-    }
-
-    // Visible-window scan; past the far edge, only the first same-foot note
-    // still owes a link back to a visible predecessor, then we're done.
-    bool leftClosed = false, rightClosed = false;
-    for (int i = _lowerBoundBySecond(notes, second); i < notes.length; i++) {
-      final n = notes[i];
-      final foot = feet[n];
-      if (foot == null) continue; // mines/shocks never take a foot
-      if (n.second > maxT) {
-        final closed = foot == Foot.left ? leftClosed : rightClosed;
-        if (!closed) {
-          final prev = footPrev[n];
-          if (prev != null && visible(prev)) drawLink(prev, n, foot);
-          if (foot == Foot.left) {
-            leftClosed = true;
-          } else {
-            rightClosed = true;
-          }
-        }
-        if (leftClosed && rightClosed) break;
-        continue;
-      }
-      final prev = footPrev[n];
-      if (prev != null) drawLink(prev, n, foot);
-    }
-  }
-
-  // Colours for timing markers: stops read as a warm caution band, BPM changes
-  // as a cool line, so the two never get confused with the arrow palette.
-  static const Color _stopColor = Color(0xFFFFB454);
-  static const Color _bpmColor = Color(0xFF8AB4FF);
-
-  // Reused marker paints (fixed colours/widths — no reason to allocate per
-  // marker per frame).
-  static final Paint _stopLinePaint = Paint()
-    ..color = _stopColor.withValues(alpha: 0.85)
-    ..strokeWidth = 2.5;
-  static final Paint _stopBandPaint = Paint()
-    ..color = _stopColor.withValues(alpha: 0.12);
-  static final Paint _stopEdgePaint = Paint()
-    ..color = _stopColor.withValues(alpha: 0.7)
-    ..strokeWidth = 1.5;
-  static final Paint _bpmLinePaint = Paint()
-    ..color = _bpmColor.withValues(alpha: 0.75)
-    ..strokeWidth = 1.5;
-  static final Paint _labelPillPaint = Paint()
-    ..color = Colors.black.withValues(alpha: 0.55);
-
-  // Draw full-width markers for stops (a band spanning the halt's duration) and
-  // BPM changes (a line + label), positioned on the same seconds axis the notes
-  // scroll on. Only markers within the visible time window are drawn.
-  // Draws timing markers in two z-layers. The lines/bands are the base layer
-  // ([labels] = false), painted before the notes so arrows scroll over them; the
-  // pill labels are the top layer ([labels] = true), painted after the notes so
-  // they stay legible instead of being buried under a stream of arrows.
-  void _paintTimingMarkers(
-    Canvas canvas,
-    Size size,
-    double Function(double) yFor,
-    double maxT,
-    bool beatLocked,
-    bool expandStops, {
-    required bool labels,
-  }) {
-    // Stops. Beat-locked while PLAYING, a stop occupies zero beat-space (the
-    // field freezes on it), so it draws as a single bold line carrying its
-    // duration in the label. Paused/scrolling ([expandStops]) — and in the
-    // constant-time fallback — the stop is given real vertical extent and draws
-    // as a band spanning the halt so its length reads at a glance.
-    for (final s in stopMarkers) {
-      final endSec = s.second + s.dur;
-      if (endSec < second || s.second > maxT) continue;
-      if (beatLocked && !expandStops) {
-        final y = yFor(s.second);
-        if (labels) {
-          _paintMarkerLabel(
-              canvas, size, y, "STOP ${_fmtDur(s.dur)}", _stopColor,
-              alignBottom: true);
-        } else {
-          canvas.drawLine(
-            Offset(0, y),
-            Offset(size.width, y),
-            _stopLinePaint,
-          );
-        }
-        continue;
-      }
-      final yTop = yFor(s.second);
-      if (labels) {
-        _paintMarkerLabel(canvas, size, yTop, "STOP", _stopColor,
-            alignBottom: true);
-        continue;
-      }
-      final yBot = yFor(endSec);
-      final band = Rect.fromLTRB(0, yBot, size.width, yTop);
-      canvas.drawRect(band, _stopBandPaint);
-      // Edges of the band, brighter, so even a near-instant stop stays visible.
-      canvas.drawLine(Offset(0, yTop), Offset(size.width, yTop), _stopEdgePaint);
-      canvas.drawLine(Offset(0, yBot), Offset(size.width, yBot), _stopEdgePaint);
-    }
-
-    // BPM changes: a thin cool line with the new tempo labelled at the edge.
-    for (final b in bpmMarkers) {
-      if (b.second < second || b.second > maxT) continue;
-      final y = yFor(b.second);
-      if (labels) {
-        _paintMarkerLabel(canvas, size, y, "${b.bpm} BPM", _bpmColor);
-      } else {
-        canvas.drawLine(
-          Offset(0, y),
-          Offset(size.width, y),
-          _bpmLinePaint,
-        );
-      }
-    }
-  }
-
-  // Laid-out TextPainters are cached across frames — text shaping is far too
-  // expensive to redo per marker/badge per frame. Keys carry everything the
-  // glyphs depend on; the caps keep a long session (many charts, zoom levels)
-  // from accumulating stale entries.
-  static final Map<String, TextPainter> _labelTpCache = {};
-  static final Map<int, TextPainter> _footTpCache = {};
-
-  static TextPainter _labelTp(String text, Color color) {
-    if (_labelTpCache.length > 64) _labelTpCache.clear();
-    return _labelTpCache.putIfAbsent("${color.toARGB32()}|$text", () {
-      return TextPainter(
-        text: TextSpan(
-          text: text,
-          style: TextStyle(
-            color: color,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            height: 1,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-    });
-  }
-
-  // A small pill label pinned to the right edge of a marker line. [alignBottom]
-  // seats it just below the line (used for a stop band's start) instead of above.
-  void _paintMarkerLabel(
-    Canvas canvas,
-    Size size,
-    double y,
-    String text,
-    Color color, {
-    bool alignBottom = false,
-  }) {
-    final tp = _labelTp(text, color);
-    const padX = 5.0;
-    const padY = 3.0;
-    const margin = 6.0;
-    final boxW = tp.width + padX * 2;
-    final boxH = tp.height + padY * 2;
-    final left = size.width - boxW - margin;
-    final top = alignBottom ? y + 2 : y - boxH - 2;
-    final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(left, top, boxW, boxH),
-      const Radius.circular(4),
-    );
-    canvas.drawRRect(rect, _labelPillPaint);
-    tp.paint(canvas, Offset(left + padX, top + padY));
-  }
-
-  static final Paint _footBadgeBgPaint = Paint()
-    ..color = Colors.black.withValues(alpha: 0.55);
-
-  void _paintFootBadge(
-      Canvas canvas, double x, double y, double arrowSize, Foot foot) {
-    final isLeft = foot == Foot.left;
-    final r = arrowSize * 0.24;
-    canvas.drawCircle(Offset(x, y), r, _footBadgeBgPaint);
-    // Font size quantised to quarter-pixels for the cache key: visually exact
-    // enough, and pinch-zoom then reuses a bounded set of layouts.
-    final sizeKey = (arrowSize * 0.34 * 4).round();
-    if (_footTpCache.length > 64) _footTpCache.clear();
-    final tp = _footTpCache.putIfAbsent((sizeKey << 1) | (isLeft ? 1 : 0), () {
-      return TextPainter(
-        text: TextSpan(
-          text: isLeft ? "L" : "R",
-          style: TextStyle(
-            color: isLeft ? _leftFootColor : _rightFootColor,
-            fontSize: sizeKey / 4.0,
-            fontWeight: FontWeight.w800,
-            height: 1,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-    });
-    tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
-  }
-
-  // Frame-static paints/shaders, cached across paints (the shaders only depend
-  // on the field size, which changes on rotation/resize, not per frame).
-  static final Paint _bgPaint = Paint();
-  static Size _bgPaintSize = Size.zero;
-  static final Paint _receptorLinePaint = Paint();
-  static double _receptorLineWidth = -1;
-  static final Paint _laneDividerPaint = Paint()
-    ..color = Colors.white.withValues(alpha: 0.04)
-    ..strokeWidth = 1;
-
-  void _paintBackground(Canvas canvas, Size size) {
-    // Vertical stage gradient: darker at the bottom, lifting toward the
-    // receptors so incoming notes read clearly.
-    if (_bgPaintSize != size) {
-      _bgPaint.shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          Color(0xFF11151C),
-          Color(0xFF080A0E),
-        ],
-      ).createShader(Offset.zero & size);
-      _bgPaintSize = size;
-    }
-    canvas.drawRect(Offset.zero & size, _bgPaint);
-  }
-
-  void _paintLanes(Canvas canvas, Size size, double fieldLeft,
-      double laneStride, double receptorY) {
-    // Subtle lane dividers, tracking the (zoom-scaled) field so they sit between
-    // the lanes rather than drifting away from the arrows when zoomed out.
-    for (int c = 1; c < columnCount; c++) {
-      final x = fieldLeft + laneStride * c;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), _laneDividerPaint);
-    }
-    // Receptor line highlight.
-    if (_receptorLineWidth != size.width) {
-      _receptorLinePaint.shader = LinearGradient(
-        colors: [
-          Colors.white.withValues(alpha: 0),
-          Colors.white.withValues(alpha: 0.18),
-          Colors.white.withValues(alpha: 0),
-        ],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, 1));
-      _receptorLineWidth = size.width;
-    }
-    canvas.drawRect(
-        Rect.fromLTWH(0, receptorY - 0.5, size.width, 1), _receptorLinePaint);
-  }
-
-  @override
-  bool shouldRepaint(_ChartPainter old) =>
-      old.pxPerSecond != pxPerSecond ||
-      old.pxPerBeat != pxPerBeat ||
-      old.timing != timing ||
-      old.notes != notes ||
-      old.holds != holds ||
-      old.bpmMarkers != bpmMarkers ||
-      old.stopMarkers != stopMarkers ||
-      old.feet != feet ||
-      old.footPrev != footPrev ||
-      old.columnCount != columnCount ||
-      !listEquals(old.colMap, colMap) ||
-      old.skin != skin ||
-      old.playing != playing ||
-      old.zoom != zoom ||
-      old.constantMs != constantMs ||
-      old.topInset != topInset;
+  final neutral = painterAt(0);
+  final offset = painterAt(units);
+  final result = (
+    repaints: offset.shouldRepaint(neutral),
+    neutralSecond: neutral.second,
+    offsetSecond: offset.second,
+  );
+  playhead.dispose();
+  return result;
 }

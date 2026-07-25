@@ -22,6 +22,34 @@ class Settings {
   // crosses the receptor line during playback. Stored as 0/1.
   static const String assistTickOnKey = "chartPreviewAssistTickOn";
 
+  // ARCADE SYNC for the chart preview: master switch for the cabinet timing
+  // simulation below. Off by default; while off both offsets are ignored and
+  // their controls stay hidden. Stored as 0/1.
+  static const String arcadeSyncOnKey = "chartPreviewArcadeSyncOn";
+
+  // DDR TIMING offsets for the chart preview, mirroring the cabinet's two
+  // timing dials. The cabinet uses DIFFERENT units and scales for these, so
+  // they are stored differently — they are not interchangeable:
+  //
+  // VISUAL (表示タイミング) — the cabinet's -5.0..+5.0 dial in 0.1 steps. Stored
+  //   as TENTHS of a dial unit, so the range is -50..+50. Moves the arrows'
+  //   aiming position: PLUS corrects a FAST bias, MINUS corrects SLOW.
+  // AUDIO (判定タイミング) — natively in MILLISECONDS on the cabinet, where
+  //   players work in roughly ±10-20ms. Stored as whole ms, clamped to ±50.
+  //
+  // Both default to an unset 0, which is correctly neutral for each.
+  static const String chartPreviewVisualOffsetKey = "chartPreviewVisualOffset";
+  static const String chartPreviewAudioOffsetMsKey =
+      "chartPreviewAudioOffsetMs";
+
+  // The song sync bias the stored offsets above were dialled against, in
+  // HUNDREDTHS of a millisecond. The offsets cancel a per-song bias, so they
+  // only mean anything for the song they were computed for; keeping the bias
+  // alongside them lets the preview tell "these are this song's offsets" from
+  // "these are the last song's offsets" and re-seed in the latter case.
+  static const String chartPreviewOffsetForBiasKey =
+      "chartPreviewOffsetForBias";
+
   // DDR WORLD speed options for the chart preview, mirroring the cabinet's
   // SPEED TYPE: 0 = SCROLL SPEED ("real speed" — a target scroll rate,
   // 10–1000 in steps of 10, pinned to the chart's max BPM), 1 = HI-SPEED

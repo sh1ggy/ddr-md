@@ -91,6 +91,18 @@ class TickClock {
   /// Voices primed-but-not-yet-fired, keyed by the row index they belong to.
   final Map<int, SoundHandle> _primed = {};
 
+  /// AUDIO OFFSET, in seconds, following the cabinet's sign convention:
+  /// positive = EARLIER (ticks sound sooner relative to the arrows), negative =
+  /// later. Applied by shifting each row's target on the clock timeline, so it
+  /// composes with — and is independent of — the fixed [_releaseLatency]
+  /// compensation: latency correction centres the tick on its target, this then
+  /// moves the target itself. Zero is the neutral default.
+  ///
+  /// Writes take effect for rows not yet primed; already-primed voices keep the
+  /// offset they were seated with, so a mid-playback change settles within
+  /// [_primeLead].
+  double audioOffset = 0;
+
   bool get isReady => _sample != null && _clockVoice != null;
 
   // --- test hooks (integration_test/tick_clock_test.dart) ---
@@ -186,7 +198,11 @@ class TickClock {
     _chartAtAnchor = chartSecond;
     _clockAtAnchor = clockNow;
     _rate = rate <= 0 ? 1.0 : rate;
-    _cursor = _firstRowAfter(chartSecond);
+    // Seat past rows whose (offset-shifted) tick time has already passed, not
+    // merely past the playhead: with a positive AUDIO OFFSET a row slightly
+    // ahead of `chartSecond` is already due, and seating on the raw playhead
+    // would fire it immediately as a stale tick on every play/seek.
+    _cursor = _firstRowAfter(chartSecond + audioOffset);
     _anchored = true;
     _ensurePolling();
   }
@@ -226,8 +242,15 @@ class TickClock {
   }
 
   /// Convert a chart-second to the audio clock's timeline via the current anchor.
+  /// [audioOffset] subtracts here so a POSITIVE offset pulls the target earlier
+  /// on the clock (the tick sounds sooner). It is divided by the rate along with
+  /// the chart delta so the offset stays a constant wall-clock shift at any
+  /// playback speed — a 16ms dial is 16ms at the ear whether the chart is
+  /// running at 0.5x or 2x.
   double _rowClockSecond(double chartSecond) =>
-      _clockAtAnchor + (chartSecond - _chartAtAnchor) / _rate;
+      _clockAtAnchor +
+      (chartSecond - _chartAtAnchor) / _rate -
+      audioOffset / _rate;
 
   void _ensurePolling() {
     _poller ??= Timer.periodic(_pollPeriod, (_) => _pump());

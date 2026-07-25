@@ -182,6 +182,10 @@ class _SongPageState extends State<SongPage> {
                     maxBpm: _chart.trueMax,
                     bpms: _chart.bpms,
                     stops: _chart.stops,
+                    // The same measured sync this page's Sync card shows
+                    // (cabinet block when present, else simfile), so ARCADE
+                    // SYNC can report the song's own bias.
+                    sync: songInfo.displaySyncFor(_chart),
                   ),
                 ),
               );
