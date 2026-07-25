@@ -178,6 +178,8 @@ class _SongPageState extends State<SongPage> {
                     title: songInfo.title,
                     songLength: songInfo.songLength,
                     chartBpm: _chart.dominantBpm,
+                    minBpm: _chart.trueMin,
+                    maxBpm: _chart.trueMax,
                     bpms: _chart.bpms,
                     stops: _chart.stops,
                   ),

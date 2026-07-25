@@ -1,10 +1,14 @@
-/// Tests for the DDR CONSTANT modifier's effect on the read speed surfaced by
-/// the chart preview's tempo badge. CONSTANT is a wall-clock display window; it
-/// converts to an ARCADE-equivalent read speed R = 370000 / ms — the
-/// community-measured cabinet guideline (925ms ↔ SPEED 400, 740ms ↔ SPEED 500,
-/// 1000ms ↔ SPEED 370). The live read speed is max(local BPM × mod, R): the
-/// window only ever HIDES arrows, so it raises the effective read of slow
-/// sections and leaves faster ones untouched.
+/// Tests that the DDR CONSTANT modifier does NOT alter the read speed shown on
+/// the chart preview's tempo badge.
+///
+/// Verified against the WORLD binary: the cabinet's speed readout never
+/// references the CONSTANT display-time value, and the play-side scroll
+/// multiplier is identical whether CONSTANT is on or off. CONSTANT changes
+/// arrow VISIBILITY (a fixed wall-clock display window), not scroll velocity —
+/// so the badge's READ value is always localBpm × mod. An earlier revision
+/// clamped slow sections up to the window's "equivalent read speed" and showed
+/// a "C###" badge; that speed floor is a fabrication and is what made
+/// CONSTANT + a speed type feel wrong. See docs/ddr-world-speed.md.
 library;
 
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
@@ -22,6 +26,32 @@ ChartSteps _steps() => const ChartSteps(notes: [
 
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
+// The READ value on the tempo badge. Scoped to the badge so it can't be
+// satisfied by the transport pane, and taken as the text immediately after the
+// "READ" label so it can't pick up the neighbouring BPM number instead. A
+// C prefix (which should never appear now) would fail the int.parse, so the
+// helper also guards against the old behaviour regressing.
+int badgeRead(WidgetTester tester) {
+  final texts = tester
+      .widgetList<Text>(find.descendant(
+          of: find.byKey(tempoBadgeKey), matching: find.byType(Text)))
+      .map((t) => t.data)
+      .whereType<String>()
+      .toList();
+  final i = texts.indexOf('READ');
+  if (i == -1 || i + 1 >= texts.length) {
+    throw StateError('no READ stat on the tempo badge: $texts');
+  }
+  return int.parse(texts[i + 1]);
+}
+
+// True if any text on the badge carries the old CONSTANT "C###" read-speed
+// prefix — which the arcade-accurate badge must never do.
+bool _badgeHasCPrefix(WidgetTester tester) => tester
+    .widgetList<Text>(find.descendant(
+        of: find.byKey(tempoBadgeKey), matching: find.byType(Text)))
+    .any((t) => RegExp(r'^C\d+$').hasMatch(t.data ?? ''));
+
 Widget _scroller({required int chartBpm, Key? key}) => ChartScroller(
       key: key,
       steps: _steps(),
@@ -38,56 +68,62 @@ void main() {
     await Settings.init();
   });
 
-  testWidgets('CONSTANT window converts to its arcade-equivalent read speed',
+  testWidgets('CONSTANT does not change the badge read speed of a slow chart',
       (tester) async {
-    await Settings.setInt(Settings.chosenReadSpeedKey, 150);
-    await Settings.setInt(Settings.constantOnKey, 1);
-    await Settings.setInt(Settings.constantMsKey, 1000);
-    // 150 BPM × 1.0x = 150 read; a 1000ms window reads like the cabinet's
-    // C = 370000/1000 = 370, which outpaces 150 and binds.
+    // 150 BPM × x1.00 = 150. A cabinet leaves this untouched no matter the
+    // CONSTANT window — CONSTANT only hides arrows, it never speeds them up.
     await tester.pumpWidget(_host(_scroller(chartBpm: 150)));
     await tester.pump(const Duration(milliseconds: 16));
-    expect(find.text('C370'), findsOneWidget);
-  });
+    final withoutConstant = badgeRead(tester);
 
-  testWidgets('halving the window doubles the equivalent read speed',
-      (tester) async {
-    await Settings.setInt(Settings.chosenReadSpeedKey, 150);
     await Settings.setInt(Settings.constantOnKey, 1);
-    await Settings.setInt(Settings.constantMsKey, 500);
+    await Settings.setInt(Settings.constantMsKey, 1000);
     await tester.pumpWidget(
-        _host(_scroller(chartBpm: 150, key: const ValueKey('half'))));
+        _host(_scroller(chartBpm: 150, key: const ValueKey('on'))));
     await tester.pump(const Duration(milliseconds: 16));
-    expect(find.text('C740'), findsOneWidget);
+
+    expect(badgeRead(tester), withoutConstant,
+        reason: 'CONSTANT must not alter the tempo badge read speed');
+    expect(_badgeHasCPrefix(tester), isFalse,
+        reason: 'the fabricated "C###" read-speed floor must not return');
   });
 
-  testWidgets(
-      'a window longer than the arcade natural travel does not bind the read',
+  testWidgets('changing the CONSTANT window leaves the badge read speed fixed',
       (tester) async {
-    // 300 BPM × 2.0x = 600 read: on the cabinet arrows are visible only
-    // 370/600 ≈ 0.62s, well inside a 3000ms window (equivalent C = 123).
-    // CONSTANT must pass the faster natural read through unchanged.
+    await Settings.setInt(Settings.constantOnKey, 1);
+    await Settings.setInt(Settings.constantMsKey, 1000);
+    await tester.pumpWidget(
+        _host(_scroller(chartBpm: 150, key: const ValueKey('full'))));
+    await tester.pump(const Duration(milliseconds: 16));
+    final atFullWindow = badgeRead(tester);
+
+    await Settings.setInt(Settings.constantMsKey, 300);
+    await tester.pumpWidget(
+        _host(_scroller(chartBpm: 150, key: const ValueKey('short'))));
+    await tester.pump(const Duration(milliseconds: 16));
+
+    // A tighter window hides more, but the arrows that are visible still move
+    // at the same read speed — the badge number must not budge.
+    expect(badgeRead(tester), atFullWindow);
+  });
+
+  testWidgets('the badge always reads localBpm x mod, CONSTANT on or off',
+      (tester) async {
+    // 300 BPM × x2.00 (read-speed pref 600) = 600. Same with CONSTANT on.
     await Settings.setInt(Settings.chosenReadSpeedKey, 600);
+    await Settings.setInt(Settings.constantOnKey, 0);
+    await tester.pumpWidget(
+        _host(_scroller(chartBpm: 300, key: const ValueKey('off'))));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(badgeRead(tester), 600);
+    expect(_badgeHasCPrefix(tester), isFalse);
+
     await Settings.setInt(Settings.constantOnKey, 1);
     await Settings.setInt(Settings.constantMsKey, 3000);
     await tester.pumpWidget(
-        _host(_scroller(chartBpm: 300, key: const ValueKey('unbound'))));
+        _host(_scroller(chartBpm: 300, key: const ValueKey('on'))));
     await tester.pump(const Duration(milliseconds: 16));
-    expect(find.text('600'), findsWidgets); // tempo badge (and transport pane)
-    expect(find.text('C600'), findsNothing);
-    expect(find.text('C123'), findsNothing);
-    expect(find.text('123'), findsNothing);
-  });
-
-  testWidgets('CONSTANT off never shows a C-prefixed read speed',
-      (tester) async {
-    await Settings.setInt(Settings.chosenReadSpeedKey, 150);
-    await Settings.setInt(Settings.constantOnKey, 0);
-    await Settings.setInt(Settings.constantMsKey, 1000);
-    await tester.pumpWidget(
-        _host(_scroller(chartBpm: 150, key: const ValueKey('off'))));
-    await tester.pump(const Duration(milliseconds: 16));
-    expect(find.text('150'), findsWidgets);
-    expect(find.text('C370'), findsNothing);
+    expect(badgeRead(tester), 600);
+    expect(_badgeHasCPrefix(tester), isFalse);
   });
 }

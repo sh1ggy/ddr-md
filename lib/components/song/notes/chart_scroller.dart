@@ -296,10 +296,14 @@ class ChartScroller extends StatefulWidget {
     required this.mode,
     required this.songLength,
     required this.chartBpm,
+    this.minBpm = 0,
+    this.maxBpm = 0,
     this.bpms = const [],
     this.stops = const [],
     this.showFootGuide = false,
     this.assistTickOn = false,
+    this.onToggleFootGuide,
+    this.onToggleAssistTick,
     this.headerBuilder,
   });
 
@@ -319,11 +323,26 @@ class ChartScroller extends StatefulWidget {
   final List<Bpm> bpms;
   final List<Stop> stops;
 
+  /// The chart's authored BPM extremes (`true_min`/`true_max` from [Chart]),
+  /// bracketing [chartBpm] (the dominant/core tempo). Together they are the
+  /// (min, core, max) trio the WORLD cabinet hands its speed option, and
+  /// [maxBpm] is the divisor REAL SPEED derives its multiplier from. 0 means
+  /// "not supplied" — the note stream is used as a fallback. See
+  /// docs/ddr-world-speed.md.
+  final int minBpm;
+  final int maxBpm;
+
   /// Overlay an L/R parity guide on each arrow (best-effort, computed on load).
   final bool showFootGuide;
 
   /// Play a short tick as each note row crosses the receptors during playback.
   final bool assistTickOn;
+
+  /// Toggle callbacks for the two playback-aid options above. Wired into the
+  /// settings shade's own segment so they live alongside the chart-viewing
+  /// modifiers rather than crowding the floating header. Null hides the tiles.
+  final VoidCallback? onToggleFootGuide;
+  final VoidCallback? onToggleAssistTick;
 
   /// Song length in seconds; bounds the scrub slider and the auto-stop point.
   final double songLength;
@@ -393,23 +412,80 @@ class _ChartScrollerState extends State<ChartScroller>
   int get _activeHundredths =>
       _hispeedType ? _hispeedHundredths : _derivedHundredths;
 
-  // The cabinet's ScrollSpeed→multiplier derivation. It hands the option its
-  // (min, core, max) BPMs and divides by MAX, so the dialled real speed pins
-  // the chart's fastest section and slower sections read proportionally
-  // below it. Charts without a usable BPM fall back to x1.00 as the cabinet
-  // does.
+  // The cabinet's ScrollSpeed→multiplier derivation: round(scroll × 100 /
+  // divisorBpm), clamped to the same 25–800 as HI-SPEED. Charts without a
+  // usable BPM fall back to x1.00 as the cabinet does.
+  //
+  // The divisor is the cabinet's own `bpmmax`. Verified against the WORLD dump's
+  // data/gamedata/musicdb.xml: each record carries only `bpmmin`/`bpmmax` (both
+  // u16), and SetScrollSpeed's divisor reads the music-record struct those
+  // populate. Crucially `bpmmax` is NOT the note stream's raw peak — for SMASH
+  // the cabinet stores 160 even though the chart soflans to 320, so REAL SPEED
+  // 600 there is round(600 × 100 / 160)=x3.75 and reads 600, matching HI-SPEED
+  // x3.75. See [_scrollDivisorBpm] for how the app reconstructs bpmmax, and
+  // docs/ddr-world-speed.md.
   int get _derivedHundredths {
-    final bpm = _maxChartBpm;
+    final bpm = _scrollDivisorBpm;
     if (bpm <= 0) return 100;
     return ((_scrollSpeed * 100) / bpm).round().clamp(_hispeedMin, _hispeedMax);
   }
 
-  int get _maxChartBpm {
-    var max = 0;
+  // Minimum seconds a tempo must be held to count toward the cabinet's bpmmax.
+  // Transient gimmick spikes (a one-beat 4× flash) are excluded; anything the
+  // chart actually sits at is kept. 2s reproduces the cabinet's bpmmax on 98%
+  // of songs it shares with this repo (measured against musicdb.xml).
+  static const double _sustainedBpmMinSeconds = 2.0;
+
+  // The REAL SPEED divisor: the app's reconstruction of the cabinet's `bpmmax`.
+  //
+  // Rule (derived empirically, not hand-tuned): bpmmax = the highest BPM the
+  // chart SUSTAINS for at least [_sustainedBpmMinSeconds], i.e. the fastest
+  // tempo you actually read at, ignoring momentary soflan spikes. This beats
+  // both prior attempts — dominant alone (95%) missed songs whose sustained
+  // peak isn't the most-common tempo, and the raw note-stream max (which halved
+  // SMASH by dividing by its 320 spike). It matches the cabinet on 98% of
+  // shared songs; the residual is BPM-octave notation differences and a few
+  // gimmick charts. See docs/ddr-world-speed.md.
+  //
+  // Computed from [widget.bpms] segment durations. NOTE this is independent of
+  // [widget.maxBpm]/`true_max`, which is deliberately preserved untouched: it's
+  // the real unreported peak (useful precisely because the cabinet hides it),
+  // just not the scroll divisor. Falls back to dominant, then effective BPM,
+  // when the stream carries no timed segments.
+  int get _scrollDivisorBpm {
+    var peak = 0;
+    final held = <int, double>{};
     for (final b in widget.bpms) {
-      if (b.val > max) max = b.val;
+      if (b.val <= 0) continue;
+      final dur = b.ed - b.st;
+      if (dur <= 0) continue;
+      held[b.val] = (held[b.val] ?? 0) + dur;
     }
-    return max > 0 ? max : _effectiveChartBpm;
+    held.forEach((val, secs) {
+      if (secs >= _sustainedBpmMinSeconds && val > peak) peak = val;
+    });
+    if (peak > 0) return peak;
+    // No segment cleared the sustain threshold (very short chart, or no timing):
+    // fall back to the dominant BPM, then the effective chart BPM.
+    final dom = widget.chartBpm;
+    return dom > 0 ? dom : _effectiveChartBpm;
+  }
+
+  // The chart's slow-end BPM — the low bound of the compact readout's span
+  // (its high bound is [_scrollDivisorBpm], the dominant/bpmmax proxy).
+  //
+  // Prefers the chart's AUTHORED `true_min` over scanning [widget.bpms]: the
+  // note stream only carries the segments this difficulty plays through, so a
+  // scan would drift if a chart ever carries a min it doesn't reach. Falls back
+  // to the stream, then to the dominant BPM.
+  int get _minChartBpm {
+    var min = widget.minBpm;
+    if (min <= 0) {
+      for (final b in widget.bpms) {
+        if (b.val > 0 && (min <= 0 || b.val < min)) min = b.val;
+      }
+    }
+    return min > 0 ? min : _effectiveChartBpm;
   }
 
 
@@ -557,27 +633,73 @@ class _ChartScrollerState extends State<ChartScroller>
   // and the kinds of notes waiting there.
   List<_MinimapBucket> _minimap = const [];
 
-  // Pixels a note travels per second of chart time, before [_rate]. Tuned so a
-  // typical stream sits at DDR World-ish spacing (arrows fairly close together)
-  // rather than sparse; the speed slider scales this either way.
-  static const double _basePxPerSecond = 200;
+  // Pixels a note travels per second of chart time, before [_rate].
+  //
+  // Anchored to the ARCADE's own speed↔time law rather than a tuned feel
+  // number. DDR WORLD's CONSTANT option is defined as "an arrow is visible
+  // for N milliseconds" (100–3000ms, step 10 — verified in the WORLD binary,
+  // see docs/ddr-world-speed.md), which fixes the relationship between a
+  // scroll speed and how long an arrow is on screen. Matching CONSTANT's
+  // definition to normal play at read speed R gives
+  //
+  //     travel seconds = kArcadeTravel / R      [_arcadeTravelConstant]
+  //
+  // so the note field, whose travel distance is (height − receptor), must
+  // scroll at (distance × R / kArcadeTravel) px/s. Because R = localBpm ×
+  // mod and a beat is 60/localBpm seconds, that reduces to a constant
+  // px-per-beat — see [_pxPerBeat] — which is what the painter actually
+  // uses. This value is only the fallback for the non-beat-locked path
+  // (charts with no timing data), expressed in the same law at a nominal
+  // 180-BPM reference so the two paths agree.
+  static const double _referenceBpm = 180.0;
+  double get _pxPerSecond =>
+      _travelPx * (_referenceBpm * _rate) / _arcadeTravelConstant * _zoom;
 
-  double get _pxPerSecond => _basePxPerSecond * _rate * _zoom;
+  // The arcade's speed↔time constant: at read speed R an arrow is on screen
+  // for (k / R) seconds. Equivalently, one CONSTANT window of N ms
+  // corresponds to read speed R = k × 1000 / N.
+  //
+  // k = 370, from measurements of DDR WORLD's own CONSTANT guideline. Three
+  // independent reported points agree exactly, which is what makes this a
+  // measurement rather than folklore:
+  //
+  //     925ms ↔ SPEED 400  →  k = 400 × 0.925 = 370
+  //     740ms ↔ SPEED 500  →  k = 500 × 0.740 = 370
+  //    1000ms ↔ SPEED 370  →  k = 370 × 1.000 = 370
+  //
+  // So at read speed 600 an arrow is visible ~0.62s, and CONSTANT's 1000ms
+  // default reads like SPEED 370.
+  //
+  // This constant CANNOT come from the binary: WORLD stores the CONSTANT
+  // option value (100–3000ms) and the speed multiplier, but the geometry
+  // that turns those into a travel time — receptor Y and field height —
+  // lives in the .arc layout blobs, not in gamemdx.dll. An earlier revision
+  // briefly used k = 180 on the reasoning that "370 isn't in the binary";
+  // that was wrong twice over (the binary can't contain it, and 180 makes
+  // arrows ~2× too fast), and it is why the field scrolled visibly quicker
+  // than a cabinet. See docs/ddr-world-speed.md.
+  static const double _arcadeTravelConstant = 370.0;
+
+  // Vertical distance an arrow actually travels in THIS field: bottom edge
+  // up to the receptor line. Set from the painter's layout each build; the
+  // fallback only matters for the first frame before layout is known.
+  double _travelPx = 600;
 
   // Beat-locked spacing: pixels per chart beat. In DDR the scroll VELOCITY is the
   // read speed (BPM × mod), so faster songs fly and slower ones crawl at the same
-  // x-mod. A beat spans 60/localBpm seconds, so to make velocity = localBpm × rate
-  // px/s the per-beat pixels must be (localBpm × rate) × (60/localBpm) = 60 × rate
-  // — chart- and tempo-independent. This is why a note's on-screen speed then
-  // tracks the LOCAL tempo (via [ChartTiming]'s slope), not the dominant BPM: a
-  // 360-BPM stretch scrolls twice as fast as a 180-BPM one at the same read speed.
+  // x-mod. A beat spans 60/localBpm seconds, so a velocity of
+  // (travelPx × localBpm × mod / k) px/s means the per-beat pixels are that
+  // times 60/localBpm = 60 × travelPx × mod / k — chart- and tempo-independent,
+  // which is why a note's on-screen speed tracks the LOCAL tempo (via
+  // [ChartTiming]'s slope), not the dominant BPM: a 360-BPM stretch scrolls
+  // twice as fast as a 180-BPM one at the same read speed.
   //
-  // Anchoring instead to the dominant BPM (the old behaviour) collapsed every
-  // chart to _basePxPerSecond × rate px/s at its dominant tempo, so a 360-BPM song
-  // crept by at the same pixels/second as a 120-BPM one — the read speed became a
-  // pure spacing knob with no bearing on actual vertical velocity.
-  static const double _pxPerReadSpeedUnit = 1.0;
-  double get _pxPerBeat => _pxPerReadSpeedUnit * _rate * 60.0 * _zoom;
+  // Anchoring instead to the dominant BPM (an older behaviour) collapsed every
+  // chart to one px/s at its dominant tempo, so a 360-BPM song crept by at the
+  // same pixels/second as a 120-BPM one — the read speed became a pure spacing
+  // knob with no bearing on actual vertical velocity.
+  double get _pxPerBeat =>
+      60.0 * _travelPx * _rate / _arcadeTravelConstant * _zoom;
 
   int get _effectiveChartBpm => widget.chartBpm > 0 ? widget.chartBpm : constants.songBpm;
 
@@ -601,44 +723,45 @@ class _ChartScrollerState extends State<ChartScroller>
     return bpms[lo].val;
   }
 
-  // The cabinet's receptor→screen-edge lookahead in read-speed × seconds:
-  // community measurements of DDR WORLD's CONSTANT guideline fit
-  // display time ms ≈ 370000 / SPEED (925ms ↔ 400, 740ms ↔ 500, 1000ms ↔ 370),
-  // i.e. at read speed R an arrow is on the cabinet's screen ~370/R seconds.
-  // Fixed — this is the real cabinet number, not a preference.
-  static const double _cabinetRunSpeedSeconds = 370;
-
-  // CONSTANT expressed as its ARCADE-equivalent read speed: the read speed
-  // whose on-cab travel time equals the window, R = 370000 / ms (see
-  // [_cabinetRunSpeedSeconds]). Anchored to the cabinet's lookahead rather
-  // than this field's own pixel run so the C number matches on-cab intuition;
-  // the painter still fades on the raw wall-clock window, so a window between
-  // the arcade's lookahead and this (taller) field's simply makes arrows
-  // materialise where the cabinet's screen edge would be. Null when CONSTANT
-  // is off.
+  // CONSTANT expressed as its equivalent read speed, on the SAME law the
+  // field scrolls by: a window of N ms is the read speed whose travel time is
+  // N ms, R = k × 1000 / N (see [_arcadeTravelConstant]). This depends only on
+  // the window, so it stays put when the scroll speed changes — see
+  // [_constantVisibleReadSpeed] for the live-tracking value the UI shows.
+  // Null when CONSTANT is off.
   int? get _constantReadSpeed {
     final c = _effectiveConstantMs;
     if (c == null) return null;
-    return (_cabinetRunSpeedSeconds * 1000.0 / c).round();
+    return (_arcadeTravelConstant * 1000.0 / c).round();
   }
 
-  // Read speed the CURRENT tempo section actually reads at. Without CONSTANT
-  // this is just localBpm × mod. With CONSTANT it's the max of that and the
-  // window's equivalent read speed: CONSTANT only hides arrows still beyond its
-  // window, so slow sections are clamped up to a uniform read while sections
-  // already faster than the window pass through unchanged.
-  int get _liveReadSpeed {
-    final local = _localBpm * _rate;
+  // The read speed a player actually READS at with CONSTANT engaged, tracking
+  // the current scroll. Arrows still travel at the dialled read speed
+  // (chartBpm × mod), but CONSTANT only reveals the last `ms` of that travel —
+  // so what you get to read is the FASTER of the two: your dialled read speed,
+  // or the window's equivalent when the window is tighter than the natural
+  // travel. Because it folds in [_rate], it moves when you switch between
+  // REAL SPEED and HI-SPEED (or change either), unlike [_constantReadSpeed].
+  // Null when CONSTANT is off.
+  int? get _constantVisibleReadSpeed {
     final rc = _constantReadSpeed;
-    return math.max(local, (rc ?? 0).toDouble()).round();
+    if (rc == null) return null;
+    final dialled = _effectiveChartBpm * _rate;
+    return math.max(dialled, rc.toDouble()).round();
   }
 
-  // Whether the CONSTANT window (not the section's own tempo) is what bounds
-  // the live read speed — i.e. CONSTANT is actively hiding arrows here.
-  bool get _constantBinds {
-    final rc = _constantReadSpeed;
-    return rc != null && rc > _localBpm * _rate;
-  }
+  // Read speed the CURRENT tempo section reads at: localBpm × mod, full stop.
+  //
+  // CONSTANT is deliberately NOT folded in. Verified against the WORLD binary:
+  // its speed readout (num_min/core/max @ 0x10116240) never references the
+  // CONSTANT display-time value (Option+0x28), and the play-side effective
+  // multiplier is identical whether CONSTANT is on or off — CONSTANT changes
+  // arrow VISIBILITY (a fixed wall-clock display window, see [_constantAlpha]),
+  // not scroll velocity. An earlier revision clamped slow sections up to the
+  // window's "equivalent read speed" and showed a "C###" badge; that speed
+  // floor does not exist on a cabinet, which is why CONSTANT + a speed type
+  // read wrong here. See docs/ddr-world-speed.md.
+  int get _liveReadSpeed => (_localBpm * _rate).round();
 
   double get _endSecond =>
       widget.songLength > 0 ? widget.songLength : _lastNoteSecond();
@@ -679,8 +802,10 @@ class _ChartScrollerState extends State<ChartScroller>
       if (_playing) {
         _tickClock.start(chartSecond: _second, rate: _playbackRate);
       }
-    }).catchError((_) {
-      // Engine/sample failed to load: the tick is simply silent.
+    }).catchError((Object e, StackTrace st) {
+      // Engine/sample failed to load: the tick stays silent. Surface it so a
+      // device that plays nothing is diagnosable instead of mysteriously mute.
+      debugPrint("TickClock load failed: $e");
     });
   }
 
@@ -802,11 +927,12 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
-  // Overlay caption for CONSTANT flashes: carries the window's equivalent read
-  // speed (see [_constantReadSpeed]) so dialling a wall-clock time immediately
-  // reads in the unit players actually think in.
+  // Overlay caption for CONSTANT flashes: carries the read speed the window
+  // lets you READ at (see [_constantVisibleReadSpeed]) so dialling a wall-clock
+  // time immediately reads in the unit players think in — and tracks the
+  // current scroll so it moves when the speed type changes.
   String get _constantCaption {
-    final eq = _constantReadSpeed;
+    final eq = _constantVisibleReadSpeed;
     return eq != null ? "CONSTANT ≈ C$eq" : "CONSTANT";
   }
 
@@ -1236,18 +1362,37 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
-  // The resulting min–max scroll speeds for the current multiplier, mirroring
-  // the cabinet's num_min/num_max readouts beside the speed option. Null when
-  // the chart holds a single tempo (nothing beyond the main number).
-  (int, int)? get _scrollSpeedRange {
-    final vals = [
-      for (final b in widget.bpms)
-        if (b.val > 0) b.val
-    ];
-    if (vals.isEmpty) return null;
-    final lo = vals.reduce(math.min), hi = vals.reduce(math.max);
-    if (lo == hi) return null;
-    return ((lo * _rate).round(), (hi * _rate).round());
+  // The cabinet's num_min / num_core / num_max readouts (display fn @
+  // 0x10116240): each of the chart's three BPM fields times the active
+  // multiplier, rounded.
+  //
+  //   min  = bpmmin       (this repo's true_min)
+  //   core = the core BPM (this repo's dominant_bpm)
+  //   max  = bpmmax       (the REAL SPEED divisor, [_scrollDivisorBpm])
+  //
+  // core is clamped into [min, max] so it can't fall outside the pair even if
+  // the parser's dominant sits above the sustained peak. All three are always
+  // shown — the cabinet always renders three numbers, even when they coincide.
+  (int min, int core, int max) get _scrollSpeeds {
+    final maxBpm = _scrollDivisorBpm;
+    final minBpm = _minChartBpm.clamp(0, maxBpm);
+    final coreBpm = _effectiveChartBpm.clamp(minBpm, maxBpm);
+    return (
+      (minBpm * _rate).round(),
+      (coreBpm * _rate).round(),
+      (maxBpm * _rate).round(),
+    );
+  }
+
+  // The trio as the compact readout label, e.g. "150–301–602". Shows all three
+  // whenever the chart has any BPM spread — including when just min==core or
+  // core==max, matching the cabinet's num_min/num_core/num_max. Only a true
+  // constant-BPM chart (all three equal) folds to a single number. Shown under
+  // the dialled REAL SPEED number.
+  String get _scrollSpeedLabel {
+    final (min, core, max) = _scrollSpeeds;
+    if (min == core && core == max) return "$min";
+    return "$min–$core–$max";
   }
 
   // Drag on the speed pane: horizontal movement turns the active dial one
@@ -1461,6 +1606,15 @@ class _ChartScrollerState extends State<ChartScroller>
   Widget build(BuildContext context) {
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
+      // Feed the real field geometry into the speed law: an arrow's travel is
+      // the bottom edge up to the receptor line (which the painter places at
+      // _ChartPainter.receptorBase below the top safe-area inset). Keeping
+      // this in sync means a taller phone scrolls FASTER in px/s so the
+      // arcade's travel TIME at a given read speed is preserved, rather than
+      // every device sharing one px/s and giving tall screens a longer read.
+      final travel = constraints.maxHeight -
+          (_ChartPainter.receptorBase + MediaQuery.of(context).padding.top);
+      if (travel > 0) _travelPx = travel;
       return Stack(
         fit: StackFit.expand,
         children: [
@@ -1747,7 +1901,6 @@ class _ChartScrollerState extends State<ChartScroller>
                           builder: (_, __, ___) => _TempoBadge(
                             bpm: _localBpm,
                             readSpeed: _liveReadSpeed,
-                            constantBound: _constantBinds,
                           ),
                         ),
                       ),
@@ -1910,12 +2063,13 @@ class _ChartScrollerState extends State<ChartScroller>
     final open = _shadeOpen;
     final topInset = MediaQuery.of(context).padding.top;
     // The card's top is dynamic: when the floating header is on screen (there is
-    // a headerBuilder AND we're paused) it seats just below the title (~64px: a
-    // 48px icon-button row in 4/12 padding); otherwise there is no title above
-    // it, so it hugs the status-bar inset. Animated so it glides down/up as the
-    // header appears/disappears on pause/play.
+    // a headerBuilder AND we're paused) it seats below the title (a ~64px 48px
+    // icon-button row in 4/12 padding) plus a 16px gap so the card reads as
+    // detached from the header rather than glued to its underside; otherwise
+    // there is no title above it, so it hugs the status-bar inset. Animated so it
+    // glides down/up as the header appears/disappears on pause/play.
     final headerShowing = widget.headerBuilder != null && !_playing;
-    final top = topInset + (headerShowing ? 64 : 8);
+    final top = topInset + (headerShowing ? 64 + 16 : 8);
     return AnimatedPositioned(
       left: 0,
       right: 0,
@@ -1956,7 +2110,7 @@ class _ChartScrollerState extends State<ChartScroller>
             _ConstantChip(
               on: _constantOn,
               ms: _constantMs,
-              equivalentReadSpeed: _constantReadSpeed,
+              equivalentReadSpeed: _constantVisibleReadSpeed,
               onTap: _toggleConstant,
               onDrag: _onConstantDrag,
             ),
@@ -1996,6 +2150,42 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
+      // Playback aids, split off into their own segment: the assist tick (audible
+      // row tick) and the L/R foot guide overlay. These moved out of the floating
+      // header so it carries only title/back — the toggles read the same as the
+      // TURN tiles, so they slot in as one more row of the options card.
+      if (widget.onToggleAssistTick != null || widget.onToggleFootGuide != null)
+        _ShadeSection(
+          content: Row(
+            children: [
+              if (widget.onToggleAssistTick != null)
+                Expanded(
+                  child: _TurnTile(
+                    label: "ASSIST TICK",
+                    icon: widget.assistTickOn
+                        ? Icons.volume_up
+                        : Icons.volume_off_outlined,
+                    selected: widget.assistTickOn,
+                    onTap: widget.onToggleAssistTick!,
+                  ),
+                ),
+              if (widget.onToggleAssistTick != null &&
+                  widget.onToggleFootGuide != null)
+                const SizedBox(width: 8),
+              if (widget.onToggleFootGuide != null)
+                Expanded(
+                  child: _TurnTile(
+                    label: "FOOT GUIDE",
+                    icon: widget.showFootGuide
+                        ? Icons.directions_walk
+                        : Icons.directions_walk_outlined,
+                    selected: widget.showFootGuide,
+                    onTap: widget.onToggleFootGuide!,
+                  ),
+                ),
+            ],
+          ),
+        ),
     ];
   }
 
@@ -2017,7 +2207,11 @@ class _ChartScrollerState extends State<ChartScroller>
                     label: _hispeedType ? "HI-SPEED" : "REAL SPEED",
                     value:
                         _hispeedType ? _fmtXMod(_rate) : "$_scrollSpeed",
-                    range: _scrollSpeedRange,
+                    // The min–core–max scroll-speed trio (cabinet
+                    // num_min/num_core/num_max) belongs to REAL SPEED, where
+                    // the dial is a scroll rate. HI-SPEED shows a bare
+                    // multiplier, so no trio there.
+                    range: _hispeedType ? null : _scrollSpeedLabel,
                     decLabel: _hispeedType ? "−.05" : "−10",
                     incLabel: _hispeedType ? "+.05" : "+10",
                     canDecrement: _hispeedType
@@ -2049,23 +2243,23 @@ class _ChartScrollerState extends State<ChartScroller>
 }
 
 /// Always-visible pill showing the tempo section under the playhead: its BPM
-/// and the read speed it actually reads at. The READ value is CONSTANT-aware —
-/// when the CONSTANT window is what bounds visibility in this section (hiding
-/// arrows a fixed wall-clock time out), the value takes a "C" prefix and shows
-/// the window's equivalent read speed; in sections already faster than the
-/// window (where CONSTANT hides nothing) the prefix drops and the plain
-/// localBpm × mod value shows through. Styled after the fast-forward badge so
-/// the floating overlays read as one family.
+/// and the read speed it reads at (localBpm × mod). CONSTANT is intentionally
+/// absent — like the cabinet, CONSTANT is a separate display-time setting that
+/// doesn't alter the scroll speed, so it lives on its own chip rather than
+/// mutating this number. Styled after the fast-forward badge so the floating
+/// overlays read as one family.
+/// Identifies the tempo badge for tests reading its BPM/READ values.
+@visibleForTesting
+const Key tempoBadgeKey = Key('chart-preview-tempo-badge');
+
 class _TempoBadge extends StatelessWidget {
   const _TempoBadge({
     required this.bpm,
     required this.readSpeed,
-    required this.constantBound,
   });
 
   final int bpm;
   final int readSpeed;
-  final bool constantBound;
 
   @override
   Widget build(BuildContext context) {
@@ -2096,6 +2290,9 @@ class _TempoBadge extends StatelessWidget {
           ],
         );
     return Container(
+      // Stable handle so tests can read THIS badge's numbers rather than
+      // matching bare text that the transport pane also shows.
+      key: tempoBadgeKey,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.4),
@@ -2111,7 +2308,7 @@ class _TempoBadge extends StatelessWidget {
             margin: const EdgeInsets.symmetric(horizontal: 10),
             color: Colors.white.withValues(alpha: 0.22),
           ),
-          stat("READ", constantBound ? "C$readSpeed" : "$readSpeed"),
+          stat("READ", "$readSpeed"),
         ],
       ),
     );
@@ -2142,7 +2339,13 @@ class _SpeedPane extends StatelessWidget {
 
   final String label;
   final String value;
-  final (int, int)? range;
+
+  /// The min–core–max scroll speeds for the current multiplier, preformatted
+  /// as "min–core–max" (matching the cabinet's num_min/num_core/num_max),
+  /// folded to a single number only when all three coincide (true constant
+  /// BPM). Null hides the row — used for HI-SPEED, which shows a bare
+  /// multiplier instead.
+  final String? range;
   final String decLabel;
   final String incLabel;
   final bool canDecrement;
@@ -2173,38 +2376,39 @@ class _SpeedPane extends StatelessWidget {
                   label,
                   style: TextStyle(
                     fontSize: 9,
+                    height: 1.0,
                     letterSpacing: 0.6,
                     fontWeight: FontWeight.w600,
                     color: scheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    if (r != null) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        "${r.$1}–${r.$2}",
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurface.withValues(alpha: 0.55),
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  ],
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    height: 1.1,
+                    fontWeight: FontWeight.bold,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
                 ),
+                // The BPM-change min–core–max range (cabinet
+                // num_min/num_core/num_max) sits on its own line UNDER the
+                // value, not beside it: on wide-range charts "150–300–602" is
+                // wider than the big number, and baseline-aligned alongside it
+                // collided with the value and crowded the ∓ edge buttons.
+                // Stacking keeps the value centred and gives the range its own
+                // uncramped row.
+                if (r != null)
+                  Text(
+                    r,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.0,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface.withValues(alpha: 0.55),
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -2409,9 +2613,10 @@ class _ConstantChip extends StatelessWidget {
   final bool on;
   final double ms;
 
-  /// The read speed whose full-field travel time equals the window — what the
-  /// chart "reads at" everywhere the window binds. Null when off or unknown
-  /// (field not laid out); shown muted next to the ms value.
+  /// The read speed the chart effectively READS at with this window at the
+  /// current scroll: the faster of the dialled read speed and the window's
+  /// equivalent, so it tracks the live speed type/multiplier rather than being
+  /// a fixed property of the window. Null when off; shown muted next to ms.
   final int? equivalentReadSpeed;
 
   final VoidCallback onTap;
@@ -3019,9 +3224,10 @@ class _ChartPainter extends CustomPainter {
   // line covers it, but hold bodies/tails draw BEHIND the receptor (matching
   // DDR/StepMania) so a sustain passing through or ending at the line slides
   // under the receptor frame instead of covering it.
-  // [_receptorBase] is the gap below the (inset-adjusted) top edge.
-  static const double _receptorBase = 56;
-  double get _receptorTop => _receptorBase + topInset;
+  // [receptorBase] is the gap below the (inset-adjusted) top edge. Read by
+  // the state to derive the field's travel distance for the speed law.
+  static const double receptorBase = 56;
+  double get _receptorTop => receptorBase + topInset;
   static const double _laneTighten = 0.92;
 
   @override

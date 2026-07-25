@@ -24,6 +24,8 @@ class ChartPreviewPage extends StatefulWidget {
     required this.title,
     required this.songLength,
     required this.chartBpm,
+    required this.minBpm,
+    required this.maxBpm,
     required this.bpms,
     required this.stops,
   });
@@ -40,6 +42,14 @@ class ChartPreviewPage extends StatefulWidget {
   final String title;
   final double songLength;
   final int chartBpm;
+
+  /// The chart's authored BPM extremes (`true_min`/`true_max` from [Chart]),
+  /// with [chartBpm] as the core (dominant) tempo between them. This is the
+  /// same (min, core, max) trio the WORLD cabinet hands its speed option, and
+  /// [maxBpm] is the divisor REAL SPEED derives its multiplier from — see
+  /// docs/ddr-world-speed.md.
+  final int minBpm;
+  final int maxBpm;
 
   /// BPM segments and stops for this chart, in seconds (from [Chart]). Rendered
   /// as timing markers in the scroller so the preview reflects tempo shifts.
@@ -112,10 +122,15 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               mode: widget.mode,
               songLength: widget.songLength,
               chartBpm: widget.chartBpm,
+              minBpm: widget.minBpm,
+              maxBpm: widget.maxBpm,
               bpms: widget.bpms,
               stops: widget.stops,
               showFootGuide: _showFootGuide,
               assistTickOn: _assistTick,
+              onToggleFootGuide: () =>
+                  setState(() => _showFootGuide = !_showFootGuide),
+              onToggleAssistTick: _toggleAssistTick,
               headerBuilder: (context) => _buildHeader(context, diffColor),
             );
           },
@@ -124,11 +139,12 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     );
   }
 
-  // The floating top bar laid over the field: back, title + mode/difficulty,
-  // and the foot-guide toggle. (The settings shade opens from the scroller's
-  // own left-edge pull-tab, not from here.) A translucent gradient keeps it
-  // legible against the scrolling arrows, and a difficulty-coloured hairline
-  // seats it.
+  // The floating top bar laid over the field: back + title/mode/difficulty only.
+  // The assist-tick and foot-guide toggles moved into the scroller's settings
+  // shade (its own segment); the shade itself opens from the scroller's left-edge
+  // pull-tab, so the header carries no action affordances at all. A translucent
+  // gradient keeps it legible against the scrolling arrows, and a
+  // difficulty-coloured hairline seats it.
   Widget _buildHeader(BuildContext context, Color diffColor) {
     final difficultyLabel = widget.difficultyLevel != null
         ? "${_pretty(widget.difficultyKey)} ${widget.difficultyLevel}"
@@ -180,26 +196,9 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: _assistTick ? "Mute assist tick" : "Assist tick",
-                onPressed: _toggleAssistTick,
-                icon: Icon(
-                  _assistTick ? Icons.volume_up : Icons.volume_off_outlined,
-                  color: _assistTick ? diffColor : Colors.blueGrey,
-                ),
-              ),
-              IconButton(
-                tooltip:
-                    _showFootGuide ? "Hide foot guide" : "Show foot guide",
-                onPressed: () =>
-                    setState(() => _showFootGuide = !_showFootGuide),
-                icon: Icon(
-                  _showFootGuide
-                      ? Icons.directions_walk
-                      : Icons.directions_walk_outlined,
-                  color: _showFootGuide ? diffColor : Colors.blueGrey,
-                ),
-              ),
+              // Balances the leading back button so the title stays optically
+              // centred now that the trailing action icons are gone.
+              const SizedBox(width: 48),
             ],
           ),
         ),
