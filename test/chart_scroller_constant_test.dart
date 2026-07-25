@@ -1,9 +1,9 @@
 /// Tests that the DDR CONSTANT modifier does NOT alter the read speed shown on
 /// the chart preview's tempo badge.
 ///
-/// Verified against the WORLD binary: the cabinet's speed readout never
-/// references the CONSTANT display-time value, and the play-side scroll
-/// multiplier is identical whether CONSTANT is on or off. CONSTANT changes
+/// The cabinet's speed readout never references the CONSTANT display-time
+/// value, and the scroll multiplier is identical whether CONSTANT is on or
+/// off. CONSTANT changes
 /// arrow VISIBILITY (a fixed wall-clock display window), not scroll velocity —
 /// so the badge's READ value is always localBpm × mod. An earlier revision
 /// clamped slow sections up to the window's "equivalent read speed" and showed

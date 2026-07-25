@@ -160,26 +160,8 @@ void main() {
         reason: 'the fast section reads localBpm x mod (320 x 3.75), uncapped');
   });
 
-  testWidgets('on a constant-BPM chart REAL SPEED equals its number',
-      (tester) async {
-    await Settings.setInt(Settings.chartPreviewSpeedTypeKey, 0);
-    await Settings.setInt(Settings.chartPreviewScrollSpeedKey, 600);
-
-    await tester.pumpWidget(_host(ChartScroller(
-      key: const ValueKey('flat-real'),
-      steps: _steps(),
-      mode: Modes.singles,
-      songLength: 20,
-      chartBpm: 160,
-      minBpm: 160,
-      maxBpm: 160,
-      bpms: [Bpm(st: 0, ed: 20, val: 160)],
-      stops: const [],
-    )));
-    await tester.pump(const Duration(milliseconds: 16));
-
-    expect(badgeRead(tester), 600);
-  });
+  // (A true constant-BPM chart reading its dialled number back is covered by
+  // the trio-fold readout test below, which uses the same 160/600 setup.)
 
   testWidgets('falls back to dominant when no segment clears the sustain window',
       (tester) async {

@@ -1,6 +1,7 @@
-/// Tests for beat-locked chart scrolling: the second→beat [ChartTiming] map that
-/// makes the preview speed up on BPM rises and freeze on stops, plus a smoke
-/// test that a chart with a change + stop builds and plays without throwing.
+/// Unit tests for beat-locked chart scrolling: the second→beat [ChartTiming]
+/// map that makes the preview speed up on BPM rises and freeze on stops.
+/// (Widget-level "renders without throwing" coverage lives in
+/// chart_scroller_playback_test.dart's every-note-species case.)
 library;
 
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
@@ -8,12 +9,6 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-ChartSteps _steps() => const ChartSteps(notes: [
-      StepNote(beat: 0, second: 0, col: 0, type: StepType.tap),
-      StepNote(beat: 4, second: 2, col: 1, type: StepType.tap),
-      StepNote(beat: 8, second: 5, col: 2, type: StepType.tap),
-    ]);
 
 Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
@@ -67,33 +62,21 @@ void main() {
     });
   });
 
-  testWidgets('renders a BPM change and a stop without throwing',
-      (tester) async {
-    await tester.pumpWidget(_host(ChartScroller(
-      steps: _steps(),
-      mode: Modes.singles,
-      songLength: 6,
-      chartBpm: 150,
-      bpms: [
-        Bpm(st: 0, ed: 2, val: 150),
-        Bpm(st: 2, ed: 6, val: 300),
-      ],
-      stops: [Stop(st: 3, dur: 0.5, beats: const [])],
-    )));
-    await tester.pump(const Duration(milliseconds: 16));
-    expect(tester.takeException(), isNull);
-    expect(find.byType(ChartScroller), findsOneWidget);
-  });
-
+  // The no-BPM-data path has no timing map, so it can't be a unit test; this
+  // smoke test guards that the constant-time fallback still renders (the
+  // every-note-species case in playback_test.dart always supplies BPMs).
   testWidgets('a chart with no BPM data still renders (constant-time fallback)',
       (tester) async {
-    await tester.pumpWidget(_host(ChartScroller(
-      steps: _steps(),
+    await tester.pumpWidget(_host(const ChartScroller(
+      steps: ChartSteps(notes: [
+        StepNote(beat: 0, second: 0, col: 0, type: StepType.tap),
+        StepNote(beat: 4, second: 2, col: 1, type: StepType.tap),
+      ]),
       mode: Modes.singles,
       songLength: 6,
       chartBpm: 150,
-      bpms: const [],
-      stops: const [],
+      bpms: [],
+      stops: [],
     )));
     await tester.pump(const Duration(milliseconds: 16));
     expect(tester.takeException(), isNull);
