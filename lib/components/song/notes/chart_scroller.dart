@@ -716,14 +716,31 @@ class _ChartScrollerState extends State<ChartScroller>
     return h;
   }
 
-  // Restore the CONSTANT modifier from settings. A saved ms of 0 means "never
-  // set", so fall back to the DDR default; the on/off flag is stored as 0/1
-  // (the Settings API has no bool getter).
+  // The CONSTANT window equivalent to the app-wide read-speed preference, so
+  // switching CONSTANT on doesn't change how fast the chart reads.
+  //
+  // Inverts the travel law (R = k × 1000 / N, see [_arcadeTravelConstant]), then
+  // snaps to the dial's 10ms grid. Floors rather than rounds: a shorter window
+  // reads faster, so flooring picks the tightest step that still meets the
+  // saved preference. Read speed 370 lands on CONSTANT's own 1000ms default.
+  double get _constantMsForReadSpeed {
+    final saved = Settings.getInt(Settings.chosenReadSpeedKey);
+    final readSpeed = saved > 0 ? saved : constants.chosenReadSpeed;
+    if (readSpeed <= 0) return _constantDefaultMs;
+    final exact = _arcadeTravelConstant * 1000.0 / readSpeed;
+    final floored =
+        (exact / _constantStepMs).floor() * _constantStepMs.toDouble();
+    return floored.clamp(_constantMinMs, _constantMaxMs);
+  }
+
+  // Restore the CONSTANT modifier from settings. The window is re-derived from
+  // the read-speed preference (see [_constantMsForReadSpeed]) rather than
+  // restored from [constantMsKey], which goes stale as soon as that preference
+  // moves. Dragging the chip still writes the key and runs for the session; it
+  // just doesn't outrank the preference next open. Only the on/off flag carries
+  // across, stored as 0/1 (the Settings API has no bool getter).
   void _loadConstant() {
-    final savedMs = Settings.getInt(Settings.constantMsKey);
-    _constantMs = savedMs > 0
-        ? savedMs.toDouble().clamp(_constantMinMs, _constantMaxMs)
-        : _constantDefaultMs;
+    _constantMs = _constantMsForReadSpeed;
     _constantOn = Settings.getInt(Settings.constantOnKey) == 1;
   }
 
@@ -751,6 +768,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_arcadeSyncOn && !_offsetsMatchThisSong()) {
       _seedOffsetsFromSync();
     }
+
     _tickClock.audioOffset = _audioOffsetSeconds;
   }
 
@@ -1021,12 +1039,20 @@ class _ChartScrollerState extends State<ChartScroller>
       };
 
   // Tap the CONSTANT chip to switch the modifier on/off (no separate switch).
+  // Switching ON re-seeds the window from the read-speed preference (see
+  // [_constantMsForReadSpeed]) rather than resuming the last dragged value, so
+  // the modifier always engages at the user's own read speed.
   void _toggleConstant() {
     HapticFeedback.selectionClick();
-    setState(() => _constantOn = !_constantOn);
-    Settings.setInt(Settings.constantOnKey, _constantOn ? 1 : 0);
+    final next = !_constantOn;
+    setState(() {
+      _constantOn = next;
+      if (next) _constantMs = _constantMsForReadSpeed;
+    });
+    Settings.setInt(Settings.constantOnKey, next ? 1 : 0);
+    if (next) Settings.setInt(Settings.constantMsKey, _constantMs.round());
     _flashScrubOverlay(
-      _constantOn ? "${_constantMs.round()}ms" : "OFF",
+      next ? "${_constantMs.round()}ms" : "OFF",
       _constantCaption,
     );
   }

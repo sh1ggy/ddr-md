@@ -10,6 +10,11 @@ class Settings {
   // DDR CONSTANT modifier for the chart preview: the arrow display time in ms
   // (100–3000, 10ms steps; DDR default 1000). Only applied when [constantOnKey]
   // is set. Stored as an int of milliseconds.
+  //
+  // Written whenever the window is dialled, but NOT read back on open: the
+  // preview re-derives it from [chosenReadSpeedKey] each time CONSTANT loads or
+  // is switched on, since a window dialled against an older saved speed is
+  // stale. Kept persisted so the last dialled value remains inspectable.
   static const String constantMsKey = "chartPreviewConstantMs";
   static const String constantOnKey = "chartPreviewConstantOn";
 
