@@ -1543,16 +1543,21 @@ class _ChartScrollerState extends State<ChartScroller>
   // The trio as the compact readout label, e.g. "150–301–602". Shows all three
   // whenever the chart has any BPM spread — including when just min==core or
   // core==max, matching the cabinet's num_min/num_core/num_max. Shown under
-  // the dialled REAL SPEED number.
+  // the dialled number for both speed types: the scroll speeds you actually
+  // read at are what the trio reports, and that's as useful under a HI-SPEED
+  // multiplier as under REAL SPEED.
   //
-  // On a true constant-BPM chart all three fold to the dialled read speed
-  // itself (the multiplier is scroll/bpm, so bpm × rate lands back on the
-  // dial), and repeating the big number above says nothing — null hides the
-  // row, as it does for HI-SPEED. When rounding or clamping leaves the fold a
-  // step off the dial that difference is real, so it stays visible.
+  // When the chart is constant-BPM all three fold to one number. Under REAL
+  // SPEED that number is the dial itself (the multiplier is scroll/bpm, so
+  // bpm × rate lands back on the dial) and repeating the big number above says
+  // nothing — null hides the row. Under HI-SPEED the fold is a genuinely new
+  // number (bpm × the multiplier), so it stays. When rounding or clamping
+  // leaves the REAL SPEED fold a step off the dial that difference is real,
+  // so it stays visible too.
   String? get _scrollSpeedLabel {
     final (min, core, max) = _scrollSpeeds;
     if (min == core && core == max) {
+      if (_hispeedType) return "$min";
       return min == _scrollSpeed ? null : "$min";
     }
     return "$min–$core–$max";
@@ -2438,10 +2443,10 @@ class _ChartScrollerState extends State<ChartScroller>
                     label: _hispeedType ? "HI-SPEED" : "REAL SPEED",
                     value: _hispeedType ? fmtXMod(_rate) : "$_scrollSpeed",
                     // The min–core–max scroll-speed trio (cabinet
-                    // num_min/num_core/num_max) belongs to REAL SPEED, where
-                    // the dial is a scroll rate. HI-SPEED shows a bare
-                    // multiplier, so no trio there.
-                    range: _hispeedType ? null : _scrollSpeedLabel,
+                    // num_min/num_core/num_max) under both types — HI-SPEED's
+                    // dial is a bare multiplier, so the trio is the only place
+                    // the resulting read speeds appear.
+                    range: _scrollSpeedLabel,
                     decLabel: _hispeedType ? "−.05" : "−10",
                     incLabel: _hispeedType ? "+.05" : "+10",
                     canDecrement: _hispeedType

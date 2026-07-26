@@ -133,7 +133,7 @@ void main() {
 // --- The min–core–max readout: three numbers on any spread; folds only when
 // --- all three coincide (true constant BPM). Arcade-accurate. -------------
 
-/// The REAL SPEED trio label as rendered under the dial ("min–core–max").
+/// The trio label as rendered under the dial ("min–core–max"), either type.
 String? _trioLabel(WidgetTester tester) {
   final texts = tester
       .widgetList<Text>(find.byType(Text))
@@ -219,24 +219,30 @@ void _readoutTests() {
     expect(_trioLabel(tester), isNull);
   });
 
-  testWidgets('HI-SPEED hides the trio', (tester) async {
+  testWidgets('HI-SPEED shows the trio too on a BPM-change chart',
+      (tester) async {
+    // Same soflan as the core==max case, read under HI-SPEED x3.75 instead of
+    // the REAL SPEED that derives that multiplier: the read speeds are the
+    // same numbers, and the trio is the only place they appear.
     await Settings.setInt(Settings.chartPreviewSpeedTypeKey, 1);
     await Settings.setInt(Settings.chartPreviewHispeedKey, 375);
 
     await tester.pumpWidget(_host(ChartScroller(
-      key: const ValueKey('hi-no-trio'),
+      key: const ValueKey('hi-trio'),
       steps: _steps(),
       mode: Modes.singles,
       songLength: 20,
       chartBpm: 160,
       minBpm: 80,
       maxBpm: 160,
-      bpms: [Bpm(st: 0, ed: 20, val: 160)],
+      bpms: [
+        Bpm(st: 0, ed: 10, val: 160),
+        Bpm(st: 10, ed: 20, val: 80),
+      ],
       stops: const [],
     )));
     await tester.pump(const Duration(milliseconds: 16));
 
-    expect(_trioLabel(tester), isNull,
-        reason: 'HI-SPEED shows a bare multiplier, no scroll-speed trio');
+    expect(_trioLabel(tester), '300–600–600');
   });
 }

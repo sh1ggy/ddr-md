@@ -91,9 +91,9 @@ class TempoBadge extends StatelessWidget {
 
 /// Left half of the control row: the DDR WORLD speed option. Shows the
 /// active SPEED TYPE — REAL SPEED (the cabinet's ScrollSpeed: the dialled
-/// target scroll rate, with the resulting min–max speeds alongside on
-/// BPM-change charts like the cabinet's num_min/num_max readouts) or
-/// HI-SPEED (the raw multiplier, printed "x %.2lf" as the cabinet does).
+/// target scroll rate) or HI-SPEED (the raw multiplier, printed "x %.2lf" as
+/// the cabinet does) — with the resulting min–core–max read speeds under
+/// either, like the cabinet's num_min/num_core/num_max readouts.
 /// Tap to switch type; drag or tap the ∓ ends to turn the active dial —
 /// buttons and drag share one detent (x0.05 for HI-SPEED, 10 for REAL
 /// SPEED), and each type keeps its own dialled value.
@@ -118,9 +118,8 @@ class SpeedPane extends StatelessWidget {
   /// The min–core–max scroll speeds for the current multiplier, preformatted
   /// as "min–core–max" (matching the cabinet's num_min/num_core/num_max),
   /// folded to a single number only when all three coincide (true constant
-  /// BPM). Null hides the row — used for HI-SPEED, which shows a bare
-  /// multiplier instead, and for a constant-BPM chart whose folded number
-  /// merely repeats the dialled read speed above it.
+  /// BPM). Null hides the row — used for a constant-BPM chart under REAL
+  /// SPEED, whose folded number merely repeats the dialled read speed above.
   final String? range;
   final String decLabel;
   final String incLabel;
