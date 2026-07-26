@@ -119,7 +119,8 @@ class SpeedPane extends StatelessWidget {
   /// as "min–core–max" (matching the cabinet's num_min/num_core/num_max),
   /// folded to a single number only when all three coincide (true constant
   /// BPM). Null hides the row — used for HI-SPEED, which shows a bare
-  /// multiplier instead.
+  /// multiplier instead, and for a constant-BPM chart whose folded number
+  /// merely repeats the dialled read speed above it.
   final String? range;
   final String decLabel;
   final String incLabel;

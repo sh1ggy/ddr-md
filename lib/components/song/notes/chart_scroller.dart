@@ -683,17 +683,20 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   // Restore the DDR WORLD speed options: the SPEED TYPE selector plus each
-  // type's own dialled value. First-run fallbacks: SCROLL SPEED starts from
-  // the app-wide read-speed preference; HI-SPEED from that same target
-  // converted at this chart's max BPM and snapped to the cabinet's x0.05
-  // grid, so both types open near the speed the user is used to.
+  // type's own dialled value.
+  //
+  // REAL SPEED opens on the app-wide read-speed preference, shared with the
+  // song page's mod picker, rather than on its own saved value — dialling in
+  // here still persists, it just doesn't outrank the preference next open.
+  // HI-SPEED derives from that same target at this chart's max BPM, snapped to
+  // the cabinet's x0.05 grid, so both types open near the same speed.
   void _loadSpeedSettings() {
     _hispeedType = Settings.getInt(Settings.chartPreviewSpeedTypeKey) == 1;
     final savedScroll = Settings.getInt(Settings.chartPreviewScrollSpeedKey);
     final appReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
-    _scrollSpeed = _snapScroll(savedScroll > 0
-        ? savedScroll
-        : (appReadSpeed > 0 ? appReadSpeed : constants.chosenReadSpeed));
+    _scrollSpeed = _snapScroll(appReadSpeed > 0
+        ? appReadSpeed
+        : (savedScroll > 0 ? savedScroll : constants.chosenReadSpeed));
     final savedHispeed = Settings.getInt(Settings.chartPreviewHispeedKey);
     _hispeedHundredths =
         _snapHispeed(savedHispeed > 0 ? savedHispeed : _derivedHundredths);
@@ -1517,12 +1520,19 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // The trio as the compact readout label, e.g. "150–301–602". Shows all three
   // whenever the chart has any BPM spread — including when just min==core or
-  // core==max, matching the cabinet's num_min/num_core/num_max. Only a true
-  // constant-BPM chart (all three equal) folds to a single number. Shown under
+  // core==max, matching the cabinet's num_min/num_core/num_max. Shown under
   // the dialled REAL SPEED number.
-  String get _scrollSpeedLabel {
+  //
+  // On a true constant-BPM chart all three fold to the dialled read speed
+  // itself (the multiplier is scroll/bpm, so bpm × rate lands back on the
+  // dial), and repeating the big number above says nothing — null hides the
+  // row, as it does for HI-SPEED. When rounding or clamping leaves the fold a
+  // step off the dial that difference is real, so it stays visible.
+  String? get _scrollSpeedLabel {
     final (min, core, max) = _scrollSpeeds;
-    if (min == core && core == max) return "$min";
+    if (min == core && core == max) {
+      return min == _scrollSpeed ? null : "$min";
+    }
     return "$min–$core–$max";
   }
 
