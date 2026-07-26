@@ -6,9 +6,9 @@ library;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
-import 'package:ddr_md/components/songlist/arcade/arcade_theme.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
+import 'package:ddr_md/components/songlist/filter_tray.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/sort_menu_button.dart';
@@ -23,12 +23,6 @@ import 'package:provider/provider.dart';
 
 export 'package:ddr_md/components/songlist/song_item.dart';
 
-enum _ActiveFilterPanel {
-  name,
-  level,
-  version,
-}
-
 class DifficultyListPage extends StatefulWidget {
   const DifficultyListPage({super.key});
   @override
@@ -39,10 +33,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   Future<List<SongItem>>? _songItemsPromise;
   final List<SongInfo> _searchResults = [];
   int favCount = 0;
-  final Set<int> _selectedLevels = <int>{};
-  final Set<String> _selectedVersionBuckets = <String>{};
-  String? _selectedNameBucket;
-  _ActiveFilterPanel? _activeFilterPanel;
+  SongFilter _filter = const SongFilter();
+  SongFilterAxis? _activeFilterPanel;
 
   // Renders the songlist as the arcade jacket grid instead of the plain list.
   bool _gridMode = Settings.getInt(Settings.songlistViewModeKey) == 1;
@@ -73,59 +65,103 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     });
   }
 
-  bool songMatchesFilters(SongInfo song, Modes mode) {
-    final bool levelMatch = _selectedLevels.isEmpty ||
-        songLevels(song, mode).any((int level) => _selectedLevels.contains(level));
-
-    final bool versionMatch = _selectedVersionBuckets.isEmpty ||
-        _selectedVersionBuckets.contains(versionBucketFor(song.version));
-
-    final bool nameMatch =
-        _selectedNameBucket == null || _selectedNameBucket == nameBucketFor(song);
-
-    return levelMatch && versionMatch && nameMatch;
-  }
-
   String levelFilterSummary() {
-    if (_selectedLevels.isEmpty) return 'All';
-    final sorted = _selectedLevels.toList()..sort();
+    if (_filter.levels.isEmpty) return 'All';
+    final sorted = _filter.levels.toList()..sort();
     if (sorted.length == 1) return 'Level ${sorted.first}';
     return '${sorted.length} selected';
   }
 
   String versionFilterSummary() {
-    if (_selectedVersionBuckets.isEmpty) return 'All';
-    if (_selectedVersionBuckets.length == 1) {
-      return _selectedVersionBuckets.first;
+    if (_filter.versionBuckets.isEmpty) return 'All';
+    if (_filter.versionBuckets.length == 1) {
+      return _filter.versionBuckets.first;
     }
-    return '${_selectedVersionBuckets.length} selected';
+    return '${_filter.versionBuckets.length} selected';
   }
 
   String nameFilterSummary() {
-    return _selectedNameBucket ?? 'All';
+    return _filter.nameBucket ?? 'All';
   }
 
-  bool get hasActiveFilters =>
-      _selectedLevels.isNotEmpty ||
-      _selectedVersionBuckets.isNotEmpty ||
-      _selectedNameBucket != null;
+  bool get hasActiveFilters => !_filter.isEmpty;
 
   void clearAllFilters(Modes mode, SortType sortType) {
     setState(() {
-      _selectedLevels.clear();
-      _selectedVersionBuckets.clear();
-      _selectedNameBucket = null;
+      _filter = const SongFilter();
     });
     regenSongItems(mode, sortType);
   }
 
-  void toggleFilterPanel(_ActiveFilterPanel panel) {
+  /// Applies [next] and rebuilds the list. The sort is left alone — like the
+  /// cabinet, filtering narrows what is shown without reordering it.
+  void _applyFilter(SongFilter next, SongState songState) {
+    setState(() {
+      _filter = next;
+    });
+    regenSongItems(songState.modes, songState.sortType);
+  }
+
+  void _toggleLevel(int level, SongState songState) {
+    final Set<int> levels = Set<int>.of(_filter.levels);
+    if (!levels.remove(level)) levels.add(level);
+    _applyFilter(
+      SongFilter(
+        levels: levels,
+        versionBuckets: _filter.versionBuckets,
+        nameBucket: _filter.nameBucket,
+        favouritesOnly: _filter.favouritesOnly,
+      ),
+      songState,
+    );
+  }
+
+  void _toggleFavouritesOnly(SongState songState) {
+    _applyFilter(
+      SongFilter(
+        levels: _filter.levels,
+        versionBuckets: _filter.versionBuckets,
+        nameBucket: _filter.nameBucket,
+        favouritesOnly: !_filter.favouritesOnly,
+      ),
+      songState,
+    );
+  }
+
+  void _toggleVersionBucket(String bucket, SongState songState) {
+    final Set<String> buckets = Set<String>.of(_filter.versionBuckets);
+    if (!buckets.remove(bucket)) buckets.add(bucket);
+    _applyFilter(
+      SongFilter(
+        levels: _filter.levels,
+        versionBuckets: buckets,
+        nameBucket: _filter.nameBucket,
+        favouritesOnly: _filter.favouritesOnly,
+      ),
+      songState,
+    );
+  }
+
+  void _selectNameBucket(String? bucket, SongState songState) {
+    _applyFilter(
+      SongFilter(
+        levels: _filter.levels,
+        versionBuckets: _filter.versionBuckets,
+        nameBucket: bucket,
+        favouritesOnly: _filter.favouritesOnly,
+      ),
+      songState,
+    );
+  }
+
+  void toggleFilterPanel(SongFilterAxis panel) {
     setState(() {
       _activeFilterPanel = _activeFilterPanel == panel ? null : panel;
     });
   }
 
-  Future<List<SongItem>> generateSongItems(Modes mode, SortType sortType) async {
+  Future<List<SongItem>> generateSongItems(
+      Modes mode, SortType sortType, bool descending) async {
     List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
     setState(() {
       favCount = favList.length;
@@ -134,15 +170,16 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     // Only a single selected level unambiguously implies a difficulty type
     // to default to when opening a song.
     final int? filteredLevel =
-        _selectedLevels.length == 1 ? _selectedLevels.first : null;
+        _filter.levels.length == 1 ? _filter.levels.first : null;
 
     List<SongItem> songItems = [];
     for (SongInfo song in Songs.list) {
-      if (!songMatchesFilters(song, mode)) {
-        continue;
-      }
+      // Resolved before the filter runs — the favourites axis needs it.
       bool isFav =
           favList.any((Favorite fav) => fav.songTitle == song.titletranslit);
+      if (!_filter.matches(song, mode, isFav: isFav)) {
+        continue;
+      }
 
       final songDifficulty = mode == Modes.singles ? song.singles : song.doubles;
       final defaultDifficultyIndex = filteredLevel == null
@@ -156,31 +193,30 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       ));
     }
 
-    switch (sortType) {
-      case SortType.level:
-        songItems.sort((a, b) {
-          final byLevel = primaryLevelFor(a.songInfo, mode)
-              .compareTo(primaryLevelFor(b.songInfo, mode));
-          return byLevel != 0
-              ? byLevel
-              : compareSongInfo(a.songInfo, b.songInfo, SortType.title);
-        });
-        break;
-      case SortType.title:
-        songItems.sort(
-            (a, b) => compareSongInfo(a.songInfo, b.songInfo, SortType.title));
-        break;
-      case SortType.version:
-        songItems.sort((a, b) =>
-            compareSongInfo(a.songInfo, b.songInfo, SortType.version));
-        break;
+    final int sign = descending ? -1 : 1;
+    if (sortType == SortType.level) {
+      // Level lives here rather than in compareSongInfo because it needs the
+      // mode to know which chart set to read.
+      songItems.sort((a, b) {
+        final byLevel = sign *
+            primaryLevelFor(a.songInfo, mode)
+                .compareTo(primaryLevelFor(b.songInfo, mode));
+        return byLevel != 0
+            ? byLevel
+            : compareSongInfo(a.songInfo, b.songInfo, SortType.title);
+      });
+    } else {
+      songItems.sort((a, b) => compareSongInfo(
+          a.songInfo, b.songInfo, sortType,
+          descending: descending));
     }
     return songItems;
   }
 
   void regenSongItems(Modes mode, SortType sortType) {
     setState(() {
-      _songItemsPromise = generateSongItems(mode, sortType);
+      _songItemsPromise = generateSongItems(
+          mode, sortType, context.read<SongState>().sortDescending);
     });
   }
 
@@ -191,8 +227,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     super.initState();
     SongState songState = Provider.of<SongState>(context, listen: false);
     _lastGenMode = songState.modes;
-    _songItemsPromise = Future<List<SongItem>>(
-      () => generateSongItems(songState.modes, songState.sortType));
+    _songItemsPromise = Future<List<SongItem>>(() => generateSongItems(
+        songState.modes, songState.sortType, songState.sortDescending));
   }
 
   @override
@@ -202,7 +238,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     // since this page last generated it.
     if (_lastGenMode != songState.modes) {
       _lastGenMode = songState.modes;
-      _songItemsPromise = generateSongItems(songState.modes, songState.sortType);
+      _songItemsPromise = generateSongItems(
+          songState.modes, songState.sortType, songState.sortDescending);
     }
     final Widget page = SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
@@ -211,28 +248,22 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           child: Scaffold(
             appBar: AppBar(
               elevation: 2,
-              title: Text(
+              title: const Text(
                 'Songlist',
                 style: TextStyle(
-                  fontFamily: _gridMode ? kArcadeFont : null,
                   fontSize: 20,
-                  color: _gridMode ? kArcadeAccent : Colors.blueGrey,
+                  color: Colors.blueGrey,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: _gridMode ? 1.5 : null,
                 ),
               ),
               actions: <Widget>[
                 IconButton(
                   icon: Icon(_gridMode ? Icons.view_list : Icons.grid_view),
-                  tooltip: _gridMode ? 'List view' : 'Arcade grid',
+                  tooltip: _gridMode ? 'List view' : 'Grid view',
                   onPressed: _toggleViewMode,
                 ),
-                SortMenuButton(
-                    onSorted: () =>
-                        regenSongItems(songState.modes, songState.sortType)),
               ],
-              iconTheme: IconThemeData(
-                  color: _gridMode ? kArcadeAccent : Colors.blueGrey),
+              iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
             body: FutureBuilder<List<SongItem>>(
               future: _songItemsPromise,
@@ -252,38 +283,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   ),
                   SliverToBoxAdapter(
                     child: ListTile(
-                      title: RichText(
-                        text: TextSpan(
-                          text: 'Favourites: ',
-                          style: TextStyle(
-                              color:
-                                  Theme.of(context).textTheme.bodyLarge!.color,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 22),
-                          children: <TextSpan>[
-                            TextSpan(
-                                text:
-                                    '$favCount song${favCount == 1 ? '' : 's'}',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 19,
-                                    color: Colors.grey.shade500)),
-                          ],
-                        ),
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () async {
-                        await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) =>
-                                    const FavoriteListPage()));
-                        regenSongItems(songState.modes, songState.sortType);
-                      },
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: ListTile(
                       title: Text(
                         '${songItems.length} song${songItems.length == 1 ? '' : 's'}',
                         style: TextStyle(
@@ -292,6 +291,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                           fontSize: 18,
                         ),
                       ),
+                      trailing: SortMenuButton(
+                          onSorted: () => regenSongItems(
+                              songState.modes, songState.sortType)),
                     ),
                   ),
                   if (songItems.isEmpty)
@@ -308,6 +310,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                     songItems: songItems,
                     sortType: songState.sortType,
                     mode: songState.modes,
+                    descending: songState.sortDescending,
                     leadingSlivers: headerSlivers,
                     regenFavsCallback: () =>
                         regenSongItems(songState.modes, songState.sortType),
@@ -343,10 +346,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       }),
     );
 
-    // The grid runs on the cabinet's near-black palette; theming the whole
-    // page restyles the shared search bar and filter chips with it, rather
-    // than each control having to know which view it sits in.
-    return _gridMode ? Theme(data: arcadeTheme(), child: page) : page;
+    // Both views run on the app's own theme, so the grid is a layout choice
+    // rather than a separate skin: the shared search bar, filter chips and
+    // app bar look identical whichever body is showing.
+    return page;
   }
 
   void _toggleViewMode() {
@@ -354,6 +357,43 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       _gridMode = !_gridMode;
     });
     Settings.setInt(Settings.songlistViewModeKey, _gridMode ? 1 : 0);
+  }
+
+  /// The favourites chip: tap filters the list to favourites, long press opens
+  /// the dedicated favourites page.
+  Widget favouritesButton(SongState songState) {
+    final bool active = _filter.favouritesOnly;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: active
+          ? 'Showing favourites only — long press to open the list'
+          : 'Favourites only — long press to open the list',
+      child: GestureDetector(
+        onLongPress: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const FavoriteListPage()),
+          );
+          regenSongItems(songState.modes, songState.sortType);
+        },
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            shape: const StadiumBorder(),
+            side: BorderSide(color: active ? scheme.primary : Theme.of(context).dividerColor),
+            backgroundColor:
+                active ? scheme.primary.withValues(alpha: 0.12) : null,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+          onPressed: () => _toggleFavouritesOnly(songState),
+          icon: Icon(
+            active ? Icons.favorite : Icons.favorite_border,
+            size: 18,
+            color: active ? Colors.redAccent : null,
+          ),
+          label: Text('$favCount'),
+        ),
+      ),
+    );
   }
 
   Widget filterPanel(SongState songState) {
@@ -377,117 +417,64 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       );
     }
 
-    Widget badge({
-      required String label,
-      required bool selected,
-      required VoidCallback onTap,
-      bool compact = false,
-    }) {
-      return FilterChip(
-        label: Text(label),
-        selected: selected,
-        showCheckmark: false,
-        visualDensity:
-            compact ? const VisualDensity(horizontal: -2, vertical: -2) : null,
-        side: BorderSide(
-            color: selected
-                ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).dividerColor),
-        onSelected: (_) => onTap(),
-      );
-    }
-
     Widget filterTray() {
       if (_activeFilterPanel == null) return const SizedBox.shrink();
+      final Modes mode = songState.modes;
+      final SongFilterAxis axis = _activeFilterPanel!;
 
-      if (_activeFilterPanel == _ActiveFilterPanel.level) {
-        final levels = List<int>.generate(constants.maxDifficulty, (i) => i + 1);
-        return Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: <Widget>[
-            for (final level in levels)
-              badge(
-                label: '$level',
-                compact: true,
-                selected: _selectedLevels.contains(level),
-                onTap: () {
-                  setState(() {
-                    if (_selectedLevels.contains(level)) {
-                      _selectedLevels.remove(level);
-                    } else {
-                      _selectedLevels.add(level);
-                    }
-                  });
-                  regenSongItems(songState.modes, songState.sortType);
-                },
+      switch (axis) {
+        case SongFilterAxis.level:
+          return FilterTray(
+            compact: true,
+            options: <FilterOption>[
+              for (int level = 1; level <= constants.maxDifficulty; level++)
+                FilterOption(
+                  label: '$level',
+                  selected: _filter.levels.contains(level),
+                  onTap: () => _toggleLevel(level, songState),
+                ),
+              FilterOption(
+                label: 'X',
+                selected: false,
+                onTap: () => clearAllFilters(mode, songState.sortType),
               ),
-            badge(
-              label: 'X',
-              compact: true,
-              selected: false,
-              onTap: () => clearAllFilters(songState.modes, songState.sortType),
-            ),
-          ],
-        );
-      }
+            ],
+          );
 
-      if (_activeFilterPanel == _ActiveFilterPanel.version) {
-        return Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: <Widget>[
-            for (final bucket in kVersionBuckets)
-              badge(
-                label: bucket,
-                selected: _selectedVersionBuckets.contains(bucket),
-                onTap: () {
-                  setState(() {
-                    if (_selectedVersionBuckets.contains(bucket)) {
-                      _selectedVersionBuckets.remove(bucket);
-                    } else {
-                      _selectedVersionBuckets.add(bucket);
-                    }
-                  });
-                  regenSongItems(songState.modes, songState.sortType);
-                },
+        case SongFilterAxis.version:
+          return FilterTray(
+            options: <FilterOption>[
+              for (final bucket in kVersionBuckets)
+                FilterOption(
+                  label: bucket,
+                  selected: _filter.versionBuckets.contains(bucket),
+                  onTap: () => _toggleVersionBucket(bucket, songState),
+                ),
+              FilterOption(
+                label: 'X',
+                selected: false,
+                onTap: () => clearAllFilters(mode, songState.sortType),
               ),
-            badge(
-              label: 'X',
-              selected: false,
-              onTap: () => clearAllFilters(songState.modes, songState.sortType),
-            ),
-          ],
-        );
-      }
+            ],
+          );
 
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: <Widget>[
-          badge(
-            label: 'All',
-            selected: _selectedNameBucket == null,
-            onTap: () {
-              setState(() {
-                _selectedNameBucket = null;
-              });
-              regenSongItems(songState.modes, songState.sortType);
-            },
-          ),
-          for (final bucket in kNameBuckets)
-            badge(
-              label: bucket,
-              selected: _selectedNameBucket == bucket,
-              onTap: () {
-                setState(() {
-                  _selectedNameBucket = bucket;
-                });
-                regenSongItems(songState.modes, songState.sortType);
-              },
-            ),
-        ],
-      );
+        case SongFilterAxis.name:
+          return FilterTray(
+            options: <FilterOption>[
+              FilterOption(
+                label: 'All',
+                selected: _filter.nameBucket == null,
+                onTap: () => _selectNameBucket(null, songState),
+              ),
+              for (final bucket in kNameBuckets)
+                FilterOption(
+                  label: bucket,
+                  selected: _filter.nameBucket == bucket,
+                  onTap: () => _selectNameBucket(bucket, songState),
+                ),
+            ],
+          );
+      }
     }
 
     return Padding(
@@ -499,25 +486,27 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: <Widget>[
+                favouritesButton(songState),
+                const SizedBox(width: 8),
                 topButton(
                   label: 'Name',
                   value: nameFilterSummary(),
-                  active: _activeFilterPanel == _ActiveFilterPanel.name,
-                  onPressed: () => toggleFilterPanel(_ActiveFilterPanel.name),
+                  active: _activeFilterPanel == SongFilterAxis.name,
+                  onPressed: () => toggleFilterPanel(SongFilterAxis.name),
                 ),
                 const SizedBox(width: 8),
                 topButton(
                   label: 'Level',
                   value: levelFilterSummary(),
-                  active: _activeFilterPanel == _ActiveFilterPanel.level,
-                  onPressed: () => toggleFilterPanel(_ActiveFilterPanel.level),
+                  active: _activeFilterPanel == SongFilterAxis.level,
+                  onPressed: () => toggleFilterPanel(SongFilterAxis.level),
                 ),
                 const SizedBox(width: 8),
                 topButton(
                   label: 'Version',
                   value: versionFilterSummary(),
-                  active: _activeFilterPanel == _ActiveFilterPanel.version,
-                  onPressed: () => toggleFilterPanel(_ActiveFilterPanel.version),
+                  active: _activeFilterPanel == SongFilterAxis.version,
+                  onPressed: () => toggleFilterPanel(SongFilterAxis.version),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(

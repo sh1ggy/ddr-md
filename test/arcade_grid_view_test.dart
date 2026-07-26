@@ -1,13 +1,14 @@
 /// Name: ArcadeGridViewTest
-/// Description: The arcade song select's two-step pick — a first tap focuses
-/// a jacket and raises the info panel, a second opens the song — plus the
-/// focus surviving (or not) the list changing underneath it.
+/// Description: The grid's one-tap pick — a tap hands the song and its implied
+/// difficulty to SongState on the way to the song page — and the jacket
+/// captions.
 library;
 
+import 'package:ddr_md/components/songlist/arcade/arcade_grid_tile.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
-import 'package:ddr_md/components/songlist/arcade/arcade_info_panel.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
@@ -16,7 +17,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 SongItem item(String title, {int? defaultDifficultyIndex}) {
+  // Singles and doubles carry different levels so tests can tell which set a
+  // widget is reading.
   Difficulty diff() => Difficulty(easy: 5, medium: 8, hard: 12);
+  Difficulty doublesDiff() => Difficulty(easy: 6, medium: 9, hard: 13);
   return SongItem(
     songInfo: SongInfo(
       ssc: false,
@@ -29,7 +33,7 @@ SongItem item(String title, {int? defaultDifficultyIndex}) {
       songLength: 100,
       perChart: false,
       singles: diff(),
-      doubles: diff(),
+      doubles: doublesDiff(),
       radarSingles: const {},
       radarDoubles: const {},
       singlesNotecounts: Difficulty(),
@@ -54,6 +58,7 @@ Future<void> pumpGrid(
   WidgetTester tester,
   List<SongItem> items, {
   SongState? state,
+  Modes mode = Modes.singles,
 }) async {
   await tester.pumpWidget(
     ChangeNotifierProvider<SongState>.value(
@@ -63,7 +68,7 @@ Future<void> pumpGrid(
           body: ArcadeGridView(
             songItems: items,
             sortType: SortType.title,
-            mode: Modes.singles,
+            mode: mode,
             leadingSlivers: const <Widget>[],
             regenFavsCallback: () {},
           ),
@@ -74,14 +79,6 @@ Future<void> pumpGrid(
   await tester.pumpAndSettle();
 }
 
-// The focused tile pulses on a repeating controller, so once anything is
-// focused the tree never goes idle and pumpAndSettle would spin until it times
-// out. Pump past the focus and panel transitions by hand instead.
-Future<void> settleFocus(WidgetTester tester) async {
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 400));
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -90,113 +87,88 @@ void main() {
     await Settings.init();
   });
 
-  testWidgets('the panel stays down until a jacket is picked', (tester) async {
-    await pumpGrid(tester, <SongItem>[item('Afronova'), item('Butterfly')]);
-
-    expect(find.byType(ArcadeInfoPanel), findsNothing);
-    // Both folders' jackets are on screen, under one A-C banner.
-    expect(find.text('A-C'), findsOneWidget);
-  });
-
-  testWidgets('the first tap focuses and raises the panel for that song',
+  testWidgets('a jacket captions itself with its title and charted levels',
       (tester) async {
-    await pumpGrid(tester, <SongItem>[item('Afronova'), item('Butterfly')]);
+    // The fixture charts easy/medium/hard only, so beginner and challenge are
+    // skipped rather than rendered as blanks.
+    await pumpGrid(tester, <SongItem>[item('Afronova')]);
 
-    await tester.tap(find.byType(Image).first);
-    await settleFocus(tester);
-
-    expect(find.byType(ArcadeInfoPanel), findsOneWidget);
     expect(find.text('Afronova'), findsOneWidget);
-    expect(find.text('artist Afronova'), findsOneWidget);
-    expect(find.text('150 BPM'), findsOneWidget);
+    // The caption is title and levels only — BPM was dropped from the tile, so
+    // the fixture's 150 must not appear.
+    expect(find.text('150'), findsNothing);
+
+    Color colourOf(String level) =>
+        tester.widget<Text>(find.text(level)).style!.color!;
+    expect(colourOf('5'), difficultyColor('easy'));
+    expect(colourOf('8'), difficultyColor('medium'));
+    expect(colourOf('12'), difficultyColor('hard'));
   });
 
-  testWidgets('focusing applies the level filter\'s default difficulty',
+  testWidgets('the levels follow the selected mode', (tester) async {
+    // The doubles fixture charts different numbers, so the mode decides which
+    // set the tile reports.
+    await pumpGrid(tester, <SongItem>[item('Afronova')], mode: Modes.doubles);
+
+    expect(find.text('6'), findsOneWidget);
+    expect(find.text('5'), findsNothing);
+  });
+
+  testWidgets('a tap opens the tapped song at its implied difficulty',
       (tester) async {
+    // The push itself isn't pumped: SongPage reaches for sqflite, which isn't
+    // wired up under `flutter test`.
     final state = SongState();
     await pumpGrid(
       tester,
-      <SongItem>[item('Afronova', defaultDifficultyIndex: 2)],
+      <SongItem>[
+        item('Afronova'),
+        item('Butterfly', defaultDifficultyIndex: 2),
+      ],
       state: state,
     );
-
-    await tester.tap(find.byType(Image).first);
-    await settleFocus(tester);
-
-    expect(state.chosenDifficulty, 2);
-  });
-
-  testWidgets('picking a badge in the panel changes the chosen difficulty',
-      (tester) async {
-    final state = SongState();
-    await pumpGrid(tester, <SongItem>[item('Afronova')], state: state);
-
-    await tester.tap(find.byType(Image).first);
-    await settleFocus(tester);
-    expect(state.chosenDifficulty, 0);
-
-    // The badges show each charted level; tapping the 12 picks hard (index 2).
-    await tester.tap(find.text('12'));
-    await settleFocus(tester);
-    expect(state.chosenDifficulty, 2);
-  });
-
-  testWidgets('closing the panel clears the focus', (tester) async {
-    await pumpGrid(tester, <SongItem>[item('Afronova')]);
-
-    await tester.tap(find.byType(Image).first);
-    await settleFocus(tester);
-    expect(find.byType(ArcadeInfoPanel), findsOneWidget);
-
-    await tester.tap(find.byIcon(Icons.close));
-    await settleFocus(tester);
-    expect(find.byType(ArcadeInfoPanel), findsNothing);
-  });
-
-  testWidgets('a tap on the focused jacket opens the song', (tester) async {
-    final state = SongState();
-    await pumpGrid(tester, <SongItem>[item('Afronova')], state: state);
-
-    await tester.tap(find.byType(Image).first);
-    await settleFocus(tester);
     expect(state.songInfo, isNull);
 
-    // Second tap on the same jacket confirms — the grid hands the song to
-    // SongState on its way to the song page. The push itself isn't pumped:
-    // SongPage reaches for sqflite, which isn't wired up under `flutter test`.
-    await tester.tap(find.byType(Image).first);
-    expect(state.songInfo?.title, 'Afronova');
+    await tester.tap(find.byType(Image).at(1));
+
+    expect(state.songInfo?.title, 'Butterfly');
+    expect(state.chosenDifficulty, 2);
   });
 
-  testWidgets('the panel drops when a filter change removes the focused song',
+  testWidgets('a song with no implied difficulty opens on the first chart',
       (tester) async {
     final state = SongState();
-    final all = <SongItem>[item('Afronova'), item('Butterfly')];
+    state.setChosenDifficulty(3);
+    await pumpGrid(tester, <SongItem>[item('Afronova')], state: state);
 
-    await pumpGrid(tester, all, state: state);
     await tester.tap(find.byType(Image).first);
-    await settleFocus(tester);
-    expect(find.text('Afronova'), findsOneWidget);
 
-    // Refilter to a list the focused song isn't in.
-    await tester.pumpWidget(
-      ChangeNotifierProvider<SongState>.value(
-        value: state,
-        child: MaterialApp(
-          home: Scaffold(
-            body: ArcadeGridView(
-              songItems: <SongItem>[all[1]],
-              sortType: SortType.title,
-              mode: Modes.singles,
-              leadingSlivers: const <Widget>[],
-              regenFavsCallback: () {},
-            ),
-          ),
-        ),
-      ),
-    );
-    await settleFocus(tester);
+    expect(state.chosenDifficulty, 0);
+  });
 
-    expect(find.byType(ArcadeInfoPanel), findsNothing);
+  testWidgets('tapping a banner folds its jackets away and back',
+      (tester) async {
+    await pumpGrid(tester, <SongItem>[item('Afronova')]);
+    expect(find.byType(ArcadeGridTile), findsOneWidget);
+
+    await tester.tap(find.text('A-C'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ArcadeGridTile), findsNothing);
+    // The banner stays, so the folder can be reopened.
+    expect(find.text('A-C'), findsOneWidget);
+
+    await tester.tap(find.text('A-C'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ArcadeGridTile), findsOneWidget);
+  });
+
+  testWidgets('folding one section leaves its neighbours open', (tester) async {
+    await pumpGrid(tester, <SongItem>[item('Afronova'), item('Dynamite')]);
+
+    await tester.tap(find.text('A-C'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ArcadeGridTile), findsOneWidget);
+    expect(find.text('Dynamite'), findsOneWidget);
   });
 }

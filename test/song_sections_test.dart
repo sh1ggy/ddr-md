@@ -10,6 +10,7 @@ SongItem item({
   required String title,
   String? translit,
   String version = 'DDR World',
+  int? bpm,
   List<int?> singles = const <int?>[null, 5, 8, 12, null],
   List<int?> doubles = const <int?>[null, 6, 9, 13, null],
 }) {
@@ -38,7 +39,18 @@ SongItem item({
       radarDoubles: const {},
       singlesNotecounts: diff(const <int?>[null, null, null, null, null]),
       doublesNotecounts: diff(const <int?>[null, null, null, null, null]),
-      charts: const [],
+      charts: bpm == null
+          ? const []
+          : <Chart>[
+              Chart(
+                dominantBpm: bpm,
+                trueMin: bpm,
+                trueMax: bpm,
+                bpmRange: '$bpm',
+                bpms: const [],
+                stops: const [],
+              ),
+            ],
     ),
     isFav: false,
   );
@@ -133,6 +145,39 @@ void main() {
         groupSongItems(<SongItem>[], SortType.title, Modes.singles),
         isEmpty,
       );
+    });
+
+    test('bpm sort bands by tens, songs with no chart data last', () {
+      final sections = groupSongItems(
+        <SongItem>[
+          item(title: 'Fast', bpm: 195),
+          item(title: 'Slow', bpm: 140),
+          item(title: 'Unknown'),
+          item(title: 'AlsoSlow', bpm: 144),
+        ],
+        SortType.bpm,
+        Modes.singles,
+      );
+
+      expect(sections.map((s) => s.label).toList(),
+          <String>['NO BPM', 'BPM 140-149', 'BPM 190-199']);
+      expect(titlesOf(sections[1]), <String>['AlsoSlow', 'Slow']);
+    });
+
+    test('descending reverses both the folders and their contents', () {
+      final sections = groupSongItems(
+        <SongItem>[
+          item(title: 'Afronova'),
+          item(title: 'Butterfly'),
+          item(title: 'Trip Machine'),
+        ],
+        SortType.title,
+        Modes.singles,
+        descending: true,
+      );
+
+      expect(sections.map((s) => s.label).toList(), <String>['S-U', 'A-C']);
+      expect(titlesOf(sections.last), <String>['Butterfly', 'Afronova']);
     });
   });
 }

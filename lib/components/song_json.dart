@@ -351,10 +351,13 @@ enum Modes {
   doubles,
 }
 
+// The cabinet's sort keys. `version` is the release order the cabinet treats as
+// its default.
 enum SortType {
   level,
   title,
   version,
+  bpm,
 }
 
 class Difficulty {

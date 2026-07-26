@@ -9,7 +9,6 @@ import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
-import 'package:flutter/material.dart';
 
 // Name buckets in the order the filter tray and the grid's folders present
 // them: Japanese titles first, then non-alphabetic, then the letter ranges.
@@ -120,41 +119,52 @@ String nameBucketFor(SongInfo song) {
   return 'v-z';
 }
 
-/// One folder of the arcade grid: a banner label plus the songs under it.
-class ArcadeSection {
-  const ArcadeSection({
-    required this.label,
-    required this.accent,
-    required this.items,
+/// The songlist's filter state: the three independent axes, as sets.
+///
+/// Kept as a value type apart from the page so option counts can be computed
+/// against a hypothetical selection without touching widget state.
+class SongFilter {
+  const SongFilter({
+    this.levels = const <int>{},
+    this.versionBuckets = const <String>{},
+    this.nameBucket,
+    this.favouritesOnly = false,
   });
 
-  final String label;
-  final Color accent;
-  final List<SongItem> items;
-}
+  final Set<int> levels;
+  final Set<String> versionBuckets;
+  // Single-select, unlike the other two: a song sits in exactly one name
+  // bucket, so picking a second could only ever narrow to nothing.
+  final String? nameBucket;
+  final bool favouritesOnly;
 
-// Accent for a level folder, borrowed from the difficulty palette so the
-// banners read at a glance the way the cabinet's level folders do: the higher
-// the level, the hotter the colour.
-Color _levelAccent(int level) {
-  if (level <= 4) return Colors.cyan;
-  if (level <= 8) return Colors.orange;
-  if (level <= 12) return Colors.red;
-  if (level <= 15) return Colors.green;
-  return Colors.purple;
-}
+  bool get isEmpty =>
+      levels.isEmpty &&
+      versionBuckets.isEmpty &&
+      nameBucket == null &&
+      !favouritesOnly;
 
-const Color _kArcadeGold = Color(0xFFE8B341);
-
-Color _versionAccent(String version) {
-  switch (versionBucketFor(version)) {
-    case 'Gold (A20 - World)':
-      return _kArcadeGold;
-    case 'White (2013 - A)':
-      return const Color(0xFF9FD8FF);
-    default:
-      return const Color(0xFFB07CE8);
+  /// Whether [song] passes every axis. [isFav] comes from the caller because
+  /// favourite state lives in the database, not on [SongInfo].
+  bool matches(SongInfo song, Modes mode, {bool isFav = false}) {
+    final bool levelMatch = levels.isEmpty ||
+        songLevels(song, mode).any((int level) => levels.contains(level));
+    final bool versionMatch = versionBuckets.isEmpty ||
+        versionBuckets.contains(versionBucketFor(song.version));
+    final bool nameMatch = nameBucket == null || nameBucket == nameBucketFor(song);
+    final bool favMatch = !favouritesOnly || isFav;
+    return levelMatch && versionMatch && nameMatch && favMatch;
   }
+}
+
+enum SongFilterAxis { name, level, version }
+
+/// One folder of the arcade grid: a banner label plus the songs under it.
+class ArcadeSection {
+  const ArcadeSection({required this.label, required this.items});
+
+  final String label;
+  final List<SongItem> items;
 }
 
 /// Groups an already-filtered song list into the grid's folders for [sortType].
@@ -168,10 +178,28 @@ Color _versionAccent(String version) {
 List<ArcadeSection> groupSongItems(
   List<SongItem> items,
   SortType sortType,
+  Modes mode, {
+  bool descending = false,
+}) {
+  if (items.isEmpty) return const <ArcadeSection>[];
+  final List<ArcadeSection> sections =
+      _groupAscending(items, sortType, mode);
+  if (!descending) return sections;
+  // Reversed at both levels so the folders and their contents agree.
+  return <ArcadeSection>[
+    for (final section in sections.reversed)
+      ArcadeSection(
+        label: section.label,
+        items: section.items.reversed.toList(),
+      ),
+  ];
+}
+
+List<ArcadeSection> _groupAscending(
+  List<SongItem> items,
+  SortType sortType,
   Modes mode,
 ) {
-  if (items.isEmpty) return const <ArcadeSection>[];
-
   switch (sortType) {
     case SortType.level:
       final Map<int, List<SongItem>> byLevel = <int, List<SongItem>>{};
@@ -189,9 +217,6 @@ List<ArcadeSection> groupSongItems(
             label: level > constants.maxDifficulty
                 ? 'NO CHART'
                 : 'LEVEL $level',
-            accent: level > constants.maxDifficulty
-                ? Colors.blueGrey
-                : _levelAccent(level),
             items: _byTitle(byLevel[level]!),
           ),
       ];
@@ -208,7 +233,6 @@ List<ArcadeSection> groupSongItems(
           if (byName.containsKey(bucket))
             ArcadeSection(
               label: bucket.toUpperCase(),
-              accent: _kArcadeGold,
               items: _byTitle(byName[bucket]!),
             ),
       ];
@@ -231,8 +255,24 @@ List<ArcadeSection> groupSongItems(
         for (final version in versions)
           ArcadeSection(
             label: version.toUpperCase(),
-            accent: _versionAccent(version),
             items: _byTitle(byVersion[version]!),
+          ),
+      ];
+
+    case SortType.bpm:
+      // BPM has no natural folder boundaries, so it bands by tens.
+      final Map<int, List<SongItem>> byBand = <int, List<SongItem>>{};
+      for (final item in items) {
+        byBand
+            .putIfAbsent((bpmKey(item.songInfo) ~/ 10) * 10, () => <SongItem>[])
+            .add(item);
+      }
+      final bands = byBand.keys.toList()..sort();
+      return <ArcadeSection>[
+        for (final band in bands)
+          ArcadeSection(
+            label: band == 0 ? 'NO BPM' : 'BPM $band-${band + 9}',
+            items: _byTitle(byBand[band]!),
           ),
       ];
   }

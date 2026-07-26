@@ -89,8 +89,9 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                     }
                     List<SongInfo> favSongs = List.of(snapshot.data!);
                     if (songState.sortType != SortType.level) {
-                      favSongs.sort(
-                          (a, b) => compareSongInfo(a, b, songState.sortType));
+                      favSongs.sort((a, b) => compareSongInfo(
+                          a, b, songState.sortType,
+                          descending: songState.sortDescending));
                     }
                     children =
                         favSongs.map<SongListItem>((SongInfo songInfo) {

@@ -290,19 +290,31 @@ String _titleKey(SongInfo song) =>
     (song.titletranslit.isNotEmpty ? song.titletranslit : song.title)
         .toLowerCase();
 
+// The song's headline BPM; 0 for songs with no chart data, so they sort last.
+int bpmKey(SongInfo song) =>
+    song.charts.isEmpty ? 0 : song.charts.first.dominantBpm;
+
 // Comparator for song lists under the given sort. Callers should skip
 // sorting entirely for SortType.level: List.sort isn't stable, so a
 // zero-comparator would still shuffle the original order.
-int compareSongInfo(SongInfo a, SongInfo b, SortType sortType) {
+//
+// `descending` flips the key but never the title tiebreak, so equal-key runs
+// stay alphabetical in both directions.
+int compareSongInfo(SongInfo a, SongInfo b, SortType sortType,
+    {bool descending = false}) {
+  final int sign = descending ? -1 : 1;
   switch (sortType) {
     case SortType.level:
       return 0;
     case SortType.title:
-      return _titleKey(a).compareTo(_titleKey(b));
+      return sign * _titleKey(a).compareTo(_titleKey(b));
     case SortType.version:
       int byVersion =
-          versionIndex(a.version).compareTo(versionIndex(b.version));
+          sign * versionIndex(a.version).compareTo(versionIndex(b.version));
       return byVersion != 0 ? byVersion : _titleKey(a).compareTo(_titleKey(b));
+    case SortType.bpm:
+      int byBpm = sign * bpmKey(a).compareTo(bpmKey(b));
+      return byBpm != 0 ? byBpm : _titleKey(a).compareTo(_titleKey(b));
   }
 }
 
