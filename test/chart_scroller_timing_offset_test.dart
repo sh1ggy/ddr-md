@@ -42,6 +42,13 @@ Future<void> _reset({bool arcadeSync = false}) async {
   await Settings.setInt(Settings.chartPreviewOffsetForBiasKey, 999999);
 }
 
+/// Claim the zeroed offsets as already dialled for a song of [biasMs], so
+/// opening that song with ARCADE SYNC on does NOT auto-seed a correction over
+/// them. Leaves the effective sync equal to the song's raw bias — the way to
+/// exercise a non-zero reading with the mode engaged.
+Future<void> _keepZeroedOffsetsFor(double biasMs) => Settings.setInt(
+    Settings.chartPreviewOffsetForBiasKey, (biasMs * 100).round());
+
 /// The chart second the field is actually drawn around — the playhead plus any
 /// applied VISUAL OFFSET.
 /// The SYNC stat on the tempo badge (the "BPM | READ | SYNC" pill), or null when
@@ -347,6 +354,66 @@ void main() {
       expect(Settings.getInt(Settings.chartPreviewAudioOffsetMsKey), 4);
     });
 
+    testWidgets('an off/on cycle comes back to the tuned value', (tester) async {
+      // The A/B round trip: the page opens engaged with a hand-tuned -4ms, the
+      // dials are dragged mid-experiment, then the mode is switched off and on.
+      // It must land back on the tuned -4ms — not on the dragged value, and not
+      // re-seeded from the song's bias.
+      await _reset(arcadeSync: true);
+      await Settings.setInt(Settings.chartPreviewAudioOffsetMsKey, -4);
+      await _keepZeroedOffsetsFor(9.0); // marks -4 as tuned for THIS song
+      await tester.pumpWidget(_host(
+          _scroller(key: const ValueKey('ab-cycle'), sync: _sync(9.0))));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(find.text('-4ms'), findsOneWidget, reason: 'opens on the tuning');
+
+      await tester.tap(find.byKey(shadeTabKey));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(audioOffsetChipKey),
+        120,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byKey(audioOffsetChipKey), const Offset(60, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(find.text('-4ms'), findsNothing,
+          reason: 'the drag must actually move the dial off the tuning');
+
+      // Off, then on again — both taps land on the already-open shade.
+      await tester.tap(find.byKey(arcadeSyncTileKey));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.tap(find.byKey(arcadeSyncTileKey));
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(find.text('-4ms'), findsOneWidget,
+          reason: 'the cycle must return to the tuned -4ms');
+    });
+
+    testWidgets('the rewind does not overwrite the stored tuning',
+        (tester) async {
+      // The rewind is LIVE-dials-only: it must not promote the value the page
+      // happened to open with into the stored tuning, since that store is what
+      // a later visit reads as "best tuned".
+      await _reset();
+      await tester.pumpWidget(_host(
+          _scroller(key: const ValueKey('rewind-nowrite'), sync: _sync(9.0))));
+      await tester.pump(const Duration(milliseconds: 16));
+
+      await _tapInShade(tester, arcadeSyncTileKey);
+      expect(Settings.getInt(Settings.chartPreviewAudioOffsetMsKey), -9,
+          reason: 'engaging seeds and stores the correction');
+
+      // The shade is already open from the tap above, and the tile is already
+      // scrolled into view — tap it directly rather than going back through
+      // _tapInShade, whose first act is a shade-tab tap that would close it.
+      await tester.tap(find.byKey(arcadeSyncTileKey));
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(Settings.getInt(Settings.chartPreviewAudioOffsetMsKey), -9,
+          reason: 'disengaging leaves the stored tuning alone');
+    });
+
     testWidgets('a song with no sync data seeds nothing', (tester) async {
       await _reset();
       await tester.pumpWidget(
@@ -525,7 +592,8 @@ void main() {
     testWidgets('shows a signed ms figure, colour-coded FAST', (tester) async {
       // The badge carries direction in the COLOUR, not the word — only the sign
       // and the number appear, to fit alongside BPM and READ over the field.
-      await _reset();
+      await _reset(arcadeSync: true);
+      await _keepZeroedOffsetsFor(9.0);
       await tester.pumpWidget(_host(
           _scroller(key: const ValueKey('badge-f'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
@@ -536,7 +604,8 @@ void main() {
     });
 
     testWidgets('colour-codes SLOW too', (tester) async {
-      await _reset();
+      await _reset(arcadeSync: true);
+      await _keepZeroedOffsetsFor(-4.5);
       await tester.pumpWidget(_host(
           _scroller(key: const ValueKey('badge-s'), sync: _sync(-4.5))));
       await tester.pump(const Duration(milliseconds: 16));
@@ -544,6 +613,18 @@ void main() {
       final badge = _badgeSync(tester);
       expect(badge?.label, '-4.5ms');
       expect(badge?.color, kSlowColor(isDark));
+    });
+
+    testWidgets('is hidden while ARCADE SYNC is off', (tester) async {
+      // With the mode off both dials are gated to zero, so there is no
+      // correction in effect for the segment to describe — reporting the song's
+      // raw bias there would claim a sync the field isn't being drawn at.
+      await _reset();
+      await tester.pumpWidget(_host(
+          _scroller(key: const ValueKey('badge-off'), sync: _sync(9.0))));
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(_badgeSync(tester), isNull);
     });
 
     testWidgets('reads a plain uncoloured zero once corrected', (tester) async {
@@ -572,7 +653,8 @@ void main() {
     testWidgets('always agrees with the ARCADE SYNC caption', (tester) async {
       // Both read the same effective figure, so they can't drift apart — the
       // badge just renders it tersely ("+9.0ms" vs "FAST by 9.0ms").
-      await _reset();
+      await _reset(arcadeSync: true);
+      await _keepZeroedOffsetsFor(9.0);
       await tester.pumpWidget(_host(
           _scroller(key: const ValueKey('badge-agree'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));

@@ -311,6 +311,12 @@ class _ChartScrollerState extends State<ChartScroller>
   bool _arcadeSyncOn = false;
   bool? _tickBeforeArcadeSync;
 
+  // The offsets this preview OPENED with, captured once on load. Switching
+  // ARCADE SYNC off restores them, so toggling stays a true A/B: it lands back
+  // on the tuned value, not on whatever was dialled mid-experiment.
+  double _visualOffsetOnEntry = 0;
+  double _audioOffsetMsOnEntry = 0;
+
   // The cabinet's two TIMING dials. They are NOT the same unit or scale — the
   // cabinet expresses them differently, and so do players:
   //
@@ -772,6 +778,11 @@ class _ChartScrollerState extends State<ChartScroller>
       _seedOffsetsFromSync();
     }
 
+    // Snapshot AFTER any re-seed, so the baseline is what the dials actually
+    // show on open, not the stale pair just replaced.
+    _visualOffsetOnEntry = _visualOffset;
+    _audioOffsetMsOnEntry = _audioOffsetMs;
+
     _tickClock.audioOffset = _audioOffsetSeconds;
   }
 
@@ -892,8 +903,12 @@ class _ChartScrollerState extends State<ChartScroller>
   /// where space is tight, and the sign already says which way it leans. Same
   /// number as [_arcadeSyncSummary], which does spell it out. Null when there is
   /// nothing to report, hiding the segment.
+  ///
+  /// Only reported while ARCADE SYNC is engaged — with the mode off both dials
+  /// are gated to zero, so a figure here would describe a correction that
+  /// isn't being applied.
   String? get _syncBadgeLabel {
-    if (_hasNoSyncReading) return null;
+    if (!_arcadeSyncOn || _hasNoSyncReading) return null;
     final ms = _effectiveSyncMs;
     if (ms.abs() < _onBeatEpsilonMs) return "0.0ms";
     return "${ms > 0 ? "+" : "-"}${ms.abs().toStringAsFixed(1)}ms";
@@ -927,6 +942,13 @@ class _ChartScrollerState extends State<ChartScroller>
       // itself a valid hand-tuned value AND a leftover from another song is not.
       if (next && !_offsetsMatchThisSong()) {
         _seedOffsetsFromSync();
+      }
+      // Switching OFF rewinds the LIVE dials to what the page opened with.
+      // Deliberately no Settings write: the stored offsets stay the tuned
+      // baseline, so a mid-experiment value can't be promoted into it.
+      if (!next) {
+        _visualOffset = _visualOffsetOnEntry;
+        _audioOffsetMs = _audioOffsetMsOnEntry;
       }
     });
     Settings.setInt(Settings.arcadeSyncOnKey, next ? 1 : 0);
