@@ -71,6 +71,7 @@ List<int> _turnColumnMap(_Turn turn, int columnCount) {
   // Unknown width: identity (no turn) rather than risk an out-of-range map.
   return [for (int c = 0; c < columnCount; c++) c];
 }
+
 class ChartScroller extends StatefulWidget {
   const ChartScroller({
     super.key,
@@ -271,7 +272,6 @@ class _ChartScrollerState extends State<ChartScroller>
     return min > 0 ? min : _effectiveChartBpm;
   }
 
-
   // Pinch-to-zoom: a purely visual multiplier on the vertical note spacing,
   // independent of the read-speed mod. <1 zooms OUT (compresses more beats into
   // the viewport so you can study long chunks at once); zooming in beyond 1x is
@@ -429,9 +429,8 @@ class _ChartScrollerState extends State<ChartScroller>
         break;
       }
     }
-    _notes = sorted
-        ? src
-        : ([...src]..sort((a, b) => a.second.compareTo(b.second)));
+    _notes =
+        sorted ? src : ([...src]..sort((a, b) => a.second.compareTo(b.second)));
     _holds = [
       for (final n in _notes)
         if (n.isHold) n,
@@ -541,7 +540,8 @@ class _ChartScrollerState extends State<ChartScroller>
   double get _pxPerBeat =>
       60.0 * _travelPx * _rate / _arcadeTravelConstant * _zoom;
 
-  int get _effectiveChartBpm => widget.chartBpm > 0 ? widget.chartBpm : constants.songBpm;
+  int get _effectiveChartBpm =>
+      widget.chartBpm > 0 ? widget.chartBpm : constants.songBpm;
 
   // BPM of the tempo section under the playhead — NOT the dominant chart BPM.
   // Looked up on the raw [Bpm] segments rather than [ChartTiming]'s slope, which
@@ -822,8 +822,8 @@ class _ChartScrollerState extends State<ChartScroller>
     // 0.0-0.5ms. VISUAL only picks up the overflow past AUDIO's ±50ms range,
     // which real data never reaches (measured max |bias| is ~50ms).
     final audioShare = _clampAudioOffsetMs(correctionMs);
-    _visualOffset = _clampVisualOffset(
-        (correctionMs - audioShare) / msPerVisualUnit);
+    _visualOffset =
+        _clampVisualOffset((correctionMs - audioShare) / msPerVisualUnit);
     // Re-derive AUDIO from what VISUAL actually landed on, so the 0.1-grid
     // rounding is absorbed here rather than left as residue.
     _audioOffsetMs =
@@ -936,8 +936,8 @@ class _ChartScrollerState extends State<ChartScroller>
   // the next build and setState covers that.
   void _onTimingOffsetDrag({required bool visual, required double dx}) {
     if (visual) {
-      final next = _clampVisualOffset(_visualOffset +
-          dx / 260 * (_visualOffsetMax - _visualOffsetMin));
+      final next = _clampVisualOffset(
+          _visualOffset + dx / 260 * (_visualOffsetMax - _visualOffsetMin));
       if (next == _visualOffset) return;
       HapticFeedback.selectionClick();
       setState(() => _visualOffset = next);
@@ -1093,7 +1093,7 @@ class _ChartScrollerState extends State<ChartScroller>
     );
     if (end > 0) {
       for (final n in widget.steps.notes) {
-        if (n.type == StepType.mine) continue; // shocks handled separately below
+        if (n.type == StepType.mine) continue; // shocks handled below
         final b = ((n.second / end) * buckets).floor().clamp(0, buckets - 1);
         counts[b] += 1;
         colorCounts[b][_quantBucketForBeat(n.beat)] += 1;
@@ -1181,7 +1181,8 @@ class _ChartScrollerState extends State<ChartScroller>
     }
     byTime.forEach((_, mines) {
       if (mines.length >= 3) {
-        _shocks.add(ShockRow(mines.first.second, {for (final m in mines) m.col}));
+        _shocks
+            .add(ShockRow(mines.first.second, {for (final m in mines) m.col}));
         _shockNotes.addAll(mines);
       }
     });
@@ -1200,7 +1201,8 @@ class _ChartScrollerState extends State<ChartScroller>
       keys.add((n.second * 1000).round());
     }
     _tickSeconds = [for (final k in keys) k / 1000.0]..sort();
-    _tickClock.setRows(_tickSeconds); // no-op before the engine finishes loading
+    _tickClock
+        .setRows(_tickSeconds); // no-op before the engine finishes loading
   }
 
   // (Re)anchor the tick clock to the live playhead + rate, so upcoming rows are
@@ -1522,11 +1524,10 @@ class _ChartScrollerState extends State<ChartScroller>
   // Fire a detent haptic each time the rate crosses one of the 0.05× steps the
   // value snaps to on-screen, so the sweep ticks under the finger.
   void _onPlaybackRateDrag(double dx) {
-    final next = (_playbackRate + dx / 260)
-        .clamp(_minPlaybackRate, _maxPlaybackRate);
+    final next =
+        (_playbackRate + dx / 260).clamp(_minPlaybackRate, _maxPlaybackRate);
     if (next == _playbackRate) return;
-    final crossedStep =
-        (next * 20).round() != (_playbackRate * 20).round();
+    final crossedStep = (next * 20).round() != (_playbackRate * 20).round();
     setState(() => _playbackRate = next);
     _resyncTickClock(); // re-anchor at the new rate
     if (crossedStep) HapticFeedback.selectionClick();
@@ -1750,35 +1751,35 @@ class _ChartScrollerState extends State<ChartScroller>
                 if (_skin == null)
                   const SizedBox.expand()
                 else
-                RepaintBoundary(
-                  child: CustomPaint(
-                    painter: ChartPainter(
-                      notes: _notes,
-                      holds: _holds,
-                      shockNotes: _shockNotes,
-                      shocks: _shocks,
-                      bpmMarkers: _bpmMarkers,
-                      stopMarkers: _stopMarkers,
-                      feet: widget.showFootGuide ? _feet : const {},
-                      footPrev: widget.showFootGuide ? _footPrev : const {},
-                      dirs: dirs,
-                      colMap: _colMap,
-                      playhead: _playhead,
-                      pxPerSecond: _pxPerSecond,
-                      pxPerBeat: _pxPerBeat,
-                      timing: _timing,
-                      columnCount: dirs.length,
-                      skin: _skin!,
-                      playing: _playing,
-                      zoom: _zoom,
-                      constantMs: _effectiveConstantMs,
-                      topInset: MediaQuery.of(context).padding.top,
-                      visualOffset: _visualOffsetSeconds,
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      painter: ChartPainter(
+                        notes: _notes,
+                        holds: _holds,
+                        shockNotes: _shockNotes,
+                        shocks: _shocks,
+                        bpmMarkers: _bpmMarkers,
+                        stopMarkers: _stopMarkers,
+                        feet: widget.showFootGuide ? _feet : const {},
+                        footPrev: widget.showFootGuide ? _footPrev : const {},
+                        dirs: dirs,
+                        colMap: _colMap,
+                        playhead: _playhead,
+                        pxPerSecond: _pxPerSecond,
+                        pxPerBeat: _pxPerBeat,
+                        timing: _timing,
+                        columnCount: dirs.length,
+                        skin: _skin!,
+                        playing: _playing,
+                        zoom: _zoom,
+                        constantMs: _effectiveConstantMs,
+                        topInset: MediaQuery.of(context).padding.top,
+                        visualOffset: _visualOffsetSeconds,
+                      ),
+                      size: Size.infinite,
+                      willChange: true,
                     ),
-                    size: Size.infinite,
-                    willChange: true,
                   ),
-                ),
                 IgnorePointer(
                   child: AnimatedOpacity(
                     opacity: _showTapOverlay ? 1 : 0,
@@ -2333,8 +2334,7 @@ class _ChartScrollerState extends State<ChartScroller>
                       value: _visualOffset,
                       valueLabel: _visualOffsetLabel(_visualOffset),
                       onTap: () => _resetTimingOffset(visual: true),
-                      onDrag: (dx) =>
-                          _onTimingOffsetDrag(visual: true, dx: dx),
+                      onDrag: (dx) => _onTimingOffsetDrag(visual: true, dx: dx),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -2363,7 +2363,10 @@ class _ChartScrollerState extends State<ChartScroller>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -2375,8 +2378,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 Expanded(
                   child: SpeedPane(
                     label: _hispeedType ? "HI-SPEED" : "REAL SPEED",
-                    value:
-                        _hispeedType ? fmtXMod(_rate) : "$_scrollSpeed",
+                    value: _hispeedType ? fmtXMod(_rate) : "$_scrollSpeed",
                     // The min–core–max scroll-speed trio (cabinet
                     // num_min/num_core/num_max) belongs to REAL SPEED, where
                     // the dial is a scroll rate. HI-SPEED shows a bare
@@ -2442,8 +2444,7 @@ double visualOffsetSeconds(double units) =>
 String visualOffsetLabel(double units) =>
     _ChartScrollerState._visualOffsetLabel(units);
 @visibleForTesting
-String audioOffsetLabel(double ms) =>
-    _ChartScrollerState._audioOffsetLabel(ms);
+String audioOffsetLabel(double ms) => _ChartScrollerState._audioOffsetLabel(ms);
 
 /// Clamps/snaps each dial to its own range: VISUAL to ±5.0 on the 0.1 grid,
 /// AUDIO to ±50 whole milliseconds.
@@ -2484,8 +2485,7 @@ double audioOffsetClampMs(double ms) =>
         columnCount: 4,
         skin: const VectorNoteskin(),
         playing: false,
-        visualOffset:
-            dialUnits * _ChartScrollerState._visualOffsetUnitSeconds,
+        visualOffset: dialUnits * _ChartScrollerState._visualOffsetUnitSeconds,
       );
   final neutral = painterAt(0);
   final offset = painterAt(units);
