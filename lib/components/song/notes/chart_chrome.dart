@@ -253,11 +253,23 @@ class ControlPane extends StatelessWidget {
     required this.child,
     required this.onDragUpdate,
     this.onTap,
+    this.borderRadius = 10,
+    this.fill,
   });
 
   final Widget child;
   final GestureDragUpdateCallback onDragUpdate;
   final VoidCallback? onTap;
+
+  /// Corner rounding. Defaults to the preview chrome's 10; the song page
+  /// passes Material's card radius so its pane matches the cards it sits among.
+  final double borderRadius;
+
+  /// Pane fill. Defaults to the preview chrome's raised tint, which reads as a
+  /// control against the dark field. Pass [Colors.transparent] when the pane
+  /// already sits on a surface that supplies its own colour (the song page's
+  /// Card), so it doesn't tint itself lighter than its neighbours.
+  final Color? fill;
 
   @override
   Widget build(BuildContext context) {
@@ -270,8 +282,8 @@ class ControlPane extends StatelessWidget {
         onHorizontalDragUpdate: onDragUpdate,
         child: Container(
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(10),
+            color: fill ?? scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(borderRadius),
           ),
           child: child,
         ),
