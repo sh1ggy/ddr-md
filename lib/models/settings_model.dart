@@ -64,6 +64,16 @@ class Settings {
   static const String chartPreviewSpeedTypeKey = "chartPreviewSpeedType";
   static const String chartPreviewHispeedKey = "chartPreviewHispeed";
   static const String chartPreviewScrollSpeedKey = "chartPreviewScrollSpeed";
+  // Order of the song page's reorderable sections, as section ids joined by
+  // "," (see SongSection in song_page.dart). Applies to every song, not one.
+  //
+  // Stored as ids rather than indices so it survives sections being added or
+  // removed from the app: on read, unknown ids are dropped and ids missing
+  // from the saved list fall back to their default position, so a stale value
+  // degrades instead of corrupting the layout. An empty value means "default
+  // order".
+  static const String songSectionOrderKey = "songSectionOrder";
+
   static const String rivalCodeSpeedKey = "rivalCode";
   static const String detectionSideKey = "detectionSide";
   static const String usernameKey = "username";

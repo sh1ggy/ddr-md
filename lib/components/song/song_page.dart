@@ -21,6 +21,69 @@ import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+/// The song page's reorderable sections, in their default top-to-bottom order.
+/// The declaration order IS the default layout, and each name is the id
+/// persisted to [Settings.songSectionOrderKey] — so renaming a value resets
+/// that section's saved position.
+///
+/// The page header and the Chart Preview row are absent: both are pinned above
+/// the reorderable list and cannot be moved.
+enum SongSection {
+  speedMod,
+  sync,
+  grooveRadar,
+  bpmGraph,
+  latestScore,
+  latestNote,
+}
+
+/// The saved section order, repaired against the sections this build of the
+/// app actually knows about: ids no longer in [SongSection] are dropped, and
+/// any section missing from the saved list is appended in its default
+/// position. Returns the default order when nothing is saved.
+List<SongSection> readSongSectionOrder() {
+  final saved = Settings.getString(Settings.songSectionOrderKey);
+  if (saved.isEmpty) return SongSection.values.toList();
+
+  final byName = {for (final s in SongSection.values) s.name: s};
+  final order = <SongSection>[];
+  for (final id in saved.split(',')) {
+    final section = byName[id];
+    if (section != null && !order.contains(section)) order.add(section);
+  }
+  for (final section in SongSection.values) {
+    if (!order.contains(section)) order.add(section);
+  }
+  return order;
+}
+
+/// [order] with the section at [oldIndex] of [visible] moved to [newIndex] of
+/// [visible], as a new list.
+///
+/// The lists differ because sections with nothing to show are not rendered: the
+/// user drags among [visible], but the saved layout is the full [order]. The
+/// move is resolved against the dragged card's new NEIGHBOUR rather than a raw
+/// index, so hidden sections keep their relative placement.
+///
+/// [newIndex] is a final position (as delivered by `onReorderItem`), not an
+/// insertion point.
+List<SongSection> reorderSongSections({
+  required List<SongSection> order,
+  required List<SongSection> visible,
+  required int oldIndex,
+  required int newIndex,
+}) {
+  if (oldIndex == newIndex) return List<SongSection>.from(order);
+
+  final moved = visible[oldIndex];
+  final target = visible[newIndex];
+  final next = List<SongSection>.from(order);
+  next.remove(moved);
+  final anchor = next.indexOf(target);
+  next.insert(newIndex > oldIndex ? anchor + 1 : anchor, moved);
+  return next;
+}
+
 class SongPage extends StatefulWidget {
   const SongPage({super.key});
 
@@ -38,6 +101,8 @@ class _SongPageState extends State<SongPage> {
   Favorite? favorite;
   Note? latestNote;
   Score? latestScore;
+
+  late List<SongSection> _sectionOrder;
 
   // Lazily-loaded per-song note streams for the scrolling chart preview. Keyed
   // by song name so it reloads only when the song changes, not on every
@@ -88,11 +153,29 @@ class _SongPageState extends State<SongPage> {
     initScore(songInfo.titletranslit, songState.modes);
   }
 
-  // Initialise chosen read speed.
+  // Initialise chosen read speed and the saved section layout.
   @override
   void initState() {
     super.initState();
     _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
+    _sectionOrder = readSongSectionOrder();
+  }
+
+  // The indices address [visible], not the full order — see
+  // [reorderSongSections].
+  void _onReorder(List<SongSection> visible, int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    final next = reorderSongSections(
+      order: _sectionOrder,
+      visible: visible,
+      oldIndex: oldIndex,
+      newIndex: newIndex,
+    );
+
+    HapticFeedback.mediumImpact();
+    setState(() => _sectionOrder = next);
+    Settings.setString(
+        Settings.songSectionOrderKey, next.map((s) => s.name).join(','));
   }
 
   // Latching onto when this class's dependencies change
@@ -158,12 +241,12 @@ class _SongPageState extends State<SongPage> {
         if (steps == null || steps.notes.isEmpty) {
           return const SizedBox.shrink();
         }
-        return Card(
+        // Padded here rather than around the FutureBuilder so a song with no
+        // generated steps leaves no gap above the sections below.
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Card(
           clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: diffColor.withValues(alpha: 0.6), width: 1),
-          ),
           child: InkWell(
             onTap: () {
               HapticFeedback.selectionClick();
@@ -191,50 +274,156 @@ class _SongPageState extends State<SongPage> {
               );
             },
             child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: diffColor.withValues(alpha: 0.15),
-                foregroundColor: diffColor,
-                child: difficultyLevel != null
-                    ? Text(
-                        "$difficultyLevel",
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      )
-                    : const Icon(Icons.play_arrow),
-              ),
+              // Matches the ExpansionTile cards' tilePadding, so every section
+              // header starts and ends on the same x.
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              // Same header shape as the Sync card.
               title: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
                 children: [
                   const Text(
                     "Chart Preview",
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: diffColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      diffLabel,
-                      style: TextStyle(
-                        color: diffColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  const SizedBox(width: 10),
+                  Text(
+                    difficultyLevel != null
+                        ? "$diffLabel $difficultyLevel"
+                        : diffLabel,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: diffColor,
                     ),
                   ),
                 ],
               ),
-              subtitle: Text(
-                "Open scrolling chart for this difficulty",
-                style: TextStyle(color: Theme.of(context).hintColor),
+              // Not the neighbours' expand_more: this row pushes a route
+              // instead of expanding in place.
+              trailing: Icon(
+                Icons.chevron_right,
+                color: Theme.of(context).hintColor,
               ),
-              trailing: const Icon(Icons.chevron_right),
             ),
+          ),
           ),
         );
       },
+    );
+  }
+
+  // The widget for one section, or null when this song has nothing to show
+  // there (a constant-BPM song has no BPM Graph, and so on). Null sections are
+  // left out of the reorderable list but keep their place in the saved order.
+  Widget? _buildSection(SongSection section, SongState songState) {
+    final songInfo = songState.songInfo!;
+    switch (section) {
+      case SongSection.speedMod:
+        return SongBpm(
+            nearestModIndex: _nearestModIndex,
+            isBpmChange: _isBpmChange,
+            chart: _chart);
+      case SongSection.sync:
+        // Gated on what the card actually displays, not on the simfile block
+        // alone — a song carrying only the cabinet fingerprint still has an
+        // offset to recommend.
+        if (songInfo.displaySyncFor(_chart) == null) return null;
+        return SongSyncChart(songInfo: songInfo, chart: _chart);
+      case SongSection.grooveRadar:
+        final radar =
+            songInfo.radarFor(songState.modes, songState.chosenDifficulty);
+        if (radar == null) return null;
+        return SongRadarChart(radar: radar);
+      case SongSection.bpmGraph:
+        if (!_isBpmChange && _chart.stops.isEmpty) return null;
+        return SongChart(
+            context: context, songInfo: songInfo, chart: _chart);
+      case SongSection.latestScore:
+        return GestureDetector(
+          onTap: () => openHistory(HistoryPage.scoresTab),
+          child: latestScore != null
+              ? ScoreCard(score: latestScore!, header: "Latest Score")
+              : const NoScoreCard(),
+        );
+      case SongSection.latestNote:
+        if (latestNote == null) return null;
+        return GestureDetector(
+          onTap: () => openHistory(HistoryPage.notesTab),
+          child: Card(
+            child: ListTile(
+              title: Column(
+                children: [
+                  Text(
+                    "Latest Note",
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary),
+                  ),
+                  Text(
+                    latestNote!.contents,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    formatDate(DateTime.parse(latestNote!.createdAt)),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ]
+                    .expand((x) => [const SizedBox(height: 10), x])
+                    .skip(1)
+                    .toList(),
+              ),
+            ),
+          ),
+        );
+    }
+  }
+
+  // The draggable stack of section cards. Long-press a card to pick it up; the
+  // resulting order is saved app-wide.
+  //
+  // Nested inside the page's own SingleChildScrollView, so it shrink-wraps and
+  // gives up scrolling to the parent — the whole page scrolls as one.
+  Widget _buildReorderableSections(SongState songState) {
+    final visible = <SongSection>[];
+    final cards = <Widget>[];
+    for (final section in _sectionOrder) {
+      final card = _buildSection(section, songState);
+      if (card == null) continue;
+      visible.add(section);
+      cards.add(
+        // Keyed by section id, not list position, so the list can tell which
+        // card moved.
+        Padding(
+          key: ValueKey(section),
+          padding: const EdgeInsets.only(bottom: 10),
+          child: card,
+        ),
+      );
+    }
+
+    return ReorderableListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      // The cards already carry their own Material and shadow; the default
+      // lift decoration would stack a second one on top mid-drag.
+      proxyDecorator: (child, index, animation) => child,
+      onReorderItem: (oldIndex, newIndex) =>
+          _onReorder(visible, oldIndex, newIndex),
+      children: [
+        for (final (i, card) in cards.indexed)
+          // Long-press rather than a visible grip: the cards are already
+          // tappable, and a handle would compete with the chevron column.
+          ReorderableDelayedDragStartListener(
+            key: card.key,
+            index: i,
+            child: card,
+          ),
+      ],
     );
   }
 
@@ -337,73 +526,12 @@ class _SongPageState extends State<SongPage> {
                         ),
                       const SizedBox(height: 10),
                       SongDetails(songInfo: songState.songInfo!, chart: _chart),
-                      SongBpm(
-                          nearestModIndex: _nearestModIndex,
-                          isBpmChange: _isBpmChange,
-                          chart: _chart),
+                      const SizedBox(height: 10),
+                      // Pinned above the draggable sections so the page's
+                      // primary action always opens from the same place.
                       _buildChartPreviewButton(songState),
-                      SongRadarChart(
-                          radar: songState.songInfo!.radarFor(
-                              songState.modes, songState.chosenDifficulty)),
-                      if (_isBpmChange || _chart.stops.isNotEmpty)
-                        SongChart(
-                            context: context,
-                            songInfo: songState.songInfo,
-                            chart: _chart),
-                      if (songState.songInfo!.syncFor(_chart) != null)
-                        SongSyncChart(
-                            songInfo: songState.songInfo!, chart: _chart),
-                      if (latestScore != null)
-                        GestureDetector(
-                          onTap: () => openHistory(HistoryPage.scoresTab),
-                          child: ScoreCard(
-                              score: latestScore!, header: "Latest Score"),
-                        )
-                      else
-                        GestureDetector(
-                          onTap: () => openHistory(HistoryPage.scoresTab),
-                          child: const NoScoreCard(),
-                        ),
-                      if (latestNote != null)
-                        GestureDetector(
-                          onTap: () => openHistory(HistoryPage.notesTab),
-                          child: Card(
-                            child: ListTile(
-                              title: Column(
-                                children: [
-                                  Text(
-                                    "Latest Note",
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary),
-                                  ),
-                                  Text(
-                                    latestNote!.contents,
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  Text(
-                                    formatDate(
-                                        DateTime.parse(latestNote!.createdAt)),
-                                    style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500),
-                                  ),
-                                ]
-                                    .expand(
-                                        (x) => [const SizedBox(height: 10), x])
-                                    .skip(1)
-                                    .toList(),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ]
-                        .expand((x) => [const SizedBox(height: 10), x])
-                        .skip(1)
-                        .toList(),
+                      _buildReorderableSections(songState),
+                    ],
                   ),
                 ),
               ),
