@@ -384,12 +384,16 @@ class _SongSyncChartState extends State<SongSyncChart> {
               ),
             ],
           ),
-          subtitle: isExpanded
-              ? Text(
-                  isCabinet ? 'cabinet' : 'simfile',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                )
-              : null,
+          // Collapsed, the caption says what the title's number IS — a bare
+          // signed figure could as easily be the measured bias as the fix for
+          // it. Expanded, the graph's axis labels carry that, so the caption
+          // gives the space up to the provenance.
+          subtitle: Text(
+            isExpanded
+                ? (isCabinet ? 'cabinet' : 'simfile')
+                : 'recommended offset (${isCabinet ? 'cabinet' : 'simfile'})',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(10, 8, 25, 8),
           children: [
