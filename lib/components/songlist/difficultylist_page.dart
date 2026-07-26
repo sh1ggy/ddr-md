@@ -5,30 +5,23 @@
 library;
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
+import 'package:ddr_md/components/songlist/arcade/arcade_theme.dart';
+import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
+import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:provider/provider.dart';
 
-class SongItem {
-  SongItem({
-    required this.songInfo,
-    required this.isFav,
-    this.defaultDifficultyIndex,
-  });
-
-  SongInfo songInfo;
-  bool isFav;
-  // chosenDifficulty index to open the song at, when a single level filter
-  // is active and matches one of this song's difficulty types.
-  int? defaultDifficultyIndex;
-}
+export 'package:ddr_md/components/songlist/song_item.dart';
 
 enum _ActiveFilterPanel {
   name,
@@ -51,24 +44,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   String? _selectedNameBucket;
   _ActiveFilterPanel? _activeFilterPanel;
 
-  static const List<String> _versionBuckets = <String>[
-    'Classic (1st - X3)',
-    'White (2013 - A)',
-    'Gold (A20 - World)',
-  ];
-
-  static const List<String> _nameBuckets = <String>[
-    'a (hiragana)',
-    '#',
-    'a-c',
-    'd-f',
-    'g-i',
-    'j-l',
-    'm-o',
-    'p-r',
-    's-u',
-    'v-z',
-  ];
+  // Renders the songlist as the arcade jacket grid instead of the plain list.
+  bool _gridMode = Settings.getInt(Settings.songlistViewModeKey) == 1;
 
   // Below this similarity a result is considered noise and dropped, same
   // threshold spirit as the OCR title matcher.
@@ -94,83 +71,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     setState(() {
       favCount = favList.length;
     });
-  }
-
-  List<int> songLevels(SongInfo song, Modes mode) {
-    final Difficulty songDifficulty =
-        mode == Modes.singles ? song.singles : song.doubles;
-    return <int?>[
-      songDifficulty.beginner,
-      songDifficulty.easy,
-      songDifficulty.medium,
-      songDifficulty.hard,
-      songDifficulty.challenge,
-    ]
-        .whereType<int>()
-        .where((level) => level >= 1 && level <= constants.maxDifficulty)
-        .toSet()
-        .toList();
-  }
-
-  String versionBucketFor(String version) {
-    const classic = <String>{
-      'DDR',
-      'DDR 2nd',
-      'DDR 3rd',
-      'DDR 4th',
-      'DDR 5th',
-      'DDR MAX',
-      'DDR MAX2',
-      'DDR EXTREME',
-      'DDR SuperNOVA',
-      'DDR SuperNOVA2',
-      'DDR X',
-      'DDR X2',
-      'DDR X3',
-    };
-    const white = <String>{
-      'DDR 2013',
-      'DDR 2014',
-      'DDR A',
-    };
-    const gold = <String>{
-      'DDR A20',
-      'DDR A20 PLUS',
-      'DDR A3',
-      'DDR World',
-    };
-
-    if (classic.contains(version)) return 'Classic (1st - X3)';
-    if (white.contains(version)) return 'White (2013 - A)';
-    if (gold.contains(version)) return 'Gold (A20 - World)';
-    return 'Classic (1st - X3)';
-  }
-
-  String nameBucketFor(SongInfo song) {
-    final String title = song.title.trim();
-    // Treat this bucket as "contains Japanese" anywhere in title.
-    if (title.isNotEmpty &&
-        RegExp(r'[\u3040-\u30FF\u4E00-\u9FFF\uFF66-\uFF9F]')
-            .hasMatch(title)) {
-      return 'a (hiragana)';
-    }
-
-    final String key =
-        (song.titletranslit.isNotEmpty ? song.titletranslit : song.title)
-            .trim()
-            .toLowerCase();
-    if (key.isEmpty) return '#';
-
-    final String first = key[0];
-    if (!RegExp(r'[a-z]').hasMatch(first)) return '#';
-    if ('abc'.contains(first)) return 'a-c';
-    if ('def'.contains(first)) return 'd-f';
-    if ('ghi'.contains(first)) return 'g-i';
-    if ('jkl'.contains(first)) return 'j-l';
-    if ('mno'.contains(first)) return 'm-o';
-    if ('pqr'.contains(first)) return 'p-r';
-    if ('stu'.contains(first)) return 's-u';
-    return 'v-z';
   }
 
   bool songMatchesFilters(SongInfo song, Modes mode) {
@@ -223,13 +123,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     setState(() {
       _activeFilterPanel = _activeFilterPanel == panel ? null : panel;
     });
-  }
-
-  int primaryLevelFor(SongInfo song, Modes mode) {
-    final levels = songLevels(song, mode);
-    if (levels.isEmpty) return constants.maxDifficulty + 1;
-    levels.sort();
-    return levels.first;
   }
 
   Future<List<SongItem>> generateSongItems(Modes mode, SortType sortType) async {
@@ -311,27 +204,35 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       _lastGenMode = songState.modes;
       _songItemsPromise = generateSongItems(songState.modes, songState.sortType);
     }
-    return SafeArea(
+    final Widget page = SafeArea(
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
           textDirection: TextDirection.ltr,
           child: Scaffold(
             appBar: AppBar(
               elevation: 2,
-              title: const Text(
+              title: Text(
                 'Songlist',
                 style: TextStyle(
+                  fontFamily: _gridMode ? kArcadeFont : null,
                   fontSize: 20,
-                  color: Colors.blueGrey,
+                  color: _gridMode ? kArcadeAccent : Colors.blueGrey,
                   fontWeight: FontWeight.w600,
+                  letterSpacing: _gridMode ? 1.5 : null,
                 ),
               ),
               actions: <Widget>[
+                IconButton(
+                  icon: Icon(_gridMode ? Icons.view_list : Icons.grid_view),
+                  tooltip: _gridMode ? 'List view' : 'Arcade grid',
+                  onPressed: _toggleViewMode,
+                ),
                 SortMenuButton(
                     onSorted: () =>
                         regenSongItems(songState.modes, songState.sortType)),
               ],
-              iconTheme: const IconThemeData(color: Colors.blueGrey),
+              iconTheme: IconThemeData(
+                  color: _gridMode ? kArcadeAccent : Colors.blueGrey),
             ),
             body: FutureBuilder<List<SongItem>>(
               future: _songItemsPromise,
@@ -341,66 +242,82 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 }
 
                 final List<SongItem> songItems = snapshot.data!;
+                // Search, filters, favourites and the count read the same in
+                // both views, so they are built once and handed to whichever
+                // body is showing.
+                final List<Widget> headerSlivers = <Widget>[
+                  songSearchBar(),
+                  SliverToBoxAdapter(
+                    child: filterPanel(songState),
+                  ),
+                  SliverToBoxAdapter(
+                    child: ListTile(
+                      title: RichText(
+                        text: TextSpan(
+                          text: 'Favourites: ',
+                          style: TextStyle(
+                              color:
+                                  Theme.of(context).textTheme.bodyLarge!.color,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 22),
+                          children: <TextSpan>[
+                            TextSpan(
+                                text:
+                                    '$favCount song${favCount == 1 ? '' : 's'}',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 19,
+                                    color: Colors.grey.shade500)),
+                          ],
+                        ),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () async {
+                        await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) =>
+                                    const FavoriteListPage()));
+                        regenSongItems(songState.modes, songState.sortType);
+                      },
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: ListTile(
+                      title: Text(
+                        '${songItems.length} song${songItems.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyLarge!.color,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (songItems.isEmpty)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('No songs match the selected filters.'),
+                      ),
+                    ),
+                ];
+
+                if (_gridMode) {
+                  return ArcadeGridView(
+                    songItems: songItems,
+                    sortType: songState.sortType,
+                    mode: songState.modes,
+                    leadingSlivers: headerSlivers,
+                    regenFavsCallback: () =>
+                        regenSongItems(songState.modes, songState.sortType),
+                  );
+                }
+
                 return CustomScrollView(
                   slivers: <Widget>[
-                    songSearchBar(),
-                    SliverToBoxAdapter(
-                      child: filterPanel(songState),
-                    ),
-                    SliverToBoxAdapter(
-                      child: ListTile(
-                        title: RichText(
-                          text: TextSpan(
-                            text: 'Favourites: ',
-                            style: TextStyle(
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge!
-                                    .color,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 22),
-                            children: <TextSpan>[
-                              TextSpan(
-                                  text:
-                                      '$favCount song${favCount == 1 ? '' : 's'}',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 19,
-                                      color: Colors.grey.shade500)),
-                            ],
-                          ),
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () async {
-                          await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) =>
-                                      const FavoriteListPage()));
-                          regenSongItems(songState.modes, songState.sortType);
-                        },
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: ListTile(
-                        title: Text(
-                          '${songItems.length} song${songItems.length == 1 ? '' : 's'}',
-                          style: TextStyle(
-                            color: Theme.of(context).textTheme.bodyLarge!.color,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (songItems.isEmpty)
-                      const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Text('No songs match the selected filters.'),
-                        ),
-                      )
-                    else
+                    ...headerSlivers,
+                    if (songItems.isNotEmpty)
                       SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
@@ -425,6 +342,18 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         );
       }),
     );
+
+    // The grid runs on the cabinet's near-black palette; theming the whole
+    // page restyles the shared search bar and filter chips with it, rather
+    // than each control having to know which view it sits in.
+    return _gridMode ? Theme(data: arcadeTheme(), child: page) : page;
+  }
+
+  void _toggleViewMode() {
+    setState(() {
+      _gridMode = !_gridMode;
+    });
+    Settings.setInt(Settings.songlistViewModeKey, _gridMode ? 1 : 0);
   }
 
   Widget filterPanel(SongState songState) {
@@ -508,7 +437,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           spacing: 8,
           runSpacing: 8,
           children: <Widget>[
-            for (final bucket in _versionBuckets)
+            for (final bucket in kVersionBuckets)
               badge(
                 label: bucket,
                 selected: _selectedVersionBuckets.contains(bucket),
@@ -546,7 +475,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               regenSongItems(songState.modes, songState.sortType);
             },
           ),
-          for (final bucket in _nameBuckets)
+          for (final bucket in kNameBuckets)
             badge(
               label: bucket,
               selected: _selectedNameBucket == bucket,

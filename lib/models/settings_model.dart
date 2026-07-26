@@ -74,6 +74,10 @@ class Settings {
   // order".
   static const String songSectionOrderKey = "songSectionOrder";
 
+  // How the songlist renders: 0 = the plain list, 1 = the arcade jacket grid.
+  // Defaults to the list, since getInt falls back to 0 when unset.
+  static const String songlistViewModeKey = "songlistViewMode";
+
   static const String rivalCodeSpeedKey = "rivalCode";
   static const String detectionSideKey = "detectionSide";
   static const String usernameKey = "username";
