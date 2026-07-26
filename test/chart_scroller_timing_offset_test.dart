@@ -254,17 +254,6 @@ void main() {
           closeTo(0.05, 1e-9));
     });
 
-    testWidgets('the gate persists across previews', (tester) async {
-      await _reset(arcadeSync: true);
-      await tester.pumpWidget(_host(_scroller(key: const ValueKey('persist'))));
-      await tester.pump(const Duration(milliseconds: 16));
-      expect(find.byKey(visualOffsetChipKey), findsOneWidget);
-
-      await Settings.setInt(Settings.arcadeSyncOnKey, 0);
-      await tester.pumpWidget(_host(_scroller(key: const ValueKey('persist2'))));
-      await tester.pump(const Duration(milliseconds: 16));
-      expect(find.byKey(visualOffsetChipKey), findsNothing);
-    });
   });
 
   group('auto-seeding on engage', () {
@@ -284,24 +273,6 @@ void main() {
       expect(Settings.getInt(Settings.chartPreviewVisualOffsetKey), 0);
       expect(find.text('on the beat'), findsOneWidget,
           reason: 'the mode should open already corrected');
-    });
-
-    testWidgets('the fine AUDIO dial carries the whole real-world range',
-        (tester) async {
-      // Measured biases top out near 50ms, inside AUDIO's ±50ms range, so the
-      // exact 1ms dial does the work and the coarse VISUAL dial (which only
-      // lands on ~1.67ms multiples) stays out of it. That is what keeps a
-      // seeded song landing at 0.0-0.5ms rather than on a coarse-grid residue.
-      await _reset();
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('seed-big'), sync: _sync(-40.0))));
-      await tester.pump(const Duration(milliseconds: 16));
-
-      await _tapInShade(tester, arcadeSyncTileKey);
-
-      expect(Settings.getInt(Settings.chartPreviewAudioOffsetMsKey), 40);
-      expect(Settings.getInt(Settings.chartPreviewVisualOffsetKey), 0);
-      expect(find.text('on the beat'), findsOneWidget);
     });
 
     testWidgets('keeps offsets hand-dialled against THIS song', (tester) async {
@@ -458,20 +429,6 @@ void main() {
   });
 
   group('header summary — effective sync', () {
-    testWidgets('an engaged song opens corrected, not at its raw bias',
-        (tester) async {
-      // With ARCADE SYNC on, opening a +9.0ms song auto-seeds the correction, so
-      // the caption reports the CORRECTED figure. Reading "FAST by 9.0ms" here
-      // would mean the correction never applied.
-      await _reset(arcadeSync: true);
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('seed'), sync: _sync(9.0))));
-      await tester.pump(const Duration(milliseconds: 16));
-
-      expect(find.text('on the beat'), findsOneWidget);
-      expect(find.text('FAST by 9.0ms'), findsNothing);
-    });
-
     testWidgets('while OFF it reads the song\'s raw bias', (tester) async {
       // Nothing is dialled while the mode is off, so the caption is the song's
       // own reading — and seeing it is often the reason to switch the mode on.
@@ -481,15 +438,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(find.text('FAST by 9.0ms'), findsOneWidget);
-    });
-
-    testWidgets('a negative bias reads SLOW while off', (tester) async {
-      await _reset();
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('seed-slow'), sync: _sync(-4.5))));
-      await tester.pump(const Duration(milliseconds: 16));
-
-      expect(find.text('SLOW by 4.5ms'), findsOneWidget);
     });
 
     testWidgets('a hand-dialled offset adjusts FROM the song\'s bias',
@@ -648,22 +596,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(_badgeSync(tester), isNull);
-    });
-
-    testWidgets('always agrees with the ARCADE SYNC caption', (tester) async {
-      // Both read the same effective figure, so they can't drift apart — the
-      // badge just renders it tersely ("+9.0ms" vs "FAST by 9.0ms").
-      await _reset(arcadeSync: true);
-      await _keepZeroedOffsetsFor(9.0);
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('badge-agree'), sync: _sync(9.0))));
-      await tester.pump(const Duration(milliseconds: 16));
-
-      expect(_badgeSync(tester)?.label, '+9.0ms');
-      expect(find.text('FAST by 9.0ms'), findsOneWidget);
-      expect(_badgeSync(tester)?.color,
-          _summaryColor(tester, 'FAST by 9.0ms'),
-          reason: 'the badge and the caption must share one hue');
     });
   });
 

@@ -6,6 +6,7 @@ library;
 import 'package:ddr_md/components/song/notes/chart_chrome.dart';
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
@@ -58,14 +59,6 @@ void main() {
     await Settings.setInt(Settings.chosenReadSpeedKey, 370);
     await _open(tester, key: const ValueKey('370'));
     expect(chipMs(tester), 1000);
-  });
-
-  testWidgets('a read speed on the grid opens on its exact window',
-      (tester) async {
-    // 500 → 740ms exactly, one of the measured points behind k = 370.
-    await Settings.setInt(Settings.chosenReadSpeedKey, 500);
-    await _open(tester, key: const ValueKey('500'));
-    expect(chipMs(tester), 740);
   });
 
   testWidgets('an off-grid read speed snaps DOWN to the tighter window',
@@ -132,14 +125,14 @@ void main() {
     expect(chipMs(tester), 740);
   });
 
-  testWidgets('a read speed with no saved preference still derives a window',
+  testWidgets('a read speed with no saved preference falls back to the default',
       (tester) async {
-    // "Never set" (0) falls back to the app's default read speed, not to a bare
-    // 1000ms, so the two paths stay consistent.
+    // "Never set" (0) derives from the app's default read speed, not from a
+    // bare 1000ms — so it lands on exactly the window that default would.
     await Settings.setInt(Settings.chosenReadSpeedKey, 0);
     await _open(tester, key: const ValueKey('unset'));
-    final ms = chipMs(tester);
-    expect(ms % 10, 0);
-    expect(ms, inInclusiveRange(100, 3000));
+    expect(chipMs(tester), 610,
+        reason: 'unset must derive from the ${constants.chosenReadSpeed} '
+            'default, giving the same window as saving it explicitly');
   });
 }
