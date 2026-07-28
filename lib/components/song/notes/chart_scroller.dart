@@ -26,11 +26,13 @@ export 'chart_chrome.dart'
         audioOffsetChipKey;
 import 'chart_painter.dart';
 import 'chart_timing.dart';
+import 'dancing_feet.dart';
 import 'density_scrub_bar.dart';
 import 'tick_clock.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
@@ -85,11 +87,13 @@ class ChartScroller extends StatefulWidget {
     this.stops = const [],
     this.sync,
     this.showFootGuide = false,
+    this.showDancingFeet = false,
     this.showMeasureLines = false,
     this.assistTickOn = false,
     this.arcadeQuantOn = false,
     this.onToggleMeasureLines,
     this.onToggleFootGuide,
+    this.onToggleDancingFeet,
     this.onToggleAssistTick,
     this.onToggleArcadeQuant,
     this.headerBuilder,
@@ -127,6 +131,10 @@ class ChartScroller extends StatefulWidget {
   /// Overlay an L/R parity guide on each arrow (best-effort, computed on load).
   final bool showFootGuide;
 
+  /// Show the dancing-feet pad: a mini stage under the field with both feet
+  /// standing where the same parity solve puts them at the playhead.
+  final bool showDancingFeet;
+
   /// Rule the field into numbered 4-beat measures.
   final bool showMeasureLines;
 
@@ -142,6 +150,7 @@ class ChartScroller extends StatefulWidget {
   /// settings shade's own segment so they live alongside the chart-viewing
   /// modifiers rather than crowding the floating header. Null hides the tiles.
   final VoidCallback? onToggleFootGuide;
+  final VoidCallback? onToggleDancingFeet;
   final VoidCallback? onToggleAssistTick;
   final VoidCallback? onToggleMeasureLines;
   final VoidCallback? onToggleArcadeQuant;
@@ -424,9 +433,18 @@ class _ChartScrollerState extends State<ChartScroller>
   // chart carries no BPM data, in which case the field scrolls by constant time.
   ChartTiming _timing = ChartTiming.empty;
 
+  // Vertical band at the bottom the dancing-feet pad may not be parked in:
+  // tempo badge + transport + scrubber, all drawn above the pad's layer. Held
+  // at the EXPANDED height even when the transport is hidden, so collapsing the
+  // controls doesn't shunt an already-placed pad upward.
+  static const double _reservedBottomForPad = 200;
+
   // Best-effort L/R foot parity for the current chart, computed once on load
   // (client-side, so the heuristic is tunable without regenerating assets).
+  // [_stances] is the same solve read as pad positions for the dancing feet, so
+  // the badges on the arrows and the feet on the pad always agree.
   Map<StepNote, Foot> _feet = const {};
+  List<ParityStance> _stances = const [];
 
   // Chart notes guaranteed ascending by second (charts already ship sorted;
   // a defensive one-time sort covers any that don't), plus the holds alone in
@@ -1204,7 +1222,9 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   void _assignFeet() {
-    _feet = FootAssigner.assign(widget.steps.notes, widget.mode);
+    final analysis = FootAssigner.analyse(widget.steps.notes, widget.mode);
+    _feet = analysis.feet;
+    _stances = analysis.stances;
   }
 
   // Distil the chart's BPM segments and stops into render-ready markers on the
@@ -2028,6 +2048,31 @@ class _ChartScrollerState extends State<ChartScroller>
             ),
           ),
 
+          // Dancing feet: the parity solve read as a body on a pad, floating
+          // wherever the user has dragged it. Above the field (so it can be
+          // picked up) but below the header, shade and edge tabs, so moving it
+          // over a control never buries that control.
+          if (widget.showDancingFeet && _stances.isNotEmpty)
+            Positioned.fill(
+              // The pad places itself within these bounds; the rest of the
+              // layer must stay transparent to taps so the field still takes
+              // play/pause, scrubs and pinches everywhere the pad isn't.
+              child: DancingFeet(
+                stances: _stances,
+                playhead: _playhead,
+                columnCount: dirs.length,
+                colMap: _colMap,
+                visualOffset: _visualOffsetSeconds,
+                // Keep the pad out from under the chrome drawn above it, which
+                // would otherwise strand it somewhere it can't be grabbed. Fixed
+                // bands rather than the live heights: the transport collapses,
+                // and a bound that moved with it would shove a parked pad around
+                // every time the controls were hidden.
+                reservedTop: MediaQuery.of(context).padding.top + 64,
+                reservedBottom: _reservedBottomForPad,
+              ),
+            ),
+
           // Floating header (song title / difficulty): shown whenever paused,
           // slides up out of view once playback starts so the running chart owns
           // the top of the screen. Not tied to the transport handle — the title
@@ -2346,62 +2391,91 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
-      // Viewing aids, split off into their own segment: the assist tick (audible
-      // row tick), the L/R foot guide overlay, the measure rules and the arcade
-      // quant palette. These moved out of the floating header so it carries only
-      // title/back — the toggles read the same as the TURN tiles, so the four
-      // slot in as one more row of the options card.
+      // Viewing aids, split off into their own segment and laid out as two rows
+      // of paired tiles: the parity readings (the on-arrow L/R guide and the
+      // dancing-feet pad, both drawn from the same solve) above, the rest — the
+      // assist tick, the measure rules and the arcade quant palette — below.
+      // These moved out of the floating header so it carries only title/back;
+      // the toggles read the same as the TURN tiles, so they slot in as more
+      // rows of the options card.
       if (widget.onToggleAssistTick != null ||
           widget.onToggleFootGuide != null ||
+          widget.onToggleDancingFeet != null ||
           widget.onToggleMeasureLines != null ||
           widget.onToggleArcadeQuant != null)
         ShadeSection(
-          content: Row(
+          content: Column(
             spacing: 8,
             children: [
-              if (widget.onToggleAssistTick != null)
-                Expanded(
-                  child: TurnTile(
-                    label: "ASSIST TICK",
-                    icon: widget.assistTickOn
-                        ? Icons.volume_up
-                        : Icons.volume_off_outlined,
-                    selected: widget.assistTickOn,
-                    onTap: widget.onToggleAssistTick!,
-                  ),
+              if (widget.onToggleFootGuide != null ||
+                  widget.onToggleDancingFeet != null)
+                Row(
+                  spacing: 8,
+                  children: [
+                    if (widget.onToggleFootGuide != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "FOOT GUIDE",
+                          icon: widget.showFootGuide
+                              ? Icons.directions_walk
+                              : Icons.directions_walk_outlined,
+                          selected: widget.showFootGuide,
+                          onTap: widget.onToggleFootGuide!,
+                        ),
+                      ),
+                    if (widget.onToggleDancingFeet != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "DANCING FEET",
+                          icon: widget.showDancingFeet
+                              ? Icons.do_not_step
+                              : Icons.do_not_step_outlined,
+                          selected: widget.showDancingFeet,
+                          onTap: widget.onToggleDancingFeet!,
+                        ),
+                      ),
+                  ],
                 ),
-              if (widget.onToggleFootGuide != null)
-                Expanded(
-                  child: TurnTile(
-                    label: "FOOT GUIDE",
-                    icon: widget.showFootGuide
-                        ? Icons.directions_walk
-                        : Icons.directions_walk_outlined,
-                    selected: widget.showFootGuide,
-                    onTap: widget.onToggleFootGuide!,
-                  ),
-                ),
-              if (widget.onToggleMeasureLines != null)
-                Expanded(
-                  child: TurnTile(
-                    label: "MEASURES",
-                    icon: widget.showMeasureLines
-                        ? Icons.straighten
-                        : Icons.straighten_outlined,
-                    selected: widget.showMeasureLines,
-                    onTap: widget.onToggleMeasureLines!,
-                  ),
-                ),
-              if (widget.onToggleArcadeQuant != null)
-                Expanded(
-                  child: TurnTile(
-                    label: "ARCADE NOTES",
-                    icon: widget.arcadeQuantOn
-                        ? Icons.music_note
-                        : Icons.music_note_outlined,
-                    selected: widget.arcadeQuantOn,
-                    onTap: widget.onToggleArcadeQuant!,
-                  ),
+              if (widget.onToggleAssistTick != null ||
+                  widget.onToggleMeasureLines != null ||
+                  widget.onToggleArcadeQuant != null)
+                Row(
+                  spacing: 8,
+                  children: [
+                    if (widget.onToggleAssistTick != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "ASSIST TICK",
+                          icon: widget.assistTickOn
+                              ? Icons.volume_up
+                              : Icons.volume_off_outlined,
+                          selected: widget.assistTickOn,
+                          onTap: widget.onToggleAssistTick!,
+                        ),
+                      ),
+                    if (widget.onToggleMeasureLines != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "MEASURES",
+                          icon: widget.showMeasureLines
+                              ? Icons.straighten
+                              : Icons.straighten_outlined,
+                          selected: widget.showMeasureLines,
+                          onTap: widget.onToggleMeasureLines!,
+                        ),
+                      ),
+                    if (widget.onToggleArcadeQuant != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "ARCADE NOTES",
+                          icon: widget.arcadeQuantOn
+                              ? Icons.music_note
+                              : Icons.music_note_outlined,
+                          selected: widget.arcadeQuantOn,
+                          onTap: widget.onToggleArcadeQuant!,
+                        ),
+                      ),
+                  ],
                 ),
             ],
           ),

@@ -87,6 +87,15 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     Settings.setInt(Settings.measureLinesOnKey, _measureLines ? 1 : 0);
   }
 
+  // The dancing-feet pad, likewise persisted: it's a way of reading charts you
+  // either want on or don't, not a per-song choice.
+  bool _dancingFeet = Settings.getInt(Settings.dancingFeetOnKey) == 1;
+
+  void _toggleDancingFeet() {
+    setState(() => _dancingFeet = !_dancingFeet);
+    Settings.setInt(Settings.dancingFeetOnKey, _dancingFeet ? 1 : 0);
+  }
+
   // Arcade-style quantisation colouring. QuantColors reads a global rather than
   // taking the flag per call, so seed it from the stored setting on the way in.
   bool _arcadeQuant = Settings.getInt(Settings.arcadeQuantOnKey) == 1;
@@ -161,12 +170,14 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               stops: widget.stops,
               sync: widget.sync,
               showFootGuide: _showFootGuide,
+              showDancingFeet: _dancingFeet,
               showMeasureLines: _measureLines,
               assistTickOn: _assistTick,
               arcadeQuantOn: _arcadeQuant,
               onToggleMeasureLines: _toggleMeasureLines,
               onToggleFootGuide: () =>
                   setState(() => _showFootGuide = !_showFootGuide),
+              onToggleDancingFeet: _toggleDancingFeet,
               onToggleAssistTick: _toggleAssistTick,
               onToggleArcadeQuant: _toggleArcadeQuant,
               headerBuilder: (context) => _buildHeader(context, diffColor),
