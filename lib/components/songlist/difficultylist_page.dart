@@ -160,6 +160,30 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     });
   }
 
+  /// The chart [song]'s row stands for under an active level filter: its
+  /// hardest chart among the filtered levels, since that is the one the filter
+  /// was reaching for. A song charting both 18 and 19 reads as its 19 rather
+  /// than appearing twice.
+  SongItem _filteredChartItem(SongInfo song, Modes mode, bool isFav) {
+    final Difficulty difficulty =
+        mode == Modes.singles ? song.singles : song.doubles;
+    final charts = difficulty.chartsByIndex
+        .where((c) => c.level >= 1 && c.level <= constants.maxDifficulty)
+        .where((c) => _filter.levels.contains(c.level))
+        .toList();
+    if (charts.isEmpty) {
+      // No chart in this mode; it sorts into the NO CHART folder.
+      return SongItem(songInfo: song, isFav: isFav);
+    }
+    final chart = charts.reduce((a, b) => b.level > a.level ? b : a);
+    return SongItem(
+      songInfo: song,
+      isFav: isFav,
+      difficultyIndex: chart.index,
+      level: chart.level,
+    );
+  }
+
   Future<List<SongItem>> generateSongItems(
       Modes mode, SortType sortType, bool descending) async {
     List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
@@ -167,11 +191,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       favCount = favList.length;
     });
 
-    // Only a single selected level unambiguously implies a difficulty type
-    // to default to when opening a song.
-    final int? filteredLevel =
-        _filter.levels.length == 1 ? _filter.levels.first : null;
-
+    // One row per song, always — the songlist stays a list of songs. A level
+    // filter only decides which of a song's charts its row stands for, so the
+    // row can fold under that level and open there.
     List<SongItem> songItems = [];
     for (SongInfo song in Songs.list) {
       // Resolved before the filter runs — the favourites axis needs it.
@@ -181,16 +203,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         continue;
       }
 
-      final songDifficulty = mode == Modes.singles ? song.singles : song.doubles;
-      final defaultDifficultyIndex = filteredLevel == null
-          ? null
-          : songDifficulty.chosenDifficultyForLevel(filteredLevel);
-
-      songItems.add(SongItem(
-        songInfo: song,
-        isFav: isFav,
-        defaultDifficultyIndex: defaultDifficultyIndex,
-      ));
+      songItems.add(_filter.levels.isEmpty
+          ? SongItem(songInfo: song, isFav: isFav)
+          : _filteredChartItem(song, mode, isFav));
     }
 
     final int sign = descending ? -1 : 1;
@@ -199,8 +214,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       // mode to know which chart set to read.
       songItems.sort((a, b) {
         final byLevel = sign *
-            primaryLevelFor(a.songInfo, mode)
-                .compareTo(primaryLevelFor(b.songInfo, mode));
+            levelForItem(a, mode).compareTo(levelForItem(b, mode));
         return byLevel != 0
             ? byLevel
             : compareSongInfo(a.songInfo, b.songInfo, SortType.title);
@@ -329,8 +343,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                               songInfo: songItem.songInfo,
                               isFav: songItem.isFav,
                               isSearch: false,
-                              defaultDifficultyIndex:
-                                  songItem.defaultDifficultyIndex,
+                              difficultyIndex: songItem.difficultyIndex,
                               regenFavsCallback: regenFavCount,
                             );
                           },

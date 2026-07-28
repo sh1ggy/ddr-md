@@ -71,13 +71,12 @@ class _ArcadeGridViewState extends State<ArcadeGridView> {
     }
   }
 
-  // Opens the song, matching what a row in the plain list view does: the level
-  // filter's implied difficulty comes along so the song page opens on the chart
-  // that was filtered for.
+  // Opens the song, matching what a row in the plain list view does: a
+  // chart-scoped tile opens the song page on the chart the tile stands for.
   Future<void> _open(SongItem item) async {
     final songState = context.read<SongState>();
     songState.setSongInfo(item.songInfo);
-    songState.setChosenDifficulty(item.defaultDifficultyIndex ?? 0);
+    songState.setChosenDifficulty(item.difficultyIndex ?? 0);
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const SongPage()),

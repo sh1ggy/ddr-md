@@ -13,6 +13,8 @@ SongItem item({
   int? bpm,
   List<int?> singles = const <int?>[null, 5, 8, 12, null],
   List<int?> doubles = const <int?>[null, 6, 9, 13, null],
+  int? difficultyIndex,
+  int? level,
 }) {
   Difficulty diff(List<int?> levels) => Difficulty(
         beginner: levels[0],
@@ -53,6 +55,8 @@ SongItem item({
             ],
     ),
     isFav: false,
+    difficultyIndex: difficultyIndex,
+    level: level,
   );
 }
 
@@ -116,6 +120,26 @@ void main() {
           <String>['LEVEL 2', 'LEVEL 15']);
       // Songs within a folder order by title.
       expect(titlesOf(sections.first), <String>['AlsoEasy', 'Easy']);
+    });
+
+    test('a filter-scoped row folders under its chart, not the song lowest',
+        () {
+      // Filtering to 19 makes the row stand for the 19 chart, so a song whose
+      // beginner is a 4 must not be dragged into LEVEL 4.
+      final sections = groupSongItems(
+        <SongItem>[
+          item(
+            title: 'Steps For Victory',
+            singles: const <int?>[4, 8, 12, 16, 19],
+            difficultyIndex: 4,
+            level: 19,
+          ),
+        ],
+        SortType.level,
+        Modes.singles,
+      );
+
+      expect(sections.map((s) => s.label).toList(), <String>['LEVEL 19']);
     });
 
     test('songs with no charts in the mode land in a trailing folder', () {

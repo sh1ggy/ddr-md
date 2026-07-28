@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-SongItem item(String title, {int? defaultDifficultyIndex}) {
+SongItem item(String title, {int? difficultyIndex}) {
   // Singles and doubles carry different levels so tests can tell which set a
   // widget is reading.
   Difficulty diff() => Difficulty(easy: 5, medium: 8, hard: 12);
@@ -50,7 +50,7 @@ SongItem item(String title, {int? defaultDifficultyIndex}) {
       ],
     ),
     isFav: false,
-    defaultDifficultyIndex: defaultDifficultyIndex,
+    difficultyIndex: difficultyIndex,
   );
 }
 
@@ -123,7 +123,7 @@ void main() {
       tester,
       <SongItem>[
         item('Afronova'),
-        item('Butterfly', defaultDifficultyIndex: 2),
+        item('Butterfly', difficultyIndex: 2),
       ],
       state: state,
     );

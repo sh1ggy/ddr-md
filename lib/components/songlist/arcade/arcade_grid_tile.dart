@@ -96,7 +96,8 @@ class ArcadeGridTile extends StatelessWidget {
   // The song's charted levels for the current mode, in the canonical
   // beginner..challenge order and colour-coded off the same palette the list
   // view and the song page use. Missing charts are skipped rather than padded,
-  // so a song with three charts shows three numbers.
+  // so a song with three charts shows three numbers. When the tile stands for
+  // one chart, that number leads at full weight and the rest recede.
   Widget _difficultyRow() {
     final Difficulty difficulty =
         mode == Modes.singles ? item.songInfo.singles : item.songInfo.doubles;
@@ -108,26 +109,16 @@ class ArcadeGridTile extends StatelessWidget {
       'challenge': difficulty.challenge,
     };
 
+    // Charted entries only, so the position matches availableTypes' index.
+    final List<MapEntry<String, int?>> charted =
+        levels.entries.where((e) => e.value != null).toList();
+
     final List<Widget> numbers = <Widget>[
-      for (final entry in levels.entries)
-        if (entry.value != null)
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Text(
-              '${entry.value}',
-              style: TextStyle(
-                color: difficultyColor(entry.key),
-                fontSize: 11,
-                height: 1.2,
-                fontWeight: FontWeight.w700,
-                // The numbers sit on artwork, so they carry their own shadow
-                // rather than relying on the scrim alone.
-                shadows: const <Shadow>[
-                  Shadow(color: Colors.black, blurRadius: 2),
-                ],
-              ),
-            ),
-          ),
+      for (int i = 0; i < charted.length; i++)
+        _levelText(
+          charted[i],
+          dimmed: item.isChartScoped && i != item.difficultyIndex,
+        ),
     ];
     if (numbers.isEmpty) return const SizedBox.shrink();
 
@@ -135,6 +126,25 @@ class ArcadeGridTile extends StatelessWidget {
     // a row and push the strip up over the artwork.
     return ClipRect(
       child: Row(mainAxisSize: MainAxisSize.min, children: numbers),
+    );
+  }
+
+  Widget _levelText(MapEntry<String, int?> chart, {required bool dimmed}) {
+    final Color color = difficultyColor(chart.key);
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Text(
+        '${chart.value}',
+        style: TextStyle(
+          color: dimmed ? color.withValues(alpha: 0.45) : color,
+          fontSize: dimmed ? 10 : 11,
+          height: 1.2,
+          fontWeight: dimmed ? FontWeight.w400 : FontWeight.w700,
+          // The numbers sit on artwork, so they carry their own shadow rather
+          // than relying on the scrim alone.
+          shadows: const <Shadow>[Shadow(color: Colors.black, blurRadius: 2)],
+        ),
+      ),
     );
   }
 

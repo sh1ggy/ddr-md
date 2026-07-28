@@ -59,6 +59,11 @@ int primaryLevelFor(SongInfo song, Modes mode) {
   return levels.first;
 }
 
+/// The level a row folders and sorts under. A chart-scoped row uses the chart
+/// it stands for; only a song-scoped row falls back to the song's lowest.
+int levelForItem(SongItem item, Modes mode) =>
+    item.level ?? primaryLevelFor(item.songInfo, mode);
+
 String versionBucketFor(String version) {
   const white = <String>{'2013', '2014', 'A'};
   const gold = <String>{'A20', 'A20 PLUS', 'A3', 'WORLD'};
@@ -181,7 +186,7 @@ List<ArcadeSection> _groupAscending(
       final Map<int, List<SongItem>> byLevel = <int, List<SongItem>>{};
       for (final item in items) {
         byLevel
-            .putIfAbsent(primaryLevelFor(item.songInfo, mode), () => <SongItem>[])
+            .putIfAbsent(levelForItem(item, mode), () => <SongItem>[])
             .add(item);
       }
       final levels = byLevel.keys.toList()..sort();

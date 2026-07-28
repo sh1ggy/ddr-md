@@ -12,12 +12,16 @@ class SongItem {
   SongItem({
     required this.songInfo,
     required this.isFav,
-    this.defaultDifficultyIndex,
+    this.difficultyIndex,
+    this.level,
   });
 
   SongInfo songInfo;
   bool isFav;
-  // chosenDifficulty index to open the song at, when a single level filter
-  // is active and matches one of this song's difficulty types.
-  int? defaultDifficultyIndex;
+  // The chart this row stands for, null when the row is the whole song. Only
+  // an active level filter scopes a row to one chart (see generateSongItems).
+  int? difficultyIndex;
+  int? level;
+
+  bool get isChartScoped => difficultyIndex != null;
 }

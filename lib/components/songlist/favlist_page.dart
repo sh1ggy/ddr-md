@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
@@ -88,7 +89,19 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                           child: const Center(child: Text('No favourites...')));
                     }
                     List<SongInfo> favSongs = List.of(snapshot.data!);
-                    if (songState.sortType != SortType.level) {
+                    if (songState.sortType == SortType.level) {
+                      // No level filter here, so a song sorts under its lowest
+                      // charted level in the mode.
+                      final int sign = songState.sortDescending ? -1 : 1;
+                      favSongs.sort((a, b) {
+                        final int byLevel = sign *
+                            primaryLevelFor(a, songState.modes)
+                                .compareTo(primaryLevelFor(b, songState.modes));
+                        return byLevel != 0
+                            ? byLevel
+                            : compareSongInfo(a, b, SortType.title);
+                      });
+                    } else {
                       favSongs.sort((a, b) => compareSongInfo(
                           a, b, songState.sortType,
                           descending: songState.sortDescending));
