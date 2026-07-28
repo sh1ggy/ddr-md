@@ -97,4 +97,25 @@ void main() {
     final p = assignParity(notes, Modes.doubles);
     expect(p.length, equals(notes.length));
   });
+
+  test('stances stand the idle foot still and agree with the badges', () {
+    final notes = stream([(0, L), (1, R), (2, L), (3, R)]);
+    final result = analyseParity(notes, Modes.singles);
+    expect(result.stances.length, equals(notes.length));
+
+    for (int i = 0; i < notes.length; i++) {
+      final stance = result.stances[i];
+      final foot = result.feet[notes[i]]!;
+      // The foot the badge names is standing on the column it just hit...
+      expect(stance.columnsFor(foot), contains(notes[i].col),
+          reason: 'stance $i has ${foot.name} off its own arrow');
+      // ...and the other foot has not moved off where the last row left it.
+      if (i > 0) {
+        final idle = foot == ParityFoot.left ? ParityFoot.right : ParityFoot.left;
+        expect(stance.columnsFor(idle),
+            equals(result.stances[i - 1].columnsFor(idle)),
+            reason: 'stance $i moved the idle ${idle.name} foot');
+      }
+    }
+  });
 }

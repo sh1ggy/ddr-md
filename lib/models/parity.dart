@@ -33,6 +33,55 @@ import 'package:ddr_md/models/steps_model.dart';
 /// Public foot result: left or right. (Heel/toe is an internal detail.)
 enum ParityFoot { left, right }
 
+/// Where both feet stand from [second] until the next entry — the solved
+/// placement of a row, kept as *columns* rather than folded to L/R badges.
+///
+/// The per-note [assignParity] result answers "which foot hits this arrow";
+/// this answers "where is the player standing right now", which is what a pad
+/// display needs: a foot that isn't stepping still occupies the panel it was
+/// left on, and a bracket occupies two panels at once. Columns are -1 when that
+/// part of the foot is off the pad (i.e. before the chart's first step).
+class ParityStance {
+  final double second;
+  final int leftHeel;
+  final int leftToe;
+  final int rightHeel;
+  final int rightToe;
+
+  /// Columns stepped ON this row (as opposed to merely still standing there),
+  /// so a display can flash the panels actually being hit.
+  final Set<int> stepped;
+
+  const ParityStance({
+    required this.second,
+    required this.leftHeel,
+    required this.leftToe,
+    required this.rightHeel,
+    required this.rightToe,
+    required this.stepped,
+  });
+
+  /// The columns a foot covers: its heel, plus its toe when bracketing.
+  List<int> columnsFor(ParityFoot foot) {
+    final heel = foot == ParityFoot.left ? leftHeel : rightHeel;
+    final toe = foot == ParityFoot.left ? leftToe : rightToe;
+    return [
+      if (heel != -1) heel,
+      if (toe != -1 && toe != heel) toe,
+    ];
+  }
+}
+
+/// One solve, read two ways: [feet] for the per-arrow L/R badges, [stances] for
+/// the pad display. Both come from the same minimum-cost path, so the badges and
+/// the feet on the pad can never disagree.
+class ParityResult {
+  final Map<StepNote, ParityFoot> feet;
+  final List<ParityStance> stances;
+
+  const ParityResult({required this.feet, required this.stances});
+}
+
 // ---------------------------------------------------------------------------
 // Foot parts (internal). Index values matter: they index [_footColumns].
 // ---------------------------------------------------------------------------
@@ -838,31 +887,46 @@ class _ParityEngine {
     return chosen.map((s) => s!).toList();
   }
 
-  /// Full pipeline: notes -> per-note L/R foot assignment.
-  Map<StepNote, ParityFoot> assign(List<StepNote> notes) {
-    final result = <StepNote, ParityFoot>{};
+  /// Full pipeline: notes -> the solved path, read both ways.
+  ParityResult analyse(List<StepNote> notes) {
     final rows = _buildRows(notes);
-    if (rows.isEmpty) return result;
+    if (rows.isEmpty) return const ParityResult(feet: {}, stances: []);
     final states = solve(rows);
+
+    final feet = <StepNote, ParityFoot>{};
+    final stances = <ParityStance>[];
     for (int r = 0; r < rows.length; r++) {
       final row = rows[r];
       final state = states[r];
+      final stepped = <int>{};
       for (int col = 0; col < layout.columnCount; col++) {
+        if (state.action[col] != _Foot.none) stepped.add(col);
         final note = row.notes[col];
         if (note == null) continue;
         final foot = state.combinedColumns[col];
         if (foot == _Foot.none) continue;
-        result[note] = _Foot.toParityFoot(foot);
+        feet[note] = _Foot.toParityFoot(foot);
       }
+      stances.add(ParityStance(
+        second: row.second,
+        leftHeel: state.leftHeel,
+        leftToe: state.leftToe,
+        rightHeel: state.rightHeel,
+        rightToe: state.rightToe,
+        stepped: stepped,
+      ));
     }
-    return result;
+    return ParityResult(feet: feet, stances: stances);
   }
 }
 
-/// Entry point: assign a left/right foot to every non-mine note using the
-/// cost-minimising parity engine.
-Map<StepNote, ParityFoot> assignParity(List<StepNote> notes, Modes mode) {
+/// Entry point: run the cost-minimising parity engine over a note stream.
+ParityResult analyseParity(List<StepNote> notes, Modes mode) {
   final layout =
       mode == Modes.doubles ? _StageLayout.doubles : _StageLayout.singles;
-  return _ParityEngine(layout).assign(notes);
+  return _ParityEngine(layout).analyse(notes);
 }
+
+/// Convenience for callers that only want the per-note L/R badges.
+Map<StepNote, ParityFoot> assignParity(List<StepNote> notes, Modes mode) =>
+    analyseParity(notes, mode).feet;

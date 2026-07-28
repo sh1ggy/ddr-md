@@ -146,11 +146,27 @@ class StepsLoader {
 class FootAssigner {
   /// Assigns a foot to every non-mine note, returning a map keyed by the note
   /// instance. Mines are skipped (never danced with a foot).
-  static Map<StepNote, Foot> assign(List<StepNote> notes, Modes mode) {
-    final parity = assignParity(notes, mode);
-    return parity.map(
-      (note, foot) =>
-          MapEntry(note, foot == ParityFoot.left ? Foot.left : Foot.right),
+  static Map<StepNote, Foot> assign(List<StepNote> notes, Modes mode) =>
+      analyse(notes, mode).feet;
+
+  /// The full solve: per-note feet plus the stance timeline the pad display
+  /// dances. One call, since the DP behind them is the expensive part.
+  static FootAnalysis analyse(List<StepNote> notes, Modes mode) {
+    final parity = analyseParity(notes, mode);
+    return FootAnalysis(
+      feet: parity.feet.map(
+        (note, foot) =>
+            MapEntry(note, foot == ParityFoot.left ? Foot.left : Foot.right),
+      ),
+      stances: parity.stances,
     );
   }
+}
+
+/// [FootAssigner.analyse]'s two readings of one solve.
+class FootAnalysis {
+  final Map<StepNote, Foot> feet;
+  final List<ParityStance> stances;
+
+  const FootAnalysis({required this.feet, required this.stances});
 }
