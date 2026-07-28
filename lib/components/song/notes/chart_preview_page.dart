@@ -7,6 +7,7 @@
 library;
 
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
+import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -78,6 +79,24 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     Settings.setInt(Settings.assistTickOnKey, _assistTick ? 1 : 0);
   }
 
+  // Arcade-style quantisation colouring. QuantColors reads a global rather than
+  // taking the flag per call, so seed it from the stored setting on the way in.
+  bool _arcadeQuant = Settings.getInt(Settings.arcadeQuantOnKey) == 1;
+
+  @override
+  void initState() {
+    super.initState();
+    QuantColors.arcadeMode = _arcadeQuant;
+  }
+
+  void _toggleArcadeQuant() {
+    setState(() {
+      _arcadeQuant = !_arcadeQuant;
+      QuantColors.arcadeMode = _arcadeQuant;
+    });
+    Settings.setInt(Settings.arcadeQuantOnKey, _arcadeQuant ? 1 : 0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final diffColor = difficultyColor(widget.difficultyKey);
@@ -135,9 +154,11 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               sync: widget.sync,
               showFootGuide: _showFootGuide,
               assistTickOn: _assistTick,
+              arcadeQuantOn: _arcadeQuant,
               onToggleFootGuide: () =>
                   setState(() => _showFootGuide = !_showFootGuide),
               onToggleAssistTick: _toggleAssistTick,
+              onToggleArcadeQuant: _toggleArcadeQuant,
               headerBuilder: (context) => _buildHeader(context, diffColor),
             );
           },

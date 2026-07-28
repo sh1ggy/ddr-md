@@ -43,6 +43,10 @@ double rotationForDir(NoteDir dir) {
 /// DDR/ITG quantisation colouring: an arrow is coloured by the fraction of a
 /// beat it lands on. 4ths red, 8ths blue, 12ths purple, 16ths yellow, 24ths
 /// pink, 32nds orange, everything finer green — the standard reading palette.
+///
+/// The cabinet palette is coarser: DDR colours 4ths, 8ths and 16ths only, and
+/// paints every other quantisation — 12ths, 24ths, 32nds and finer — green.
+/// [arcadeMode] reproduces that, so the preview reads the way the cabinet does.
 class QuantColors {
   static const Color quarter = Color(0xFFF23838); // 4th  - red
   static const Color eighth = Color(0xFF3B8DF2); // 8th  - blue
@@ -52,16 +56,23 @@ class QuantColors {
   static const Color thirtysecond = Color(0xFFF28A3B); // 32nd - orange
   static const Color other = Color(0xFF43C24A); // finer - green
 
+  /// When true, only the colours the cabinet distinguishes survive; the rest
+  /// collapse to green. Global because both noteskins and the minimap colour
+  /// notes through [forBeat] alone, and it flips for the whole preview at once.
+  static bool arcadeMode = false;
+
   static Color forBeat(double beat) {
     final frac = beat - beat.floorToDouble();
     bool near(double v) => (frac - v).abs() < 0.012 || (frac - v).abs() > 0.988;
     if (near(0.0)) return quarter;
     if (near(0.5)) return eighth;
-    if (near(1 / 3) || near(2 / 3)) return twelfth;
+    if (!arcadeMode && (near(1 / 3) || near(2 / 3))) return twelfth;
     if (near(0.25) || near(0.75)) return sixteenth;
-    if (near(1 / 6) || near(5 / 6)) return twentyfourth;
-    if (near(0.125) || near(0.375) || near(0.625) || near(0.875)) {
-      return thirtysecond;
+    if (!arcadeMode) {
+      if (near(1 / 6) || near(5 / 6)) return twentyfourth;
+      if (near(0.125) || near(0.375) || near(0.625) || near(0.875)) {
+        return thirtysecond;
+      }
     }
     return other;
   }

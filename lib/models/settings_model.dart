@@ -27,6 +27,11 @@ class Settings {
   // crosses the receptor line during playback. Stored as 0/1.
   static const String assistTickOnKey = "chartPreviewAssistTickOn";
 
+  // ARCADE NOTES for the chart preview: colour arrows with the cabinet's coarser
+  // palette (4ths/8ths/16ths only, everything else green) instead of the full
+  // ITG-style one. Stored as 0/1. See [QuantColors.arcadeMode].
+  static const String arcadeQuantOnKey = "chartPreviewArcadeQuantOn";
+
   // ARCADE SYNC for the chart preview: master switch for the cabinet timing
   // simulation below. Off by default; while off both offsets are ignored and
   // their controls stay hidden. Stored as 0/1.
