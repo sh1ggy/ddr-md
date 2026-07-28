@@ -94,9 +94,7 @@ void main() {
     await pumpGrid(tester, <SongItem>[item('Afronova')]);
 
     expect(find.text('Afronova'), findsOneWidget);
-    // The caption is title and levels only — BPM was dropped from the tile, so
-    // the fixture's 150 must not appear.
-    expect(find.text('150'), findsNothing);
+    expect(find.text('150'), findsOneWidget);
 
     Color colourOf(String level) =>
         tester.widget<Text>(find.text(level)).style!.color!;

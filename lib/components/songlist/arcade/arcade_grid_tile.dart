@@ -208,7 +208,6 @@ class ArcadeGridTile extends StatelessWidget {
     return ('${adjustBy >= 0 ? '+' : ''}${adjustBy.toStringAsFixed(0)}', color);
   }
 
-  // BPM leading, sync trailing.
   Widget _statStrip(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(

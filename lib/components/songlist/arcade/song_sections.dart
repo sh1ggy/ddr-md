@@ -110,7 +110,6 @@ String versionBucketFor(String version) {
 
 String nameBucketFor(SongInfo song) {
   final String title = song.title.trim();
-  // Treat this bucket as "contains Japanese" anywhere in title.
   if (title.isNotEmpty && RegExp(r'[぀-ヿ一-鿿ｦ-ﾟ]').hasMatch(title)) {
     return 'a (hiragana)';
   }
