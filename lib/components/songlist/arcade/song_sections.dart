@@ -111,8 +111,7 @@ String versionBucketFor(String version) {
 String nameBucketFor(SongInfo song) {
   final String title = song.title.trim();
   // Treat this bucket as "contains Japanese" anywhere in title.
-  if (title.isNotEmpty &&
-      RegExp(r'[぀-ヿ一-鿿ｦ-ﾟ]').hasMatch(title)) {
+  if (title.isNotEmpty && RegExp(r'[぀-ヿ一-鿿ｦ-ﾟ]').hasMatch(title)) {
     return 'a (hiragana)';
   }
 
@@ -166,7 +165,8 @@ class SongFilter {
         songLevels(song, mode).any((int level) => levels.contains(level));
     final bool versionMatch = versionBuckets.isEmpty ||
         versionBuckets.contains(versionBucketFor(song.version));
-    final bool nameMatch = nameBucket == null || nameBucket == nameBucketFor(song);
+    final bool nameMatch =
+        nameBucket == null || nameBucket == nameBucketFor(song);
     final bool favMatch = !favouritesOnly || isFav;
     return levelMatch && versionMatch && nameMatch && favMatch;
   }
@@ -197,8 +197,7 @@ List<ArcadeSection> groupSongItems(
   bool descending = false,
 }) {
   if (items.isEmpty) return const <ArcadeSection>[];
-  final List<ArcadeSection> sections =
-      _groupAscending(items, sortType, mode);
+  final List<ArcadeSection> sections = _groupAscending(items, sortType, mode);
   if (!descending) return sections;
   // Reversed at both levels so the folders and their contents agree.
   return <ArcadeSection>[
@@ -229,9 +228,8 @@ List<ArcadeSection> _groupAscending(
           ArcadeSection(
             // Past the real levels sits the "no chart in this mode" folder
             // (e.g. a singles-only song while doubles is selected).
-            label: level > constants.maxDifficulty
-                ? 'NO CHART'
-                : 'LEVEL $level',
+            label:
+                level > constants.maxDifficulty ? 'NO CHART' : 'LEVEL $level',
             items: _byTitle(byLevel[level]!),
           ),
       ];
