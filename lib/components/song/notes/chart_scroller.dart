@@ -85,9 +85,13 @@ class ChartScroller extends StatefulWidget {
     this.stops = const [],
     this.sync,
     this.showFootGuide = false,
+    this.showMeasureLines = false,
     this.assistTickOn = false,
+    this.arcadeQuantOn = false,
+    this.onToggleMeasureLines,
     this.onToggleFootGuide,
     this.onToggleAssistTick,
+    this.onToggleArcadeQuant,
     this.headerBuilder,
   });
 
@@ -123,14 +127,24 @@ class ChartScroller extends StatefulWidget {
   /// Overlay an L/R parity guide on each arrow (best-effort, computed on load).
   final bool showFootGuide;
 
+  /// Rule the field into numbered 4-beat measures.
+  final bool showMeasureLines;
+
   /// Play a short tick as each note row crosses the receptors during playback.
   final bool assistTickOn;
 
-  /// Toggle callbacks for the two playback-aid options above. Wired into the
+  /// Colour arrows with the cabinet's coarser quantisation palette. The colours
+  /// themselves come from [QuantColors.arcadeMode], which the owner sets; this
+  /// mirrors it so the tile and the minimap repaint when it flips.
+  final bool arcadeQuantOn;
+
+  /// Toggle callbacks for the playback-aid options above. Wired into the
   /// settings shade's own segment so they live alongside the chart-viewing
   /// modifiers rather than crowding the floating header. Null hides the tiles.
   final VoidCallback? onToggleFootGuide;
   final VoidCallback? onToggleAssistTick;
+  final VoidCallback? onToggleMeasureLines;
+  final VoidCallback? onToggleArcadeQuant;
 
   /// Song length in seconds; bounds the scrub slider and the auto-stop point.
   final double songLength;
@@ -685,6 +699,11 @@ class _ChartScrollerState extends State<ChartScroller>
     // Toggling the assist tick mid-play starts or silences the clock at once.
     if (old.assistTickOn != widget.assistTickOn) {
       _resyncTickClock();
+    }
+    // The minimap bakes each note's quant bucket, so a palette change has to
+    // rebuild it — the field itself re-reads the colours on the next paint.
+    if (old.arcadeQuantOn != widget.arcadeQuantOn) {
+      _buildDensity();
     }
   }
 
@@ -1543,16 +1562,21 @@ class _ChartScrollerState extends State<ChartScroller>
   // The trio as the compact readout label, e.g. "150–301–602". Shows all three
   // whenever the chart has any BPM spread — including when just min==core or
   // core==max, matching the cabinet's num_min/num_core/num_max. Shown under
-  // the dialled REAL SPEED number.
+  // the dialled number for both speed types: the scroll speeds you actually
+  // read at are what the trio reports, and that's as useful under a HI-SPEED
+  // multiplier as under REAL SPEED.
   //
-  // On a true constant-BPM chart all three fold to the dialled read speed
-  // itself (the multiplier is scroll/bpm, so bpm × rate lands back on the
-  // dial), and repeating the big number above says nothing — null hides the
-  // row, as it does for HI-SPEED. When rounding or clamping leaves the fold a
-  // step off the dial that difference is real, so it stays visible.
+  // When the chart is constant-BPM all three fold to one number. Under REAL
+  // SPEED that number is the dial itself (the multiplier is scroll/bpm, so
+  // bpm × rate lands back on the dial) and repeating the big number above says
+  // nothing — null hides the row. Under HI-SPEED the fold is a genuinely new
+  // number (bpm × the multiplier), so it stays. When rounding or clamping
+  // leaves the REAL SPEED fold a step off the dial that difference is real,
+  // so it stays visible too.
   String? get _scrollSpeedLabel {
     final (min, core, max) = _scrollSpeeds;
     if (min == core && core == max) {
+      if (_hispeedType) return "$min";
       return min == _scrollSpeed ? null : "$min";
     }
     return "$min–$core–$max";
@@ -1818,6 +1842,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         shocks: _shocks,
                         bpmMarkers: _bpmMarkers,
                         stopMarkers: _stopMarkers,
+                        showMeasureLines: widget.showMeasureLines,
                         feet: widget.showFootGuide ? _feet : const {},
                         footPrev: widget.showFootGuide ? _footPrev : const {},
                         dirs: dirs,
@@ -1833,6 +1858,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         constantMs: _effectiveConstantMs,
                         topInset: MediaQuery.of(context).padding.top,
                         visualOffset: _visualOffsetSeconds,
+                        arcadeQuant: widget.arcadeQuantOn,
                       ),
                       size: Size.infinite,
                       willChange: true,
@@ -2320,13 +2346,18 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
-      // Playback aids, split off into their own segment: the assist tick (audible
-      // row tick) and the L/R foot guide overlay. These moved out of the floating
-      // header so it carries only title/back — the toggles read the same as the
-      // TURN tiles, so they slot in as one more row of the options card.
-      if (widget.onToggleAssistTick != null || widget.onToggleFootGuide != null)
+      // Viewing aids, split off into their own segment: the assist tick (audible
+      // row tick), the L/R foot guide overlay, the measure rules and the arcade
+      // quant palette. These moved out of the floating header so it carries only
+      // title/back — the toggles read the same as the TURN tiles, so the four
+      // slot in as one more row of the options card.
+      if (widget.onToggleAssistTick != null ||
+          widget.onToggleFootGuide != null ||
+          widget.onToggleMeasureLines != null ||
+          widget.onToggleArcadeQuant != null)
         ShadeSection(
           content: Row(
+            spacing: 8,
             children: [
               if (widget.onToggleAssistTick != null)
                 Expanded(
@@ -2339,9 +2370,6 @@ class _ChartScrollerState extends State<ChartScroller>
                     onTap: widget.onToggleAssistTick!,
                   ),
                 ),
-              if (widget.onToggleAssistTick != null &&
-                  widget.onToggleFootGuide != null)
-                const SizedBox(width: 8),
               if (widget.onToggleFootGuide != null)
                 Expanded(
                   child: TurnTile(
@@ -2351,6 +2379,28 @@ class _ChartScrollerState extends State<ChartScroller>
                         : Icons.directions_walk_outlined,
                     selected: widget.showFootGuide,
                     onTap: widget.onToggleFootGuide!,
+                  ),
+                ),
+              if (widget.onToggleMeasureLines != null)
+                Expanded(
+                  child: TurnTile(
+                    label: "MEASURES",
+                    icon: widget.showMeasureLines
+                        ? Icons.straighten
+                        : Icons.straighten_outlined,
+                    selected: widget.showMeasureLines,
+                    onTap: widget.onToggleMeasureLines!,
+                  ),
+                ),
+              if (widget.onToggleArcadeQuant != null)
+                Expanded(
+                  child: TurnTile(
+                    label: "ARCADE NOTES",
+                    icon: widget.arcadeQuantOn
+                        ? Icons.music_note
+                        : Icons.music_note_outlined,
+                    selected: widget.arcadeQuantOn,
+                    onTap: widget.onToggleArcadeQuant!,
                   ),
                 ),
             ],
@@ -2438,10 +2488,10 @@ class _ChartScrollerState extends State<ChartScroller>
                     label: _hispeedType ? "HI-SPEED" : "REAL SPEED",
                     value: _hispeedType ? fmtXMod(_rate) : "$_scrollSpeed",
                     // The min–core–max scroll-speed trio (cabinet
-                    // num_min/num_core/num_max) belongs to REAL SPEED, where
-                    // the dial is a scroll rate. HI-SPEED shows a bare
-                    // multiplier, so no trio there.
-                    range: _hispeedType ? null : _scrollSpeedLabel,
+                    // num_min/num_core/num_max) under both types — HI-SPEED's
+                    // dial is a bare multiplier, so the trio is the only place
+                    // the resulting read speeds appear.
+                    range: _scrollSpeedLabel,
                     decLabel: _hispeedType ? "−.05" : "−10",
                     incLabel: _hispeedType ? "+.05" : "+10",
                     canDecrement: _hispeedType

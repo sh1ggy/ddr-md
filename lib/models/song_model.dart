@@ -22,8 +22,14 @@ class SongState extends ChangeNotifier {
       : Modes.singles;
   Modes get modes => _mode;
 
-  SortType _sortType = SortType.level;
+  // Stored as index+1 so an unset 0 falls back to the cabinet's release order.
+  SortType _sortType = Settings.getInt(Settings.songlistSortKey) == 0
+      ? SortType.version
+      : SortType.values[Settings.getInt(Settings.songlistSortKey) - 1];
   SortType get sortType => _sortType;
+
+  bool _sortDescending = Settings.getInt(Settings.songlistSortDescKey) == 1;
+  bool get sortDescending => _sortDescending;
 
   int _chosenDifficulty = 0;
   int get chosenDifficulty => _chosenDifficulty;
@@ -44,6 +50,13 @@ class SongState extends ChangeNotifier {
 
   void setSortType(SortType newSortType) {
     _sortType = newSortType;
+    Settings.setInt(Settings.songlistSortKey, newSortType.index + 1);
+    notifyListeners();
+  }
+
+  void setSortDescending(bool descending) {
+    _sortDescending = descending;
+    Settings.setInt(Settings.songlistSortDescKey, descending ? 1 : 0);
     notifyListeners();
   }
 

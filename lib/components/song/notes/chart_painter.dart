@@ -36,10 +36,12 @@ class ChartPainter extends CustomPainter {
     required this.columnCount,
     required this.skin,
     required this.playing,
+    this.showMeasureLines = false,
     this.zoom = 1.0,
     this.constantMs,
     this.topInset = 0,
     this.visualOffset = 0,
+    this.arcadeQuant = false,
   }) : super(repaint: playhead);
 
   /// All notes ascending by second (see [_ChartScrollerState._prepareNotes]) —
@@ -100,6 +102,16 @@ class ChartPainter extends CustomPainter {
   final int columnCount;
   final Noteskin skin;
   final bool playing;
+
+  /// Rule the field into numbered 4-beat measures. Needs the beat axis, so it
+  /// does nothing on charts with no BPM data.
+  final bool showMeasureLines;
+
+  /// Mirrors [QuantColors.arcadeMode]. The skins read that global directly, so
+  /// the painter never uses this value — it exists purely so [shouldRepaint]
+  /// can see a palette change. Without it the field only recolours once
+  /// something else (the playhead ticking) forces a repaint.
+  final bool arcadeQuant;
 
   // Pinch-to-zoom factor. Applied to the horizontal field geometry (arrow size
   // and lane spacing) so that zooming out shrinks the arrows in step with the
@@ -175,6 +187,12 @@ class ChartPainter extends CustomPainter {
   // the state to derive the field's travel distance for the speed law.
   static const double receptorBase = 56;
   double get _receptorTop => receptorBase + topInset;
+
+  // Impact flash lifetime. DDR's is 120ms; the preview has no input or
+  // judgement, so every arrival draws the clean-hit flash rather than one of
+  // the per-judgement variants.
+  static const double _flashSeconds = 0.12;
+
   static const double _laneTighten = 0.92;
 
   @override
@@ -244,12 +262,26 @@ class ChartPainter extends CustomPainter {
     final phase = (beatLocked ? currentBeat : second * 2) % 1.0;
     final glow = playing ? 1.0 - (2.0 * phase - 1.0).abs() : 0.0;
 
-    // Clip only the far top of the field (above where a note centred on the
-    // receptor would reach), so a note sitting ON the receptor draws in full
-    // (z-above it) while notes that have scrolled well past are hidden.
-    final clipTop = _receptorTop - arrowSize / 2 - 2;
+    // Clip only the far top of the field, so a note sitting ON the receptor
+    // draws in full (z-above it) while notes that have scrolled well past are
+    // hidden. Sized for the impact flash rather than the note: the flash shares
+    // the receptor's centre but overhangs it (see [noteFlashCurve]), and a clip
+    // cut to the arrow alone shears its top off. Never rises above the safe
+    // area though — the field must not draw under the status bar / notch, so on
+    // wide fields the flash is cut there rather than the chrome being overrun.
+    final flashTop =
+        _receptorTop - arrowSize * noteFlashPeakScale / 2 - arrowSize * 0.12;
+    final clipTop = flashTop < topInset ? topInset : flashTop;
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
+
+    // 0a) Measure rules, under everything else: they are scaffolding for reading
+    // position, not part of the field.
+    if (showMeasureLines && beatLocked) {
+      _paintMeasureLines(canvas, size, yFor, currentBeat,
+          currentBeat + (size.height - _receptorTop) / pxPerBeat,
+          labels: false);
+    }
 
     // 0) Timing markers (BPM changes and stops), base layer: lines/bands drawn
     // first inside the clip so notes, holds and foot paths render on top. Their
@@ -286,13 +318,41 @@ class ChartPainter extends CustomPainter {
       });
     }
 
+    // Age (in seconds) of the most recent arrival in each drawn lane, for the
+    // impact effects below. Notes are sorted, so the arrivals still in effect
+    // are the slice ending at the playhead — walk back from a binary search
+    // until one is older than the longest effect. Nothing is retained between
+    // frames; every effect is a function of (playhead - note.second). Only
+    // while playing: scrubbing sweeps arrivals past the playhead at arbitrary
+    // speed (and backwards), which would strobe the whole field.
+    final arrivals = <int, double>{};
+    if (playing) {
+      const longest =
+          _flashSeconds > receptorRecoilSeconds ? _flashSeconds : receptorRecoilSeconds;
+      for (int i = _lowerBoundBySecond(notes, second) - 1; i >= 0; i--) {
+        final n = notes[i];
+        final age = second - n.second;
+        if (age >= longest) break; // sorted: everything earlier is older
+        if (n.type == StepType.mine) continue; // mines aren't "hit"
+        arrivals.putIfAbsent(turned(n.col), () => age); // newest wins the lane
+      }
+    }
+
     // 1.2) Receptors, drawn on top of hold bodies/tails but under taps and
     // held hold-heads (below) — a sustain slides under the receptor frame as
     // it passes through or ends at the line, matching DDR/StepMania, while an
     // arrow landing on the line still covers its receptacle.
+    //
+    // A receptor recoils when a note lands on it: it snaps in and springs back.
+    // DDR drives this off ghost taps (stepping with no note there) rather than
+    // arrivals — there is no input here, so it hangs off the note instead.
     for (int c = 0; c < columnCount; c++) {
-      skin.paintReceptor(
-          canvas, laneCenterX(c), _receptorTop, arrowSize, dirs[c], glow * 0.9);
+      final age = arrivals[c];
+      final recoil = age == null
+          ? 1.0
+          : receptorRecoilCurve(age / receptorRecoilSeconds);
+      skin.paintReceptor(canvas, laneCenterX(c), _receptorTop,
+          arrowSize * recoil, dirs[c], glow * 0.9);
     }
 
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
@@ -363,10 +423,23 @@ class ChartPainter extends CustomPainter {
       drawHead(n, false);
     }
 
+    // 3.5) Impact flashes for notes that just reached the line, one per lane
+    // (matching DDR's one-live-flash-per-column).
+    for (final MapEntry(key: col, value: age) in arrivals.entries) {
+      if (age >= _flashSeconds) continue; // recoil outlasts the flash
+      skin.paintNoteFlash(canvas, laneCenterX(col), _receptorTop, arrowSize,
+          dirs[col], age / _flashSeconds);
+    }
+
     // 4) Timing-marker labels, top layer: drawn last so the STOP/BPM pills sit
     // above the note stream instead of being buried under passing arrows.
     _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
         labels: true);
+    if (showMeasureLines && beatLocked) {
+      _paintMeasureLines(canvas, size, yFor, currentBeat,
+          currentBeat + (size.height - _receptorTop) / pxPerBeat,
+          labels: true);
+    }
 
     canvas.restore(); // end note clip
   }
@@ -502,6 +575,39 @@ class ChartPainter extends CustomPainter {
   static final Paint _labelPillPaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.55);
 
+  static const Color _measureColor = Color(0xFF8FA3B8);
+  static final Paint _measureLinePaint = Paint()
+    ..color = _measureColor.withValues(alpha: 0.22)
+    ..strokeWidth = 1;
+
+  // Rule the field every 4 beats and number each measure at the left edge, the
+  // way a stepchart editor does, so a spot in the chart can be named. Positions
+  // go through [yFor] like everything else, so the rules ride BPM changes and
+  // stops instead of being a fixed pixel grid. Measures are numbered from 1 at
+  // beat 0 (editor convention).
+  //
+  // Two z-layers, like [_paintTimingMarkers]: the rules are the base layer
+  // ([labels] = false) so arrows scroll over them, the number pills the top
+  // layer so a stream of notes can't bury them.
+  void _paintMeasureLines(Canvas canvas, Size size, double Function(double) yFor,
+      double currentBeat, double maxBeat, {required bool labels}) {
+    var m = (currentBeat / 4).floor();
+    if (m < 0) m = 0;
+    // Zoomed out the rules crowd together, so number only every fourth one and
+    // let the rest read as plain ruling.
+    final labelEvery = pxPerBeat * 4 < 46 ? 4 : 1;
+    for (; m * 4 <= maxBeat; m++) {
+      final y = yFor(timing.secondAt(m * 4.0));
+      if (!labels) {
+        canvas.drawLine(Offset(0, y), Offset(size.width, y), _measureLinePaint);
+        continue;
+      }
+      if (m % labelEvery != 0) continue;
+      _paintMarkerLabel(canvas, size, y, "${m + 1}", _measureColor,
+          alignLeft: true);
+    }
+  }
+
   // Draw full-width markers for stops (a band spanning the halt's duration) and
   // BPM changes (a line + label), positioned on the same seconds axis the notes
   // scroll on. Only markers within the visible time window are drawn.
@@ -530,8 +636,7 @@ class ChartPainter extends CustomPainter {
         final y = yFor(s.second);
         if (labels) {
           _paintMarkerLabel(
-              canvas, size, y, "STOP ${_fmtDur(s.dur)}", _stopColor,
-              alignBottom: true);
+              canvas, size, y, "STOP ${_fmtDur(s.dur)}", _stopColor);
         } else {
           canvas.drawLine(
             Offset(0, y),
@@ -543,8 +648,7 @@ class ChartPainter extends CustomPainter {
       }
       final yTop = yFor(s.second);
       if (labels) {
-        _paintMarkerLabel(canvas, size, yTop, "STOP", _stopColor,
-            alignBottom: true);
+        _paintMarkerLabel(canvas, size, yTop, "STOP", _stopColor);
         continue;
       }
       final yBot = yFor(endSec);
@@ -596,15 +700,16 @@ class ChartPainter extends CustomPainter {
     });
   }
 
-  // A small pill label pinned to the right edge of a marker line. [alignBottom]
-  // seats it just below the line (used for a stop band's start) instead of above.
+  // A small pill label pinned to a marker line's right edge ([alignLeft] puts it
+  // on the left, for measure numbers), centred on the line so it runs through
+  // the pill.
   void _paintMarkerLabel(
     Canvas canvas,
     Size size,
     double y,
     String text,
     Color color, {
-    bool alignBottom = false,
+    bool alignLeft = false,
   }) {
     final tp = _labelTp(text, color);
     const padX = 5.0;
@@ -612,8 +717,8 @@ class ChartPainter extends CustomPainter {
     const margin = 6.0;
     final boxW = tp.width + padX * 2;
     final boxH = tp.height + padY * 2;
-    final left = size.width - boxW - margin;
-    final top = alignBottom ? y + 2 : y - boxH - 2;
+    final left = alignLeft ? margin : size.width - boxW - margin;
+    final top = y - boxH / 2;
     final rect = RRect.fromRectAndRadius(
       Rect.fromLTWH(left, top, boxW, boxH),
       const Radius.circular(4),
@@ -716,9 +821,11 @@ class ChartPainter extends CustomPainter {
       !listEquals(old.colMap, colMap) ||
       old.skin != skin ||
       old.playing != playing ||
+      old.showMeasureLines != showMeasureLines ||
       old.zoom != zoom ||
       old.constantMs != constantMs ||
       old.topInset != topInset ||
+      old.arcadeQuant != arcadeQuant ||
       // Without this the field wouldn't move while dialling VISUAL OFFSET
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.

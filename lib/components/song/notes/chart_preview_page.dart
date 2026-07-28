@@ -7,6 +7,7 @@
 library;
 
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
+import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -78,6 +79,32 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     Settings.setInt(Settings.assistTickOnKey, _assistTick ? 1 : 0);
   }
 
+  // Measure rules, persisted the same way.
+  bool _measureLines = Settings.getInt(Settings.measureLinesOnKey) == 1;
+
+  void _toggleMeasureLines() {
+    setState(() => _measureLines = !_measureLines);
+    Settings.setInt(Settings.measureLinesOnKey, _measureLines ? 1 : 0);
+  }
+
+  // Arcade-style quantisation colouring. QuantColors reads a global rather than
+  // taking the flag per call, so seed it from the stored setting on the way in.
+  bool _arcadeQuant = Settings.getInt(Settings.arcadeQuantOnKey) == 1;
+
+  @override
+  void initState() {
+    super.initState();
+    QuantColors.arcadeMode = _arcadeQuant;
+  }
+
+  void _toggleArcadeQuant() {
+    setState(() {
+      _arcadeQuant = !_arcadeQuant;
+      QuantColors.arcadeMode = _arcadeQuant;
+    });
+    Settings.setInt(Settings.arcadeQuantOnKey, _arcadeQuant ? 1 : 0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final diffColor = difficultyColor(widget.difficultyKey);
@@ -134,10 +161,14 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               stops: widget.stops,
               sync: widget.sync,
               showFootGuide: _showFootGuide,
+              showMeasureLines: _measureLines,
               assistTickOn: _assistTick,
+              arcadeQuantOn: _arcadeQuant,
+              onToggleMeasureLines: _toggleMeasureLines,
               onToggleFootGuide: () =>
                   setState(() => _showFootGuide = !_showFootGuide),
               onToggleAssistTick: _toggleAssistTick,
+              onToggleArcadeQuant: _toggleArcadeQuant,
               headerBuilder: (context) => _buildHeader(context, diffColor),
             );
           },
@@ -150,8 +181,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   // The assist-tick and foot-guide toggles moved into the scroller's settings
   // shade (its own segment); the shade itself opens from the scroller's left-edge
   // pull-tab, so the header carries no action affordances at all. A translucent
-  // gradient keeps it legible against the scrolling arrows, and a
-  // difficulty-coloured hairline seats it.
+  // gradient alone keeps it legible against the scrolling arrows — it fades into
+  // the field rather than being fenced off by a rule.
   Widget _buildHeader(BuildContext context, Color diffColor) {
     final difficultyLabel = widget.difficultyLevel != null
         ? "${_pretty(widget.difficultyKey)} ${widget.difficultyLevel}"
@@ -165,9 +196,6 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
             Colors.black.withValues(alpha: 0.72),
             Colors.black.withValues(alpha: 0.0),
           ],
-        ),
-        border: Border(
-          bottom: BorderSide(color: diffColor.withValues(alpha: 0.9), width: 2),
         ),
       ),
       child: SafeArea(
@@ -214,5 +242,10 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   }
 }
 
+// The in-game name (BASIC/DIFFICULT/EXPERT…), not the StepMania-style data key
+// — "medium" is a field name, never something a player sees.
 String _pretty(String difficultyKey) =>
-    difficultyKey.isEmpty ? "" : difficultyKey[0].toUpperCase() + difficultyKey.substring(1);
+    kInGameDifficultyNames[difficultyKey] ??
+    (difficultyKey.isEmpty
+        ? ""
+        : difficultyKey[0].toUpperCase() + difficultyKey.substring(1));

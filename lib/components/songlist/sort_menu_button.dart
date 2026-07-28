@@ -1,14 +1,35 @@
 /// Name: SortMenuButton
 /// Parent: DifficultyListPage, FavoriteListPage
-/// Description: App bar popup menu that sets the shared song sort, i.e. how
-/// songs are bucketed into folders (level / title letter / version).
+/// Description: Button that cycles the shared song sort, sitting beside the
+/// songlist's count. A tap advances the key (release order / title / level /
+/// BPM); a long press flips between ascending and descending.
 library;
 
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+// Cycle order, starting on the cabinet's default.
+const List<SortType> _kSortCycle = <SortType>[
+  SortType.version,
+  SortType.title,
+  SortType.level,
+  SortType.bpm,
+];
+
+String sortLabel(SortType sortType) {
+  switch (sortType) {
+    case SortType.version:
+      return 'Default';
+    case SortType.title:
+      return 'Title';
+    case SortType.level:
+      return 'Level';
+    case SortType.bpm:
+      return 'BPM';
+  }
+}
 
 class SortMenuButton extends StatelessWidget {
   const SortMenuButton({super.key, this.onSorted});
@@ -18,33 +39,29 @@ class SortMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var songState = context.watch<SongState>();
-    return PopupMenuButton(
-      tooltip: "Sort",
-      icon: const Icon(Icons.sort),
-      itemBuilder: (BuildContext context) => <PopupMenuEntry>[
-        sortMenuItem(context, songState, SortType.level,
-            Icons.format_list_numbered_rounded, 'Level'),
-        sortMenuItem(
-            context, songState, SortType.title, Icons.sort_by_alpha, 'Title'),
-        sortMenuItem(context, songState, SortType.version,
-            Icons.sports_esports_rounded, 'Version'),
-      ],
-    );
-  }
+    final SongState songState = context.watch<SongState>();
+    final bool descending = songState.sortDescending;
+    final String label = sortLabel(songState.sortType);
 
-  PopupMenuItem sortMenuItem(BuildContext context, SongState songState,
-      SortType sortType, IconData icon, String label) {
-    return menuListTileItem(
-      title: label,
-      leading: icon,
-      checked: songState.sortType == sortType,
-      onTap: () {
-        songState.setSortType(sortType);
-        onSorted?.call();
-        showToast(context, "Sorted by ${label.toLowerCase()}");
-        Navigator.pop(context);
-      },
+    return Tooltip(
+      message: 'Sort: $label — long press to reverse',
+      child: TextButton.icon(
+        onPressed: () {
+          final int next = (_kSortCycle.indexOf(songState.sortType) + 1) %
+              _kSortCycle.length;
+          songState.setSortType(_kSortCycle[next]);
+          onSorted?.call();
+        },
+        onLongPress: () {
+          songState.setSortDescending(!descending);
+          onSorted?.call();
+        },
+        icon: Icon(
+          descending ? Icons.arrow_downward : Icons.arrow_upward,
+          size: 16,
+        ),
+        label: Text(label),
+      ),
     );
   }
 }

@@ -351,10 +351,13 @@ enum Modes {
   doubles,
 }
 
+// The cabinet's sort keys. `version` is the release order the cabinet treats as
+// its default.
 enum SortType {
   level,
   title,
   version,
+  bpm,
 }
 
 class Difficulty {
@@ -397,14 +400,14 @@ class Difficulty {
       .map((e) => e.key)
       .toList();
 
-  /// Index into [availableTypes] of the first difficulty type at [level],
-  /// or null if none match.
-  int? chosenDifficultyForLevel(int level) {
-    final types = availableTypes;
+  /// Every charted difficulty as its [availableTypes] index paired with its
+  /// level, in canonical beginner..challenge order.
+  List<({int index, int level})> get chartsByIndex {
     final levels = toJson();
-    for (int i = 0; i < types.length; i++) {
-      if (levels[types[i]] == level) return i;
-    }
-    return null;
+    final types = availableTypes;
+    return <({int index, int level})>[
+      for (int i = 0; i < types.length; i++)
+        (index: i, level: levels[types[i]] as int),
+    ];
   }
 }

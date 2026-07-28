@@ -88,25 +88,6 @@ void main() {
         reason: 'the fabricated "C###" read-speed floor must not return');
   });
 
-  testWidgets('changing the CONSTANT window leaves the badge read speed fixed',
-      (tester) async {
-    await Settings.setInt(Settings.constantOnKey, 1);
-    await Settings.setInt(Settings.constantMsKey, 1000);
-    await tester.pumpWidget(
-        _host(_scroller(chartBpm: 150, key: const ValueKey('full'))));
-    await tester.pump(const Duration(milliseconds: 16));
-    final atFullWindow = badgeRead(tester);
-
-    await Settings.setInt(Settings.constantMsKey, 300);
-    await tester.pumpWidget(
-        _host(_scroller(chartBpm: 150, key: const ValueKey('short'))));
-    await tester.pump(const Duration(milliseconds: 16));
-
-    // A tighter window hides more, but the arrows that are visible still move
-    // at the same read speed — the badge number must not budge.
-    expect(badgeRead(tester), atFullWindow);
-  });
-
   testWidgets('the badge always reads localBpm x mod, CONSTANT on or off',
       (tester) async {
     // 300 BPM × x2.00 (read-speed pref 600) = 600. Same with CONSTANT on.

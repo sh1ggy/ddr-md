@@ -91,9 +91,9 @@ class TempoBadge extends StatelessWidget {
 
 /// Left half of the control row: the DDR WORLD speed option. Shows the
 /// active SPEED TYPE — REAL SPEED (the cabinet's ScrollSpeed: the dialled
-/// target scroll rate, with the resulting min–max speeds alongside on
-/// BPM-change charts like the cabinet's num_min/num_max readouts) or
-/// HI-SPEED (the raw multiplier, printed "x %.2lf" as the cabinet does).
+/// target scroll rate) or HI-SPEED (the raw multiplier, printed "x %.2lf" as
+/// the cabinet does) — with the resulting min–core–max read speeds under
+/// either, like the cabinet's num_min/num_core/num_max readouts.
 /// Tap to switch type; drag or tap the ∓ ends to turn the active dial —
 /// buttons and drag share one detent (x0.05 for HI-SPEED, 10 for REAL
 /// SPEED), and each type keeps its own dialled value.
@@ -118,9 +118,8 @@ class SpeedPane extends StatelessWidget {
   /// The min–core–max scroll speeds for the current multiplier, preformatted
   /// as "min–core–max" (matching the cabinet's num_min/num_core/num_max),
   /// folded to a single number only when all three coincide (true constant
-  /// BPM). Null hides the row — used for HI-SPEED, which shows a bare
-  /// multiplier instead, and for a constant-BPM chart whose folded number
-  /// merely repeats the dialled read speed above it.
+  /// BPM). Null hides the row — used for a constant-BPM chart under REAL
+  /// SPEED, whose folded number merely repeats the dialled read speed above.
   final String? range;
   final String decLabel;
   final String incLabel;
@@ -438,7 +437,8 @@ class ConstantChip extends StatelessWidget {
         onHorizontalDragUpdate: (d) => onDrag(d.primaryDelta ?? 0),
         child: Container(
           width: double.infinity,
-          height: 44,
+          // Shares the grid tiles' height so the whole shade sits on one rhythm.
+          height: TurnTile.height,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             color: c.fill,
@@ -664,7 +664,8 @@ class ArcadeSyncHeader extends StatelessWidget {
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        height: 52,
+        // Same height as the CONSTANT chip and the grid tiles it sits among.
+        height: TurnTile.height,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: c.fill,
@@ -753,6 +754,12 @@ class TurnTile extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// Fixed so every tile in the shade lines up regardless of its label: at a
+  /// third of the width a two-word label ("ARCADE NOTES") would wrap where
+  /// "LEFT" doesn't, and content-sized tiles would leave the rows ragged. The
+  /// label scales down to fit one line rather than the tile growing to fit it.
+  static const double height = 56;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -762,7 +769,8 @@ class TurnTile extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        height: height,
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         decoration: BoxDecoration(
           color: c.fill,
           borderRadius: BorderRadius.circular(10),
@@ -774,14 +782,18 @@ class TurnTile extends StatelessWidget {
           children: [
             Icon(icon, size: 22, color: c.fg),
             const SizedBox(height: 4),
-            Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                letterSpacing: 0.5,
-                fontWeight: FontWeight.w700,
-                color: c.fg,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 0.5,
+                  fontWeight: FontWeight.w700,
+                  color: c.fg,
+                ),
               ),
             ),
           ],
