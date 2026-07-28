@@ -36,6 +36,7 @@ class ChartPainter extends CustomPainter {
     required this.columnCount,
     required this.skin,
     required this.playing,
+    this.showMeasureLines = false,
     this.zoom = 1.0,
     this.constantMs,
     this.topInset = 0,
@@ -100,6 +101,10 @@ class ChartPainter extends CustomPainter {
   final int columnCount;
   final Noteskin skin;
   final bool playing;
+
+  /// Rule the field into numbered 4-beat measures. Needs the beat axis, so it
+  /// does nothing on charts with no BPM data.
+  final bool showMeasureLines;
 
   // Pinch-to-zoom factor. Applied to the horizontal field geometry (arrow size
   // and lane spacing) so that zooming out shrinks the arrows in step with the
@@ -263,6 +268,14 @@ class ChartPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
 
+    // 0a) Measure rules, under everything else: they are scaffolding for reading
+    // position, not part of the field.
+    if (showMeasureLines && beatLocked) {
+      _paintMeasureLines(canvas, size, yFor, currentBeat,
+          currentBeat + (size.height - _receptorTop) / pxPerBeat,
+          labels: false);
+    }
+
     // 0) Timing markers (BPM changes and stops), base layer: lines/bands drawn
     // first inside the clip so notes, holds and foot paths render on top. Their
     // pill labels come later (after the notes) so they stay legible.
@@ -415,6 +428,11 @@ class ChartPainter extends CustomPainter {
     // above the note stream instead of being buried under passing arrows.
     _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
         labels: true);
+    if (showMeasureLines && beatLocked) {
+      _paintMeasureLines(canvas, size, yFor, currentBeat,
+          currentBeat + (size.height - _receptorTop) / pxPerBeat,
+          labels: true);
+    }
 
     canvas.restore(); // end note clip
   }
@@ -550,6 +568,39 @@ class ChartPainter extends CustomPainter {
   static final Paint _labelPillPaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.55);
 
+  static const Color _measureColor = Color(0xFF8FA3B8);
+  static final Paint _measureLinePaint = Paint()
+    ..color = _measureColor.withValues(alpha: 0.22)
+    ..strokeWidth = 1;
+
+  // Rule the field every 4 beats and number each measure at the left edge, the
+  // way a stepchart editor does, so a spot in the chart can be named. Positions
+  // go through [yFor] like everything else, so the rules ride BPM changes and
+  // stops instead of being a fixed pixel grid. Measures are numbered from 1 at
+  // beat 0 (editor convention).
+  //
+  // Two z-layers, like [_paintTimingMarkers]: the rules are the base layer
+  // ([labels] = false) so arrows scroll over them, the number pills the top
+  // layer so a stream of notes can't bury them.
+  void _paintMeasureLines(Canvas canvas, Size size, double Function(double) yFor,
+      double currentBeat, double maxBeat, {required bool labels}) {
+    var m = (currentBeat / 4).floor();
+    if (m < 0) m = 0;
+    // Zoomed out the rules crowd together, so number only every fourth one and
+    // let the rest read as plain ruling.
+    final labelEvery = pxPerBeat * 4 < 46 ? 4 : 1;
+    for (; m * 4 <= maxBeat; m++) {
+      final y = yFor(timing.secondAt(m * 4.0));
+      if (!labels) {
+        canvas.drawLine(Offset(0, y), Offset(size.width, y), _measureLinePaint);
+        continue;
+      }
+      if (m % labelEvery != 0) continue;
+      _paintMarkerLabel(canvas, size, y, "${m + 1}", _measureColor,
+          alignLeft: true);
+    }
+  }
+
   // Draw full-width markers for stops (a band spanning the halt's duration) and
   // BPM changes (a line + label), positioned on the same seconds axis the notes
   // scroll on. Only markers within the visible time window are drawn.
@@ -578,8 +629,7 @@ class ChartPainter extends CustomPainter {
         final y = yFor(s.second);
         if (labels) {
           _paintMarkerLabel(
-              canvas, size, y, "STOP ${_fmtDur(s.dur)}", _stopColor,
-              alignBottom: true);
+              canvas, size, y, "STOP ${_fmtDur(s.dur)}", _stopColor);
         } else {
           canvas.drawLine(
             Offset(0, y),
@@ -591,8 +641,7 @@ class ChartPainter extends CustomPainter {
       }
       final yTop = yFor(s.second);
       if (labels) {
-        _paintMarkerLabel(canvas, size, yTop, "STOP", _stopColor,
-            alignBottom: true);
+        _paintMarkerLabel(canvas, size, yTop, "STOP", _stopColor);
         continue;
       }
       final yBot = yFor(endSec);
@@ -644,15 +693,16 @@ class ChartPainter extends CustomPainter {
     });
   }
 
-  // A small pill label pinned to the right edge of a marker line. [alignBottom]
-  // seats it just below the line (used for a stop band's start) instead of above.
+  // A small pill label pinned to a marker line's right edge ([alignLeft] puts it
+  // on the left, for measure numbers), centred on the line so it runs through
+  // the pill.
   void _paintMarkerLabel(
     Canvas canvas,
     Size size,
     double y,
     String text,
     Color color, {
-    bool alignBottom = false,
+    bool alignLeft = false,
   }) {
     final tp = _labelTp(text, color);
     const padX = 5.0;
@@ -660,8 +710,8 @@ class ChartPainter extends CustomPainter {
     const margin = 6.0;
     final boxW = tp.width + padX * 2;
     final boxH = tp.height + padY * 2;
-    final left = size.width - boxW - margin;
-    final top = alignBottom ? y + 2 : y - boxH - 2;
+    final left = alignLeft ? margin : size.width - boxW - margin;
+    final top = y - boxH / 2;
     final rect = RRect.fromRectAndRadius(
       Rect.fromLTWH(left, top, boxW, boxH),
       const Radius.circular(4),
@@ -764,6 +814,7 @@ class ChartPainter extends CustomPainter {
       !listEquals(old.colMap, colMap) ||
       old.skin != skin ||
       old.playing != playing ||
+      old.showMeasureLines != showMeasureLines ||
       old.zoom != zoom ||
       old.constantMs != constantMs ||
       old.topInset != topInset ||

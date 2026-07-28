@@ -78,6 +78,14 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     Settings.setInt(Settings.assistTickOnKey, _assistTick ? 1 : 0);
   }
 
+  // Measure rules, persisted the same way.
+  bool _measureLines = Settings.getInt(Settings.measureLinesOnKey) == 1;
+
+  void _toggleMeasureLines() {
+    setState(() => _measureLines = !_measureLines);
+    Settings.setInt(Settings.measureLinesOnKey, _measureLines ? 1 : 0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final diffColor = difficultyColor(widget.difficultyKey);
@@ -134,7 +142,9 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               stops: widget.stops,
               sync: widget.sync,
               showFootGuide: _showFootGuide,
+              showMeasureLines: _measureLines,
               assistTickOn: _assistTick,
+              onToggleMeasureLines: _toggleMeasureLines,
               onToggleFootGuide: () =>
                   setState(() => _showFootGuide = !_showFootGuide),
               onToggleAssistTick: _toggleAssistTick,

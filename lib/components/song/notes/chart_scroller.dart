@@ -85,7 +85,9 @@ class ChartScroller extends StatefulWidget {
     this.stops = const [],
     this.sync,
     this.showFootGuide = false,
+    this.showMeasureLines = false,
     this.assistTickOn = false,
+    this.onToggleMeasureLines,
     this.onToggleFootGuide,
     this.onToggleAssistTick,
     this.headerBuilder,
@@ -123,6 +125,9 @@ class ChartScroller extends StatefulWidget {
   /// Overlay an L/R parity guide on each arrow (best-effort, computed on load).
   final bool showFootGuide;
 
+  /// Rule the field into numbered 4-beat measures.
+  final bool showMeasureLines;
+
   /// Play a short tick as each note row crosses the receptors during playback.
   final bool assistTickOn;
 
@@ -131,6 +136,7 @@ class ChartScroller extends StatefulWidget {
   /// modifiers rather than crowding the floating header. Null hides the tiles.
   final VoidCallback? onToggleFootGuide;
   final VoidCallback? onToggleAssistTick;
+  final VoidCallback? onToggleMeasureLines;
 
   /// Song length in seconds; bounds the scrub slider and the auto-stop point.
   final double songLength;
@@ -1823,6 +1829,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         shocks: _shocks,
                         bpmMarkers: _bpmMarkers,
                         stopMarkers: _stopMarkers,
+                        showMeasureLines: widget.showMeasureLines,
                         feet: widget.showFootGuide ? _feet : const {},
                         footPrev: widget.showFootGuide ? _footPrev : const {},
                         dirs: dirs,
@@ -2326,12 +2333,16 @@ class _ChartScrollerState extends State<ChartScroller>
         ),
       ),
       // Playback aids, split off into their own segment: the assist tick (audible
-      // row tick) and the L/R foot guide overlay. These moved out of the floating
-      // header so it carries only title/back — the toggles read the same as the
-      // TURN tiles, so they slot in as one more row of the options card.
-      if (widget.onToggleAssistTick != null || widget.onToggleFootGuide != null)
+      // row tick), the L/R foot guide overlay and the measure rules. These moved
+      // out of the floating header so it carries only title/back — the toggles
+      // read the same as the TURN tiles, so they slot in as one more row of the
+      // options card.
+      if (widget.onToggleAssistTick != null ||
+          widget.onToggleFootGuide != null ||
+          widget.onToggleMeasureLines != null)
         ShadeSection(
           content: Row(
+            spacing: 8,
             children: [
               if (widget.onToggleAssistTick != null)
                 Expanded(
@@ -2344,9 +2355,6 @@ class _ChartScrollerState extends State<ChartScroller>
                     onTap: widget.onToggleAssistTick!,
                   ),
                 ),
-              if (widget.onToggleAssistTick != null &&
-                  widget.onToggleFootGuide != null)
-                const SizedBox(width: 8),
               if (widget.onToggleFootGuide != null)
                 Expanded(
                   child: TurnTile(
@@ -2356,6 +2364,17 @@ class _ChartScrollerState extends State<ChartScroller>
                         : Icons.directions_walk_outlined,
                     selected: widget.showFootGuide,
                     onTap: widget.onToggleFootGuide!,
+                  ),
+                ),
+              if (widget.onToggleMeasureLines != null)
+                Expanded(
+                  child: TurnTile(
+                    label: "MEASURES",
+                    icon: widget.showMeasureLines
+                        ? Icons.straighten
+                        : Icons.straighten_outlined,
+                    selected: widget.showMeasureLines,
+                    onTap: widget.onToggleMeasureLines!,
                   ),
                 ),
             ],
