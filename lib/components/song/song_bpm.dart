@@ -105,7 +105,7 @@ class _SongBpmState extends State<SongBpm> {
         // Minimum, not fixed: this pane sits in a scrolling page and must grow
         // rather than overflow at large text scales.
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 62),
+          constraints: const BoxConstraints(minHeight: 84),
           child: IntrinsicHeight(
             child: Row(
               children: [
@@ -117,6 +117,7 @@ class _SongBpmState extends State<SongBpm> {
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
                         "SPEED MOD",
@@ -129,6 +130,19 @@ class _SongBpmState extends State<SongBpm> {
                         ),
                       ),
                       const SizedBox(height: 3),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          "×${_formatMod(mod)}",
+                          style: const TextStyle(
+                            fontSize: 18,
+                            height: 1.1,
+                            fontWeight: FontWeight.bold,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
                       // Each caption sits in the row under its own number, so
                       // it stays centred on the value it names however wide the
                       // digits get. Scales down rather than wrapping when the
@@ -139,18 +153,6 @@ class _SongBpmState extends State<SongBpm> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: Text(
-                                "×${_formatMod(mod)}  →",
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  height: 1.1,
-                                  fontWeight: FontWeight.bold,
-                                  fontFeatures: [FontFeature.tabularFigures()],
-                                ),
-                              ),
-                            ),
                             for (final (i, (value, caption))
                                 in reads.indexed) ...[
                               if (i > 0)
@@ -179,17 +181,19 @@ class _SongBpmState extends State<SongBpm> {
                                       ],
                                     ),
                                   ),
-                                  if (caption != null)
-                                    Text(
-                                      caption,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        height: 1.0,
-                                        fontWeight: FontWeight.w600,
-                                        color: scheme.onSurface
-                                            .withValues(alpha: 0.55),
-                                      ),
+                                  // Reserve the caption's height even when
+                                  // unlabelled, so a single-speed chart centres
+                                  // in the pane the same as a three-speed one.
+                                  Text(
+                                    caption ?? "",
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      height: 1.0,
+                                      fontWeight: FontWeight.w600,
+                                      color: scheme.onSurface
+                                          .withValues(alpha: 0.55),
                                     ),
+                                  ),
                                 ],
                               ),
                             ],
