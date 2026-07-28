@@ -60,36 +60,12 @@ int primaryLevelFor(SongInfo song, Modes mode) {
 }
 
 String versionBucketFor(String version) {
-  const classic = <String>{
-    'DDR',
-    'DDR 2nd',
-    'DDR 3rd',
-    'DDR 4th',
-    'DDR 5th',
-    'DDR MAX',
-    'DDR MAX2',
-    'DDR EXTREME',
-    'DDR SuperNOVA',
-    'DDR SuperNOVA2',
-    'DDR X',
-    'DDR X2',
-    'DDR X3',
-  };
-  const white = <String>{
-    'DDR 2013',
-    'DDR 2014',
-    'DDR A',
-  };
-  const gold = <String>{
-    'DDR A20',
-    'DDR A20 PLUS',
-    'DDR A3',
-    'DDR World',
-  };
+  const white = <String>{'2013', '2014', 'A'};
+  const gold = <String>{'A20', 'A20 PLUS', 'A3', 'WORLD'};
 
-  if (classic.contains(version)) return 'Classic (1st - X3)';
-  if (white.contains(version)) return 'White (2013 - A)';
-  if (gold.contains(version)) return 'Gold (A20 - World)';
+  final String key = constants.canonicalVersion(version);
+  if (white.contains(key)) return 'White (2013 - A)';
+  if (gold.contains(key)) return 'Gold (A20 - World)';
   return 'Classic (1st - X3)';
 }
 

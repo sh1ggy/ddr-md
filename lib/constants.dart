@@ -32,28 +32,44 @@ const note =
     "The crossovers in this song are surprisingly hard, I keep leading with the wrong first foot in after the jumps. Song should be played with those in mind.";
 
 // DDR releases in chronological order, used for version sorting/filtering.
+// These are the bare names the song JSON carries; canonicalVersion() maps the
+// display form ("DDR A20 PLUS") onto them.
 const versionOrder = [
-  'DDR World',
-  'DDR A3',
-  'DDR A20 PLUS',
-  'DDR A20',
-  'DDR A',
-  'DDR 2014',
-  'DDR 2013',
-  'DDR X3',
-  'DDR X2',
-  'DDR X',
-  'DDR SuperNOVA2',
-  'DDR SuperNOVA',
-  'DDR EXTREME',
-  'DDR MAX2',
-  'DDR MAX',
-  'DDR 5th',
-  'DDR 4th',
-  'DDR 3rd',
-  'DDR 2nd',
-  'DDR',
+  'WORLD',
+  'A3',
+  'A20 PLUS',
+  'A20',
+  'A',
+  '2014',
+  '2013',
+  'X3',
+  'X2',
+  'X',
+  'SuperNOVA2',
+  'SuperNOVA',
+  'EXTREME',
+  'MAX2',
+  'MAX',
+  '5th',
+  '4th',
+  '3rd',
+  '2nd',
+  '1st',
 ];
+
+// Version strings reach us both bare from the song JSON ('A20 PLUS', 'WORLD')
+// and prefixed from display/user input ('DDR A20 Plus'), so match on a form
+// that strips the prefix and ignores case.
+String canonicalVersion(String version) {
+  final String trimmed = version.trim();
+  final String bare = trimmed.toUpperCase().startsWith('DDR ')
+      ? trimmed.substring(4).trim()
+      : trimmed;
+  for (final String known in versionOrder) {
+    if (known.toUpperCase() == bare.toUpperCase()) return known;
+  }
+  return bare;
+}
 
 const appVer = "v1.0.1";
 

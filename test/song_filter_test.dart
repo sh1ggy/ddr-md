@@ -46,8 +46,8 @@ SongInfo song({
 
 void main() {
   group('SongFilter.matches', () {
-    final classic = song(title: 'Butterfly', version: 'DDR');
-    final modern = song(title: 'Endymion', version: 'DDR A20');
+    final classic = song(title: 'Butterfly', version: '1st');
+    final modern = song(title: 'Endymion', version: 'A20');
 
     test('an empty filter admits everything', () {
       const filter = SongFilter();
@@ -94,5 +94,15 @@ void main() {
   test('favouritesOnly alone counts as an active filter', () {
     // Drives whether the Clear button enables.
     expect(const SongFilter(favouritesOnly: true).isEmpty, isFalse);
+  });
+
+  // The song JSON carries bare version names ('WORLD', 'A20 PLUS'); matching
+  // the 'DDR '-prefixed display form instead dropped every song into Classic.
+  test('version buckets read the bare names the song data uses', () {
+    expect(versionBucketFor('X3'), 'Classic (1st - X3)');
+    expect(versionBucketFor('2013'), 'White (2013 - A)');
+    expect(versionBucketFor('A20 PLUS'), 'Gold (A20 - World)');
+    // The prefixed display form still resolves.
+    expect(versionBucketFor('DDR World'), 'Gold (A20 - World)');
   });
 }

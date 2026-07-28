@@ -281,7 +281,8 @@ String? resolveOcrFlare(String raw) {
 
 // Position of a version in the DDR release order; unknown versions sort last.
 int versionIndex(String version) {
-  final index = constants.versionOrder.indexOf(version);
+  final index =
+      constants.versionOrder.indexOf(constants.canonicalVersion(version));
   return index == -1 ? constants.versionOrder.length : index;
 }
 

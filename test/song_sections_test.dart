@@ -89,16 +89,16 @@ void main() {
     test('version sort folders by exact release, newest first', () {
       final sections = groupSongItems(
         <SongItem>[
-          item(title: 'Old', version: 'DDR'),
-          item(title: 'New', version: 'DDR World'),
-          item(title: 'Mid', version: 'DDR X2'),
+          item(title: 'Old', version: '1st'),
+          item(title: 'New', version: 'WORLD'),
+          item(title: 'Mid', version: 'X2'),
         ],
         SortType.version,
         Modes.singles,
       );
 
       expect(sections.map((s) => s.label).toList(),
-          <String>['DDR WORLD', 'DDR X2', 'DDR']);
+          <String>['WORLD', 'X2', '1ST']);
     });
 
     test('level sort folders by lowest charted level in the mode', () {
