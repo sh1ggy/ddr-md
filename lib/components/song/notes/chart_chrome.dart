@@ -437,7 +437,8 @@ class ConstantChip extends StatelessWidget {
         onHorizontalDragUpdate: (d) => onDrag(d.primaryDelta ?? 0),
         child: Container(
           width: double.infinity,
-          height: 44,
+          // Shares the grid tiles' height so the whole shade sits on one rhythm.
+          height: TurnTile.height,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             color: c.fill,
@@ -663,7 +664,8 @@ class ArcadeSyncHeader extends StatelessWidget {
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        height: 52,
+        // Same height as the CONSTANT chip and the grid tiles it sits among.
+        height: TurnTile.height,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: c.fill,
@@ -752,6 +754,12 @@ class TurnTile extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// Fixed so every tile in the shade lines up regardless of its label: at a
+  /// third of the width a two-word label ("ARCADE NOTES") would wrap where
+  /// "LEFT" doesn't, and content-sized tiles would leave the rows ragged. The
+  /// label scales down to fit one line rather than the tile growing to fit it.
+  static const double height = 56;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -761,7 +769,8 @@ class TurnTile extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        height: height,
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         decoration: BoxDecoration(
           color: c.fill,
           borderRadius: BorderRadius.circular(10),
@@ -773,14 +782,18 @@ class TurnTile extends StatelessWidget {
           children: [
             Icon(icon, size: 22, color: c.fg),
             const SizedBox(height: 4),
-            Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                letterSpacing: 0.5,
-                fontWeight: FontWeight.w700,
-                color: c.fg,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 0.5,
+                  fontWeight: FontWeight.w700,
+                  color: c.fg,
+                ),
               ),
             ),
           ],

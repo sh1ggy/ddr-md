@@ -41,6 +41,7 @@ class ChartPainter extends CustomPainter {
     this.constantMs,
     this.topInset = 0,
     this.visualOffset = 0,
+    this.arcadeQuant = false,
   }) : super(repaint: playhead);
 
   /// All notes ascending by second (see [_ChartScrollerState._prepareNotes]) —
@@ -105,6 +106,12 @@ class ChartPainter extends CustomPainter {
   /// Rule the field into numbered 4-beat measures. Needs the beat axis, so it
   /// does nothing on charts with no BPM data.
   final bool showMeasureLines;
+
+  /// Mirrors [QuantColors.arcadeMode]. The skins read that global directly, so
+  /// the painter never uses this value — it exists purely so [shouldRepaint]
+  /// can see a palette change. Without it the field only recolours once
+  /// something else (the playhead ticking) forces a repaint.
+  final bool arcadeQuant;
 
   // Pinch-to-zoom factor. Applied to the horizontal field geometry (arrow size
   // and lane spacing) so that zooming out shrinks the arrows in step with the
@@ -818,6 +825,7 @@ class ChartPainter extends CustomPainter {
       old.zoom != zoom ||
       old.constantMs != constantMs ||
       old.topInset != topInset ||
+      old.arcadeQuant != arcadeQuant ||
       // Without this the field wouldn't move while dialling VISUAL OFFSET
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.

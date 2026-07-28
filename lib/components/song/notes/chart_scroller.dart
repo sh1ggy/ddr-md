@@ -87,9 +87,11 @@ class ChartScroller extends StatefulWidget {
     this.showFootGuide = false,
     this.showMeasureLines = false,
     this.assistTickOn = false,
+    this.arcadeQuantOn = false,
     this.onToggleMeasureLines,
     this.onToggleFootGuide,
     this.onToggleAssistTick,
+    this.onToggleArcadeQuant,
     this.headerBuilder,
   });
 
@@ -131,12 +133,18 @@ class ChartScroller extends StatefulWidget {
   /// Play a short tick as each note row crosses the receptors during playback.
   final bool assistTickOn;
 
-  /// Toggle callbacks for the two playback-aid options above. Wired into the
+  /// Colour arrows with the cabinet's coarser quantisation palette. The colours
+  /// themselves come from [QuantColors.arcadeMode], which the owner sets; this
+  /// mirrors it so the tile and the minimap repaint when it flips.
+  final bool arcadeQuantOn;
+
+  /// Toggle callbacks for the playback-aid options above. Wired into the
   /// settings shade's own segment so they live alongside the chart-viewing
   /// modifiers rather than crowding the floating header. Null hides the tiles.
   final VoidCallback? onToggleFootGuide;
   final VoidCallback? onToggleAssistTick;
   final VoidCallback? onToggleMeasureLines;
+  final VoidCallback? onToggleArcadeQuant;
 
   /// Song length in seconds; bounds the scrub slider and the auto-stop point.
   final double songLength;
@@ -691,6 +699,11 @@ class _ChartScrollerState extends State<ChartScroller>
     // Toggling the assist tick mid-play starts or silences the clock at once.
     if (old.assistTickOn != widget.assistTickOn) {
       _resyncTickClock();
+    }
+    // The minimap bakes each note's quant bucket, so a palette change has to
+    // rebuild it — the field itself re-reads the colours on the next paint.
+    if (old.arcadeQuantOn != widget.arcadeQuantOn) {
+      _buildDensity();
     }
   }
 
@@ -1845,6 +1858,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         constantMs: _effectiveConstantMs,
                         topInset: MediaQuery.of(context).padding.top,
                         visualOffset: _visualOffsetSeconds,
+                        arcadeQuant: widget.arcadeQuantOn,
                       ),
                       size: Size.infinite,
                       willChange: true,
@@ -2332,14 +2346,15 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
-      // Playback aids, split off into their own segment: the assist tick (audible
-      // row tick), the L/R foot guide overlay and the measure rules. These moved
-      // out of the floating header so it carries only title/back — the toggles
-      // read the same as the TURN tiles, so they slot in as one more row of the
-      // options card.
+      // Viewing aids, split off into their own segment: the assist tick (audible
+      // row tick), the L/R foot guide overlay, the measure rules and the arcade
+      // quant palette. These moved out of the floating header so it carries only
+      // title/back — the toggles read the same as the TURN tiles, so the four
+      // slot in as one more row of the options card.
       if (widget.onToggleAssistTick != null ||
           widget.onToggleFootGuide != null ||
-          widget.onToggleMeasureLines != null)
+          widget.onToggleMeasureLines != null ||
+          widget.onToggleArcadeQuant != null)
         ShadeSection(
           content: Row(
             spacing: 8,
@@ -2375,6 +2390,17 @@ class _ChartScrollerState extends State<ChartScroller>
                         : Icons.straighten_outlined,
                     selected: widget.showMeasureLines,
                     onTap: widget.onToggleMeasureLines!,
+                  ),
+                ),
+              if (widget.onToggleArcadeQuant != null)
+                Expanded(
+                  child: TurnTile(
+                    label: "ARCADE NOTES",
+                    icon: widget.arcadeQuantOn
+                        ? Icons.music_note
+                        : Icons.music_note_outlined,
+                    selected: widget.arcadeQuantOn,
+                    onTap: widget.onToggleArcadeQuant!,
                   ),
                 ),
             ],
