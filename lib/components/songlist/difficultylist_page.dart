@@ -412,7 +412,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           ),
           onPressed: () => _toggleFavouritesOnly(songState),
           icon: Icon(
-            active ? Icons.favorite : Icons.favorite_border,
+            active ? Icons.star : Icons.star_border,
             size: 18,
             color: active ? Colors.redAccent : null,
           ),
