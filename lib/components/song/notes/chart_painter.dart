@@ -444,10 +444,10 @@ class ChartPainter extends CustomPainter {
     canvas.restore(); // end note clip
   }
 
-  // A small L/R parity badge centred on the arrow. Left = warm, right = cool,
-  // so the two feet read apart at a glance without a legend.
-  static const Color _leftFootColor = Color(0xFFFF5D73);
-  static const Color _rightFootColor = Color(0xFF3FA9FF);
+  // A small L/R parity badge centred on the arrow, in the shared parity palette
+  // so an arrow's badge, its flow path and the pad's foot all read as one foot.
+  static const Color _leftFootColor = kLeftFootColor;
+  static const Color _rightFootColor = kRightFootColor;
 
   // First index in [notes] (ascending by second) whose second is >= [t].
   static int _lowerBoundBySecond(List<StepNote> notes, double t) {
