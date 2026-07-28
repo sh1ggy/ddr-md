@@ -6,7 +6,6 @@
 library;
 
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -56,7 +55,6 @@ class SortMenuButton extends StatelessWidget {
         onLongPress: () {
           songState.setSortDescending(!descending);
           onSorted?.call();
-          showToast(context, descending ? 'Ascending' : 'Descending');
         },
         icon: Icon(
           descending ? Icons.arrow_downward : Icons.arrow_upward,
