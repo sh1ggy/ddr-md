@@ -231,8 +231,12 @@ class _SongPageState extends State<SongPage> {
         (mode == Modes.singles ? songInfo.singles : songInfo.doubles)
             .toJson()[diffKey] as int?;
     final diffColor = difficultyColor(diffKey);
-    final diffLabel =
-        diffKey.isEmpty ? "" : diffKey[0].toUpperCase() + diffKey.substring(1);
+    // The in-game name (BASIC/DIFFICULT/EXPERT…), not the StepMania-style data
+    // key — "medium" is a field name, never something a player sees.
+    final diffLabel = kInGameDifficultyNames[diffKey] ??
+        (diffKey.isEmpty
+            ? ""
+            : diffKey[0].toUpperCase() + diffKey.substring(1));
 
     return FutureBuilder<SongSteps?>(
       future: _stepsFuture,

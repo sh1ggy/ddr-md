@@ -221,5 +221,10 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   }
 }
 
+// The in-game name (BASIC/DIFFICULT/EXPERT…), not the StepMania-style data key
+// — "medium" is a field name, never something a player sees.
 String _pretty(String difficultyKey) =>
-    difficultyKey.isEmpty ? "" : difficultyKey[0].toUpperCase() + difficultyKey.substring(1);
+    kInGameDifficultyNames[difficultyKey] ??
+    (difficultyKey.isEmpty
+        ? ""
+        : difficultyKey[0].toUpperCase() + difficultyKey.substring(1));
