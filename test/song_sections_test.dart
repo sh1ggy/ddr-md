@@ -105,7 +105,10 @@ void main() {
           <String>['WORLD', 'X2', '1ST']);
     });
 
-    test('level sort folders by lowest charted level in the mode', () {
+    // A song-scoped row still falls back to the song's lowest level. The
+    // songlist's level sort feeds chart-scoped rows (see chartItemsFor), so
+    // this is the fallback path.
+    test('a song-scoped row folders under the song lowest', () {
       final sections = groupSongItems(
         <SongItem>[
           item(title: 'Hard', singles: const <int?>[null, null, null, 15, 17]),
@@ -164,6 +167,26 @@ void main() {
       expect(titlesOf(sections.last), <String>['SinglesOnly']);
     });
 
+    test('a song appears in every level folder it charts', () {
+      // The regression: rows used to fold under the song's lowest chart, so a
+      // boss song sat in LEVEL 4 and LEVEL 19 was all but empty.
+      final song = item(
+        title: 'Steps For Victory',
+        singles: const <int?>[4, 8, 12, 16, 19],
+      ).songInfo;
+
+      final sections = groupSongItems(
+        chartItemsFor(song, Modes.singles, isFav: false),
+        SortType.level,
+        Modes.singles,
+      );
+
+      expect(sections.map((s) => s.label).toList(),
+          <String>['LEVEL 4', 'LEVEL 8', 'LEVEL 12', 'LEVEL 16', 'LEVEL 19']);
+      // Each row opens on the chart its folder stands for.
+      expect(sections.last.items.single.difficultyIndex, 4);
+    });
+
     test('an empty song list produces no folders', () {
       expect(
         groupSongItems(<SongItem>[], SortType.title, Modes.singles),
@@ -202,6 +225,32 @@ void main() {
 
       expect(sections.map((s) => s.label).toList(), <String>['S-U', 'A-C']);
       expect(titlesOf(sections.last), <String>['Butterfly', 'Afronova']);
+    });
+  });
+
+  group('chartItemsFor', () {
+    test('a level filter keeps only the charts it selected', () {
+      final song = item(
+        title: 'Steps For Victory',
+        singles: const <int?>[4, 8, 12, 16, 19],
+      ).songInfo;
+
+      final rows = chartItemsFor(song, Modes.singles,
+          isFav: false, levels: const <int>{16, 19});
+
+      expect(rows.map((r) => r.level).toList(), <int>[16, 19]);
+    });
+
+    test('a song with no chart in the mode yields one song-scoped row', () {
+      final song = item(
+        title: 'SinglesOnly',
+        singles: const <int?>[null, 5, null, null, null],
+        doubles: const <int?>[null, null, null, null, null],
+      ).songInfo;
+
+      final rows = chartItemsFor(song, Modes.doubles, isFav: false);
+
+      expect(rows.single.isChartScoped, isFalse);
     });
   });
 }

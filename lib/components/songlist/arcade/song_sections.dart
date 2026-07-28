@@ -64,6 +64,40 @@ int primaryLevelFor(SongInfo song, Modes mode) {
 int levelForItem(SongItem item, Modes mode) =>
     item.level ?? primaryLevelFor(item.songInfo, mode);
 
+/// [song] as one row per chart it has in [mode], for the level sort — a song
+/// charting both 3 and 19 belongs in LEVEL 3 *and* LEVEL 19, which is what the
+/// cabinet's level folders list. Folding it under a single level would hide it
+/// from the folder someone went looking in. [levels], when non-empty, keeps
+/// only the charts the level filter selected.
+///
+/// A song with no chart in the mode yields one song-scoped row, so it still
+/// appears once under NO CHART.
+List<SongItem> chartItemsFor(
+  SongInfo song,
+  Modes mode, {
+  required bool isFav,
+  Set<int> levels = const <int>{},
+}) {
+  final Difficulty difficulty =
+      mode == Modes.singles ? song.singles : song.doubles;
+  final charts = difficulty.chartsByIndex
+      .where((c) => c.level >= 1 && c.level <= constants.maxDifficulty)
+      .where((c) => levels.isEmpty || levels.contains(c.level))
+      .toList();
+  if (charts.isEmpty) {
+    return <SongItem>[SongItem(songInfo: song, isFav: isFav)];
+  }
+  return <SongItem>[
+    for (final chart in charts)
+      SongItem(
+        songInfo: song,
+        isFav: isFav,
+        difficultyIndex: chart.index,
+        level: chart.level,
+      ),
+  ];
+}
+
 String versionBucketFor(String version) {
   const white = <String>{'2013', '2014', 'A'};
   const gold = <String>{'A20', 'A20 PLUS', 'A3', 'WORLD'};

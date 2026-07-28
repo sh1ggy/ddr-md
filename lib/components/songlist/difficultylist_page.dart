@@ -184,6 +184,11 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
+  static String _countLabel(int count, SortType sortType) {
+    final String noun = sortType == SortType.level ? 'chart' : 'song';
+    return '$count $noun${count == 1 ? '' : 's'}';
+  }
+
   Future<List<SongItem>> generateSongItems(
       Modes mode, SortType sortType, bool descending) async {
     List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
@@ -191,9 +196,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       favCount = favList.length;
     });
 
-    // One row per song, always — the songlist stays a list of songs. A level
-    // filter only decides which of a song's charts its row stands for, so the
-    // row can fold under that level and open there.
+    // One row per song, except under the level sort, where a row stands for a
+    // chart: a song sits in every level folder it charts. Off that sort a level
+    // filter still scopes the row to the chart it was reaching for, so the row
+    // opens there.
     List<SongItem> songItems = [];
     for (SongInfo song in Songs.list) {
       // Resolved before the filter runs — the favourites axis needs it.
@@ -203,9 +209,14 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         continue;
       }
 
-      songItems.add(_filter.levels.isEmpty
-          ? SongItem(songInfo: song, isFav: isFav)
-          : _filteredChartItem(song, mode, isFav));
+      if (sortType == SortType.level) {
+        songItems.addAll(chartItemsFor(song, mode,
+            isFav: isFav, levels: _filter.levels));
+      } else {
+        songItems.add(_filter.levels.isEmpty
+            ? SongItem(songInfo: song, isFav: isFav)
+            : _filteredChartItem(song, mode, isFav));
+      }
     }
 
     final int sign = descending ? -1 : 1;
@@ -298,7 +309,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   SliverToBoxAdapter(
                     child: ListTile(
                       title: Text(
-                        '${songItems.length} song${songItems.length == 1 ? '' : 's'}',
+                        // Rows are charts under the level sort and songs
+                        // everywhere else, so the noun follows the rows.
+                        _countLabel(songItems.length, songState.sortType),
                         style: TextStyle(
                           color: Theme.of(context).textTheme.bodyLarge!.color,
                           fontWeight: FontWeight.bold,
