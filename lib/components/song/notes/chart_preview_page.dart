@@ -150,8 +150,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   // The assist-tick and foot-guide toggles moved into the scroller's settings
   // shade (its own segment); the shade itself opens from the scroller's left-edge
   // pull-tab, so the header carries no action affordances at all. A translucent
-  // gradient keeps it legible against the scrolling arrows, and a
-  // difficulty-coloured hairline seats it.
+  // gradient alone keeps it legible against the scrolling arrows — it fades into
+  // the field rather than being fenced off by a rule.
   Widget _buildHeader(BuildContext context, Color diffColor) {
     final difficultyLabel = widget.difficultyLevel != null
         ? "${_pretty(widget.difficultyKey)} ${widget.difficultyLevel}"
@@ -165,9 +165,6 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
             Colors.black.withValues(alpha: 0.72),
             Colors.black.withValues(alpha: 0.0),
           ],
-        ),
-        border: Border(
-          bottom: BorderSide(color: diffColor.withValues(alpha: 0.9), width: 2),
         ),
       ),
       child: SafeArea(

@@ -97,6 +97,60 @@ abstract class Noteskin {
   /// beat.
   void paintReceptor(
       Canvas canvas, double x, double y, double size, NoteDir dir, double glow);
+
+  /// The impact flash left behind by a note arriving at the receptor, centred
+  /// on the line at (x,y). [progress] runs 0..1 across the flash's lifetime.
+  ///
+  /// DDR grows the flash over the FIRST HALF, then holds that size and fades it
+  /// out over the second half — it never expands while fading. The arrow itself
+  /// is not scaled on impact (it is simply gone by then); the flash starting
+  /// under-sized where the arrow was is what reads as the note compressing into
+  /// the line.
+  void paintNoteFlash(Canvas canvas, double x, double y, double size,
+      NoteDir dir, double progress);
+}
+
+/// Flash size as a multiple of the arrow. It peaks slightly larger than the
+/// note so it blooms past the receptor and reads as an impact rather than a
+/// tint. DDR's own is bigger (~1.2x growing to ~1.5x), but the receptor sits
+/// close to the top of the field here, so a burst that size runs into the
+/// status bar — these are pulled in to fit.
+const double noteFlashStartScale = 0.95;
+
+/// Largest the flash ever gets, as a multiple of the arrow size. The painter
+/// leaves room above the receptor for this so the flash draws uncut.
+const double noteFlashPeakScale = 1.15;
+
+/// How long the receptor's recoil lasts, in seconds, and how far it contracts.
+/// DDR's own is 75% over 60ms; pushed a little deeper and longer here so the
+/// recoil still registers on a phone-sized field.
+const double receptorRecoilSeconds = 0.09;
+const double receptorRecoilScale = 0.62;
+
+/// Receptor size multiplier [progress] through a recoil, as a multiple of the
+/// normal receptor size. Starts contracted and eases back out to 1.0 — the
+/// snap is on arrival, the visible motion is the recovery.
+double receptorRecoilCurve(double progress) {
+  final p = progress.clamp(0.0, 1.0);
+  // Ease-out: most of the spring-back happens early, so it reads as a recoil
+  // rather than a slow grow.
+  final eased = 1 - (1 - p) * (1 - p);
+  return receptorRecoilScale + (1 - receptorRecoilScale) * eased;
+}
+
+/// Shared shape of the DDR impact flash, so every skin grows and fades in step.
+/// Returns the (scale, alpha) for a flash [progress] through its lifetime,
+/// where scale is a multiple of the arrow size.
+(double scale, double alpha) noteFlashCurve(double progress) {
+  final p = progress.clamp(0.0, 1.0);
+  // Grow to the peak over the first half; hold that size and fade over the
+  // second. It never expands while fading — that hold is the DDR look.
+  final scale = p < 0.5
+      ? noteFlashStartScale +
+          (noteFlashPeakScale - noteFlashStartScale) * 2 * p
+      : noteFlashPeakScale;
+  final alpha = p < 0.5 ? 1.0 : 1.0 - (p - 0.5) * 2;
+  return (scale, alpha);
 }
 
 /// The default, self-contained look: crisp vector arrows with a quantisation
@@ -432,6 +486,36 @@ class VectorNoteskin implements Noteskin {
     canvas.restore();
   }
 
+  @override
+  void paintNoteFlash(Canvas canvas, double x, double y, double size,
+      NoteDir dir, double progress) {
+    final (scale, alpha) = noteFlashCurve(progress);
+    if (alpha <= 0) return;
+    final s = size * scale;
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.rotate(rotationForDir(dir));
+    // A soft additive bloom in the arrow's shape — DDR's flash is light thrown
+    // off the receptor, not an opaque arrow stamped over the lane, so it lifts
+    // what's underneath rather than hiding it. The vector stand-in for the
+    // sprite burst, needing no external art.
+    canvas.drawPath(
+      _arrowPath(s),
+      Paint()
+        ..blendMode = BlendMode.plus
+        ..color = Colors.white.withValues(alpha: alpha * 0.30)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.22),
+    );
+    canvas.drawPath(
+      _arrowPath(s * 0.82),
+      Paint()
+        ..blendMode = BlendMode.plus
+        ..color = Colors.white.withValues(alpha: alpha * 0.22)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.10),
+    );
+    canvas.restore();
+  }
+
   static Color _lighten(Color c, double amt) =>
       Color.lerp(c, Colors.white, amt)!;
   static Color _darken(Color c, double amt) => Color.lerp(c, Colors.black, amt)!;
@@ -589,6 +673,30 @@ class SpriteNoteskin implements Noteskin {
   @override
   void paintMine(Canvas c, double x, double y, double s) =>
       _vector.paintMine(c, x, y, s);
+
+  @override
+  void paintNoteFlash(Canvas canvas, double x, double y, double size,
+      NoteDir dir, double progress) {
+    final (scale, alpha) = noteFlashCurve(progress);
+    if (alpha <= 0) return;
+    // The real arrow art blown out to white, so the burst keeps the sprite
+    // skin's silhouette instead of dropping to the vector chevron.
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.rotate(rotationForDir(dir));
+    final dst = Rect.fromCenter(
+        center: Offset.zero, width: size * scale, height: size * scale);
+    // Additive so the burst reads as light off the receptor rather than an
+    // opaque white arrow covering the lane.
+    _drawImage(canvas, _note, dst,
+        paint: Paint()
+          ..blendMode = BlendMode.plus
+          ..colorFilter =
+              const ColorFilter.mode(Colors.white, BlendMode.srcIn)
+          ..color = Colors.white.withValues(alpha: alpha * 0.45)
+          ..filterQuality = FilterQuality.medium);
+    canvas.restore();
+  }
 
   @override
   void paintShock(Canvas canvas, List<(double x, NoteDir dir)> lanes, double y,

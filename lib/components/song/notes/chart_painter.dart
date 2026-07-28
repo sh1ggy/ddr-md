@@ -175,6 +175,12 @@ class ChartPainter extends CustomPainter {
   // the state to derive the field's travel distance for the speed law.
   static const double receptorBase = 56;
   double get _receptorTop => receptorBase + topInset;
+
+  // Impact flash lifetime. DDR's is 120ms; the preview has no input or
+  // judgement, so every arrival draws the clean-hit flash rather than one of
+  // the per-judgement variants.
+  static const double _flashSeconds = 0.12;
+
   static const double _laneTighten = 0.92;
 
   @override
@@ -244,10 +250,16 @@ class ChartPainter extends CustomPainter {
     final phase = (beatLocked ? currentBeat : second * 2) % 1.0;
     final glow = playing ? 1.0 - (2.0 * phase - 1.0).abs() : 0.0;
 
-    // Clip only the far top of the field (above where a note centred on the
-    // receptor would reach), so a note sitting ON the receptor draws in full
-    // (z-above it) while notes that have scrolled well past are hidden.
-    final clipTop = _receptorTop - arrowSize / 2 - 2;
+    // Clip only the far top of the field, so a note sitting ON the receptor
+    // draws in full (z-above it) while notes that have scrolled well past are
+    // hidden. Sized for the impact flash rather than the note: the flash shares
+    // the receptor's centre but overhangs it (see [noteFlashCurve]), and a clip
+    // cut to the arrow alone shears its top off. Never rises above the safe
+    // area though — the field must not draw under the status bar / notch, so on
+    // wide fields the flash is cut there rather than the chrome being overrun.
+    final flashTop =
+        _receptorTop - arrowSize * noteFlashPeakScale / 2 - arrowSize * 0.12;
+    final clipTop = flashTop < topInset ? topInset : flashTop;
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
 
@@ -286,13 +298,41 @@ class ChartPainter extends CustomPainter {
       });
     }
 
+    // Age (in seconds) of the most recent arrival in each drawn lane, for the
+    // impact effects below. Notes are sorted, so the arrivals still in effect
+    // are the slice ending at the playhead — walk back from a binary search
+    // until one is older than the longest effect. Nothing is retained between
+    // frames; every effect is a function of (playhead - note.second). Only
+    // while playing: scrubbing sweeps arrivals past the playhead at arbitrary
+    // speed (and backwards), which would strobe the whole field.
+    final arrivals = <int, double>{};
+    if (playing) {
+      const longest =
+          _flashSeconds > receptorRecoilSeconds ? _flashSeconds : receptorRecoilSeconds;
+      for (int i = _lowerBoundBySecond(notes, second) - 1; i >= 0; i--) {
+        final n = notes[i];
+        final age = second - n.second;
+        if (age >= longest) break; // sorted: everything earlier is older
+        if (n.type == StepType.mine) continue; // mines aren't "hit"
+        arrivals.putIfAbsent(turned(n.col), () => age); // newest wins the lane
+      }
+    }
+
     // 1.2) Receptors, drawn on top of hold bodies/tails but under taps and
     // held hold-heads (below) — a sustain slides under the receptor frame as
     // it passes through or ends at the line, matching DDR/StepMania, while an
     // arrow landing on the line still covers its receptacle.
+    //
+    // A receptor recoils when a note lands on it: it snaps in and springs back.
+    // DDR drives this off ghost taps (stepping with no note there) rather than
+    // arrivals — there is no input here, so it hangs off the note instead.
     for (int c = 0; c < columnCount; c++) {
-      skin.paintReceptor(
-          canvas, laneCenterX(c), _receptorTop, arrowSize, dirs[c], glow * 0.9);
+      final age = arrivals[c];
+      final recoil = age == null
+          ? 1.0
+          : receptorRecoilCurve(age / receptorRecoilSeconds);
+      skin.paintReceptor(canvas, laneCenterX(c), _receptorTop,
+          arrowSize * recoil, dirs[c], glow * 0.9);
     }
 
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
@@ -361,6 +401,14 @@ class ChartPainter extends CustomPainter {
       final n = notes[i];
       if (n.second > maxT) break;
       drawHead(n, false);
+    }
+
+    // 3.5) Impact flashes for notes that just reached the line, one per lane
+    // (matching DDR's one-live-flash-per-column).
+    for (final MapEntry(key: col, value: age) in arrivals.entries) {
+      if (age >= _flashSeconds) continue; // recoil outlasts the flash
+      skin.paintNoteFlash(canvas, laneCenterX(col), _receptorTop, arrowSize,
+          dirs[col], age / _flashSeconds);
     }
 
     // 4) Timing-marker labels, top layer: drawn last so the STOP/BPM pills sit
