@@ -439,32 +439,56 @@ class _PadPainter extends CustomPainter {
     canvas.save();
     canvas.translate((heel.dx + toe.dx) / 2, (heel.dy + toe.dy) / 2);
     canvas.rotate(math.atan2(axis.dy, axis.dx) + math.pi / 2);
-    // A bracket reaches, so the foot lengthens — but widen it a little too.
-    // Length alone turns a long reach into a spike that stops reading as a foot.
-    final reach = len / unit;
-    _drawFootPath(
-        canvas, unit * (0.46 + reach * 0.18), unit * 0.66 + len, color);
+    // A foot is always drawn the same size. Brackets are rare, and one that
+    // stretched to span two panels reads as a rendering glitch rather than as a
+    // reach — so a bracket only turns to point along its heel->toe line.
+    // Which way is "inward" for THIS foot, in the foot's own rotated frame: the
+    // left foot's body is to its right (+x) and vice versa. Constant per foot
+    // rather than derived from the pad centre, so the arch never flips sides
+    // mid-run when a foot crosses over.
+    final inward = foot == ParityFoot.left ? 1.0 : -1.0;
+    _drawFootPath(canvas, unit * 0.46, unit * 0.66, color, inward);
     canvas.restore();
   }
 
   /// The foot outline itself, centred on the origin and pointing up (-y), so the
   /// caller only has to place and rotate it. [length] spans heel to toe.
-  void _drawFootPath(Canvas canvas, double width, double length, Color color) {
+  ///
+  /// Handed: [inward] is the x direction of the pad's centre (-1 for a foot on
+  /// the right of the body, +1 for one on the left), and the arch is cut into
+  /// THAT side while the outer edge stays full. So the left and right feet are
+  /// mirror images that visibly belong to one body, rather than two copies of
+  /// the same shape.
+  void _drawFootPath(
+      Canvas canvas, double width, double length, Color color, double inward) {
     final halfW = width / 2;
     final halfL = length / 2;
     // Forefoot is the full width; the heel is drawn at ~60% of it, which is what
     // gives the silhouette its direction at a glance.
     final heelW = halfW * 0.6;
+    // The arch scoops in on the inner edge; the outer edge stays convex. Mirror
+    // the x of every point by [inward] so one path serves both feet.
+    final inner = halfW * inward;
+    final outer = -inner;
+    final innerHeel = heelW * inward;
+    final outerHeel = -innerHeel;
     final path = Path()
-      ..moveTo(-halfW, -halfL + width * 0.35)
+      ..moveTo(outer, -halfL + width * 0.35)
       // Toe: a rounded cap across the front.
-      ..quadraticBezierTo(-halfW, -halfL - width * 0.12, 0, -halfL - width * 0.12)
-      ..quadraticBezierTo(halfW, -halfL - width * 0.12, halfW, -halfL + width * 0.35)
-      // Outer edge sweeping back into the arch, then the heel.
-      ..quadraticBezierTo(halfW * 0.92, halfL * 0.35, heelW, halfL - heelW * 0.4)
-      ..quadraticBezierTo(heelW, halfL + heelW * 0.35, 0, halfL + heelW * 0.35)
-      ..quadraticBezierTo(-heelW, halfL + heelW * 0.35, -heelW, halfL - heelW * 0.4)
-      ..quadraticBezierTo(-halfW * 0.92, halfL * 0.35, -halfW, -halfL + width * 0.35)
+      ..quadraticBezierTo(outer, -halfL - width * 0.12, 0, -halfL - width * 0.12)
+      ..quadraticBezierTo(
+          inner, -halfL - width * 0.12, inner, -halfL + width * 0.35)
+      // Inner edge: scooped well in at the arch (0.62 of the half-width) before
+      // meeting the heel — this hollow is what makes the foot read as a left or
+      // a right at a glance.
+      ..quadraticBezierTo(
+          inner * 0.62, halfL * 0.30, innerHeel, halfL - heelW * 0.4)
+      // Heel: a rounded cap across the back.
+      ..quadraticBezierTo(innerHeel, halfL + heelW * 0.35, 0, halfL + heelW * 0.35)
+      ..quadraticBezierTo(
+          outerHeel, halfL + heelW * 0.35, outerHeel, halfL - heelW * 0.4)
+      // Outer edge: stays full and convex all the way back to the toe.
+      ..quadraticBezierTo(outer * 1.02, halfL * 0.32, outer, -halfL + width * 0.35)
       ..close();
 
     canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.55));

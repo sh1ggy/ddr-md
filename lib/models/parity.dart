@@ -98,6 +98,10 @@ class _Foot {
   /// The parts that can actually be placed on an arrow (NONE excluded).
   static const List<int> all = [leftHeel, leftToe, rightHeel, rightToe];
 
+  /// The subset placeable when brackets are disallowed: heels only, so one foot
+  /// can never cover two panels and the toe parts stay permanently unplaced.
+  static const List<int> heels = [leftHeel, rightHeel];
+
   /// The other part of the same physical foot (heel<->toe), NONE for NONE.
   static const List<int> otherPart = [none, leftToe, leftHeel, rightToe, rightHeel];
 
@@ -128,6 +132,23 @@ class _Weights {
   static const double spin = 3000;
   static const double sideswitch = 130;
   static const double startXo = 10000;
+
+  /// Flat surcharge for putting one foot on two panels at all. NOT from
+  /// SMEditor, which prices only specific awkward brackets (bracket jacks, slow
+  /// brackets, bracketing while crossed over) and is otherwise happy to bracket
+  /// whenever it saves a little distance.
+  ///
+  /// Only a small minority of players bracket at all, so a solve that reaches
+  /// for one wherever it saves a step doesn't describe how the chart is really
+  /// danced.
+  ///
+  /// Deliberately small. Measured over 63 singles charts (~17.8k rows), the
+  /// engine brackets on 0.31% of rows at zero surcharge and stops entirely
+  /// around 150 — a narrow band, not a broad dial, so anything in the hundreds
+  /// is a ban dressed up as a preference. At 50 the rate is 0.04% (4 charts of
+  /// 63): the marginal brackets are gone, and the ones left are where the
+  /// alternatives really are worse.
+  static const double bracket = 50;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +352,13 @@ class _Placement {
 class _ParityEngine {
   final _StageLayout layout;
 
-  _ParityEngine(this.layout);
+  /// Whether one foot may cover two panels at once. On by default, priced by
+  /// [_Weights.bracket] so brackets stay rare. Turning it off drops them from
+  /// the candidate placements entirely, which is stricter than any weight can
+  /// be — no solve can then fall back on one however bad the alternatives.
+  final bool allowBrackets;
+
+  _ParityEngine(this.layout, {this.allowBrackets = true});
 
   /// Build rows by grouping notes on the same (rounded) second. Holds are
   /// tracked so a foot may legally "double step" while the other foot holds.
@@ -444,7 +471,7 @@ class _ParityEngine {
         recurse(col + 1);
         return;
       }
-      for (final foot in _Foot.all) {
+      for (final foot in allowBrackets ? _Foot.all : _Foot.heels) {
         if (columns.contains(foot)) continue;
         columns[col] = foot;
         recurse(col + 1);
@@ -610,6 +637,10 @@ class _ParityEngine {
         ((d.leftJack && d.leftBracket) || (d.rightJack && d.rightBracket))) {
       total += _Weights.bracketJack;
     }
+
+    // BRACKET: the flat surcharge for bracketing at all, per foot.
+    if (d.leftBracket) total += _Weights.bracket;
+    if (d.rightBracket) total += _Weights.bracket;
 
     // XO_BR: bracketing while crossed over.
     final crossedOver = d.rightPos.x < d.leftPos.x;
@@ -921,12 +952,19 @@ class _ParityEngine {
 }
 
 /// Entry point: run the cost-minimising parity engine over a note stream.
-ParityResult analyseParity(List<StepNote> notes, Modes mode) {
+///
+/// Brackets are legal but carry [_Weights.bracket], so they stay rare. Pass
+/// [allowBrackets] false to remove them from consideration entirely — note that
+/// this can push the solve into worse-looking alternatives on charts where a
+/// bracket really was the sane reading.
+ParityResult analyseParity(List<StepNote> notes, Modes mode,
+    {bool allowBrackets = true}) {
   final layout =
       mode == Modes.doubles ? _StageLayout.doubles : _StageLayout.singles;
-  return _ParityEngine(layout).analyse(notes);
+  return _ParityEngine(layout, allowBrackets: allowBrackets).analyse(notes);
 }
 
 /// Convenience for callers that only want the per-note L/R badges.
-Map<StepNote, ParityFoot> assignParity(List<StepNote> notes, Modes mode) =>
-    analyseParity(notes, mode).feet;
+Map<StepNote, ParityFoot> assignParity(List<StepNote> notes, Modes mode,
+        {bool allowBrackets = true}) =>
+    analyseParity(notes, mode, allowBrackets: allowBrackets).feet;
