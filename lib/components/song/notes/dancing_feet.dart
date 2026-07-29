@@ -26,6 +26,69 @@ import 'package:flutter/material.dart';
 /// deliberately parked in the corner isn't mistaken for an unplaced one.
 const int kDancingFeetUnset = 0;
 
+/// How far the feet turn, given the panel each foot stands on.
+///
+/// These are the panels the player is really standing on: the parity solve runs
+/// on the chart as TURNED, so a stance already accounts for the modifier and no
+/// column mapping belongs anywhere on this path.
+///
+/// You stand facing the machine, and almost nothing turns you. A staircase runs
+/// through every panel without ever crossing your legs; a foot on Up while the
+/// other is on Down is just one foot forward. So the feet point straight up the
+/// pad by default and turn only on a genuine crossover.
+///
+/// The test is about PANELS, not coordinates: Up and Down are neutral ground
+/// that either foot uses freely, so a cross is one foot standing on the SIDE
+/// panel that belongs to the other foot — the left foot on Right, or the right
+/// foot on Left. Measuring the feet's x positions instead gets this wrong,
+/// because a foot reaching for a centre panel can sit further across than its
+/// partner without any crossing having happened, which spins the body a quarter
+/// turn in the middle of an ordinary staircase.
+///
+/// Crossing is not a matter of degree — the leg has crossed or it hasn't — so
+/// the turn is all-or-nothing. The canvas rotates clockwise-positive and the
+/// foot is drawn pointing up, so a right foot crossing under to the LEFT panel
+/// turns -90 (its toe swings to -x) and a left foot reaching across to Right
+/// turns +90.
+@visibleForTesting
+double turnFor(int leftCol, int rightCol) {
+  // Both feet on one panel is a footswitch — they are stacked, not crossed.
+  if (leftCol == rightCol) return 0;
+  if (rightCol == _colLeft) return -_maxTurn;
+  if (leftCol == _colRight) return _maxTurn;
+  return 0;
+}
+
+/// How far a foot shrinks at the bottom of its press. A foot coming down on a
+/// panel is seen from above as it drops, so it reads smaller for the moment it
+/// lands — that dip is what separates a foot PLANTED on a panel from one merely
+/// hovering over it. Small: enough to register as weight going down, not so much
+/// that a stream of steps turns into a row of pulsing blobs.
+const double _pressScale = 0.82;
+
+/// Recovery is a shade longer than the panel flash, so the foot is still
+/// settling as the light fades rather than snapping back before it.
+const double _pressSeconds = 0.2;
+
+/// The size multiplier for a foot [sinceStep] seconds after it landed: smallest
+/// on impact, easing back to full as the weight settles. Outside the press
+/// window it is exactly 1, so a foot standing through a long gap is drawn at the
+/// size it would be if there were no press at all.
+@visibleForTesting
+double padPressFactor(double sinceStep) {
+  if (sinceStep < 0 || sinceStep >= _pressSeconds) return 1.0;
+  final recovered =
+      Curves.easeOutCubic.transform((sinceStep / _pressSeconds).clamp(0.0, 1.0));
+  return _pressScale + (1 - _pressScale) * recovered;
+}
+
+/// Column indices for the two side panels.
+const int _colLeft = 0;
+const int _colRight = 3;
+
+/// A full crossover turns the feet a quarter circle.
+const double _maxTurn = math.pi / 2;
+
 /// The pad: a floating, draggable overlay showing where the parity solve stands
 /// the player at the playhead. Driven by the scroller's playhead notifier so the
 /// feet animate without rebuilding the widget tree per frame.
@@ -41,7 +104,6 @@ class DancingFeet extends StatefulWidget {
     required this.stances,
     required this.playhead,
     required this.columnCount,
-    required this.colMap,
     this.visualOffset = 0,
   });
 
@@ -57,11 +119,6 @@ class DancingFeet extends StatefulWidget {
 
   /// 4 for singles, 8 for doubles — a doubles pad draws as two panels.
   final int columnCount;
-
-  /// The TURN permutation the field is drawn with (`colMap[chartCol]` = drawn
-  /// column). The feet must land on the panel the player actually sees, so the
-  /// pad walks through the same map the arrows do.
-  final List<int> colMap;
 
   /// Tall enough for the three-panel-high stage to read at a glance without
   /// covering much of the field. Doubles draws two pads in this width, so its
@@ -187,7 +244,6 @@ class _DancingFeetState extends State<DancingFeet> {
                 stances: widget.stances,
                 playhead: widget.playhead,
                 columnCount: widget.columnCount,
-                colMap: widget.colMap,
                 visualOffset: widget.visualOffset,
               ),
             ),
@@ -205,7 +261,6 @@ class _PadSurface extends StatelessWidget {
     required this.stances,
     required this.playhead,
     required this.columnCount,
-    required this.colMap,
     required this.visualOffset,
   });
 
@@ -213,7 +268,6 @@ class _PadSurface extends StatelessWidget {
   final List<ParityStance> stances;
   final ValueListenable<double> playhead;
   final int columnCount;
-  final List<int> colMap;
   final double visualOffset;
 
   @override
@@ -237,7 +291,6 @@ class _PadSurface extends StatelessWidget {
               stances: stances,
               playhead: playhead,
               columnCount: columnCount,
-              colMap: colMap,
               visualOffset: visualOffset,
             ),
             size: Size.infinite,
@@ -267,14 +320,12 @@ class _PadPainter extends CustomPainter {
     required this.stances,
     required this.playhead,
     required this.columnCount,
-    required this.colMap,
     required this.visualOffset,
   }) : super(repaint: playhead);
 
   final List<ParityStance> stances;
   final ValueListenable<double> playhead;
   final int columnCount;
-  final List<int> colMap;
   final double visualOffset;
 
   double get second => playhead.value + visualOffset;
@@ -358,25 +409,68 @@ class _PadPainter extends CustomPainter {
             ? 1 - (sinceStep / _flashSeconds).clamp(0.0, 1.0)
             : 0);
 
+    // The body's turn, slid alongside the feet so a crossover winds round as the
+    // foot travels rather than snapping square on the landing frame.
+    final turn = _lerpAngle(_bodyTurn(previous ?? current), _bodyTurn(current), t);
+
     for (final foot in ParityFoot.values) {
       final to = _poseFor(current, foot);
       if (to == null) continue; // foot not on the pad yet
       final from = (previous == null ? null : _poseFor(previous, foot)) ?? to;
-      _paintFoot(canvas, pointFor, unit, foot, from, to, t);
+      // Only the foot that actually stepped presses. A foot standing still while
+      // its partner steps is holding its weight, not landing, and bobbing it too
+      // would read as both feet hitting on every note.
+      final press = _stepped(current, foot) ? _pressFor(sinceStep) : 1.0;
+      _paintFoot(canvas, pointFor, unit, foot, from, to, t, turn, press);
     }
   }
 
-  /// A foot's heel/toe as DRAWN columns, or null when it isn't on the pad yet.
-  /// A foot standing on a single panel reports that panel as both, so the
-  /// silhouette has a zero-length axis and stands upright.
+  /// Did [foot] step on this row, as opposed to standing where it already was?
+  bool _stepped(ParityStance stance, ParityFoot foot) {
+    if (stance.stepped.isEmpty) return false;
+    for (final col in stance.columnsFor(foot)) {
+      if (stance.stepped.contains(col)) return true;
+    }
+    return false;
+  }
+
+  double _pressFor(double sinceStep) => padPressFactor(sinceStep);
+
+  /// This stance's [turnFor], read off the panels each foot stands on. Doubles
+  /// has no single pair of side panels to cross over, so it stays square.
+  ///
+  /// No mapping happens here: the solve already ran on the turned chart, so a
+  /// stance names the panels the player is really standing on and a crossover in
+  /// it is a real crossover.
+  double _bodyTurn(ParityStance stance) {
+    if (columnCount > 4) return 0;
+    // The heel names the panel a foot is standing on; a bracket's toe doesn't
+    // change which side of the body the foot is on. A foot not yet on the pad
+    // has no side, so the body stays square.
+    final left = stance.leftHeel == -1 ? stance.leftToe : stance.leftHeel;
+    final right = stance.rightHeel == -1 ? stance.rightToe : stance.rightHeel;
+    if (left == -1 || right == -1) return 0;
+    return turnFor(left, right);
+  }
+
+  /// Shortest-path angle interpolation, so turning through the -pi/pi seam spins
+  /// the short way instead of unwinding all the way round.
+  double _lerpAngle(double a, double b, double t) {
+    var delta = (b - a) % (math.pi * 2);
+    if (delta > math.pi) delta -= math.pi * 2;
+    if (delta < -math.pi) delta += math.pi * 2;
+    return a + delta * t;
+  }
+
+  /// A foot's heel/toe columns, or null when it isn't on the pad yet. A foot
+  /// standing on a single panel reports that panel as both, so the silhouette
+  /// has a zero-length axis and stands upright.
   _FootPose? _poseFor(ParityStance stance, ParityFoot foot) {
     final heel = foot == ParityFoot.left ? stance.leftHeel : stance.rightHeel;
     final toe = foot == ParityFoot.left ? stance.leftToe : stance.rightToe;
     if (heel == -1 && toe == -1) return null;
-    return _FootPose(_drawn(heel == -1 ? toe : heel), _drawn(toe == -1 ? heel : toe));
+    return _FootPose(heel == -1 ? toe : heel, toe == -1 ? heel : toe);
   }
-
-  int _drawn(int col) => (col >= 0 && col < colMap.length) ? colMap[col] : col;
 
   static final Paint _panelPaint = Paint()
     ..color = Colors.white.withValues(alpha: 0.05);
@@ -395,9 +489,8 @@ class _PadPainter extends CustomPainter {
   }) {
     final side = unit * 0.88;
     for (int col = 0; col < columnCount; col++) {
-      final drawn = (col >= 0 && col < colMap.length) ? colMap[col] : col;
       final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: pointFor(drawn), width: side, height: side),
+        Rect.fromCenter(center: pointFor(col), width: side, height: side),
         Radius.circular(unit * 0.12),
       );
       canvas.drawRRect(rect, _panelPaint);
@@ -415,8 +508,8 @@ class _PadPainter extends CustomPainter {
   /// heel, pointing from heel toward toe. A symmetric blob can't say which end
   /// is which — and which end is which is the whole point of a bracket, so the
   /// shape carries the heel/toe the solver already worked out. When the foot
-  /// isn't bracketing it stands on one panel and simply points up the pad, the
-  /// way you actually stand on a plain step.
+  /// isn't bracketing it stands on one panel and points up the pad, turned only
+  /// by [bodyTurn] — see [turnFor], which is 0 for everything but a crossover.
   void _paintFoot(
     Canvas canvas,
     Offset Function(int) pointFor,
@@ -425,29 +518,43 @@ class _PadPainter extends CustomPainter {
     _FootPose from,
     _FootPose to,
     double t,
+    double bodyTurn,
+    double press,
   ) {
     final heel = Offset.lerp(from.heel(pointFor), to.heel(pointFor), t)!;
     final toe = Offset.lerp(from.toe(pointFor), to.toe(pointFor), t)!;
 
     // Heel->toe direction. Equal points mean a single-panel stance, which has no
-    // axis of its own: stand it upright (toe toward the top of the pad).
-    var axis = toe - heel;
+    // axis of its own: it stands upright, turned only by the body (0 unless the
+    // stance is crossed over). A bracket has a real axis and follows it instead.
+    final axis = toe - heel;
     final len = axis.distance;
-    axis = len < 0.001 ? const Offset(0, -1) : axis / len;
+    final angle =
+        len < 0.001 ? bodyTurn : math.atan2(axis.dy, axis.dx) + math.pi / 2;
 
     final color = foot == ParityFoot.left ? kLeftFootColor : kRightFootColor;
     canvas.save();
     canvas.translate((heel.dx + toe.dx) / 2, (heel.dy + toe.dy) / 2);
-    canvas.rotate(math.atan2(axis.dy, axis.dx) + math.pi / 2);
-    // A foot is always drawn the same size. Brackets are rare, and one that
+    canvas.rotate(angle);
+    // Scaled about the foot's own centre (we are already translated there), so
+    // the press squashes it in place instead of sliding it toward the panel's
+    // corner as it shrinks.
+    canvas.scale(press);
+    // A foot never STRETCHES to its stance. Brackets are rare, and one that
     // stretched to span two panels reads as a rendering glitch rather than as a
-    // reach — so a bracket only turns to point along its heel->toe line.
+    // reach — so a bracket only turns to point along its heel->toe line. The
+    // press above is the one thing that changes a foot's size, and it is uniform
+    // and brief.
     // Which way is "inward" for THIS foot, in the foot's own rotated frame: the
     // left foot's body is to its right (+x) and vice versa. Constant per foot
     // rather than derived from the pad centre, so the arch never flips sides
     // mid-run when a foot crosses over.
     final inward = foot == ParityFoot.left ? 1.0 : -1.0;
-    _drawFootPath(canvas, unit * 0.46, unit * 0.66, color, inward);
+    // Longer than it is wide by about 1.8:1, the way a real foot is and the way
+    // SMEditor's bot draws it. A rounder blob reads as a token sitting on the
+    // panel; the length is what makes it read as a foot with a direction, and it
+    // makes the heel/toe of a bracket legible at this size.
+    _drawFootPath(canvas, unit * 0.46, unit * 0.82, color, inward);
     canvas.restore();
   }
 
@@ -506,7 +613,6 @@ class _PadPainter extends CustomPainter {
   bool shouldRepaint(_PadPainter old) =>
       old.stances != stances ||
       old.columnCount != columnCount ||
-      old.colMap != colMap ||
       // Without this the feet wouldn't move while dialling VISUAL OFFSET
       // paused — same reason the field's painter watches it.
       old.visualOffset != visualOffset;

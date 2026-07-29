@@ -2107,7 +2107,6 @@ class _ChartScrollerState extends State<ChartScroller>
                 stances: _stances,
                 playhead: _playhead,
                 columnCount: dirs.length,
-                colMap: _colMap,
                 visualOffset: _visualOffsetSeconds,
               ),
             ),
