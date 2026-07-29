@@ -1082,7 +1082,13 @@ class _ChartScrollerState extends State<ChartScroller>
   void _setTurn(_Turn turn) {
     HapticFeedback.selectionClick();
     final next = _turn == turn ? _Turn.off : turn;
-    setState(() => _turn = next);
+    setState(() {
+      _turn = next;
+      // The footing belongs to the turned chart, so it is re-solved here rather
+      // than only when the chart itself changes.
+      _assignFeet();
+      _buildFootLinks();
+    });
     Settings.setInt(Settings.chartPreviewTurnKey, next.index);
     _flashScrubOverlay(_turnLabel(next), "TURN");
   }
@@ -1215,10 +1221,50 @@ class _ChartScrollerState extends State<ChartScroller>
     });
   }
 
+  // Solve the footing for the chart AS TURNED. A TURN mod is not a repaint: it
+  // moves the arrows under your feet, so a chart whose crossovers all sit on one
+  // side is danced differently mirrored. Solving the unturned chart and drawing
+  // the result on turned panels shows footing for a chart the player isn't
+  // playing, so the solve runs on permuted columns and re-runs on every change
+  // of turn.
+  //
+  // The solve therefore works on permuted COPIES, and [FootAnalysis.feet] comes
+  // back keyed by those copies. StepNote has no value equality, so that map
+  // would miss every lookup made with an original note. Re-key it by position —
+  // _turned preserves order one-for-one — to hand the rest of the widget a map
+  // in the chart space it already speaks. The stances stay in turned space,
+  // which is what the pad wants: they describe where the player's feet are.
   void _assignFeet() {
-    final analysis = FootAssigner.analyse(widget.steps.notes, widget.mode);
-    _feet = analysis.feet;
+    final source = widget.steps.notes;
+    final turned = _turned(source);
+    final analysis = FootAssigner.analyse(turned, widget.mode);
+    _feet = {
+      for (int i = 0; i < source.length; i++)
+        if (analysis.feet[turned[i]] case final foot?) source[i]: foot,
+    };
     _stances = analysis.stances;
+  }
+
+  // [notes] with every column sent through the active TURN map. Returns the
+  // originals untouched when no turn is on, so the common case allocates
+  // nothing.
+  List<StepNote> _turned(List<StepNote> notes) {
+    if (_turn == _Turn.off) return notes;
+    final map = _colMap;
+    return [
+      for (final n in notes)
+        if (n.col >= 0 && n.col < map.length)
+          StepNote(
+            beat: n.beat,
+            second: n.second,
+            col: map[n.col],
+            type: n.type,
+            endBeat: n.endBeat,
+            endSecond: n.endSecond,
+          )
+        else
+          n,
+    ];
   }
 
   // Distil the chart's BPM segments and stops into render-ready markers on the
