@@ -7,6 +7,7 @@
 /// paints without throwing.
 library;
 
+import 'package:ddr_md/components/song/notes/chart_chrome.dart';
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song/notes/dancing_feet.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -86,6 +87,22 @@ Finder _padRect() => find.descendant(
       matching: find.byType(CustomPaint),
     );
 
+/// Whether [of] paints on top of [other]. Both are laid over the field by the
+/// same Stack, so the one visited LATER in the element tree's depth-first walk
+/// is the one drawn last — and therefore on top.
+bool _paintsAbove(WidgetTester tester, {required Finder of, required Finder other}) {
+  final target = of.evaluate().single;
+  final against = other.evaluate().single;
+  final order = <Element>[];
+  void walk(Element e) {
+    order.add(e);
+    e.visitChildren(walk);
+  }
+
+  walk(tester.element(find.byType(ChartScroller)));
+  return order.indexOf(target) > order.indexOf(against);
+}
+
 Future<void> _pumpFrames(WidgetTester tester, int frames) async {
   for (int i = 0; i < frames; i++) {
     await tester.pump(const Duration(milliseconds: 16));
@@ -93,6 +110,14 @@ Future<void> _pumpFrames(WidgetTester tester, int frames) async {
 }
 
 void main() {
+  // The pad's placement PERSISTS, so a test that drags it would otherwise hand
+  // the next test a pad in the wrong spot. Clear it between tests so each one
+  // starts from the default berth.
+  setUp(() async {
+    await Settings.setInt(Settings.dancingFeetXKey, kDancingFeetUnset);
+    await Settings.setInt(Settings.dancingFeetYKey, kDancingFeetUnset);
+  });
+
   setUpAll(() async {
     SharedPreferences.setMockInitialValues({});
     await Settings.init();
@@ -197,6 +222,68 @@ void main() {
     await _pumpFrames(tester, 120);
     expect(_elapsedLabel(tester), isNot('0:00'),
         reason: 'the pad layer ate the field tap');
+  });
+
+  testWidgets('the pad can be parked over the controls and picked up again',
+      (tester) async {
+    await tester.pumpWidget(_host(_scroller(dancingFeet: true)));
+    await tester.pump(const Duration(milliseconds: 16));
+    final field = tester.getRect(find.byType(ChartScroller));
+
+    // Drag it hard into the bottom-right, where the transport and scrubber
+    // live. Those are drawn under the pad's layer, so this must be reachable.
+    var gesture = await tester.startGesture(tester.getCenter(_padRect()));
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveBy(const Offset(600, 600));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final parked = tester.getRect(_padRect());
+    expect(parked.bottom, closeTo(field.bottom, 4),
+        reason: 'the pad should reach the very bottom of the field');
+
+    // And it is still the thing under your finger down there: pick it up again
+    // and drag it back out. If the controls were stealing the touch the pad
+    // would be stranded.
+    gesture = await tester.startGesture(tester.getCenter(_padRect()));
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveBy(const Offset(0, -200));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(_padRect()).dy, lessThan(parked.top),
+        reason: 'the pad was stranded under the controls');
+  });
+
+  testWidgets('the settings shade covers the pad rather than the reverse',
+      (tester) async {
+    await tester.pumpWidget(_host(_scroller(dancingFeet: true)));
+    await tester.pump(const Duration(milliseconds: 16));
+
+    // Park the pad up under the top chrome, where the shade will open over it.
+    var gesture = await tester.startGesture(tester.getCenter(_padRect()));
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveBy(const Offset(-100, -600));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(shadeTabKey));
+    await tester.pumpAndSettle();
+
+    // The shade is a deliberate, momentary surface: it must paint OVER the pad,
+    // and its controls must still take the touch where the two overlap.
+    final shade = find.byType(SettingsShade);
+    expect(shade, findsOneWidget);
+    final overlap = tester.getRect(shade).intersect(tester.getRect(_padRect()));
+    expect(overlap.isEmpty, isFalse,
+        reason: 'move the pad further into the shade for this to prove anything');
+    expect(
+      _paintsAbove(tester, of: shade, other: find.byType(DancingFeet)),
+      isTrue,
+      reason: 'the pad punched through the shade',
+    );
   });
 
   testWidgets('press and hold moves the pad, and the move is remembered',

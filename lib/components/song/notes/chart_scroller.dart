@@ -433,12 +433,6 @@ class _ChartScrollerState extends State<ChartScroller>
   // chart carries no BPM data, in which case the field scrolls by constant time.
   ChartTiming _timing = ChartTiming.empty;
 
-  // Vertical band at the bottom the dancing-feet pad may not be parked in:
-  // tempo badge + transport + scrubber, all drawn above the pad's layer. Held
-  // at the EXPANDED height even when the transport is hidden, so collapsing the
-  // controls doesn't shunt an already-placed pad upward.
-  static const double _reservedBottomForPad = 200;
-
   // Best-effort L/R foot parity for the current chart, computed once on load
   // (client-side, so the heuristic is tunable without regenerating assets).
   // [_stances] is the same solve read as pad positions for the dancing feet, so
@@ -2049,27 +2043,26 @@ class _ChartScrollerState extends State<ChartScroller>
           ),
 
           // Dancing feet: the parity solve read as a body on a pad, floating
-          // wherever the user has dragged it. Above the field (so it can be
-          // picked up) but below the header, shade and edge tabs, so moving it
-          // over a control never buries that control.
+          // wherever the user has dragged it — anywhere on the field, including
+          // over the controls.
+          //
+          // Sits ABOVE the transport and scrubber, because a pad parked on top
+          // of them must still be the thing your finger finds or it could never
+          // be dragged off again. But BELOW the header, the settings shade and
+          // the edge tabs: those are pulled over the field deliberately and for
+          // a moment, so the pad passes under them rather than punching a hole
+          // through whatever the user just opened.
           if (widget.showDancingFeet && _stances.isNotEmpty)
             Positioned.fill(
               // The pad places itself within these bounds; the rest of the
-              // layer must stay transparent to taps so the field still takes
-              // play/pause, scrubs and pinches everywhere the pad isn't.
+              // layer stays transparent to taps, so the field (and the controls
+              // under it) still get everything the pad itself doesn't cover.
               child: DancingFeet(
                 stances: _stances,
                 playhead: _playhead,
                 columnCount: dirs.length,
                 colMap: _colMap,
                 visualOffset: _visualOffsetSeconds,
-                // Keep the pad out from under the chrome drawn above it, which
-                // would otherwise strand it somewhere it can't be grabbed. Fixed
-                // bands rather than the live heights: the transport collapses,
-                // and a bound that moved with it would shove a parked pad around
-                // every time the controls were hidden.
-                reservedTop: MediaQuery.of(context).padding.top + 64,
-                reservedBottom: _reservedBottomForPad,
               ),
             ),
 

@@ -43,16 +43,7 @@ class DancingFeet extends StatefulWidget {
     required this.columnCount,
     required this.colMap,
     this.visualOffset = 0,
-    this.reservedBottom = 0,
-    this.reservedTop = 0,
   });
-
-  /// Height of the chrome pinned to the bottom/top of the field (transport,
-  /// scrubber, header). Those layers are drawn ABOVE the pad, so a pad allowed
-  /// to sit under them could never be picked up again — its travel stops short
-  /// of them instead. Purely a bound on movement; nothing is drawn here.
-  final double reservedBottom;
-  final double reservedTop;
 
   /// The solved stance timeline, ascending by second.
   final List<ParityStance> stances;
@@ -110,11 +101,9 @@ class _DancingFeetState extends State<DancingFeet> {
     }
   }
 
-  // Default berth: centre-right, clear of the chrome the user would otherwise
-  // have to move it off before it could be picked up at all. The transport and
-  // scrubber own the bottom of the field and are drawn ABOVE this layer, so a
-  // pad parked down there would be unreachable on first use; the header owns the
-  // top. This lands it in the open middle-right, away from both.
+  // Default berth: centre-right, in the open part of the field where it blocks
+  // neither the arrows nor the controls. Only a starting point — the pad may be
+  // dragged anywhere from here, chrome included.
   static const double _defaultFx = 0.72;
   static const double _defaultFy = 0.46;
 
@@ -134,14 +123,11 @@ class _DancingFeetState extends State<DancingFeet> {
       final w = widget.width;
       const h = DancingFeet.height;
       // Free space the pad's top-left can range over, so a fraction of 1 puts
-      // its far edge on the field's far edge instead of off-screen — less the
-      // bands the chrome occupies, which the pad must stay clear of to remain
-      // draggable.
-      final top = widget.reservedTop;
-      final usableHeight =
-          constraints.maxHeight - widget.reservedTop - widget.reservedBottom;
+      // its far edge on the field's far edge instead of off-screen. The whole
+      // field is fair game, chrome included — the pad's layer sits above the
+      // controls, so it stays grabbable even parked on top of them.
       final freeX = math.max(0.0, constraints.maxWidth - w);
-      final freeY = math.max(0.0, usableHeight - h);
+      final freeY = math.max(0.0, constraints.maxHeight - h);
 
       void moveBy(Offset delta) {
         setState(() {
@@ -158,7 +144,7 @@ class _DancingFeetState extends State<DancingFeet> {
         children: [
           Positioned(
             left: _fxOrDefault * freeX,
-            top: top + _fyOrDefault * freeY,
+            top: _fyOrDefault * freeY,
             width: w,
             height: h,
             child: RawGestureDetector(
