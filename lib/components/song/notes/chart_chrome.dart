@@ -321,6 +321,12 @@ class SettingsShade extends StatelessWidget {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final scheme = Theme.of(context).colorScheme;
+    // Empty sections are dropped before the dividers are placed, so a hidden
+    // leading group can't leave a rule with nothing above it.
+    final shown = [
+      for (final s in sections)
+        if (s.content != null) s,
+    ];
     return Padding(
       // Inset from the screen edges so the card doesn't span the full width —
       // matching how the transport floats above the bottom edge.
@@ -345,12 +351,19 @@ class SettingsShade extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (int i = 0; i < sections.length; i++)
-                      if (sections[i].content != null)
-                        Padding(
-                          padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
-                          child: sections[i].content!,
+                    for (final (i, section) in shown.indexed) ...[
+                      // A hairline between groups so the TURN mods, the viewing
+                      // aids and ARCADE SYNC read as three sets rather than one
+                      // long stack of tiles. Kept faint — it separates, it isn't
+                      // chrome of its own.
+                      if (i > 0)
+                        Divider(
+                          height: 17,
+                          thickness: 1,
+                          color: scheme.onSurface.withValues(alpha: 0.12),
                         ),
+                      section.content!,
+                    ],
                   ],
                 ),
               ),
