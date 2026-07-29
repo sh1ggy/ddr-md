@@ -23,7 +23,9 @@ export 'chart_chrome.dart'
         shadeTabKey,
         arcadeSyncTileKey,
         visualOffsetChipKey,
-        audioOffsetChipKey;
+        audioOffsetChipKey,
+        timingMapKey,
+        TimingMap;
 import 'chart_painter.dart';
 import 'chart_timing.dart';
 import 'dancing_feet.dart';
@@ -368,6 +370,11 @@ class _ChartScrollerState extends State<ChartScroller>
 
   static const double _audioOffsetMinMs = -50;
   static const double _audioOffsetMaxMs = 50;
+
+  /// Half-width of the TIMING MAP's axis. Fixed rather than fitted to the song,
+  /// so the marker moves as you dial instead of the axis rescaling under it.
+  /// Songs beyond it peg at the edge; measured |bias| barely reaches it.
+  static const double _timingMapRangeMs = 50;
 
   /// Seconds of arrow travel per whole VISUAL dial unit.
   ///
@@ -1926,6 +1933,10 @@ class _ChartScrollerState extends State<ChartScroller>
                         constantMs: _effectiveConstantMs,
                         topInset: MediaQuery.of(context).padding.top,
                         visualOffset: _visualOffsetSeconds,
+                        audioOffset: _audioOffsetSeconds,
+                        // Off, both dials are gated to zero and the marks would
+                        // sit on the receptors saying nothing.
+                        showSyncGuide: _arcadeSyncOn,
                         arcadeQuant: widget.arcadeQuantOn,
                       ),
                       size: Size.infinite,
@@ -2560,6 +2571,15 @@ class _ChartScrollerState extends State<ChartScroller>
               // tells you when you've corrected it.
               summaryAccent: _syncAccent(context),
               onTap: _toggleArcadeSync,
+              map: _arcadeSyncOn
+                  ? TimingMap(
+                      key: timingMapKey,
+                      biasMs: _songBiasMs,
+                      visualMs: _visualOffset * _visualOffsetUnitSeconds * 1000,
+                      audioMs: _audioOffsetMs,
+                      rangeMs: _timingMapRangeMs,
+                    )
+                  : null,
             ),
             if (_arcadeSyncOn) ...[
               const SizedBox(height: 8),
@@ -2735,6 +2755,67 @@ double audioOffsetClampMs(double ms) =>
     repaints: offset.shouldRepaint(neutral),
     neutralSecond: neutral.second,
     offsetSecond: offset.second,
+  );
+  playhead.dispose();
+  return result;
+}
+
+/// Where the SYNC GUIDE puts its two marks for a given pair of dials, in pixels
+/// from the receptor line (positive = below/later), plus whether switching the
+/// guide on is treated as a repaint.
+///
+/// Exposed for the same reason as [debugVisualOffsetEffect]: the guide is drawn
+/// by the field painter, which never runs in a widget test.
+@visibleForTesting
+({
+  double beatDy,
+  double tickDy,
+  bool repaintsOnToggle,
+  Color beatHue,
+  Color tickHue,
+}) debugSyncGuideEffect({
+  required double visualUnits,
+  required double audioMs,
+  double pxPerSecond = 300,
+  double pxPerBeat = 150,
+  // Null exercises the constant-time fallback; a BPM builds a real timing map
+  // and exercises the beat-locked path the guide normally runs on.
+  int? bpm,
+}) {
+  final playhead = ValueNotifier<double>(1.0);
+  ChartPainter painterAt({required bool guide}) => ChartPainter(
+        notes: const [],
+        holds: const [],
+        shockNotes: const {},
+        shocks: const [],
+        bpmMarkers: const [],
+        stopMarkers: const [],
+        feet: const {},
+        footPrev: const {},
+        dirs: kSingleDirs,
+        colMap: const [0, 1, 2, 3],
+        playhead: playhead,
+        pxPerSecond: pxPerSecond,
+        pxPerBeat: pxPerBeat,
+        timing: bpm == null
+            ? ChartTiming.empty
+            : ChartTiming.build([Bpm(st: 0, ed: 10000, val: bpm)], const []),
+        columnCount: 4,
+        skin: const VectorNoteskin(),
+        playing: false,
+        visualOffset:
+            visualUnits * _ChartScrollerState._visualOffsetUnitSeconds,
+        audioOffset: audioMs / 1000.0,
+        showSyncGuide: guide,
+      );
+  final on = painterAt(guide: true);
+  final marks = on.syncGuideOffsets(on.yForNote);
+  final result = (
+    beatDy: marks.beatDy,
+    tickDy: marks.tickDy,
+    repaintsOnToggle: on.shouldRepaint(painterAt(guide: false)),
+    beatHue: on.guideHue(on.visualOffset),
+    tickHue: on.guideHue(on.audioOffset),
   );
   playhead.dispose();
   return result;

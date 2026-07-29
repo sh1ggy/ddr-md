@@ -184,7 +184,8 @@ void main() {
     testWidgets('the offset chips are hidden until ARCADE SYNC is on',
         (tester) async {
       await _reset();
-      await tester.pumpWidget(_host(_scroller(key: const ValueKey('gate-off'))));
+      await tester
+          .pumpWidget(_host(_scroller(key: const ValueKey('gate-off'))));
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(find.byKey(arcadeSyncTileKey), findsOneWidget,
@@ -242,8 +243,7 @@ void main() {
       // The gate isn't only about hiding controls: an offset saved in an earlier
       // session must not silently shift the field or the tick once ARCADE SYNC
       // is switched back off. This is the exact code path the live state uses.
-      expect(
-          debugGatedVisualOffsetSeconds(arcadeSyncOn: false, units: 5.0), 0);
+      expect(debugGatedVisualOffsetSeconds(arcadeSyncOn: false, units: 5.0), 0);
       expect(debugGatedAudioOffsetSeconds(arcadeSyncOn: false, ms: 50), 0);
     });
 
@@ -253,7 +253,6 @@ void main() {
       expect(debugGatedAudioOffsetSeconds(arcadeSyncOn: true, ms: 50),
           closeTo(0.05, 1e-9));
     });
-
   });
 
   group('auto-seeding on engage', () {
@@ -263,8 +262,8 @@ void main() {
       // entirely (one VISUAL unit is 16.67ms, which would overshoot), so the
       // whole correction lands there and the song opens already in sync.
       await _reset();
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('seed-on'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('seed-on'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       await _tapInShade(tester, arcadeSyncTileKey);
@@ -309,23 +308,41 @@ void main() {
       expect(find.text('SLOW by 0.5ms'), findsOneWidget);
     });
 
+    testWidgets('the timing map plots the CORRECTED result, not the raw bias',
+        (tester) async {
+      // The map's whole job is showing where the dials leave you, so it has to
+      // be fed the sum. A +9ms song seeded to -9ms plots at the centre while
+      // still reporting the +9ms bias it started from.
+      await _reset(arcadeSync: true);
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('map'), sync: _sync(9.0))));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.tap(find.byKey(shadeTabKey));
+      await tester.pumpAndSettle();
+
+      final map = tester.widget<TimingMap>(find.byKey(timingMapKey));
+      expect(map.biasMs, 9.0);
+      expect(map.visualMs + map.audioMs, -9.0);
+    });
+
     testWidgets('switching chart mid-preview re-seeds for the new sync',
         (tester) async {
       await _reset(arcadeSync: true);
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('switch'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('switch'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
       expect(Settings.getInt(Settings.chartPreviewAudioOffsetMsKey), -9);
 
       // Same widget identity, new sync — didUpdateWidget must notice.
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('switch'), sync: _sync(-4.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('switch'), sync: _sync(-4.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(Settings.getInt(Settings.chartPreviewAudioOffsetMsKey), 4);
     });
 
-    testWidgets('an off/on cycle comes back to the tuned value', (tester) async {
+    testWidgets('an off/on cycle comes back to the tuned value',
+        (tester) async {
       // The A/B round trip: the page opens engaged with a hand-tuned -4ms, the
       // dials are dragged mid-experiment, then the mode is switched off and on.
       // It must land back on the tuned -4ms — not on the dragged value, and not
@@ -333,8 +350,8 @@ void main() {
       await _reset(arcadeSync: true);
       await Settings.setInt(Settings.chartPreviewAudioOffsetMsKey, -4);
       await _keepZeroedOffsetsFor(9.0); // marks -4 as tuned for THIS song
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('ab-cycle'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('ab-cycle'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
       expect(find.text('-4ms'), findsOneWidget, reason: 'opens on the tuning');
 
@@ -387,8 +404,8 @@ void main() {
 
     testWidgets('a song with no sync data seeds nothing', (tester) async {
       await _reset();
-      await tester.pumpWidget(
-          _host(_scroller(key: const ValueKey('seed-none'))));
+      await tester
+          .pumpWidget(_host(_scroller(key: const ValueKey('seed-none'))));
       await tester.pump(const Duration(milliseconds: 16));
 
       await _tapInShade(tester, arcadeSyncTileKey);
@@ -433,8 +450,8 @@ void main() {
       // Nothing is dialled while the mode is off, so the caption is the song's
       // own reading — and seeing it is often the reason to switch the mode on.
       await _reset();
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('off-sync'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('off-sync'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(find.text('FAST by 9.0ms'), findsOneWidget);
@@ -447,8 +464,8 @@ void main() {
       await _reset(arcadeSync: true);
       await Settings.setInt(Settings.chartPreviewAudioOffsetMsKey, -2);
       await Settings.setInt(Settings.chartPreviewOffsetForBiasKey, 900);
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('adjusted'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('adjusted'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(find.text('FAST by 7.0ms'), findsOneWidget);
@@ -487,8 +504,8 @@ void main() {
       // card agree on what FAST and SLOW look like. Read with the mode off, so
       // the raw bias is what's on screen.
       await _reset();
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('accent-f'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('accent-f'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(_summaryColor(tester, 'FAST by 9.0ms'), kFastColor(isDark));
@@ -497,8 +514,8 @@ void main() {
     testWidgets('a SLOW song colours the summary with the SLOW hue',
         (tester) async {
       await _reset();
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('accent-s'), sync: _sync(-9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('accent-s'), sync: _sync(-9.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(_summaryColor(tester, 'SLOW by 9.0ms'), kSlowColor(isDark));
@@ -523,8 +540,8 @@ void main() {
       await _reset(arcadeSync: true);
       await Settings.setInt(Settings.chartPreviewVisualOffsetKey, 15);
       await Settings.setInt(Settings.chartPreviewAudioOffsetMsKey, -10);
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('no-tint'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('no-tint'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       for (final key in [visualOffsetChipKey, audioOffsetChipKey]) {
@@ -542,8 +559,8 @@ void main() {
       // and the number appear, to fit alongside BPM and READ over the field.
       await _reset(arcadeSync: true);
       await _keepZeroedOffsetsFor(9.0);
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('badge-f'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('badge-f'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       final badge = _badgeSync(tester);
@@ -554,8 +571,8 @@ void main() {
     testWidgets('colour-codes SLOW too', (tester) async {
       await _reset(arcadeSync: true);
       await _keepZeroedOffsetsFor(-4.5);
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('badge-s'), sync: _sync(-4.5))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('badge-s'), sync: _sync(-4.5))));
       await tester.pump(const Duration(milliseconds: 16));
 
       final badge = _badgeSync(tester);
@@ -568,8 +585,8 @@ void main() {
       // correction in effect for the segment to describe — reporting the song's
       // raw bias there would claim a sync the field isn't being drawn at.
       await _reset();
-      await tester.pumpWidget(_host(
-          _scroller(key: const ValueKey('badge-off'), sync: _sync(9.0))));
+      await tester.pumpWidget(
+          _host(_scroller(key: const ValueKey('badge-off'), sync: _sync(9.0))));
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(_badgeSync(tester), isNull);
@@ -591,8 +608,8 @@ void main() {
         (tester) async {
       // An empty slot over the field would just be noise.
       await _reset();
-      await tester.pumpWidget(
-          _host(_scroller(key: const ValueKey('badge-none'))));
+      await tester
+          .pumpWidget(_host(_scroller(key: const ValueKey('badge-none'))));
       await tester.pump(const Duration(milliseconds: 16));
 
       expect(_badgeSync(tester), isNull);
@@ -643,6 +660,71 @@ void main() {
       expect(r.repaints, isFalse,
           reason: 'neutral must not invalidate the field');
       expect(r.offsetSecond, r.neutralSecond);
+    });
+  });
+
+  group('sync guide', () {
+    test('each mark sits at its dial\'s travel distance, above for PLUS', () {
+      // A PLUS dial pulls arrows toward the line EARLY, so the unshifted
+      // reference is left behind them — above the receptors, NEGATIVE dy. An
+      // earlier version derived the marks from the dial rather than the
+      // renderer's own yFor and put both on the wrong side.
+      final r = debugSyncGuideEffect(visualUnits: 1.0, audioMs: 10);
+      expect(r.beatDy, closeTo(-300 / 60, 1e-9),
+          reason: 'one VISUAL unit is a 60fps frame: 5px at 300px/s');
+      expect(r.tickDy, closeTo(-3.0, 1e-9));
+      expect(debugSyncGuideEffect(visualUnits: 4.0, audioMs: 10).tickDy,
+          closeTo(-3.0, 1e-9),
+          reason: 'the tick reads AUDIO alone, against the receptors');
+      // The beat line scales with the field, so it tracks read speed too.
+      expect(
+          debugSyncGuideEffect(visualUnits: 1.0, audioMs: 0, pxPerSecond: 900)
+              .beatDy,
+          closeTo(-300 / 60 * 3, 1e-9));
+    });
+
+    test('the tick does NOT scale with tempo, but the beat line does', () {
+      // The reason the two are placed by different rules. AUDIO is a fixed
+      // wall-clock lead on the SOUND, so its mark must be identical on both
+      // charts; VISUAL displaces the NOTES, so its mark scales to stay glued to
+      // them. Routing the tick through the beat-locked mapping (as an earlier
+      // version did) inflated a constant offset on faster charts.
+      final slow =
+          debugSyncGuideEffect(visualUnits: 1.0, audioMs: 10, bpm: 150);
+      final fast =
+          debugSyncGuideEffect(visualUnits: 1.0, audioMs: 10, bpm: 300);
+
+      expect(fast.tickDy, closeTo(slow.tickDy, 1e-9),
+          reason: 'a constant millisecond lead cannot depend on BPM');
+      expect(fast.beatDy, closeTo(slow.beatDy * 2, 1e-9),
+          reason: 'double the tempo covers double the ground in one frame');
+    });
+
+    test('marks take the sync palette by their dial\'s sign', () {
+      // Keyed on the DIAL, not which side of the line the mark landed — those
+      // are opposite, and colouring by position labelled every FAST correction
+      // SLOW. The dials are independent, so the pair must also be able to
+      // disagree (arrows early, tick late).
+      final early = debugSyncGuideEffect(visualUnits: 1.0, audioMs: 10);
+      expect(early.beatHue.withValues(alpha: 1), kFastColor(true),
+          reason: 'PLUS is the FAST-bias correction');
+      expect(early.tickHue.withValues(alpha: 1), kFastColor(true));
+
+      final late = debugSyncGuideEffect(visualUnits: -1.0, audioMs: -10);
+      expect(late.beatHue.withValues(alpha: 1), kSlowColor(true),
+          reason: 'MINUS is the SLOW-bias correction');
+      expect(late.tickHue.withValues(alpha: 1), kSlowColor(true));
+
+      final split = debugSyncGuideEffect(visualUnits: 1.0, audioMs: -10);
+      expect(split.beatHue.withValues(alpha: 1), kFastColor(true));
+      expect(split.tickHue.withValues(alpha: 1), kSlowColor(true));
+    });
+
+    test('switching the guide on repaints', () {
+      // Engaging ARCADE SYNC while paused must bring the marks up immediately;
+      // the playhead notifier isn't running to do it.
+      expect(debugSyncGuideEffect(visualUnits: 0, audioMs: 0).repaintsOnToggle,
+          isTrue);
     });
   });
 }

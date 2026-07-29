@@ -10,6 +10,7 @@ library;
 import 'chart_models.dart';
 import 'chart_timing.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
+import 'package:ddr_md/constants.dart' show kFastColor, kSlowColor;
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +42,8 @@ class ChartPainter extends CustomPainter {
     this.constantMs,
     this.topInset = 0,
     this.visualOffset = 0,
+    this.audioOffset = 0,
+    this.showSyncGuide = false,
     this.arcadeQuant = false,
   }) : super(repaint: playhead);
 
@@ -90,6 +93,16 @@ class ChartPainter extends CustomPainter {
   final double visualOffset;
 
   double get second => playhead.value + visualOffset;
+
+  /// AUDIO OFFSET in seconds — the same figure the tick clock runs on. The
+  /// renderer does NOT shift for it (it moves sound, not arrows); it's carried
+  /// here purely so the sync guide can draw where the tick actually fires
+  /// against the arrows.
+  final double audioOffset;
+
+  /// Draw the SYNC GUIDE (see [_paintSyncGuide]). Only while ARCADE SYNC is
+  /// engaged; off, the field is bit-for-bit as it was.
+  final bool showSyncGuide;
 
   final double pxPerSecond;
 
@@ -173,7 +186,8 @@ class ChartPainter extends CustomPainter {
       draw();
       return;
     }
-    canvas.saveLayer(bounds, Paint()..color = Colors.white.withValues(alpha: alpha));
+    canvas.saveLayer(
+        bounds, Paint()..color = Colors.white.withValues(alpha: alpha));
     draw();
     canvas.restore();
   }
@@ -212,13 +226,13 @@ class ChartPainter extends CustomPainter {
     // in lockstep with the lane stride so their proportion within a lane holds.
     final arrowSize = laneW * 0.92 * zoom;
 
-    double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
+    double laneCenterX(int col) =>
+        fieldLeft + laneStride * col + laneStride / 2;
 
     // TURN modifier: a note originally in column `c` is drawn in `turned(c)`,
     // taking that panel's glyph orientation. Bounds-guarded so a mismatched map
     // (e.g. mode/width change mid-frame) falls back to the note's own column.
-    int turned(int c) =>
-        (c >= 0 && c < colMap.length) ? colMap[c] : c;
+    int turned(int c) => (c >= 0 && c < colMap.length) ? colMap[c] : c;
 
     // Beat-locked scroll (true DDR): a note's screen position is its beat
     // distance from the playhead's beat, so BPM changes speed the field up/down
@@ -232,8 +246,7 @@ class ChartPainter extends CustomPainter {
     // halt reads as a physical gap you can scroll through instead of a collapsed
     // seam. This deliberately shifts the layout between play and scroll.
     final bool expandStops = beatLocked && !playing;
-    final double currentStop =
-        expandStops ? timing.stopSecondsAt(second) : 0;
+    final double currentStop = expandStops ? timing.stopSecondsAt(second) : 0;
     double yFor(double t) {
       if (!beatLocked) return _receptorTop + (t - second) * pxPerSecond;
       var y = _receptorTop + (timing.beatAt(t) - currentBeat) * pxPerBeat;
@@ -273,7 +286,8 @@ class ChartPainter extends CustomPainter {
         _receptorTop - arrowSize * noteFlashPeakScale / 2 - arrowSize * 0.12;
     final clipTop = flashTop < topInset ? topInset : flashTop;
     canvas.save();
-    canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
+    canvas
+        .clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
 
     // 0a) Measure rules, under everything else: they are scaffolding for reading
     // position, not part of the field.
@@ -309,12 +323,12 @@ class ChartPainter extends CustomPainter {
       _fadeLayer(
           canvas,
           holdAlpha,
-          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize,
-              holdX + arrowSize, tailY + arrowSize), () {
+          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize, holdX + arrowSize,
+              tailY + arrowSize), () {
         skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
             n.type == StepType.roll);
-        skin.paintHoldTail(
-            canvas, holdX, tailY, arrowSize, dirs[col], n.type == StepType.roll);
+        skin.paintHoldTail(canvas, holdX, tailY, arrowSize, dirs[col],
+            n.type == StepType.roll);
       });
     }
 
@@ -327,8 +341,9 @@ class ChartPainter extends CustomPainter {
     // speed (and backwards), which would strobe the whole field.
     final arrivals = <int, double>{};
     if (playing) {
-      const longest =
-          _flashSeconds > receptorRecoilSeconds ? _flashSeconds : receptorRecoilSeconds;
+      const longest = _flashSeconds > receptorRecoilSeconds
+          ? _flashSeconds
+          : receptorRecoilSeconds;
       for (int i = _lowerBoundBySecond(notes, second) - 1; i >= 0; i--) {
         final n = notes[i];
         final age = second - n.second;
@@ -348,11 +363,16 @@ class ChartPainter extends CustomPainter {
     // arrivals — there is no input here, so it hangs off the note instead.
     for (int c = 0; c < columnCount; c++) {
       final age = arrivals[c];
-      final recoil = age == null
-          ? 1.0
-          : receptorRecoilCurve(age / receptorRecoilSeconds);
+      final recoil =
+          age == null ? 1.0 : receptorRecoilCurve(age / receptorRecoilSeconds);
       skin.paintReceptor(canvas, laneCenterX(c), _receptorTop,
           arrowSize * recoil, dirs[c], glow * 0.9);
+    }
+
+    // 1.3) SYNC GUIDE — above the receptors (it annotates them) but below the
+    // arrows, so a note landing on the line still reads as the foreground event.
+    if (showSyncGuide) {
+      _paintSyncGuide(canvas, fieldLeft, laneStride, yFor);
     }
 
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
@@ -415,9 +435,7 @@ class ChartPainter extends CustomPainter {
       if ((n.endSecond ?? n.second) < second) continue;
       drawHead(n, true);
     }
-    for (int i = _lowerBoundBySecond(notes, second);
-        i < notes.length;
-        i++) {
+    for (int i = _lowerBoundBySecond(notes, second); i < notes.length; i++) {
       final n = notes[i];
       if (n.second > maxT) break;
       drawHead(n, false);
@@ -589,8 +607,9 @@ class ChartPainter extends CustomPainter {
   // Two z-layers, like [_paintTimingMarkers]: the rules are the base layer
   // ([labels] = false) so arrows scroll over them, the number pills the top
   // layer so a stream of notes can't bury them.
-  void _paintMeasureLines(Canvas canvas, Size size, double Function(double) yFor,
-      double currentBeat, double maxBeat, {required bool labels}) {
+  void _paintMeasureLines(Canvas canvas, Size size,
+      double Function(double) yFor, double currentBeat, double maxBeat,
+      {required bool labels}) {
     var m = (currentBeat / 4).floor();
     if (m < 0) m = 0;
     // Zoomed out the rules crowd together, so number only every fourth one and
@@ -655,8 +674,10 @@ class ChartPainter extends CustomPainter {
       final band = Rect.fromLTRB(0, yBot, size.width, yTop);
       canvas.drawRect(band, _stopBandPaint);
       // Edges of the band, brighter, so even a near-instant stop stays visible.
-      canvas.drawLine(Offset(0, yTop), Offset(size.width, yTop), _stopEdgePaint);
-      canvas.drawLine(Offset(0, yBot), Offset(size.width, yBot), _stopEdgePaint);
+      canvas.drawLine(
+          Offset(0, yTop), Offset(size.width, yTop), _stopEdgePaint);
+      canvas.drawLine(
+          Offset(0, yBot), Offset(size.width, yBot), _stopEdgePaint);
     }
 
     // BPM changes: a thin cool line with the new tempo labelled at the edge.
@@ -783,6 +804,99 @@ class ChartPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, _bgPaint);
   }
 
+  /// The SYNC GUIDE: two reference marks that make the offsets visible while
+  /// the chart scrolls. The receptors never move (VISUAL displaces the notes
+  /// past them) and AUDIO is sound, so neither dial shows up on its own.
+  ///
+  ///   TRUE BEAT LINE — where the note for the current beat would sit with no
+  ///     VISUAL dialled; an arrow crossing it is on the song's actual beat.
+  ///   TICK MARKER — carets on the rails at the assist tick's lead/lag.
+  ///
+  /// The two use DIFFERENT scales on purpose. VISUAL displaces notes, so its
+  /// mark goes through [yFor] and scales with the field. AUDIO is a fixed
+  /// wall-clock lead — 10ms at any tempo — so the tick converts through
+  /// [pxPerSecond] only; running it through the beat mapping inflates a
+  /// constant offset on faster charts, as though the tick had moved.
+  void _paintSyncGuide(Canvas canvas, double fieldLeft, double laneStride,
+      double Function(double) yFor) {
+    final fieldRight = fieldLeft + laneStride * columnCount;
+
+    // yFor already carries the dial (via [second]), so the true playhead second
+    // yields the displaced position directly, in the field's own units.
+    final beatY = yFor(playhead.value);
+    final tickY = _receptorTop - audioOffset * pxPerSecond;
+
+    if ((beatY - _receptorTop).abs() > 0.5) {
+      _paintDashedLine(
+          canvas, beatY, fieldLeft, fieldRight, guideHue(visualOffset));
+    }
+
+    if ((tickY - _receptorTop).abs() > 0.5) {
+      // Carets on the rails rather than a full line — a second line across the
+      // field read as another beat line.
+      final paint = Paint()
+        ..color = guideHue(audioOffset)
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round;
+      for (final (x, dir) in [(fieldLeft, 1.0), (fieldRight, -1.0)]) {
+        canvas.drawLine(
+            Offset(x, tickY), Offset(x + 9 * dir, tickY - 5), paint);
+        canvas.drawLine(
+            Offset(x, tickY), Offset(x + 9 * dir, tickY + 5), paint);
+      }
+    }
+  }
+
+  /// The app's sync hue for a guide mark, keyed on the DIAL's sign rather than
+  /// which side of the line the mark landed — those are opposite (a PLUS dial
+  /// makes arrows arrive early, putting its reference mark BELOW the
+  /// receptors), so colouring by position labels every FAST correction SLOW.
+  ///
+  /// Not private so the colour coding can be asserted — the guide itself never
+  /// renders under the test harness (see [syncGuideOffsets]).
+  Color guideHue(double offsetSeconds) =>
+      (offsetSeconds > 0 ? kFastColor(true) : kSlowColor(true))
+          .withValues(alpha: 0.75);
+
+  void _paintDashedLine(
+      Canvas canvas, double y, double left, double right, Color color) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5;
+    const dash = 7.0;
+    const gap = 5.0;
+    for (double x = left; x < right; x += dash + gap) {
+      final end = x + dash;
+      canvas.drawLine(
+          Offset(x, y), Offset(end > right ? right : end, y), paint);
+    }
+  }
+
+  /// Where the guide's two marks sit relative to the receptor line, in pixels
+  /// (positive = below). Takes the same [yFor] the paint pass uses so it reports
+  /// what is drawn rather than a parallel formula that could drift from it.
+  ///
+  /// Exposed because the guide can't be observed through a widget test: the
+  /// scroller paints nothing until the noteskin future resolves, which never
+  /// happens under the test harness.
+  ({double beatDy, double tickDy}) syncGuideOffsets(
+          double Function(double) yFor) =>
+      (
+        // Note-space: scales with the field, so it stays glued to the arrows.
+        beatDy: yFor(playhead.value) - _receptorTop,
+        // Time-space: a fixed wall-clock lead, independent of tempo.
+        tickDy: -audioOffset * pxPerSecond,
+      );
+
+  /// The note-placement mapping [paint] uses, minus the paused-only stop
+  /// expansion (which needs per-frame state). Picks the beat-locked or
+  /// constant-time branch exactly as `yFor` does, so the guide's geometry can
+  /// be asserted on both paths — the distinction matters, since the beat-locked
+  /// branch is the one that scales with tempo.
+  double yForNote(double t) => timing.isEmpty
+      ? _receptorTop + (t - second) * pxPerSecond
+      : _receptorTop + (timing.beatAt(t) - timing.beatAt(second)) * pxPerBeat;
+
   void _paintLanes(Canvas canvas, Size size, double fieldLeft,
       double laneStride, double receptorY) {
     // Subtle lane dividers, tracking the (zoom-scaled) field so they sit between
@@ -829,5 +943,9 @@ class ChartPainter extends CustomPainter {
       // Without this the field wouldn't move while dialling VISUAL OFFSET
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.
-      old.visualOffset != visualOffset;
+      old.visualOffset != visualOffset ||
+      // Same reason for the guide: dialling AUDIO paused moves only the tick
+      // marker, which nothing else here would notice.
+      old.audioOffset != audioOffset ||
+      old.showSyncGuide != showSyncGuide;
 }

@@ -281,7 +281,8 @@ class ControlPane extends StatelessWidget {
         onHorizontalDragUpdate: onDragUpdate,
         child: Container(
           decoration: BoxDecoration(
-            color: fill ?? scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            color:
+                fill ?? scheme.surfaceContainerHighest.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(borderRadius),
           ),
           child: child,
@@ -528,6 +529,7 @@ const Key audioOffsetChipKey = Key('chart-preview-audio-offset');
 /// scroller paints nothing until [SpriteNoteskin.tryLoad] resolves, and that
 /// future never completes under the test harness.
 @visibleForTesting
+
 /// One TIMING offset chip (VISUAL or AUDIO) in the shade's TIMING section.
 /// Drag horizontally to sweep the offset, tap to reset it to neutral — the same
 /// interaction as [ConstantChip], minus an on/off state: an offset of +0.0 IS
@@ -653,9 +655,15 @@ class ArcadeSyncHeader extends StatelessWidget {
     required this.summary,
     required this.summaryAccent,
     required this.onTap,
+    this.map,
   });
 
   final bool on;
+
+  /// The [TimingMap] strip, shown under the summary while the mode is engaged.
+  /// Null hides it — with ARCADE SYNC off both dials are gated to zero, so its
+  /// markers would sit on the centre line saying nothing.
+  final TimingMap? map;
 
   /// The song's measured sync, e.g. "song is FAST by 12.3ms" — the same reading
   /// the previous page's Sync card shows. Always present: it describes the song,
@@ -677,72 +685,255 @@ class ArcadeSyncHeader extends StatelessWidget {
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        // Same height as the CONSTANT chip and the grid tiles it sits among.
-        height: TurnTile.height,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: c.fill,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: c.border, width: 1),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(on ? Icons.sync : Icons.sync_disabled,
-                size: 16, color: c.fgMuted),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
+            SizedBox(
+              // The header row keeps the CONSTANT chip's height so the tile
+              // still sits on the shade's rhythm; the strip below extends it
+              // rather than squeezing into it.
+              height: TurnTile.height,
+              child: Row(
                 children: [
-                  Text(
-                    "ARCADE SYNC",
-                    style: TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 0.8,
-                      fontWeight: FontWeight.w700,
-                      color: c.fgMuted,
+                  Icon(on ? Icons.sync : Icons.sync_disabled,
+                      size: 16, color: c.fgMuted),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          "ARCADE SYNC",
+                          style: TextStyle(
+                            fontSize: 11,
+                            letterSpacing: 0.8,
+                            fontWeight: FontWeight.w700,
+                            color: c.fgMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          summary,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            letterSpacing: 0.2,
+                            // The section's accented element: the song's own
+                            // FAST/SLOW bias, so the direction it leans reads
+                            // before the number does. The strip's result dot
+                            // below takes the same hue.
+                            fontWeight: summaryAccent != null
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: summaryAccent ??
+                                c.fgMuted.withValues(alpha: 0.75),
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  // Plain ON/OFF text in the same weight the CONSTANT chip uses
+                  // for its value — no Switch, no chevron. State reads from the
+                  // shared tile fill/border treatment plus this word, exactly
+                  // like the rest of the shade's controls.
                   Text(
-                    summary,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    on ? "ON" : "OFF",
                     style: TextStyle(
-                      fontSize: 10,
-                      letterSpacing: 0.2,
-                      // The one accented element in the section: the song's own
-                      // FAST/SLOW bias, so the direction it leans reads before
-                      // the number does.
-                      fontWeight: summaryAccent != null
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                      color:
-                          summaryAccent ?? c.fgMuted.withValues(alpha: 0.75),
-                      fontFeatures: const [FontFeature.tabularFigures()],
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: c.fg,
                     ),
                   ),
                 ],
               ),
             ),
-            // Plain ON/OFF text in the same weight the CONSTANT chip uses for its
-            // value — no Switch, no chevron. State reads from the shared tile
-            // fill/border treatment plus this word, exactly like the rest of the
-            // shade's controls.
-            Text(
-              on ? "ON" : "OFF",
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: c.fg,
+            if (map != null)
+              Padding(
+                // Clears the header row's text without opening a gap big enough
+                // to read as a separate panel again.
+                padding: const EdgeInsets.only(bottom: 8),
+                child: map,
               ),
-            ),
           ],
         ),
       ),
     );
   }
+}
+
+/// Identifies the timing map for tests.
+const Key timingMapKey = Key('chart-preview-timing-map');
+
+/// The TIMING MAP: where the two dials leave the song, on one millisecond axis
+/// centred on the beat — the song's BIAS as a hollow marker, the correction as
+/// a bar, and the RESULT as the solid one. The dials aren't comparable as
+/// figures (VISUAL is a bare ±5.0 dial, AUDIO is milliseconds), so a common
+/// axis is what answers "is this good?"; on the centre line is corrected.
+///
+/// A slim strip INSIDE [ArcadeSyncHeader] rather than its own panel — the
+/// header states the result in words directly above, so the two are one
+/// readout, which is also why nothing here is labelled.
+class TimingMap extends StatelessWidget {
+  const TimingMap({
+    super.key,
+    required this.biasMs,
+    required this.visualMs,
+    required this.audioMs,
+    required this.rangeMs,
+  });
+
+  /// The song's measured bias: positive FAST, negative SLOW — the same sign
+  /// convention as everything else that reports sync.
+  final double biasMs;
+
+  /// Each dial's contribution in milliseconds. VISUAL arrives already converted
+  /// from its dial units, so the two are commensurable here even though their
+  /// chips are not.
+  final double visualMs;
+  final double audioMs;
+
+  /// Half-width of the axis. Fixed by the caller rather than fitted to the
+  /// current values, so the marker MOVES as you dial instead of the axis
+  /// rescaling under it — a rescaling axis would keep the marker in place and
+  /// destroy the whole point.
+  final double rangeMs;
+
+  /// Height of the strip inside the header. Just enough for the axis and its
+  /// markers; the header owns the numbers.
+  static const double height = 14;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _TimingMapPainter(
+          biasMs: biasMs,
+          visualMs: visualMs,
+          audioMs: audioMs,
+          rangeMs: rangeMs,
+          onSurface: scheme.onSurface,
+          fast: constants.kFastColor(isDark),
+          slow: constants.kSlowColor(isDark),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimingMapPainter extends CustomPainter {
+  _TimingMapPainter({
+    required this.biasMs,
+    required this.visualMs,
+    required this.audioMs,
+    required this.rangeMs,
+    required this.onSurface,
+    required this.fast,
+    required this.slow,
+  });
+
+  final double biasMs;
+  final double visualMs;
+  final double audioMs;
+  final double rangeMs;
+  final Color onSurface;
+  final Color fast;
+  final Color slow;
+
+  double get _resultMs => biasMs + visualMs + audioMs;
+
+  /// Values beyond the axis are pinned to its edge rather than drawn off-panel,
+  /// so an out-of-range song still reads as "pegged hard FAST" instead of
+  /// vanishing.
+  double _x(double ms, double width) =>
+      width / 2 + (ms / rangeMs).clamp(-1.0, 1.0) * (width / 2);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // No labels, no scale ticks, no result readout — the header's summary line
+    // directly above carries all of that. This strip is only the picture.
+    final axisY = size.height / 2;
+    final w = size.width;
+
+    canvas.drawLine(
+      Offset(0, axisY),
+      Offset(w, axisY),
+      Paint()
+        ..color = onSurface.withValues(alpha: 0.18)
+        ..strokeWidth = 1,
+    );
+
+    // The beat: what the result marker is judged against, so it's the one thing
+    // standing proud of the axis.
+    final centreX = _x(0, w);
+    canvas.drawLine(
+      Offset(centreX, axisY - 5),
+      Offset(centreX, axisY + 5),
+      Paint()
+        ..color = onSurface.withValues(alpha: 0.5)
+        ..strokeWidth = 1.5,
+    );
+
+    final biasX = _x(biasMs, w);
+    final resultX = _x(_resultMs, w);
+
+    // The correction: bias → result. Drawing it as one connected run is what
+    // makes the two dials read as a single act of correction rather than two
+    // unrelated numbers.
+    if ((biasX - resultX).abs() > 0.5) {
+      canvas.drawLine(
+        Offset(biasX, axisY),
+        Offset(resultX, axisY),
+        Paint()
+          ..color = onSurface.withValues(alpha: 0.35)
+          ..strokeWidth = 2.5
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // Where the song started: hollow, so it reads as history rather than state.
+    canvas.drawCircle(
+      Offset(biasX, axisY),
+      3,
+      Paint()
+        ..color = onSurface.withValues(alpha: 0.4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    // Where the dials leave you: solid, hue by direction, grey once it's close
+    // enough to the beat that no dial could improve it. Same palette as the
+    // summary text directly above, so the dot and the words never disagree.
+    canvas.drawCircle(
+      Offset(resultX, axisY),
+      4.5,
+      Paint()
+        ..color = _resultMs.abs() < 0.05
+            ? onSurface.withValues(alpha: 0.75)
+            : (_resultMs > 0 ? fast : slow),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TimingMapPainter old) =>
+      old.biasMs != biasMs ||
+      old.visualMs != visualMs ||
+      old.audioMs != audioMs ||
+      old.rangeMs != rangeMs ||
+      old.onSurface != onSurface;
 }
 
 /// A single TURN tile (MIRROR / LEFT / RIGHT) in the split second row of the
