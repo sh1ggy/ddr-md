@@ -30,6 +30,12 @@ class Settings {
   // Measure rules for the chart preview: numbered lines every 4 beats. 0/1.
   static const String measureLinesOnKey = "chartPreviewMeasureLinesOn";
 
+  // FOOT TRAILS for the chart preview: the lines joining each note to the
+  // previous one struck by the same foot. Separate from the badges because the
+  // trails read the chart's movement while the badges read its footing, and
+  // either is useful without the other. 0/1.
+  static const String footTrailsOnKey = "chartPreviewFootTrailsOn";
+
   // DANCING FEET for the chart preview: the mini pad under the field showing
   // where the parity solve stands the player at the playhead. 0/1.
   static const String dancingFeetOnKey = "chartPreviewDancingFeetOn";

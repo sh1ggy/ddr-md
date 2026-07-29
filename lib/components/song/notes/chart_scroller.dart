@@ -87,12 +87,14 @@ class ChartScroller extends StatefulWidget {
     this.stops = const [],
     this.sync,
     this.showFootGuide = false,
+    this.showFootTrails = false,
     this.showDancingFeet = false,
     this.showMeasureLines = false,
     this.assistTickOn = false,
     this.arcadeQuantOn = false,
     this.onToggleMeasureLines,
     this.onToggleFootGuide,
+    this.onToggleFootTrails,
     this.onToggleDancingFeet,
     this.onToggleAssistTick,
     this.onToggleArcadeQuant,
@@ -131,6 +133,11 @@ class ChartScroller extends StatefulWidget {
   /// Overlay an L/R parity guide on each arrow (best-effort, computed on load).
   final bool showFootGuide;
 
+  /// Join each note to the previous one struck by the same foot. Drawn from the
+  /// same solve as [showFootGuide] but toggled apart from it: the trails show
+  /// how the feet travel, which is readable with the badges off.
+  final bool showFootTrails;
+
   /// Show the dancing-feet pad: a mini stage under the field with both feet
   /// standing where the same parity solve puts them at the playhead.
   final bool showDancingFeet;
@@ -150,6 +157,7 @@ class ChartScroller extends StatefulWidget {
   /// settings shade's own segment so they live alongside the chart-viewing
   /// modifiers rather than crowding the floating header. Null hides the tiles.
   final VoidCallback? onToggleFootGuide;
+  final VoidCallback? onToggleFootTrails;
   final VoidCallback? onToggleDancingFeet;
   final VoidCallback? onToggleAssistTick;
   final VoidCallback? onToggleMeasureLines;
@@ -1904,7 +1912,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         stopMarkers: _stopMarkers,
                         showMeasureLines: widget.showMeasureLines,
                         feet: widget.showFootGuide ? _feet : const {},
-                        footPrev: widget.showFootGuide ? _footPrev : const {},
+                        footPrev: widget.showFootTrails ? _footPrev : const {},
                         dirs: dirs,
                         colMap: _colMap,
                         playhead: _playhead,
@@ -2430,14 +2438,16 @@ class _ChartScrollerState extends State<ChartScroller>
         ),
       ),
       // Viewing aids, split off into their own segment and laid out as two rows
-      // of paired tiles: the parity readings (the on-arrow L/R guide and the
-      // dancing-feet pad, both drawn from the same solve) above, the rest — the
-      // assist tick, the measure rules and the arcade quant palette — below.
+      // of tiles: the parity readings (the on-arrow L/R guide, the same-foot
+      // trails and the dancing-feet pad, all three drawn from one solve) above,
+      // the rest — the assist tick, the measure rules and the arcade quant
+      // palette — below.
       // These moved out of the floating header so it carries only title/back;
       // the toggles read the same as the TURN tiles, so they slot in as more
       // rows of the options card.
       if (widget.onToggleAssistTick != null ||
           widget.onToggleFootGuide != null ||
+          widget.onToggleFootTrails != null ||
           widget.onToggleDancingFeet != null ||
           widget.onToggleMeasureLines != null ||
           widget.onToggleArcadeQuant != null)
@@ -2446,6 +2456,7 @@ class _ChartScrollerState extends State<ChartScroller>
             spacing: 8,
             children: [
               if (widget.onToggleFootGuide != null ||
+                  widget.onToggleFootTrails != null ||
                   widget.onToggleDancingFeet != null)
                 Row(
                   spacing: 8,
@@ -2459,6 +2470,17 @@ class _ChartScrollerState extends State<ChartScroller>
                               : Icons.directions_walk_outlined,
                           selected: widget.showFootGuide,
                           onTap: widget.onToggleFootGuide!,
+                        ),
+                      ),
+                    if (widget.onToggleFootTrails != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "FOOT TRAILS",
+                          icon: widget.showFootTrails
+                              ? Icons.timeline
+                              : Icons.timeline_outlined,
+                          selected: widget.showFootTrails,
+                          onTap: widget.onToggleFootTrails!,
                         ),
                       ),
                     if (widget.onToggleDancingFeet != null)

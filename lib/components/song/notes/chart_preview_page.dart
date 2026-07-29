@@ -70,6 +70,15 @@ class ChartPreviewPage extends StatefulWidget {
 class _ChartPreviewPageState extends State<ChartPreviewPage> {
   bool _showFootGuide = false;
 
+  // Same-foot trails, split out of the foot guide so the movement can be read
+  // without the badges (and vice versa). Persisted like the other viewing aids.
+  bool _showFootTrails = Settings.getInt(Settings.footTrailsOnKey) == 1;
+
+  void _toggleFootTrails() {
+    setState(() => _showFootTrails = !_showFootTrails);
+    Settings.setInt(Settings.footTrailsOnKey, _showFootTrails ? 1 : 0);
+  }
+
   // Assist tick: audible tick as each note row crosses the receptors during
   // playback (chart-derived, no song audio involved). Persisted across previews.
   bool _assistTick = Settings.getInt(Settings.assistTickOnKey) == 1;
@@ -170,6 +179,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               stops: widget.stops,
               sync: widget.sync,
               showFootGuide: _showFootGuide,
+              showFootTrails: _showFootTrails,
               showDancingFeet: _dancingFeet,
               showMeasureLines: _measureLines,
               assistTickOn: _assistTick,
@@ -177,6 +187,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               onToggleMeasureLines: _toggleMeasureLines,
               onToggleFootGuide: () =>
                   setState(() => _showFootGuide = !_showFootGuide),
+              onToggleFootTrails: _toggleFootTrails,
               onToggleDancingFeet: _toggleDancingFeet,
               onToggleAssistTick: _toggleAssistTick,
               onToggleArcadeQuant: _toggleArcadeQuant,
