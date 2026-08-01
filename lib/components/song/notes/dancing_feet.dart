@@ -26,7 +26,7 @@ import 'package:flutter/material.dart';
 /// deliberately parked in the corner isn't mistaken for an unplaced one.
 const int kDancingFeetUnset = 0;
 
-/// How far the feet turn, given the panel each foot stands on.
+/// How far the body turns, given the panel each foot stands on.
 ///
 /// These are the panels the player is really standing on: the parity solve runs
 /// on the chart as TURNED, so a stance already accounts for the modifier and no
@@ -45,19 +45,55 @@ const int kDancingFeetUnset = 0;
 /// partner without any crossing having happened, which spins the body a quarter
 /// turn in the middle of an ordinary staircase.
 ///
-/// Crossing is not a matter of degree — the leg has crossed or it hasn't — so
-/// the turn is all-or-nothing. The canvas rotates clockwise-positive and the
-/// foot is drawn pointing up, so a right foot crossing under to the LEFT panel
-/// turns -90 (its toe swings to -x) and a left foot reaching across to Right
-/// turns +90.
+/// BOTH feet share the angle: you turn at the waist, and the whole body goes
+/// with it. Turning the crossing foot alone leaves the planted one splayed at
+/// right angles to its partner, which is not a stance a body can hold.
+///
+/// Where it turns TO is the line between the feet — your shoulders square up to
+/// your own stance. The axis runs from the planted foot's panel to the crossing
+/// foot's, so a cross with the partner on Down opens the body one way and the
+/// same cross with the partner on Up winds it the other. That lands on 45deg for
+/// a single cross, not the 90 a foot-on-side-panel rule would give: one foot is
+/// still on a centre panel, so the diagonal is half a turn.
+///
+/// Facing along that axis or back down it is the same stance, so the heading
+/// folds onto +-90. The fully swapped stance sits exactly on the fold — both
+/// feet on side panels puts the axis flat across the pad, where +90 and -90 name
+/// the same line — and it resolves to +90, the way the legs actually wind.
 @visibleForTesting
 double turnFor(int leftCol, int rightCol) {
   // Both feet on one panel is a footswitch — they are stacked, not crossed.
   if (leftCol == rightCol) return 0;
-  if (rightCol == _colLeft) return -_maxTurn;
-  if (leftCol == _colRight) return _maxTurn;
-  return 0;
+  final leftCrossed = leftCol == _colRight;
+  final rightCrossed = rightCol == _colLeft;
+  if (!leftCrossed && !rightCrossed) return 0;
+  // Fully swapped: the axis is flat across the pad and the fold below can't
+  // choose a side, so name the winding explicitly.
+  if (leftCrossed && rightCrossed) return _maxTurn;
+
+  // From the planted foot's panel to the crossing foot's: the body faces along
+  // the line its own feet make.
+  final planted = _panelOffsets[(leftCrossed ? rightCol : leftCol) % 4];
+  final crossing = _panelOffsets[(leftCrossed ? leftCol : rightCol) % 4];
+  final dx = crossing.dx - planted.dx;
+  final dy = crossing.dy - planted.dy;
+  // Canvas y runs down and 0 points up the pad, hence atan2(dx, -dy).
+  final heading = math.atan2(dx, -dy);
+  // Fold onto (-90, 90]: a heading and its opposite are one stance.
+  final folded = (heading + _maxTurn) % math.pi - _maxTurn;
+  return folded;
 }
+
+/// Panel geometry, as offsets in "panel units" from the pad centre: the four
+/// arrows of one pad sit on a plus, matching the physical stage. Shared between
+/// the turn above, which reads the line between the feet off it, and the painter
+/// below, which draws the panels there — one stage, one set of coordinates.
+const List<Offset> _panelOffsets = [
+  Offset(-1, 0), // left
+  Offset(0, 1), // down
+  Offset(0, -1), // up
+  Offset(1, 0), // right
+];
 
 /// How far a foot shrinks at the bottom of its press. A foot coming down on a
 /// panel is seen from above as it drops, so it reads smaller for the moment it
@@ -338,15 +374,6 @@ class _PadPainter extends CustomPainter {
   /// How long a stepped panel stays lit after it is hit.
   static const double _flashSeconds = 0.16;
 
-  // Panel geometry, as offsets in "panel units" from the pad centre: the four
-  // arrows of one pad sit on a plus, matching the physical stage.
-  static const List<Offset> _panelOffsets = [
-    Offset(-1, 0), // left
-    Offset(0, 1), // down
-    Offset(0, -1), // up
-    Offset(1, 0), // right
-  ];
-
   /// The drawn centre of a column, in panel units from the whole pad's centre.
   /// A doubles column past the fourth belongs to the second panel, shifted
   /// right by its width (3 panel units) — and both panels shift out from the
@@ -410,7 +437,8 @@ class _PadPainter extends CustomPainter {
             : 0);
 
     // The body's turn, slid alongside the feet so a crossover winds round as the
-    // foot travels rather than snapping square on the landing frame.
+    // foot travels rather than snapping square on the landing frame. One angle
+    // for both feet: the waist turns and the whole body follows.
     final turn = _lerpAngle(_bodyTurn(previous ?? current), _bodyTurn(current), t);
 
     for (final foot in ParityFoot.values) {

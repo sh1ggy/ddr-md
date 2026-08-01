@@ -8,10 +8,11 @@ void main() {
   // the chart, not the TURN-mapped panels on screen.
   const l = 0, d = 1, u = 2, r = 3;
 
+  // Negative is counter-clockwise on the canvas, i.e. the body faces LEFT.
   double deg(int leftCol, int rightCol) =>
       turnFor(leftCol, rightCol) * 180 / math.pi;
 
-  test('a <V^> staircase never turns the feet', () {
+  test('a <V^> staircase never turns the body', () {
     // The four stances an alternating L-D-U-R staircase cycles through
     // (confirmed against the solver). No leg crosses — the feet take turns
     // reaching forward — so the whole run stays pointing up the pad.
@@ -37,18 +38,25 @@ void main() {
     expect(deg(d, u), 0);
   });
 
-  test('>V< danced R L R: straight, straight, quarter turn to the left', () {
-    expect(deg(l, r), 0); // R1: both feet square
-    expect(deg(d, r), 0); // L: left foot steps Down, still square
-    expect(deg(d, l), closeTo(-90, 0.001)); // R2: right foot crosses under
+  // The crossed stances, as danced and dictated. There are only five in singles,
+  // so this is the whole rule rather than a sample of it.
+  //
+  // A single cross reaches 45, not 90: one foot is still on a centre panel, so
+  // the line between the feet runs diagonally and the body squares up to it. The
+  // pivot panel therefore sets the sign, and it flips with which foot crossed —
+  // the same partner panel opens the body one way for a left cross and winds it
+  // the other for a right one.
+  test('a single crossover turns the body 45 along the line of the feet', () {
+    expect(deg(d, l), closeTo(-45, 0.001)); // R crosses under, partner on Down
+    expect(deg(u, l), closeTo(45, 0.001)); //  R crosses under, partner on Up
+    expect(deg(r, d), closeTo(45, 0.001)); //  L crosses over,  partner on Down
+    expect(deg(r, u), closeTo(-45, 0.001)); // L crosses over,  partner on Up
   });
 
-  test("only a foot on the other foot's side panel counts as crossed", () {
-    expect(deg(d, l), closeTo(-90, 0.001));
-    expect(deg(u, l), closeTo(-90, 0.001));
-    expect(deg(r, d), closeTo(90, 0.001));
-    expect(deg(r, u), closeTo(90, 0.001));
-    expect(deg(r, l).abs(), closeTo(90, 0.001));
+  test('the fully swapped stance turns a full quarter', () {
+    // Both feet on side panels puts the axis flat across the pad, where +-90
+    // name the same line. It resolves to +90, the way the legs really wind.
+    expect(deg(r, l), closeTo(90, 0.001));
   });
 
   test('both feet on one panel is a footswitch, not a crossover', () {
