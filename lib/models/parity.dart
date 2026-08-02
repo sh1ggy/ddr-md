@@ -133,6 +133,22 @@ class _Weights {
   static const double sideswitch = 130;
   static const double startXo = 10000;
 
+  /// Both feet ending up on one panel. NOT from SMEditor, which never scores
+  /// the stance itself, so the state is free — and worse than free, since two
+  /// feet on one panel share a position and so sit minimum distance from every
+  /// following note, making the rows after it look cheap too.
+  ///
+  /// You cannot actually stand like this: a DDR panel fits one foot, so the
+  /// reading is really "hop onto the arrow the other foot is on", which is a
+  /// footswitch the engine already prices when it can see one. Charging the
+  /// stance closes the gap where it can't.
+  ///
+  /// Measured over ~5300 singles charts: 0.98% of rows at 0, 0.68% at 100,
+  /// 0.60% at 250, 0.54% at 400. It never reaches zero because a jump onto a
+  /// column both feet must share leaves no alternative, so this stays a
+  /// preference; past ~250 it buys little.
+  static const double samePanel = 250;
+
   /// Flat surcharge for putting one foot on two panels at all. NOT from
   /// SMEditor, which prices only specific awkward brackets (bracket jacks, slow
   /// brackets, bracketing while crossed over) and is otherwise happy to bracket
@@ -699,6 +715,11 @@ class _ParityEngine {
     if (_twisted(d.result.rightHeel, d.result.rightToe) ||
         _twisted(d.result.leftHeel, d.result.leftToe)) {
       total += _Weights.twistedFoot;
+    }
+
+    // SAME_PANEL: both feet left standing on one arrow.
+    if (d.result.leftHeel != -1 && d.result.leftHeel == d.result.rightHeel) {
+      total += _Weights.samePanel;
     }
 
     // FACING: facing backwards, ramps sharply (^7.2) so deep crossovers cost

@@ -178,4 +178,22 @@ void main() {
               's=${stance.second}');
     }
   });
+
+  test('a jump into one of its own arrows does not stack both feet on it', () {
+    // D+U jump, then U on its own. Taking that U with the foot that is not
+    // already on Up parks both feet on one panel — which no pad allows.
+    final notes = [
+      ...stream([(0, L), (2, R)]),
+      ...stream([(4, D), (4, U)]),
+      ...stream([(6, U), (8, R)]),
+    ];
+
+    final result = analyseParity(notes, Modes.singles);
+    for (final stance in result.stances) {
+      expect(stance.leftHeel == stance.rightHeel && stance.leftHeel != -1,
+          isFalse,
+          reason: 'both feet on column ${stance.leftHeel} '
+              'at s=${stance.second}');
+    }
+  });
 }
