@@ -222,4 +222,16 @@ void main() {
               'at s=${stance.second}');
     }
   });
+
+  test('a side panel keeps its foot when revisited after stepping away', () {
+    // R is hit, the right foot leaves it for other arrows, then R returns. The
+    // foot no longer rests on R, so a switch check keyed on current occupancy
+    // sees an empty panel and prices the switch at nothing — the return must
+    // still cost, and stay on the right foot.
+    final notes = stream([(0, R), (1, D), (2, U), (3, R), (4, D)], bpm: 150);
+
+    final p = assignParity(notes, Modes.singles);
+    expect(p[notes[3]], equals(p[notes[0]]),
+        reason: 'R switched feet across the gap: ${render(notes, p)}');
+  });
 }

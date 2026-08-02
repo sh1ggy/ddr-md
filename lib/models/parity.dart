@@ -130,7 +130,6 @@ class _Weights {
   static const double facing = 3;
   static const double distance = 6;
   static const double spin = 3000;
-  static const double sideswitch = 130;
   static const double startXo = 10000;
 
   /// Both feet ending up on one panel. NOT from SMEditor, which never scores
@@ -168,6 +167,25 @@ class _Weights {
   /// foot pinning a hold and tapping the neighbour pays too — on a sprung pad
   /// that's harder than a clean bracket, not free.
   static const double bracket = 200;
+
+  /// Changing feet on a side panel (the "LL" / "RR" case). Raised well above
+  /// SMEditor's 130: switching on L or R means swapping which foot owns the
+  /// outside of the pad, which players overwhelmingly don't do — they jack or
+  /// re-approach instead.
+  ///
+  /// This only bites alongside the [_State.lastFoot] fix; while the check keyed
+  /// off feet still *resting* on the panel it missed every switch with notes in
+  /// between, so raising the weight alone moved almost nothing (47.1 -> 44.0
+  /// switches per 1k rows going 130 -> 3000).
+  ///
+  /// Measured over ~5300 singles charts (~1.53M rows), switches per 1k rows /
+  /// doublesteps per 1k rows: 43.0/109.8 (130), 34.8/114.1 (400), 26.0/119.4
+  /// (700), 22.3/122.9 (900), 20.8/124.1 (1000), 5.8/143.5 (2000). Sideswitches
+  /// only leave by *becoming* doublesteps, which are worse, so this can't go
+  /// arbitrarily high: past ~1000 each switch removed adds more than one
+  /// doublestep. 800 roughly halves the rate while staying on the good side of
+  /// that trade.
+  static const double sideswitch = 800;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +324,13 @@ class _State {
   /// footColumns[part] = column that foot part currently rests on (-1 if none).
   final List<int> footColumns; // length 5, indexed by _Foot part
 
+  /// lastFoot[col] = the foot part that most recently *pressed* this column,
+  /// kept even after that foot has moved away. [combinedColumns] only remembers
+  /// a foot while it still rests there, which is enough for jacks but not for
+  /// switches: in "R ... R" with notes in between, the foot leaves the panel, so
+  /// a combined-columns check sees an empty column and reads the return as free.
+  final List<int> lastFoot;
+
   final Set<int> movedFeet;
   final Set<int> holdFeet;
   int? frontFoot;
@@ -316,6 +341,7 @@ class _State {
     required this.action,
     required this.combinedColumns,
     required this.footColumns,
+    required this.lastFoot,
     required this.movedFeet,
     required this.holdFeet,
     required this.frontFoot,
@@ -573,10 +599,18 @@ class _ParityEngine {
       frontFoot = initial.frontFoot;
     }
 
+    // Remember who last pressed each column, so a foot that steps away still
+    // leaves its mark for switch detection on a later return.
+    final lastFoot = List<int>.of(initial.lastFoot);
+    for (int i = 0; i < layout.columnCount; i++) {
+      if (action[i] != _Foot.none) lastFoot[i] = action[i];
+    }
+
     return _State(
       action: action,
       combinedColumns: combined,
       footColumns: footColumns,
+      lastFoot: lastFoot,
       movedFeet: moved,
       holdFeet: held,
       frontFoot: frontFoot,
@@ -837,7 +871,7 @@ class _ParityEngine {
     for (final col in layout.sideArrows) {
       final act = d.result.action[col];
       if (act == _Foot.none) continue;
-      final prev = d.initial.combinedColumns[col];
+      final prev = d.initial.lastFoot[col];
       if (prev == _Foot.none) continue;
       if (prev == act || prev == _Foot.otherPart[act]) continue;
       cost += _Weights.sideswitch;
@@ -890,6 +924,7 @@ class _ParityEngine {
       action: List<int>.filled(layout.columnCount, _Foot.none),
       combinedColumns: List<int>.filled(layout.columnCount, _Foot.none),
       footColumns: List<int>.filled(5, -1),
+      lastFoot: List<int>.filled(layout.columnCount, _Foot.none),
       movedFeet: {},
       holdFeet: {},
       frontFoot: null,
