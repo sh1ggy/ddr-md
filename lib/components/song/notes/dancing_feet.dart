@@ -448,7 +448,7 @@ class _PadPainter extends CustomPainter {
       // Only the foot that actually stepped presses. A foot standing still while
       // its partner steps is holding its weight, not landing, and bobbing it too
       // would read as both feet hitting on every note.
-      final press = _stepped(current, foot) ? _pressFor(sinceStep) : 1.0;
+      final press = _stepped(current, foot) ? padPressFactor(sinceStep) : 1.0;
       _paintFoot(canvas, pointFor, unit, foot, from, to, t, turn, press);
     }
   }
@@ -461,8 +461,6 @@ class _PadPainter extends CustomPainter {
     }
     return false;
   }
-
-  double _pressFor(double sinceStep) => padPressFactor(sinceStep);
 
   /// This stance's [turnFor], read off the panels each foot stands on. Doubles
   /// has no single pair of side panels to cross over, so it stays square.

@@ -988,7 +988,13 @@ class _ParityEngine {
       final state = states[r];
       final stepped = <int>{};
       for (int col = 0; col < layout.columnCount; col++) {
-        if (state.action[col] != _Foot.none) stepped.add(col);
+        // A sustained column is "active" for action generation, so the holding
+        // foot appears in [action] on every row the hold spans. Only the head
+        // row is a step: without this a held panel re-flashes, and the foot
+        // pinning it re-presses, on every note played alongside it.
+        if (state.action[col] != _Foot.none && !row.holds[col]) {
+          stepped.add(col);
+        }
         final note = row.notes[col];
         if (note == null) continue;
         final foot = state.combinedColumns[col];

@@ -149,6 +149,32 @@ void main() {
     }
   });
 
+  test('a sustained hold is only stepped on its head row', () {
+    // Left holds Left for 8 beats while the right foot taps Down. The held
+    // column is "active" every row it spans, so without excluding sustains it
+    // reports as freshly stepped each time — the pad would re-flash the panel
+    // and re-press the holding foot on every note played alongside it.
+    const secPerBeat = 60.0 / 150;
+    final notes = <StepNote>[
+      const StepNote(
+        beat: 0,
+        second: 0,
+        col: L,
+        type: StepType.hold,
+        endBeat: 8,
+        endSecond: 8 * secPerBeat,
+      ),
+      ...stream([(2, D), (4, D), (6, D)]),
+    ];
+
+    final result = analyseParity(notes, Modes.singles);
+    expect(result.stances.first.stepped, contains(L));
+    for (final stance in result.stances.skip(1)) {
+      expect(stance.stepped, isNot(contains(L)),
+          reason: 'held Left re-reported as stepped at ${stance.second}');
+    }
+  });
+
   test('a sustained hold keeps the same foot until its tail', () {
     // Left holds Down for 8 beats while the other foot dances U/R/U. Nothing
     // may reassign Down mid-sustain: the panel is physically pinned.
