@@ -118,4 +118,64 @@ void main() {
       }
     }
   });
+
+  test('a held panel does not let the same foot bracket the neighbour for free',
+      () {
+    // Left is held throughout while Down is tapped repeatedly. The free right
+    // foot should take every Down rather than the holding foot stretching onto
+    // it — pads make that stretch harder than a clean bracket, not cheaper.
+    const secPerBeat = 60.0 / 150;
+    final notes = <StepNote>[
+      const StepNote(
+        beat: 0,
+        second: 0,
+        col: L,
+        type: StepType.hold,
+        endBeat: 8,
+        endSecond: 8 * secPerBeat,
+      ),
+      for (int i = 1; i <= 6; i++)
+        StepNote(
+            beat: i.toDouble(),
+            second: i * secPerBeat,
+            col: D,
+            type: StepType.tap),
+    ];
+
+    final result = analyseParity(notes, Modes.singles);
+    for (final note in notes.where((n) => n.col == D)) {
+      expect(result.feet[note], equals(ParityFoot.right),
+          reason: 'beat ${note.beat} bracketed Down off the held Left');
+    }
+  });
+
+  test('a sustained hold keeps the same foot until its tail', () {
+    // Left holds Down for 8 beats while the other foot dances U/R/U. Nothing
+    // may reassign Down mid-sustain: the panel is physically pinned.
+    const secPerBeat = 60.0 / 150;
+    final notes = <StepNote>[
+      const StepNote(
+        beat: 0,
+        second: 0,
+        col: D,
+        type: StepType.hold,
+        endBeat: 8,
+        endSecond: 8 * secPerBeat,
+      ),
+      ...stream([(2, U), (4, R), (6, U), (8, L)]),
+    ];
+
+    final result = analyseParity(notes, Modes.singles);
+    final hold = notes.first;
+    final foot = result.feet[hold]!;
+    for (final stance in result.stances) {
+      if (stance.second <= hold.second ||
+          stance.second >= hold.endSecond! - 1e-6) {
+        continue;
+      }
+      expect(stance.columnsFor(foot), contains(D),
+          reason: 'the ${foot.name} foot left the held Down at '
+              's=${stance.second}');
+    }
+  });
 }

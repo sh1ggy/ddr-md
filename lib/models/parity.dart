@@ -138,17 +138,20 @@ class _Weights {
   /// brackets, bracketing while crossed over) and is otherwise happy to bracket
   /// whenever it saves a little distance.
   ///
-  /// Only a small minority of players bracket at all, so a solve that reaches
-  /// for one wherever it saves a step doesn't describe how the chart is really
-  /// danced.
+  /// DDR pads don't support bracketing well — the panels are large, spaced, and
+  /// spring-loaded, so covering two with one foot is a fringe technique rather
+  /// than a normal reading. A solve that reaches for one wherever it saves a
+  /// step doesn't describe how the chart is actually danced.
   ///
-  /// Deliberately small. Measured over 63 singles charts (~17.8k rows), the
-  /// engine brackets on 0.31% of rows at zero surcharge and stops entirely
-  /// around 150 — a narrow band, not a broad dial, so anything in the hundreds
-  /// is a ban dressed up as a preference. At 50 the rate is 0.04% (4 charts of
-  /// 63): the marginal brackets are gone, and the ones left are where the
-  /// alternatives really are worse.
-  static const double bracket = 50;
+  /// Measured over all ~5300 singles charts (~1.53M rows), bracket rate per row
+  /// falls 1.75% (50) -> 0.14% (100) -> 0.05% (200) -> 0.005% (400). Past ~400
+  /// it's a ban rather than a preference; 200 keeps brackets in the ~400 charts
+  /// where the alternative is a genuine doublestep and removes them elsewhere.
+  ///
+  /// Note this is priced on panels *covered*, not panels freshly pressed, so a
+  /// foot pinning a hold and tapping the neighbour pays too — on a sprung pad
+  /// that's harder than a clean bracket, not free.
+  static const double bracket = 200;
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +436,28 @@ class _ParityEngine {
 
   static const double _secondEps = 0.0005;
 
+  /// Whether [action] leaves every sustained hold under the foot that is
+  /// already on it. A hold is a panel physically pinned down: the foot holding
+  /// it cannot be reassigned until the tail, and no *other* foot can take the
+  /// column over. Actions are enumerated per row without knowledge of the
+  /// previous state, so this is the transition-time check that the DP needs to
+  /// stop a hold from silently changing feet mid-sustain.
+  bool _holdsKeepTheirFoot(_State initial, _Row row, List<int> action) {
+    for (int col = 0; col < layout.columnCount; col++) {
+      // Only sustained columns; the head row is a normal step, and a tail row
+      // still needs the holding foot in place to release it.
+      if (!row.holds[col]) continue;
+      final was = initial.combinedColumns[col];
+      if (was == _Foot.none) continue;
+      final now = action[col];
+      // Same physical foot is enough — a foot may roll heel<->toe on the panel.
+      if (now != _Foot.none && !_sameFoot(now, was)) return false;
+    }
+    return true;
+  }
+
+  static bool _sameFoot(int a, int b) => _Foot.isLeft(a) == _Foot.isLeft(b);
+
   /// Enumerate every legal assignment of foot parts to the stepped columns of a
   /// row, pruned by bracket geometry and heel/toe validity.
   List<List<int>> _generateActions(_Row row) {
@@ -564,12 +589,20 @@ class _ParityEngine {
     final movedLeft = nonHeld[_Foot.leftHeel] || nonHeld[_Foot.leftToe];
     final movedRight = nonHeld[_Foot.rightHeel] || nonHeld[_Foot.rightToe];
 
-    final leftBracket = nonHeld[_Foot.leftHeel] && nonHeld[_Foot.leftToe];
-    final rightBracket = nonHeld[_Foot.rightHeel] && nonHeld[_Foot.rightToe];
+    // A foot brackets whenever it covers two panels — pressing both this row,
+    // pinning one from a hold, or merely still standing spread across them from
+    // an earlier row. Gating this on "stepped this row" would let a foot drift
+    // into a permanent free straddle, which also understates its distance to
+    // everywhere else and quietly warps the rest of the solve.
+    final leftBracket = result.leftHeel != -1 && result.leftToe != -1;
+    final rightBracket = result.rightHeel != -1 && result.rightToe != -1;
 
-    final previousJumped =
-        prevNonHeld[_Foot.leftHeel] && prevNonHeld[_Foot.rightHeel];
-    final jumped = nonHeld[_Foot.leftHeel] && nonHeld[_Foot.rightHeel];
+    // A jump is both feet landing at once, whichever part each lands on — a
+    // foot arriving on its toe (or bracketed across two panels) is still that
+    // foot jumping. Testing heels alone misreads those rows as two independent
+    // steps, which then leaks into the jack / doublestep / footswitch gates.
+    final previousJumped = prevMovedLeft && prevMovedRight;
+    final jumped = movedLeft && movedRight;
 
     final leftJack = !jumped &&
         _doFeetOverlap(
@@ -879,6 +912,7 @@ class _ParityEngine {
         int bestPrev = 0;
         _State? bestResult;
         for (int p = 0; p < prevLayer.length; p++) {
+          if (r > 0 && !_holdsKeepTheirFoot(prevLayer[p], row, action)) continue;
           final result = _initResultState(prevLayer[p], row, action);
           final edge = _cost(prevLayer[p], result, rows, r);
           final c = prevCost[p] + edge;
@@ -888,7 +922,9 @@ class _ParityEngine {
             bestResult = result;
           }
         }
-        curStates.add(bestResult!);
+        // Every predecessor would have released a hold — not a reachable state.
+        if (bestResult == null) continue;
+        curStates.add(bestResult);
         curCost.add(best);
         curBack.add(bestPrev);
       }
