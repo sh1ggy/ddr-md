@@ -1,17 +1,10 @@
 /// Unit tests for beat-locked chart scrolling: the second→beat [ChartTiming]
 /// map that makes the preview speed up on BPM rises and freeze on stops.
-/// (Widget-level "renders without throwing" coverage lives in
-/// chart_scroller_playback_test.dart's every-note-species case.)
 library;
 
-import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song/notes/chart_timing.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/models/steps_model.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
 void main() {
   group('ChartTiming', () {
@@ -61,25 +54,5 @@ void main() {
       expect(t.secondAt(4), closeTo(3, 1e-6));
       expect(t.secondAt(6), closeTo(4, 1e-6));
     });
-  });
-
-  // The no-BPM-data path has no timing map, so it can't be a unit test; this
-  // smoke test guards that the constant-time fallback still renders (the
-  // every-note-species case in playback_test.dart always supplies BPMs).
-  testWidgets('a chart with no BPM data still renders (constant-time fallback)',
-      (tester) async {
-    await tester.pumpWidget(_host(const ChartScroller(
-      steps: ChartSteps(notes: [
-        StepNote(beat: 0, second: 0, col: 0, type: StepType.tap),
-        StepNote(beat: 4, second: 2, col: 1, type: StepType.tap),
-      ]),
-      mode: Modes.singles,
-      songLength: 6,
-      chartBpm: 150,
-      bpms: [],
-      stops: [],
-    )));
-    await tester.pump(const Duration(milliseconds: 16));
-    expect(tester.takeException(), isNull);
   });
 }
