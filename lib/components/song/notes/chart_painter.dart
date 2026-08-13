@@ -44,13 +44,13 @@ class ChartPainter extends CustomPainter {
     this.arcadeQuant = false,
   }) : super(repaint: playhead);
 
-  /// All notes ascending by second (see [_ChartScrollerState._prepareNotes]) —
-  /// sorted order is what the per-frame binary-search culling relies on.
+  /// All notes ascending by second — sorted order is what the per-frame
+  /// binary-search culling relies on.
   final List<StepNote> notes;
 
-  /// Just the holds/rolls, same order — a hold's body must draw while its head
-  /// second is already behind the playhead, so it can't be found by
-  /// binary-searching [notes] on second.
+  /// Just the holds/rolls, same order. A hold's body draws while its head second
+  /// is already behind the playhead, so it can't be found by binary-searching
+  /// [notes].
   final List<StepNote> holds;
 
   final Set<StepNote> shockNotes;
@@ -75,18 +75,13 @@ class ChartPainter extends CustomPainter {
   /// else about the painter is per-build configuration.
   final ValueListenable<double> playhead;
 
-  /// VISUAL OFFSET in seconds (cabinet convention: positive = EARLIER, so the
-  /// arrows reach the receptor sooner; negative = later). Added to the playhead
-  /// rather than subtracted from every note: advancing the *reference* second by
-  /// dt is exactly equivalent to pulling every note dt closer to the line, and
-  /// doing it here means the whole renderer inherits it from one place — note Ys
-  /// ([yFor]), the visible-window cull ([maxT]), stop expansion, the beat-locked
-  /// mapping, and the CONSTANT display window ([_constantAlpha]) all key off
-  /// [second]. Zero leaves the pipeline bit-for-bit unchanged.
+  /// VISUAL OFFSET in seconds (cabinet convention: positive = EARLIER). Added to
+  /// the playhead rather than subtracted from every note — advancing the
+  /// reference second is equivalent, and everything downstream (note Ys, the
+  /// cull window, stop expansion, CONSTANT) already keys off [second].
   ///
-  /// Only the rendered field shifts; the transport's own position readout keeps
-  /// using the true playhead, so the offset never desyncs the seek bar or the
-  /// reported time from the audio.
+  /// Only the rendered field shifts; the transport's readout keeps the true
+  /// playhead, so the offset never desyncs the seek bar from the audio.
   final double visualOffset;
 
   double get second => playhead.value + visualOffset;
@@ -113,22 +108,17 @@ class ChartPainter extends CustomPainter {
   /// something else (the playhead ticking) forces a repaint.
   final bool arcadeQuant;
 
-  // Pinch-to-zoom factor. Applied to the horizontal field geometry (arrow size
-  // and lane spacing) so that zooming out shrinks the arrows in step with the
-  // vertical compression already baked into [pxPerBeat]/[pxPerSecond]. The result
-  // is a uniform "map zoom": at <1 the field pulls in from both edges and the
-  // arrows get smaller, so more of the chart is legibly on screen instead of the
-  // notes just piling together.
+  // Pinch-to-zoom, applied to the horizontal geometry (arrow size and lane
+  // spacing) so it shrinks arrows in step with the vertical compression already
+  // in [pxPerBeat]/[pxPerSecond]. The result is a uniform "map zoom" that fits
+  // more chart on screen instead of just piling the notes together.
   final double zoom;
 
-  // DDR CONSTANT modifier: when non-null, every arrow is only visible for this
-  // many milliseconds of WALL-CLOCK time before it reaches the receptor,
-  // regardless of BPM or read speed — a note is invisible until it is this far
-  // (in real seconds) from the line, then FADES IN over the leading slice of
-  // the window and travels the rest of the way solid. Null = NORMAL (arrows
-  // always visible). The window is keyed on real seconds-to-receptor, not beat
-  // distance, so its span in pixels/beats stretches and compresses with the
-  // local tempo, exactly as in-game. See [_constantAlpha].
+  // DDR CONSTANT modifier: when non-null, an arrow is invisible until it is this
+  // many milliseconds of WALL-CLOCK time from the receptor, fades in over the
+  // leading slice of that window, then travels the rest solid — regardless of
+  // BPM or read speed. Null = NORMAL. Keyed on real seconds-to-receptor, so the
+  // window's span in beats stretches with the local tempo. See [_constantAlpha].
   final double? constantMs;
 
   // Top safe-area inset (status bar / notch). The field is full-bleed, so the
@@ -137,21 +127,15 @@ class ChartPainter extends CustomPainter {
 
   // Leading slice of the CONSTANT window over which an arrow ramps from
   // invisible to solid. The arcade fades arrows in as they enter their display
-  // window (RemyWiki/DDR wiki both describe CONSTANT as arrows that "fade in as
-  // they reach the Step Zone", and the modifier's origin — 鳳 as A3's
-  // BABY-LON'S GALAXY encore — visibly fades); the exact curve isn't published,
-  // so this fraction is eyeballed from footage and tunable. Unlike HIDDEN/
-  // SUDDEN, which are drawn lane covers, CONSTANT is per-arrow alpha.
+  // window, but the exact curve isn't published, so this is eyeballed from
+  // footage. Unlike HIDDEN/SUDDEN, which are lane covers, CONSTANT is per-arrow
+  // alpha.
   static const double _constantFadeFrac = 0.2;
 
-  // Opacity of the note at chart-second [t] under the CONSTANT modifier: 1 when
-  // CONSTANT is off, the note is at/past the receptor, or it's solidly inside
-  // its display window; 0 while it's still beyond the window; ramping linearly
-  // across the first [_constantFadeFrac] of the window in between. Driven by
-  // real seconds-to-receptor (`t - second`), so the window is a fixed
-  // wall-clock time no matter the tempo. For a held note whose head has already
-  // reached the line, [t] should be the head's own second (<= playhead),
-  // yielding 1.
+  // Opacity of the note at chart-second [t] under CONSTANT: 0 beyond the window,
+  // ramping across its first [_constantFadeFrac], then 1. Driven by real
+  // seconds-to-receptor, so the window is a fixed wall-clock time at any tempo.
+  // For a held note, pass the head's own second (<= playhead), yielding 1.
   double _constantAlpha(double t) {
     final c = constantMs;
     if (c == null) return 1;
@@ -178,13 +162,11 @@ class ChartPainter extends CustomPainter {
     canvas.restore();
   }
 
-  // Receptors sit near the TOP; arrows scroll up into them. Tap/hold-head
-  // arrows draw ON TOP OF (z-above) the receptors so an arrow reaching the
-  // line covers it, but hold bodies/tails draw BEHIND the receptor (matching
-  // DDR/StepMania) so a sustain passing through or ending at the line slides
-  // under the receptor frame instead of covering it.
-  // [receptorBase] is the gap below the (inset-adjusted) top edge. Read by
-  // the state to derive the field's travel distance for the speed law.
+  // Receptors sit near the TOP; arrows scroll up into them. Taps and hold heads
+  // draw z-above the receptors so an arrow reaching the line covers it, while
+  // hold bodies/tails draw behind (matching DDR/StepMania) so a sustain slides
+  // under the frame. [receptorBase] is the gap below the inset-adjusted top
+  // edge, read by the state to derive travel distance for the speed law.
   static const double receptorBase = 56;
   double get _receptorTop => receptorBase + topInset;
 
@@ -200,16 +182,13 @@ class ChartPainter extends CustomPainter {
     _paintBackground(canvas, size);
 
     final laneW = size.width / columnCount;
-    // Pinch zoom pulls the lanes in toward the field's centre (and shrinks the
-    // arrows below), so zooming out narrows the field AND the glyphs uniformly —
-    // the "map zoom" that actually fits more chart, rather than only tightening
-    // the vertical gaps (which just stacks the arrows on top of each other).
+    // Zoom pulls the lanes toward the field's centre and shrinks the arrows with
+    // them, so zooming out fits more chart rather than only tightening the
+    // vertical gaps (which just stacks arrows on top of each other).
     final laneStride = laneW * _laneTighten * zoom;
     final fieldLeft = (size.width - laneStride * columnCount) / 2;
-    // DDR World arrows fill nearly the whole lane (the atlas glyph is ~0.94 of
-    // its cell). No small upper clamp — arrows scale with the lane so they read
-    // at the arcade's size instead of shrinking on wide fields. Zoom shrinks them
-    // in lockstep with the lane stride so their proportion within a lane holds.
+    // DDR World arrows fill nearly the whole lane. Deliberately no upper clamp,
+    // so they read at the arcade's size instead of shrinking on wide fields.
     final arrowSize = laneW * 0.92 * zoom;
 
     double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
@@ -221,16 +200,13 @@ class ChartPainter extends CustomPainter {
         (c >= 0 && c < colMap.length) ? colMap[c] : c;
 
     // Beat-locked scroll (true DDR): a note's screen position is its beat
-    // distance from the playhead's beat, so BPM changes speed the field up/down
-    // and stops freeze it. Charts without BPM data (empty [timing]) fall back to
-    // the original constant-time scroll so they still render.
+    // distance from the playhead's, so BPM changes speed the field up/down and
+    // stops freeze it. Charts with no BPM data fall back to constant time.
     final bool beatLocked = !timing.isEmpty;
     final double currentBeat = beatLocked ? timing.beatAt(second) : 0;
-    // While playing, the field is strictly beat-locked (stops freeze it to a
-    // line). While paused/scrolling we re-expand each stop to real pixels — a
-    // note past a stop is pushed further down by the stop's duration — so the
-    // halt reads as a physical gap you can scroll through instead of a collapsed
-    // seam. This deliberately shifts the layout between play and scroll.
+    // Paused, each stop re-expands to real pixels so the halt reads as a gap you
+    // can scroll through rather than the collapsed seam playback shows. This
+    // deliberately shifts the layout between play and scroll.
     final bool expandStops = beatLocked && !playing;
     final double currentStop =
         expandStops ? timing.stopSecondsAt(second) : 0;
@@ -254,21 +230,18 @@ class ChartPainter extends CustomPainter {
             1
         : second + ((size.height - _receptorTop) / pxPerSecond) + 1;
 
-    // Receptors only pulse while playing; static (dim, steady) when paused. The
-    // pulse rides the beat (freezing on stops, quickening with the tempo) when
-    // beat-locked, else falls back to a fixed half-second cadence. Use a
-    // triangle wave (peak on the beat, easing symmetrically to the trough) so
-    // the glow never snaps back discontinuously — a sawtooth flashed each beat.
+    // Receptors pulse only while playing, riding the beat when beat-locked
+    // (freezing on stops, quickening with the tempo) and a fixed half-second
+    // cadence otherwise. A triangle wave rather than a sawtooth, which snapped
+    // back discontinuously and read as a flash each beat.
     final phase = (beatLocked ? currentBeat : second * 2) % 1.0;
     final glow = playing ? 1.0 - (2.0 * phase - 1.0).abs() : 0.0;
 
-    // Clip only the far top of the field, so a note sitting ON the receptor
-    // draws in full (z-above it) while notes that have scrolled well past are
-    // hidden. Sized for the impact flash rather than the note: the flash shares
-    // the receptor's centre but overhangs it (see [noteFlashCurve]), and a clip
-    // cut to the arrow alone shears its top off. Never rises above the safe
-    // area though — the field must not draw under the status bar / notch, so on
-    // wide fields the flash is cut there rather than the chrome being overrun.
+    // Clip only the far top, so a note sitting ON the receptor draws in full
+    // while notes well past it are hidden. Sized for the impact flash, which
+    // overhangs the receptor (see [noteFlashCurve]) and would be sheared by a
+    // clip cut to the arrow alone — but never above the safe area, so on wide
+    // fields the flash is cut rather than the status bar overrun.
     final flashTop =
         _receptorTop - arrowSize * noteFlashPeakScale / 2 - arrowSize * 0.12;
     final clipTop = flashTop < topInset ? topInset : flashTop;
@@ -289,10 +262,9 @@ class ChartPainter extends CustomPainter {
     _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
         labels: false);
 
-    // 1) Freeze/hold bodies (behind the receptor and arrowheads). While a hold
-    // is being held its head has reached the receptor, so clamp the head to
-    // the line; the body then shrinks upward into it and vanishes at the tail.
-    // Walks the (much smaller) holds list and stops at the window's far edge.
+    // 1) Freeze/hold bodies, behind the receptor and arrowheads. A hold being
+    // held has its head clamped to the line, so the body shrinks upward into it
+    // and vanishes at the tail.
     for (final n in holds) {
       if (n.second > maxT) break; // sorted: nothing later can be visible
       final endS = n.endSecond ?? n.second;
@@ -318,13 +290,11 @@ class ChartPainter extends CustomPainter {
       });
     }
 
-    // Age (in seconds) of the most recent arrival in each drawn lane, for the
-    // impact effects below. Notes are sorted, so the arrivals still in effect
-    // are the slice ending at the playhead — walk back from a binary search
-    // until one is older than the longest effect. Nothing is retained between
-    // frames; every effect is a function of (playhead - note.second). Only
-    // while playing: scrubbing sweeps arrivals past the playhead at arbitrary
-    // speed (and backwards), which would strobe the whole field.
+    // Age of the most recent arrival in each lane, for the impact effects below.
+    // Nothing is retained between frames — every effect is a function of
+    // (playhead - note.second) — so this walks back from a binary search until
+    // one is older than the longest effect. Only while playing: scrubbing sweeps
+    // arrivals past the playhead at arbitrary speed, strobing the whole field.
     final arrivals = <int, double>{};
     if (playing) {
       const longest =
@@ -338,14 +308,10 @@ class ChartPainter extends CustomPainter {
       }
     }
 
-    // 1.2) Receptors, drawn on top of hold bodies/tails but under taps and
-    // held hold-heads (below) — a sustain slides under the receptor frame as
-    // it passes through or ends at the line, matching DDR/StepMania, while an
-    // arrow landing on the line still covers its receptacle.
-    //
-    // A receptor recoils when a note lands on it: it snaps in and springs back.
-    // DDR drives this off ghost taps (stepping with no note there) rather than
-    // arrivals — there is no input here, so it hangs off the note instead.
+    // 1.2) Receptors, above hold bodies/tails but under taps and held heads, so
+    // a sustain slides under the frame while an arrow landing on the line covers
+    // it. Each recoils when a note lands — DDR drives that off ghost taps, but
+    // there is no input here, so it hangs off the note instead.
     for (int c = 0; c < columnCount; c++) {
       final age = arrivals[c];
       final recoil = age == null
@@ -378,12 +344,10 @@ class ChartPainter extends CustomPainter {
       });
     }
 
-    // 3) Taps, mines (non-shock), and hold heads — drawn last so they sit above
-    // the receptors. A held freeze keeps its head pinned to the receptor line.
-    // Two culled sources replace the old full-chart walk: active holds (head
-    // already behind the playhead, pinned to the receptor) from the holds list,
-    // then the binary-searched [second, maxT] slice of the sorted note list —
-    // the same set, and the same sorted draw order, the full walk produced.
+    // 3) Taps, mines (non-shock) and hold heads, drawn last so they sit above
+    // the receptors; a held freeze keeps its head pinned to the line. Two culled
+    // sources: active holds, whose heads are already behind the playhead, then
+    // the binary-searched [second, maxT] slice of the sorted note list.
     void drawHead(StepNote n, bool held) {
       // A held head sits on the receptor, so treat it as fully arrived rather
       // than re-fading it; otherwise CONSTANT fades it in over its window.
@@ -476,16 +440,14 @@ class ChartPainter extends CustomPainter {
     ..strokeJoin = StrokeJoin.round
     ..color = _rightFootColor.withValues(alpha: 0.42);
 
-  // Connect each note to the previous note struck by the same foot, drawing two
-  // flowing polylines (one per foot) so the chart's movement pattern reads at a
-  // glance. Drawn behind the arrowheads. Held notes anchor to the receptor while
-  // active, matching where their head is actually drawn.
+  // Connect each note to the previous one struck by the same foot, as two
+  // polylines behind the arrowheads, so the chart's movement pattern reads at a
+  // glance. Held notes anchor to the receptor while active, matching where their
+  // head is drawn.
   //
-  // The same-foot chaining is precomputed per chart ([footPrev]), so this only
-  // touches the visible window: every visible note draws its incoming link, the
-  // active holds draw theirs (their heads are pinned on the receptor), and the
-  // first note per foot beyond the window closes the outgoing link — exactly
-  // the segments the old whole-chart walk drew with `visible(prev)||visible(n)`.
+  // The chaining is precomputed ([footPrev]), so this touches only the visible
+  // window: every visible note draws its incoming link, active holds draw
+  // theirs, and the first note per foot beyond the window closes the outgoing one.
   void _paintFootPaths(
     Canvas canvas,
     double Function(int) laneCenterX,
@@ -582,13 +544,9 @@ class ChartPainter extends CustomPainter {
 
   // Rule the field every 4 beats and number each measure at the left edge, the
   // way a stepchart editor does, so a spot in the chart can be named. Positions
-  // go through [yFor] like everything else, so the rules ride BPM changes and
-  // stops instead of being a fixed pixel grid. Measures are numbered from 1 at
-  // beat 0 (editor convention).
-  //
-  // Two z-layers, like [_paintTimingMarkers]: the rules are the base layer
-  // ([labels] = false) so arrows scroll over them, the number pills the top
-  // layer so a stream of notes can't bury them.
+  // go through [yFor], so the rules ride BPM changes and stops rather than being
+  // a fixed pixel grid; measures number from 1 at beat 0 (editor convention).
+  // Two z-layers, like [_paintTimingMarkers].
   void _paintMeasureLines(Canvas canvas, Size size, double Function(double) yFor,
       double currentBeat, double maxBeat, {required bool labels}) {
     var m = (currentBeat / 4).floor();
@@ -608,13 +566,10 @@ class ChartPainter extends CustomPainter {
     }
   }
 
-  // Draw full-width markers for stops (a band spanning the halt's duration) and
-  // BPM changes (a line + label), positioned on the same seconds axis the notes
-  // scroll on. Only markers within the visible time window are drawn.
-  // Draws timing markers in two z-layers. The lines/bands are the base layer
-  // ([labels] = false), painted before the notes so arrows scroll over them; the
-  // pill labels are the top layer ([labels] = true), painted after the notes so
-  // they stay legible instead of being buried under a stream of arrows.
+  // Full-width markers for stops (a band spanning the halt) and BPM changes (a
+  // line + label), on the same seconds axis the notes scroll on, culled to the
+  // visible window. Drawn in two z-layers: lines/bands before the notes so
+  // arrows scroll over them, pill labels after so a stream can't bury them.
   void _paintTimingMarkers(
     Canvas canvas,
     Size size,
@@ -624,11 +579,10 @@ class ChartPainter extends CustomPainter {
     bool expandStops, {
     required bool labels,
   }) {
-    // Stops. Beat-locked while PLAYING, a stop occupies zero beat-space (the
-    // field freezes on it), so it draws as a single bold line carrying its
-    // duration in the label. Paused/scrolling ([expandStops]) — and in the
-    // constant-time fallback — the stop is given real vertical extent and draws
-    // as a band spanning the halt so its length reads at a glance.
+    // A stop occupies zero beat-space while playing (the field freezes on it),
+    // so it draws as one bold line carrying its duration in the label. Paused,
+    // and in the constant-time fallback, it gets real vertical extent and draws
+    // as a band so its length reads at a glance.
     for (final s in stopMarkers) {
       final endSec = s.second + s.dur;
       if (endSec < second || s.second > maxT) continue;
@@ -675,10 +629,9 @@ class ChartPainter extends CustomPainter {
     }
   }
 
-  // Laid-out TextPainters are cached across frames — text shaping is far too
+  // Laid-out TextPainters cached across frames — text shaping is far too
   // expensive to redo per marker/badge per frame. Keys carry everything the
-  // glyphs depend on; the caps keep a long session (many charts, zoom levels)
-  // from accumulating stale entries.
+  // glyphs depend on; the caps stop a long session accumulating stale entries.
   static final Map<String, TextPainter> _labelTpCache = {};
   static final Map<int, TextPainter> _footTpCache = {};
 

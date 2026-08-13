@@ -1,28 +1,20 @@
 /// Name: Parity engine (foot assignment)
 /// Description: A cost-minimising foot-parity solver ported from SMEditor
-/// (tillvit/smeditor, files ParityInternals/ParityCost/ParityDataTypes/
-/// StageLayouts). Replaces the old greedy [FootAssigner] heuristic.
+/// (tillvit/smeditor: ParityInternals/ParityCost/ParityDataTypes/StageLayouts).
 ///
-/// Why a full engine and not a greedy pass: crossovers and footswitches can
-/// only be read correctly with lookahead over a *physical* model of the pad.
-/// A crossover is defined by the notes that follow it; a footswitch is a
-/// repeated column danced with alternating feet. A per-note greedy solver
-/// commits before it has seen the disambiguating notes, so it can't produce
-/// either reliably. This solver instead:
-///   1. models each foot as heel+toe on a coordinate pad (so "crossed over",
-///      "facing", "bracket" are real geometric facts, not column heuristics),
-///   2. scores every legal foot placement per row with a weighted cost model,
-///   3. finds the minimum-cost path through the whole chart via a forward DP.
-/// Crossovers/footswitches then *emerge* because they're cheaper than the
-/// doublestep alternative — nothing hard-codes "insert a crossover here".
+/// Crossovers and footswitches need lookahead over a *physical* pad model — a
+/// crossover is defined by the notes that follow it — so a greedy per-note pass
+/// commits before it can see the disambiguating notes. This solver instead
+/// models each foot as heel+toe on a coordinate pad, scores every legal
+/// placement per row, and takes the minimum-cost path via a forward DP.
+/// Crossovers and footswitches then emerge from being cheaper than the
+/// doublestep alternative rather than being hard-coded.
 ///
-/// Internally feet are heel/toe (4 parts) because the cost functions need that
-/// to keep brackets honest, but the public API folds back to plain L/R via
-/// [ParityFoot], since the renderer only draws a left/right badge.
+/// Feet are heel/toe internally because the cost functions need that to keep
+/// brackets honest; the public API folds back to L/R via [ParityFoot].
 ///
-/// This is a batch analyser (compute once when a chart opens), so all of
-/// SMEditor's incremental-recompute / edge-caching / web-worker machinery is
-/// deliberately dropped.
+/// A batch analyser (one solve per chart open), so SMEditor's incremental
+/// recompute / edge caching / web-worker machinery is deliberately dropped.
 library;
 
 import 'dart:math' as math;
@@ -33,14 +25,10 @@ import 'package:ddr_md/models/steps_model.dart';
 /// Public foot result: left or right. (Heel/toe is an internal detail.)
 enum ParityFoot { left, right }
 
-/// Where both feet stand from [second] until the next entry — the solved
-/// placement of a row, kept as *columns* rather than folded to L/R badges.
-///
-/// The per-note [assignParity] result answers "which foot hits this arrow";
-/// this answers "where is the player standing right now", which is what a pad
-/// display needs: a foot that isn't stepping still occupies the panel it was
-/// left on, and a bracket occupies two panels at once. Columns are -1 when that
-/// part of the foot is off the pad (i.e. before the chart's first step).
+/// Where both feet stand from [second] until the next entry, kept as *columns*
+/// rather than folded to L/R badges: [assignParity] answers "which foot hits
+/// this arrow", this answers "where is the player standing", which is what a pad
+/// display needs. Columns are -1 when that part of the foot is off the pad.
 class ParityStance {
   final double second;
   final int leftHeel;
@@ -72,9 +60,8 @@ class ParityStance {
   }
 }
 
-/// One solve, read two ways: [feet] for the per-arrow L/R badges, [stances] for
-/// the pad display. Both come from the same minimum-cost path, so the badges and
-/// the feet on the pad can never disagree.
+/// One solve read two ways — [feet] for the per-arrow badges, [stances] for the
+/// pad — both off the same minimum-cost path, so the two can never disagree.
 class ParityResult {
   final Map<StepNote, ParityFoot> feet;
   final List<ParityStance> stances;
@@ -86,8 +73,8 @@ class ParityResult {
 // Foot parts (internal). Index values matter: they index [_footColumns].
 // ---------------------------------------------------------------------------
 
-/// A foot *part*. NONE is the absence of a foot; each real foot is a heel and a
-/// toe so a single arrow uses the heel and a bracket uses heel+toe.
+/// A foot *part*: each real foot is a heel and a toe, so a single arrow uses the
+/// heel and a bracket uses both.
 class _Foot {
   static const int none = 0;
   static const int leftHeel = 1;
@@ -98,8 +85,8 @@ class _Foot {
   /// The parts that can actually be placed on an arrow (NONE excluded).
   static const List<int> all = [leftHeel, leftToe, rightHeel, rightToe];
 
-  /// The subset placeable when brackets are disallowed: heels only, so one foot
-  /// can never cover two panels and the toe parts stay permanently unplaced.
+  /// Placeable when brackets are disallowed: heels only, so no foot can cover
+  /// two panels and the toes stay permanently unplaced.
   static const List<int> heels = [leftHeel, rightHeel];
 
   /// The other part of the same physical foot (heel<->toe), NONE for NONE.
@@ -132,59 +119,42 @@ class _Weights {
   static const double spin = 3000;
   static const double startXo = 10000;
 
-  /// Both feet ending up on one panel. NOT from SMEditor, which never scores
-  /// the stance itself, so the state is free — and worse than free, since two
-  /// feet on one panel share a position and so sit minimum distance from every
-  /// following note, making the rows after it look cheap too.
+  /// Both feet ending up on one panel — not a stance you can hold, since a DDR
+  /// panel fits one foot. Not from SMEditor, which never scores the stance, so
+  /// the state is free there and worse than free: two feet sharing a position
+  /// sit minimum distance from every following note.
   ///
-  /// You cannot actually stand like this: a DDR panel fits one foot, so the
-  /// reading is really "hop onto the arrow the other foot is on", which is a
-  /// footswitch the engine already prices when it can see one. Charging the
-  /// stance closes the gap where it can't.
-  ///
-  /// Measured over ~5300 singles charts: 0.98% of rows at 0, 0.68% at 100,
-  /// 0.60% at 250, 0.54% at 400. It never reaches zero because a jump onto a
-  /// column both feet must share leaves no alternative, so this stays a
-  /// preference; past ~250 it buys little.
+  /// Measured over ~5300 singles charts, share of rows: 0.98% at 0, 0.68% at
+  /// 100, 0.60% at 250, 0.54% at 400. It never reaches zero — a jump onto a
+  /// column both feet must share has no alternative — so past ~250 it buys
+  /// little.
   static const double samePanel = 250;
 
-  /// Flat surcharge for putting one foot on two panels at all. NOT from
-  /// SMEditor, which prices only specific awkward brackets (bracket jacks, slow
-  /// brackets, bracketing while crossed over) and is otherwise happy to bracket
-  /// whenever it saves a little distance.
+  /// Flat surcharge for one foot covering two panels. Not from SMEditor, which
+  /// prices only specific awkward brackets and otherwise brackets freely to save
+  /// distance. DDR's panels are large, spaced and spring-loaded, so bracketing
+  /// is a fringe technique rather than a normal reading.
   ///
-  /// DDR pads don't support bracketing well — the panels are large, spaced, and
-  /// spring-loaded, so covering two with one foot is a fringe technique rather
-  /// than a normal reading. A solve that reaches for one wherever it saves a
-  /// step doesn't describe how the chart is actually danced.
+  /// Priced on panels *covered*, not freshly pressed, so a foot pinning a hold
+  /// and tapping its neighbour pays too — on a sprung pad that isn't free.
   ///
-  /// Measured over all ~5300 singles charts (~1.53M rows), bracket rate per row
-  /// falls 1.75% (50) -> 0.14% (100) -> 0.05% (200) -> 0.005% (400). Past ~400
-  /// it's a ban rather than a preference; 200 keeps brackets in the ~400 charts
-  /// where the alternative is a genuine doublestep and removes them elsewhere.
-  ///
-  /// Note this is priced on panels *covered*, not panels freshly pressed, so a
-  /// foot pinning a hold and tapping the neighbour pays too — on a sprung pad
-  /// that's harder than a clean bracket, not free.
+  /// Measured over ~5300 singles charts (~1.53M rows), brackets per row: 1.75%
+  /// (50), 0.14% (100), 0.05% (200), 0.005% (400). Past ~400 it's a ban rather
+  /// than a preference; 200 keeps them only where the alternative is a genuine
+  /// doublestep.
   static const double bracket = 200;
 
-  /// Changing feet on a side panel (the "LL" / "RR" case). Raised well above
-  /// SMEditor's 130: switching on L or R means swapping which foot owns the
-  /// outside of the pad, which players overwhelmingly don't do — they jack or
-  /// re-approach instead.
+  /// Changing feet on a side panel (the "LL" / "RR" case) — swapping which foot
+  /// owns the outside of the pad, which players overwhelmingly don't do. Well
+  /// above SMEditor's 130, and only effective alongside [_State.lastFoot]: while
+  /// the check keyed off feet still *resting* on the panel it missed every
+  /// switch with notes in between, so the weight alone moved almost nothing.
   ///
-  /// This only bites alongside the [_State.lastFoot] fix; while the check keyed
-  /// off feet still *resting* on the panel it missed every switch with notes in
-  /// between, so raising the weight alone moved almost nothing (47.1 -> 44.0
-  /// switches per 1k rows going 130 -> 3000).
-  ///
-  /// Measured over ~5300 singles charts (~1.53M rows), switches per 1k rows /
-  /// doublesteps per 1k rows: 43.0/109.8 (130), 34.8/114.1 (400), 26.0/119.4
-  /// (700), 22.3/122.9 (900), 20.8/124.1 (1000), 5.8/143.5 (2000). Sideswitches
-  /// only leave by *becoming* doublesteps, which are worse, so this can't go
-  /// arbitrarily high: past ~1000 each switch removed adds more than one
-  /// doublestep. 800 roughly halves the rate while staying on the good side of
-  /// that trade.
+  /// Measured over ~5300 singles charts (~1.53M rows), switches / doublesteps
+  /// per 1k rows: 43.0/109.8 (130), 34.8/114.1 (400), 26.0/119.4 (700),
+  /// 20.8/124.1 (1000), 5.8/143.5 (2000). Switches only leave by *becoming*
+  /// doublesteps, so past ~1000 each one removed costs more than it saves; 800
+  /// roughly halves the rate on the good side of that trade.
   static const double sideswitch = 800;
 }
 
@@ -325,10 +295,9 @@ class _State {
   final List<int> footColumns; // length 5, indexed by _Foot part
 
   /// lastFoot[col] = the foot part that most recently *pressed* this column,
-  /// kept even after that foot has moved away. [combinedColumns] only remembers
-  /// a foot while it still rests there, which is enough for jacks but not for
-  /// switches: in "R ... R" with notes in between, the foot leaves the panel, so
-  /// a combined-columns check sees an empty column and reads the return as free.
+  /// kept after that foot moves away. [combinedColumns] forgets a foot as soon
+  /// as it leaves, which is enough for jacks but reads "R ... R" with notes in
+  /// between as a free return rather than a switch.
   final List<int> lastFoot;
 
   final Set<int> movedFeet;
@@ -397,10 +366,9 @@ class _Placement {
 class _ParityEngine {
   final _StageLayout layout;
 
-  /// Whether one foot may cover two panels at once. On by default, priced by
-  /// [_Weights.bracket] so brackets stay rare. Turning it off drops them from
-  /// the candidate placements entirely, which is stricter than any weight can
-  /// be — no solve can then fall back on one however bad the alternatives.
+  /// Whether one foot may cover two panels. On by default and priced by
+  /// [_Weights.bracket] so brackets stay rare; off drops them from the candidate
+  /// placements entirely, which no weight can match.
   final bool allowBrackets;
 
   _ParityEngine(this.layout, {this.allowBrackets = true});
@@ -478,12 +446,10 @@ class _ParityEngine {
 
   static const double _secondEps = 0.0005;
 
-  /// Whether [action] leaves every sustained hold under the foot that is
-  /// already on it. A hold is a panel physically pinned down: the foot holding
-  /// it cannot be reassigned until the tail, and no *other* foot can take the
-  /// column over. Actions are enumerated per row without knowledge of the
-  /// previous state, so this is the transition-time check that the DP needs to
-  /// stop a hold from silently changing feet mid-sustain.
+  /// Whether [action] leaves every sustained hold under the foot already on it —
+  /// a pinned panel can't be reassigned until the tail. Actions are enumerated
+  /// per row without knowing the previous state, so this is the transition-time
+  /// check that stops a hold changing feet mid-sustain.
   bool _holdsKeepTheirFoot(_State initial, _Row row, List<int> action) {
     for (int col = 0; col < layout.columnCount; col++) {
       // Only sustained columns; the head row is a normal step, and a tail row
@@ -639,18 +605,16 @@ class _ParityEngine {
     final movedLeft = nonHeld[_Foot.leftHeel] || nonHeld[_Foot.leftToe];
     final movedRight = nonHeld[_Foot.rightHeel] || nonHeld[_Foot.rightToe];
 
-    // A foot brackets whenever it covers two panels — pressing both this row,
-    // pinning one from a hold, or merely still standing spread across them from
-    // an earlier row. Gating this on "stepped this row" would let a foot drift
-    // into a permanent free straddle, which also understates its distance to
-    // everywhere else and quietly warps the rest of the solve.
+    // A foot brackets whenever it covers two panels, whether it pressed both
+    // this row, pinned one from a hold, or is still spread from an earlier row.
+    // Gating on "stepped this row" would let a foot drift into a permanent free
+    // straddle, understating its distance to everywhere else.
     final leftBracket = result.leftHeel != -1 && result.leftToe != -1;
     final rightBracket = result.rightHeel != -1 && result.rightToe != -1;
 
-    // A jump is both feet landing at once, whichever part each lands on — a
-    // foot arriving on its toe (or bracketed across two panels) is still that
-    // foot jumping. Testing heels alone misreads those rows as two independent
-    // steps, which then leaks into the jack / doublestep / footswitch gates.
+    // A jump is both feet landing at once, on whichever part — testing heels
+    // alone misreads a toe or bracketed landing as two independent steps, which
+    // leaks into the jack / doublestep / footswitch gates.
     final previousJumped = prevMovedLeft && prevMovedRight;
     final jumped = movedLeft && movedRight;
 
@@ -1023,10 +987,10 @@ class _ParityEngine {
       final state = states[r];
       final stepped = <int>{};
       for (int col = 0; col < layout.columnCount; col++) {
-        // A sustained column is "active" for action generation, so the holding
-        // foot appears in [action] on every row the hold spans. Only the head
-        // row is a step: without this a held panel re-flashes, and the foot
-        // pinning it re-presses, on every note played alongside it.
+        // A sustained column stays "active" for action generation, so the
+        // holding foot appears in [action] on every row the hold spans. Only the
+        // head row is a step — otherwise a held panel re-flashes on every note
+        // played alongside it.
         if (state.action[col] != _Foot.none && !row.holds[col]) {
           stepped.add(col);
         }
@@ -1050,11 +1014,9 @@ class _ParityEngine {
 }
 
 /// Entry point: run the cost-minimising parity engine over a note stream.
-///
-/// Brackets are legal but carry [_Weights.bracket], so they stay rare. Pass
-/// [allowBrackets] false to remove them from consideration entirely — note that
-/// this can push the solve into worse-looking alternatives on charts where a
-/// bracket really was the sane reading.
+/// Brackets are legal but carry [_Weights.bracket] so they stay rare; passing
+/// [allowBrackets] false removes them entirely, which can push the solve into
+/// worse alternatives on charts where a bracket was the sane reading.
 ParityResult analyseParity(List<StepNote> notes, Modes mode,
     {bool allowBrackets = true}) {
   final layout =

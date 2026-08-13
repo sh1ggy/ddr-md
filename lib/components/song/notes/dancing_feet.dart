@@ -19,47 +19,30 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-/// The stored coordinates are thousandths PLUS ONE, because [Settings.getInt]
-/// returns 0 for a key that was never written and 0 is itself a legitimate
-/// position (hard against the left/top edge). Biasing by one keeps "never
-/// placed" (0) distinct from "placed at the edge" (1), so a pad the user has
-/// deliberately parked in the corner isn't mistaken for an unplaced one.
+/// Stored coordinates are thousandths PLUS ONE: [Settings.getInt] returns 0 for
+/// an unwritten key, and 0 is itself a legitimate position (hard against the
+/// edge), so the bias keeps "never placed" distinct from "parked in the corner".
 const int kDancingFeetUnset = 0;
 
-/// How far the body turns, given the panel each foot stands on.
+/// How far the body turns, given the panel each foot stands on. The parity solve
+/// runs on the chart as TURNED, so these are the panels the player is really on
+/// and no column mapping belongs on this path.
 ///
-/// These are the panels the player is really standing on: the parity solve runs
-/// on the chart as TURNED, so a stance already accounts for the modifier and no
-/// column mapping belongs anywhere on this path.
+/// You stand facing the machine and almost nothing turns you — a staircase runs
+/// through every panel without crossing your legs — so the feet point up the pad
+/// by default and turn only on a genuine crossover. The test is about PANELS,
+/// not coordinates: Up and Down are neutral ground either foot uses freely, so a
+/// cross is one foot on the SIDE panel belonging to the other. Comparing the
+/// feet's x positions instead spins the body mid-staircase, since a foot
+/// reaching for a centre panel can sit further across than its partner.
 ///
-/// You stand facing the machine, and almost nothing turns you. A staircase runs
-/// through every panel without ever crossing your legs; a foot on Up while the
-/// other is on Down is just one foot forward. So the feet point straight up the
-/// pad by default and turn only on a genuine crossover.
-///
-/// The test is about PANELS, not coordinates: Up and Down are neutral ground
-/// that either foot uses freely, so a cross is one foot standing on the SIDE
-/// panel that belongs to the other foot — the left foot on Right, or the right
-/// foot on Left. Measuring the feet's x positions instead gets this wrong,
-/// because a foot reaching for a centre panel can sit further across than its
-/// partner without any crossing having happened, which spins the body a quarter
-/// turn in the middle of an ordinary staircase.
-///
-/// BOTH feet share the angle: you turn at the waist, and the whole body goes
-/// with it. Turning the crossing foot alone leaves the planted one splayed at
-/// right angles to its partner, which is not a stance a body can hold.
-///
-/// Where it turns TO is the line between the feet — your shoulders square up to
-/// your own stance. The axis runs from the planted foot's panel to the crossing
-/// foot's, so a cross with the partner on Down opens the body one way and the
-/// same cross with the partner on Up winds it the other. That lands on 45deg for
-/// a single cross, not the 90 a foot-on-side-panel rule would give: one foot is
-/// still on a centre panel, so the diagonal is half a turn.
-///
-/// Facing along that axis or back down it is the same stance, so the heading
-/// folds onto +-90. The fully swapped stance sits exactly on the fold — both
-/// feet on side panels puts the axis flat across the pad, where +90 and -90 name
-/// the same line — and it resolves to +90, the way the legs actually wind.
+/// BOTH feet share the angle — you turn at the waist. It turns to the line
+/// between the feet, running from the planted foot's panel to the crossing
+/// foot's, so the same cross winds one way with the partner on Down and the
+/// other with it on Up. A single cross lands on 45deg, not 90, because one foot
+/// is still on a centre panel. Facing along that axis or back down it is one
+/// stance, so the heading folds onto ±90; the fully swapped stance sits exactly
+/// on the fold and resolves to +90, the way the legs actually wind.
 @visibleForTesting
 double turnFor(int leftCol, int rightCol) {
   // Both feet on one panel is a footswitch — they are stacked, not crossed.
@@ -84,10 +67,9 @@ double turnFor(int leftCol, int rightCol) {
   return folded;
 }
 
-/// Panel geometry, as offsets in "panel units" from the pad centre: the four
-/// arrows of one pad sit on a plus, matching the physical stage. Shared between
-/// the turn above, which reads the line between the feet off it, and the painter
-/// below, which draws the panels there — one stage, one set of coordinates.
+/// Panel geometry in "panel units" from the pad centre — one pad's four arrows
+/// on a plus, matching the physical stage. Shared by the turn above and the
+/// painter below so there is one set of coordinates.
 const List<Offset> _panelOffsets = [
   Offset(-1, 0), // left
   Offset(0, 1), // down
@@ -95,21 +77,19 @@ const List<Offset> _panelOffsets = [
   Offset(1, 0), // right
 ];
 
-/// How far a foot shrinks at the bottom of its press. A foot coming down on a
-/// panel is seen from above as it drops, so it reads smaller for the moment it
-/// lands — that dip is what separates a foot PLANTED on a panel from one merely
-/// hovering over it. Small: enough to register as weight going down, not so much
-/// that a stream of steps turns into a row of pulsing blobs.
+/// How far a foot shrinks at the bottom of its press. Seen from above, a foot
+/// coming down reads smaller for the moment it lands, which is what separates a
+/// PLANTED foot from one hovering. Kept small so a stream of steps doesn't turn
+/// into a row of pulsing blobs.
 const double _pressScale = 0.82;
 
 /// Recovery is a shade longer than the panel flash, so the foot is still
 /// settling as the light fades rather than snapping back before it.
 const double _pressSeconds = 0.2;
 
-/// The size multiplier for a foot [sinceStep] seconds after it landed: smallest
-/// on impact, easing back to full as the weight settles. Outside the press
-/// window it is exactly 1, so a foot standing through a long gap is drawn at the
-/// size it would be if there were no press at all.
+/// Size multiplier for a foot [sinceStep] seconds after landing: smallest on
+/// impact, easing back to full as the weight settles, exactly 1 outside the
+/// press window.
 @visibleForTesting
 double padPressFactor(double sinceStep) {
   if (sinceStep < 0 || sinceStep >= _pressSeconds) return 1.0;
@@ -129,11 +109,9 @@ const double _maxTurn = math.pi / 2;
 /// the player at the playhead. Driven by the scroller's playhead notifier so the
 /// feet animate without rebuilding the widget tree per frame.
 ///
-/// It floats rather than sitting in the control column because there is no one
-/// right place for it — where it belongs depends on the chart, the phone and
-/// where the user's thumbs are. Press and hold to pick it up, drag to place it;
-/// the position is remembered as a fraction of the field (see
-/// [Settings.dancingFeetXKey]) so it survives rotation and a change of device.
+/// It floats because where it belongs depends on the chart, the phone and the
+/// user's thumbs. Press and hold to pick it up; the position is remembered as a
+/// fraction of the field so it survives rotation and a change of device.
 class DancingFeet extends StatefulWidget {
   const DancingFeet({
     super.key,
@@ -148,18 +126,16 @@ class DancingFeet extends StatefulWidget {
 
   final ValueListenable<double> playhead;
 
-  /// VISUAL OFFSET in seconds, added to the playhead exactly as the field does
-  /// it — otherwise a dialled offset would slide the arrows without sliding the
-  /// feet, and the pad would step early or late against what's on screen.
+  /// VISUAL OFFSET in seconds, added to the playhead exactly as the field does,
+  /// so the feet don't step early or late against the arrows on screen.
   final double visualOffset;
 
   /// 4 for singles, 8 for doubles — a doubles pad draws as two panels.
   final int columnCount;
 
-  /// Tall enough for the three-panel-high stage to read at a glance without
-  /// covering much of the field. Doubles draws two pads in this width, so its
-  /// panels come out smaller — deliberately, since the point there is the
-  /// distance a foot travels across the whole stage.
+  /// Tall enough for the three-panel stage to read at a glance without covering
+  /// much of the field. Doubles fits two pads in this width, so its panels come
+  /// out smaller — the point there is the distance a foot travels.
   static const double height = 108;
 
   /// Singles is a square-ish plus; doubles needs twice the width for its pair.
@@ -215,10 +191,9 @@ class _DancingFeetState extends State<DancingFeet> {
     return LayoutBuilder(builder: (context, constraints) {
       final w = widget.width;
       const h = DancingFeet.height;
-      // Free space the pad's top-left can range over, so a fraction of 1 puts
-      // its far edge on the field's far edge instead of off-screen. The whole
-      // field is fair game, chrome included — the pad's layer sits above the
-      // controls, so it stays grabbable even parked on top of them.
+      // Free space the top-left can range over, so a fraction of 1 puts the
+      // pad's far edge on the field's rather than off-screen. Chrome included:
+      // the pad's layer is above the controls, so it stays grabbable there.
       final freeX = math.max(0.0, constraints.maxWidth - w);
       final freeY = math.max(0.0, constraints.maxHeight - h);
 
@@ -248,12 +223,10 @@ class _DancingFeetState extends State<DancingFeet> {
                 LongPressGestureRecognizer:
                     GestureRecognizerFactoryWithHandlers<
                         LongPressGestureRecognizer>(
-                  // The field runs its OWN long press (2x fast-forward) over the
-                  // whole screen, and both recognizers would otherwise reach
-                  // their deadline on the same frame — the arena breaks that tie
-                  // by entry order, which is not ours to rely on. A shorter
-                  // deadline makes the pad win outright whenever the touch
-                  // started on it, so picking the pad up never fast-forwards.
+                  // The field runs its own long press (2x fast-forward) over the
+                  // whole screen, and both would otherwise hit their deadline on
+                  // the same frame, leaving the arena to break the tie by entry
+                  // order. A shorter deadline makes the pad win outright.
                   () => LongPressGestureRecognizer(
                     duration: const Duration(milliseconds: 220),
                     debugOwner: this,
@@ -530,12 +503,10 @@ class _PadPainter extends CustomPainter {
     }
   }
 
-  /// One foot, drawn as a foot: a wide rounded forefoot tapering to a narrow
-  /// heel, pointing from heel toward toe. A symmetric blob can't say which end
-  /// is which — and which end is which is the whole point of a bracket, so the
-  /// shape carries the heel/toe the solver already worked out. When the foot
-  /// isn't bracketing it stands on one panel and points up the pad, turned only
-  /// by [bodyTurn] — see [turnFor], which is 0 for everything but a crossover.
+  /// One foot: a wide rounded forefoot tapering to a narrow heel, pointing from
+  /// heel toward toe. A symmetric blob couldn't say which end is which, which is
+  /// the whole point of a bracket. Off a bracket the foot stands on one panel
+  /// and points up the pad, turned only by [bodyTurn] (see [turnFor]).
   void _paintFoot(
     Canvas canvas,
     Offset Function(int) pointFor,
@@ -551,8 +522,8 @@ class _PadPainter extends CustomPainter {
     final toe = Offset.lerp(from.toe(pointFor), to.toe(pointFor), t)!;
 
     // Heel->toe direction. Equal points mean a single-panel stance, which has no
-    // axis of its own: it stands upright, turned only by the body (0 unless the
-    // stance is crossed over). A bracket has a real axis and follows it instead.
+    // axis of its own and stands upright under the body's turn; a bracket has a
+    // real axis and follows it.
     final axis = toe - heel;
     final len = axis.distance;
     final angle =
@@ -562,36 +533,29 @@ class _PadPainter extends CustomPainter {
     canvas.save();
     canvas.translate((heel.dx + toe.dx) / 2, (heel.dy + toe.dy) / 2);
     canvas.rotate(angle);
-    // Scaled about the foot's own centre (we are already translated there), so
-    // the press squashes it in place instead of sliding it toward the panel's
-    // corner as it shrinks.
+    // Scaled about the foot's own centre (already translated there) so the press
+    // squashes it in place rather than sliding it toward the panel's corner. A
+    // foot never STRETCHES to its stance — a bracket only turns to point along
+    // its heel->toe line, since one stretched across two panels reads as a
+    // rendering glitch. The press is the only thing that changes a foot's size.
     canvas.scale(press);
-    // A foot never STRETCHES to its stance. Brackets are rare, and one that
-    // stretched to span two panels reads as a rendering glitch rather than as a
-    // reach — so a bracket only turns to point along its heel->toe line. The
-    // press above is the one thing that changes a foot's size, and it is uniform
-    // and brief.
-    // Which way is "inward" for THIS foot, in the foot's own rotated frame: the
-    // left foot's body is to its right (+x) and vice versa. Constant per foot
-    // rather than derived from the pad centre, so the arch never flips sides
-    // mid-run when a foot crosses over.
+    // Which way is "inward" in the foot's own rotated frame: the left foot's
+    // body is to its right (+x) and vice versa. Constant per foot rather than
+    // derived from the pad centre, so the arch never flips sides on a crossover.
     final inward = foot == ParityFoot.left ? 1.0 : -1.0;
-    // Longer than it is wide by about 1.8:1, the way a real foot is and the way
-    // SMEditor's bot draws it. A rounder blob reads as a token sitting on the
-    // panel; the length is what makes it read as a foot with a direction, and it
-    // makes the heel/toe of a bracket legible at this size.
+    // About 1.8:1, the way a real foot is and the way SMEditor's bot draws it.
+    // The length is what gives the silhouette a direction and keeps a bracket's
+    // heel/toe legible at this size.
     _drawFootPath(canvas, unit * 0.46, unit * 0.82, color, inward);
     canvas.restore();
   }
 
-  /// The foot outline itself, centred on the origin and pointing up (-y), so the
-  /// caller only has to place and rotate it. [length] spans heel to toe.
+  /// The foot outline, centred on the origin and pointing up (-y) so the caller
+  /// only places and rotates it. [length] spans heel to toe.
   ///
-  /// Handed: [inward] is the x direction of the pad's centre (-1 for a foot on
-  /// the right of the body, +1 for one on the left), and the arch is cut into
-  /// THAT side while the outer edge stays full. So the left and right feet are
-  /// mirror images that visibly belong to one body, rather than two copies of
-  /// the same shape.
+  /// [inward] is the x direction of the body (+1 for the left foot, -1 for the
+  /// right); the arch is cut into that side and the outer edge stays full, so
+  /// the two feet are mirror images rather than two copies of one shape.
   void _drawFootPath(
       Canvas canvas, double width, double length, Color color, double inward) {
     final halfW = width / 2;
@@ -611,9 +575,8 @@ class _PadPainter extends CustomPainter {
       ..quadraticBezierTo(outer, -halfL - width * 0.12, 0, -halfL - width * 0.12)
       ..quadraticBezierTo(
           inner, -halfL - width * 0.12, inner, -halfL + width * 0.35)
-      // Inner edge: scooped well in at the arch (0.62 of the half-width) before
-      // meeting the heel — this hollow is what makes the foot read as a left or
-      // a right at a glance.
+      // Inner edge: scooped in at the arch before meeting the heel — the hollow
+      // is what makes the foot read as a left or a right at a glance.
       ..quadraticBezierTo(
           inner * 0.62, halfL * 0.30, innerHeel, halfL - heelW * 0.4)
       // Heel: a rounded cap across the back.

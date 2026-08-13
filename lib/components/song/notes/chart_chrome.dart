@@ -89,14 +89,11 @@ class TempoBadge extends StatelessWidget {
   }
 }
 
-/// Left half of the control row: the DDR WORLD speed option. Shows the
-/// active SPEED TYPE — REAL SPEED (the cabinet's ScrollSpeed: the dialled
-/// target scroll rate) or HI-SPEED (the raw multiplier, printed "x %.2lf" as
-/// the cabinet does) — with the resulting min–core–max read speeds under
-/// either, like the cabinet's num_min/num_core/num_max readouts.
-/// Tap to switch type; drag or tap the ∓ ends to turn the active dial —
-/// buttons and drag share one detent (x0.05 for HI-SPEED, 10 for REAL
-/// SPEED), and each type keeps its own dialled value.
+/// Left half of the control row: the DDR WORLD speed option. Shows the active
+/// SPEED TYPE — REAL SPEED (the dialled target scroll rate) or HI-SPEED (the raw
+/// multiplier) — over the resulting min–core–max read speeds. Tap to switch
+/// type; drag or tap the ∓ ends to turn the active dial, which share one detent
+/// (x0.05 for HI-SPEED, 10 for REAL SPEED).
 class SpeedPane extends StatelessWidget {
   const SpeedPane({
     super.key,
@@ -301,14 +298,11 @@ class ShadeSection {
   });
 }
 
-/// The pull-down options card: a rounded panel of chart-viewing modifiers that
-/// floats inset from the screen edges (never a full-width sheet — it must not
-/// dominate the field). Styled like the bottom transport — same padding, fill
-/// and radius, with filled tiles inside matching the read/song-speed panes — so
-/// the two chrome surfaces read as one family. Height-capped with a scrollable
-/// body for when the option set outgrows the cap. Its top is positioned by the
-/// caller ([_buildSettingsShade]) so it seats under the title when the header is
-/// up, or at the status bar when it isn't.
+/// The pull-down options card: a rounded panel of chart-viewing modifiers,
+/// floating inset from the screen edges rather than as a full-width sheet so it
+/// doesn't dominate the field. Framed like the bottom transport so the two read
+/// as one family, height-capped with a scrollable body. The caller positions its
+/// top, seating it under the title or at the status bar.
 class SettingsShade extends StatelessWidget {
   const SettingsShade({
     super.key,
@@ -375,12 +369,10 @@ class SettingsShade extends StatelessWidget {
   }
 }
 
-/// Fill/border/foreground for a shade control, keyed on whether it's active.
-/// The inactive state deliberately matches the read/song-speed panes
-/// ([ControlPane]: `surfaceContainerHighest` at α 0.5, no border) so the shade
-/// tiles read as the same buttons as the bottom config. The active state lifts
-/// the same surface brighter with a hairline border to mark the selection —
-/// still monochrome, never a purple accent.
+/// Fill/border/foreground for a shade control. Inactive deliberately matches
+/// [ControlPane] so the shade tiles read as the same buttons as the bottom
+/// config; active lifts the same surface brighter with a hairline border —
+/// monochrome, never a purple accent.
 ({Color fill, Color border, Color fg, Color fgMuted}) _tileColors(
     ColorScheme scheme, bool active) {
   final onSurface = scheme.onSurface;
@@ -400,11 +392,9 @@ class SettingsShade extends StatelessWidget {
         );
 }
 
-/// The accent for a dial value: the FAST hue for positive, the SLOW hue for
-/// negative, null at neutral (which stays the shade's plain grey). Uses the
-/// app's existing sync FAST/SLOW palette ([kFastColor]/[kSlowColor], shared with
-/// the song page's sync card) so the same two colours mean the same two things
-/// everywhere in the app.
+/// The accent for a dial value: the FAST hue for positive, SLOW for negative,
+/// null at neutral. Uses the app's sync palette, shared with the song page's
+/// sync card, so the two colours mean the same thing everywhere.
 Color? timingAccent(double value, bool isDark) {
   if (value == 0) return null;
   return value > 0
@@ -519,15 +509,6 @@ const Key arcadeSyncTileKey = Key('chart-preview-arcade-sync');
 const Key visualOffsetChipKey = Key('chart-preview-visual-offset');
 const Key audioOffsetChipKey = Key('chart-preview-audio-offset');
 
-/// Resolves a stored VISUAL OFFSET through the ARCADE SYNC gate exactly as the
-/// live state does, in seconds. Returns 0 whenever the gate is off, whatever is
-/// stored — the gate is not merely a UI affordance, it decides whether the field
-/// moves at all.
-///
-/// Exposed because the field painter can't be observed in a widget test: the
-/// scroller paints nothing until [SpriteNoteskin.tryLoad] resolves, and that
-/// future never completes under the test harness.
-@visibleForTesting
 /// One TIMING offset chip (VISUAL or AUDIO) in the shade's TIMING section.
 /// Drag horizontally to sweep the offset, tap to reset it to neutral — the same
 /// interaction as [ConstantChip], minus an on/off state: an offset of +0.0 IS
@@ -636,16 +617,13 @@ class TimingOffsetChip extends StatelessWidget {
 /// The ARCADE SYNC header: the master toggle for the cabinet timing simulation
 /// and, while engaged, a live summary of both dials.
 ///
-/// Tap to toggle and a plain ON/OFF readout, exactly like every other control in
-/// the shade — a [Switch] was tried here and read as foreign, since nothing else
-/// in the shade uses one. State is carried by the same fill/border treatment the
-/// TURN tiles and CONSTANT chip use, so this reads as one of them despite owning
-/// the two chips below it.
+/// Tap to toggle, with a plain ON/OFF readout and the same fill/border treatment
+/// the TURN tiles and CONSTANT chip use, so it reads as one of them despite
+/// owning the two chips below it. (A [Switch] read as foreign here.)
 ///
-/// This is also the ONLY place the FAST/SLOW hue appears: the summary label
-/// takes it, so one line reports the direction for both dials. The chips
-/// themselves stay neutral — tinting two side-by-side chips turned the row into
-/// competing blocks of colour.
+/// The only place the FAST/SLOW hue appears: the summary label takes it, so one
+/// line reports the direction for both dials. The chips stay neutral — tinting
+/// two side-by-side chips turned the row into competing blocks of colour.
 class ArcadeSyncHeader extends StatelessWidget {
   const ArcadeSyncHeader({
     super.key,
@@ -816,11 +794,10 @@ class TurnTile extends StatelessWidget {
   }
 }
 
-/// A small always-visible pull-tab pinned to a screen edge, vertically centred
-/// so it never collides with the full-width header or transport. Two mirrored
-/// instances exist: the RIGHT tab shows/hides the floating controls, the LEFT
-/// tab pulls the settings shade down/up. [leftEdge] flips the shape so the
-/// rounded corners always face away from the edge the tab hangs off.
+/// A small pull-tab pinned to a screen edge, vertically centred so it never
+/// collides with the header or transport. The RIGHT tab shows/hides the floating
+/// controls, the LEFT one pulls the settings shade down; [leftEdge] flips the
+/// shape so the rounded corners face away from the edge it hangs off.
 class EdgeTab extends StatelessWidget {
   const EdgeTab({
     super.key,
