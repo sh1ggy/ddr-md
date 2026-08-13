@@ -30,6 +30,24 @@ class Settings {
   // Measure rules for the chart preview: numbered lines every 4 beats. 0/1.
   static const String measureLinesOnKey = "chartPreviewMeasureLinesOn";
 
+  // FOOT TRAILS for the chart preview: the lines joining each note to the
+  // previous one struck by the same foot. Separate from the badges because the
+  // trails read the chart's movement while the badges read its footing, and
+  // either is useful without the other. 0/1.
+  static const String footTrailsOnKey = "chartPreviewFootTrailsOn";
+
+  // DANCING FEET for the chart preview: the mini pad under the field showing
+  // where the parity solve stands the player at the playhead. 0/1.
+  static const String dancingFeetOnKey = "chartPreviewDancingFeetOn";
+
+  // Where the user has dragged the dancing-feet pad, as THOUSANDTHS of the
+  // field's free space, PLUS ONE. Stored as a fraction rather than pixels so
+  // the pad returns to the same spot on a different screen size or after a
+  // rotation; biased by one so getInt's 0 default still reads as "never placed"
+  // even for a pad parked hard in a corner. See [kDancingFeetUnset].
+  static const String dancingFeetXKey = "chartPreviewDancingFeetX";
+  static const String dancingFeetYKey = "chartPreviewDancingFeetY";
+
   // ARCADE NOTES for the chart preview: colour arrows with the cabinet's coarser
   // palette (4ths/8ths/16ths only, everything else green) instead of the full
   // ITG-style one. Stored as 0/1. See [QuantColors.arcadeMode].

@@ -14,9 +14,8 @@ import 'dart:math' as math;
 
 import 'chart_chrome.dart';
 import 'chart_models.dart';
-// The chrome's test handles (tempoBadgeKey, shadeTabKey, the offset chip keys)
-// are re-exported so tests and callers keep importing them from this file, the
-// preview's entry point, rather than reaching into the split-out parts.
+// Re-exported so callers keep importing the test handles from the preview's
+// entry point rather than reaching into the split-out parts.
 export 'chart_chrome.dart'
     show
         tempoBadgeKey,
@@ -26,34 +25,31 @@ export 'chart_chrome.dart'
         audioOffsetChipKey;
 import 'chart_painter.dart';
 import 'chart_timing.dart';
+import 'dancing_feet.dart';
 import 'density_scrub_bar.dart';
 import 'tick_clock.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
-/// DDR "TURN" appearance modifier: a column permutation applied to the notes
-/// while the receptors/panels stay in their fixed L-D-U-R positions. Matches the
-/// DDR World option list — MIRROR is a 180° turn, LEFT/RIGHT are 90° turns.
-/// (https://p.eagate.573.jp/game/ddr/ddrworld/howto/option_list.html)
+/// DDR "TURN" modifier: permutes the notes' columns while the receptors stay in
+/// their fixed L-D-U-R positions. MIRROR is a 180° turn, LEFT/RIGHT are 90°.
 enum _Turn { off, mirror, left, right }
 
-/// Column map for [turn] over a [columnCount]-wide field: `map[oldCol]` is the
-/// column the note now appears in. Receptors are unaffected. The single-panel
-/// turns follow the standard StepMania tables (L D U R = 0 1 2 3):
-///   MIRROR L↔R, U↔D  ·  LEFT (90° CCW) L→D→R→U→L  ·  RIGHT (90° CW) L→U→R→D→L.
-/// For doubles, MIRROR reverses the whole 8-panel row; LEFT/RIGHT turn each pad
-/// half on its own, which keeps the per-foot motion intact.
+/// `map[oldCol]` is the column the note now appears in. Doubles mirrors across
+/// the whole 8-panel row but turns each pad half on its own, which keeps the
+/// per-foot motion intact.
 List<int> _turnColumnMap(_Turn turn, int columnCount) {
   if (turn == _Turn.off) {
     return [for (int c = 0; c < columnCount; c++) c];
   }
-  // Per-4-panel single turns, as offsets within a pad (L D U R = 0 1 2 3).
+  // Offsets within one pad (L D U R = 0 1 2 3).
   const single = {
     _Turn.mirror: [3, 2, 1, 0],
     _Turn.left: [1, 3, 0, 2],
@@ -85,11 +81,15 @@ class ChartScroller extends StatefulWidget {
     this.stops = const [],
     this.sync,
     this.showFootGuide = false,
+    this.showFootTrails = false,
+    this.showDancingFeet = false,
     this.showMeasureLines = false,
     this.assistTickOn = false,
     this.arcadeQuantOn = false,
     this.onToggleMeasureLines,
     this.onToggleFootGuide,
+    this.onToggleFootTrails,
+    this.onToggleDancingFeet,
     this.onToggleAssistTick,
     this.onToggleArcadeQuant,
     this.headerBuilder,
@@ -98,34 +98,34 @@ class ChartScroller extends StatefulWidget {
   final ChartSteps steps;
   final Modes mode;
 
-  /// Optional floating header (title / back / actions) laid over the top of the
-  /// full-bleed field. Shown and hidden together with the transport controls.
-  /// The settings shade is opened by the scroller's own left-edge pull-tab, so
-  /// the header carries no settings affordance.
+  /// Optional floating header (title / back / actions) over the full-bleed
+  /// field. Shown and hidden with the transport controls.
   final Widget Function(BuildContext context)? headerBuilder;
 
-  /// Timing markers, in seconds (from [Chart]). [bpms] carry a [Bpm.st] start
-  /// second and target [Bpm.val]; [stops] carry a [Stop.st] start and [Stop.dur]
-  /// duration. Both live on the same seconds axis the note stream scrolls on, so
-  /// they render at true position without any extra timing reconstruction.
+  /// Timing markers in seconds (from [Chart]) — the same seconds axis the note
+  /// stream scrolls on, so they render at true position.
   final List<Bpm> bpms;
   final List<Stop> stops;
 
-  /// The song's measured audio-vs-chart sync (the block the song page's Sync
-  /// card shows). Reported under ARCADE SYNC so the dials are set against the
-  /// song's known bias instead of blind. Null when the song has no sync data.
+  /// The song's measured audio-vs-chart sync, reported under ARCADE SYNC so the
+  /// dials are set against a known bias. Null when the song has no sync data.
   final Sync? sync;
 
-  /// The chart's authored BPM extremes (`true_min`/`true_max` from [Chart]),
-  /// bracketing [chartBpm] (the dominant/core tempo). Together they are the
-  /// (min, core, max) trio the cabinet hands its speed option, and [maxBpm] is
-  /// the divisor REAL SPEED derives its multiplier from. 0 means "not supplied"
-  /// — the note stream is used as a fallback.
+  /// The chart's authored BPM extremes (`true_min`/`true_max`), bracketing
+  /// [chartBpm]. 0 means "not supplied" — the note stream is the fallback.
   final int minBpm;
   final int maxBpm;
 
-  /// Overlay an L/R parity guide on each arrow (best-effort, computed on load).
+  /// Overlay an L/R parity guide on each arrow.
   final bool showFootGuide;
+
+  /// Join each note to the previous one struck by the same foot. Same solve as
+  /// [showFootGuide], toggled separately — the trails read with the badges off.
+  final bool showFootTrails;
+
+  /// Show the dancing-feet pad: a mini stage with both feet standing where the
+  /// parity solve puts them at the playhead.
+  final bool showDancingFeet;
 
   /// Rule the field into numbered 4-beat measures.
   final bool showMeasureLines;
@@ -133,15 +133,15 @@ class ChartScroller extends StatefulWidget {
   /// Play a short tick as each note row crosses the receptors during playback.
   final bool assistTickOn;
 
-  /// Colour arrows with the cabinet's coarser quantisation palette. The colours
-  /// themselves come from [QuantColors.arcadeMode], which the owner sets; this
-  /// mirrors it so the tile and the minimap repaint when it flips.
+  /// Colour arrows with the cabinet's coarser quantisation palette. Mirrors
+  /// [QuantColors.arcadeMode] so the tile and minimap repaint when it flips.
   final bool arcadeQuantOn;
 
-  /// Toggle callbacks for the playback-aid options above. Wired into the
-  /// settings shade's own segment so they live alongside the chart-viewing
-  /// modifiers rather than crowding the floating header. Null hides the tiles.
+  /// Toggle callbacks for the options above, wired into the settings shade.
+  /// Null hides the tile.
   final VoidCallback? onToggleFootGuide;
+  final VoidCallback? onToggleFootTrails;
+  final VoidCallback? onToggleDancingFeet;
   final VoidCallback? onToggleAssistTick;
   final VoidCallback? onToggleMeasureLines;
   final VoidCallback? onToggleArcadeQuant;
@@ -163,44 +163,31 @@ class _ChartScrollerState extends State<ChartScroller>
   Duration _lastTick = Duration.zero;
 
   // Virtual playhead in seconds. Notes at this second sit on the receptor line.
-  // Backed by a ValueNotifier so per-frame motion (playback, flings, scrubs)
-  // repaints ONLY the listeners that ride the playhead — the chart canvas, the
-  // minimap needle and the HUD readouts — via CustomPainter.repaint /
-  // ValueListenableBuilder, without rebuilding the whole widget tree at 60+Hz.
-  // setState is reserved for real state flips (play/pause, panel visibility).
+  // A ValueNotifier so per-frame motion repaints only the listeners that ride
+  // the playhead (canvas, minimap needle, HUD readouts) instead of rebuilding
+  // the tree at 60+Hz; setState is reserved for real state flips.
   final ValueNotifier<double> _playhead = ValueNotifier(0);
   double get _second => _playhead.value;
   set _second(double v) => _playhead.value = v;
   bool _playing = false;
 
-  // Whether the bottom transport pane (read/song speed) is shown. The field is
-  // full-bleed underneath; hiding it hands more of the screen to the chart.
-  // Toggled by the right-edge handle, never by tapping the field (that stays
-  // play/pause). The top header (title) is NOT gated by this — it follows the
-  // paused state instead, so the song title is always up while paused.
+  // Whether the bottom transport pane (read/song speed) is shown, toggled by
+  // the right-edge handle. The top header is NOT gated by this — it follows the
+  // paused state, so the song title is always up while paused.
   bool _transportVisible = true;
 
-  // Whether the top settings shade (chart-viewing modifiers) is pulled down.
-  // Opened from the left-edge pull-tab; auto-closed when playback starts, and
-  // never shown while playing (it's a paused-browsing surface).
+  // Whether the top settings shade is pulled down. Auto-closed when playback
+  // starts, and never shown while playing (it's a paused-browsing surface).
   bool _shadeOpen = false;
 
-  // DDR WORLD SPEED TYPE: the cabinet stores TWO independent speed values
-  // plus a type selector, and the pane's tap toggles between them. (Semantics
-  // notes kept locally; see the gitignored _private/ archive.)
+  // DDR WORLD SPEED TYPE: two independent speed values plus a type selector,
+  // toggled by tapping the pane. Each type keeps its own dialled value, and all
+  // three persist across previews.
   //
-  // HI-SPEED — a raw multiplier in hundredths, 25–800 (x0.25–x8.00). The
-  // cabinet dial moves in x0.05: its setter snaps to multiples of 5, with
-  // the quirk that snapped values below x1.00 round UP (see [_snapHispeed]).
-  //
-  // SCROLL SPEED (shown as REAL SPEED) — a target scroll rate, 10–1000 in
-  // steps of 10 (the cabinet builds exactly that choice list). The effective
-  // multiplier is derived per chart as round(scroll × 100 / maxBPM) clamped
-  // to the same 25–800 — deliberately NOT 0.05-snapped, so this mode reaches
-  // x0.01 multipliers HI-SPEED can't (see [_derivedHundredths]).
-  //
-  // Each type keeps its own dialled value across the toggle, like the
-  // cabinet's separate option fields. All persisted across previews.
+  // HI-SPEED — a raw multiplier in hundredths, 25–800 (x0.25–x8.00), dialled in
+  // x0.05 steps (see [_snapHispeed]).
+  // SCROLL SPEED (shown as REAL SPEED) — a target scroll rate, 10–1000 in steps
+  // of 10, whose multiplier is derived per chart (see [_derivedHundredths]).
   bool _hispeedType = false;
   int _hispeedHundredths = 100;
   int _scrollSpeed = constants.chosenReadSpeed;
@@ -214,42 +201,30 @@ class _ChartScrollerState extends State<ChartScroller>
   int get _activeHundredths =>
       _hispeedType ? _hispeedHundredths : _derivedHundredths;
 
-  // The cabinet's ScrollSpeed→multiplier derivation: round(scroll × 100 /
-  // divisorBpm), clamped to the same 25–800 as HI-SPEED. Charts without a
-  // usable BPM fall back to x1.00 as the cabinet does.
+  // REAL SPEED's multiplier: round(scroll × 100 / divisorBpm), clamped to the
+  // same 25–800 as HI-SPEED, x1.00 when the chart has no usable BPM.
   //
-  // The divisor is the cabinet's own curated headline BPM (its `bpmmax`), which
-  // is NOT the note stream's raw peak: a soflan song can spike well above its
-  // headline tempo yet still divide by the headline. So REAL SPEED reads the
-  // same number at the headline section and genuinely faster on an uncapped
-  // soflan spike. See [_scrollDivisorBpm] for how the app reconstructs it.
+  // The divisor is the curated headline BPM, not the note stream's raw peak, so
+  // a soflan spike reads genuinely faster than the headline section. See
+  // [_scrollDivisorBpm].
   int get _derivedHundredths {
     final bpm = _scrollDivisorBpm;
     if (bpm <= 0) return 100;
     return ((_scrollSpeed * 100) / bpm).round().clamp(_hispeedMin, _hispeedMax);
   }
 
-  // Minimum seconds a tempo must be held to count toward the headline BPM.
-  // Transient gimmick spikes (a one-beat 4× flash) are excluded; anything the
-  // chart actually sits at is kept. 2s reproduces the cabinet's headline tempo
+  // Minimum seconds a tempo must be held to count toward the headline BPM, so a
+  // one-beat gimmick spike is excluded. 2s matches the cabinet's headline tempo
   // on the large majority of songs.
   static const double _sustainedBpmMinSeconds = 2.0;
 
-  // The REAL SPEED divisor: the app's reconstruction of the cabinet's `bpmmax`.
+  // The REAL SPEED divisor: the highest BPM the chart SUSTAINS for at least
+  // [_sustainedBpmMinSeconds] — the fastest tempo you actually read at,
+  // ignoring momentary soflan spikes. Falls back to dominant, then effective
+  // BPM, when the stream carries no timed segments.
   //
-  // Rule (derived empirically, not hand-tuned): headline BPM = the highest BPM
-  // the chart SUSTAINS for at least [_sustainedBpmMinSeconds], i.e. the fastest
-  // tempo you actually read at, ignoring momentary soflan spikes. This beats
-  // both prior attempts — dominant_bpm alone missed songs whose sustained peak
-  // isn't the most-common tempo, and the raw note-stream max halved big soflans
-  // by dividing by a sub-2s spike. The residual misses are BPM-octave notation
-  // differences and a few gimmick charts.
-  //
-  // Computed from [widget.bpms] segment durations. NOTE this is independent of
-  // [widget.maxBpm]/`true_max`, which is deliberately preserved untouched: it's
-  // the real unreported peak (useful precisely because the cabinet hides it),
-  // just not the scroll divisor. Falls back to dominant, then effective BPM,
-  // when the stream carries no timed segments.
+  // Independent of [widget.maxBpm]/`true_max`, which stays the real unreported
+  // peak and is deliberately not used as the divisor.
   int get _scrollDivisorBpm {
     var peak = 0;
     final held = <int, double>{};
@@ -269,13 +244,9 @@ class _ChartScrollerState extends State<ChartScroller>
     return dom > 0 ? dom : _effectiveChartBpm;
   }
 
-  // The chart's slow-end BPM — the low bound of the compact readout's span
-  // (its high bound is [_scrollDivisorBpm], the dominant/bpmmax proxy).
-  //
-  // Prefers the chart's AUTHORED `true_min` over scanning [widget.bpms]: the
-  // note stream only carries the segments this difficulty plays through, so a
-  // scan would drift if a chart ever carries a min it doesn't reach. Falls back
-  // to the stream, then to the dominant BPM.
+  // The chart's slow-end BPM — the low bound of the compact readout's span.
+  // Prefers the authored `true_min` over scanning [widget.bpms], which only
+  // carries the segments this difficulty plays through.
   int get _minChartBpm {
     var min = widget.minBpm;
     if (min <= 0) {
@@ -286,25 +257,22 @@ class _ChartScrollerState extends State<ChartScroller>
     return min > 0 ? min : _effectiveChartBpm;
   }
 
-  // Pinch-to-zoom: a purely visual multiplier on the vertical note spacing,
-  // independent of the read-speed mod. <1 zooms OUT (compresses more beats into
-  // the viewport so you can study long chunks at once); zooming in beyond 1x is
-  // disallowed since READ SPEED already covers that. It scales
-  // [_pxPerBeat]/[_pxPerSecond] on top of [_rate], so the whole render — the
-  // cull window, CONSTANT, markers, foot paths — stretches with it for free and
-  // the READ SPEED number the user dialled in is left untouched. Reset to 1.0
-  // whenever a new chart loads (a study lens, not a persisted setting).
+  // Pinch-to-zoom: a visual multiplier on note spacing, applied on top of
+  // [_rate] so the whole render (cull window, CONSTANT, markers, foot paths)
+  // stretches with it and the dialled READ SPEED is untouched. Zooming in past
+  // 1x is disallowed since READ SPEED covers that. A study lens, not a
+  // persisted setting — reset to 1.0 on each new chart.
   static const double _minZoom = 0.25;
   static const double _maxZoom = 1.0;
   double _zoom = 1.0;
-  // Zoom captured at the start of a pinch, so mid-gesture updates scale from the
-  // level the fingers landed on rather than compounding each frame.
+  // Zoom at the start of a pinch, so updates scale from where the fingers
+  // landed instead of compounding each frame.
   double _pinchStartZoom = 1.0;
 
   // DDR CONSTANT modifier: fade arrows in a fixed wall-clock time before they
   // reach the receptor, independent of BPM/read speed. Off by default (NORMAL).
-  // [_constantMs] is the display time in ms (100–3000, snapped to 10ms); it's
-  // handed to the painter only while [_constantOn]. Persisted across previews.
+  // [_constantMs] is the display time (100–3000ms, snapped to 10ms), handed to
+  // the painter only while [_constantOn]. Persisted across previews.
   static const double _constantMinMs = 100;
   static const double _constantMaxMs = 3000;
   static const double _constantStepMs = 10;
@@ -317,34 +285,27 @@ class _ChartScrollerState extends State<ChartScroller>
   _Turn _turn = _Turn.off;
 
   // ARCADE SYNC: master switch for the cabinet timing simulation. While off,
-  // both offsets below are ignored entirely and their controls stay hidden, so
-  // the default preview behaves exactly as it did before they existed. Turning
-  // it on also forces the assist tick on (restoring the previous tick state on
-  // the way out), because an AUDIO OFFSET is inaudible without it — the whole
-  // point of the mode is hearing the tick move against the arrows.
+  // both offsets below are ignored and their controls stay hidden. Turning it
+  // on forces the assist tick on (restoring the previous state on the way out),
+  // since an AUDIO OFFSET is inaudible without it.
   bool _arcadeSyncOn = false;
   bool? _tickBeforeArcadeSync;
 
-  // The offsets this preview OPENED with, captured once on load. Switching
-  // ARCADE SYNC off restores them, so toggling stays a true A/B: it lands back
-  // on the tuned value, not on whatever was dialled mid-experiment.
+  // The offsets this preview opened with. Switching ARCADE SYNC off restores
+  // them, so toggling is a true A/B against the tuned value rather than
+  // whatever was dialled mid-experiment.
   double _visualOffsetOnEntry = 0;
   double _audioOffsetMsOnEntry = 0;
 
-  // The cabinet's two TIMING dials. They are NOT the same unit or scale — the
-  // cabinet expresses them differently, and so do players:
+  // The cabinet's two TIMING dials, in their own units:
   //
-  //   VISUAL (表示タイミング) — a -5.0..+5.0 dial in 0.1 steps. It moves the
-  //     arrows' aiming position, NOT the judgement position against the music.
-  //     Correction direction: many FAST → PLUS, many SLOW → MINUS.
-  //   AUDIO (判定タイミング) — natively in MILLISECONDS, where players work in
-  //     roughly ±10-20ms (more on badly-synced songs). Kept in ms here rather
-  //     than converted to the visual dial's unit, so a number that means
-  //     something on a cabinet means the same thing in the preview.
+  //   VISUAL (表示タイミング) — a -5.0..+5.0 dial in 0.1 steps, moving the
+  //     arrows' aiming position rather than the judgement against the music.
+  //   AUDIO (判定タイミング) — natively milliseconds, where players work in
+  //     roughly ±10-20ms. Kept in ms so a cabinet number means the same here.
   //
-  // The preview has no judgement or input, so neither dial can be validated
-  // from FAST/SLOW counts in-app: they reproduce the settings so their effect
-  // can be seen and heard, they can't tell you your offset.
+  // The preview has no judgement or input, so these reproduce the settings'
+  // effect — they can't tell you your offset.
   static const double _visualOffsetMin = -5.0;
   static const double _visualOffsetMax = 5.0;
   static const double _visualOffsetStep = 0.1;
@@ -352,26 +313,18 @@ class _ChartScrollerState extends State<ChartScroller>
   static const double _audioOffsetMinMs = -50;
   static const double _audioOffsetMaxMs = 50;
 
-  /// Seconds of arrow travel per whole VISUAL dial unit.
-  ///
-  /// The cabinet's dial is published as a bare number — no source gives its ms
-  /// or frame equivalent — so this is the preview's own calibration, not a
-  /// cabinet fact. One unit = one 60fps frame (16.67ms) is the natural reading
-  /// given DDR judges on frames, and it puts the full ±5.0 dial at ±83ms, the
-  /// right order of magnitude for a display-lag correction. Notes kept locally.
+  /// Seconds of arrow travel per whole VISUAL dial unit. The cabinet publishes
+  /// the dial as a bare number, so this is the preview's own calibration: one
+  /// unit = one 60fps frame, putting the full ±5.0 dial at ±83ms.
   static const double _visualOffsetUnitSeconds = 1.0 / 60.0;
 
   double _visualOffset = 0; // dial units, -5.0..+5.0
   double _audioOffsetMs = 0; // milliseconds, -50..+50
 
-  /// Seconds fed to the painter / tick clock. Both collapse to zero unless
-  /// ARCADE SYNC is engaged, so the gate is enforced here rather than at each
-  /// use site — no caller can apply an offset while the mode is off. The gate
-  /// itself lives in the [debugGatedVisualOffsetSeconds] /
-  /// [debugGatedAudioOffsetSeconds] free functions so tests exercise this exact
-  /// logic (the field painter is unobservable in a widget test — the scroller
-  /// paints nothing until the noteskin future resolves, which never happens
-  /// under the test harness).
+  /// Seconds fed to the painter / tick clock, gated once here so no caller can
+  /// apply an offset while ARCADE SYNC is off. The gate lives in free functions
+  /// so tests can exercise it — the field painter is unobservable in a widget
+  /// test, since the scroller paints nothing until the noteskin future resolves.
   double get _visualOffsetSeconds => debugGatedVisualOffsetSeconds(
         arcadeSyncOn: _arcadeSyncOn,
         units: _visualOffset,
@@ -388,11 +341,9 @@ class _ChartScrollerState extends State<ChartScroller>
   static const double _minPlaybackRate = 0.25;
   static const double _maxPlaybackRate = 1.0;
 
-  // Tap-and-hold fast-forward: while the finger is held down on the field
-  // without dragging, playback temporarily doubles. Releasing (or the hold
-  // losing the gesture arena to a drag) restores the rate that was active
-  // before the hold started, not a hardcoded 1.0 — so it composes with the
-  // song-speed control instead of clobbering it.
+  // Tap-and-hold fast-forward: holding the field without dragging doubles
+  // playback. Releasing restores the rate active before the hold rather than a
+  // hardcoded 1.0, so it composes with the song-speed control.
   static const double _holdSpeedMultiplier = 2.0;
   static const double _maxHoldPlaybackRate = 2.0;
   double? _preHoldPlaybackRate;
@@ -403,14 +354,11 @@ class _ChartScrollerState extends State<ChartScroller>
   final Set<StepNote> _shockNotes = {};
   final List<ShockRow> _shocks = [];
 
-  // Assist tick: distinct row seconds (taps + hold/roll heads, mines excluded),
-  // sorted, that get an audible tick as the playhead crosses them. Scheduling
-  // is owned by [TickClock], which fires each row against SoLoud's audio-thread
-  // clock rather than this render loop — dense streams jank the frame rate
-  // exactly when notes are closest, so a frame-driven tick drops or smears
-  // them. We hand the clock the row list and, on every play/seek/rate change,
-  // the current chart position + rate; it does the rest. Null-safe: if the
-  // engine or sample fails to load the clock simply never fires.
+  // Assist tick: sorted distinct row seconds (taps + hold/roll heads, mines
+  // excluded) that get an audible tick as the playhead crosses them. [TickClock]
+  // fires them against the audio-thread clock rather than this render loop,
+  // where dense streams jank exactly when notes are closest. If the engine or
+  // sample fails to load the clock simply never fires.
   List<double> _tickSeconds = const [];
   final TickClock _tickClock = TickClock();
 
@@ -424,20 +372,22 @@ class _ChartScrollerState extends State<ChartScroller>
   // chart carries no BPM data, in which case the field scrolls by constant time.
   ChartTiming _timing = ChartTiming.empty;
 
-  // Best-effort L/R foot parity for the current chart, computed once on load
-  // (client-side, so the heuristic is tunable without regenerating assets).
+  // L/R foot parity for the current chart, solved once on load (client-side, so
+  // the heuristic is tunable without regenerating assets). [_stances] is the
+  // same solve read as pad positions, so the arrow badges and the dancing feet
+  // always agree.
   Map<StepNote, Foot> _feet = const {};
+  List<ParityStance> _stances = const [];
 
-  // Chart notes guaranteed ascending by second (charts already ship sorted;
-  // a defensive one-time sort covers any that don't), plus the holds alone in
-  // the same order. Sorted input is what lets the painter binary-search the
-  // visible window each frame instead of walking every note in the chart.
+  // Chart notes ascending by second, plus the holds alone in the same order.
+  // Sorted order is what lets the painter binary-search the visible window each
+  // frame instead of walking the whole chart.
   List<StepNote> _notes = const [];
   List<StepNote> _holds = const [];
 
-  // Previous same-foot note for each footed note, precomputed once per chart so
-  // the foot-path pass only touches on-screen notes instead of replaying the
-  // whole chart's L/R walk every frame.
+  // Previous same-foot note for each footed note, precomputed so the foot-path
+  // pass touches only on-screen notes instead of replaying the chart's L/R walk
+  // every frame.
   Map<StepNote, StepNote> _footPrev = const {};
 
   void _prepareNotes() {
@@ -457,9 +407,8 @@ class _ChartScrollerState extends State<ChartScroller>
     ];
   }
 
-  // Chain each footed note to the previous note struck by the same foot —
-  // exactly the walk the painter used to do per frame. Mines and shock rows
-  // don't take a foot, same as the draw pass.
+  // Chain each footed note to the previous note struck by the same foot. Mines
+  // and shock rows don't take a foot, same as the draw pass.
   void _buildFootLinks() {
     final links = <StepNote, StepNote>{};
     StepNote? prevLeft;
@@ -481,82 +430,45 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   // Real DDR World sprites when bundled (assets/noteskin/), else vector. Null
-  // until the one-time sprite load resolves; the field paints nothing for that
-  // moment rather than flashing vector receptors that the sprite skin then
-  // replaces. The resolve is cached statically, so only the app's very first
-  // preview ever waits — later ones start on the right skin synchronously.
+  // until the sprite load resolves; the field paints nothing for that moment
+  // rather than flashing vector receptors the sprite skin then replaces. The
+  // resolve is cached statically, so only the app's first preview ever waits.
   Noteskin? _skin = SpriteNoteskin.resolved
       ? SpriteNoteskin.resolvedSkin ?? const VectorNoteskin()
       : null;
 
-  // Note-density histogram with per-bucket rhythm-color composition for the
-  // scrub minimap, built once from the chart so seeking shows both intensity
-  // and the kinds of notes waiting there.
+  // Note-density histogram for the scrub minimap, each bucket carrying its
+  // rhythm colours so seeking shows both intensity and the kinds of notes there.
   List<MinimapBucket> _minimap = const [];
 
-  // Pixels a note travels per second of chart time, before [_rate].
-  //
-  // Anchored to the ARCADE's own speed↔time law rather than a tuned feel
-  // number. DDR WORLD's CONSTANT option is defined as "an arrow is visible
-  // for N milliseconds" (100–3000ms, step 10), which fixes the relationship
-  // between a
-  // scroll speed and how long an arrow is on screen. Matching CONSTANT's
-  // definition to normal play at read speed R gives
-  //
-  //     travel seconds = kArcadeTravel / R      [_arcadeTravelConstant]
-  //
-  // so the note field, whose travel distance is (height − receptor), must
-  // scroll at (distance × R / kArcadeTravel) px/s. Because R = localBpm ×
-  // mod and a beat is 60/localBpm seconds, that reduces to a constant
-  // px-per-beat — see [_pxPerBeat] — which is what the painter actually
-  // uses. This value is only the fallback for the non-beat-locked path
-  // (charts with no timing data), expressed in the same law at a nominal
-  // 180-BPM reference so the two paths agree.
+  // Pixels a note travels per second of chart time, before [_rate]. Only the
+  // fallback for charts with no timing data — the beat-locked path uses
+  // [_pxPerBeat] — expressed at a nominal 180-BPM reference so the two agree.
   static const double _referenceBpm = 180.0;
   double get _pxPerSecond =>
       _travelPx * (_referenceBpm * _rate) / _arcadeTravelConstant * _zoom;
 
-  // The arcade's speed↔time constant: at read speed R an arrow is on screen
-  // for (k / R) seconds. Equivalently, one CONSTANT window of N ms
-  // corresponds to read speed R = k × 1000 / N.
+  // The arcade's speed↔time law: at read speed R an arrow is on screen for
+  // (k / R) seconds, so a CONSTANT window of N ms is read speed k × 1000 / N.
+  // At read speed 600 an arrow is visible ~0.62s, and CONSTANT's 1000ms default
+  // reads like SPEED 370.
   //
-  // k = 370, from measurements of DDR WORLD's own CONSTANT guideline. Three
-  // independent reported points agree exactly, which is what makes this a
-  // measurement rather than folklore:
-  //
-  //     925ms ↔ SPEED 400  →  k = 400 × 0.925 = 370
-  //     740ms ↔ SPEED 500  →  k = 500 × 0.740 = 370
-  //    1000ms ↔ SPEED 370  →  k = 370 × 1.000 = 370
-  //
-  // So at read speed 600 an arrow is visible ~0.62s, and CONSTANT's 1000ms
-  // default reads like SPEED 370.
-  //
-  // k is necessarily MEASURED from the running game, not read from any config:
-  // the cabinet stores the CONSTANT option (100–3000ms) and the speed
-  // multiplier, but the on-screen geometry that turns those into a travel time
-  // (receptor position and field height) isn't a stored number. An earlier
-  // revision used k = 180 and made arrows ~2× too fast (travel 0.30s at
-  // R = 600); 370 is the value the three measured points above agree on.
+  // k = 370, measured from the running game — three CONSTANT guideline points
+  // agree exactly (400↔925ms, 500↔740ms, 370↔1000ms). It can't be read from
+  // config: the on-screen geometry that turns the stored options into a travel
+  // time isn't a stored number.
   static const double _arcadeTravelConstant = 370.0;
 
-  // Vertical distance an arrow actually travels in THIS field: bottom edge
-  // up to the receptor line. Set from the painter's layout each build; the
-  // fallback only matters for the first frame before layout is known.
+  // Vertical distance an arrow travels in THIS field: bottom edge to receptor
+  // line. Set from the painter's layout each build; the fallback only covers
+  // the first frame.
   double _travelPx = 600;
 
-  // Beat-locked spacing: pixels per chart beat. In DDR the scroll VELOCITY is the
-  // read speed (BPM × mod), so faster songs fly and slower ones crawl at the same
-  // x-mod. A beat spans 60/localBpm seconds, so a velocity of
-  // (travelPx × localBpm × mod / k) px/s means the per-beat pixels are that
-  // times 60/localBpm = 60 × travelPx × mod / k — chart- and tempo-independent,
-  // which is why a note's on-screen speed tracks the LOCAL tempo (via
-  // [ChartTiming]'s slope), not the dominant BPM: a 360-BPM stretch scrolls
-  // twice as fast as a 180-BPM one at the same read speed.
-  //
-  // Anchoring instead to the dominant BPM (an older behaviour) collapsed every
-  // chart to one px/s at its dominant tempo, so a 360-BPM song crept by at the
-  // same pixels/second as a 120-BPM one — the read speed became a pure spacing
-  // knob with no bearing on actual vertical velocity.
+  // Beat-locked spacing: pixels per chart beat. DDR's scroll VELOCITY is the
+  // read speed (BPM × mod), so at one x-mod a 360-BPM stretch scrolls twice as
+  // fast as a 180-BPM one. Working that through the travel law leaves a
+  // constant px-per-beat, which is why a note's on-screen speed tracks the
+  // LOCAL tempo (via [ChartTiming]'s slope) rather than the dominant BPM.
   double get _pxPerBeat =>
       60.0 * _travelPx * _rate / _arcadeTravelConstant * _zoom;
 
@@ -564,9 +476,8 @@ class _ChartScrollerState extends State<ChartScroller>
       widget.chartBpm > 0 ? widget.chartBpm : constants.songBpm;
 
   // BPM of the tempo section under the playhead — NOT the dominant chart BPM.
-  // Looked up on the raw [Bpm] segments rather than [ChartTiming]'s slope, which
-  // flattens to zero inside a stop and would read "BPM 0" mid-halt instead of
-  // the enclosing tempo. Charts without segments fall back to the dominant BPM.
+  // Read off the raw [Bpm] segments rather than [ChartTiming]'s slope, which
+  // flattens to zero inside a stop and would read "BPM 0" mid-halt.
   int get _localBpm {
     final bpms = widget.bpms;
     if (bpms.isEmpty) return _effectiveChartBpm;
@@ -583,26 +494,20 @@ class _ChartScrollerState extends State<ChartScroller>
     return bpms[lo].val;
   }
 
-  // CONSTANT expressed as its equivalent read speed, on the SAME law the
-  // field scrolls by: a window of N ms is the read speed whose travel time is
-  // N ms, R = k × 1000 / N (see [_arcadeTravelConstant]). This depends only on
-  // the window, so it stays put when the scroll speed changes — see
-  // [_constantVisibleReadSpeed] for the live-tracking value the UI shows.
-  // Null when CONSTANT is off.
+  // CONSTANT as its equivalent read speed (see [_arcadeTravelConstant]). Depends
+  // only on the window, so it stays put when the scroll speed changes — see
+  // [_constantVisibleReadSpeed] for the live-tracking value the UI shows. Null
+  // when CONSTANT is off.
   int? get _constantReadSpeed {
     final c = _effectiveConstantMs;
     if (c == null) return null;
     return (_arcadeTravelConstant * 1000.0 / c).round();
   }
 
-  // The read speed a player actually READS at with CONSTANT engaged, tracking
-  // the current scroll. Arrows still travel at the dialled read speed
-  // (chartBpm × mod), but CONSTANT only reveals the last `ms` of that travel —
-  // so what you get to read is the FASTER of the two: your dialled read speed,
-  // or the window's equivalent when the window is tighter than the natural
-  // travel. Because it folds in [_rate], it moves when you switch between
-  // REAL SPEED and HI-SPEED (or change either), unlike [_constantReadSpeed].
-  // Null when CONSTANT is off.
+  // The read speed a player actually READS at with CONSTANT engaged. Arrows
+  // still travel at the dialled speed, but CONSTANT reveals only its last `ms`,
+  // so the effective read is the faster of the two. Folds in [_rate], so unlike
+  // [_constantReadSpeed] it moves with the speed type. Null when CONSTANT is off.
   int? get _constantVisibleReadSpeed {
     final rc = _constantReadSpeed;
     if (rc == null) return null;
@@ -611,15 +516,8 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   // Read speed the CURRENT tempo section reads at: localBpm × mod, full stop.
-  //
-  // CONSTANT is deliberately NOT folded in: the cabinet's speed readout never
-  // references the CONSTANT display-time value, and the effective scroll
-  // multiplier is identical whether CONSTANT is on or off — CONSTANT changes
-  // arrow VISIBILITY (a fixed wall-clock display window, see [_constantAlpha]),
-  // not scroll velocity. An earlier revision clamped slow sections up to the
-  // window's "equivalent read speed" and showed a "C###" badge; that speed
-  // floor is not a cabinet behaviour, which is why CONSTANT + a speed type read
-  // wrong here.
+  // CONSTANT is deliberately not folded in — it changes arrow VISIBILITY, not
+  // scroll velocity, and the cabinet's readout ignores it too.
   int get _liveReadSpeed => (_localBpm * _rate).round();
 
   double get _endSecond =>
@@ -707,14 +605,11 @@ class _ChartScrollerState extends State<ChartScroller>
     }
   }
 
-  // Restore the DDR WORLD speed options: the SPEED TYPE selector plus each
-  // type's own dialled value.
-  //
-  // REAL SPEED opens on the app-wide read-speed preference, shared with the
-  // song page's mod picker, rather than on its own saved value — dialling in
-  // here still persists, it just doesn't outrank the preference next open.
-  // HI-SPEED derives from that same target at this chart's max BPM, snapped to
-  // the cabinet's x0.05 grid, so both types open near the same speed.
+  // Restore the SPEED TYPE selector and each type's dialled value. REAL SPEED
+  // opens on the app-wide read-speed preference (shared with the song page's
+  // mod picker) rather than its own saved value, and HI-SPEED derives from that
+  // same target, so both types open near the same speed. Dialling here still
+  // persists — it just doesn't outrank the preference next open.
   void _loadSpeedSettings() {
     _hispeedType = Settings.getInt(Settings.chartPreviewSpeedTypeKey) == 1;
     final savedScroll = Settings.getInt(Settings.chartPreviewScrollSpeedKey);
@@ -730,10 +625,8 @@ class _ChartScrollerState extends State<ChartScroller>
   int _snapScroll(int v) =>
       ((v / _scrollStep).round() * _scrollStep).clamp(_scrollMin, _scrollMax);
 
-  // The cabinet's SetHispeed snap: clamp to 25–800, then floor to a multiple
-  // of 5 (x0.05) — except a floored value below x1.00 bumps back up one step,
-  // so sub-x1 multipliers round UP. Reproduces the cabinet's dial snap
-  // behaviour-for-behaviour.
+  // The cabinet's hi-speed snap: clamp to 25–800, then floor to a multiple of 5
+  // (x0.05) — except sub-x1.00 values bump back up one step, i.e. round UP.
   int _snapHispeed(int h) {
     h = h.clamp(_hispeedMin, _hispeedMax);
     final r = h % _hispeedStep;
@@ -745,12 +638,9 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   // The CONSTANT window equivalent to the app-wide read-speed preference, so
-  // switching CONSTANT on doesn't change how fast the chart reads.
-  //
-  // Inverts the travel law (R = k × 1000 / N, see [_arcadeTravelConstant]), then
-  // snaps to the dial's 10ms grid. Floors rather than rounds: a shorter window
-  // reads faster, so flooring picks the tightest step that still meets the
-  // saved preference. Read speed 370 lands on CONSTANT's own 1000ms default.
+  // switching CONSTANT on doesn't change how fast the chart reads. Inverts the
+  // travel law (see [_arcadeTravelConstant]) onto the dial's 10ms grid, flooring
+  // so the chosen step still meets the saved preference.
   double get _constantMsForReadSpeed {
     final saved = Settings.getInt(Settings.chosenReadSpeedKey);
     final readSpeed = saved > 0 ? saved : constants.chosenReadSpeed;
@@ -761,12 +651,9 @@ class _ChartScrollerState extends State<ChartScroller>
     return floored.clamp(_constantMinMs, _constantMaxMs);
   }
 
-  // Restore the CONSTANT modifier from settings. The window is re-derived from
-  // the read-speed preference (see [_constantMsForReadSpeed]) rather than
-  // restored from [constantMsKey], which goes stale as soon as that preference
-  // moves. Dragging the chip still writes the key and runs for the session; it
-  // just doesn't outrank the preference next open. Only the on/off flag carries
-  // across, stored as 0/1 (the Settings API has no bool getter).
+  // Restore the CONSTANT modifier. Only the on/off flag carries across (as 0/1
+  // — Settings has no bool getter); the window is re-derived from the read-speed
+  // preference, since a stored one goes stale as soon as that preference moves.
   void _loadConstant() {
     _constantMs = _constantMsForReadSpeed;
     _constantOn = Settings.getInt(Settings.constantOnKey) == 1;
@@ -776,10 +663,9 @@ class _ChartScrollerState extends State<ChartScroller>
   // unless the modifier is switched on.
   double? get _effectiveConstantMs => _constantOn ? _constantMs : null;
 
-  // Restore ARCADE SYNC and both TIMING offsets. VISUAL is stored as tenths of
-  // a dial unit so its 0.1 step round-trips exactly through the int-only
-  // Settings API; AUDIO is already whole ms. For both, the "never set" value of
-  // 0 is the neutral default.
+  // Restore ARCADE SYNC and both TIMING offsets. VISUAL is stored as tenths of a
+  // dial unit so its 0.1 step round-trips through the int-only Settings API;
+  // AUDIO is already whole ms. For both, "never set" (0) is the neutral default.
   void _loadTimingOffsets() {
     _arcadeSyncOn = Settings.getInt(Settings.arcadeSyncOnKey) == 1;
     _visualOffset = _clampVisualOffset(
@@ -787,18 +673,14 @@ class _ChartScrollerState extends State<ChartScroller>
     _audioOffsetMs = _clampAudioOffsetMs(
         Settings.getInt(Settings.chartPreviewAudioOffsetMsKey).toDouble());
 
-    // The stored offsets cancel a PER-SONG bias, so they are only meaningful for
-    // the song they were seeded against. Re-seed whenever the saved values were
-    // computed for a different sync reading than this song's — otherwise the
-    // previous song's correction rides along and lands the new song off by the
-    // difference between the two biases (e.g. a +9ms correction carried onto a
-    // +1.5ms song reads "FAST by 10.5ms" instead of opening near zero).
+    // The offsets cancel a PER-SONG bias, so a pair seeded against another
+    // song's reading would ride along and land this one off by the difference
+    // between the two biases.
     if (_arcadeSyncOn && !_offsetsMatchThisSong()) {
       _seedOffsetsFromSync();
     }
 
-    // Snapshot AFTER any re-seed, so the baseline is what the dials actually
-    // show on open, not the stale pair just replaced.
+    // After any re-seed, so the baseline is what the dials actually show.
     _visualOffsetOnEntry = _visualOffset;
     _audioOffsetMsOnEntry = _audioOffsetMs;
 
@@ -917,15 +799,10 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   /// Compact effective sync for the tempo badge: a signed millisecond figure
-  /// only ("+9.0ms" / "-4.5ms" / "0.0ms"). The FAST/SLOW direction is carried by
-  /// the value's COLOUR rather than spelled out — the badge sits over the field
-  /// where space is tight, and the sign already says which way it leans. Same
-  /// number as [_arcadeSyncSummary], which does spell it out. Null when there is
-  /// nothing to report, hiding the segment.
-  ///
-  /// Only reported while ARCADE SYNC is engaged — with the mode off both dials
-  /// are gated to zero, so a figure here would describe a correction that
-  /// isn't being applied.
+  /// ("+9.0ms" / "-4.5ms" / "0.0ms"), with FAST/SLOW carried by its colour since
+  /// the badge is tight for space. Same number [_arcadeSyncSummary] spells out.
+  /// Null hides the segment — including whenever ARCADE SYNC is off, where the
+  /// dials are gated to zero and a figure would describe an unapplied correction.
   String? get _syncBadgeLabel {
     if (!_arcadeSyncOn || _hasNoSyncReading) return null;
     final ms = _effectiveSyncMs;
@@ -944,27 +821,21 @@ class _ChartScrollerState extends State<ChartScroller>
     return ms > 0 ? "FAST by $magnitude" : "SLOW by $magnitude";
   }
 
-  // Toggle ARCADE SYNC. Engaging it forces the assist tick on so an AUDIO
-  // OFFSET is audible immediately (remembering the prior tick state to restore
-  // on the way out) — the mode exists to hear the tick move against the arrows,
-  // and silently doing nothing would read as broken.
+  // Toggle ARCADE SYNC. Engaging it forces the assist tick on (restoring the
+  // prior state on the way out) so an AUDIO OFFSET is audible immediately.
   void _toggleArcadeSync() {
     HapticFeedback.selectionClick();
     final next = !_arcadeSyncOn;
     setState(() {
       _arcadeSyncOn = next;
-      // Engaging the mode pre-dials the correction that cancels the song's own
-      // bias, so it opens already in sync rather than at a bare zero the user
-      // has to discover and dial themselves. Skipped only when the stored
-      // offsets were already dialled against THIS song (seeded or hand-tuned) —
-      // keyed on the recorded bias, not on the dials being zero, because zero is
-      // itself a valid hand-tuned value AND a leftover from another song is not.
+      // Pre-dial the correction cancelling the song's bias so the mode opens in
+      // sync. Keyed on the recorded bias rather than the dials being zero: zero
+      // is itself a valid hand-tuned value.
       if (next && !_offsetsMatchThisSong()) {
         _seedOffsetsFromSync();
       }
-      // Switching OFF rewinds the LIVE dials to what the page opened with.
-      // Deliberately no Settings write: the stored offsets stay the tuned
-      // baseline, so a mid-experiment value can't be promoted into it.
+      // Rewind the LIVE dials to what the page opened with. Deliberately no
+      // Settings write, so a mid-experiment value can't become the baseline.
       if (!next) {
         _visualOffset = _visualOffsetOnEntry;
         _audioOffsetMs = _audioOffsetMsOnEntry;
@@ -1070,7 +941,13 @@ class _ChartScrollerState extends State<ChartScroller>
   void _setTurn(_Turn turn) {
     HapticFeedback.selectionClick();
     final next = _turn == turn ? _Turn.off : turn;
-    setState(() => _turn = next);
+    setState(() {
+      _turn = next;
+      // The footing belongs to the turned chart, so it is re-solved here rather
+      // than only when the chart itself changes.
+      _assignFeet();
+      _buildFootLinks();
+    });
     Settings.setInt(Settings.chartPreviewTurnKey, next.index);
     _flashScrubOverlay(_turnLabel(next), "TURN");
   }
@@ -1102,9 +979,8 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   // Overlay caption for CONSTANT flashes: carries the read speed the window
-  // lets you READ at (see [_constantVisibleReadSpeed]) so dialling a wall-clock
-  // time immediately reads in the unit players think in — and tracks the
-  // current scroll so it moves when the speed type changes.
+  // lets you READ at (see [_constantVisibleReadSpeed]), so a wall-clock time
+  // reads in the unit players think in.
   String get _constantCaption {
     final eq = _constantVisibleReadSpeed;
     return eq != null ? "CONSTANT ≈ C$eq" : "CONSTANT";
@@ -1203,8 +1079,45 @@ class _ChartScrollerState extends State<ChartScroller>
     });
   }
 
+  // Solve the footing for the chart AS TURNED — a turn moves the arrows under
+  // your feet, so a mirrored chart is danced differently and the solve re-runs
+  // on every change of turn.
+  //
+  // The solve works on permuted COPIES, so its feet map comes back keyed by
+  // those; StepNote has no value equality, so it's re-keyed by position (which
+  // _turned preserves one-for-one) into the chart space the rest of the widget
+  // speaks. The stances stay in turned space — they describe where the feet are.
   void _assignFeet() {
-    _feet = FootAssigner.assign(widget.steps.notes, widget.mode);
+    final source = widget.steps.notes;
+    final turned = _turned(source);
+    final analysis = FootAssigner.analyse(turned, widget.mode);
+    _feet = {
+      for (int i = 0; i < source.length; i++)
+        if (analysis.feet[turned[i]] case final foot?) source[i]: foot,
+    };
+    _stances = analysis.stances;
+  }
+
+  // [notes] with every column sent through the active TURN map. Returns the
+  // originals untouched when no turn is on, so the common case allocates
+  // nothing.
+  List<StepNote> _turned(List<StepNote> notes) {
+    if (_turn == _Turn.off) return notes;
+    final map = _colMap;
+    return [
+      for (final n in notes)
+        if (n.col >= 0 && n.col < map.length)
+          StepNote(
+            beat: n.beat,
+            second: n.second,
+            col: map[n.col],
+            type: n.type,
+            endBeat: n.endBeat,
+            endSecond: n.endSecond,
+          )
+        else
+          n,
+    ];
   }
 
   // Distil the chart's BPM segments and stops into render-ready markers on the
@@ -1844,7 +1757,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         stopMarkers: _stopMarkers,
                         showMeasureLines: widget.showMeasureLines,
                         feet: widget.showFootGuide ? _feet : const {},
-                        footPrev: widget.showFootGuide ? _footPrev : const {},
+                        footPrev: widget.showFootTrails ? _footPrev : const {},
                         dirs: dirs,
                         colMap: _colMap,
                         playhead: _playhead,
@@ -2027,6 +1940,29 @@ class _ChartScrollerState extends State<ChartScroller>
               ],
             ),
           ),
+
+          // Dancing feet: the parity solve read as a body on a pad, floating
+          // wherever the user has dragged it — anywhere on the field, including
+          // over the controls.
+          //
+          // Sits ABOVE the transport and scrubber, because a pad parked on top
+          // of them must still be the thing your finger finds or it could never
+          // be dragged off again. But BELOW the header, the settings shade and
+          // the edge tabs: those are pulled over the field deliberately and for
+          // a moment, so the pad passes under them rather than punching a hole
+          // through whatever the user just opened.
+          if (widget.showDancingFeet && _stances.isNotEmpty)
+            Positioned.fill(
+              // The pad places itself within these bounds; the rest of the
+              // layer stays transparent to taps, so the field (and the controls
+              // under it) still get everything the pad itself doesn't cover.
+              child: DancingFeet(
+                stances: _stances,
+                playhead: _playhead,
+                columnCount: dirs.length,
+                visualOffset: _visualOffsetSeconds,
+              ),
+            ),
 
           // Floating header (song title / difficulty): shown whenever paused,
           // slides up out of view once playback starts so the running chart owns
@@ -2346,62 +2282,105 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
-      // Viewing aids, split off into their own segment: the assist tick (audible
-      // row tick), the L/R foot guide overlay, the measure rules and the arcade
-      // quant palette. These moved out of the floating header so it carries only
-      // title/back — the toggles read the same as the TURN tiles, so the four
-      // slot in as one more row of the options card.
+      // Viewing aids, split off into their own segment and laid out as two rows
+      // of tiles: the parity readings (the on-arrow L/R guide, the same-foot
+      // trails and the dancing-feet pad, all three drawn from one solve) above,
+      // the rest — the assist tick, the measure rules and the arcade quant
+      // palette — below.
+      // These moved out of the floating header so it carries only title/back;
+      // the toggles read the same as the TURN tiles, so they slot in as more
+      // rows of the options card.
       if (widget.onToggleAssistTick != null ||
           widget.onToggleFootGuide != null ||
+          widget.onToggleFootTrails != null ||
+          widget.onToggleDancingFeet != null ||
           widget.onToggleMeasureLines != null ||
           widget.onToggleArcadeQuant != null)
         ShadeSection(
-          content: Row(
+          content: Column(
             spacing: 8,
             children: [
-              if (widget.onToggleAssistTick != null)
-                Expanded(
-                  child: TurnTile(
-                    label: "ASSIST TICK",
-                    icon: widget.assistTickOn
-                        ? Icons.volume_up
-                        : Icons.volume_off_outlined,
-                    selected: widget.assistTickOn,
-                    onTap: widget.onToggleAssistTick!,
-                  ),
+              if (widget.onToggleFootGuide != null ||
+                  widget.onToggleFootTrails != null ||
+                  widget.onToggleDancingFeet != null)
+                Row(
+                  spacing: 8,
+                  children: [
+                    if (widget.onToggleFootGuide != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "FOOT GUIDE",
+                          icon: widget.showFootGuide
+                              ? Icons.directions_walk
+                              : Icons.directions_walk_outlined,
+                          selected: widget.showFootGuide,
+                          onTap: widget.onToggleFootGuide!,
+                        ),
+                      ),
+                    if (widget.onToggleFootTrails != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "FOOT TRAILS",
+                          icon: widget.showFootTrails
+                              ? Icons.timeline
+                              : Icons.timeline_outlined,
+                          selected: widget.showFootTrails,
+                          onTap: widget.onToggleFootTrails!,
+                        ),
+                      ),
+                    if (widget.onToggleDancingFeet != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "DANCING FEET",
+                          icon: widget.showDancingFeet
+                              ? Icons.do_not_step
+                              : Icons.do_not_step_outlined,
+                          selected: widget.showDancingFeet,
+                          onTap: widget.onToggleDancingFeet!,
+                        ),
+                      ),
+                  ],
                 ),
-              if (widget.onToggleFootGuide != null)
-                Expanded(
-                  child: TurnTile(
-                    label: "FOOT GUIDE",
-                    icon: widget.showFootGuide
-                        ? Icons.directions_walk
-                        : Icons.directions_walk_outlined,
-                    selected: widget.showFootGuide,
-                    onTap: widget.onToggleFootGuide!,
-                  ),
-                ),
-              if (widget.onToggleMeasureLines != null)
-                Expanded(
-                  child: TurnTile(
-                    label: "MEASURES",
-                    icon: widget.showMeasureLines
-                        ? Icons.straighten
-                        : Icons.straighten_outlined,
-                    selected: widget.showMeasureLines,
-                    onTap: widget.onToggleMeasureLines!,
-                  ),
-                ),
-              if (widget.onToggleArcadeQuant != null)
-                Expanded(
-                  child: TurnTile(
-                    label: "ARCADE NOTES",
-                    icon: widget.arcadeQuantOn
-                        ? Icons.music_note
-                        : Icons.music_note_outlined,
-                    selected: widget.arcadeQuantOn,
-                    onTap: widget.onToggleArcadeQuant!,
-                  ),
+              if (widget.onToggleAssistTick != null ||
+                  widget.onToggleMeasureLines != null ||
+                  widget.onToggleArcadeQuant != null)
+                Row(
+                  spacing: 8,
+                  children: [
+                    if (widget.onToggleAssistTick != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "ASSIST TICK",
+                          icon: widget.assistTickOn
+                              ? Icons.volume_up
+                              : Icons.volume_off_outlined,
+                          selected: widget.assistTickOn,
+                          onTap: widget.onToggleAssistTick!,
+                        ),
+                      ),
+                    if (widget.onToggleMeasureLines != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "MEASURES",
+                          icon: widget.showMeasureLines
+                              ? Icons.straighten
+                              : Icons.straighten_outlined,
+                          selected: widget.showMeasureLines,
+                          onTap: widget.onToggleMeasureLines!,
+                        ),
+                      ),
+                    if (widget.onToggleArcadeQuant != null)
+                      Expanded(
+                        child: TurnTile(
+                          label: "ARCADE NOTES",
+                          icon: widget.arcadeQuantOn
+                              ? Icons.music_note
+                              : Icons.music_note_outlined,
+                          selected: widget.arcadeQuantOn,
+                          onTap: widget.onToggleArcadeQuant!,
+                        ),
+                      ),
+                  ],
                 ),
             ],
           ),
