@@ -66,7 +66,12 @@ class ParityResult {
   final Map<StepNote, ParityFoot> feet;
   final List<ParityStance> stances;
 
-  const ParityResult({required this.feet, required this.stances});
+  /// Total cost of the chosen path under the weights it was solved with. Only
+  /// comparable between solves of the same notes, e.g. free vs pinned.
+  final double cost;
+
+  const ParityResult(
+      {required this.feet, required this.stances, this.cost = 0});
 }
 
 // ---------------------------------------------------------------------------
@@ -100,24 +105,47 @@ class _Foot {
 
 // ---------------------------------------------------------------------------
 // Cost weights. Read as a priority order (higher = more strongly avoided).
-// Ported from SMEditor's DEFAULT_WEIGHTS; kept here so they're easy to tune.
+// Started from SMEditor's DEFAULT_WEIGHTS. A profile is one set of them: the
+// defaults ship, a player's can be fitted to their answers.
 // ---------------------------------------------------------------------------
 
-class _Weights {
-  static const double doublestep = 750;
-  static const double bracketJack = 60;
-  static const double jack = 40;
-  static const double jump = 0;
-  static const double slowBracket = 300;
-  static const double twistedFoot = 100000;
-  static const double xoBr = 200;
-  static const double mine = 10000;
-  static const double footswitch = 325;
-  static const double missedFootswitch = 500;
-  static const double facing = 3;
-  static const double distance = 6;
-  static const double spin = 3000;
-  static const double startXo = 10000;
+class ParityWeights {
+  const ParityWeights({
+    this.doublestep = 750,
+    this.bracketJack = 60,
+    this.jack = 40,
+    this.jump = 0,
+    this.slowBracket = 300,
+    this.twistedFoot = 100000,
+    this.xoBr = 200,
+    this.mine = 10000,
+    this.footswitch = 325,
+    this.missedFootswitch = 500,
+    this.facing = 3,
+    this.distance = 6,
+    this.spin = 3000,
+    this.startXo = 10000,
+    this.samePanel = 250,
+    this.bracket = 200,
+    this.sideswitch = 50,
+  });
+
+  static const defaults = ParityWeights();
+
+  final double doublestep;
+  final double bracketJack;
+  final double jack;
+  final double jump;
+  final double slowBracket;
+  final double twistedFoot;
+  final double xoBr;
+  final double mine;
+  final double footswitch;
+  final double missedFootswitch;
+  final double facing;
+  final double distance;
+  final double spin;
+  final double startXo;
 
   /// Both feet ending up on one panel — not a stance you can hold, since a DDR
   /// panel fits one foot. Not from SMEditor, which never scores the stance, so
@@ -128,7 +156,7 @@ class _Weights {
   /// 100, 0.60% at 250, 0.54% at 400. It never reaches zero — a jump onto a
   /// column both feet must share has no alternative — so past ~250 it buys
   /// little.
-  static const double samePanel = 250;
+  final double samePanel;
 
   /// Flat surcharge for one foot covering two panels. Not from SMEditor, which
   /// prices only specific awkward brackets and otherwise brackets freely to save
@@ -142,12 +170,52 @@ class _Weights {
   /// (50), 0.14% (100), 0.05% (200), 0.005% (400). Past ~400 it's a ban rather
   /// than a preference; 200 keeps them only where the alternative is a genuine
   /// doublestep.
-  static const double bracket = 200;
+  final double bracket;
 
   /// Side-panel ownership changes are represented by movement and body-facing
   /// costs. Keep this small enough that a lateral remains cheaper to walk than
   /// to doublestep, while retaining a modest preference for stable ownership.
-  static const double sideswitch = 50;
+  final double sideswitch;
+
+  factory ParityWeights.fromJson(Map<String, dynamic> j) => ParityWeights(
+        doublestep: (j['doublestep'] as num?)?.toDouble() ?? defaults.doublestep,
+        bracketJack: (j['bracketJack'] as num?)?.toDouble() ?? defaults.bracketJack,
+        jack: (j['jack'] as num?)?.toDouble() ?? defaults.jack,
+        jump: (j['jump'] as num?)?.toDouble() ?? defaults.jump,
+        slowBracket: (j['slowBracket'] as num?)?.toDouble() ?? defaults.slowBracket,
+        twistedFoot: (j['twistedFoot'] as num?)?.toDouble() ?? defaults.twistedFoot,
+        xoBr: (j['xoBr'] as num?)?.toDouble() ?? defaults.xoBr,
+        mine: (j['mine'] as num?)?.toDouble() ?? defaults.mine,
+        footswitch: (j['footswitch'] as num?)?.toDouble() ?? defaults.footswitch,
+        missedFootswitch: (j['missedFootswitch'] as num?)?.toDouble() ?? defaults.missedFootswitch,
+        facing: (j['facing'] as num?)?.toDouble() ?? defaults.facing,
+        distance: (j['distance'] as num?)?.toDouble() ?? defaults.distance,
+        spin: (j['spin'] as num?)?.toDouble() ?? defaults.spin,
+        startXo: (j['startXo'] as num?)?.toDouble() ?? defaults.startXo,
+        samePanel: (j['samePanel'] as num?)?.toDouble() ?? defaults.samePanel,
+        bracket: (j['bracket'] as num?)?.toDouble() ?? defaults.bracket,
+        sideswitch: (j['sideswitch'] as num?)?.toDouble() ?? defaults.sideswitch,
+      );
+
+  Map<String, double> toJson() => {
+        'doublestep': doublestep,
+        'bracketJack': bracketJack,
+        'jack': jack,
+        'jump': jump,
+        'slowBracket': slowBracket,
+        'twistedFoot': twistedFoot,
+        'xoBr': xoBr,
+        'mine': mine,
+        'footswitch': footswitch,
+        'missedFootswitch': missedFootswitch,
+        'facing': facing,
+        'distance': distance,
+        'spin': spin,
+        'startXo': startXo,
+        'samePanel': samePanel,
+        'bracket': bracket,
+        'sideswitch': sideswitch,
+      };
 }
 
 // ---------------------------------------------------------------------------
@@ -359,11 +427,19 @@ class _ParityEngine {
   final _StageLayout layout;
 
   /// Whether one foot may cover two panels. On by default and priced by
-  /// [_Weights.bracket] so brackets stay rare; off drops them from the candidate
+  /// [weights.bracket] so brackets stay rare; off drops them from the candidate
   /// placements entirely, which no weight can match.
   final bool allowBrackets;
 
-  _ParityEngine(this.layout, {this.allowBrackets = true, this.pins = const {}});
+  _ParityEngine(this.layout,
+      {this.allowBrackets = true,
+      this.pins = const {},
+      this.weights = ParityWeights.defaults});
+
+  final ParityWeights weights;
+
+  /// Total cost of the path [solve] last chose.
+  double cost = 0;
 
   /// Notes whose foot is fixed (hand labels); the solve fits everything else
   /// around them.
@@ -701,30 +777,30 @@ class _ParityEngine {
     // MINE: stepping on a mined column.
     for (int i = 0; i < layout.columnCount; i++) {
       if (d.result.combinedColumns[i] != _Foot.none && row.mines[i]) {
-        total += _Weights.mine;
+        total += weights.mine;
         break;
       }
     }
 
     // START_XO: don't begin the chart crossed over.
     if (rowIndex == 0 && d.rightPos.x < d.leftPos.x) {
-      total += _Weights.startXo;
+      total += weights.startXo;
     }
 
     // BRACKETJACK
     if (!d.jumped &&
         ((d.leftJack && d.leftBracket) || (d.rightJack && d.rightBracket))) {
-      total += _Weights.bracketJack;
+      total += weights.bracketJack;
     }
 
     // BRACKET: the flat surcharge for bracketing at all, per foot.
-    if (d.leftBracket) total += _Weights.bracket;
-    if (d.rightBracket) total += _Weights.bracket;
+    if (d.leftBracket) total += weights.bracket;
+    if (d.rightBracket) total += weights.bracket;
 
     // XO_BR: bracketing while crossed over.
     final crossedOver = d.rightPos.x < d.leftPos.x;
-    if (d.leftBracket && crossedOver) total += _Weights.xoBr;
-    if (d.rightBracket && crossedOver) total += _Weights.xoBr;
+    if (d.leftBracket && crossedOver) total += weights.xoBr;
+    if (d.rightBracket && crossedOver) total += weights.xoBr;
 
     // DOUBLESTEP
     if (d.leftDoubleStep || d.rightDoubleStep) {
@@ -732,24 +808,24 @@ class _ParityEngine {
     }
 
     // JUMP
-    if (d.jumped) total += _Weights.jump / elapsed;
+    if (d.jumped) total += weights.jump / elapsed;
 
     // SLOW_BRACKET
     if (elapsed > 0.15 &&
         (d.leftBracket || d.rightBracket) &&
         !d.jumped) {
-      total += math.min(0.5, elapsed - 0.15) * _Weights.slowBracket;
+      total += math.min(0.5, elapsed - 0.15) * weights.slowBracket;
     }
 
     // TWISTED_FOOT: toe behind heel (foot rotated backwards) — near-impossible.
     if (_twisted(d.result.rightHeel, d.result.rightToe) ||
         _twisted(d.result.leftHeel, d.result.leftToe)) {
-      total += _Weights.twistedFoot;
+      total += weights.twistedFoot;
     }
 
     // SAME_PANEL: both feet left standing on one arrow.
     if (d.result.leftHeel != -1 && d.result.leftHeel == d.result.rightHeel) {
-      total += _Weights.samePanel;
+      total += weights.samePanel;
     }
 
     // FACING: facing backwards, ramps sharply (^7.2) so deep crossovers cost
@@ -767,14 +843,14 @@ class _ParityEngine {
 
     // MISSED_FOOTSWITCH: a jack where a mine indicated a switch.
     if ((d.leftJack || d.rightJack) && _rowHasMine(row)) {
-      total += _Weights.missedFootswitch;
+      total += weights.missedFootswitch;
     }
 
     // JACK: same foot same arrow, penalised when fast.
     if (elapsed < 0.125 &&
         (d.leftJack || d.rightJack) &&
         !d.previousJumped) {
-      total += (1 / elapsed - 1 / 0.125) * _Weights.jack;
+      total += (1 / elapsed - 1 / 0.125) * weights.jack;
     }
 
     // DISTANCE: moving a foot far in little time.
@@ -815,7 +891,7 @@ class _ParityEngine {
       final rt = d.initial.footColumns[_Foot.rightToe];
       if ((rh != -1 && row.mines[rh]) || (rt != -1 && row.mines[rt])) return 0;
     }
-    return _Weights.doublestep / _clamp(elapsed * 4, 0.3, 1);
+    return weights.doublestep / _clamp(elapsed * 4, 0.3, 1);
   }
 
   double _facingCost(_Placement d) {
@@ -826,7 +902,7 @@ class _ParityEngine {
     dx /= dist;
     final heelFacing = dx;
     final penalty = math.pow(-math.min(heelFacing, 0.0), 7.2) * 200;
-    if (penalty > 0) return penalty * _Weights.facing;
+    if (penalty > 0) return penalty * weights.facing;
     return 0;
   }
 
@@ -840,7 +916,7 @@ class _ParityEngine {
     final crosses = (prev <= math.pi && angle >= math.pi) ||
         (prev >= math.pi && angle <= math.pi);
     if (crosses && d.initial.frontFoot != d.result.frontFoot) {
-      return _Weights.spin;
+      return weights.spin;
     }
     return 0;
   }
@@ -860,9 +936,9 @@ class _ParityEngine {
       // there only dodges something — usually a slow doublestep. Price both as
       // one so neither pays.
       if (layout.sideArrows.contains(col) || elapsed >= 0.4) {
-        cost += _Weights.doublestep;
+        cost += weights.doublestep;
       } else if (elapsed >= 0.2) {
-        cost += ((elapsed - 0.2) / elapsed) * _Weights.footswitch;
+        cost += ((elapsed - 0.2) / elapsed) * weights.footswitch;
       }
     }
     return cost;
@@ -877,7 +953,7 @@ class _ParityEngine {
       final prev = d.initial.lastFoot[col];
       if (prev == _Foot.none) continue;
       if (prev == act || prev == _Foot.otherPart[act]) continue;
-      cost += _Weights.sideswitch;
+      cost += weights.sideswitch;
     }
     return cost;
   }
@@ -911,7 +987,7 @@ class _ParityEngine {
         e = math.pow(e, 1.5).toDouble();
       }
       cost += math.sqrt(layout.distanceSqPoints(initialPos, resultPos)) *
-          _Weights.distance /
+          weights.distance /
           e;
     }
     return cost;
@@ -1018,6 +1094,7 @@ class _ParityEngine {
         bestIdx = i;
       }
     }
+    cost = bestVal;
 
     final chosen = List<_State?>.filled(rows.length, null);
     int idx = bestIdx;
@@ -1063,22 +1140,28 @@ class _ParityEngine {
         stepped: stepped,
       ));
     }
-    return ParityResult(feet: feet, stances: stances);
+    return ParityResult(feet: feet, stances: stances, cost: cost);
   }
 }
 
 /// Entry point: run the cost-minimising parity engine over a note stream.
-/// Brackets are legal but carry [_Weights.bracket] so they stay rare; passing
+/// Brackets are legal but carry [weights.bracket] so they stay rare; passing
 /// [allowBrackets] false removes them entirely, which can push the solve into
 /// worse alternatives on charts where a bracket was the sane reading.
 ///
 /// [pins] fixes the foot for particular notes (hand labels); everything else is
 /// solved around them.
+///
+/// [weights] is the cost profile; the shipped defaults unless a fitted one is
+/// passed.
 ParityResult analyseParity(List<StepNote> notes, Modes mode,
-    {bool allowBrackets = true, Map<StepNote, ParityFoot> pins = const {}}) {
+    {bool allowBrackets = true,
+    Map<StepNote, ParityFoot> pins = const {},
+    ParityWeights weights = ParityWeights.defaults}) {
   final layout =
       mode == Modes.doubles ? _StageLayout.doubles : _StageLayout.singles;
-  return _ParityEngine(layout, allowBrackets: allowBrackets, pins: pins)
+  return _ParityEngine(layout,
+          allowBrackets: allowBrackets, pins: pins, weights: weights)
       .analyse(notes);
 }
 
