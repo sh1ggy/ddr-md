@@ -16,6 +16,14 @@
   "to": 15.158
  },
  {
+  "pattern": "doublestep-vs-crossover",
+  "song": "PARANOiA Revolution",
+  "difficulty": "hard",
+  "from": 105.334,
+  "key": 105.667,
+  "to": 106.167
+ },
+ {
   "pattern": "candle",
   "song": "Cirno's Perfect Math Class (EDM REMIX)",
   "difficulty": "medium",

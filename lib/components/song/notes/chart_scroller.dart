@@ -102,6 +102,7 @@ class ChartScroller extends StatefulWidget {
     this.headerBuilder,
     this.footingRef,
     this.editFooting = false,
+    this.initialSecond,
   });
 
   final ChartSteps steps;
@@ -118,6 +119,10 @@ class ChartScroller extends StatefulWidget {
   /// Footing edit mode, toggled from the preview's header: paused taps on notes
   /// swap their foot, and the bar steps through flagged moments.
   final bool editFooting;
+
+  /// Opens paused on the row nearest this second instead of the top — and in
+  /// edit mode focused on it as a moment — e.g. a Footing Style example.
+  final double? initialSecond;
 
   /// Timing markers in seconds (from [Chart]) — the same seconds axis the note
   /// stream scrolls on, so they render at true position.
@@ -572,6 +577,7 @@ class _ChartScrollerState extends State<ChartScroller>
     _buildTickTimes();
     _buildTimingMarkers();
     _buildDensity();
+    if (widget.initialSecond case final second?) _openAt(second);
     // Prefer real DDR World sprites if they're bundled; repaint once loaded.
     if (_skin == null) {
       SpriteNoteskin.tryLoad().then((skin) {
@@ -1246,6 +1252,27 @@ class _ChartScrollerState extends State<ChartScroller>
     _second = first;
     _second = math.max(0.0, first + _pxToSeconds(-_travelPx * 0.3));
     _resyncTickClock();
+  }
+
+  // Open on the row nearest [second] the way [_stepMoment] lands on a moment.
+  void _openAt(double second) {
+    final rows = {
+      for (final n in widget.steps.notes)
+        if (n.type != StepType.mine) n.second
+    }.toList()
+      ..sort();
+    if (rows.isEmpty) return;
+    var i = 0;
+    for (int j = 1; j < rows.length; j++) {
+      if ((rows[j] - second).abs() < (rows[i] - second).abs()) i = j;
+    }
+    if (widget.editFooting) {
+      _transportVisible = false;
+      _momentSecond = rows[i];
+      _focus = _momentNotes(rows[i]);
+    }
+    _second = math.max(
+        0.0, rows[math.max(0, i - 1)] + _pxToSeconds(-_travelPx * 0.3));
   }
 
   // A moment's notes: its row and the one before, which together make the flag.

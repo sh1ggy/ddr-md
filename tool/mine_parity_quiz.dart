@@ -89,6 +89,16 @@ final Map<String, Iterable<_Alt> Function(_Chart)> _patterns = {
       }
     }
   },
+  // A fast change of arrow taken with the same foot: doublestep it, or cross
+  // over to keep alternating.
+  'doublestep-vs-crossover': (c) sync* {
+    for (int i = 1; i < c.rows.length; i++) {
+      if (!c.single(i) || !c.single(i - 1) || c.held(i)) continue;
+      final a = c.one(i - 1), b = c.one(i);
+      if (a.col == b.col || c.gap(i) >= 0.28) continue;
+      if (c.foot(a) == c.foot(b)) yield (i, [{b: _flip(c.foot(b))}]);
+    }
+  },
   // One foot travelling Up <-> Down across the middle.
   'candle': (c) sync* {
     final last = <ParityFoot, int>{};

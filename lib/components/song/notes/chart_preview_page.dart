@@ -32,6 +32,7 @@ class ChartPreviewPage extends StatefulWidget {
     required this.bpms,
     required this.stops,
     this.sync,
+    this.initialSecond,
   });
 
   /// The (already in-flight) lazy load of the song's step file, shared with the
@@ -65,6 +66,10 @@ class ChartPreviewPage extends StatefulWidget {
   /// rather than in the dark. Null when the song ships no sync data.
   final Sync? sync;
 
+  /// Opens on this second rather than the top, straight into the footing
+  /// editor where there is one — to judge a moment picked elsewhere.
+  final double? initialSecond;
+
   @override
   State<ChartPreviewPage> createState() => _ChartPreviewPageState();
 }
@@ -74,7 +79,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
 
   // Footing edit mode (debug builds): a distinct mode, entered from the
   // header rather than the viewing options.
-  bool _editFooting = false;
+  late bool _editFooting = kDebugMode && widget.initialSecond != null;
 
   // Same-foot trails, split out of the foot guide so the movement can be read
   // without the badges (and vice versa). Persisted like the other viewing aids.
@@ -205,6 +210,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                       widget.difficultyKey)
                   : null,
               editFooting: _editFooting,
+              initialSecond: widget.initialSecond,
             );
           },
         ),

@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:ddr_md/components/song/notes/chart_painter.dart';
+import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song/notes/chart_timing.dart';
 import 'package:ddr_md/components/song/notes/dancing_feet.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
@@ -16,6 +17,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_profile.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -53,6 +55,7 @@ class FootingStyleSwitch extends StatelessWidget {
 const Map<String, String> _patternNames = {
   'jack-vs-footswitch': 'Jack or footswitch',
   'slow-doublestep-vs-crossover': 'Slow doublestep',
+  'doublestep-vs-crossover': 'Doublestep or crossover',
   'candle': 'Candle',
   'spin': 'Spin',
   'bracket-vs-jump': 'Bracket or jump',
@@ -69,14 +72,14 @@ const double _leadIn = 1.0, _tail = 0.6;
 /// its chart and the active style's solve of it.
 class _Moment {
   final String pattern, song, difficulty;
-  final double from, to;
+  final double from, key, to;
   final List<StepNote> notes;
   Map<StepNote, Foot> feet = const {};
   List<ParityStance> stances = const [];
   final ValueNotifier<double> playhead;
 
-  _Moment(this.pattern, this.song, this.difficulty, this.from, this.to,
-      this.notes)
+  _Moment(this.pattern, this.song, this.difficulty, this.from, this.key,
+      this.to, this.notes)
       : playhead = ValueNotifier(from - _leadIn);
 
   double get loop => to - from + _leadIn + _tail;
@@ -134,11 +137,17 @@ class _FootingStylePageState extends State<FootingStylePage>
     final moments = <_Moment>[];
     for (final p in picks) {
       final song = await StepsLoader.load(p['song'] as String);
-      final notes = song?.chartFor(Modes.singles, p['difficulty'] as String)?.notes;
+      final notes =
+          song?.chartFor(Modes.singles, p['difficulty'] as String)?.notes;
       if (notes == null) continue;
-      moments.add(_Moment(p['pattern'] as String, p['song'] as String,
-          p['difficulty'] as String, (p['from'] as num).toDouble(),
-          (p['to'] as num).toDouble(), notes));
+      moments.add(_Moment(
+          p['pattern'] as String,
+          p['song'] as String,
+          p['difficulty'] as String,
+          (p['from'] as num).toDouble(),
+          (p['key'] as num).toDouble(),
+          (p['to'] as num).toDouble(),
+          notes));
     }
     _moments = moments;
     _fit = fit;
@@ -197,12 +206,51 @@ class _FootingStylePageState extends State<FootingStylePage>
                     }),
                   ),
                   const SizedBox(height: 8),
-                  for (final m in _moments) _MomentCard(m),
+                  for (final m in _moments)
+                    _MomentCard(m, onTap: () => _openChart(m)),
                   if (_fit case final fit?) _editsLine(fit),
                 ],
               ),
             ),
     );
+  }
+
+  // The moment's whole chart, opened on it to judge — and correct — the footing.
+  // Coming back re-learns Yours from whatever was edited there.
+  Future<void> _openChart(_Moment m) async {
+    final info = Songs.list.where((s) => s.name == m.song).firstOrNull;
+    if (info == null) return;
+    // Mirrors the song page: a per-chart song lists its charts in the order of
+    // its available difficulties.
+    final i = info.singles.availableTypes.indexOf(m.difficulty);
+    final chart = info.perChart
+        ? info.charts[i.clamp(0, info.charts.length - 1)]
+        : info.charts.first;
+    HapticFeedback.selectionClick();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChartPreviewPage(
+          stepsFuture: StepsLoader.load(m.song),
+          mode: Modes.singles,
+          difficultyKey: m.difficulty,
+          difficultyLevel: info.singles.toJson()[m.difficulty] as int?,
+          title: info.title,
+          songLength: info.songLength,
+          chartBpm: chart.dominantBpm,
+          minBpm: chart.trueMin,
+          maxBpm: chart.trueMax,
+          bpms: chart.bpms,
+          stops: chart.stops,
+          sync: info.displaySyncFor(chart),
+          initialSecond: m.key,
+        ),
+      ),
+    );
+    final fit = await refitFromEdits();
+    if (!mounted) return;
+    _fit = fit;
+    await _solve();
   }
 
   // How many hand-set feet each style places on its own.
@@ -212,7 +260,8 @@ class _FootingStylePageState extends State<FootingStylePage>
     final yours = fit.result.after.fold(0, (a, b) => a + b);
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Text('Your edits  ·  Default $byDefault/$total  ·  Yours $yours/$total',
+      child: Text(
+          'Your edits  ·  Default $byDefault/$total  ·  Yours $yours/$total',
           textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.blueGrey, fontSize: 13)),
     );
@@ -220,52 +269,58 @@ class _FootingStylePageState extends State<FootingStylePage>
 }
 
 class _MomentCard extends StatelessWidget {
-  const _MomentCard(this.m);
+  const _MomentCard(this.m, {required this.onTap});
 
   final _Moment m;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(_patternNames[m.pattern] ?? m.pattern,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-            Text.rich(
-              TextSpan(children: [
-                TextSpan(text: '${m.song}  '),
-                TextSpan(
-                    text: kInGameDifficultyNames[m.difficulty] ?? m.difficulty,
-                    style: TextStyle(
-                        color: difficultyColor(m.difficulty),
-                        fontWeight: FontWeight.w800)),
-              ]),
-              style: const TextStyle(color: Colors.blueGrey, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 280,
-              child: Row(
-                children: [
-                  Expanded(child: _MomentChart(m)),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 132,
-                    height: DancingFeet.height,
-                    child: DancePad(
-                        stances: m.stances,
-                        playhead: m.playhead,
-                        columnCount: 4),
-                  ),
-                ],
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(_patternNames[m.pattern] ?? m.pattern,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: '${m.song}  '),
+                  TextSpan(
+                      text:
+                          kInGameDifficultyNames[m.difficulty] ?? m.difficulty,
+                      style: TextStyle(
+                          color: difficultyColor(m.difficulty),
+                          fontWeight: FontWeight.w800)),
+                ]),
+                style: const TextStyle(color: Colors.blueGrey, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 280,
+                child: Row(
+                  children: [
+                    Expanded(child: _MomentChart(m)),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 132,
+                      height: DancingFeet.height,
+                      child: DancePad(
+                          stances: m.stances,
+                          playhead: m.playhead,
+                          columnCount: 4),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -301,7 +356,10 @@ class _MomentChart extends StatelessWidget {
           size: Size.infinite,
           painter: ChartPainter(
             notes: notes,
-            holds: [for (final n in notes) if (n.isHold) n],
+            holds: [
+              for (final n in notes)
+                if (n.isHold) n
+            ],
             shockNotes: const {},
             shocks: const [],
             bpmMarkers: const [],
