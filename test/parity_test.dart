@@ -295,4 +295,17 @@ void main() {
     expect(p[notes[3]], equals(p[notes[0]]),
         reason: 'R switched feet across the gap: ${render(notes, p)}');
   });
+
+  test('an L+R jump always lands left foot left, right foot right', () {
+    // PARANOiA Revolution m142: the stream after the break alternates cleanly
+    // only if the jump before it lands crossed, which the solver used to take.
+    final notes = stream([
+      (0, R), (0.25, L), (0.5, U), (2, L), (2, R),
+      for (final (i, c) in [R, U, R, U, L, U, L, D, L, D].indexed)
+        (8 + i * 0.25, c),
+    ], bpm: 180);
+    final p = assignParity(notes, Modes.singles);
+    expect([p[notes[3]], p[notes[4]]], [ParityFoot.left, ParityFoot.right],
+        reason: render(notes, p));
+  });
 }

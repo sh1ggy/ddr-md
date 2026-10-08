@@ -574,10 +574,31 @@ class _ParityEngine {
 
   static bool _sameFoot(int a, int b) => _Foot.isLeft(a) == _Foot.isLeft(b);
 
+  /// The two side panels of a jump across the pad (e.g. L+R), leftmost first,
+  /// or null. Only fresh notes count — a foot joining a hold already down isn't
+  /// both feet landing.
+  (int, int)? _sideJump(_Row row) {
+    final active = [
+      for (int i = 0; i < layout.columnCount; i++)
+        if (row.notes[i] != null || row.holds[i]) i
+    ];
+    if (active.length != 2 || row.holds[active[0]] || row.holds[active[1]]) {
+      return null;
+    }
+    if (!layout.sideArrows.contains(active[0]) ||
+        !layout.sideArrows.contains(active[1])) {
+      return null;
+    }
+    return (active[0], active[1]);
+  }
+
   /// Enumerate every legal assignment of foot parts to the stepped columns of a
-  /// row, pruned by bracket geometry and heel/toe validity.
+  /// row, pruned by bracket geometry and heel/toe validity. A jump across the
+  /// pad always lands left foot left, right foot right, facing forward: there's
+  /// no reason to land one crossed, however the next notes would flow from it.
   List<List<int>> _generateActions(_Row row) {
     final results = <List<int>>[];
+    final sideJump = _sideJump(row);
     final columns = List<int>.filled(layout.columnCount, _Foot.none);
 
     void recurse(int col) {
@@ -604,6 +625,11 @@ class _ParityEngine {
         // Both parts of a foot must be bracketable (adjacent).
         if (lh != -1 && lt != -1 && !layout.bracketCheck(lh, lt)) return;
         if (rh != -1 && rt != -1 && !layout.bracketCheck(rh, rt)) return;
+        if (sideJump != null &&
+            (!_Foot.isLeft(columns[sideJump.$1]) ||
+                _Foot.isLeft(columns[sideJump.$2]))) {
+          return;
+        }
         results.add(List<int>.of(columns));
         return;
       }
@@ -1020,6 +1046,8 @@ class _ParityEngine {
         if (row.notes[i] != null || row.holds[i]) sb.write(i);
         sb.write('|');
       }
+      // Same columns, but a fresh side jump is pinned where a held one isn't.
+      if (_sideJump(row) != null) sb.write('J');
       return permCache[sb.toString()] ??= _generateActions(row);
     }
 
