@@ -402,7 +402,6 @@ class _ChartScrollerState extends State<ChartScroller>
   List<double> _rowSeconds = const [];
   List<(double, ParityFlag)> _moments = const [];
   double? _momentSecond;
-  double _zoomBeforeEdit = 1.0;
   String _chartHash = '';
   ChartPainter? _painter;
 
@@ -623,12 +622,6 @@ class _ChartScrollerState extends State<ChartScroller>
         _focus = const {};
         // The edit bar takes the transport's place.
         _transportVisible = !widget.editFooting;
-        // Moments zoom the field to fit; leaving puts the reader's zoom back.
-        if (widget.editFooting) {
-          _zoomBeforeEdit = _zoom;
-        } else {
-          _zoom = _zoomBeforeEdit;
-        }
       });
       if (widget.editFooting) _stepMoment(1);
     }
@@ -1218,10 +1211,9 @@ class _ChartScrollerState extends State<ChartScroller>
     _setFeet({n: foot == Foot.left ? ParityFoot.right : ParityFoot.left});
   }
 
-  // Jump to the next/previous flagged moment. Zooms out just enough to fit the
-  // row before it through the row after (a flag is about how a row follows its
-  // neighbour) and sets it a third of the way down, below the dancing pad, at
-  // any read speed.
+  // Jump to the next/previous flagged moment, setting the row before it (a flag
+  // is about how a row follows its neighbour) a third of the way down, below
+  // the dancing pad. The reader's zoom is left alone.
   void _stepMoment(int dir) {
     if (_moments.isEmpty) return;
     final at = _momentSecond ?? _second;
@@ -1232,16 +1224,9 @@ class _ChartScrollerState extends State<ChartScroller>
     _pause();
     final i = _rowSeconds.indexOf(next.$1);
     final first = _rowSeconds[math.max(0, i - 1)];
-    final last = _rowSeconds[math.min(_rowSeconds.length - 1, i + 1)];
-    final span = _timing.isEmpty
-        ? (last - first) * _pxPerSecond
-        : (_timing.beatAt(last) - _timing.beatAt(first)) * _pxPerBeat;
     setState(() {
       _momentSecond = next.$1;
       _focus = _momentNotes(next.$1);
-      if (span > 0) {
-        _zoom = (_zoom * _travelPx * 0.45 / span).clamp(_minZoom, _maxZoom);
-      }
     });
     _second = first;
     _second = math.max(0.0, first + _pxToSeconds(-_travelPx * 0.3));
@@ -2037,7 +2022,6 @@ class _ChartScrollerState extends State<ChartScroller>
                             ? _feet
                             : const {},
                         focus: widget.editFooting ? _focus : const {},
-                        focusDone: widget.editFooting && _addressed(_focus),
                         footPrev: widget.showFootTrails ? _footPrev : const {},
                         dirs: dirs,
                         colMap: _colMap,
