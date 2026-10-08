@@ -6,9 +6,11 @@
 library;
 
 import 'package:ddr_md/components/song/notes/chart_models.dart';
+import 'package:ddr_md/components/song/notes/dancing_feet.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_quiz.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 const Map<String, String> _patternNames = {
@@ -28,10 +30,37 @@ class ParityQuizPage extends StatefulWidget {
   State<ParityQuizPage> createState() => _ParityQuizPageState();
 }
 
-class _ParityQuizPageState extends State<ParityQuizPage> {
+class _ParityQuizPageState extends State<ParityQuizPage>
+    with SingleTickerProviderStateMixin {
   List<QuizQuestion> _questions = const [];
   Map<String, int> _answers = {};
   int _index = 0;
+
+  // One clock loops the current moment for every option, so their pads and
+  // charts move in step and can be compared side by side.
+  late final AnimationController _loop = AnimationController(vsync: this)
+    ..addListener(_tick);
+  final ValueNotifier<double> _playhead = ValueNotifier(0);
+  static const double _leadIn = 0.5, _tail = 0.8;
+
+  void _tick() {
+    final rows = _questions[_index].rows;
+    final span = rows.last.second - rows.first.second + _leadIn + _tail;
+    _playhead.value = rows.first.second - _leadIn + _loop.value * span;
+  }
+
+  void _restartLoop() {
+    final rows = _questions[_index].rows;
+    final span = rows.last.second - rows.first.second + _leadIn + _tail;
+    _loop
+      ..duration = Duration(milliseconds: (span * 1000).round())
+      ..repeat();
+  }
+
+  void _show(int index) {
+    setState(() => _index = index);
+    _restartLoop();
+  }
 
   @override
   void initState() {
@@ -45,7 +74,15 @@ class _ParityQuizPageState extends State<ParityQuizPage> {
         final next = qs.indexWhere((q) => !_answers.containsKey(q.id));
         _index = next < 0 ? 0 : next;
       });
+      _restartLoop();
     });
+  }
+
+  @override
+  void dispose() {
+    _loop.dispose();
+    _playhead.dispose();
+    super.dispose();
   }
 
   // Options are shown rotated per question so the engine's reading (option 0
@@ -57,8 +94,8 @@ class _ParityQuizPageState extends State<ParityQuizPage> {
     setState(() {
       _answers = {..._answers, q.id: option};
       QuizAnswers.write(_answers);
-      if (_index < _questions.length - 1) _index++;
     });
+    if (_index < _questions.length - 1) _show(_index + 1);
   }
 
   @override
@@ -113,6 +150,7 @@ class _ParityQuizPageState extends State<ParityQuizPage> {
                         child: _OptionCard(
                           question: q,
                           option: option,
+                          playhead: _playhead,
                           selected: chosen == option,
                           onTap: () => _choose(q, option),
                         ),
@@ -127,8 +165,7 @@ class _ParityQuizPageState extends State<ParityQuizPage> {
             children: [
               IconButton(
                 icon: const Icon(Icons.chevron_left),
-                onPressed:
-                    _index == 0 ? null : () => setState(() => _index--),
+                onPressed: _index == 0 ? null : () => _show(_index - 1),
               ),
               Text('${_index + 1}/${_questions.length}',
                   style: const TextStyle(color: Colors.blueGrey)),
@@ -136,7 +173,7 @@ class _ParityQuizPageState extends State<ParityQuizPage> {
                 icon: const Icon(Icons.chevron_right),
                 onPressed: _index == _questions.length - 1
                     ? null
-                    : () => setState(() => _index++),
+                    : () => _show(_index + 1),
               ),
             ],
           ),
@@ -150,12 +187,14 @@ class _OptionCard extends StatelessWidget {
   const _OptionCard({
     required this.question,
     required this.option,
+    required this.playhead,
     required this.selected,
     required this.onTap,
   });
 
   final QuizQuestion question;
   final int option;
+  final ValueListenable<double> playhead;
   final bool selected;
   final VoidCallback onTap;
 
@@ -173,9 +212,26 @@ class _OptionCard extends StatelessWidget {
               color: selected ? scheme.primary : Colors.white12,
               width: selected ? 2 : 1),
         ),
-        child: CustomPaint(
-          painter: _MiniChart(question, option),
-          size: Size.infinite,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: SizedBox(
+                height: DancingFeet.height,
+                child: DancePad(
+                  stances: question.stancesFor(option),
+                  playhead: playhead,
+                  columnCount: 4,
+                ),
+              ),
+            ),
+            Expanded(
+              child: CustomPaint(
+                painter: _MiniChart(question, option, playhead),
+                size: Size.infinite,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -185,10 +241,14 @@ class _OptionCard extends StatelessWidget {
 /// One option's footing as a small chart: lanes L D U R, earliest row at the
 /// bottom, rows spaced by their real timing so tempo reads as distance.
 class _MiniChart extends CustomPainter {
-  _MiniChart(this.question, this.option);
+  _MiniChart(this.question, this.option, this.playhead)
+      : super(repaint: playhead);
 
   final QuizQuestion question;
   final int option;
+
+  /// The looping clock the pads dance to, drawn as a line sweeping up.
+  final ValueListenable<double> playhead;
 
   static const _glyphs = [
     Icons.arrow_back_rounded,
@@ -207,6 +267,14 @@ class _MiniChart extends CustomPainter {
     double yFor(double s) => last == first
         ? size.height / 2
         : size.height - pad - (s - first) / (last - first) * (size.height - 2 * pad);
+
+    final now = playhead.value;
+    if (now >= first && now <= last) {
+      canvas.drawLine(Offset(0, yFor(now)), Offset(size.width, yFor(now)),
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.25)
+            ..strokeWidth = 1);
+    }
 
     for (final row in rows) {
       final y = yFor(row.second);

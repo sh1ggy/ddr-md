@@ -46,6 +46,36 @@ class QuizQuestion {
 
   int get optionCount => rows.first.notes.first.feet.length;
 
+  /// Where [option] stands the player after each row, for the dancing pad.
+  /// Each foot starts on the first panel it steps on, rather than off the pad.
+  List<ParityStance> stancesFor(int option) {
+    List<int> colsOf(QuizRow row, ParityFoot foot) =>
+        [for (final n in row.notes) if (n.feet[option] == foot) n.col];
+    int firstCol(ParityFoot foot) => rows
+        .map((r) => colsOf(r, foot))
+        .firstWhere((c) => c.isNotEmpty, orElse: () => const [-1])
+        .first;
+    var left = [firstCol(ParityFoot.left)];
+    var right = [firstCol(ParityFoot.right)];
+    return [
+      for (final row in rows)
+        () {
+          final l = colsOf(row, ParityFoot.left);
+          final r = colsOf(row, ParityFoot.right);
+          if (l.isNotEmpty) left = l;
+          if (r.isNotEmpty) right = r;
+          return ParityStance(
+            second: row.second,
+            leftHeel: left.first,
+            leftToe: left.length > 1 ? left[1] : -1,
+            rightHeel: right.first,
+            rightToe: right.length > 1 ? right[1] : -1,
+            stepped: {for (final n in row.notes) n.col},
+          );
+        }()
+    ];
+  }
+
   factory QuizQuestion.fromJson(Map<String, dynamic> j) => QuizQuestion(
         j['pattern'] as String,
         j['song'] as String,

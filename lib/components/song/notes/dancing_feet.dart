@@ -248,7 +248,7 @@ class _DancingFeetState extends State<DancingFeet> {
                     },
                 ),
               },
-              child: _PadSurface(
+              child: DancePad(
                 dragging: _dragging,
                 stances: widget.stances,
                 playhead: widget.playhead,
@@ -263,14 +263,16 @@ class _DancingFeetState extends State<DancingFeet> {
   }
 }
 
-/// The pad's own chrome and canvas, independent of where it floats.
-class _PadSurface extends StatelessWidget {
-  const _PadSurface({
-    required this.dragging,
+/// The pad's own chrome and canvas, independent of where it floats. Also used
+/// on its own, e.g. to replay a footing in the questionnaire.
+class DancePad extends StatelessWidget {
+  const DancePad({
+    super.key,
+    this.dragging = false,
     required this.stances,
     required this.playhead,
     required this.columnCount,
-    required this.visualOffset,
+    this.visualOffset = 0,
   });
 
   final bool dragging;
