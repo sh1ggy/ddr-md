@@ -55,8 +55,26 @@ void main() {
 
   test('the fully swapped stance turns a full quarter', () {
     // Both feet on side panels puts the axis flat across the pad, where +-90
-    // name the same line. It resolves to +90, the way the legs really wind.
+    // name the same line. From square it resolves to +90.
     expect(deg(r, l), closeTo(90, 0.001));
+  });
+
+  // Each (left, right) stance in order, stepped through stepTurn.
+  List<int> walk(List<(int, int)> stances) {
+    var turn = 0.0, fl = -1, fr = -1;
+    return [
+      for (final (lc, rc) in stances)
+        (turn = stepTurn(turn, fl, fr, fl = lc, fr = rc)) * 180 ~/ math.pi
+    ];
+  }
+
+  test('only stepping across turns the body', () {
+    // Scooby R-D-L-R footed R L R L: each foot steps across in turn, so the body
+    // winds left and stays left rather than spinning round to +90.
+    expect(walk([(l, r), (d, r), (d, l), (r, l)]), [0, 0, -45, -90]);
+    // A D+L jump landing crossed, a re-press, then the right foot steps back
+    // out of the cross: nobody stepped across, so no turn anywhere.
+    expect(walk([(l, u), (d, l), (d, l), (d, u)]), [0, 0, 0, 0]);
   });
 
   test('both feet on one panel is a footswitch, not a crossover', () {

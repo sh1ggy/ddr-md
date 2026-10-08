@@ -41,18 +41,20 @@ const int kDancingFeetUnset = 0;
 /// foot's, so the same cross winds one way with the partner on Down and the
 /// other with it on Up. A single cross lands on 45deg, not 90, because one foot
 /// is still on a centre panel. Facing along that axis or back down it is one
-/// stance, so the heading folds onto ±90; the fully swapped stance sits exactly
-/// on the fold and resolves to +90, the way the legs actually wind.
+/// stance, so the heading folds onto ±90. The fully swapped stance sits exactly
+/// on the fold, so it keeps winding whichever way the body [previous]ly faced —
+/// a scooby that has turned you left finishes facing left rather than spinning
+/// round to the right — and resolves to +90 from square.
 @visibleForTesting
-double turnFor(int leftCol, int rightCol) {
+double turnFor(int leftCol, int rightCol, {double previous = 0}) {
   // Both feet on one panel is a footswitch — they are stacked, not crossed.
   if (leftCol == rightCol) return 0;
   final leftCrossed = leftCol == _colRight;
   final rightCrossed = rightCol == _colLeft;
   if (!leftCrossed && !rightCrossed) return 0;
   // Fully swapped: the axis is flat across the pad and the fold below can't
-  // choose a side, so name the winding explicitly.
-  if (leftCrossed && rightCrossed) return _maxTurn;
+  // choose a side, so the body's existing turn does.
+  if (leftCrossed && rightCrossed) return previous < 0 ? -_maxTurn : _maxTurn;
 
   // From the planted foot's panel to the crossing foot's: the body faces along
   // the line its own feet make.
@@ -65,6 +67,26 @@ double turnFor(int leftCol, int rightCol) {
   // Fold onto (-90, 90]: a heading and its opposite are one stance.
   final folded = (heading + _maxTurn) % math.pi - _maxTurn;
   return folded;
+}
+
+/// The body's turn after moving from the stance [fromLeft]/[fromRight] into
+/// [leftCol]/[rightCol], given it was turned [previous].
+///
+/// [turnFor] says how a stance COULD face; context decides whether it does. The
+/// body only winds round when one foot steps across its planted partner, the way
+/// a scooby walks you round step by step. Landing crossed off a jump, re-pressing
+/// a panel or stepping back out of a cross never turns you further — you stay
+/// facing the screen with your legs crossed, or ease back towards it.
+@visibleForTesting
+double stepTurn(double previous, int fromLeft, int fromRight, int leftCol,
+    int rightCol) {
+  final target = turnFor(leftCol, rightCol, previous: previous);
+  final leftMoved = leftCol != fromLeft;
+  final rightMoved = rightCol != fromRight;
+  final steppedAcross = leftMoved != rightMoved &&
+      (leftMoved ? leftCol == _colRight : rightCol == _colLeft);
+  if (steppedAcross) return target;
+  return previous.sign * math.min(previous.abs(), target.abs());
 }
 
 /// Panel geometry in "panel units" from the pad centre — one pad's four arrows
@@ -344,6 +366,33 @@ class _PadPainter extends CustomPainter {
   final int columnCount;
   final double visualOffset;
 
+  /// The body's turn at each stance, solved in order since whether a stance
+  /// turns you depends on how you stepped into it (see [stepTurn]). Doubles has
+  /// no single pair of side panels to cross over, so it stays square.
+  ///
+  /// No mapping happens here: the solve already ran on the turned chart, so a
+  /// stance names the panels the player is really standing on and a crossover in
+  /// it is a real crossover.
+  late final List<double> _turns = () {
+    final turns = <double>[];
+    var last = 0.0;
+    var fromLeft = -1, fromRight = -1;
+    for (final stance in stances) {
+      // The heel names the panel a foot is standing on; a bracket's toe doesn't
+      // change which side of the body the foot is on. A foot not yet on the pad
+      // has no side, so the body stays square.
+      final left = stance.leftHeel == -1 ? stance.leftToe : stance.leftHeel;
+      final right = stance.rightHeel == -1 ? stance.rightToe : stance.rightHeel;
+      last = columnCount > 4 || left == -1 || right == -1
+          ? 0
+          : stepTurn(last, fromLeft, fromRight, left, right);
+      turns.add(last);
+      fromLeft = left;
+      fromRight = right;
+    }
+    return turns;
+  }();
+
   double get second => playhead.value + visualOffset;
 
   /// Seconds a foot takes to slide from one panel to the next. Short enough
@@ -419,7 +468,8 @@ class _PadPainter extends CustomPainter {
     // The body's turn, slid alongside the feet so a crossover winds round as the
     // foot travels rather than snapping square on the landing frame. One angle
     // for both feet: the waist turns and the whole body follows.
-    final turn = _lerpAngle(_bodyTurn(previous ?? current), _bodyTurn(current), t);
+    final turn = _lerpAngle(_turns[previous == null ? idx - 1 : idx - 2],
+        _turns[idx - 1], t);
 
     for (final foot in ParityFoot.values) {
       final to = _poseFor(current, foot);
@@ -440,23 +490,6 @@ class _PadPainter extends CustomPainter {
       if (stance.stepped.contains(col)) return true;
     }
     return false;
-  }
-
-  /// This stance's [turnFor], read off the panels each foot stands on. Doubles
-  /// has no single pair of side panels to cross over, so it stays square.
-  ///
-  /// No mapping happens here: the solve already ran on the turned chart, so a
-  /// stance names the panels the player is really standing on and a crossover in
-  /// it is a real crossover.
-  double _bodyTurn(ParityStance stance) {
-    if (columnCount > 4) return 0;
-    // The heel names the panel a foot is standing on; a bracket's toe doesn't
-    // change which side of the body the foot is on. A foot not yet on the pad
-    // has no side, so the body stays square.
-    final left = stance.leftHeel == -1 ? stance.leftToe : stance.leftHeel;
-    final right = stance.rightHeel == -1 ? stance.rightToe : stance.rightHeel;
-    if (left == -1 || right == -1) return 0;
-    return turnFor(left, right);
   }
 
   /// Shortest-path angle interpolation, so turning through the -pi/pi seam spins
