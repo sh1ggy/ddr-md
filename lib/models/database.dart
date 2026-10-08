@@ -81,6 +81,31 @@ class DatabaseProvider {
     ];
   }
 
+  // Every chart's pins, keyed by chart and the note hash they were set against.
+  static Future<Map<(ChartRef, String), List<ParityPin>>> getAllParityPins() async {
+    final db = await _instance;
+    final out = <(String, String, String, String), List<ParityPin>>{};
+    for (final r in await db.query("parity_pins")) {
+      out.putIfAbsent(
+          (
+            r["song"] as String,
+            r["mode"] as String,
+            r["difficulty"] as String,
+            r["chartHash"] as String
+          ),
+          () => []).add((
+        r["beat"] as double,
+        r["col"] as int,
+        r["foot"] == "L" ? ParityFoot.left : ParityFoot.right,
+      ));
+    }
+    return {
+      for (final MapEntry(key: (song, mode, diff, hash), value: pins)
+          in out.entries)
+        (ChartRef(song, mode, diff), hash): pins
+    };
+  }
+
   static Future<void> setParityPin(
       ChartRef ref, String chartHash, ParityPin pin) async {
     final db = await _instance;

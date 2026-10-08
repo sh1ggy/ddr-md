@@ -617,6 +617,17 @@ class _ChartScrollerState extends State<ChartScroller>
         _zoom = 1.0; // the study lens is per-chart; snap back on a new chart
       });
     }
+    // Leaving edit mode teaches Yours from the edits; if Yours is in use the
+    // chart re-solves with what it learned.
+    if (old.editFooting && !widget.editFooting) {
+      refitFromEdits().then((_) {
+        if (!mounted || !ParityProfile.usingYours) return;
+        setState(() {
+          _assignFeet();
+          _buildFootLinks();
+        });
+      });
+    }
     if (old.editFooting != widget.editFooting) {
       setState(() {
         _momentSecond = null;

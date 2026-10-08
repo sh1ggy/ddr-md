@@ -1,9 +1,10 @@
 /// Name: Parity quiz miner
 /// Parent: tool (dev only)
 /// Description: Finds real-chart moments where the parity engine is least sure
-/// between two footings, for each divisive pattern, as candidates for the style
-/// questionnaire. Each candidate is solved free and with its key note forced to
-/// the other foot; the smaller the cost gap, the more divisive the moment.
+/// between two footings, for each divisive pattern: candidates worth a look in
+/// the footing editor, or for tuning the defaults. Each candidate is solved free
+/// and with its key note forced to the other foot; the smaller the cost gap, the
+/// more divisive the moment.
 ///
 ///   QUIZ_OUT=quiz_candidates.json flutter test tool/mine_parity_quiz.dart
 library;

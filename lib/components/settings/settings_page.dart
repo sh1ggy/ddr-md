@@ -3,7 +3,7 @@
 /// Description: Settings page for use with shared_preferences
 library;
 
-import 'package:ddr_md/components/settings/parity_quiz_page.dart';
+import 'package:ddr_md/components/settings/footing_style_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
@@ -132,7 +132,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             onChanged: () => setState(() {})),
                         onTap: () async {
                           await Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) => const ParityQuizPage()));
+                              builder: (_) => const FootingStylePage()));
                           if (mounted) setState(() {});
                         },
                       ),
