@@ -57,7 +57,6 @@ const Map<String, String> _patternNames = {
   'spin': 'Spin',
   'bracket-vs-jump': 'Bracket or jump',
   'hold-with-taps': 'Hold with taps',
-  'lateral': 'Lateral',
 };
 
 /// Arrow scale in the moment charts, small enough to keep a few rows in view.

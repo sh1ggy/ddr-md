@@ -1,27 +1,27 @@
 [
  {
   "pattern": "jack-vs-footswitch",
-  "song": "POSSESSION (20th Anniversary Mix)",
-  "difficulty": "easy",
-  "from": 55.158,
-  "key": 56.0,
-  "to": 56.632
+  "song": "Diamond Dust",
+  "difficulty": "hard",
+  "from": 22.5,
+  "key": 23.919,
+  "to": 24.73
  },
  {
   "pattern": "slow-doublestep-vs-crossover",
-  "song": "Right on time (Ryu Remix)",
+  "song": "Awakening Wings",
   "difficulty": "easy",
-  "from": 57.987,
-  "key": 59.597,
-  "to": 60.805
+  "from": 8.842,
+  "key": 12.632,
+  "to": 15.158
  },
  {
   "pattern": "candle",
-  "song": "Totsugeki! Glass no kneeso hime!",
+  "song": "Cirno's Perfect Math Class (EDM REMIX)",
   "difficulty": "medium",
-  "from": 25.297,
-  "key": 26.27,
-  "to": 27.243
+  "from": 56.426,
+  "key": 57.349,
+  "to": 58.503
  },
  {
   "pattern": "spin",
@@ -33,11 +33,11 @@
  },
  {
   "pattern": "bracket-vs-jump",
-  "song": "BRILLIANT 2U",
+  "song": "Pa pi pu Yeah!",
   "difficulty": "hard",
-  "from": 20.4,
-  "key": 21.8,
-  "to": 22.6
+  "from": 37.5,
+  "key": 38.812,
+  "to": 39.75
  },
  {
   "pattern": "hold-with-taps",
@@ -46,13 +46,5 @@
   "from": 38.531,
   "key": 39.0,
   "to": 39.562
- },
- {
-  "pattern": "lateral",
-  "song": "The Lonely Streets",
-  "difficulty": "challenge",
-  "from": 79.696,
-  "key": 80.348,
-  "to": 80.739
  }
 ]

@@ -198,6 +198,9 @@ void main() {
         if (chart.notes.isEmpty || diff == 'beginner') continue;
         final c = _Chart(chart.notes);
         for (final MapEntry(key: name, value: find) in _patterns.entries) {
+          // Footwork choices read best on mid-level charts; only the slow
+          // doublestep is really a slow-chart question.
+          if (diff == 'easy' && name != 'slow-doublestep-vs-crossover') continue;
           // A few per chart keeps the run short and the pool varied.
           for (final (row, alternatives) in find(c).take(3)) {
             final from = (row - 4).clamp(0, c.rows.length - 1);
@@ -222,6 +225,14 @@ void main() {
             if (alts.isEmpty) continue;
             final delta = alts.map((a) => a.cost - c.free.cost).reduce(
                 (a, b) => a < b ? a : b);
+            // An exact tie is settled by the rest of the chart, not by style,
+            // so it illustrates nothing.
+            if (delta < 1) continue;
+            // Holds clutter a moment unless they're what it's about.
+            final window = [for (int i = from; i <= to; i++) ...c.rows[i]];
+            if (name != 'hold-with-taps' && window.any((n) => n.isHold)) {
+              continue;
+            }
             found[name]!.add({
               'song': song.name,
               'difficulty': diff,
