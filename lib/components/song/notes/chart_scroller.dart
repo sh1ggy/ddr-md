@@ -399,6 +399,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // stepped through with the playhead. Only live with [ChartScroller.footingRef].
   Map<StepNote, ParityFoot> _pins = {};
   Set<StepNote> _focus = const {};
+  List<double> _rowSeconds = const [];
   List<(double, ParityFlag)> _moments = const [];
   double? _momentSecond;
   double _zoomBeforeEdit = 1.0;
@@ -1144,6 +1145,11 @@ class _ChartScrollerState extends State<ChartScroller>
     };
     _stances = analysis.stances;
     if (widget.footingRef != null) {
+      _rowSeconds = {
+        for (final n in source)
+          if (n.type != StepType.mine) n.second
+      }.toList()
+        ..sort();
       final flags = findFlags(turned, analysis, widget.mode);
       _moments = [
         for (final kind in ParityFlag.values)
@@ -1224,25 +1230,15 @@ class _ChartScrollerState extends State<ChartScroller>
         : _moments.lastWhere((m) => m.$1 < at - 1e-6,
             orElse: () => _moments.last);
     _pause();
-    final rows = {
-      for (final n in widget.steps.notes)
-        if (n.type != StepType.mine) n.second
-    }.toList()
-      ..sort();
-    final i = rows.indexOf(next.$1);
-    final first = rows[math.max(0, i - 1)];
-    final last = rows[math.min(rows.length - 1, i + 1)];
+    final i = _rowSeconds.indexOf(next.$1);
+    final first = _rowSeconds[math.max(0, i - 1)];
+    final last = _rowSeconds[math.min(_rowSeconds.length - 1, i + 1)];
     final span = _timing.isEmpty
         ? (last - first) * _pxPerSecond
         : (_timing.beatAt(last) - _timing.beatAt(first)) * _pxPerBeat;
     setState(() {
       _momentSecond = next.$1;
-      _focus = {
-        for (final n in widget.steps.notes)
-          if (n.type != StepType.mine &&
-              (n.second == first || n.second == next.$1))
-            n
-      };
+      _focus = _momentNotes(next.$1);
       if (span > 0) {
         _zoom = (_zoom * _travelPx * 0.45 / span).clamp(_minZoom, _maxZoom);
       }
@@ -1251,6 +1247,22 @@ class _ChartScrollerState extends State<ChartScroller>
     _second = math.max(0.0, first + _pxToSeconds(-_travelPx * 0.3));
     _resyncTickClock();
   }
+
+  // A moment's notes: its row and the one before, which together make the flag.
+  Set<StepNote> _momentNotes(double second) {
+    final i = _rowSeconds.indexOf(second);
+    final before = _rowSeconds[math.max(0, i - 1)];
+    return {
+      for (final n in widget.steps.notes)
+        if (n.type != StepType.mine &&
+            (n.second == before || n.second == second))
+          n
+    };
+  }
+
+  // Addressed by hand: every note of the moment has a hand-set foot.
+  bool _addressed(Set<StepNote> notes) =>
+      notes.isNotEmpty && notes.every(_pins.containsKey);
 
   // The solve is right for this moment: pin its notes' feet as they stand.
   Future<void> _confirmMoment() async {
@@ -1285,6 +1297,8 @@ class _ChartScrollerState extends State<ChartScroller>
     _togglePlay(showOverlay: true);
   }
 
+  static const Color _doneColor = Color(0xFF4ADE80);
+
   static const Map<ParityFlag, String> _flagNames = {
     ParityFlag.samePanel: 'Same panel',
     ParityFlag.footswitch: 'Footswitch',
@@ -1295,44 +1309,67 @@ class _ChartScrollerState extends State<ChartScroller>
 
   Widget _buildFootingBar(BuildContext context) {
     final i = _moments.indexWhere((m) => m.$1 == _momentSecond);
+    final done = _addressed(_focus);
+    final addressed =
+        _moments.where((m) => _addressed(_momentNotes(m.$1))).length;
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            icon: const Icon(Icons.restart_alt),
-            color: Colors.white54,
-            tooltip: 'Reset footing',
-            onPressed: _pins.isEmpty ? null : _resetFooting,
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.restart_alt),
+                color: Colors.white54,
+                tooltip: 'Reset footing',
+                onPressed: _pins.isEmpty ? null : _resetFooting,
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                color: Colors.white70,
+                onPressed: () => _stepMoment(-1),
+              ),
+              Expanded(
+                child: Text(
+                  i < 0
+                      ? '–'
+                      : '${_flagNames[_moments[i].$2]} ${i + 1}/${_moments.length}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                color: Colors.white70,
+                onPressed: () => _stepMoment(1),
+              ),
+              done
+                  ? IconButton.filled(
+                      icon: const Icon(Icons.check),
+                      style: IconButton.styleFrom(
+                          backgroundColor: _doneColor,
+                          foregroundColor: Colors.black),
+                      onPressed: () => _stepMoment(1),
+                    )
+                  : IconButton.filledTonal(
+                      icon: const Icon(Icons.check),
+                      tooltip: 'Looks right',
+                      onPressed: _focus.isEmpty ? null : _confirmMoment,
+                    ),
+              const SizedBox(width: 4),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            color: Colors.white70,
-            onPressed: () => _stepMoment(-1),
+          LinearProgressIndicator(
+            value: _moments.isEmpty ? 0 : addressed / _moments.length,
+            minHeight: 2,
+            backgroundColor: Colors.transparent,
+            color: _doneColor,
           ),
-          Expanded(
-            child: Text(
-              i < 0
-                  ? '–'
-                  : '${_flagNames[_moments[i].$2]} ${i + 1}/${_moments.length}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            color: Colors.white70,
-            onPressed: () => _stepMoment(1),
-          ),
-          IconButton.filledTonal(
-            icon: const Icon(Icons.check),
-            tooltip: 'Looks right',
-            onPressed: _focus.isEmpty ? null : _confirmMoment,
-          ),
-          const SizedBox(width: 4),
         ],
       ),
     );
@@ -2000,6 +2037,7 @@ class _ChartScrollerState extends State<ChartScroller>
                             ? _feet
                             : const {},
                         focus: widget.editFooting ? _focus : const {},
+                        focusDone: widget.editFooting && _addressed(_focus),
                         footPrev: widget.showFootTrails ? _footPrev : const {},
                         dirs: dirs,
                         colMap: _colMap,

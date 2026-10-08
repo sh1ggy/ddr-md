@@ -43,11 +43,16 @@ class ChartPainter extends CustomPainter {
     this.visualOffset = 0,
     this.arcadeQuant = false,
     this.focus = const {},
+    this.focusDone = false,
   }) : super(repaint: playhead);
 
   /// Notes under review (the footing editor's current moment). When set, they
   /// glow and every other note dims.
   final Set<StepNote> focus;
+
+  /// The focused moment has already been addressed by hand; its glow turns
+  /// green.
+  final bool focusDone;
 
   double _focusAlpha(StepNote n) =>
       focus.isEmpty || focus.contains(n) ? 1.0 : 0.25;
@@ -348,9 +353,13 @@ class ChartPainter extends CustomPainter {
         return; // drawn in the shock pass
       }
       if (focus.contains(n)) {
-        canvas.drawCircle(Offset(x, y), arrowSize * 0.75,
-            _focusGlowPaint..maskFilter = MaskFilter.blur(
-                BlurStyle.normal, arrowSize * 0.25));
+        canvas.drawCircle(
+            Offset(x, y),
+            arrowSize * 0.6,
+            _focusGlowPaint
+              ..color = focusDone ? _focusDoneColor : _focusColor
+              ..maskFilter =
+                  MaskFilter.blur(BlurStyle.normal, arrowSize * 0.22));
       }
       _fadeLayer(
           canvas,
@@ -782,8 +791,10 @@ class ChartPainter extends CustomPainter {
   // Frame-static paints/shaders, cached across paints (the shaders only depend
   // on the field size, which changes on rotation/resize, not per frame).
   static final Paint _bgPaint = Paint();
-  static final Paint _focusGlowPaint = Paint()
-    ..color = Colors.white.withValues(alpha: 0.35);
+  static final Paint _focusGlowPaint = Paint();
+  static final Color _focusColor = Colors.white.withValues(alpha: 0.16);
+  static final Color _focusDoneColor =
+      const Color(0xFF4ADE80).withValues(alpha: 0.22);
   static Size _bgPaintSize = Size.zero;
   static final Paint _receptorLinePaint = Paint();
   static double _receptorLineWidth = -1;
@@ -855,5 +866,6 @@ class ChartPainter extends CustomPainter {
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.
       old.visualOffset != visualOffset ||
-      old.focus != focus;
+      old.focus != focus ||
+      old.focusDone != focusDone;
 }
