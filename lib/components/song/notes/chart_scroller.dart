@@ -75,6 +75,10 @@ List<int> _turnColumnMap(_Turn turn, int columnCount) {
   return [for (int c = 0; c < columnCount; c++) c];
 }
 
+List<(double, ParityFlag)> _rankJob(
+        (List<StepNote>, Modes, Map<StepNote, ParityFoot>, ParityWeights) job) =>
+    rankMoments(job.$1, job.$2, job.$3, job.$4);
+
 class ChartScroller extends StatefulWidget {
   const ChartScroller({
     super.key,
@@ -641,7 +645,11 @@ class _ChartScrollerState extends State<ChartScroller>
         // The edit bar takes the transport's place.
         _transportVisible = !widget.editFooting;
       });
-      if (widget.editFooting) _stepMoment(1);
+      if (widget.editFooting) {
+        _rankMoments();
+      } else {
+        _moments = const [];
+      }
     }
     // A different sync reading means the stored offsets belong to another
     // chart's bias — re-seed so the new one still opens near zero.
@@ -1164,13 +1172,26 @@ class _ChartScrollerState extends State<ChartScroller>
           if (n.type != StepType.mine) n.second
       }.toList()
         ..sort();
-      final flags = findFlags(turned, analysis, widget.mode);
-      _moments = [
-        for (final kind in ParityFlag.values)
-          if (kind != ParityFlag.sideswitch)
-            for (final second in flags[kind]!) (second, kind)
-      ]..sort((a, b) => a.$1.compareTo(b.$1));
     }
+  }
+
+  // The few moments worth the player's input, weighed once per edit session
+  // (off the UI isolate) so the list holds still while they edit.
+  Future<void> _rankMoments() async {
+    final source = widget.steps.notes;
+    final turned = _turned(source);
+    final moments = await compute(_rankJob, (
+      turned,
+      widget.mode,
+      {
+        for (int i = 0; i < source.length; i++)
+          if (_pins[source[i]] case final foot?) turned[i]: foot,
+      },
+      ParityProfile.active,
+    ));
+    if (!mounted || !widget.editFooting) return;
+    setState(() => _moments = moments);
+    if (_momentSecond == null) _stepMoment(1);
   }
 
   Future<void> _loadPins() async {
@@ -1180,6 +1201,7 @@ class _ChartScrollerState extends State<ChartScroller>
         await DatabaseProvider.getParityPins(widget.footingRef!, _chartHash);
     if (!mounted) return;
     _applyPins(pinsByNote(pins, notes));
+    if (widget.editFooting) _rankMoments();
   }
 
   void _applyPins(Map<StepNote, ParityFoot> pins) {

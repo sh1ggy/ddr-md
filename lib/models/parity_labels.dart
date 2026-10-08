@@ -149,3 +149,53 @@ Map<ParityFlag, List<double>> findFlags(
   }
   return flags;
 }
+
+/// The flagged moments most worth a player's input, at most [limit], in chart
+/// order. Each is weighed by re-solving with its row's feet flipped (lead-in
+/// held, existing [pins] kept): the smaller the extra cost, the nearer the
+/// engine came to choosing that way, and the more footing the flip changes
+/// afterwards, the more the choice matters. Moments the player has already
+/// decided (every note in the row pinned) are left out.
+List<(double, ParityFlag)> rankMoments(List<StepNote> notes, Modes mode,
+    Map<StepNote, ParityFoot> pins, ParityWeights weights,
+    {int limit = 8}) {
+  final solve = analyseParity(notes, mode, pins: pins, weights: weights);
+  final flags = findFlags(notes, solve, mode);
+  final kindAt = <double, ParityFlag>{};
+  for (final kind in ParityFlag.values) {
+    if (kind == ParityFlag.sideswitch) continue;
+    for (final s in flags[kind]!) {
+      kindAt.putIfAbsent(s, () => kind);
+    }
+  }
+  final rows = <double, List<StepNote>>{};
+  for (final n in notes) {
+    if (n.type != StepType.mine) rows.putIfAbsent(n.second, () => []).add(n);
+  }
+  final secs = rows.keys.toList()..sort();
+
+  final scored = <(double, ParityFlag, double)>[];
+  for (final MapEntry(key: at, value: kind) in kindAt.entries) {
+    final i = secs.indexOf(at);
+    final row = rows[at]!;
+    if (row.every(pins.containsKey)) continue;
+    final alt = analyseParity(notes, mode, weights: weights, pins: {
+      ...pins,
+      for (int j = (i - 4).clamp(0, i); j < i; j++)
+        for (final n in rows[secs[j]]!)
+          if (solve.feet[n] case final f?) n: f,
+      for (final n in row)
+        if (!pins.containsKey(n))
+          n: solve.feet[n] == ParityFoot.left
+              ? ParityFoot.right
+              : ParityFoot.left,
+    });
+    final changed =
+        notes.where((n) => n.second >= at && alt.feet[n] != solve.feet[n]);
+    final gap = alt.cost - solve.cost;
+    scored.add((at, kind, changed.length / (1 + gap / 10)));
+  }
+  scored.sort((a, b) => b.$3.compareTo(a.$3));
+  return [for (final (at, kind, _) in scored.take(limit)) (at, kind)]
+    ..sort((a, b) => a.$1.compareTo(b.$1));
+}
