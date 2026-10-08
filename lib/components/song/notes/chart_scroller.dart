@@ -398,13 +398,12 @@ class _ChartScrollerState extends State<ChartScroller>
   // Footing editor: hand-set feet pin the solve, and the flagged moments are
   // stepped through with the playhead. Only live with [ChartScroller.footingRef].
   Map<StepNote, ParityFoot> _pins = {};
-  Set<StepNote> _pinnedNotes = const {};
+  Set<StepNote> _focus = const {};
   List<(double, ParityFlag)> _moments = const [];
   double? _momentSecond;
   double _zoomBeforeEdit = 1.0;
   String _chartHash = '';
   ChartPainter? _painter;
-  static const int _momentContextRows = 3;
 
   // Chart notes ascending by second, plus the holds alone in the same order.
   // Sorted order is what lets the painter binary-search the visible window each
@@ -620,6 +619,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (old.editFooting != widget.editFooting) {
       setState(() {
         _momentSecond = null;
+        _focus = const {};
         // The edit bar takes the transport's place.
         _transportVisible = !widget.editFooting;
         // Moments zoom the field to fit; leaving puts the reader's zoom back.
@@ -1165,7 +1165,6 @@ class _ChartScrollerState extends State<ChartScroller>
   void _applyPins(Map<StepNote, ParityFoot> pins) {
     setState(() {
       _pins = pins;
-      _pinnedNotes = pins.keys.toSet();
       _assignFeet();
       _buildFootLinks();
     });
@@ -1213,24 +1212,10 @@ class _ChartScrollerState extends State<ChartScroller>
     _setFeet({n: foot == Foot.left ? ParityFoot.right : ParityFoot.left});
   }
 
-  // The rows a moment is judged by: a few either side of the flagged one.
-  (double, double) _momentWindow(double at) {
-    final rows = {
-      for (final n in widget.steps.notes)
-        if (n.type != StepType.mine) n.second
-    }.toList()
-      ..sort();
-    final i = rows.indexOf(at);
-    if (i < 0) return (at, at);
-    return (
-      rows[math.max(0, i - _momentContextRows)],
-      rows[math.min(rows.length - 1, i + _momentContextRows)],
-    );
-  }
-
   // Jump to the next/previous flagged moment. Zooms out just enough to fit the
   // row before it through the row after (a flag is about how a row follows its
-  // neighbour) and sets that span just under the receptor, at any read speed.
+  // neighbour) and sets it a third of the way down, below the dancing pad, at
+  // any read speed.
   void _stepMoment(int dir) {
     if (_moments.isEmpty) return;
     final at = _momentSecond ?? _second;
@@ -1252,27 +1237,44 @@ class _ChartScrollerState extends State<ChartScroller>
         : (_timing.beatAt(last) - _timing.beatAt(first)) * _pxPerBeat;
     setState(() {
       _momentSecond = next.$1;
+      _focus = {
+        for (final n in widget.steps.notes)
+          if (n.type != StepType.mine &&
+              (n.second == first || n.second == next.$1))
+            n
+      };
       if (span > 0) {
-        _zoom = (_zoom * _travelPx * 0.55 / span).clamp(_minZoom, _maxZoom);
+        _zoom = (_zoom * _travelPx * 0.45 / span).clamp(_minZoom, _maxZoom);
       }
     });
     _second = first;
-    _second = math.max(0.0, first + _pxToSeconds(-_travelPx * 0.1));
+    _second = math.max(0.0, first + _pxToSeconds(-_travelPx * 0.3));
     _resyncTickClock();
   }
 
-  // The solve is right around this moment: pin its feet as they stand.
+  // The solve is right for this moment: pin its notes' feet as they stand.
   Future<void> _confirmMoment() async {
-    final at = _momentSecond;
-    if (at == null) return;
-    final (from, to) = _momentWindow(at);
     await _setFeet({
-      for (final n in widget.steps.notes)
-        if (n.second >= from && n.second <= to)
-          if (_feet[n] case final f?)
-            n: f == Foot.left ? ParityFoot.left : ParityFoot.right,
+      for (final n in _focus)
+        if (_feet[n] case final f?)
+          n: f == Foot.left ? ParityFoot.left : ParityFoot.right,
     });
     _stepMoment(1);
+  }
+
+  // Clear every hand-set foot on this chart, with an undo.
+  Future<void> _resetFooting() async {
+    final before = _pins;
+    if (before.isEmpty) return;
+    await _setFeet({for (final n in before.keys) n: null});
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: const Text('Footing reset'),
+        action: SnackBarAction(
+            label: 'Undo', onPressed: () => _setFeet({...before})),
+      ));
   }
 
   // Editing footing, a paused tap on a note swaps its foot; anywhere else (or
@@ -1283,93 +1285,54 @@ class _ChartScrollerState extends State<ChartScroller>
     _togglePlay(showOverlay: true);
   }
 
-  // Editing footing, a long press on a hand-set note clears it; otherwise it is
-  // the usual hold-for-speed.
-  void _onFieldLongPress(Offset pos, Size size) {
-    final n = widget.editFooting && !_playing ? _painter?.noteAt(pos, size) : null;
-    if (n != null && _pins.containsKey(n)) {
-      _setFeet({n: null});
-      return;
-    }
-    _onHoldSpeedStart();
-  }
-
-  static const Map<ParityFlag, (String, String)> _flagText = {
-    ParityFlag.samePanel: ('Same panel', 'Both feet end up on one arrow.'),
-    ParityFlag.footswitch:
-        ('Footswitch', 'The feet swap on a repeated arrow.'),
-    ParityFlag.doublestep:
-        ('Doublestep', 'One foot takes two different arrows in a row.'),
-    ParityFlag.crossover:
-        ('Crossover', 'A foot crosses over to the far side.'),
-    ParityFlag.sideswitch:
-        ('Side switch', 'A side arrow changes which foot owns it.'),
+  static const Map<ParityFlag, String> _flagNames = {
+    ParityFlag.samePanel: 'Same panel',
+    ParityFlag.footswitch: 'Footswitch',
+    ParityFlag.doublestep: 'Doublestep',
+    ParityFlag.crossover: 'Crossover',
+    ParityFlag.sideswitch: 'Side switch',
   };
 
   Widget _buildFootingBar(BuildContext context) {
     final i = _moments.indexWhere((m) => m.$1 == _momentSecond);
-    final (title, detail) = i < 0
-        ? (
-            _moments.isEmpty ? 'Nothing flagged' : 'No longer flagged',
-            'Use the arrows to step through flagged moments.'
-          )
-        : _flagText[_moments[i].$2]!;
-    const dim = TextStyle(color: Colors.white54, fontSize: 12);
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 6, 6),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  i < 0 ? title : '$title · ${i + 1} of ${_moments.length}',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
-              Text('${_pins.length} set', style: dim),
-              const SizedBox(width: 8),
-            ],
+          IconButton(
+            icon: const Icon(Icons.restart_alt),
+            color: Colors.white54,
+            tooltip: 'Reset footing',
+            onPressed: _pins.isEmpty ? null : _resetFooting,
           ),
-          const SizedBox(height: 2),
-          Text(detail,
-              style: const TextStyle(color: Colors.white70, fontSize: 13)),
-          const SizedBox(height: 2),
-          const Text(
-              'Tap a badge to swap its foot · hold a ringed one to clear it',
-              style: dim),
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                color: Colors.white70,
-                tooltip: 'Previous',
-                onPressed: () => _stepMoment(-1),
-              ),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  onPressed: _momentSecond == null ? null : _confirmMoment,
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Confirm & next'),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right),
-                color: Colors.white70,
-                tooltip: 'Next',
-                onPressed: () => _stepMoment(1),
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            color: Colors.white70,
+            onPressed: () => _stepMoment(-1),
           ),
+          Expanded(
+            child: Text(
+              i < 0
+                  ? '–'
+                  : '${_flagNames[_moments[i].$2]} ${i + 1}/${_moments.length}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            color: Colors.white70,
+            onPressed: () => _stepMoment(1),
+          ),
+          IconButton.filledTonal(
+            icon: const Icon(Icons.check),
+            tooltip: 'Looks right',
+            onPressed: _focus.isEmpty ? null : _confirmMoment,
+          ),
+          const SizedBox(width: 4),
         ],
       ),
     );
@@ -2004,8 +1967,7 @@ class _ChartScrollerState extends State<ChartScroller>
             onTapUp: (d) => _onFieldTap(d.localPosition, constraints.biggest),
             onDoubleTapDown: (d) =>
                 _seek(d.localPosition.dx >= constraints.maxWidth / 2),
-            onLongPressStart: (d) =>
-                _onFieldLongPress(d.localPosition, constraints.biggest),
+            onLongPressStart: (_) => _onHoldSpeedStart(),
             onLongPressEnd: (_) => _onHoldSpeedEnd(),
             onLongPressCancel: _onHoldSpeedEnd,
             onScaleStart: _onScaleStart,
@@ -2037,8 +1999,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         feet: widget.showFootGuide || widget.editFooting
                             ? _feet
                             : const {},
-                        pinned: widget.editFooting ? _pinnedNotes : const {},
-                        highlightSecond: widget.editFooting ? _momentSecond : null,
+                        focus: widget.editFooting ? _focus : const {},
                         footPrev: widget.showFootTrails ? _footPrev : const {},
                         dirs: dirs,
                         colMap: _colMap,

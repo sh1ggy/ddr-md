@@ -42,15 +42,15 @@ class ChartPainter extends CustomPainter {
     this.topInset = 0,
     this.visualOffset = 0,
     this.arcadeQuant = false,
-    this.pinned = const {},
-    this.highlightSecond,
+    this.focus = const {},
   }) : super(repaint: playhead);
 
-  /// Notes whose foot was set by hand; their badges get a ring.
-  final Set<StepNote> pinned;
+  /// Notes under review (the footing editor's current moment). When set, they
+  /// glow and every other note dims.
+  final Set<StepNote> focus;
 
-  /// A row to mark with a faint band (the moment being labelled), or null.
-  final double? highlightSecond;
+  double _focusAlpha(StepNote n) =>
+      focus.isEmpty || focus.contains(n) ? 1.0 : 0.25;
 
   /// All notes ascending by second — sorted order is what the per-frame
   /// binary-search culling relies on.
@@ -208,14 +208,6 @@ class ChartPainter extends CustomPainter {
 
     _paintLanes(canvas, size, fieldLeft, laneStride, _receptorTop);
 
-    if (highlightSecond case final t? when t >= second) {
-      final y = yFor(t);
-      canvas.drawRect(
-          Rect.fromLTRB(fieldLeft, y - arrowSize * 0.55,
-              fieldLeft + laneStride * columnCount, y + arrowSize * 0.55),
-          _highlightPaint);
-    }
-
     // Visible window's far edge, in seconds. Notes draw on-screen until they
     // align with the receptor, then disappear immediately. Holds are the
     // exception: a held head stays pinned to the receptor while the body drains.
@@ -266,7 +258,7 @@ class ChartPainter extends CustomPainter {
       if (endS < second) continue;
       // A freeze appears as one piece under CONSTANT, keyed on its head's second
       // — the whole body fades in together as the head enters its window.
-      final holdAlpha = _constantAlpha(n.second);
+      final holdAlpha = _constantAlpha(n.second) * _focusAlpha(n);
       if (holdAlpha <= 0) continue;
       final headY =
           n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
@@ -346,13 +338,19 @@ class ChartPainter extends CustomPainter {
     void drawHead(StepNote n, bool held) {
       // A held head sits on the receptor, so treat it as fully arrived rather
       // than re-fading it; otherwise CONSTANT fades it in over its window.
-      final noteAlpha = held ? 1.0 : _constantAlpha(n.second);
+      final noteAlpha =
+          (held ? 1.0 : _constantAlpha(n.second)) * _focusAlpha(n);
       if (noteAlpha <= 0) return;
       final col = turned(n.col);
       final x = laneCenterX(col);
       final y = held ? _receptorTop.toDouble() : yFor(n.second);
       if (n.type == StepType.mine && shockNotes.contains(n)) {
         return; // drawn in the shock pass
+      }
+      if (focus.contains(n)) {
+        canvas.drawCircle(Offset(x, y), arrowSize * 0.75,
+            _focusGlowPaint..maskFilter = MaskFilter.blur(
+                BlurStyle.normal, arrowSize * 0.25));
       }
       _fadeLayer(
           canvas,
@@ -364,10 +362,7 @@ class ChartPainter extends CustomPainter {
         } else {
           skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
           final foot = feet[n];
-          if (foot != null) {
-            _paintFootBadge(canvas, x, y, arrowSize, foot,
-                pinned: pinned.contains(n));
-          }
+          if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
         }
       });
     }
@@ -759,15 +754,10 @@ class ChartPainter extends CustomPainter {
     ..color = Colors.black.withValues(alpha: 0.55);
 
   void _paintFootBadge(
-      Canvas canvas, double x, double y, double arrowSize, Foot foot,
-      {bool pinned = false}) {
+      Canvas canvas, double x, double y, double arrowSize, Foot foot) {
     final isLeft = foot == Foot.left;
     final r = arrowSize * 0.24;
     canvas.drawCircle(Offset(x, y), r, _footBadgeBgPaint);
-    if (pinned) {
-      canvas.drawCircle(
-          Offset(x, y), r, _pinRingPaint..strokeWidth = arrowSize * 0.04);
-    }
     // Font size quantised to quarter-pixels for the cache key: visually exact
     // enough, and pinch-zoom then reuses a bounded set of layouts.
     final sizeKey = (arrowSize * 0.34 * 4).round();
@@ -792,11 +782,8 @@ class ChartPainter extends CustomPainter {
   // Frame-static paints/shaders, cached across paints (the shaders only depend
   // on the field size, which changes on rotation/resize, not per frame).
   static final Paint _bgPaint = Paint();
-  static final Paint _highlightPaint = Paint()
-    ..color = Colors.white.withValues(alpha: 0.07);
-  static final Paint _pinRingPaint = Paint()
-    ..style = PaintingStyle.stroke
-    ..color = Colors.white;
+  static final Paint _focusGlowPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.35);
   static Size _bgPaintSize = Size.zero;
   static final Paint _receptorLinePaint = Paint();
   static double _receptorLineWidth = -1;
@@ -868,6 +855,5 @@ class ChartPainter extends CustomPainter {
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.
       old.visualOffset != visualOffset ||
-      old.pinned != pinned ||
-      old.highlightSecond != highlightSecond;
+      old.focus != focus;
 }

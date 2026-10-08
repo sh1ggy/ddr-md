@@ -257,9 +257,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      _editFooting
-                          ? "$difficultyLabel · EDITING FOOTING"
-                          : difficultyLabel,
+                      difficultyLabel,
                       style: TextStyle(
                           fontSize: 12,
                           color: diffColor,
