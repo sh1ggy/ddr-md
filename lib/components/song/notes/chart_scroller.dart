@@ -10,6 +10,8 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'chart_chrome.dart';
@@ -31,12 +33,16 @@ import 'tick_clock.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// DDR "TURN" modifier: permutes the notes' columns while the receptors stay in
 /// their fixed L-D-U-R positions. MIRROR is a 180° turn, LEFT/RIGHT are 90°.
@@ -93,6 +99,8 @@ class ChartScroller extends StatefulWidget {
     this.onToggleAssistTick,
     this.onToggleArcadeQuant,
     this.headerBuilder,
+    this.footingRef,
+    this.editFooting = false,
   });
 
   final ChartSteps steps;
@@ -101,6 +109,14 @@ class ChartScroller extends StatefulWidget {
   /// Optional floating header (title / back / actions) over the full-bleed
   /// field. Shown and hidden with the transport controls.
   final Widget Function(BuildContext context)? headerBuilder;
+
+  /// Which chart this is, for hand-setting feet (the footing editor). Null
+  /// hides the editor.
+  final ChartRef? footingRef;
+
+  /// Footing edit mode, toggled from the preview's header: paused taps on notes
+  /// swap their foot, and the bar steps through flagged moments.
+  final bool editFooting;
 
   /// Timing markers in seconds (from [Chart]) — the same seconds axis the note
   /// stream scrolls on, so they render at true position.
@@ -379,6 +395,17 @@ class _ChartScrollerState extends State<ChartScroller>
   Map<StepNote, Foot> _feet = const {};
   List<ParityStance> _stances = const [];
 
+  // Footing editor: hand-set feet pin the solve, and the flagged moments are
+  // stepped through with the playhead. Only live with [ChartScroller.footingRef].
+  Map<StepNote, ParityFoot> _pins = {};
+  Set<StepNote> _pinnedNotes = const {};
+  List<(double, ParityFlag)> _moments = const [];
+  double? _momentSecond;
+  double _zoomBeforeEdit = 1.0;
+  String _chartHash = '';
+  ChartPainter? _painter;
+  static const int _momentContextRows = 3;
+
   // Chart notes ascending by second, plus the holds alone in the same order.
   // Sorted order is what lets the painter binary-search the visible window each
   // frame instead of walking the whole chart.
@@ -540,6 +567,7 @@ class _ChartScrollerState extends State<ChartScroller>
     _prepareNotes();
     _detectShocks();
     _assignFeet();
+    if (widget.footingRef != null) _loadPins();
     _buildFootLinks();
     _buildTickTimes();
     _buildTimingMarkers();
@@ -579,6 +607,7 @@ class _ChartScrollerState extends State<ChartScroller>
       _prepareNotes();
       _detectShocks();
       _assignFeet();
+      if (widget.footingRef != null) _loadPins();
       _buildFootLinks();
       _buildTickTimes();
       _buildTimingMarkers();
@@ -587,6 +616,20 @@ class _ChartScrollerState extends State<ChartScroller>
         _second = 0;
         _zoom = 1.0; // the study lens is per-chart; snap back on a new chart
       });
+    }
+    if (old.editFooting != widget.editFooting) {
+      setState(() {
+        _momentSecond = null;
+        // The edit bar takes the transport's place.
+        _transportVisible = !widget.editFooting;
+        // Moments zoom the field to fit; leaving puts the reader's zoom back.
+        if (widget.editFooting) {
+          _zoomBeforeEdit = _zoom;
+        } else {
+          _zoom = _zoomBeforeEdit;
+        }
+      });
+      if (widget.editFooting) _stepMoment(1);
     }
     // A different sync reading means the stored offsets belong to another
     // chart's bias — re-seed so the new one still opens near zero.
@@ -1090,12 +1133,246 @@ class _ChartScrollerState extends State<ChartScroller>
   void _assignFeet() {
     final source = widget.steps.notes;
     final turned = _turned(source);
-    final analysis = FootAssigner.analyse(turned, widget.mode);
+    final analysis = analyseParity(turned, widget.mode, pins: {
+      for (int i = 0; i < source.length; i++)
+        if (_pins[source[i]] case final foot?) turned[i]: foot,
+    });
     _feet = {
       for (int i = 0; i < source.length; i++)
-        if (analysis.feet[turned[i]] case final foot?) source[i]: foot,
+        if (analysis.feet[turned[i]] case final foot?)
+          source[i]: foot == ParityFoot.left ? Foot.left : Foot.right,
     };
     _stances = analysis.stances;
+    if (widget.footingRef != null) {
+      final flags = findFlags(turned, analysis, widget.mode);
+      _moments = [
+        for (final kind in ParityFlag.values)
+          if (kind != ParityFlag.sideswitch)
+            for (final second in flags[kind]!) (second, kind)
+      ]..sort((a, b) => a.$1.compareTo(b.$1));
+    }
+  }
+
+  Future<void> _loadPins() async {
+    final notes = widget.steps.notes;
+    _chartHash = chartHash(notes);
+    final pins =
+        await DatabaseProvider.getParityPins(widget.footingRef!, _chartHash);
+    if (!mounted) return;
+    _applyPins(pinsByNote(pins, notes));
+  }
+
+  void _applyPins(Map<StepNote, ParityFoot> pins) {
+    setState(() {
+      _pins = pins;
+      _pinnedNotes = pins.keys.toSet();
+      _assignFeet();
+      _buildFootLinks();
+    });
+  }
+
+  // Hand-set each note's foot (null clears it), persist, and re-solve around
+  // the result.
+  Future<void> _setFeet(Map<StepNote, ParityFoot?> changes) async {
+    final ref = widget.footingRef!;
+    final pins = {..._pins};
+    for (final MapEntry(key: n, value: foot) in changes.entries) {
+      if (foot == null) {
+        pins.remove(n);
+        await DatabaseProvider.deleteParityPin(ref, n.beat, n.col);
+      } else {
+        pins[n] = foot;
+        await DatabaseProvider.setParityPin(
+            ref, _chartHash, (n.beat, n.col, foot));
+      }
+    }
+    if (!mounted) return;
+    HapticFeedback.selectionClick();
+    _applyPins(pins);
+    if (kDebugMode) _exportPins();
+  }
+
+  // Debug builds mirror each chart's pins to a JSON file, which is copied into
+  // test/parity_labels/ to become a labels test (docs/parity/labelling.md).
+  Future<void> _exportPins() async {
+    final ref = widget.footingRef!;
+    final pins = [
+      for (final MapEntry(key: n, value: f) in _pins.entries) (n.beat, n.col, f)
+    ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
+    final dir = Directory(
+        '${(await getApplicationSupportDirectory()).path}/parity_labels');
+    dir.createSync(recursive: true);
+    File('${dir.path}/${ref.fileName}').writeAsStringSync(
+        const JsonEncoder.withIndent('  ')
+            .convert(ChartLabels(ref, _chartHash, pins).toJson()));
+  }
+
+  void _flipFoot(StepNote n) {
+    final foot = _feet[n];
+    if (foot == null) return;
+    _setFeet({n: foot == Foot.left ? ParityFoot.right : ParityFoot.left});
+  }
+
+  // The rows a moment is judged by: a few either side of the flagged one.
+  (double, double) _momentWindow(double at) {
+    final rows = {
+      for (final n in widget.steps.notes)
+        if (n.type != StepType.mine) n.second
+    }.toList()
+      ..sort();
+    final i = rows.indexOf(at);
+    if (i < 0) return (at, at);
+    return (
+      rows[math.max(0, i - _momentContextRows)],
+      rows[math.min(rows.length - 1, i + _momentContextRows)],
+    );
+  }
+
+  // Jump to the next/previous flagged moment. Zooms out just enough to fit the
+  // row before it through the row after (a flag is about how a row follows its
+  // neighbour) and sets that span just under the receptor, at any read speed.
+  void _stepMoment(int dir) {
+    if (_moments.isEmpty) return;
+    final at = _momentSecond ?? _second;
+    final next = dir > 0
+        ? _moments.where((m) => m.$1 > at + 1e-6).firstOrNull ?? _moments.first
+        : _moments.lastWhere((m) => m.$1 < at - 1e-6,
+            orElse: () => _moments.last);
+    _pause();
+    final rows = {
+      for (final n in widget.steps.notes)
+        if (n.type != StepType.mine) n.second
+    }.toList()
+      ..sort();
+    final i = rows.indexOf(next.$1);
+    final first = rows[math.max(0, i - 1)];
+    final last = rows[math.min(rows.length - 1, i + 1)];
+    final span = _timing.isEmpty
+        ? (last - first) * _pxPerSecond
+        : (_timing.beatAt(last) - _timing.beatAt(first)) * _pxPerBeat;
+    setState(() {
+      _momentSecond = next.$1;
+      if (span > 0) {
+        _zoom = (_zoom * _travelPx * 0.55 / span).clamp(_minZoom, _maxZoom);
+      }
+    });
+    _second = first;
+    _second = math.max(0.0, first + _pxToSeconds(-_travelPx * 0.1));
+    _resyncTickClock();
+  }
+
+  // The solve is right around this moment: pin its feet as they stand.
+  Future<void> _confirmMoment() async {
+    final at = _momentSecond;
+    if (at == null) return;
+    final (from, to) = _momentWindow(at);
+    await _setFeet({
+      for (final n in widget.steps.notes)
+        if (n.second >= from && n.second <= to)
+          if (_feet[n] case final f?)
+            n: f == Foot.left ? ParityFoot.left : ParityFoot.right,
+    });
+    _stepMoment(1);
+  }
+
+  // Editing footing, a paused tap on a note swaps its foot; anywhere else (or
+  // not editing) it plays/pauses as usual.
+  void _onFieldTap(Offset pos, Size size) {
+    final n = widget.editFooting && !_playing ? _painter?.noteAt(pos, size) : null;
+    if (n != null) return _flipFoot(n);
+    _togglePlay(showOverlay: true);
+  }
+
+  // Editing footing, a long press on a hand-set note clears it; otherwise it is
+  // the usual hold-for-speed.
+  void _onFieldLongPress(Offset pos, Size size) {
+    final n = widget.editFooting && !_playing ? _painter?.noteAt(pos, size) : null;
+    if (n != null && _pins.containsKey(n)) {
+      _setFeet({n: null});
+      return;
+    }
+    _onHoldSpeedStart();
+  }
+
+  static const Map<ParityFlag, (String, String)> _flagText = {
+    ParityFlag.samePanel: ('Same panel', 'Both feet end up on one arrow.'),
+    ParityFlag.footswitch:
+        ('Footswitch', 'The feet swap on a repeated arrow.'),
+    ParityFlag.doublestep:
+        ('Doublestep', 'One foot takes two different arrows in a row.'),
+    ParityFlag.crossover:
+        ('Crossover', 'A foot crosses over to the far side.'),
+    ParityFlag.sideswitch:
+        ('Side switch', 'A side arrow changes which foot owns it.'),
+  };
+
+  Widget _buildFootingBar(BuildContext context) {
+    final i = _moments.indexWhere((m) => m.$1 == _momentSecond);
+    final (title, detail) = i < 0
+        ? (
+            _moments.isEmpty ? 'Nothing flagged' : 'No longer flagged',
+            'Use the arrows to step through flagged moments.'
+          )
+        : _flagText[_moments[i].$2]!;
+    const dim = TextStyle(color: Colors.white54, fontSize: 12);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  i < 0 ? title : '$title · ${i + 1} of ${_moments.length}',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text('${_pins.length} set', style: dim),
+              const SizedBox(width: 8),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(detail,
+              style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          const SizedBox(height: 2),
+          const Text(
+              'Tap a badge to swap its foot · hold a ringed one to clear it',
+              style: dim),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                color: Colors.white70,
+                tooltip: 'Previous',
+                onPressed: () => _stepMoment(-1),
+              ),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: _momentSecond == null ? null : _confirmMoment,
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Confirm & next'),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                color: Colors.white70,
+                tooltip: 'Next',
+                onPressed: () => _stepMoment(1),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   // [notes] with every column sent through the active TURN map. Returns the
@@ -1724,10 +2001,11 @@ class _ChartScrollerState extends State<ChartScroller>
           // a pinch coexist with separate pan/drag recognizers on one detector.
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => _togglePlay(showOverlay: true),
+            onTapUp: (d) => _onFieldTap(d.localPosition, constraints.biggest),
             onDoubleTapDown: (d) =>
                 _seek(d.localPosition.dx >= constraints.maxWidth / 2),
-            onLongPressStart: (_) => _onHoldSpeedStart(),
+            onLongPressStart: (d) =>
+                _onFieldLongPress(d.localPosition, constraints.biggest),
             onLongPressEnd: (_) => _onHoldSpeedEnd(),
             onLongPressCancel: _onHoldSpeedEnd,
             onScaleStart: _onScaleStart,
@@ -1748,7 +2026,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 else
                   RepaintBoundary(
                     child: CustomPaint(
-                      painter: ChartPainter(
+                      painter: _painter = ChartPainter(
                         notes: _notes,
                         holds: _holds,
                         shockNotes: _shockNotes,
@@ -1756,7 +2034,11 @@ class _ChartScrollerState extends State<ChartScroller>
                         bpmMarkers: _bpmMarkers,
                         stopMarkers: _stopMarkers,
                         showMeasureLines: widget.showMeasureLines,
-                        feet: widget.showFootGuide ? _feet : const {},
+                        feet: widget.showFootGuide || widget.editFooting
+                            ? _feet
+                            : const {},
+                        pinned: widget.editFooting ? _pinnedNotes : const {},
+                        highlightSecond: widget.editFooting ? _momentSecond : null,
                         footPrev: widget.showFootTrails ? _footPrev : const {},
                         dirs: dirs,
                         colMap: _colMap,
@@ -2010,6 +2292,10 @@ class _ChartScrollerState extends State<ChartScroller>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (widget.editFooting) ...[
+                      _buildFootingBar(context),
+                      const SizedBox(height: 6),
+                    ],
                     // Always-visible tempo readout: the BPM of the section under
                     // the playhead and the read speed it actually scrolls at
                     // (CONSTANT-aware). Centred over the bottom controls and kept

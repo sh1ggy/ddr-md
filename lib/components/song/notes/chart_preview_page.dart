@@ -10,8 +10,10 @@ import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -69,6 +71,10 @@ class ChartPreviewPage extends StatefulWidget {
 
 class _ChartPreviewPageState extends State<ChartPreviewPage> {
   bool _showFootGuide = false;
+
+  // Footing edit mode (debug builds): a distinct mode, entered from the
+  // header rather than the viewing options.
+  bool _editFooting = false;
 
   // Same-foot trails, split out of the foot guide so the movement can be read
   // without the badges (and vice versa). Persisted like the other viewing aids.
@@ -192,6 +198,13 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               onToggleAssistTick: _toggleAssistTick,
               onToggleArcadeQuant: _toggleArcadeQuant,
               headerBuilder: (context) => _buildHeader(context, diffColor),
+              // The footing editor stays a debug tool until it ships to users.
+              footingRef: kDebugMode
+                  ? ChartRef(snapshot.data!.name,
+                      widget.mode == Modes.doubles ? 'dp' : 'sp',
+                      widget.difficultyKey)
+                  : null,
+              editFooting: _editFooting,
             );
           },
         ),
@@ -244,7 +257,9 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      difficultyLabel,
+                      _editFooting
+                          ? "$difficultyLabel · EDITING FOOTING"
+                          : difficultyLabel,
                       style: TextStyle(
                           fontSize: 12,
                           color: diffColor,
@@ -254,8 +269,17 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 ),
               ),
               // Balances the leading back button so the title stays optically
-              // centred now that the trailing action icons are gone.
-              const SizedBox(width: 48),
+              // centred. Debug builds put the footing editor's toggle there.
+              if (kDebugMode)
+                IconButton(
+                  icon: Icon(_editFooting ? Icons.check : Icons.edit_note,
+                      color: _editFooting ? Colors.white : Colors.blueGrey),
+                  tooltip: _editFooting ? 'Done editing' : 'Edit footing',
+                  onPressed: () =>
+                      setState(() => _editFooting = !_editFooting),
+                )
+              else
+                const SizedBox(width: 48),
             ],
           ),
         ),

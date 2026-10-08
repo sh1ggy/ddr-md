@@ -42,7 +42,15 @@ class ChartPainter extends CustomPainter {
     this.topInset = 0,
     this.visualOffset = 0,
     this.arcadeQuant = false,
+    this.pinned = const {},
+    this.highlightSecond,
   }) : super(repaint: playhead);
+
+  /// Notes whose foot was set by hand; their badges get a ring.
+  final Set<StepNote> pinned;
+
+  /// A row to mark with a faint band (the moment being labelled), or null.
+  final double? highlightSecond;
 
   /// All notes ascending by second — sorted order is what the per-frame
   /// binary-search culling relies on.
@@ -181,17 +189,16 @@ class ChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     _paintBackground(canvas, size);
 
-    final laneW = size.width / columnCount;
-    // Zoom pulls the lanes toward the field's centre and shrinks the arrows with
-    // them, so zooming out fits more chart rather than only tightening the
-    // vertical gaps (which just stacks arrows on top of each other).
-    final laneStride = laneW * _laneTighten * zoom;
-    final fieldLeft = (size.width - laneStride * columnCount) / 2;
-    // DDR World arrows fill nearly the whole lane. Deliberately no upper clamp,
-    // so they read at the arcade's size instead of shrinking on wide fields.
-    final arrowSize = laneW * 0.92 * zoom;
-
-    double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
+    final (
+      :fieldLeft,
+      :laneStride,
+      :arrowSize,
+      :laneCenterX,
+      :beatLocked,
+      :currentBeat,
+      :expandStops,
+      :yFor,
+    ) = _geometry(size);
 
     // TURN modifier: a note originally in column `c` is drawn in `turned(c)`,
     // taking that panel's glyph orientation. Bounds-guarded so a mismatched map
@@ -199,27 +206,15 @@ class ChartPainter extends CustomPainter {
     int turned(int c) =>
         (c >= 0 && c < colMap.length) ? colMap[c] : c;
 
-    // Beat-locked scroll (true DDR): a note's screen position is its beat
-    // distance from the playhead's, so BPM changes speed the field up/down and
-    // stops freeze it. Charts with no BPM data fall back to constant time.
-    final bool beatLocked = !timing.isEmpty;
-    final double currentBeat = beatLocked ? timing.beatAt(second) : 0;
-    // Paused, each stop re-expands to real pixels so the halt reads as a gap you
-    // can scroll through rather than the collapsed seam playback shows. This
-    // deliberately shifts the layout between play and scroll.
-    final bool expandStops = beatLocked && !playing;
-    final double currentStop =
-        expandStops ? timing.stopSecondsAt(second) : 0;
-    double yFor(double t) {
-      if (!beatLocked) return _receptorTop + (t - second) * pxPerSecond;
-      var y = _receptorTop + (timing.beatAt(t) - currentBeat) * pxPerBeat;
-      if (expandStops) {
-        y += (timing.stopSecondsAt(t) - currentStop) * pxPerSecond;
-      }
-      return y;
-    }
-
     _paintLanes(canvas, size, fieldLeft, laneStride, _receptorTop);
+
+    if (highlightSecond case final t? when t >= second) {
+      final y = yFor(t);
+      canvas.drawRect(
+          Rect.fromLTRB(fieldLeft, y - arrowSize * 0.55,
+              fieldLeft + laneStride * columnCount, y + arrowSize * 0.55),
+          _highlightPaint);
+    }
 
     // Visible window's far edge, in seconds. Notes draw on-screen until they
     // align with the receptor, then disappear immediately. Holds are the
@@ -369,7 +364,10 @@ class ChartPainter extends CustomPainter {
         } else {
           skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
           final foot = feet[n];
-          if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
+          if (foot != null) {
+            _paintFootBadge(canvas, x, y, arrowSize, foot,
+                pinned: pinned.contains(n));
+          }
         }
       });
     }
@@ -406,6 +404,83 @@ class ChartPainter extends CustomPainter {
     }
 
     canvas.restore(); // end note clip
+  }
+
+  // Lane and scroll geometry for a field of [size] at the current playhead,
+  // shared by [paint] and [noteAt] so a tap lands on exactly what was drawn.
+  ({
+    double fieldLeft,
+    double laneStride,
+    double arrowSize,
+    double Function(int) laneCenterX,
+    bool beatLocked,
+    double currentBeat,
+    bool expandStops,
+    double Function(double) yFor,
+  }) _geometry(Size size) {
+    final laneW = size.width / columnCount;
+    // Zoom pulls the lanes toward the field's centre and shrinks the arrows with
+    // them, so zooming out fits more chart rather than only tightening the
+    // vertical gaps (which just stacks arrows on top of each other).
+    final laneStride = laneW * _laneTighten * zoom;
+    final fieldLeft = (size.width - laneStride * columnCount) / 2;
+    // DDR World arrows fill nearly the whole lane. Deliberately no upper clamp,
+    // so they read at the arcade's size instead of shrinking on wide fields.
+    final arrowSize = laneW * 0.92 * zoom;
+
+    double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
+
+    // Beat-locked scroll (true DDR): a note's screen position is its beat
+    // distance from the playhead's, so BPM changes speed the field up/down and
+    // stops freeze it. Charts with no BPM data fall back to constant time.
+    final bool beatLocked = !timing.isEmpty;
+    final double currentBeat = beatLocked ? timing.beatAt(second) : 0;
+    // Paused, each stop re-expands to real pixels so the halt reads as a gap you
+    // can scroll through rather than the collapsed seam playback shows. This
+    // deliberately shifts the layout between play and scroll.
+    final bool expandStops = beatLocked && !playing;
+    final double currentStop =
+        expandStops ? timing.stopSecondsAt(second) : 0;
+    double yFor(double t) {
+      if (!beatLocked) return _receptorTop + (t - second) * pxPerSecond;
+      var y = _receptorTop + (timing.beatAt(t) - currentBeat) * pxPerBeat;
+      if (expandStops) {
+        y += (timing.stopSecondsAt(t) - currentStop) * pxPerSecond;
+      }
+      return y;
+    }
+
+    return (
+      fieldLeft: fieldLeft,
+      laneStride: laneStride,
+      arrowSize: arrowSize,
+      laneCenterX: laneCenterX,
+      beatLocked: beatLocked,
+      currentBeat: currentBeat,
+      expandStops: expandStops,
+      yFor: yFor,
+    );
+  }
+
+  /// The tappable note (not a mine, not already past the receptor) under [pos]
+  /// on a field of [size], nearest first.
+  StepNote? noteAt(Offset pos, Size size) {
+    final g = _geometry(size);
+    StepNote? best;
+    double bestDist = double.infinity;
+    for (int i = _lowerBoundBySecond(notes, second); i < notes.length; i++) {
+      final n = notes[i];
+      if (n.type == StepType.mine) continue;
+      final y = g.yFor(n.second);
+      if (y - g.arrowSize > size.height) break;
+      final col = (n.col >= 0 && n.col < colMap.length) ? colMap[n.col] : n.col;
+      final d = (Offset(g.laneCenterX(col), y) - pos).distance;
+      if (d < g.arrowSize * 0.6 && d < bestDist) {
+        best = n;
+        bestDist = d;
+      }
+    }
+    return best;
   }
 
   // A small L/R parity badge centred on the arrow, in the shared parity palette
@@ -684,10 +759,15 @@ class ChartPainter extends CustomPainter {
     ..color = Colors.black.withValues(alpha: 0.55);
 
   void _paintFootBadge(
-      Canvas canvas, double x, double y, double arrowSize, Foot foot) {
+      Canvas canvas, double x, double y, double arrowSize, Foot foot,
+      {bool pinned = false}) {
     final isLeft = foot == Foot.left;
     final r = arrowSize * 0.24;
     canvas.drawCircle(Offset(x, y), r, _footBadgeBgPaint);
+    if (pinned) {
+      canvas.drawCircle(
+          Offset(x, y), r, _pinRingPaint..strokeWidth = arrowSize * 0.04);
+    }
     // Font size quantised to quarter-pixels for the cache key: visually exact
     // enough, and pinch-zoom then reuses a bounded set of layouts.
     final sizeKey = (arrowSize * 0.34 * 4).round();
@@ -712,6 +792,11 @@ class ChartPainter extends CustomPainter {
   // Frame-static paints/shaders, cached across paints (the shaders only depend
   // on the field size, which changes on rotation/resize, not per frame).
   static final Paint _bgPaint = Paint();
+  static final Paint _highlightPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.07);
+  static final Paint _pinRingPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..color = Colors.white;
   static Size _bgPaintSize = Size.zero;
   static final Paint _receptorLinePaint = Paint();
   static double _receptorLineWidth = -1;
@@ -782,5 +867,7 @@ class ChartPainter extends CustomPainter {
       // Without this the field wouldn't move while dialling VISUAL OFFSET
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.
-      old.visualOffset != visualOffset;
+      old.visualOffset != visualOffset ||
+      old.pinned != pinned ||
+      old.highlightSecond != highlightSecond;
 }
