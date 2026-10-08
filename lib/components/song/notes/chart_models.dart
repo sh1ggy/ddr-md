@@ -8,6 +8,12 @@ library;
 
 import 'package:flutter/material.dart';
 
+/// The parity palette: left foot warm, right foot cool, so the two read apart
+/// at a glance without a legend. Shared by the on-arrow L/R badges, the
+/// foot-flow paths and the dancing-feet pad — one solve, one colour language.
+const Color kLeftFootColor = Color(0xFFFF5D73);
+const Color kRightFootColor = Color(0xFF3FA9FF);
+
 /// A row of simultaneous mines spanning most/all columns — a DDR shock arrow,
 /// which is drawn as a single bar per lane rather than individual mines.
 class ShockRow {

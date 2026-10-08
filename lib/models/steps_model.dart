@@ -28,12 +28,11 @@ StepType _stepTypeFrom(int t) {
   }
 }
 
-/// A single arrow (or mine). Holds/rolls carry the beat+second of their tail
-/// so the renderer can draw the sustain bar; taps/mines leave those null.
+/// A single arrow (or mine). Holds/rolls carry the beat+second of their tail so
+/// the renderer can draw the sustain bar; taps/mines leave those null.
 ///
-/// Foot (L/R) parity is NOT stored here: it is a derived, best-effort guide
-/// computed on the fly by [FootAssigner] when a chart is opened, so it can be
-/// tuned freely without regenerating every steps asset. See [FootAssigner].
+/// Foot parity is NOT stored here — it's derived on chart open by
+/// [FootAssigner], so it can be tuned without regenerating the steps assets.
 class StepNote {
   final double beat;
   final double second;
@@ -135,22 +134,32 @@ class StepsLoader {
 }
 
 /// Best-effort L/R foot parity for a note stream, computed client-side so the
-/// engine can be tuned without regenerating steps assets.
-///
-/// This delegates to the cost-minimising parity engine in [assignParity]
-/// (ported from SMEditor): it models the pad as physical geometry, scores every
-/// legal foot placement per row with a weighted cost model, and picks the
-/// minimum-cost path through the whole chart. Crossovers and footswitches
-/// emerge correctly because they read the notes that follow — something the
-/// earlier greedy per-note solver structurally could not do.
+/// engine can be tuned without regenerating steps assets. Delegates to the
+/// cost-minimising engine in [assignParity].
 class FootAssigner {
   /// Assigns a foot to every non-mine note, returning a map keyed by the note
   /// instance. Mines are skipped (never danced with a foot).
-  static Map<StepNote, Foot> assign(List<StepNote> notes, Modes mode) {
-    final parity = assignParity(notes, mode);
-    return parity.map(
-      (note, foot) =>
-          MapEntry(note, foot == ParityFoot.left ? Foot.left : Foot.right),
+  static Map<StepNote, Foot> assign(List<StepNote> notes, Modes mode) =>
+      analyse(notes, mode).feet;
+
+  /// The full solve: per-note feet plus the stance timeline the pad display
+  /// dances. One call, since the DP behind them is the expensive part.
+  static FootAnalysis analyse(List<StepNote> notes, Modes mode) {
+    final parity = analyseParity(notes, mode);
+    return FootAnalysis(
+      feet: parity.feet.map(
+        (note, foot) =>
+            MapEntry(note, foot == ParityFoot.left ? Foot.left : Foot.right),
+      ),
+      stances: parity.stances,
     );
   }
+}
+
+/// [FootAssigner.analyse]'s two readings of one solve.
+class FootAnalysis {
+  final Map<StepNote, Foot> feet;
+  final List<ParityStance> stances;
+
+  const FootAnalysis({required this.feet, required this.stances});
 }

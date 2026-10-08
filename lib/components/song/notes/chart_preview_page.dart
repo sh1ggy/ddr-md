@@ -10,8 +10,10 @@ import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -30,6 +32,7 @@ class ChartPreviewPage extends StatefulWidget {
     required this.bpms,
     required this.stops,
     this.sync,
+    this.initialSecond,
   });
 
   /// The (already in-flight) lazy load of the song's step file, shared with the
@@ -63,12 +66,29 @@ class ChartPreviewPage extends StatefulWidget {
   /// rather than in the dark. Null when the song ships no sync data.
   final Sync? sync;
 
+  /// Opens on this second rather than the top, straight into the footing
+  /// editor where there is one — to judge a moment picked elsewhere.
+  final double? initialSecond;
+
   @override
   State<ChartPreviewPage> createState() => _ChartPreviewPageState();
 }
 
 class _ChartPreviewPageState extends State<ChartPreviewPage> {
   bool _showFootGuide = false;
+
+  // Footing edit mode (debug builds): a distinct mode, entered from the
+  // header rather than the viewing options.
+  late bool _editFooting = kDebugMode && widget.initialSecond != null;
+
+  // Same-foot trails, split out of the foot guide so the movement can be read
+  // without the badges (and vice versa). Persisted like the other viewing aids.
+  bool _showFootTrails = Settings.getInt(Settings.footTrailsOnKey) == 1;
+
+  void _toggleFootTrails() {
+    setState(() => _showFootTrails = !_showFootTrails);
+    Settings.setInt(Settings.footTrailsOnKey, _showFootTrails ? 1 : 0);
+  }
 
   // Assist tick: audible tick as each note row crosses the receptors during
   // playback (chart-derived, no song audio involved). Persisted across previews.
@@ -85,6 +105,15 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   void _toggleMeasureLines() {
     setState(() => _measureLines = !_measureLines);
     Settings.setInt(Settings.measureLinesOnKey, _measureLines ? 1 : 0);
+  }
+
+  // The dancing-feet pad, likewise persisted: it's a way of reading charts you
+  // either want on or don't, not a per-song choice.
+  bool _dancingFeet = Settings.getInt(Settings.dancingFeetOnKey) == 1;
+
+  void _toggleDancingFeet() {
+    setState(() => _dancingFeet = !_dancingFeet);
+    Settings.setInt(Settings.dancingFeetOnKey, _dancingFeet ? 1 : 0);
   }
 
   // Arcade-style quantisation colouring. QuantColors reads a global rather than
@@ -161,15 +190,27 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               stops: widget.stops,
               sync: widget.sync,
               showFootGuide: _showFootGuide,
+              showFootTrails: _showFootTrails,
+              showDancingFeet: _dancingFeet,
               showMeasureLines: _measureLines,
               assistTickOn: _assistTick,
               arcadeQuantOn: _arcadeQuant,
               onToggleMeasureLines: _toggleMeasureLines,
               onToggleFootGuide: () =>
                   setState(() => _showFootGuide = !_showFootGuide),
+              onToggleFootTrails: _toggleFootTrails,
+              onToggleDancingFeet: _toggleDancingFeet,
               onToggleAssistTick: _toggleAssistTick,
               onToggleArcadeQuant: _toggleArcadeQuant,
               headerBuilder: (context) => _buildHeader(context, diffColor),
+              // The footing editor stays a debug tool until it ships to users.
+              footingRef: kDebugMode
+                  ? ChartRef(snapshot.data!.name,
+                      widget.mode == Modes.doubles ? 'dp' : 'sp',
+                      widget.difficultyKey)
+                  : null,
+              editFooting: _editFooting,
+              initialSecond: widget.initialSecond,
             );
           },
         ),
@@ -232,8 +273,17 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 ),
               ),
               // Balances the leading back button so the title stays optically
-              // centred now that the trailing action icons are gone.
-              const SizedBox(width: 48),
+              // centred. Debug builds put the footing editor's toggle there.
+              if (kDebugMode)
+                IconButton(
+                  icon: Icon(_editFooting ? Icons.check : Icons.edit_note,
+                      color: _editFooting ? Colors.white : Colors.blueGrey),
+                  tooltip: _editFooting ? 'Done editing' : 'Edit footing',
+                  onPressed: () =>
+                      setState(() => _editFooting = !_editFooting),
+                )
+              else
+                const SizedBox(width: 48),
             ],
           ),
         ),

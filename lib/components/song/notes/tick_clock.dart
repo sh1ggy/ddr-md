@@ -2,25 +2,21 @@
 /// Parent: chart_scroller.dart
 /// Description: Sample-accurate assist-tick scheduler for the chart preview.
 ///
-/// The chart preview scrolls silently and pings a short "tick" sample as each
-/// note row crosses the receptors. Under dense streams the render loop can't be
-/// the timing source — frames get long exactly when notes are closest together,
-/// so scheduling ticks on frame boundaries drops or smears them. `audioplayers`
-/// can't fix this either: it has no scheduling API, only fire-and-forget play.
+/// The render loop can't be the timing source for the assist tick: frames get
+/// long exactly when notes are closest together, so scheduling on frame
+/// boundaries drops or smears ticks. (`audioplayers` can't help either — it has
+/// no scheduling API, only fire-and-forget play.)
 ///
-/// This module drives the tick off SoLoud's audio-thread clock instead of the
-/// render loop. SoLoud runs a dedicated mixing thread whose position (via
-/// [SoLoud.getPosition] on an always-running silent "clock" voice) advances
-/// smoothly regardless of UI jank. A short-period poller reads that clock and
-/// releases each tick when the clock reaches the row's timestamp, one voice per
-/// row, from a pre-primed pool of paused voices so no decode/setup happens at
-/// fire time. The residual error is bounded by the poll period (sub-frame,
-/// consistent), not by frame timing — which is what "predictable" requires.
+/// So the tick runs off SoLoud's audio-thread clock, read via
+/// [SoLoud.getPosition] on an always-running silent "clock" voice, which
+/// advances smoothly regardless of UI jank. A short-period poller releases each
+/// row's tick from a pool of pre-primed paused voices, so no decode or setup
+/// happens at fire time and the residual error is bounded by the poll period
+/// rather than by frame timing.
 ///
-/// The SoLoud Dart binding does not expose the engine's native clocked-play
-/// (delay-by-samples) primitive, so this is the tightest scheduling available
-/// without patching the plugin. If that primitive is ever surfaced, the poller
-/// can be replaced with a single scheduled release per row.
+/// The Dart binding doesn't expose SoLoud's native clocked-play
+/// (delay-by-samples) primitive; if it ever does, the poller collapses to a
+/// single scheduled release per row.
 library;
 
 import 'dart:async';
@@ -38,12 +34,10 @@ class TickClock {
   /// (then every schedule call is a silent no-op — the toggle just does nothing).
   AudioSource? _sample;
 
-  /// An always-playing, muted, NON-looping voice over a long silent buffer.
-  /// Its [SoLoud.getPosition] is the monotonic audio-thread clock we schedule
-  /// against. It must not loop: [SoLoud.getPosition] reports the offset within
-  /// the current loop, so a looping carrier would wrap to zero periodically and
-  /// desync every tick after the first wrap. The buffer is [_clockLengthSeconds]
-  /// long — comfortably past any chart — so it never runs out mid-preview.
+  /// An always-playing, muted, NON-looping voice over a long silent buffer whose
+  /// [SoLoud.getPosition] is the monotonic clock ticks schedule against. It must
+  /// not loop — position reports the offset within the current loop, so a
+  /// looping carrier would wrap to zero and desync every tick after.
   SoundHandle? _clockVoice;
   AudioSource? _clockSource;
 
@@ -66,10 +60,9 @@ class TickClock {
   double _clockAtAnchor = 0;
   double _rate = 1.0;
 
-  /// The poller. Runs only while ticks are pending. 4ms is comfortably finer
-  /// than SoLoud's ~15ms unpause latency, so the poll period is not the
-  /// accuracy bottleneck — tightening it further doesn't help (verified in the
-  /// integration test), it just burns CPU.
+  /// The poller, running only while ticks are pending. 4ms is comfortably finer
+  /// than SoLoud's ~15ms unpause latency, so it isn't the accuracy bottleneck —
+  /// tightening it further only burns CPU (verified in the integration test).
   Timer? _poller;
   static const Duration _pollPeriod = Duration(milliseconds: 4);
 
@@ -78,29 +71,23 @@ class TickClock {
   /// exceed one poll period comfortably.
   static const double _primeLead = 0.05;
 
-  /// Mean latency between us calling [SoLoud.setPause] to release a voice and
-  /// the sample actually sounding — the unpause takes about one output buffer
-  /// to reach the DAC. Measured on the real engine at ~10-25ms, centred near
-  /// 15ms (integration_test/tick_clock_test.dart), so we release each tick this
-  /// far *before* its target to centre the residual error on zero instead of
-  /// landing a buffer late. The remaining spread is jitter in SoLoud's unpause
-  /// path that can't be scheduled away from Dart — closing it needs the native
-  /// setDelaySamples primitive, which the flutter_soloud binding doesn't expose.
+  /// Mean latency between releasing a voice with [SoLoud.setPause] and the
+  /// sample sounding — about one output buffer's worth. Measured on the real
+  /// engine at ~10-25ms (integration_test/tick_clock_test.dart), so each tick is
+  /// released this far *before* its target to centre the error on zero rather
+  /// than landing a buffer late. The remaining spread is jitter in SoLoud's
+  /// unpause path that can't be scheduled away from Dart.
   static const double _releaseLatency = 0.015;
 
   /// Voices primed-but-not-yet-fired, keyed by the row index they belong to.
   final Map<int, SoundHandle> _primed = {};
 
-  /// AUDIO OFFSET, in seconds, following the cabinet's sign convention:
-  /// positive = EARLIER (ticks sound sooner relative to the arrows), negative =
-  /// later. Applied by shifting each row's target on the clock timeline, so it
-  /// composes with — and is independent of — the fixed [_releaseLatency]
-  /// compensation: latency correction centres the tick on its target, this then
-  /// moves the target itself. Zero is the neutral default.
+  /// AUDIO OFFSET in seconds, cabinet convention: positive = EARLIER. Shifts
+  /// each row's target on the clock timeline, independent of [_releaseLatency],
+  /// which centres a tick on whatever target this sets.
   ///
-  /// Writes take effect for rows not yet primed; already-primed voices keep the
-  /// offset they were seated with, so a mid-playback change settles within
-  /// [_primeLead].
+  /// Writes apply to rows not yet primed, so a mid-playback change settles
+  /// within [_primeLead].
   double audioOffset = 0;
 
   bool get isReady => _sample != null && _clockVoice != null;

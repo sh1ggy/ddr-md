@@ -42,11 +42,9 @@ double rotationForDir(NoteDir dir) {
 
 /// DDR/ITG quantisation colouring: an arrow is coloured by the fraction of a
 /// beat it lands on. 4ths red, 8ths blue, 12ths purple, 16ths yellow, 24ths
-/// pink, 32nds orange, everything finer green — the standard reading palette.
-///
-/// The cabinet palette is coarser: DDR colours 4ths, 8ths and 16ths only, and
-/// paints every other quantisation — 12ths, 24ths, 32nds and finer — green.
-/// [arcadeMode] reproduces that, so the preview reads the way the cabinet does.
+/// pink, 32nds orange, finer green — the standard reading palette. The cabinet
+/// is coarser, colouring only 4ths, 8ths and 16ths and painting the rest green;
+/// [arcadeMode] reproduces that.
 class QuantColors {
   static const Color quarter = Color(0xFFF23838); // 4th  - red
   static const Color eighth = Color(0xFF3B8DF2); // 8th  - blue
@@ -121,11 +119,10 @@ abstract class Noteskin {
       NoteDir dir, double progress);
 }
 
-/// Flash size as a multiple of the arrow. It peaks slightly larger than the
-/// note so it blooms past the receptor and reads as an impact rather than a
-/// tint. DDR's own is bigger (~1.2x growing to ~1.5x), but the receptor sits
-/// close to the top of the field here, so a burst that size runs into the
-/// status bar — these are pulled in to fit.
+/// Flash size as a multiple of the arrow, peaking slightly larger than the note
+/// so it blooms past the receptor and reads as an impact rather than a tint.
+/// DDR's own is bigger (~1.2x to ~1.5x), but the receptor sits near the top of
+/// the field here, where a burst that size runs into the status bar.
 const double noteFlashStartScale = 0.95;
 
 /// Largest the flash ever gets, as a multiple of the arrow size. The painter
@@ -199,15 +196,12 @@ class VectorNoteskin implements Noteskin {
 
   // --- rasterised tap/tail glyphs -----------------------------------------
   //
-  // The full vector arrow costs a blurred shadow (a GPU blur!), two gradient
-  // shaders and two strokes PER NOTE PER FRAME — by far the painter's biggest
-  // line item at stream densities. Instead each (colour, tap/tail) glyph is
-  // drawn once at a fixed reference size into a texture via toImageSync, and
-  // every note becomes a single rotated image blit. The texture is rendered at
-  // the device pixel ratio and sampled with mipmapped (medium) filtering, so
-  // drawing it at any note size — including mid-pinch zoom — stays crisp
-  // without ever regenerating the cache. Only 7 quant colours + 2 tail colours
-  // exist, so the whole cache is 9 small textures.
+  // Drawing the full vector arrow costs a blurred shadow, two gradient shaders
+  // and two strokes PER NOTE PER FRAME — the painter's biggest line item at
+  // stream densities. Instead each (colour, tap/tail) glyph is baked once into a
+  // texture and every note becomes a single rotated blit. Rendered at the device
+  // pixel ratio with mipmapped filtering, so any note size stays crisp without
+  // regenerating the cache; 7 quant colours + 2 tail colours means 9 textures.
   static const double _glyphBaseSize = 96;
   static const double _glyphPadFrac = 0.14; // room for the baked shadow blur
   static final Map<int, ui.Image> _glyphCache = {};
@@ -532,16 +526,14 @@ class VectorNoteskin implements Noteskin {
   static Color _darken(Color c, double amt) => Color.lerp(c, Colors.black, amt)!;
 }
 
-/// Sprite-backed noteskin using real DDR World arrow art from assets/noteskin/
-/// (grey `note.png` rotated + tinted per quantisation for taps; direction-
-/// oriented `hold-{left,down,up,right}-{body,tail}.png` for freezes — see
-/// docs/noteskin.md). The grey note is tinted per note quantisation so the
-/// authentic arrow shape still reads its rhythm at a glance. Mines, shock arrows
-/// and receptors fall back to the vector skin, which already looks good for
-/// those.
+/// Sprite-backed noteskin using real DDR World arrow art from assets/noteskin/ —
+/// grey `note.png` rotated and tinted per quantisation for taps, direction-
+/// oriented `hold-*-{body,tail}.png` for freezes (see docs/noteskin.md). The
+/// tint keeps the authentic arrow shape reading its rhythm at a glance. Mines,
+/// shock arrows and receptors fall back to the vector skin.
 ///
 /// [tryLoad] returns null when the sprites aren't bundled (fresh clone / lite
-/// build) so the caller uses [VectorNoteskin] everywhere instead.
+/// build), so the caller uses [VectorNoteskin] everywhere instead.
 class SpriteNoteskin implements Noteskin {
   SpriteNoteskin._(
     this._note,

@@ -1,5 +1,7 @@
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_labels.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -24,15 +26,22 @@ class DatabaseProvider {
   static const String _favoritesDdl =
       'CREATE TABLE IF NOT EXISTS favorites(id INTEGER PRIMARY KEY, isFav INT, songTitle TEXT, mode TEXT NOT NULL)';
 
+  // v8: hand-set feet for chart notes (the parity labeller). One row per note,
+  // keyed by beat and unturned column; chartHash marks rows from an older
+  // version of the chart as stale.
+  static const String _parityPinsDdl =
+      'CREATE TABLE IF NOT EXISTS parity_pins(song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, chartHash TEXT NOT NULL, beat REAL NOT NULL, col INT NOT NULL, foot TEXT NOT NULL, PRIMARY KEY(song, mode, difficulty, beat, col))';
+
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
     await db.execute(_favoritesDdl);
     await db.execute(_scoresDdl);
+    await db.execute(_parityPinsDdl);
   }
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 7, onCreate: (db, version) async {
+    return await openDatabase(path, version: 8, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -50,7 +59,77 @@ class DatabaseProvider {
       if (oldVersion == 6) {
         await db.execute('ALTER TABLE scores ADD COLUMN exScore INT');
       }
+      if (oldVersion < 8) await db.execute(_parityPinsDdl);
     });
+  }
+
+  // -- PARITY PIN FUNCTIONS
+  // Pins for one chart, skipping any saved against a different chartHash.
+  static Future<List<ParityPin>> getParityPins(
+      ChartRef ref, String chartHash) async {
+    final db = await _instance;
+    final rows = await db.query("parity_pins",
+        where: "song = ? AND mode = ? AND difficulty = ? AND chartHash = ?",
+        whereArgs: [ref.song, ref.mode, ref.difficulty, chartHash]);
+    return [
+      for (final r in rows)
+        (
+          r["beat"] as double,
+          r["col"] as int,
+          r["foot"] == "L" ? ParityFoot.left : ParityFoot.right,
+        )
+    ];
+  }
+
+  // Every chart's pins, keyed by chart and the note hash they were set against.
+  static Future<Map<(ChartRef, String), List<ParityPin>>> getAllParityPins() async {
+    final db = await _instance;
+    final out = <(String, String, String, String), List<ParityPin>>{};
+    for (final r in await db.query("parity_pins")) {
+      out.putIfAbsent(
+          (
+            r["song"] as String,
+            r["mode"] as String,
+            r["difficulty"] as String,
+            r["chartHash"] as String
+          ),
+          () => []).add((
+        r["beat"] as double,
+        r["col"] as int,
+        r["foot"] == "L" ? ParityFoot.left : ParityFoot.right,
+      ));
+    }
+    return {
+      for (final MapEntry(key: (song, mode, diff, hash), value: pins)
+          in out.entries)
+        (ChartRef(song, mode, diff), hash): pins
+    };
+  }
+
+  static Future<void> setParityPin(
+      ChartRef ref, String chartHash, ParityPin pin) async {
+    final db = await _instance;
+    final (beat, col, foot) = pin;
+    await db.insert(
+      "parity_pins",
+      {
+        "song": ref.song,
+        "mode": ref.mode,
+        "difficulty": ref.difficulty,
+        "chartHash": chartHash,
+        "beat": beat,
+        "col": col,
+        "foot": foot == ParityFoot.left ? "L" : "R",
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<void> deleteParityPin(ChartRef ref, double beat, int col) async {
+    final db = await _instance;
+    await db.delete("parity_pins",
+        where: "song = ? AND mode = ? AND difficulty = ? AND beat = ? AND col = ?",
+        whereArgs: [ref.song, ref.mode, ref.difficulty, beat, col]);
   }
 
   // -- FAVS FUNCTIONS

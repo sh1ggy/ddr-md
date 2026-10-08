@@ -51,6 +51,39 @@ void main() {
     }
   });
 
+  test('scooby lateral L D R L U R stays fully alternating', () {
+    // A lateral ("scooby") crosses through the opposite side before resolving
+    // forward. It is a deliberate six-step walk, not an excuse to doublestep
+    // through the middle of the pattern.
+    final notes = stream(
+      [(0, L), (1, D), (2, R), (3, L), (4, U), (5, R)],
+      bpm: 160,
+    );
+    final p = assignParity(notes, Modes.singles);
+    final feet = notes.map((n) => p[n]).toList();
+    for (int i = 1; i < feet.length; i++) {
+      expect(feet[i], isNot(equals(feet[i - 1])),
+          reason: 'scooby doublestepped at $i: ${render(notes, p)}');
+    }
+  });
+
+  test('Soda Galaxy 12 keeps Left with the left foot after an L+R jump', () {
+    // SP Hard, beats 45–60. At beat 51 both feet land on Left+Right; the next
+    // Left is a straightforward repeat for the foot already on that panel.
+    final notes = stream([
+      (45, D), (45, U), (46, R), (47, L), (47, R), (48, D),
+      (49, D), (49, U), (50, L), (51, L), (51, R), (52, L),
+      (52.5, D), (53, R), (54, L), (54.5, D), (55, U), (56, R),
+      (56.5, D), (57, L), (58, D), (58.5, U), (59, L), (60, R),
+    ], bpm: 178);
+    final result = analyseParity(notes, Modes.singles);
+    final jumpLeft = notes.firstWhere((n) => n.beat == 51 && n.col == L);
+    final nextLeft = notes.firstWhere((n) => n.beat == 52 && n.col == L);
+    expect(result.feet[jumpLeft], equals(ParityFoot.left));
+    expect(result.feet[nextLeft], equals(ParityFoot.left),
+        reason: 'the right foot replaced the left foot already on Left');
+  });
+
   test('footswitch: repeat where a jack would force a doublestep switches feet',
       () {
     // Force the footswitch to be the cheaper option. In "R L L D", the two L's
@@ -75,6 +108,34 @@ void main() {
     }
   });
 
+  test('a slow repeat is jacked, not switched onto the standing foot', () {
+    // Luckgakist SP Easy opening. With 0.6s between the repeated D's (and R's)
+    // a jack is free; switching feet there only dodges a slow doublestep and
+    // leaves both feet on one panel.
+    final notes = stream([
+      (0, L), (1, D), (3, D), (4, L), (5, D), (7, R),
+      (8, L), (9, R), (11, R), (12, D), (13, L),
+    ], bpm: 199);
+    final result = analyseParity(notes, Modes.singles);
+    expect(result.feet[notes[2]], equals(result.feet[notes[1]]),
+        reason: render(notes, result.feet));
+    for (final s in result.stances) {
+      expect(s.leftHeel == -1 || s.leftHeel != s.rightHeel, isTrue,
+          reason: 'both feet on column ${s.leftHeel} at ${s.second}s');
+    }
+  });
+
+  test('a pinned note keeps its foot and the rest still solves', () {
+    final notes = stream([(0, L), (1, D), (2, U), (3, R), (4, D), (5, L)]);
+    final free = assignParity(notes, Modes.singles);
+    final flipped =
+        free[notes[2]] == ParityFoot.left ? ParityFoot.right : ParityFoot.left;
+    final pinned =
+        assignParity(notes, Modes.singles, pins: {notes[2]: flipped});
+    expect(pinned[notes[2]], equals(flipped));
+    expect(pinned.length, equals(notes.length), reason: render(notes, pinned));
+  });
+
   test('does not start crossed over', () {
     final notes = stream([(0, R), (1, L), (2, R), (3, L)]);
     final p = assignParity(notes, Modes.singles);
@@ -96,5 +157,155 @@ void main() {
     final notes = stream([(0, 0), (1, 3), (2, 4), (3, 7), (4, 2), (5, 5)]);
     final p = assignParity(notes, Modes.doubles);
     expect(p.length, equals(notes.length));
+  });
+
+  test('stances stand the idle foot still and agree with the badges', () {
+    final notes = stream([(0, L), (1, R), (2, L), (3, R)]);
+    final result = analyseParity(notes, Modes.singles);
+    expect(result.stances.length, equals(notes.length));
+
+    for (int i = 0; i < notes.length; i++) {
+      final stance = result.stances[i];
+      final foot = result.feet[notes[i]]!;
+      // The foot the badge names is standing on the column it just hit...
+      expect(stance.columnsFor(foot), contains(notes[i].col),
+          reason: 'stance $i has ${foot.name} off its own arrow');
+      // ...and the other foot has not moved off where the last row left it.
+      if (i > 0) {
+        final idle = foot == ParityFoot.left ? ParityFoot.right : ParityFoot.left;
+        expect(stance.columnsFor(idle),
+            equals(result.stances[i - 1].columnsFor(idle)),
+            reason: 'stance $i moved the idle ${idle.name} foot');
+      }
+    }
+  });
+
+  test('a held panel does not let the same foot bracket the neighbour for free',
+      () {
+    // Left is held throughout while Down is tapped repeatedly. The free right
+    // foot should take every Down rather than the holding foot stretching onto
+    // it — pads make that stretch harder than a clean bracket, not cheaper.
+    const secPerBeat = 60.0 / 150;
+    final notes = <StepNote>[
+      const StepNote(
+        beat: 0,
+        second: 0,
+        col: L,
+        type: StepType.hold,
+        endBeat: 8,
+        endSecond: 8 * secPerBeat,
+      ),
+      for (int i = 1; i <= 6; i++)
+        StepNote(
+            beat: i.toDouble(),
+            second: i * secPerBeat,
+            col: D,
+            type: StepType.tap),
+    ];
+
+    final result = analyseParity(notes, Modes.singles);
+    for (final note in notes.where((n) => n.col == D)) {
+      expect(result.feet[note], equals(ParityFoot.right),
+          reason: 'beat ${note.beat} bracketed Down off the held Left');
+    }
+  });
+
+  test('a sustained hold is only stepped on its head row', () {
+    // Left holds Left for 8 beats while the right foot taps Down. The held
+    // column is "active" every row it spans, so without excluding sustains it
+    // reports as freshly stepped each time — the pad would re-flash the panel
+    // and re-press the holding foot on every note played alongside it.
+    const secPerBeat = 60.0 / 150;
+    final notes = <StepNote>[
+      const StepNote(
+        beat: 0,
+        second: 0,
+        col: L,
+        type: StepType.hold,
+        endBeat: 8,
+        endSecond: 8 * secPerBeat,
+      ),
+      ...stream([(2, D), (4, D), (6, D)]),
+    ];
+
+    final result = analyseParity(notes, Modes.singles);
+    expect(result.stances.first.stepped, contains(L));
+    for (final stance in result.stances.skip(1)) {
+      expect(stance.stepped, isNot(contains(L)),
+          reason: 'held Left re-reported as stepped at ${stance.second}');
+    }
+  });
+
+  test('a sustained hold keeps the same foot until its tail', () {
+    // Left holds Down for 8 beats while the other foot dances U/R/U. Nothing
+    // may reassign Down mid-sustain: the panel is physically pinned.
+    const secPerBeat = 60.0 / 150;
+    final notes = <StepNote>[
+      const StepNote(
+        beat: 0,
+        second: 0,
+        col: D,
+        type: StepType.hold,
+        endBeat: 8,
+        endSecond: 8 * secPerBeat,
+      ),
+      ...stream([(2, U), (4, R), (6, U), (8, L)]),
+    ];
+
+    final result = analyseParity(notes, Modes.singles);
+    final hold = notes.first;
+    final foot = result.feet[hold]!;
+    for (final stance in result.stances) {
+      if (stance.second <= hold.second ||
+          stance.second >= hold.endSecond! - 1e-6) {
+        continue;
+      }
+      expect(stance.columnsFor(foot), contains(D),
+          reason: 'the ${foot.name} foot left the held Down at '
+              's=${stance.second}');
+    }
+  });
+
+  test('a jump into one of its own arrows does not stack both feet on it', () {
+    // D+U jump, then U on its own. Taking that U with the foot that is not
+    // already on Up parks both feet on one panel — which no pad allows.
+    final notes = [
+      ...stream([(0, L), (2, R)]),
+      ...stream([(4, D), (4, U)]),
+      ...stream([(6, U), (8, R)]),
+    ];
+
+    final result = analyseParity(notes, Modes.singles);
+    for (final stance in result.stances) {
+      expect(stance.leftHeel == stance.rightHeel && stance.leftHeel != -1,
+          isFalse,
+          reason: 'both feet on column ${stance.leftHeel} '
+              'at s=${stance.second}');
+    }
+  });
+
+  test('a side panel keeps its foot when revisited after stepping away', () {
+    // R is hit, the right foot leaves it for other arrows, then R returns. The
+    // foot no longer rests on R, so a switch check keyed on current occupancy
+    // sees an empty panel and prices the switch at nothing — the return must
+    // still cost, and stay on the right foot.
+    final notes = stream([(0, R), (1, D), (2, U), (3, R), (4, D)], bpm: 150);
+
+    final p = assignParity(notes, Modes.singles);
+    expect(p[notes[3]], equals(p[notes[0]]),
+        reason: 'R switched feet across the gap: ${render(notes, p)}');
+  });
+
+  test('an L+R jump always lands left foot left, right foot right', () {
+    // PARANOiA Revolution m142: the stream after the break alternates cleanly
+    // only if the jump before it lands crossed, which the solver used to take.
+    final notes = stream([
+      (0, R), (0.25, L), (0.5, U), (2, L), (2, R),
+      for (final (i, c) in [R, U, R, U, L, U, L, D, L, D].indexed)
+        (8 + i * 0.25, c),
+    ], bpm: 180);
+    final p = assignParity(notes, Modes.singles);
+    expect([p[notes[3]], p[notes[4]]], [ParityFoot.left, ParityFoot.right],
+        reason: render(notes, p));
   });
 }

@@ -1,28 +1,20 @@
 /// Name: Parity engine (foot assignment)
 /// Description: A cost-minimising foot-parity solver ported from SMEditor
-/// (tillvit/smeditor, files ParityInternals/ParityCost/ParityDataTypes/
-/// StageLayouts). Replaces the old greedy [FootAssigner] heuristic.
+/// (tillvit/smeditor: ParityInternals/ParityCost/ParityDataTypes/StageLayouts).
 ///
-/// Why a full engine and not a greedy pass: crossovers and footswitches can
-/// only be read correctly with lookahead over a *physical* model of the pad.
-/// A crossover is defined by the notes that follow it; a footswitch is a
-/// repeated column danced with alternating feet. A per-note greedy solver
-/// commits before it has seen the disambiguating notes, so it can't produce
-/// either reliably. This solver instead:
-///   1. models each foot as heel+toe on a coordinate pad (so "crossed over",
-///      "facing", "bracket" are real geometric facts, not column heuristics),
-///   2. scores every legal foot placement per row with a weighted cost model,
-///   3. finds the minimum-cost path through the whole chart via a forward DP.
-/// Crossovers/footswitches then *emerge* because they're cheaper than the
-/// doublestep alternative — nothing hard-codes "insert a crossover here".
+/// Crossovers and footswitches need lookahead over a *physical* pad model — a
+/// crossover is defined by the notes that follow it — so a greedy per-note pass
+/// commits before it can see the disambiguating notes. This solver instead
+/// models each foot as heel+toe on a coordinate pad, scores every legal
+/// placement per row, and takes the minimum-cost path via a forward DP.
+/// Crossovers and footswitches then emerge from being cheaper than the
+/// doublestep alternative rather than being hard-coded.
 ///
-/// Internally feet are heel/toe (4 parts) because the cost functions need that
-/// to keep brackets honest, but the public API folds back to plain L/R via
-/// [ParityFoot], since the renderer only draws a left/right badge.
+/// Feet are heel/toe internally because the cost functions need that to keep
+/// brackets honest; the public API folds back to L/R via [ParityFoot].
 ///
-/// This is a batch analyser (compute once when a chart opens), so all of
-/// SMEditor's incremental-recompute / edge-caching / web-worker machinery is
-/// deliberately dropped.
+/// A batch analyser (one solve per chart open), so SMEditor's incremental
+/// recompute / edge caching / web-worker machinery is deliberately dropped.
 library;
 
 import 'dart:math' as math;
@@ -33,12 +25,61 @@ import 'package:ddr_md/models/steps_model.dart';
 /// Public foot result: left or right. (Heel/toe is an internal detail.)
 enum ParityFoot { left, right }
 
+/// Where both feet stand from [second] until the next entry, kept as *columns*
+/// rather than folded to L/R badges: [assignParity] answers "which foot hits
+/// this arrow", this answers "where is the player standing", which is what a pad
+/// display needs. Columns are -1 when that part of the foot is off the pad.
+class ParityStance {
+  final double second;
+  final int leftHeel;
+  final int leftToe;
+  final int rightHeel;
+  final int rightToe;
+
+  /// Columns stepped ON this row (as opposed to merely still standing there),
+  /// so a display can flash the panels actually being hit.
+  final Set<int> stepped;
+
+  const ParityStance({
+    required this.second,
+    required this.leftHeel,
+    required this.leftToe,
+    required this.rightHeel,
+    required this.rightToe,
+    required this.stepped,
+  });
+
+  /// The columns a foot covers: its heel, plus its toe when bracketing.
+  List<int> columnsFor(ParityFoot foot) {
+    final heel = foot == ParityFoot.left ? leftHeel : rightHeel;
+    final toe = foot == ParityFoot.left ? leftToe : rightToe;
+    return [
+      if (heel != -1) heel,
+      if (toe != -1 && toe != heel) toe,
+    ];
+  }
+}
+
+/// One solve read two ways — [feet] for the per-arrow badges, [stances] for the
+/// pad — both off the same minimum-cost path, so the two can never disagree.
+class ParityResult {
+  final Map<StepNote, ParityFoot> feet;
+  final List<ParityStance> stances;
+
+  /// Total cost of the chosen path under the weights it was solved with. Only
+  /// comparable between solves of the same notes, e.g. free vs pinned.
+  final double cost;
+
+  const ParityResult(
+      {required this.feet, required this.stances, this.cost = 0});
+}
+
 // ---------------------------------------------------------------------------
 // Foot parts (internal). Index values matter: they index [_footColumns].
 // ---------------------------------------------------------------------------
 
-/// A foot *part*. NONE is the absence of a foot; each real foot is a heel and a
-/// toe so a single arrow uses the heel and a bracket uses heel+toe.
+/// A foot *part*: each real foot is a heel and a toe, so a single arrow uses the
+/// heel and a bracket uses both.
 class _Foot {
   static const int none = 0;
   static const int leftHeel = 1;
@@ -48,6 +89,10 @@ class _Foot {
 
   /// The parts that can actually be placed on an arrow (NONE excluded).
   static const List<int> all = [leftHeel, leftToe, rightHeel, rightToe];
+
+  /// Placeable when brackets are disallowed: heels only, so no foot can cover
+  /// two panels and the toes stay permanently unplaced.
+  static const List<int> heels = [leftHeel, rightHeel];
 
   /// The other part of the same physical foot (heel<->toe), NONE for NONE.
   static const List<int> otherPart = [none, leftToe, leftHeel, rightToe, rightHeel];
@@ -60,25 +105,117 @@ class _Foot {
 
 // ---------------------------------------------------------------------------
 // Cost weights. Read as a priority order (higher = more strongly avoided).
-// Ported from SMEditor's DEFAULT_WEIGHTS; kept here so they're easy to tune.
+// Started from SMEditor's DEFAULT_WEIGHTS. A profile is one set of them: the
+// defaults ship, a player's can be fitted to their answers.
 // ---------------------------------------------------------------------------
 
-class _Weights {
-  static const double doublestep = 750;
-  static const double bracketJack = 60;
-  static const double jack = 40;
-  static const double jump = 0;
-  static const double slowBracket = 300;
-  static const double twistedFoot = 100000;
-  static const double xoBr = 200;
-  static const double mine = 10000;
-  static const double footswitch = 325;
-  static const double missedFootswitch = 500;
-  static const double facing = 3;
-  static const double distance = 6;
-  static const double spin = 3000;
-  static const double sideswitch = 130;
-  static const double startXo = 10000;
+class ParityWeights {
+  const ParityWeights({
+    this.doublestep = 750,
+    this.bracketJack = 60,
+    this.jack = 40,
+    this.jump = 0,
+    this.slowBracket = 300,
+    this.twistedFoot = 100000,
+    this.xoBr = 200,
+    this.mine = 10000,
+    this.footswitch = 325,
+    this.missedFootswitch = 500,
+    this.facing = 3,
+    this.distance = 6,
+    this.spin = 3000,
+    this.startXo = 10000,
+    this.samePanel = 250,
+    this.bracket = 200,
+    this.sideswitch = 50,
+  });
+
+  static const defaults = ParityWeights();
+
+  final double doublestep;
+  final double bracketJack;
+  final double jack;
+  final double jump;
+  final double slowBracket;
+  final double twistedFoot;
+  final double xoBr;
+  final double mine;
+  final double footswitch;
+  final double missedFootswitch;
+  final double facing;
+  final double distance;
+  final double spin;
+  final double startXo;
+
+  /// Both feet ending up on one panel — not a stance you can hold, since a DDR
+  /// panel fits one foot. Not from SMEditor, which never scores the stance, so
+  /// the state is free there and worse than free: two feet sharing a position
+  /// sit minimum distance from every following note.
+  ///
+  /// Measured over ~5300 singles charts, share of rows: 0.98% at 0, 0.68% at
+  /// 100, 0.60% at 250, 0.54% at 400. It never reaches zero — a jump onto a
+  /// column both feet must share has no alternative — so past ~250 it buys
+  /// little.
+  final double samePanel;
+
+  /// Flat surcharge for one foot covering two panels. Not from SMEditor, which
+  /// prices only specific awkward brackets and otherwise brackets freely to save
+  /// distance. DDR's panels are large, spaced and spring-loaded, so bracketing
+  /// is a fringe technique rather than a normal reading.
+  ///
+  /// Priced on panels *covered*, not freshly pressed, so a foot pinning a hold
+  /// and tapping its neighbour pays too — on a sprung pad that isn't free.
+  ///
+  /// Measured over ~5300 singles charts (~1.53M rows), brackets per row: 1.75%
+  /// (50), 0.14% (100), 0.05% (200), 0.005% (400). Past ~400 it's a ban rather
+  /// than a preference; 200 keeps them only where the alternative is a genuine
+  /// doublestep.
+  final double bracket;
+
+  /// Side-panel ownership changes are represented by movement and body-facing
+  /// costs. Keep this small enough that a lateral remains cheaper to walk than
+  /// to doublestep, while retaining a modest preference for stable ownership.
+  final double sideswitch;
+
+  factory ParityWeights.fromJson(Map<String, dynamic> j) => ParityWeights(
+        doublestep: (j['doublestep'] as num?)?.toDouble() ?? defaults.doublestep,
+        bracketJack: (j['bracketJack'] as num?)?.toDouble() ?? defaults.bracketJack,
+        jack: (j['jack'] as num?)?.toDouble() ?? defaults.jack,
+        jump: (j['jump'] as num?)?.toDouble() ?? defaults.jump,
+        slowBracket: (j['slowBracket'] as num?)?.toDouble() ?? defaults.slowBracket,
+        twistedFoot: (j['twistedFoot'] as num?)?.toDouble() ?? defaults.twistedFoot,
+        xoBr: (j['xoBr'] as num?)?.toDouble() ?? defaults.xoBr,
+        mine: (j['mine'] as num?)?.toDouble() ?? defaults.mine,
+        footswitch: (j['footswitch'] as num?)?.toDouble() ?? defaults.footswitch,
+        missedFootswitch: (j['missedFootswitch'] as num?)?.toDouble() ?? defaults.missedFootswitch,
+        facing: (j['facing'] as num?)?.toDouble() ?? defaults.facing,
+        distance: (j['distance'] as num?)?.toDouble() ?? defaults.distance,
+        spin: (j['spin'] as num?)?.toDouble() ?? defaults.spin,
+        startXo: (j['startXo'] as num?)?.toDouble() ?? defaults.startXo,
+        samePanel: (j['samePanel'] as num?)?.toDouble() ?? defaults.samePanel,
+        bracket: (j['bracket'] as num?)?.toDouble() ?? defaults.bracket,
+        sideswitch: (j['sideswitch'] as num?)?.toDouble() ?? defaults.sideswitch,
+      );
+
+  Map<String, double> toJson() => {
+        'doublestep': doublestep,
+        'bracketJack': bracketJack,
+        'jack': jack,
+        'jump': jump,
+        'slowBracket': slowBracket,
+        'twistedFoot': twistedFoot,
+        'xoBr': xoBr,
+        'mine': mine,
+        'footswitch': footswitch,
+        'missedFootswitch': missedFootswitch,
+        'facing': facing,
+        'distance': distance,
+        'spin': spin,
+        'startXo': startXo,
+        'samePanel': samePanel,
+        'bracket': bracket,
+        'sideswitch': sideswitch,
+      };
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +354,12 @@ class _State {
   /// footColumns[part] = column that foot part currently rests on (-1 if none).
   final List<int> footColumns; // length 5, indexed by _Foot part
 
+  /// lastFoot[col] = the foot part that most recently *pressed* this column,
+  /// kept after that foot moves away. [combinedColumns] forgets a foot as soon
+  /// as it leaves, which is enough for jacks but reads "R ... R" with notes in
+  /// between as a free return rather than a switch.
+  final List<int> lastFoot;
+
   final Set<int> movedFeet;
   final Set<int> holdFeet;
   int? frontFoot;
@@ -227,6 +370,7 @@ class _State {
     required this.action,
     required this.combinedColumns,
     required this.footColumns,
+    required this.lastFoot,
     required this.movedFeet,
     required this.holdFeet,
     required this.frontFoot,
@@ -282,7 +426,35 @@ class _Placement {
 class _ParityEngine {
   final _StageLayout layout;
 
-  _ParityEngine(this.layout);
+  /// Whether one foot may cover two panels. On by default and priced by
+  /// [weights.bracket] so brackets stay rare; off drops them from the candidate
+  /// placements entirely, which no weight can match.
+  final bool allowBrackets;
+
+  _ParityEngine(this.layout,
+      {this.allowBrackets = true,
+      this.pins = const {},
+      this.weights = ParityWeights.defaults});
+
+  final ParityWeights weights;
+
+  /// Total cost of the path [solve] last chose.
+  double cost = 0;
+
+  /// Notes whose foot is fixed (hand labels); the solve fits everything else
+  /// around them.
+  final Map<StepNote, ParityFoot> pins;
+
+  /// Whether [action] puts every pinned note in [row] on its pinned foot.
+  bool _honoursPins(_Row row, List<int> action) {
+    for (int col = 0; col < layout.columnCount; col++) {
+      final pin = pins[row.notes[col]];
+      if (pin == null) continue;
+      final foot = action[col];
+      if (foot == _Foot.none || _Foot.toParityFoot(foot) != pin) return false;
+    }
+    return true;
+  }
 
   /// Build rows by grouping notes on the same (rounded) second. Holds are
   /// tracked so a foot may legally "double step" while the other foot holds.
@@ -357,10 +529,76 @@ class _ParityEngine {
 
   static const double _secondEps = 0.0005;
 
+  /// Whether [action] leaves every sustained hold under the foot already on it —
+  /// a pinned panel can't be reassigned until the tail. Actions are enumerated
+  /// per row without knowing the previous state, so this is the transition-time
+  /// check that stops a hold changing feet mid-sustain.
+  bool _holdsKeepTheirFoot(_State initial, _Row row, List<int> action) {
+    for (int col = 0; col < layout.columnCount; col++) {
+      // Only sustained columns; the head row is a normal step, and a tail row
+      // still needs the holding foot in place to release it.
+      if (!row.holds[col]) continue;
+      final was = initial.combinedColumns[col];
+      if (was == _Foot.none) continue;
+      final now = action[col];
+      // Same physical foot is enough — a foot may roll heel<->toe on the panel.
+      if (now != _Foot.none && !_sameFoot(now, was)) return false;
+    }
+    return true;
+  }
+
+  /// A one-arrow follow-up to a jump reuses the foot that just landed on that
+  /// panel. Letting the other foot take it would swap feet on an occupied panel
+  /// for no physical benefit, and the jump transition deliberately bypasses the
+  /// usual jack / doublestep costs that would otherwise discourage it.
+  bool _jumpFollowupKeepsLandingFoot(
+      _State initial, _Row row, List<int> action) {
+    final jumpedLeft = initial.movedFeet.any(_Foot.isLeft);
+    final jumpedRight = initial.movedFeet.any((foot) => !_Foot.isLeft(foot));
+    if (!jumpedLeft || !jumpedRight) return true;
+
+    var noteCount = 0;
+    var noteColumn = -1;
+    for (int col = 0; col < layout.columnCount; col++) {
+      if (row.notes[col] != null) {
+        noteCount++;
+        noteColumn = col;
+      }
+    }
+    if (noteCount != 1) return true;
+
+    final was = initial.combinedColumns[noteColumn];
+    final now = action[noteColumn];
+    return was == _Foot.none || now == _Foot.none || _sameFoot(was, now);
+  }
+
+  static bool _sameFoot(int a, int b) => _Foot.isLeft(a) == _Foot.isLeft(b);
+
+  /// The two side panels of a jump across the pad (e.g. L+R), leftmost first,
+  /// or null. Only fresh notes count — a foot joining a hold already down isn't
+  /// both feet landing.
+  (int, int)? _sideJump(_Row row) {
+    final active = [
+      for (int i = 0; i < layout.columnCount; i++)
+        if (row.notes[i] != null || row.holds[i]) i
+    ];
+    if (active.length != 2 || row.holds[active[0]] || row.holds[active[1]]) {
+      return null;
+    }
+    if (!layout.sideArrows.contains(active[0]) ||
+        !layout.sideArrows.contains(active[1])) {
+      return null;
+    }
+    return (active[0], active[1]);
+  }
+
   /// Enumerate every legal assignment of foot parts to the stepped columns of a
-  /// row, pruned by bracket geometry and heel/toe validity.
+  /// row, pruned by bracket geometry and heel/toe validity. A jump across the
+  /// pad always lands left foot left, right foot right, facing forward: there's
+  /// no reason to land one crossed, however the next notes would flow from it.
   List<List<int>> _generateActions(_Row row) {
     final results = <List<int>>[];
+    final sideJump = _sideJump(row);
     final columns = List<int>.filled(layout.columnCount, _Foot.none);
 
     void recurse(int col) {
@@ -387,6 +625,11 @@ class _ParityEngine {
         // Both parts of a foot must be bracketable (adjacent).
         if (lh != -1 && lt != -1 && !layout.bracketCheck(lh, lt)) return;
         if (rh != -1 && rt != -1 && !layout.bracketCheck(rh, rt)) return;
+        if (sideJump != null &&
+            (!_Foot.isLeft(columns[sideJump.$1]) ||
+                _Foot.isLeft(columns[sideJump.$2]))) {
+          return;
+        }
         results.add(List<int>.of(columns));
         return;
       }
@@ -395,7 +638,7 @@ class _ParityEngine {
         recurse(col + 1);
         return;
       }
-      for (final foot in _Foot.all) {
+      for (final foot in allowBrackets ? _Foot.all : _Foot.heels) {
         if (columns.contains(foot)) continue;
         columns[col] = foot;
         recurse(col + 1);
@@ -456,10 +699,18 @@ class _ParityEngine {
       frontFoot = initial.frontFoot;
     }
 
+    // Remember who last pressed each column, so a foot that steps away still
+    // leaves its mark for switch detection on a later return.
+    final lastFoot = List<int>.of(initial.lastFoot);
+    for (int i = 0; i < layout.columnCount; i++) {
+      if (action[i] != _Foot.none) lastFoot[i] = action[i];
+    }
+
     return _State(
       action: action,
       combinedColumns: combined,
       footColumns: footColumns,
+      lastFoot: lastFoot,
       movedFeet: moved,
       holdFeet: held,
       frontFoot: frontFoot,
@@ -488,12 +739,18 @@ class _ParityEngine {
     final movedLeft = nonHeld[_Foot.leftHeel] || nonHeld[_Foot.leftToe];
     final movedRight = nonHeld[_Foot.rightHeel] || nonHeld[_Foot.rightToe];
 
-    final leftBracket = nonHeld[_Foot.leftHeel] && nonHeld[_Foot.leftToe];
-    final rightBracket = nonHeld[_Foot.rightHeel] && nonHeld[_Foot.rightToe];
+    // A foot brackets whenever it covers two panels, whether it pressed both
+    // this row, pinned one from a hold, or is still spread from an earlier row.
+    // Gating on "stepped this row" would let a foot drift into a permanent free
+    // straddle, understating its distance to everywhere else.
+    final leftBracket = result.leftHeel != -1 && result.leftToe != -1;
+    final rightBracket = result.rightHeel != -1 && result.rightToe != -1;
 
-    final previousJumped =
-        prevNonHeld[_Foot.leftHeel] && prevNonHeld[_Foot.rightHeel];
-    final jumped = nonHeld[_Foot.leftHeel] && nonHeld[_Foot.rightHeel];
+    // A jump is both feet landing at once, on whichever part — testing heels
+    // alone misreads a toe or bracketed landing as two independent steps, which
+    // leaks into the jack / doublestep / footswitch gates.
+    final previousJumped = prevMovedLeft && prevMovedRight;
+    final jumped = movedLeft && movedRight;
 
     final leftJack = !jumped &&
         _doFeetOverlap(
@@ -546,26 +803,30 @@ class _ParityEngine {
     // MINE: stepping on a mined column.
     for (int i = 0; i < layout.columnCount; i++) {
       if (d.result.combinedColumns[i] != _Foot.none && row.mines[i]) {
-        total += _Weights.mine;
+        total += weights.mine;
         break;
       }
     }
 
     // START_XO: don't begin the chart crossed over.
     if (rowIndex == 0 && d.rightPos.x < d.leftPos.x) {
-      total += _Weights.startXo;
+      total += weights.startXo;
     }
 
     // BRACKETJACK
     if (!d.jumped &&
         ((d.leftJack && d.leftBracket) || (d.rightJack && d.rightBracket))) {
-      total += _Weights.bracketJack;
+      total += weights.bracketJack;
     }
+
+    // BRACKET: the flat surcharge for bracketing at all, per foot.
+    if (d.leftBracket) total += weights.bracket;
+    if (d.rightBracket) total += weights.bracket;
 
     // XO_BR: bracketing while crossed over.
     final crossedOver = d.rightPos.x < d.leftPos.x;
-    if (d.leftBracket && crossedOver) total += _Weights.xoBr;
-    if (d.rightBracket && crossedOver) total += _Weights.xoBr;
+    if (d.leftBracket && crossedOver) total += weights.xoBr;
+    if (d.rightBracket && crossedOver) total += weights.xoBr;
 
     // DOUBLESTEP
     if (d.leftDoubleStep || d.rightDoubleStep) {
@@ -573,19 +834,24 @@ class _ParityEngine {
     }
 
     // JUMP
-    if (d.jumped) total += _Weights.jump / elapsed;
+    if (d.jumped) total += weights.jump / elapsed;
 
     // SLOW_BRACKET
     if (elapsed > 0.15 &&
         (d.leftBracket || d.rightBracket) &&
         !d.jumped) {
-      total += math.min(0.5, elapsed - 0.15) * _Weights.slowBracket;
+      total += math.min(0.5, elapsed - 0.15) * weights.slowBracket;
     }
 
     // TWISTED_FOOT: toe behind heel (foot rotated backwards) — near-impossible.
     if (_twisted(d.result.rightHeel, d.result.rightToe) ||
         _twisted(d.result.leftHeel, d.result.leftToe)) {
-      total += _Weights.twistedFoot;
+      total += weights.twistedFoot;
+    }
+
+    // SAME_PANEL: both feet left standing on one arrow.
+    if (d.result.leftHeel != -1 && d.result.leftHeel == d.result.rightHeel) {
+      total += weights.samePanel;
     }
 
     // FACING: facing backwards, ramps sharply (^7.2) so deep crossovers cost
@@ -595,22 +861,22 @@ class _ParityEngine {
     // SPIN
     total += _spinCost(d);
 
-    // FOOTSWITCH: only slow footswitches are penalised.
-    total += _slowFootswitchCost(d, row, elapsed);
+    // FOOTSWITCH: slow ones, and any on a side panel.
+    total += _footswitchCost(d, row, elapsed);
 
     // SIDESWITCH
     total += _sideswitchCost(d);
 
     // MISSED_FOOTSWITCH: a jack where a mine indicated a switch.
     if ((d.leftJack || d.rightJack) && _rowHasMine(row)) {
-      total += _Weights.missedFootswitch;
+      total += weights.missedFootswitch;
     }
 
     // JACK: same foot same arrow, penalised when fast.
     if (elapsed < 0.125 &&
         (d.leftJack || d.rightJack) &&
         !d.previousJumped) {
-      total += (1 / elapsed - 1 / 0.125) * _Weights.jack;
+      total += (1 / elapsed - 1 / 0.125) * weights.jack;
     }
 
     // DISTANCE: moving a foot far in little time.
@@ -651,7 +917,7 @@ class _ParityEngine {
       final rt = d.initial.footColumns[_Foot.rightToe];
       if ((rh != -1 && row.mines[rh]) || (rt != -1 && row.mines[rt])) return 0;
     }
-    return _Weights.doublestep / _clamp(elapsed * 4, 0.3, 1);
+    return weights.doublestep / _clamp(elapsed * 4, 0.3, 1);
   }
 
   double _facingCost(_Placement d) {
@@ -662,7 +928,7 @@ class _ParityEngine {
     dx /= dist;
     final heelFacing = dx;
     final penalty = math.pow(-math.min(heelFacing, 0.0), 7.2) * 200;
-    if (penalty > 0) return penalty * _Weights.facing;
+    if (penalty > 0) return penalty * weights.facing;
     return 0;
   }
 
@@ -676,13 +942,12 @@ class _ParityEngine {
     final crosses = (prev <= math.pi && angle >= math.pi) ||
         (prev >= math.pi && angle <= math.pi);
     if (crosses && d.initial.frontFoot != d.result.frontFoot) {
-      return _Weights.spin;
+      return weights.spin;
     }
     return 0;
   }
 
-  double _slowFootswitchCost(_Placement d, _Row row, double elapsed) {
-    if (elapsed < 0.2 || elapsed >= 0.4) return 0;
+  double _footswitchCost(_Placement d, _Row row, double elapsed) {
     if (d.jumped) return 0;
     if (_rowHasMine(row)) return 0;
     double cost = 0;
@@ -692,7 +957,15 @@ class _ParityEngine {
       final prev = d.initial.combinedColumns[col];
       if (prev == _Foot.none) continue;
       if (prev == foot || prev == _Foot.otherPart[foot]) continue;
-      cost += ((elapsed - 0.2) / elapsed) * _Weights.footswitch;
+      // Footswitches belong on Up/Down; swapping feet on a side panel isn't a
+      // technique players use. With 0.4s to spare a jack is free, so a switch
+      // there only dodges something — usually a slow doublestep. Price both as
+      // one so neither pays.
+      if (layout.sideArrows.contains(col) || elapsed >= 0.4) {
+        cost += weights.doublestep;
+      } else if (elapsed >= 0.2) {
+        cost += ((elapsed - 0.2) / elapsed) * weights.footswitch;
+      }
     }
     return cost;
   }
@@ -703,10 +976,10 @@ class _ParityEngine {
     for (final col in layout.sideArrows) {
       final act = d.result.action[col];
       if (act == _Foot.none) continue;
-      final prev = d.initial.combinedColumns[col];
+      final prev = d.initial.lastFoot[col];
       if (prev == _Foot.none) continue;
       if (prev == act || prev == _Foot.otherPart[act]) continue;
-      cost += _Weights.sideswitch;
+      cost += weights.sideswitch;
     }
     return cost;
   }
@@ -740,7 +1013,7 @@ class _ParityEngine {
         e = math.pow(e, 1.5).toDouble();
       }
       cost += math.sqrt(layout.distanceSqPoints(initialPos, resultPos)) *
-          _Weights.distance /
+          weights.distance /
           e;
     }
     return cost;
@@ -756,6 +1029,7 @@ class _ParityEngine {
       action: List<int>.filled(layout.columnCount, _Foot.none),
       combinedColumns: List<int>.filled(layout.columnCount, _Foot.none),
       footColumns: List<int>.filled(5, -1),
+      lastFoot: List<int>.filled(layout.columnCount, _Foot.none),
       movedFeet: {},
       holdFeet: {},
       frontFoot: null,
@@ -772,6 +1046,8 @@ class _ParityEngine {
         if (row.notes[i] != null || row.holds[i]) sb.write(i);
         sb.write('|');
       }
+      // Same columns, but a fresh side jump is pinned where a held one isn't.
+      if (_sideJump(row) != null) sb.write('J');
       return permCache[sb.toString()] ??= _generateActions(row);
     }
 
@@ -794,24 +1070,42 @@ class _ParityEngine {
           ? <List<int>>[List<int>.filled(layout.columnCount, _Foot.none)]
           : actions;
 
-      for (final action in effectiveActions) {
-        double best = double.infinity;
-        int bestPrev = 0;
-        _State? bestResult;
-        for (int p = 0; p < prevLayer.length; p++) {
-          final result = _initResultState(prevLayer[p], row, action);
-          final edge = _cost(prevLayer[p], result, rows, r);
-          final c = prevCost[p] + edge;
-          if (c < best) {
-            best = c;
-            bestPrev = p;
-            bestResult = result;
+      void expand(Iterable<List<int>> candidates) {
+        for (final action in candidates) {
+          double best = double.infinity;
+          int bestPrev = 0;
+          _State? bestResult;
+          for (int p = 0; p < prevLayer.length; p++) {
+            if (r > 0 && !_holdsKeepTheirFoot(prevLayer[p], row, action)) {
+              continue;
+            }
+            if (r > 0 &&
+                !_jumpFollowupKeepsLandingFoot(prevLayer[p], row, action)) {
+              continue;
+            }
+            final result = _initResultState(prevLayer[p], row, action);
+            final edge = _cost(prevLayer[p], result, rows, r);
+            final c = prevCost[p] + edge;
+            if (c < best) {
+              best = c;
+              bestPrev = p;
+              bestResult = result;
+            }
           }
+          // Every predecessor would have released a hold — not a reachable state.
+          if (bestResult == null) continue;
+          curStates.add(bestResult);
+          curCost.add(best);
+          curBack.add(bestPrev);
         }
-        curStates.add(bestResult!);
-        curCost.add(best);
-        curBack.add(bestPrev);
       }
+
+      expand(pins.isEmpty
+          ? effectiveActions
+          : effectiveActions.where((a) => _honoursPins(row, a)));
+      // A pin the row can't honour (it fights a hold, say) is dropped rather
+      // than leaving the solve with no path.
+      if (curStates.isEmpty && pins.isNotEmpty) expand(effectiveActions);
 
       layers.add(curStates);
       back.add(curBack);
@@ -828,6 +1122,7 @@ class _ParityEngine {
         bestIdx = i;
       }
     }
+    cost = bestVal;
 
     final chosen = List<_State?>.filled(rows.length, null);
     int idx = bestIdx;
@@ -838,31 +1133,67 @@ class _ParityEngine {
     return chosen.map((s) => s!).toList();
   }
 
-  /// Full pipeline: notes -> per-note L/R foot assignment.
-  Map<StepNote, ParityFoot> assign(List<StepNote> notes) {
-    final result = <StepNote, ParityFoot>{};
+  /// Full pipeline: notes -> the solved path, read both ways.
+  ParityResult analyse(List<StepNote> notes) {
     final rows = _buildRows(notes);
-    if (rows.isEmpty) return result;
+    if (rows.isEmpty) return const ParityResult(feet: {}, stances: []);
     final states = solve(rows);
+
+    final feet = <StepNote, ParityFoot>{};
+    final stances = <ParityStance>[];
     for (int r = 0; r < rows.length; r++) {
       final row = rows[r];
       final state = states[r];
+      final stepped = <int>{};
       for (int col = 0; col < layout.columnCount; col++) {
+        // A sustained column stays "active" for action generation, so the
+        // holding foot appears in [action] on every row the hold spans. Only the
+        // head row is a step — otherwise a held panel re-flashes on every note
+        // played alongside it.
+        if (state.action[col] != _Foot.none && !row.holds[col]) {
+          stepped.add(col);
+        }
         final note = row.notes[col];
         if (note == null) continue;
         final foot = state.combinedColumns[col];
         if (foot == _Foot.none) continue;
-        result[note] = _Foot.toParityFoot(foot);
+        feet[note] = _Foot.toParityFoot(foot);
       }
+      stances.add(ParityStance(
+        second: row.second,
+        leftHeel: state.leftHeel,
+        leftToe: state.leftToe,
+        rightHeel: state.rightHeel,
+        rightToe: state.rightToe,
+        stepped: stepped,
+      ));
     }
-    return result;
+    return ParityResult(feet: feet, stances: stances, cost: cost);
   }
 }
 
-/// Entry point: assign a left/right foot to every non-mine note using the
-/// cost-minimising parity engine.
-Map<StepNote, ParityFoot> assignParity(List<StepNote> notes, Modes mode) {
+/// Entry point: run the cost-minimising parity engine over a note stream.
+/// Brackets are legal but carry [weights.bracket] so they stay rare; passing
+/// [allowBrackets] false removes them entirely, which can push the solve into
+/// worse alternatives on charts where a bracket was the sane reading.
+///
+/// [pins] fixes the foot for particular notes (hand labels); everything else is
+/// solved around them.
+///
+/// [weights] is the cost profile; the shipped defaults unless a fitted one is
+/// passed.
+ParityResult analyseParity(List<StepNote> notes, Modes mode,
+    {bool allowBrackets = true,
+    Map<StepNote, ParityFoot> pins = const {},
+    ParityWeights weights = ParityWeights.defaults}) {
   final layout =
       mode == Modes.doubles ? _StageLayout.doubles : _StageLayout.singles;
-  return _ParityEngine(layout).assign(notes);
+  return _ParityEngine(layout,
+          allowBrackets: allowBrackets, pins: pins, weights: weights)
+      .analyse(notes);
 }
+
+/// Convenience for callers that only want the per-note L/R badges.
+Map<StepNote, ParityFoot> assignParity(List<StepNote> notes, Modes mode,
+        {bool allowBrackets = true, Map<StepNote, ParityFoot> pins = const {}}) =>
+    analyseParity(notes, mode, allowBrackets: allowBrackets, pins: pins).feet;
