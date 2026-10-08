@@ -3,6 +3,7 @@
 /// Description: Settings page for use with shared_preferences
 library;
 
+import 'package:ddr_md/components/settings/parity_quiz_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
@@ -135,6 +136,19 @@ class _SettingsPageState extends State<SettingsPage> {
                                     digitsOnly: false,
                                   ),
                                   const _PlayStyleCard(),
+                                  Card(
+                                    child: ListTile(
+                                      title: const Text("Footing Style",
+                                          style: TextStyle(
+                                              fontWeight: FontWeight.w600)),
+                                      trailing:
+                                          const Icon(Icons.chevron_right),
+                                      onTap: () => Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                              builder: (_) =>
+                                                  const ParityQuizPage())),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),

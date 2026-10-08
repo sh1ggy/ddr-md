@@ -112,6 +112,7 @@ class Settings {
   static const String detectionSideKey = "detectionSide";
   static const String usernameKey = "username";
   static const String playModeKey = "playMode";
+  static const String parityQuizKey = "parityQuiz";
 
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();
