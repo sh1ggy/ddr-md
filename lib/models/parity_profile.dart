@@ -93,21 +93,7 @@ FitResult fitProfile(List<FitCase> cases) {
   );
 }
 
-/// How often each flagged pattern shows up across [charts] under [w], for
-/// showing what a profile does beyond the questions themselves.
-Map<ParityFlag, int> flagCounts(List<FitCase> charts, ParityWeights w) {
-  final counts = {for (final f in ParityFlag.values) f: 0};
-  for (final c in charts) {
-    final flags = findFlags(
-        c.notes, analyseParity(c.notes, c.mode, weights: w), c.mode);
-    for (final MapEntry(key: f, value: at) in flags.entries) {
-      counts[f] = counts[f]! + at.length;
-    }
-  }
-  return counts;
-}
-
-/// "Ours" (the shipped weights) or "Yours" (fitted to the player's footing
+/// "Default" (the shipped weights) or "Yours" (fitted to the player's footing
 /// edits). The latest fit is always kept, so switching never loses it.
 class ParityProfile {
   static ParityWeights? get yours {
@@ -135,21 +121,8 @@ class FootingFit {
   final List<ChartRef> charts;
   final List<int> pinCounts;
   final FitResult result;
-  final Map<ParityFlag, int> countsOurs;
-  final Map<ParityFlag, int> countsYours;
 
-  const FootingFit(this.charts, this.pinCounts, this.result, this.countsOurs,
-      this.countsYours);
-}
-
-(FitResult, Map<ParityFlag, int>, Map<ParityFlag, int>) _fitJob(
-    List<FitCase> cases) {
-  final fit = fitProfile(cases);
-  return (
-    fit,
-    flagCounts(cases, ParityWeights.defaults),
-    flagCounts(cases, fit.weights),
-  );
+  const FootingFit(this.charts, this.pinCounts, this.result);
 }
 
 /// Re-fit Yours from every hand-set foot, off the UI isolate, and keep it.
@@ -168,8 +141,7 @@ Future<FootingFit?> refitFromEdits() async {
     cases.add(FitCase(notes, mode, pinsByNote(pins, notes)));
   }
   if (cases.isEmpty) return null;
-  final (result, ours, yours) = await compute(_fitJob, cases);
+  final result = await compute(fitProfile, cases);
   ParityProfile.saveYours(result.weights);
-  return FootingFit(
-      charts, [for (final c in cases) c.chosen.length], result, ours, yours);
+  return FootingFit(charts, [for (final c in cases) c.chosen.length], result);
 }

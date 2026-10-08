@@ -6,7 +6,7 @@ Hand-set feet pin the parity solve in the chart preview, and are the evidence th
 2. The preview jumps to the first flagged moment (doublestep, same panel, footswitch, crossover). Its two rows glow and the rest of the chart dims; a solid check marks moments already addressed.
 3. Tap a note to swap its foot; the solve re-fits around it. ✓ keeps the moment as it stands and moves on; the arrows step between moments. Reset clears every hand-set foot on the chart (with undo).
 
-Pins live in the app database and pin that chart's preview. They also teach **Yours**: leaving edit mode (or opening Settings > Footing Style) re-fits a few engine weights so the unpinned engine places as many hand-set feet as it can, and Settings switches the preview between **Ours** and **Yours**. Debug builds also mirror each chart's pins to the app's support directory; copy them into the repo to make them tests:
+Pins live in the app database and pin that chart's preview. They also teach **Yours**: leaving edit mode (or opening Settings > Footing Style) re-fits a few engine weights so the unpinned engine places as many hand-set feet as it can, and Settings switches the preview between **Default** and **Yours**. Debug builds also mirror each chart's pins to the app's support directory; copy them into the repo to make them tests:
 
 ```bash
 cp ~/Library/Containers/com.shiggy.ddrmd/Data/Library/Application\ Support/com.shiggy.ddrmd/parity_labels/*.json test/parity_labels/

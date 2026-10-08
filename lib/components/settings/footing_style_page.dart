@@ -1,8 +1,8 @@
 /// Name: FootingStylePage
 /// Parent: SettingsPage
 /// Description: An overview of the parity engine: the patterns it finds most
-/// divisive, each looping a real-chart moment as the active style (Ours, or
-/// Yours learned from footing edits) dances it, chart and pad side by side.
+/// divisive, each looping a real-chart moment as the active style (Default,
+/// or Yours learned from footing edits) dances it, chart and pad side by side.
 library;
 
 import 'dart:convert';
@@ -22,7 +22,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
-/// Ours (the shipped footing) or Yours (learned from your edits); Yours stays
+/// Default (the shipped footing) or Yours (learned from your edits); Yours stays
 /// disabled until there's a fit to use.
 class FootingStyleSwitch extends StatelessWidget {
   const FootingStyleSwitch({super.key, this.onChanged});
@@ -35,7 +35,7 @@ class FootingStyleSwitch extends StatelessWidget {
       showSelectedIcon: false,
       style: const ButtonStyle(visualDensity: VisualDensity.compact),
       segments: [
-        const ButtonSegment(value: false, label: Text('Ours')),
+        const ButtonSegment(value: false, label: Text('Default')),
         ButtonSegment(
             value: true,
             label: const Text('Yours'),
@@ -209,11 +209,11 @@ class _FootingStylePageState extends State<FootingStylePage>
   // How many hand-set feet each style places on its own.
   Widget _editsLine(FootingFit fit) {
     final total = fit.pinCounts.fold(0, (a, b) => a + b);
-    final ours = fit.result.before.fold(0, (a, b) => a + b);
+    final byDefault = fit.result.before.fold(0, (a, b) => a + b);
     final yours = fit.result.after.fold(0, (a, b) => a + b);
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Text('Your edits  ·  Ours $ours/$total  ·  Yours $yours/$total',
+      child: Text('Your edits  ·  Default $byDefault/$total  ·  Yours $yours/$total',
           textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.blueGrey, fontSize: 13)),
     );
