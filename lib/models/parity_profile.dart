@@ -112,19 +112,25 @@ Map<ParityFlag, int> flagCounts(List<List<StepNote>> charts, ParityWeights w) {
   return counts;
 }
 
-/// The profile the chart preview solves with: the player's fitted weights once
-/// they've chosen to use them, otherwise the defaults.
+/// "Ours" (the shipped weights) or "Yours" (fitted to the questionnaire). The
+/// latest fit is always kept, so switching between them never needs a retake.
 class ParityProfile {
-  static ParityWeights get active {
+  static ParityWeights? get yours {
     final raw = Settings.getString(Settings.parityProfileKey);
-    if (raw.isEmpty) return ParityWeights.defaults;
+    if (raw.isEmpty) return null;
     return ParityWeights.fromJson(json.decode(raw) as Map<String, dynamic>);
   }
 
-  static bool get isCustom =>
-      Settings.getString(Settings.parityProfileKey).isNotEmpty;
+  static void saveYours(ParityWeights weights) => Settings.setString(
+      Settings.parityProfileKey, json.encode(weights.toJson()));
 
-  static void use(ParityWeights? weights) => Settings.setString(
-      Settings.parityProfileKey,
-      weights == null ? '' : json.encode(weights.toJson()));
+  static bool get usingYours =>
+      Settings.getInt(Settings.parityProfileOnKey) == 1 && yours != null;
+
+  static set usingYours(bool on) =>
+      Settings.setInt(Settings.parityProfileOnKey, on ? 1 : 0);
+
+  /// What the chart preview solves with.
+  static ParityWeights get active =>
+      usingYours ? yours! : ParityWeights.defaults;
 }

@@ -95,96 +95,74 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             iconTheme: const IconThemeData(color: Colors.blueGrey),
           ),
-          body: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                  physics: const NeverScrollableScrollPhysics(),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                        minWidth: constraints.maxWidth,
-                        // TODO: find a better way to set height, dynamic height shifts the layout
-                        minHeight: MediaQuery.of(context).size.height * 0.74),
-                    child: IntrinsicHeight(
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.max,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.max,
-                                children: [
-                                  SettingCard<int>(
-                                    setValue: _setReadSpeed,
-                                    chosenValue: _chosenReadSpeed,
-                                    field: "Read Speed",
-                                    maxLength: 3,
-                                  ),
-                                  SettingCard<String>(
-                                    setValue: _setRivalCode,
-                                    chosenValue: _rivalCode,
-                                    field: "Rival Code",
-                                    maxLength: 8,
-                                  ),
-                                  SettingCard<String>(
-                                    setValue: _setUsername,
-                                    chosenValue: _username,
-                                    field: "Username",
-                                    maxLength: constants.usernameLength,
-                                    digitsOnly: false,
-                                  ),
-                                  const _PlayStyleCard(),
-                                  Card(
-                                    child: ListTile(
-                                      title: const Text("Footing Style",
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.w600)),
-                                      trailing:
-                                          const Icon(Icons.chevron_right),
-                                      onTap: () => Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                              builder: (_) =>
-                                                  const ParityQuizPage())),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              mainAxisSize: MainAxisSize.max,
-                              children: [
-                                const Expanded(
-                                    child: Padding(
-                                  padding: EdgeInsets.only(left: 8.0),
-                                  child: Text(constants.appVer),
-                                )),
-                                IconButton(
-                                    onPressed: () =>
-                                        _launchUrl(constants.github),
-                                    icon: const FaIcon(FontAwesomeIcons.github,
-                                        size: 20)),
-                                IconButton(
-                                    onPressed: () =>
-                                        _launchUrl(constants.linkedin),
-                                    icon: const FaIcon(
-                                        FontAwesomeIcons.linkedin,
-                                        size: 20)),
-                                IconButton(
-                                    onPressed: () =>
-                                        _launchUrl(constants.paypalDono),
-                                    icon: const FaIcon(FontAwesomeIcons.paypal,
-                                        size: 20)),
-                              ],
-                            ),
-                          ],
-                        ),
+          // Settings scroll; the links stay pinned to the bottom.
+          body: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(8),
+                  children: [
+                    const _SectionHeader('Profile'),
+                    SettingCard<int>(
+                      setValue: _setReadSpeed,
+                      chosenValue: _chosenReadSpeed,
+                      field: "Read Speed",
+                      maxLength: 3,
+                    ),
+                    SettingCard<String>(
+                      setValue: _setRivalCode,
+                      chosenValue: _rivalCode,
+                      field: "Rival Code",
+                      maxLength: 8,
+                    ),
+                    SettingCard<String>(
+                      setValue: _setUsername,
+                      chosenValue: _username,
+                      field: "Username",
+                      maxLength: constants.usernameLength,
+                      digitsOnly: false,
+                    ),
+                    const _SectionHeader('Play'),
+                    const _PlayStyleCard(),
+                    Card(
+                      child: ListTile(
+                        title: const Text("Footing Style",
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        trailing: FootingStyleSwitch(
+                            onChanged: () => setState(() {})),
+                        onTap: () async {
+                          await Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => const ParityQuizPage()));
+                          if (mounted) setState(() {});
+                        },
                       ),
                     ),
-                  ));
-            },
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    const Expanded(
+                        child: Padding(
+                      padding: EdgeInsets.only(left: 8.0),
+                      child: Text(constants.appVer),
+                    )),
+                    IconButton(
+                        onPressed: () => _launchUrl(constants.github),
+                        icon: const FaIcon(FontAwesomeIcons.github, size: 20)),
+                    IconButton(
+                        onPressed: () => _launchUrl(constants.linkedin),
+                        icon:
+                            const FaIcon(FontAwesomeIcons.linkedin, size: 20)),
+                    IconButton(
+                        onPressed: () => _launchUrl(constants.paypalDono),
+                        icon: const FaIcon(FontAwesomeIcons.paypal, size: 20)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -203,43 +181,53 @@ class _SettingsPageState extends State<SettingsPage> {
 class _PlayStyleCard extends StatelessWidget {
   const _PlayStyleCard();
 
-  Widget _styleOption(BuildContext context, Modes mode, String asset) {
-    var songState = context.watch<SongState>();
-    final selected = songState.modes == mode;
-    return InkWell(
-      borderRadius: BorderRadius.circular(6),
-      onTap: () {
-        if (selected) return;
-        songState.setMode(mode);
-        showToast(context,
-            "Set play style to ${mode == Modes.singles ? "singles" : "doubles"}");
-      },
-      child: Opacity(
-        opacity: selected ? 1 : 0.3,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-          child: Image.asset(asset, height: 15),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    var songState = context.watch<SongState>();
+    ButtonSegment<Modes> segment(Modes mode, String asset) => ButtonSegment(
+        value: mode,
+        label: Opacity(
+          opacity: songState.modes == mode ? 1 : 0.4,
+          child: Image.asset(asset, height: 15),
+        ));
     return Card(
       child: ListTile(
         title: const Text("Play Style",
             style: TextStyle(fontWeight: FontWeight.w600)),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _styleOption(
-                context, Modes.singles, 'assets/icons/style_single.png'),
-            _styleOption(
-                context, Modes.doubles, 'assets/icons/style_double.png'),
+        trailing: SegmentedButton<Modes>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: [
+            segment(Modes.singles, 'assets/icons/style_single.png'),
+            segment(Modes.doubles, 'assets/icons/style_double.png'),
           ],
+          selected: {songState.modes},
+          onSelectionChanged: (s) {
+            songState.setMode(s.first);
+            showToast(context,
+                "Set play style to ${s.first == Modes.singles ? "singles" : "doubles"}");
+          },
         ),
       ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 4),
+      child: Text(label.toUpperCase(),
+          style: const TextStyle(
+              fontSize: 12,
+              letterSpacing: 1.2,
+              color: Colors.blueGrey,
+              fontWeight: FontWeight.w700)),
     );
   }
 }

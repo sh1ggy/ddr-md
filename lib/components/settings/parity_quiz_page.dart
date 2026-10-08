@@ -44,6 +44,34 @@ const Map<String, String> _patternNames = {
   );
 }
 
+/// Ours (the shipped footing) or Yours (fitted to the questionnaire); Yours
+/// stays disabled until there's a fit to use.
+class FootingStyleSwitch extends StatelessWidget {
+  const FootingStyleSwitch({super.key, this.onChanged});
+
+  final VoidCallback? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<bool>(
+      showSelectedIcon: false,
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+      segments: [
+        const ButtonSegment(value: false, label: Text('Ours')),
+        ButtonSegment(
+            value: true,
+            label: const Text('Yours'),
+            enabled: ParityProfile.yours != null),
+      ],
+      selected: {ParityProfile.usingYours},
+      onSelectionChanged: (s) {
+        ParityProfile.usingYours = s.first;
+        onChanged?.call();
+      },
+    );
+  }
+}
+
 class ParityQuizPage extends StatefulWidget {
   const ParityQuizPage({super.key});
 
@@ -60,7 +88,6 @@ class _ParityQuizPageState extends State<ParityQuizPage>
   // Fitted once every question is answered; shown past the last question.
   FitResult? _fit;
   Map<ParityFlag, int> _countsBefore = const {}, _countsAfter = const {};
-  bool _inUse = ParityProfile.isCustom;
 
   bool get _onResults => _index == _questions.length;
 
@@ -145,7 +172,7 @@ class _ParityQuizPageState extends State<ParityQuizPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Footing style',
+        title: const Text('Footing Style',
             style: TextStyle(
                 fontSize: 20,
                 color: Colors.blueGrey,
@@ -172,6 +199,7 @@ class _ParityQuizPageState extends State<ParityQuizPage>
         _questions[i].fitCase(charts[i], _answers[_questions[i].id]!)
     ];
     final (fit, before, after) = await compute(_fitJob, (cases, charts));
+    ParityProfile.saveYours(fit.weights);
     if (!mounted) return;
     setState(() {
       _fit = fit;
@@ -180,93 +208,79 @@ class _ParityQuizPageState extends State<ParityQuizPage>
     });
   }
 
-  void _use(bool mine) {
-    ParityProfile.use(mine ? _fit!.weights : null);
-    setState(() => _inUse = mine);
-  }
-
   Widget _buildResults(BuildContext context) {
     final fit = _fit;
     if (fit == null) return const Center(child: CircularProgressIndicator());
     final n = _questions.length;
-    final before = fit.before.where((x) => x).length;
-    final after = fit.after.where((x) => x).length;
-    final defaults = ParityWeights.defaults.toJson(), mine = fit.weights.toJson();
+    final yours = ParityProfile.usingYours;
     const dim = TextStyle(color: Colors.blueGrey, fontSize: 13);
     Widget tick(bool ok) => Icon(ok ? Icons.check_circle : Icons.circle_outlined,
         size: 18, color: ok ? Colors.greenAccent : Colors.white24);
+    // Two columns throughout, the one in use tinted.
+    Widget row(Widget label, Widget ours, Widget mine, {VoidCallback? onTap}) {
+      Widget cell(Widget child, bool active) => Container(
+            width: 72,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            color: active ? Colors.white.withValues(alpha: 0.05) : null,
+            child: child,
+          );
+      return InkWell(
+        onTap: onTap,
+        child: Row(children: [
+          Expanded(child: label),
+          cell(ours, !yours),
+          cell(mine, yours),
+        ]),
+      );
+    }
+
+    Text count(int? v) => Text('${v ?? 0}',
+        style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]));
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         children: [
-          Center(
-            child: Text('$before/$n  →  $after/$n',
-                style: const TextStyle(
-                    fontSize: 34, fontWeight: FontWeight.w800)),
+          row(const SizedBox(),
+              const Text('Ours', style: TextStyle(fontWeight: FontWeight.w700)),
+              const Text('Yours', style: TextStyle(fontWeight: FontWeight.w700))),
+          row(
+            const Text('Moments read your way'),
+            Text('${fit.before.where((x) => x).length}/$n',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            Text('${fit.after.where((x) => x).length}/$n',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
           ),
-          const Center(child: Text('read your way', style: dim)),
-          const SizedBox(height: 16),
           for (int i = 0; i < n; i++)
-            ListTile(
-              dense: true,
-              title: Text(
-                  _patternNames[_questions[i].pattern] ?? _questions[i].pattern),
-              subtitle: Text(_questions[i].song, style: dim),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                tick(fit.before[i]),
-                const Icon(Icons.arrow_right_alt, color: Colors.white24),
-                tick(fit.after[i]),
-              ]),
+            row(
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_patternNames[_questions[i].pattern] ??
+                        _questions[i].pattern),
+                    Text(_questions[i].song,
+                        style: dim, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+              tick(fit.before[i]),
+              tick(fit.after[i]),
               onTap: () => _show(i),
             ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final MapEntry(key: k, value: label) in tunableWeights.entries)
-                if (mine[k] != defaults[k])
-                  // A cheaper pattern shows up more.
-                  Chip(
-                    avatar: Icon(
-                        mine[k]! < defaults[k]!
-                            ? Icons.arrow_upward
-                            : Icons.arrow_downward,
-                        size: 16),
-                    label: Text(label),
-                  ),
-            ],
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          const Text('Across these 8 charts', style: dim),
           for (final (flag, label) in const [
             (ParityFlag.doublestep, 'Doublesteps'),
             (ParityFlag.crossover, 'Crossovers'),
             (ParityFlag.footswitch, 'Footswitches'),
-            (ParityFlag.samePanel, 'Same panel'),
+            (ParityFlag.samePanel, 'Both feet on one arrow'),
           ])
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              child: Row(children: [
-                Expanded(child: Text(label, style: dim)),
-                Text('${_countsBefore[flag]}  →  ${_countsAfter[flag]}'),
-              ]),
-            ),
+            row(Text(label), count(_countsBefore[flag]), count(_countsAfter[flag])),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: _inUse ? () => _use(false) : null,
-                  child: Text(_inUse ? 'Back to default' : 'Default in use'),
-                ),
-              ),
-              Expanded(
-                child: FilledButton(
-                  onPressed: _inUse ? null : () => _use(true),
-                  child: Text(_inUse ? 'Your style in use' : 'Use my style'),
-                ),
-              ),
-            ],
+          Center(
+            child: FootingStyleSwitch(onChanged: () => setState(() {})),
           ),
         ],
       ),
