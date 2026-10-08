@@ -36,6 +36,7 @@ import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_labels.dart';
+import 'package:ddr_md/models/parity_profile.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
@@ -1127,10 +1128,13 @@ class _ChartScrollerState extends State<ChartScroller>
   void _assignFeet() {
     final source = widget.steps.notes;
     final turned = _turned(source);
-    final analysis = analyseParity(turned, widget.mode, pins: {
-      for (int i = 0; i < source.length; i++)
-        if (_pins[source[i]] case final foot?) turned[i]: foot,
-    });
+    // Solved with the player's footing style when they've chosen to use it.
+    final analysis = analyseParity(turned, widget.mode,
+        weights: ParityProfile.active,
+        pins: {
+          for (int i = 0; i < source.length; i++)
+            if (_pins[source[i]] case final foot?) turned[i]: foot,
+        });
     _feet = {
       for (int i = 0; i < source.length; i++)
         if (analysis.feet[turned[i]] case final foot?)

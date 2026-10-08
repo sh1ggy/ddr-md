@@ -13,6 +13,9 @@ import 'package:ddr_md/models/steps_model.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_quiz.dart';
+import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/parity_labels.dart';
+import 'package:ddr_md/models/parity_profile.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -28,6 +31,19 @@ const Map<String, String> _patternNames = {
   'lateral': 'Lateral',
 };
 
+/// The fit plus flag counts before and after, off the UI isolate: a few
+/// seconds of solving that would otherwise freeze the page.
+(FitResult, Map<ParityFlag, int>, Map<ParityFlag, int>) _fitJob(
+    (List<FitCase>, List<List<StepNote>>) job) {
+  final (cases, charts) = job;
+  final fit = fitProfile(cases);
+  return (
+    fit,
+    flagCounts(charts, ParityWeights.defaults),
+    flagCounts(charts, fit.weights),
+  );
+}
+
 class ParityQuizPage extends StatefulWidget {
   const ParityQuizPage({super.key});
 
@@ -41,6 +57,13 @@ class _ParityQuizPageState extends State<ParityQuizPage>
   Map<String, int> _answers = {};
   int _index = 0;
 
+  // Fitted once every question is answered; shown past the last question.
+  FitResult? _fit;
+  Map<ParityFlag, int> _countsBefore = const {}, _countsAfter = const {};
+  bool _inUse = ParityProfile.isCustom;
+
+  bool get _onResults => _index == _questions.length;
+
   // One clock loops the current moment for every option, so their pads and
   // charts move in step and can be compared side by side.
   late final AnimationController _loop = AnimationController(vsync: this)
@@ -48,12 +71,18 @@ class _ParityQuizPageState extends State<ParityQuizPage>
   final ValueNotifier<double> _playhead = ValueNotifier(0);
 
   void _tick() {
+    if (_onResults) return;
     final rows = _questions[_index].rows;
     final span = rows.last.second - rows.first.second + _leadIn + _tail;
     _playhead.value = rows.first.second - _leadIn + _loop.value * span;
   }
 
   void _restartLoop() {
+    if (_onResults) {
+      _loop.stop();
+      _runFit();
+      return;
+    }
     final rows = _questions[_index].rows;
     final span = rows.last.second - rows.first.second + _leadIn + _tail;
     _loop
@@ -82,9 +111,9 @@ class _ParityQuizPageState extends State<ParityQuizPage>
       if (!mounted) return;
       setState(() {
         _questions = qs;
-        // Resume at the first unanswered question.
+        // Resume at the first unanswered question, or the results.
         final next = qs.indexWhere((q) => !_answers.containsKey(q.id));
-        _index = next < 0 ? 0 : next;
+        _index = next < 0 ? qs.length : next;
       });
       _restartLoop();
     });
@@ -107,7 +136,9 @@ class _ParityQuizPageState extends State<ParityQuizPage>
       _answers = {..._answers, q.id: option};
       QuizAnswers.write(_answers);
     });
-    if (_index < _questions.length - 1) _show(_index + 1);
+    _fit = null;
+    final next = _questions.indexWhere((q) => !_answers.containsKey(q.id));
+    _show(next < 0 ? _questions.length : next);
   }
 
   @override
@@ -123,7 +154,122 @@ class _ParityQuizPageState extends State<ParityQuizPage>
       ),
       body: _questions.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : _buildQuestion(context),
+          : _onResults
+              ? _buildResults(context)
+              : _buildQuestion(context),
+    );
+  }
+
+  Future<void> _runFit() async {
+    if (_fit != null) return;
+    final charts = <List<StepNote>>[];
+    for (final q in _questions) {
+      final song = await StepsLoader.load(q.song);
+      charts.add(song!.chartFor(Modes.singles, q.difficulty)!.notes);
+    }
+    final cases = [
+      for (int i = 0; i < _questions.length; i++)
+        _questions[i].fitCase(charts[i], _answers[_questions[i].id]!)
+    ];
+    final (fit, before, after) = await compute(_fitJob, (cases, charts));
+    if (!mounted) return;
+    setState(() {
+      _fit = fit;
+      _countsBefore = before;
+      _countsAfter = after;
+    });
+  }
+
+  void _use(bool mine) {
+    ParityProfile.use(mine ? _fit!.weights : null);
+    setState(() => _inUse = mine);
+  }
+
+  Widget _buildResults(BuildContext context) {
+    final fit = _fit;
+    if (fit == null) return const Center(child: CircularProgressIndicator());
+    final n = _questions.length;
+    final before = fit.before.where((x) => x).length;
+    final after = fit.after.where((x) => x).length;
+    final defaults = ParityWeights.defaults.toJson(), mine = fit.weights.toJson();
+    const dim = TextStyle(color: Colors.blueGrey, fontSize: 13);
+    Widget tick(bool ok) => Icon(ok ? Icons.check_circle : Icons.circle_outlined,
+        size: 18, color: ok ? Colors.greenAccent : Colors.white24);
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Center(
+            child: Text('$before/$n  →  $after/$n',
+                style: const TextStyle(
+                    fontSize: 34, fontWeight: FontWeight.w800)),
+          ),
+          const Center(child: Text('read your way', style: dim)),
+          const SizedBox(height: 16),
+          for (int i = 0; i < n; i++)
+            ListTile(
+              dense: true,
+              title: Text(
+                  _patternNames[_questions[i].pattern] ?? _questions[i].pattern),
+              subtitle: Text(_questions[i].song, style: dim),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                tick(fit.before[i]),
+                const Icon(Icons.arrow_right_alt, color: Colors.white24),
+                tick(fit.after[i]),
+              ]),
+              onTap: () => _show(i),
+            ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final MapEntry(key: k, value: label) in tunableWeights.entries)
+                if (mine[k] != defaults[k])
+                  // A cheaper pattern shows up more.
+                  Chip(
+                    avatar: Icon(
+                        mine[k]! < defaults[k]!
+                            ? Icons.arrow_upward
+                            : Icons.arrow_downward,
+                        size: 16),
+                    label: Text(label),
+                  ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          for (final (flag, label) in const [
+            (ParityFlag.doublestep, 'Doublesteps'),
+            (ParityFlag.crossover, 'Crossovers'),
+            (ParityFlag.footswitch, 'Footswitches'),
+            (ParityFlag.samePanel, 'Same panel'),
+          ])
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              child: Row(children: [
+                Expanded(child: Text(label, style: dim)),
+                Text('${_countsBefore[flag]}  →  ${_countsAfter[flag]}'),
+              ]),
+            ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: _inUse ? () => _use(false) : null,
+                  child: Text(_inUse ? 'Back to default' : 'Default in use'),
+                ),
+              ),
+              Expanded(
+                child: FilledButton(
+                  onPressed: _inUse ? null : () => _use(true),
+                  child: Text(_inUse ? 'Your style in use' : 'Use my style'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -183,7 +329,8 @@ class _ParityQuizPageState extends State<ParityQuizPage>
                   style: const TextStyle(color: Colors.blueGrey)),
               IconButton(
                 icon: const Icon(Icons.chevron_right),
-                onPressed: _index == _questions.length - 1
+                onPressed: _index == _questions.length - 1 &&
+                        _answers.length < _questions.length
                     ? null
                     : () => _show(_index + 1),
               ),

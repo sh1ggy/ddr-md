@@ -9,6 +9,7 @@ library;
 import 'dart:convert';
 
 import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_profile.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/services.dart';
@@ -121,6 +122,22 @@ class QuizQuestion {
             )
         ],
       );
+
+  /// This moment as a fitting case on its whole chart (a close call is decided
+  /// by the rest of the chart, so a cut-out stretch can tip the other way),
+  /// with [option]'s feet as chosen.
+  FitCase fitCase(List<StepNote> chart, int option) {
+    final notes = chart;
+    final byKey = {for (final n in notes) (n.beat, n.col): n};
+    final key = rows.indexWhere((r) => r.key);
+    Map<StepNote, ParityFoot> feetOf(Iterable<QuizRow> rows) => {
+          for (final row in rows)
+            for (final q in row.notes)
+              if (byKey[(q.beat, q.col)] case final n?) n: q.feet[option]
+        };
+    return FitCase(
+        notes, feetOf(rows.take(key)), feetOf(rows.skip(key)));
+  }
 
   static Future<List<QuizQuestion>> load() async => [
         for (final q in json.decode(
