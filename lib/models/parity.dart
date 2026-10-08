@@ -144,18 +144,10 @@ class _Weights {
   /// doublestep.
   static const double bracket = 200;
 
-  /// Changing feet on a side panel (the "LL" / "RR" case) — swapping which foot
-  /// owns the outside of the pad, which players overwhelmingly don't do. Well
-  /// above SMEditor's 130, and only effective alongside [_State.lastFoot]: while
-  /// the check keyed off feet still *resting* on the panel it missed every
-  /// switch with notes in between, so the weight alone moved almost nothing.
-  ///
-  /// Measured over ~5300 singles charts (~1.53M rows), switches / doublesteps
-  /// per 1k rows: 43.0/109.8 (130), 34.8/114.1 (400), 26.0/119.4 (700),
-  /// 20.8/124.1 (1000), 5.8/143.5 (2000). Switches only leave by *becoming*
-  /// doublesteps, so past ~1000 each one removed costs more than it saves; 800
-  /// roughly halves the rate on the good side of that trade.
-  static const double sideswitch = 800;
+  /// Side-panel ownership changes are represented by movement and body-facing
+  /// costs. Keep this small enough that a lateral remains cheaper to walk than
+  /// to doublestep, while retaining a modest preference for stable ownership.
+  static const double sideswitch = 50;
 }
 
 // ---------------------------------------------------------------------------
@@ -462,6 +454,31 @@ class _ParityEngine {
       if (now != _Foot.none && !_sameFoot(now, was)) return false;
     }
     return true;
+  }
+
+  /// A one-arrow follow-up to a jump reuses the foot that just landed on that
+  /// panel. Letting the other foot take it would swap feet on an occupied panel
+  /// for no physical benefit, and the jump transition deliberately bypasses the
+  /// usual jack / doublestep costs that would otherwise discourage it.
+  bool _jumpFollowupKeepsLandingFoot(
+      _State initial, _Row row, List<int> action) {
+    final jumpedLeft = initial.movedFeet.any(_Foot.isLeft);
+    final jumpedRight = initial.movedFeet.any((foot) => !_Foot.isLeft(foot));
+    if (!jumpedLeft || !jumpedRight) return true;
+
+    var noteCount = 0;
+    var noteColumn = -1;
+    for (int col = 0; col < layout.columnCount; col++) {
+      if (row.notes[col] != null) {
+        noteCount++;
+        noteColumn = col;
+      }
+    }
+    if (noteCount != 1) return true;
+
+    final was = initial.combinedColumns[noteColumn];
+    final now = action[noteColumn];
+    return was == _Foot.none || now == _Foot.none || _sameFoot(was, now);
   }
 
   static bool _sameFoot(int a, int b) => _Foot.isLeft(a) == _Foot.isLeft(b);
@@ -933,6 +950,10 @@ class _ParityEngine {
         _State? bestResult;
         for (int p = 0; p < prevLayer.length; p++) {
           if (r > 0 && !_holdsKeepTheirFoot(prevLayer[p], row, action)) continue;
+          if (r > 0 &&
+              !_jumpFollowupKeepsLandingFoot(prevLayer[p], row, action)) {
+            continue;
+          }
           final result = _initResultState(prevLayer[p], row, action);
           final edge = _cost(prevLayer[p], result, rows, r);
           final c = prevCost[p] + edge;

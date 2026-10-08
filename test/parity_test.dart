@@ -51,6 +51,39 @@ void main() {
     }
   });
 
+  test('scooby lateral L D R L U R stays fully alternating', () {
+    // A lateral ("scooby") crosses through the opposite side before resolving
+    // forward. It is a deliberate six-step walk, not an excuse to doublestep
+    // through the middle of the pattern.
+    final notes = stream(
+      [(0, L), (1, D), (2, R), (3, L), (4, U), (5, R)],
+      bpm: 160,
+    );
+    final p = assignParity(notes, Modes.singles);
+    final feet = notes.map((n) => p[n]).toList();
+    for (int i = 1; i < feet.length; i++) {
+      expect(feet[i], isNot(equals(feet[i - 1])),
+          reason: 'scooby doublestepped at $i: ${render(notes, p)}');
+    }
+  });
+
+  test('Soda Galaxy 12 keeps Left with the left foot after an L+R jump', () {
+    // SP Hard, beats 45–60. At beat 51 both feet land on Left+Right; the next
+    // Left is a straightforward repeat for the foot already on that panel.
+    final notes = stream([
+      (45, D), (45, U), (46, R), (47, L), (47, R), (48, D),
+      (49, D), (49, U), (50, L), (51, L), (51, R), (52, L),
+      (52.5, D), (53, R), (54, L), (54.5, D), (55, U), (56, R),
+      (56.5, D), (57, L), (58, D), (58.5, U), (59, L), (60, R),
+    ], bpm: 178);
+    final result = analyseParity(notes, Modes.singles);
+    final jumpLeft = notes.firstWhere((n) => n.beat == 51 && n.col == L);
+    final nextLeft = notes.firstWhere((n) => n.beat == 52 && n.col == L);
+    expect(result.feet[jumpLeft], equals(ParityFoot.left));
+    expect(result.feet[nextLeft], equals(ParityFoot.left),
+        reason: 'the right foot replaced the left foot already on Left');
+  });
+
   test('footswitch: repeat where a jack would force a doublestep switches feet',
       () {
     // Force the footswitch to be the cheaper option. In "R L L D", the two L's
