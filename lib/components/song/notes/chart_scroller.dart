@@ -75,9 +75,9 @@ List<int> _turnColumnMap(_Turn turn, int columnCount) {
   return [for (int c = 0; c < columnCount; c++) c];
 }
 
-List<(double, ParityFlag)> _rankJob(
+List<(double, ParityFlag)> _divisiveJob(
         (List<StepNote>, Modes, Map<StepNote, ParityFoot>, ParityWeights) job) =>
-    rankMoments(job.$1, job.$2, job.$3, job.$4);
+    divisiveMoments(job.$1, job.$2, job.$3, job.$4);
 
 class ChartScroller extends StatefulWidget {
   const ChartScroller({
@@ -411,6 +411,7 @@ class _ChartScrollerState extends State<ChartScroller>
   Set<StepNote> _focus = const {};
   List<double> _rowSeconds = const [];
   List<(double, ParityFlag)> _moments = const [];
+  bool _momentsFound = false;
   double? _momentSecond;
   String _chartHash = '';
   ChartPainter? _painter;
@@ -1175,12 +1176,13 @@ class _ChartScrollerState extends State<ChartScroller>
     }
   }
 
-  // The few moments worth the player's input, weighed once per edit session
-  // (off the UI isolate) so the list holds still while they edit.
+  // The moments where the engine is torn, found once per edit session (off the
+  // UI isolate) so the list holds still while the player edits.
   Future<void> _rankMoments() async {
+    setState(() => _momentsFound = false);
     final source = widget.steps.notes;
     final turned = _turned(source);
-    final moments = await compute(_rankJob, (
+    final moments = await compute(_divisiveJob, (
       turned,
       widget.mode,
       {
@@ -1190,7 +1192,10 @@ class _ChartScrollerState extends State<ChartScroller>
       ParityProfile.active,
     ));
     if (!mounted || !widget.editFooting) return;
-    setState(() => _moments = moments);
+    setState(() {
+      _moments = moments;
+      _momentsFound = true;
+    });
     if (_momentSecond == null) _stepMoment(1);
   }
 
@@ -1381,13 +1386,17 @@ class _ChartScrollerState extends State<ChartScroller>
               IconButton(
                 icon: const Icon(Icons.chevron_left),
                 color: Colors.white70,
-                onPressed: () => _stepMoment(-1),
+                onPressed: _moments.isEmpty ? null : () => _stepMoment(-1),
               ),
               Expanded(
                 child: Text(
-                  i < 0
-                      ? '–'
-                      : '${_flagNames[_moments[i].$2]} ${i + 1}/${_moments.length}',
+                  !_momentsFound
+                      ? '…'
+                      : _moments.isEmpty
+                          ? 'Nothing divisive here'
+                          : i < 0
+                              ? '–'
+                              : '${_flagNames[_moments[i].$2]} ${i + 1}/${_moments.length}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
@@ -1395,7 +1404,7 @@ class _ChartScrollerState extends State<ChartScroller>
               IconButton(
                 icon: const Icon(Icons.chevron_right),
                 color: Colors.white70,
-                onPressed: () => _stepMoment(1),
+                onPressed: _moments.isEmpty ? null : () => _stepMoment(1),
               ),
               done
                   ? IconButton.filled(
