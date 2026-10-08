@@ -1,0 +1,58 @@
+[
+ {
+  "pattern": "jack-vs-footswitch",
+  "song": "POSSESSION (20th Anniversary Mix)",
+  "difficulty": "easy",
+  "from": 55.158,
+  "key": 56.0,
+  "to": 56.632
+ },
+ {
+  "pattern": "slow-doublestep-vs-crossover",
+  "song": "Right on time (Ryu Remix)",
+  "difficulty": "easy",
+  "from": 57.987,
+  "key": 59.597,
+  "to": 60.805
+ },
+ {
+  "pattern": "candle",
+  "song": "Totsugeki! Glass no kneeso hime!",
+  "difficulty": "medium",
+  "from": 25.297,
+  "key": 26.27,
+  "to": 27.243
+ },
+ {
+  "pattern": "spin",
+  "song": "PARANOiA KCET ~clean mix~",
+  "difficulty": "hard",
+  "from": 17.676,
+  "key": 18.676,
+  "to": 19.509
+ },
+ {
+  "pattern": "bracket-vs-jump",
+  "song": "BRILLIANT 2U",
+  "difficulty": "hard",
+  "from": 20.4,
+  "key": 21.8,
+  "to": 22.6
+ },
+ {
+  "pattern": "hold-with-taps",
+  "song": "Nageki no ki",
+  "difficulty": "challenge",
+  "from": 38.531,
+  "key": 39.0,
+  "to": 39.562
+ },
+ {
+  "pattern": "lateral",
+  "song": "The Lonely Streets",
+  "difficulty": "challenge",
+  "from": 79.696,
+  "key": 80.348,
+  "to": 80.739
+ }
+]
