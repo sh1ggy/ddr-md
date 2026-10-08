@@ -363,7 +363,22 @@ class _ParityEngine {
   /// placements entirely, which no weight can match.
   final bool allowBrackets;
 
-  _ParityEngine(this.layout, {this.allowBrackets = true});
+  _ParityEngine(this.layout, {this.allowBrackets = true, this.pins = const {}});
+
+  /// Notes whose foot is fixed (hand labels); the solve fits everything else
+  /// around them.
+  final Map<StepNote, ParityFoot> pins;
+
+  /// Whether [action] puts every pinned note in [row] on its pinned foot.
+  bool _honoursPins(_Row row, List<int> action) {
+    for (int col = 0; col < layout.columnCount; col++) {
+      final pin = pins[row.notes[col]];
+      if (pin == null) continue;
+      final foot = action[col];
+      if (foot == _Foot.none || _Foot.toParityFoot(foot) != pin) return false;
+    }
+    return true;
+  }
 
   /// Build rows by grouping notes on the same (rounded) second. Holds are
   /// tracked so a foot may legally "double step" while the other foot holds.
@@ -951,31 +966,42 @@ class _ParityEngine {
           ? <List<int>>[List<int>.filled(layout.columnCount, _Foot.none)]
           : actions;
 
-      for (final action in effectiveActions) {
-        double best = double.infinity;
-        int bestPrev = 0;
-        _State? bestResult;
-        for (int p = 0; p < prevLayer.length; p++) {
-          if (r > 0 && !_holdsKeepTheirFoot(prevLayer[p], row, action)) continue;
-          if (r > 0 &&
-              !_jumpFollowupKeepsLandingFoot(prevLayer[p], row, action)) {
-            continue;
+      void expand(Iterable<List<int>> candidates) {
+        for (final action in candidates) {
+          double best = double.infinity;
+          int bestPrev = 0;
+          _State? bestResult;
+          for (int p = 0; p < prevLayer.length; p++) {
+            if (r > 0 && !_holdsKeepTheirFoot(prevLayer[p], row, action)) {
+              continue;
+            }
+            if (r > 0 &&
+                !_jumpFollowupKeepsLandingFoot(prevLayer[p], row, action)) {
+              continue;
+            }
+            final result = _initResultState(prevLayer[p], row, action);
+            final edge = _cost(prevLayer[p], result, rows, r);
+            final c = prevCost[p] + edge;
+            if (c < best) {
+              best = c;
+              bestPrev = p;
+              bestResult = result;
+            }
           }
-          final result = _initResultState(prevLayer[p], row, action);
-          final edge = _cost(prevLayer[p], result, rows, r);
-          final c = prevCost[p] + edge;
-          if (c < best) {
-            best = c;
-            bestPrev = p;
-            bestResult = result;
-          }
+          // Every predecessor would have released a hold — not a reachable state.
+          if (bestResult == null) continue;
+          curStates.add(bestResult);
+          curCost.add(best);
+          curBack.add(bestPrev);
         }
-        // Every predecessor would have released a hold — not a reachable state.
-        if (bestResult == null) continue;
-        curStates.add(bestResult);
-        curCost.add(best);
-        curBack.add(bestPrev);
       }
+
+      expand(pins.isEmpty
+          ? effectiveActions
+          : effectiveActions.where((a) => _honoursPins(row, a)));
+      // A pin the row can't honour (it fights a hold, say) is dropped rather
+      // than leaving the solve with no path.
+      if (curStates.isEmpty && pins.isNotEmpty) expand(effectiveActions);
 
       layers.add(curStates);
       back.add(curBack);
@@ -1045,14 +1071,18 @@ class _ParityEngine {
 /// Brackets are legal but carry [_Weights.bracket] so they stay rare; passing
 /// [allowBrackets] false removes them entirely, which can push the solve into
 /// worse alternatives on charts where a bracket was the sane reading.
+///
+/// [pins] fixes the foot for particular notes (hand labels); everything else is
+/// solved around them.
 ParityResult analyseParity(List<StepNote> notes, Modes mode,
-    {bool allowBrackets = true}) {
+    {bool allowBrackets = true, Map<StepNote, ParityFoot> pins = const {}}) {
   final layout =
       mode == Modes.doubles ? _StageLayout.doubles : _StageLayout.singles;
-  return _ParityEngine(layout, allowBrackets: allowBrackets).analyse(notes);
+  return _ParityEngine(layout, allowBrackets: allowBrackets, pins: pins)
+      .analyse(notes);
 }
 
 /// Convenience for callers that only want the per-note L/R badges.
 Map<StepNote, ParityFoot> assignParity(List<StepNote> notes, Modes mode,
-        {bool allowBrackets = true}) =>
-    analyseParity(notes, mode, allowBrackets: allowBrackets).feet;
+        {bool allowBrackets = true, Map<StepNote, ParityFoot> pins = const {}}) =>
+    analyseParity(notes, mode, allowBrackets: allowBrackets, pins: pins).feet;

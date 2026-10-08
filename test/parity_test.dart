@@ -125,6 +125,17 @@ void main() {
     }
   });
 
+  test('a pinned note keeps its foot and the rest still solves', () {
+    final notes = stream([(0, L), (1, D), (2, U), (3, R), (4, D), (5, L)]);
+    final free = assignParity(notes, Modes.singles);
+    final flipped =
+        free[notes[2]] == ParityFoot.left ? ParityFoot.right : ParityFoot.left;
+    final pinned =
+        assignParity(notes, Modes.singles, pins: {notes[2]: flipped});
+    expect(pinned[notes[2]], equals(flipped));
+    expect(pinned.length, equals(notes.length), reason: render(notes, pinned));
+  });
+
   test('does not start crossed over', () {
     final notes = stream([(0, R), (1, L), (2, R), (3, L)]);
     final p = assignParity(notes, Modes.singles);
