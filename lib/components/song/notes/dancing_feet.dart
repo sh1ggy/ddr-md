@@ -320,10 +320,15 @@ class _FootPose {
   final int heelCol;
   final int toeCol;
 
-  const _FootPose(this.heelCol, this.toeCol);
+  /// Sideways nudge in panel units, for sharing a panel with the other foot.
+  final double shift;
 
-  Offset heel(Offset Function(int) pointFor) => pointFor(heelCol);
-  Offset toe(Offset Function(int) pointFor) => pointFor(toeCol);
+  const _FootPose(this.heelCol, this.toeCol, [this.shift = 0]);
+
+  Offset heel(Offset Function(int) pointFor, double unit) =>
+      pointFor(heelCol) + Offset(shift * unit, 0);
+  Offset toe(Offset Function(int) pointFor, double unit) =>
+      pointFor(toeCol) + Offset(shift * unit, 0);
 }
 
 class _PadPainter extends CustomPainter {
@@ -470,7 +475,13 @@ class _PadPainter extends CustomPainter {
     final heel = foot == ParityFoot.left ? stance.leftHeel : stance.rightHeel;
     final toe = foot == ParityFoot.left ? stance.leftToe : stance.rightToe;
     if (heel == -1 && toe == -1) return null;
-    return _FootPose(heel == -1 ? toe : heel, toe == -1 ? heel : toe);
+    // Both feet on one panel (mid-footswitch) stand side by side on it, left
+    // foot on the left half, rather than drawn on top of each other.
+    final left = stance.columnsFor(ParityFoot.left);
+    final right = stance.columnsFor(ParityFoot.right);
+    final sharing = left.length == 1 && right.length == 1 && left[0] == right[0];
+    return _FootPose(heel == -1 ? toe : heel, toe == -1 ? heel : toe,
+        sharing ? (foot == ParityFoot.left ? -0.28 : 0.28) : 0);
   }
 
   static final Paint _panelPaint = Paint()
@@ -520,8 +531,10 @@ class _PadPainter extends CustomPainter {
     double bodyTurn,
     double press,
   ) {
-    final heel = Offset.lerp(from.heel(pointFor), to.heel(pointFor), t)!;
-    final toe = Offset.lerp(from.toe(pointFor), to.toe(pointFor), t)!;
+    final heel =
+        Offset.lerp(from.heel(pointFor, unit), to.heel(pointFor, unit), t)!;
+    final toe =
+        Offset.lerp(from.toe(pointFor, unit), to.toe(pointFor, unit), t)!;
 
     // Heel->toe direction. Equal points mean a single-panel stance, which has no
     // axis of its own and stands upright under the body's turn; a bracket has a

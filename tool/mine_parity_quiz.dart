@@ -237,6 +237,7 @@ void main() {
                           'b': n.beat,
                           'c': n.col,
                           'hold': n.isHold,
+                          if (n.endSecond != null) 'e': n.endSecond,
                           'a': c.foot(n) == _l ? 'L' : 'R',
                           'alts': [
                             for (final alt in alts)

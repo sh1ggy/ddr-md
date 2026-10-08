@@ -10,17 +10,19 @@ import 'dart:convert';
 
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/services.dart';
 
 class QuizNote {
   final double beat;
   final int col;
   final bool hold;
+  final double? endSecond;
 
   /// The foot each option gives this note; option 0 is the engine's.
   final List<ParityFoot> feet;
 
-  const QuizNote(this.beat, this.col, this.hold, this.feet);
+  const QuizNote(this.beat, this.col, this.hold, this.endSecond, this.feet);
 }
 
 class QuizRow {
@@ -38,13 +40,30 @@ class QuizQuestion {
   final double second;
   final List<QuizRow> rows;
 
-  const QuizQuestion(
+  QuizQuestion(
       this.pattern, this.song, this.difficulty, this.second, this.rows);
 
   /// Stable id for storing the answer.
   String get id => '$song@$second';
 
   int get optionCount => rows.first.notes.first.feet.length;
+
+  /// The moment as chart notes, ascending, for the preview's painter; each
+  /// paired with its [QuizNote] so an option's feet can be keyed to it.
+  late final List<(StepNote, QuizNote)> chartNotes = [
+    for (final row in rows)
+      for (final n in row.notes)
+        (
+          StepNote(
+            beat: n.beat,
+            second: row.second,
+            col: n.col,
+            type: n.hold ? StepType.hold : StepType.tap,
+            endSecond: n.endSecond,
+          ),
+          n
+        )
+  ];
 
   /// Where [option] stands the player after each row, for the dancing pad.
   /// Each foot starts on the first panel it steps on, rather than off the pad.
@@ -92,6 +111,7 @@ class QuizQuestion {
                     (n['b'] as num).toDouble(),
                     n['c'] as int,
                     n['hold'] as bool,
+                    (n['e'] as num?)?.toDouble(),
                     [
                       for (final f in n['feet'] as List)
                         f == 'L' ? ParityFoot.left : ParityFoot.right

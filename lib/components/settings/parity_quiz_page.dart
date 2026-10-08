@@ -5,13 +5,18 @@
 /// one you'd dance. Answers are kept for fitting the player's parity profile.
 library;
 
-import 'package:ddr_md/components/song/notes/chart_models.dart';
+import 'package:ddr_md/components/song/notes/chart_painter.dart';
+import 'package:ddr_md/components/song/notes/chart_timing.dart';
 import 'package:ddr_md/components/song/notes/dancing_feet.dart';
+import 'package:ddr_md/components/song/notes/noteskin.dart';
+import 'package:ddr_md/models/steps_model.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_quiz.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+const double _leadIn = 1.0, _tail = 0.6;
 
 const Map<String, String> _patternNames = {
   'jack-vs-footswitch': 'Jack or footswitch',
@@ -41,7 +46,6 @@ class _ParityQuizPageState extends State<ParityQuizPage>
   late final AnimationController _loop = AnimationController(vsync: this)
     ..addListener(_tick);
   final ValueNotifier<double> _playhead = ValueNotifier(0);
-  static const double _leadIn = 0.5, _tail = 0.8;
 
   void _tick() {
     final rows = _questions[_index].rows;
@@ -66,6 +70,14 @@ class _ParityQuizPageState extends State<ParityQuizPage>
   void initState() {
     super.initState();
     _answers = QuizAnswers.read();
+    // Same skin as the chart preview once it resolves; vector until then.
+    SpriteNoteskin.tryLoad().then((_) {
+      if (mounted) setState(() {});
+    });
+    // Same skin as the chart preview once it resolves; vector until then.
+    SpriteNoteskin.tryLoad().then((_) {
+      if (mounted) setState(() {});
+    });
     QuizQuestion.load().then((qs) {
       if (!mounted) return;
       setState(() {
@@ -225,12 +237,7 @@ class _OptionCard extends StatelessWidget {
                 ),
               ),
             ),
-            Expanded(
-              child: CustomPaint(
-                painter: _MiniChart(question, option, playhead),
-                size: Size.infinite,
-              ),
-            ),
+            Expanded(child: _OptionChart(question, option, playhead)),
           ],
         ),
       ),
@@ -238,85 +245,48 @@ class _OptionCard extends StatelessWidget {
   }
 }
 
-/// One option's footing as a small chart: lanes L D U R, earliest row at the
-/// bottom, rows spaced by their real timing so tempo reads as distance.
-class _MiniChart extends CustomPainter {
-  _MiniChart(this.question, this.option, this.playhead)
-      : super(repaint: playhead);
+/// One option's footing scrolling up into the receptors exactly as the chart
+/// preview draws it, on the clock the pads dance to.
+class _OptionChart extends StatelessWidget {
+  const _OptionChart(this.question, this.option, this.playhead);
 
   final QuizQuestion question;
   final int option;
-
-  /// The looping clock the pads dance to, drawn as a line sweeping up.
   final ValueListenable<double> playhead;
 
-  static const _glyphs = [
-    Icons.arrow_back_rounded,
-    Icons.arrow_downward_rounded,
-    Icons.arrow_upward_rounded,
-    Icons.arrow_forward_rounded,
-  ];
-
   @override
-  void paint(Canvas canvas, Size size) {
+  Widget build(BuildContext context) {
+    final notes = [for (final (n, _) in question.chartNotes) n];
     final rows = question.rows;
-    final first = rows.first.second, last = rows.last.second;
-    final lane = size.width / 4;
-    final glyph = lane * 0.8;
-    final pad = glyph * 0.8;
-    double yFor(double s) => last == first
-        ? size.height / 2
-        : size.height - pad - (s - first) / (last - first) * (size.height - 2 * pad);
-
-    final now = playhead.value;
-    if (now >= first && now <= last) {
-      canvas.drawLine(Offset(0, yFor(now)), Offset(size.width, yFor(now)),
-          Paint()
-            ..color = Colors.white.withValues(alpha: 0.25)
-            ..strokeWidth = 1);
-    }
-
-    for (final row in rows) {
-      final y = yFor(row.second);
-      if (row.key) {
-        canvas.drawRect(
-            Rect.fromCenter(
-                center: Offset(size.width / 2, y),
-                width: size.width,
-                height: glyph * 1.2),
-            Paint()..color = Colors.white.withValues(alpha: 0.06));
-      }
-      for (final n in row.notes) {
-        final color = n.feet[option] == ParityFoot.left
-            ? kLeftFootColor
-            : kRightFootColor;
-        final x = lane * n.col + lane / 2;
-        if (n.hold) {
-          canvas.drawRRect(
-              RRect.fromRectAndRadius(
-                  Rect.fromLTWH(x - glyph * 0.12, y - glyph * 1.2,
-                      glyph * 0.24, glyph * 1.2),
-                  Radius.circular(glyph * 0.12)),
-              Paint()..color = color.withValues(alpha: 0.35));
-        }
-        final icon = _glyphs[n.col % 4];
-        final tp = TextPainter(
-          text: TextSpan(
-            text: String.fromCharCode(icon.codePoint),
-            style: TextStyle(
-                fontSize: glyph,
-                fontFamily: icon.fontFamily,
-                package: icon.fontPackage,
-                color: color),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
-      }
-    }
+    return LayoutBuilder(builder: (context, constraints) {
+      // The whole moment, lead-in included, fits the field at the loop's start.
+      final travel = constraints.maxHeight - ChartPainter.receptorBase;
+      final seconds = rows.last.second - rows.first.second + _leadIn;
+      return CustomPaint(
+        size: Size.infinite,
+        painter: ChartPainter(
+          notes: notes,
+          holds: [for (final n in notes) if (n.isHold) n],
+          shockNotes: const {},
+          shocks: const [],
+          bpmMarkers: const [],
+          stopMarkers: const [],
+          feet: {
+            for (final (n, q) in question.chartNotes)
+              n: q.feet[option] == ParityFoot.left ? Foot.left : Foot.right
+          },
+          footPrev: const {},
+          dirs: kSingleDirs,
+          colMap: const [0, 1, 2, 3],
+          playhead: playhead,
+          pxPerSecond: travel / seconds,
+          pxPerBeat: 0,
+          timing: ChartTiming.empty,
+          columnCount: 4,
+          skin: SpriteNoteskin.resolvedSkin ?? const VectorNoteskin(),
+          playing: true,
+        ),
+      );
+    });
   }
-
-  @override
-  bool shouldRepaint(_MiniChart old) =>
-      old.question != question || old.option != option;
 }
