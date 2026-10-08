@@ -108,6 +108,23 @@ void main() {
     }
   });
 
+  test('a slow repeat is jacked, not switched onto the standing foot', () {
+    // Luckgakist SP Easy opening. With 0.6s between the repeated D's (and R's)
+    // a jack is free; switching feet there only dodges a slow doublestep and
+    // leaves both feet on one panel.
+    final notes = stream([
+      (0, L), (1, D), (3, D), (4, L), (5, D), (7, R),
+      (8, L), (9, R), (11, R), (12, D), (13, L),
+    ], bpm: 199);
+    final result = analyseParity(notes, Modes.singles);
+    expect(result.feet[notes[2]], equals(result.feet[notes[1]]),
+        reason: render(notes, result.feet));
+    for (final s in result.stances) {
+      expect(s.leftHeel == -1 || s.leftHeel != s.rightHeel, isTrue,
+          reason: 'both feet on column ${s.leftHeel} at ${s.second}s');
+    }
+  });
+
   test('does not start crossed over', () {
     final notes = stream([(0, R), (1, L), (2, R), (3, L)]);
     final p = assignParity(notes, Modes.singles);

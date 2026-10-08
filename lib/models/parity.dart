@@ -744,8 +744,8 @@ class _ParityEngine {
     // SPIN
     total += _spinCost(d);
 
-    // FOOTSWITCH: only slow footswitches are penalised.
-    total += _slowFootswitchCost(d, row, elapsed);
+    // FOOTSWITCH: slow ones, and any on a side panel.
+    total += _footswitchCost(d, row, elapsed);
 
     // SIDESWITCH
     total += _sideswitchCost(d);
@@ -830,8 +830,7 @@ class _ParityEngine {
     return 0;
   }
 
-  double _slowFootswitchCost(_Placement d, _Row row, double elapsed) {
-    if (elapsed < 0.2 || elapsed >= 0.4) return 0;
+  double _footswitchCost(_Placement d, _Row row, double elapsed) {
     if (d.jumped) return 0;
     if (_rowHasMine(row)) return 0;
     double cost = 0;
@@ -841,7 +840,15 @@ class _ParityEngine {
       final prev = d.initial.combinedColumns[col];
       if (prev == _Foot.none) continue;
       if (prev == foot || prev == _Foot.otherPart[foot]) continue;
-      cost += ((elapsed - 0.2) / elapsed) * _Weights.footswitch;
+      // Footswitches belong on Up/Down; swapping feet on a side panel isn't a
+      // technique players use. With 0.4s to spare a jack is free, so a switch
+      // there only dodges something — usually a slow doublestep. Price both as
+      // one so neither pays.
+      if (layout.sideArrows.contains(col) || elapsed >= 0.4) {
+        cost += _Weights.doublestep;
+      } else if (elapsed >= 0.2) {
+        cost += ((elapsed - 0.2) / elapsed) * _Weights.footswitch;
+      }
     }
     return cost;
   }
