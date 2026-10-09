@@ -34,7 +34,6 @@ import 'package:provider/provider.dart';
 enum SongSection {
   speedMod,
   sync,
-  grooveRadar,
   patterns,
   bpmGraph,
   latestScore,
@@ -351,11 +350,6 @@ class _SongPageState extends State<SongPage> {
         // offset to recommend.
         if (songInfo.displaySyncFor(_chart) == null) return null;
         return SongSyncChart(songInfo: songInfo, chart: _chart);
-      case SongSection.grooveRadar:
-        final radar =
-            songInfo.radarFor(songState.modes, songState.chosenDifficulty);
-        if (radar == null) return null;
-        return SongRadarChart(radar: radar);
       case SongSection.patterns:
         final available = (songState.modes == Modes.singles
                 ? songInfo.singles

@@ -530,9 +530,53 @@ class _SongSyncChartState extends State<SongSyncChart> {
 }
 
 class SongRadarChart extends StatelessWidget {
-  const SongRadarChart({super.key, required this.radar});
+  const SongRadarChart({super.key, required this.radar, this.expanded = false});
 
   final Radar? radar;
+  final bool expanded;
+
+  static const _axisIcons = [
+    Icons.waves,
+    Icons.bolt,
+    Icons.flight,
+    Icons.ac_unit,
+    Icons.shuffle,
+  ];
+
+  void _openRadar(BuildContext context) {
+    Navigator.of(context).push(PageRouteBuilder<void>(
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (context, animation, secondaryAnimation) => Scaffold(
+        body: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.pop(context),
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Center(
+                  child: SizedBox(
+                    width: MediaQuery.sizeOf(context).width * 0.85,
+                    height: MediaQuery.sizeOf(context).height * 0.65,
+                    child: SongRadarChart(radar: radar, expanded: true),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    tooltip: 'Close Groove Radar',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -547,19 +591,16 @@ class SongRadarChart extends StatelessWidget {
       radar.chaos,
     ];
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        // Remove the default ExpansionTile top/bottom divider lines so the
-        // expanded state doesn't show a stray line against the card.
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          title: const CardHeading('Groove Radar', icon: Icons.radar),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-          childrenPadding: const EdgeInsets.fromLTRB(28, 8, 28, 16),
+    final chart = Semantics(
+      label: 'Groove Radar: Stream ${radar.stream}, Voltage ${radar.voltage}, '
+          'Air ${radar.air}, Freeze ${radar.freeze}, Chaos ${radar.chaos}',
+      child: SizedBox(
+        width: expanded ? null : 76,
+        height: expanded ? null : 76,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            SizedBox(
-              height: 280,
+            Positioned.fill(
               child: RadarChart(
                 RadarChartData(
                   radarShape: RadarShape.polygon,
@@ -581,9 +622,13 @@ class SongRadarChart extends StatelessWidget {
                   gridBorderData: const BorderSide(color: Colors.transparent),
                   radarBorderData: const BorderSide(color: Colors.transparent),
                   titleTextStyle: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w600),
+                      fontSize: 12, fontWeight: FontWeight.w600),
                   getTitle: (index, angle) {
-                    return RadarChartTitle(text: labels[index]);
+                    return RadarChartTitle(
+                      text: expanded
+                          ? '${labels[index]} ${values[index].round()}'
+                          : '',
+                    );
                   },
                   dataSets: [
                     // Invisible zero anchor so the chart's minimum (and thus
@@ -624,7 +669,7 @@ class SongRadarChart extends StatelessWidget {
                       fillColor: Colors.redAccent.withValues(alpha: 0.25),
                       borderColor: Colors.redAccent,
                       borderWidth: 2,
-                      entryRadius: 2.5,
+                      entryRadius: 1.5,
                       dataEntries: values
                           .map((value) => RadarEntry(value: value))
                           .toList(),
@@ -636,8 +681,34 @@ class SongRadarChart extends StatelessWidget {
                 swapAnimationCurve: Curves.easeOut,
               ),
             ),
+            if (!expanded) ...[
+              for (final (index, alignment) in const [
+                Alignment(0, -1),
+                Alignment(1, -0.31),
+                Alignment(0.62, 1),
+                Alignment(-0.62, 1),
+                Alignment(-1, -0.31),
+              ].indexed)
+                Align(
+                  alignment: alignment,
+                  child: Tooltip(
+                    message: '${labels[index]}: ${values[index].round()}',
+                    child: Icon(_axisIcons[index], size: 11),
+                  ),
+                ),
+            ],
           ],
         ),
+      ),
+    );
+    if (expanded) return IgnorePointer(child: chart);
+    return Semantics(
+      button: true,
+      hint: 'Expand Groove Radar',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openRadar(context),
+        child: chart,
       ),
     );
   }

@@ -23,16 +23,15 @@ void main() {
 
     test('round-trips a custom order', () async {
       final custom = <SongSection>[
-        SongSection.grooveRadar,
+        SongSection.patterns,
         SongSection.speedMod,
         SongSection.sync,
-        SongSection.patterns,
         SongSection.bpmGraph,
         SongSection.latestScore,
         SongSection.latestNote,
       ];
-      await Settings.setString(Settings.songSectionOrderKey,
-          custom.map((s) => s.name).join(','));
+      await Settings.setString(
+          Settings.songSectionOrderKey, custom.map((s) => s.name).join(','));
 
       expect(readSongSectionOrder(), custom);
     });
@@ -40,10 +39,10 @@ void main() {
     test('drops ids this build no longer knows, keeping the rest in order',
         () async {
       await Settings.setString(Settings.songSectionOrderKey,
-          'grooveRadar,someRemovedSection,speedMod');
+          'patterns,grooveRadar,someRemovedSection,speedMod');
 
       final order = readSongSectionOrder();
-      expect(order.first, SongSection.grooveRadar);
+      expect(order.first, SongSection.patterns);
       expect(order[1], SongSection.speedMod);
       // Everything else survives, exactly once.
       expect(order.toSet(), SongSection.values.toSet());
@@ -52,11 +51,11 @@ void main() {
 
     test('appends sections added since the order was saved', () async {
       await Settings.setString(
-          Settings.songSectionOrderKey, 'latestNote,grooveRadar');
+          Settings.songSectionOrderKey, 'latestNote,patterns');
 
       final order = readSongSectionOrder();
       expect(order.first, SongSection.latestNote);
-      expect(order[1], SongSection.grooveRadar);
+      expect(order[1], SongSection.patterns);
       expect(order.length, SongSection.values.length);
       expect(order.toSet(), SongSection.values.toSet());
     });
@@ -81,20 +80,20 @@ void main() {
         order: full(),
         visible: full(),
         oldIndex: 0, // speedMod
-        newIndex: 2, // past sync and grooveRadar
+        newIndex: 2, // past sync and patterns
       );
       expect(next.take(3),
-          [SongSection.sync, SongSection.grooveRadar, SongSection.speedMod]);
+          [SongSection.sync, SongSection.patterns, SongSection.speedMod]);
     });
 
     test('moving up within a fully-visible list lands where dropped', () {
       final next = reorderSongSections(
         order: full(),
         visible: full(),
-        oldIndex: 2, // grooveRadar
+        oldIndex: 2, // patterns
         newIndex: 0,
       );
-      expect(next.take(2), [SongSection.grooveRadar, SongSection.speedMod]);
+      expect(next.take(2), [SongSection.patterns, SongSection.speedMod]);
     });
 
     // The case the visible/full split exists for: dragging the cards that ARE
@@ -103,12 +102,12 @@ void main() {
       // sync and bpmGraph hidden: the user only ever drags the other four.
       final visible = <SongSection>[
         SongSection.speedMod,
-        SongSection.grooveRadar,
+        SongSection.patterns,
         SongSection.latestScore,
         SongSection.latestNote,
       ];
 
-      // Drag grooveRadar (visible index 1) to the top.
+      // Drag patterns (visible index 1) to the top.
       final next = reorderSongSections(
         order: full(),
         visible: visible,
@@ -116,8 +115,8 @@ void main() {
         newIndex: 0,
       );
 
-      expect(next.first, SongSection.grooveRadar);
-      // sync was hidden between speedMod and grooveRadar; it must stay after
+      expect(next.first, SongSection.patterns);
+      // sync was hidden between speedMod and patterns; it must stay after
       // speedMod rather than being dragged to the top along with the move.
       expect(next.indexOf(SongSection.sync),
           greaterThan(next.indexOf(SongSection.speedMod)));

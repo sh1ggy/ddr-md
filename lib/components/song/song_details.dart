@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
+import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
@@ -86,90 +87,125 @@ class SongDetails extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.max,
         children: [
-          GestureDetector(
-            child: Hero(
-              tag: "imgZoom",
-              child: _ResolvedJacketImage(
-                songName: songInfo.name,
-                assetPrefix: 'assets/jackets-160/',
-                height: 100,
-                fallbackSize: 100,
-              ),
-            ),
-            // Zooming image onTap
-            onTap: () {
-              Navigator.of(context).push(PageRouteBuilder(
-                  transitionDuration: Duration.zero,
-                  reverseTransitionDuration: Duration.zero,
-                  opaque: true,
-                  barrierDismissible: true,
-                  pageBuilder: (BuildContext context, _, __) {
-                    return GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Hero(
-                        tag: "imgZoom",
-                        transitionOnUserGestures: true,
-                        child: _ResolvedJacketImage(
-                          songName: songInfo.name,
-                          assetPrefix: 'assets/jackets/',
-                          height: MediaQuery.of(context).size.height * .7,
-                          fallbackSize: 100,
-                        ),
-                      ),
-                    );
-                  }));
-            },
-          ),
-          const SizedBox(width: 20),
           Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              if (chart != null)
-                RichText(
-                  text: TextSpan(
-                    style: TextStyle(
-                        fontSize: 15.5,
-                        color: DefaultTextStyle.of(context).style.color),
-                    children: <TextSpan>[
-                      TextSpan(
-                        text: "${chart.dominantBpm} BPM",
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      TextSpan(text: _bpmRangeSuffix(chart)),
-                    ],
+              GestureDetector(
+                child: Hero(
+                  tag: "imgZoom",
+                  child: _ResolvedJacketImage(
+                    songName: songInfo.name,
+                    assetPrefix: 'assets/jackets-160/',
+                    height: 100,
+                    fallbackSize: 100,
                   ),
                 ),
-              Row(children: [
-                Text(
-                  formattedTime(timeInSecond: songInfo.songLength.toInt()) +
-                      " min",
-                  style: const TextStyle(
-                      fontSize: 16.0, fontWeight: FontWeight.bold),
-                ),
-                if (chosenNotecount != null) ...[
-                  const SizedBox(width: 8),
-                  const Icon(Icons.music_note, size: 14, color: Colors.grey),
-                  Text(
-                    "$chosenNotecount",
-                    style: TextStyle(
-                        fontSize: 16.0,
-                        color: _difficultyColors[chosenKey],
-                        fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ]),
-              Text(
-                songInfo.version,
-                style: const TextStyle(
-                    fontSize: 15.5,
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic),
+                // Zooming image onTap
+                onTap: () {
+                  Navigator.of(context).push(PageRouteBuilder(
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                      opaque: true,
+                      barrierDismissible: true,
+                      pageBuilder: (BuildContext context, _, __) {
+                        return GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Hero(
+                            tag: "imgZoom",
+                            transitionOnUserGestures: true,
+                            child: _ResolvedJacketImage(
+                              songName: songInfo.name,
+                              assetPrefix: 'assets/jackets/',
+                              height: MediaQuery.of(context).size.height * .7,
+                              fallbackSize: 100,
+                            ),
+                          ),
+                        );
+                      }));
+                },
               ),
-              // Every song has per-difficulty radar data, so the
-              // difficulty is always selectable.
-              SongDifficultyPicker(difficulty: difficulty),
             ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (chart != null)
+                            RichText(
+                              text: TextSpan(
+                                style: TextStyle(
+                                    fontSize: 15.5,
+                                    color: DefaultTextStyle.of(context)
+                                        .style
+                                        .color),
+                                children: <TextSpan>[
+                                  TextSpan(
+                                    text: "${chart.dominantBpm} BPM",
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  TextSpan(text: _bpmRangeSuffix(chart)),
+                                ],
+                              ),
+                            ),
+                          Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  formattedTime(
+                                          timeInSecond:
+                                              songInfo.songLength.toInt()) +
+                                      " min",
+                                  style: const TextStyle(
+                                      fontSize: 16.0,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                if (chosenNotecount != null) ...[
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.music_note,
+                                      size: 14, color: Colors.grey),
+                                  Text(
+                                    "$chosenNotecount",
+                                    style: TextStyle(
+                                        fontSize: 16.0,
+                                        color: _difficultyColors[chosenKey],
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ]),
+                          Text(
+                            songInfo.version,
+                            style: const TextStyle(
+                                fontSize: 15.5,
+                                color: Colors.grey,
+                                fontStyle: FontStyle.italic),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (songInfo.radarFor(
+                            songState.modes, songState.chosenDifficulty)
+                        case final radar?)
+                      SongRadarChart(radar: radar),
+                  ],
+                ),
+                // Every song has per-difficulty radar data, so the
+                // difficulty is always selectable.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: SongDifficultyPicker(difficulty: difficulty),
+                ),
+              ],
+            ),
           ),
         ]);
   }
@@ -222,7 +258,7 @@ class _ResolvedJacketImageState extends State<_ResolvedJacketImage> {
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     final assets = manifest
         .listAssets()
-      .where((path) => path.startsWith(assetPrefix) && path.endsWith('.png'))
+        .where((path) => path.startsWith(assetPrefix) && path.endsWith('.png'))
         .toList();
 
     final exact = <String>{};
@@ -250,18 +286,20 @@ class _ResolvedJacketImageState extends State<_ResolvedJacketImage> {
         if (!snapshot.hasData) {
           return SizedBox(
             height: widget.height,
-            child: const Center(child: CircularProgressIndicator(strokeWidth: 1.5)),
+            child: const Center(
+                child: CircularProgressIndicator(strokeWidth: 1.5)),
           );
         }
 
         final lookup = snapshot.data!;
         final exactPngPath = '${widget.assetPrefix}${widget.songName}.png';
-        final exactLegacyPath = '${widget.assetPrefix}${widget.songName}-jacket.png';
+        final exactLegacyPath =
+            '${widget.assetPrefix}${widget.songName}-jacket.png';
         final resolvedPath = lookup.exactPaths.contains(exactPngPath)
-          ? exactPngPath
-          : lookup.exactPaths.contains(exactLegacyPath)
-            ? exactLegacyPath
-            : lookup.normalizedPath[_normalize(widget.songName)];
+            ? exactPngPath
+            : lookup.exactPaths.contains(exactLegacyPath)
+                ? exactLegacyPath
+                : lookup.normalizedPath[_normalize(widget.songName)];
 
         if (resolvedPath == null) {
           return Icon(Icons.music_note, size: widget.fallbackSize);
