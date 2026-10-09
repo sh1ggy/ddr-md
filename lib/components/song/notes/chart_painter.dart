@@ -7,6 +7,8 @@
 /// separate from the widget that drives it.
 library;
 
+import 'dart:math' as math;
+
 import 'chart_models.dart';
 import 'chart_timing.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
@@ -43,7 +45,14 @@ class ChartPainter extends CustomPainter {
     this.visualOffset = 0,
     this.arcadeQuant = false,
     this.focus = const {},
+    this.highlights = const [],
+    this.highlightIcon,
   }) : super(repaint: playhead);
+
+  /// Pattern occurrences to mark, (first, last) row seconds sorted by first,
+  /// each banded across the field with [highlightIcon] at its start.
+  final List<(double, double)> highlights;
+  final IconData? highlightIcon;
 
   /// Notes under review (the footing editor's current moment). When set, they
   /// glow and every other note dims.
@@ -122,38 +131,36 @@ class ChartPainter extends CustomPainter {
   // more chart on screen instead of just piling the notes together.
   final double zoom;
 
-  // DDR CONSTANT modifier: when non-null, an arrow is invisible until it is this
-  // many milliseconds of WALL-CLOCK time from the receptor, fades in over the
-  // leading slice of that window, then travels the rest solid — regardless of
-  // BPM or read speed. Null = NORMAL. Keyed on real seconds-to-receptor, so the
-  // window's span in beats stretches with the local tempo. See [_constantAlpha].
+  // DDR CONSTANT modifier: when non-null, an arrow fades in around this many
+  // milliseconds of WALL-CLOCK time before the receptor, regardless of BPM or
+  // read speed. Null = NORMAL. Keyed on real seconds-to-receptor, so the
+  // window's span in beats stretches with the local tempo. See [constantAlpha].
   final double? constantMs;
 
   // Top safe-area inset (status bar / notch). The field is full-bleed, so the
   // receptor line is pushed down by this much to clear the system chrome.
   final double topInset;
 
-  // Leading slice of the CONSTANT window over which an arrow ramps from
-  // invisible to solid. The arcade fades arrows in as they enter their display
-  // window, but the exact curve isn't published, so this is eyeballed from
-  // footage. Unlike HIDDEN/SUDDEN, which are lane covers, CONSTANT is per-arrow
-  // alpha.
-  static const double _constantFadeFrac = 0.2;
+  // The cabinet's CONSTANT fade is a fixed 200ms linear ramp centred on the
+  // display time, whatever that is: an arrow starts appearing 100ms before its
+  // window opens and is solid 100ms after. Unlike HIDDEN/SUDDEN, which are lane
+  // covers, CONSTANT is per-arrow alpha.
+  static const double _constantFadeHalfSeconds = 0.1;
 
-  // Opacity of the note at chart-second [t] under CONSTANT: 0 beyond the window,
-  // ramping across its first [_constantFadeFrac], then 1. Driven by real
-  // seconds-to-receptor, so the window is a fixed wall-clock time at any tempo.
-  // For a held note, pass the head's own second (<= playhead), yielding 1.
+  // Opacity under a CONSTANT of [constantMs] for a note [timeToReceptor]
+  // seconds from the receptor.
+  static double constantAlpha(double constantMs, double timeToReceptor) {
+    final fadeEnd = constantMs / 1000.0 - _constantFadeHalfSeconds;
+    final sinceFadeEnd = timeToReceptor - fadeEnd;
+    if (sinceFadeEnd <= 0) return 1;
+    return (1 - sinceFadeEnd / (2 * _constantFadeHalfSeconds)).clamp(0.0, 1.0);
+  }
+
+  // Opacity of the note at chart-second [t]. For a held note, pass the head's
+  // own second (<= playhead), yielding 1.
   double _constantAlpha(double t) {
     final c = constantMs;
-    if (c == null) return 1;
-    final timeToReceptor = t - second;
-    if (timeToReceptor <= 0) return 1; // at or past the line
-    final window = c / 1000.0;
-    if (timeToReceptor >= window) return 0; // beyond the display window
-    // Seconds since the note entered its window, as a share of the fade band.
-    final sinceAppear = window - timeToReceptor;
-    return (sinceAppear / (window * _constantFadeFrac)).clamp(0.0, 1.0);
+    return c == null ? 1 : constantAlpha(c, t - second);
   }
 
   // Draws [draw] composited at [alpha] via a save layer over [bounds]. Full
@@ -178,16 +185,32 @@ class ChartPainter extends CustomPainter {
   static const double receptorBase = 56;
   double get _receptorTop => receptorBase + topInset;
 
+  // The field is laid out in the cabinet's proportions rather than filling the
+  // screen. The cabinet's play field in arrow heights: Arrows are one lane wide with no
+  // gap between lanes, and the screen's bottom edge sits 603/96 arrow heights
+  // below the receptor's centre line (one beat is one arrow height at x1).
+  static const double cabinetTravelArrows = 603 / 96;
+
+  // Arrow (and lane) size that fits the cabinet's proportions into a field of
+  // [size]: as wide as the lanes allow, unless the cabinet's travel below the
+  // receptor wouldn't then fit on screen.
+  static double arcadeArrowSize(Size size, int columns, double topInset) =>
+      math.min(size.width / columns,
+          (size.height - receptorBase - topInset) / cabinetTravelArrows);
+
   // Impact flash lifetime. DDR's is 120ms; the preview has no input or
   // judgement, so every arrival draws the clean-hit flash rather than one of
   // the per-judgement variants.
   static const double _flashSeconds = 0.12;
 
-  static const double _laneTighten = 0.92;
-
   @override
   void paint(Canvas canvas, Size size) {
     _paintBackground(canvas, size);
+    // The cabinet's screen ends where its bottom edge falls; arrows emerge from
+    // there rather than from the bottom of a taller phone.
+    final edge = _receptorTop +
+        arcadeArrowSize(size, columnCount, topInset) * cabinetTravelArrows;
+    canvas.clipRect(Rect.fromLTRB(0, 0, size.width, edge));
 
     final (
       :fieldLeft,
@@ -248,6 +271,21 @@ class ChartPainter extends CustomPainter {
     // pill labels come later (after the notes) so they stay legible.
     _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
         labels: false);
+
+    // 0b) Pattern bands, under the notes they group.
+    final fieldRight = fieldLeft + laneStride * columnCount;
+    for (final (from, to) in highlights) {
+      if (from > maxT) break;
+      if (to < second) continue;
+      final band = RRect.fromLTRBR(
+          fieldLeft - 4,
+          yFor(from) - arrowSize * 0.6,
+          fieldRight + 4,
+          yFor(to) + arrowSize * 0.6,
+          const Radius.circular(10));
+      canvas.drawRRect(band, _highlightFillPaint);
+      canvas.drawRRect(band, _highlightEdgePaint);
+    }
 
     // 1) Freeze/hold bodies, behind the receptor and arrowheads. A hold being
     // held has its head clamped to the line, so the body shrinks upward into it
@@ -391,8 +429,15 @@ class ChartPainter extends CustomPainter {
           dirs[col], age / _flashSeconds);
     }
 
-    // 4) Timing-marker labels, top layer: drawn last so the STOP/BPM pills sit
-    // above the note stream instead of being buried under passing arrows.
+    // 4) Timing-marker labels and pattern badges, top layer: drawn last so they
+    // sit above the note stream instead of being buried under passing arrows.
+    if (highlightIcon case final icon?) {
+      for (final (from, to) in highlights) {
+        if (from > maxT) break;
+        if (to < second) continue;
+        _paintPatternBadge(canvas, fieldLeft, yFor(from), icon);
+      }
+    }
     _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
         labels: true);
     if (showMeasureLines && beatLocked) {
@@ -416,15 +461,12 @@ class ChartPainter extends CustomPainter {
     bool expandStops,
     double Function(double) yFor,
   }) _geometry(Size size) {
-    final laneW = size.width / columnCount;
     // Zoom pulls the lanes toward the field's centre and shrinks the arrows with
-    // them, so zooming out fits more chart rather than only tightening the
-    // vertical gaps (which just stacks arrows on top of each other).
-    final laneStride = laneW * _laneTighten * zoom;
+    // them, in step with the vertical spacing, so zooming out fits more chart
+    // while keeping the cabinet's spacing in arrow heights.
+    final arrowSize = arcadeArrowSize(size, columnCount, topInset) * zoom;
+    final laneStride = arrowSize;
     final fieldLeft = (size.width - laneStride * columnCount) / 2;
-    // DDR World arrows fill nearly the whole lane. Deliberately no upper clamp,
-    // so they read at the arcade's size instead of shrinking on wide fields.
-    final arrowSize = laneW * 0.92 * zoom;
 
     double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
 
@@ -753,6 +795,42 @@ class ChartPainter extends CustomPainter {
     tp.paint(canvas, Offset(left + padX, top + padY));
   }
 
+  static final Paint _highlightFillPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.07);
+  static final Paint _highlightEdgePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.5
+    ..color = Colors.white.withValues(alpha: 0.35);
+  static final Paint _patternBadgePaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.75);
+  static final Map<int, TextPainter> _iconTpCache = {};
+
+  // A pattern's icon in a dark disc on the band's top-left corner.
+  void _paintPatternBadge(
+      Canvas canvas, double fieldLeft, double y, IconData icon) {
+    const r = 12.0;
+    final c = Offset(math.max(fieldLeft, r + 4), y);
+    canvas.drawCircle(c, r, _patternBadgePaint);
+    canvas.drawCircle(c, r, _highlightEdgePaint);
+    if (_iconTpCache.length > 16) _iconTpCache.clear();
+    final tp = _iconTpCache.putIfAbsent(icon.codePoint, () {
+      return TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(icon.codePoint),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontFamily: icon.fontFamily,
+            package: icon.fontPackage,
+            height: 1,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+    });
+    tp.paint(canvas, c - Offset(tp.width / 2, tp.height / 2));
+  }
+
   static final Paint _footBadgeBgPaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.55);
 
@@ -858,5 +936,6 @@ class ChartPainter extends CustomPainter {
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.
       old.visualOffset != visualOffset ||
-      old.focus != focus;
+      old.focus != focus ||
+      old.highlights != highlights;
 }

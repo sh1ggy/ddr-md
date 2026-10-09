@@ -16,12 +16,13 @@ import 'dart:math' as math;
 
 import 'chart_chrome.dart';
 import 'chart_models.dart';
+import 'constant_speed.dart';
 // Re-exported so callers keep importing the test handles from the preview's
 // entry point rather than reaching into the split-out parts.
 export 'chart_chrome.dart'
     show
         tempoBadgeKey,
-        shadeTabKey,
+        menuTabKey,
         arcadeSyncTileKey,
         visualOffsetChipKey,
         audioOffsetChipKey;
@@ -37,6 +38,8 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/parity_profile.dart';
+import 'package:ddr_md/models/pattern_analysis.dart';
+import 'package:ddr_md/models/pattern_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
@@ -76,7 +79,12 @@ List<int> _turnColumnMap(_Turn turn, int columnCount) {
 }
 
 List<(double, ParityFlag)> _divisiveJob(
-        (List<StepNote>, Modes, Map<StepNote, ParityFoot>, ParityWeights) job) =>
+        (
+          List<StepNote>,
+          Modes,
+          Map<StepNote, ParityFoot>,
+          ParityWeights
+        ) job) =>
     divisiveMoments(job.$1, job.$2, job.$3, job.$4);
 
 class ChartScroller extends StatefulWidget {
@@ -113,8 +121,10 @@ class ChartScroller extends StatefulWidget {
   final Modes mode;
 
   /// Optional floating header (title / back / actions) over the full-bleed
-  /// field. Shown and hidden with the transport controls.
-  final Widget Function(BuildContext context)? headerBuilder;
+  /// field. Shown and hidden with the transport controls. Handed the button
+  /// that opens the pattern breakdown, to seat among its actions.
+  final Widget Function(BuildContext context, Widget patternsButton)?
+      headerBuilder;
 
   /// Which chart this is, for hand-setting feet (the footing editor). Null
   /// hides the editor.
@@ -197,14 +207,11 @@ class _ChartScrollerState extends State<ChartScroller>
   set _second(double v) => _playhead.value = v;
   bool _playing = false;
 
-  // Whether the bottom transport pane (read/song speed) is shown, toggled by
-  // the right-edge handle. The top header is NOT gated by this — it follows the
+  // Whether the menu is open: the top settings shade and the bottom transport
+  // pane (read/song speed) show and hide together from one edge tab. Closed
+  // when playback starts. The top header is NOT gated by this — it follows the
   // paused state, so the song title is always up while paused.
-  bool _transportVisible = true;
-
-  // Whether the top settings shade is pulled down. Auto-closed when playback
-  // starts, and never shown while playing (it's a paused-browsing surface).
-  bool _shadeOpen = false;
+  bool _menuOpen = false;
 
   // DDR WORLD SPEED TYPE: two independent speed values plus a type selector,
   // toggled by tapping the pane. Each type keeps its own dialled value, and all
@@ -405,6 +412,15 @@ class _ChartScrollerState extends State<ChartScroller>
   Map<StepNote, Foot> _feet = const {};
   List<ParityStance> _stances = const [];
 
+  // Patterns read off that same solve, so they agree with the foot guide, and
+  // the one picked from the breakdown: its occurrences as (first, last) row
+  // seconds, the feet shown on their notes, and the one last stepped to.
+  FootworkCounts? _footwork;
+  Pattern? _pattern;
+  List<(double, double)> _hits = const [];
+  Map<StepNote, Foot> _hitFeet = const {};
+  double? _hitAt;
+
   // Footing editor: hand-set feet pin the solve, and the flagged moments are
   // stepped through with the playhead. Only live with [ChartScroller.footingRef].
   Map<StepNote, ParityFoot> _pins = {};
@@ -483,18 +499,15 @@ class _ChartScrollerState extends State<ChartScroller>
   // [_pxPerBeat] — expressed at a nominal 180-BPM reference so the two agree.
   static const double _referenceBpm = 180.0;
   double get _pxPerSecond =>
-      _travelPx * (_referenceBpm * _rate) / _arcadeTravelConstant * _zoom;
+      _travelPx * (_referenceBpm * _rate) / _travelConstant * _zoom;
 
-  // The arcade's speed↔time law: at read speed R an arrow is on screen for
-  // (k / R) seconds, so a CONSTANT window of N ms is read speed k × 1000 / N.
-  // At read speed 600 an arrow is visible ~0.62s, and CONSTANT's 1000ms default
-  // reads like SPEED 370.
-  //
-  // k = 370, measured from the running game — three CONSTANT guideline points
-  // agree exactly (400↔925ms, 500↔740ms, 370↔1000ms). It can't be read from
-  // config: the on-screen geometry that turns the stored options into a travel
-  // time isn't a stored number.
-  static const double _arcadeTravelConstant = 370.0;
+  // The arcade's speed↔time law: at read speed R an arrow's centre takes
+  // (k / R) seconds from the bottom edge to the receptor, so a CONSTANT window
+  // of N ms is read speed k × 1000 / N. One beat is one arrow height at x1, so
+  // k is the cabinet's travel in arrow heights × 60 (≈376.9): at read speed 600
+  // an arrow is on screen ~0.63s, and CONSTANT's 1000ms default reads like
+  // SPEED 377.
+  static const double _travelConstant = ChartPainter.cabinetTravelArrows * 60;
 
   // Vertical distance an arrow travels in THIS field: bottom edge to receptor
   // line. Set from the painter's layout each build; the fallback only covers
@@ -506,8 +519,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // fast as a 180-BPM one. Working that through the travel law leaves a
   // constant px-per-beat, which is why a note's on-screen speed tracks the
   // LOCAL tempo (via [ChartTiming]'s slope) rather than the dominant BPM.
-  double get _pxPerBeat =>
-      60.0 * _travelPx * _rate / _arcadeTravelConstant * _zoom;
+  double get _pxPerBeat => 60.0 * _travelPx * _rate / _travelConstant * _zoom;
 
   int get _effectiveChartBpm =>
       widget.chartBpm > 0 ? widget.chartBpm : constants.songBpm;
@@ -531,14 +543,14 @@ class _ChartScrollerState extends State<ChartScroller>
     return bpms[lo].val;
   }
 
-  // CONSTANT as its equivalent read speed (see [_arcadeTravelConstant]). Depends
+  // CONSTANT as its equivalent read speed (see [_travelConstant]). Depends
   // only on the window, so it stays put when the scroll speed changes — see
   // [_constantVisibleReadSpeed] for the live-tracking value the UI shows. Null
   // when CONSTANT is off.
   int? get _constantReadSpeed {
     final c = _effectiveConstantMs;
     if (c == null) return null;
-    return (_arcadeTravelConstant * 1000.0 / c).round();
+    return (_travelConstant * 1000.0 / c).round();
   }
 
   // The read speed a player actually READS at with CONSTANT engaged. Arrows
@@ -644,7 +656,7 @@ class _ChartScrollerState extends State<ChartScroller>
         _momentSecond = null;
         _focus = const {};
         // The edit bar takes the transport's place.
-        _transportVisible = !widget.editFooting;
+        if (widget.editFooting) _menuOpen = false;
       });
       if (widget.editFooting) {
         _rankMoments();
@@ -703,16 +715,12 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // The CONSTANT window equivalent to the app-wide read-speed preference, so
   // switching CONSTANT on doesn't change how fast the chart reads. Inverts the
-  // travel law (see [_arcadeTravelConstant]) onto the dial's 10ms grid, flooring
+  // travel law (see [_travelConstant]) onto the dial's 10ms grid, flooring
   // so the chosen step still meets the saved preference.
   double get _constantMsForReadSpeed {
-    final saved = Settings.getInt(Settings.chosenReadSpeedKey);
-    final readSpeed = saved > 0 ? saved : constants.chosenReadSpeed;
-    if (readSpeed <= 0) return _constantDefaultMs;
-    final exact = _arcadeTravelConstant * 1000.0 / readSpeed;
-    final floored =
-        (exact / _constantStepMs).floor() * _constantStepMs.toDouble();
-    return floored.clamp(_constantMinMs, _constantMaxMs);
+    return constantForReadSpeed(Settings.getInt(Settings.chosenReadSpeedKey))
+        .ms
+        .toDouble();
   }
 
   // Restore the CONSTANT modifier. Only the on/off flag carries across (as 0/1
@@ -1167,6 +1175,8 @@ class _ChartScrollerState extends State<ChartScroller>
           source[i]: foot == ParityFoot.left ? Foot.left : Foot.right,
     };
     _stances = analysis.stances;
+    _footwork = footworkOf(turned, analysis, widget.mode);
+    _collectHits();
     if (widget.footingRef != null) {
       _rowSeconds = {
         for (final n in source)
@@ -1174,6 +1184,141 @@ class _ChartScrollerState extends State<ChartScroller>
       }.toList()
         ..sort();
     }
+  }
+
+  void _collectHits() {
+    final p = _pattern;
+    final spans = [
+      for (final s in _footwork!.spans)
+        if (s.$1 == p) (s.$2, s.$3)
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    _hits = [
+      for (int i = 0; i < spans.length; i++)
+        if (i == 0 || spans[i].$1 != spans[i - 1].$1) spans[i]
+    ];
+    _hitFeet = {
+      for (final n in widget.steps.notes)
+        if (_feet[n] case final foot?)
+          if (_hits.any((h) => n.second >= h.$1 && n.second <= h.$2)) n: foot
+    };
+    if (!_hits.any((h) => h.$1 == _hitAt)) _hitAt = null;
+  }
+
+  // Highlight [p]'s occurrences (or nothing, picking the current one again)
+  // and go to the first from here.
+  void _pickPattern(Pattern p) {
+    setState(() {
+      _pattern = _pattern == p ? null : p;
+      _hitAt = null;
+      _collectHits();
+    });
+    if (_pattern != null) _stepHit(1);
+  }
+
+  // Next/previous occurrence, set a third of the way down like a moment.
+  void _stepHit(int dir) {
+    if (_hits.isEmpty) return;
+    final at = _hitAt ?? _second - 1e-3;
+    final next = dir > 0
+        ? _hits.where((h) => h.$1 > at + 1e-6).firstOrNull ?? _hits.first
+        : _hits.lastWhere((h) => h.$1 < at - 1e-6, orElse: () => _hits.last);
+    _pause();
+    setState(() => _hitAt = next.$1);
+    _second = next.$1;
+    _second = math.max(0.0, next.$1 + _pxToSeconds(-_travelPx * 0.3));
+    _resyncTickClock();
+  }
+
+  Widget _buildPatternsButton(BuildContext context) {
+    final p = _pattern;
+    return IconButton(
+      icon: Icon(p == null ? Icons.insights : kPatternIcons[p]),
+      color: p == null ? Colors.blueGrey : Colors.white,
+      tooltip: 'Patterns',
+      onPressed: _footwork == null ? null : () => _openBreakdown(context),
+    );
+  }
+
+  // The chart's patterns as this preview foots them; tapping one highlights it.
+  Future<void> _openBreakdown(BuildContext context) async {
+    final counts = _footwork!;
+    final present = [
+      for (final p in Pattern.values)
+        if (counts.count(p) > 0) p
+    ];
+    final picked = await showModalBottomSheet<Pattern>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: present.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Text('No patterns in this chart'),
+              )
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final p in present)
+                    ListTile(
+                      leading: Icon(kPatternIcons[p]),
+                      title: Text(kPatternLabels[p]!),
+                      trailing: Text('${counts.count(p)}',
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w700)),
+                      selected: p == _pattern,
+                      onTap: () => Navigator.of(context).pop(p),
+                    ),
+                ],
+              ),
+      ),
+    );
+    if (picked != null && mounted) _pickPattern(picked);
+  }
+
+  Widget _buildPatternBar(BuildContext context) {
+    final p = _pattern!;
+    final i = _hits.indexWhere((h) => h.$1 == _hitAt);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.close),
+            color: Colors.white54,
+            tooltip: 'Stop highlighting',
+            onPressed: () => _pickPattern(p),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            color: Colors.white70,
+            onPressed: () => _stepHit(-1),
+          ),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(kPatternIcons[p], size: 16, color: Colors.white70),
+                const SizedBox(width: 6),
+                Text(
+                  i < 0
+                      ? '${kPatternLabels[p]} ${_hits.length}'
+                      : '${kPatternLabels[p]} ${i + 1}/${_hits.length}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            color: Colors.white70,
+            onPressed: () => _stepHit(1),
+          ),
+        ],
+      ),
+    );
   }
 
   // The moments where the engine is torn, found once per edit session (off the
@@ -1244,7 +1389,8 @@ class _ChartScrollerState extends State<ChartScroller>
     final ref = widget.footingRef!;
     final pins = [
       for (final MapEntry(key: n, value: f) in _pins.entries) (n.beat, n.col, f)
-    ]..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
+    ]..sort(
+        (a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
     final dir = Directory(
         '${(await getApplicationSupportDirectory()).path}/parity_labels');
     dir.createSync(recursive: true);
@@ -1294,7 +1440,7 @@ class _ChartScrollerState extends State<ChartScroller>
       if ((rows[j] - second).abs() < (rows[i] - second).abs()) i = j;
     }
     if (widget.editFooting) {
-      _transportVisible = false;
+      _menuOpen = false;
       _momentSecond = rows[i];
       _focus = _momentNotes(rows[i]);
     }
@@ -1346,7 +1492,8 @@ class _ChartScrollerState extends State<ChartScroller>
   // Editing footing, a paused tap on a note swaps its foot; anywhere else (or
   // not editing) it plays/pauses as usual.
   void _onFieldTap(Offset pos, Size size) {
-    final n = widget.editFooting && !_playing ? _painter?.noteAt(pos, size) : null;
+    final n =
+        widget.editFooting && !_playing ? _painter?.noteAt(pos, size) : null;
     if (n != null) return _flipFoot(n);
     _togglePlay(showOverlay: true);
   }
@@ -1620,25 +1767,20 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_second >= _endSecond) _second = 0;
     _flingVel = 0;
     _ensureTicking();
-    // Starting playback tucks both edge panels away so the running chart owns
-    // the screen — the options card and the bottom transport collapse together.
-    // Either tab brings its panel back mid-play (neither pauses). The header
+    // Starting playback closes the menu so the running chart owns the screen.
+    // The menu tab brings it back mid-play (it doesn't pause). The header
     // (title) rides the paused state, so it slides away on its own.
     setState(() {
       _playing = true;
-      _shadeOpen = false;
-      _transportVisible = false;
+      _menuOpen = false;
     });
     _resyncTickClock(); // anchor the audio clock to this start position + rate
   }
 
-  void _toggleShade() {
+  // Purely a visibility toggle — it never touches playback.
+  void _toggleMenu() {
     HapticFeedback.selectionClick();
-    // Purely a visibility toggle, like the right-edge transport tab — it never
-    // touches playback. (The shade is still auto-hidden while playing via the
-    // `!_playing` gate in [_buildSettingsShade], but tapping the tab won't
-    // pause a running chart.)
-    setState(() => _shadeOpen = !_shadeOpen);
+    setState(() => _menuOpen = !_menuOpen);
   }
 
   void _pause() {
@@ -2031,23 +2173,17 @@ class _ChartScrollerState extends State<ChartScroller>
     super.dispose();
   }
 
-  void _toggleTransport() {
-    HapticFeedback.selectionClick();
-    setState(() => _transportVisible = !_transportVisible);
-  }
-
   @override
   Widget build(BuildContext context) {
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
-      // Feed the real field geometry into the speed law: an arrow's travel is
-      // the bottom edge up to the receptor line (which the painter places at
-      // ChartPainter.receptorBase below the top safe-area inset). Keeping
-      // this in sync means a taller phone scrolls FASTER in px/s so the
-      // arcade's travel TIME at a given read speed is preserved, rather than
-      // every device sharing one px/s and giving tall screens a longer read.
-      final travel = constraints.maxHeight -
-          (ChartPainter.receptorBase + MediaQuery.of(context).padding.top);
+      // Feed the field geometry into the speed law: an arrow's travel is the
+      // cabinet's bottom edge up to the receptor line, scaled to the arrow size
+      // this screen allows (see ChartPainter.arcadeArrowSize).
+      final topInset = MediaQuery.of(context).padding.top;
+      final travel = ChartPainter.arcadeArrowSize(
+              constraints.biggest, dirs.length, topInset) *
+          ChartPainter.cabinetTravelArrows;
       if (travel > 0) _travelPx = travel;
       return Stack(
         fit: StackFit.expand,
@@ -2093,7 +2229,10 @@ class _ChartScrollerState extends State<ChartScroller>
                         showMeasureLines: widget.showMeasureLines,
                         feet: widget.showFootGuide || widget.editFooting
                             ? _feet
-                            : const {},
+                            : _hitFeet,
+                        highlights: _hits,
+                        highlightIcon:
+                            _pattern == null ? null : kPatternIcons[_pattern],
                         focus: widget.editFooting ? _focus : const {},
                         footPrev: widget.showFootTrails ? _footPrev : const {},
                         dirs: dirs,
@@ -2107,7 +2246,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         playing: _playing,
                         zoom: _zoom,
                         constantMs: _effectiveConstantMs,
-                        topInset: MediaQuery.of(context).padding.top,
+                        topInset: topInset,
                         visualOffset: _visualOffsetSeconds,
                         arcadeQuant: widget.arcadeQuantOn,
                       ),
@@ -2320,14 +2459,15 @@ class _ChartScrollerState extends State<ChartScroller>
                   child: AnimatedOpacity(
                     opacity: _playing ? 0 : 1,
                     duration: const Duration(milliseconds: 180),
-                    child: widget.headerBuilder!(context),
+                    child: widget.headerBuilder!(
+                        context, _buildPatternsButton(context)),
                   ),
                 ),
               ),
             ),
 
           // Settings shade: a top "pull-down" sheet of chart-viewing modifiers,
-          // hidden by default behind the left-edge pull-tab. Kept out of the
+          // hidden by default behind the menu tab. Kept out of the
           // way (unlike an always-on strip) so it has room to grow to the full
           // DDR option set; force-closed while playing since it's a browsing
           // surface, and tapping the scrim behind it dismisses it.
@@ -2348,6 +2488,10 @@ class _ChartScrollerState extends State<ChartScroller>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_pattern != null) ...[
+                      _buildPatternBar(context),
+                      const SizedBox(height: 6),
+                    ],
                     if (widget.editFooting) ...[
                       _buildFootingBar(context),
                       const SizedBox(height: 6),
@@ -2379,23 +2523,21 @@ class _ChartScrollerState extends State<ChartScroller>
                       ),
                     ),
                     const SizedBox(height: 6),
-                    // Transport (read/song speed): hidden by the right-edge tab.
+                    // Transport (read/song speed): shown with the menu.
                     IgnorePointer(
-                      ignoring: !_transportVisible,
+                      ignoring: !_menuOpen,
                       child: AnimatedSize(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,
                         alignment: Alignment.bottomCenter,
                         child: AnimatedSlide(
-                          offset: _transportVisible
-                              ? Offset.zero
-                              : const Offset(0, 1),
+                          offset: _menuOpen ? Offset.zero : const Offset(0, 1),
                           duration: const Duration(milliseconds: 220),
                           curve: Curves.easeOutCubic,
                           child: AnimatedOpacity(
-                            opacity: _transportVisible ? 1 : 0,
+                            opacity: _menuOpen ? 1 : 0,
                             duration: const Duration(milliseconds: 180),
-                            child: _transportVisible
+                            child: _menuOpen
                                 ? _buildTransport(context)
                                 : const SizedBox(width: double.infinity),
                           ),
@@ -2411,42 +2553,18 @@ class _ChartScrollerState extends State<ChartScroller>
             ),
           ),
 
-          // Always-visible handle to show/hide the bottom transport: a small tab
-          // pinned to the right edge. Its chevron points the way the transport
-          // will move (up-into-view vs down-out-of-view). Only affects the
-          // bottom config — the title header rides the paused state instead.
+          // The menu handle: one always-visible tab on the right edge that opens
+          // and closes the settings shade and the transport together.
           Positioned(
             right: 0,
             top: 0,
             bottom: 0,
             child: Center(
               child: EdgeTab(
+                key: menuTabKey,
                 leftEdge: false,
-                icon: _transportVisible
-                    ? Icons.keyboard_arrow_down
-                    : Icons.keyboard_arrow_up,
-                onTap: _toggleTransport,
-              ),
-            ),
-          ),
-
-          // The settings-shade handle: the left-edge mirror of the transport
-          // tab, replacing the old gear tucked in the header's corner. Its
-          // chevron points the way the shade will move (down-into-view when
-          // closed, up-out-of-view when open). Purely a visibility toggle — it
-          // never pauses the chart (see [_toggleShade]).
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: EdgeTab(
-                key: shadeTabKey,
-                leftEdge: true,
-                icon: _shadeOpen
-                    ? Icons.keyboard_arrow_up
-                    : Icons.keyboard_arrow_down,
-                onTap: _toggleShade,
+                icon: _menuOpen ? Icons.close : Icons.tune,
+                onTap: _toggleMenu,
               ),
             ),
           ),
@@ -2509,6 +2627,10 @@ class _ChartScrollerState extends State<ChartScroller>
               bpmFractions: _markerFractions(_bpmMarkers.map((m) => m.second)),
               stopFractions:
                   _markerFractions(_stopMarkers.map((m) => m.second)),
+              highlightFractions: [
+                if (_endSecond > 0)
+                  for (final (a, b) in _hits) (a / _endSecond, b / _endSecond)
+              ],
               onSeek: (frac) {
                 _pause();
                 final next = (frac * _endSecond).clamp(0.0, _endSecond);
@@ -2527,15 +2649,16 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   // The settings shade: a top "pull-down" card of chart-viewing modifiers,
-  // hidden behind the left-edge pull-tab until opened. Operationally it mirrors
+  // hidden behind the menu tab until opened. Operationally it mirrors
   // the bottom transport: a panel pinned to its edge with pointer-handling
   // scoped to its own bounds, so it never blocks the full-bleed chart's
   // tap-to-play gesture and is only dismissed via its own tab — never by tapping
   // elsewhere on the field. Its body scrolls so it has room to grow toward the
   // full DDR option set (arrows, lane, scroll, assist …).
   Widget _buildSettingsShade(BuildContext context) {
-    final open = _shadeOpen;
-    final topInset = MediaQuery.of(context).padding.top;
+    final open = _menuOpen;
+    final media = MediaQuery.of(context);
+    final topInset = media.padding.top;
     // The card's top is dynamic: when the floating header is on screen (there is
     // a headerBuilder AND we're paused) it seats below the title (a ~64px 48px
     // icon-button row in 4/12 padding) plus a 16px gap so the card reads as
@@ -2544,6 +2667,18 @@ class _ChartScrollerState extends State<ChartScroller>
     // glides down/up as the header appears/disappears on pause/play.
     final headerShowing = widget.headerBuilder != null && !_playing;
     final top = topInset + (headerShowing ? 64 + 16 : 8);
+    // Leave space for the bottom controls on short phones and in landscape.
+    // The shade's own scroller handles any content beyond this height.
+    final bottomControlsHeight =
+        154 + (_pattern != null ? 52 : 0) + (widget.editFooting ? 52 : 0);
+    final maxHeight = math.min(
+        media.size.height * 0.4,
+        math.max(
+            0.0,
+            media.size.height -
+                top -
+                media.padding.bottom -
+                bottomControlsHeight));
     return AnimatedPositioned(
       left: 0,
       right: 0,
@@ -2561,6 +2696,7 @@ class _ChartScrollerState extends State<ChartScroller>
             duration: const Duration(milliseconds: 160),
             child: SettingsShade(
               sections: _buildShadeSections(context),
+              maxHeight: maxHeight,
             ),
           ),
         ),

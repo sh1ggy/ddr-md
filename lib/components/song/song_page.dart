@@ -4,15 +4,18 @@
 library;
 
 import 'package:ddr_md/components/song/history_page.dart';
+import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
+import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/pattern_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
@@ -32,6 +35,7 @@ enum SongSection {
   speedMod,
   sync,
   grooveRadar,
+  patterns,
   bpmGraph,
   latestScore,
   latestNote,
@@ -116,6 +120,20 @@ class _SongPageState extends State<SongPage> {
     _stepsFuture = StepsLoader.load(songInfo.name);
   }
 
+  // Same lazy per-song load as the steps, held as a value so the section can
+  // be left out entirely when there is no analysis.
+  String? _patternsSongName;
+  SongPatterns? _patterns;
+
+  Future<void> _loadPatternsFor(SongInfo songInfo) async {
+    if (_patternsSongName == songInfo.name) return;
+    _patternsSongName = songInfo.name;
+    _patterns = null;
+    final patterns = await PatternsLoader.load(songInfo.name);
+    if (!mounted || _patternsSongName != songInfo.name) return;
+    setState(() => _patterns = patterns);
+  }
+
   void initFav(String songTitleTranslit, Modes mode) async {
     Favorite? initFav =
         await DatabaseProvider.getFavoriteBySong(songTitleTranslit, mode);
@@ -188,6 +206,7 @@ class _SongPageState extends State<SongPage> {
 
     if (songInfo != null) {
       _loadStepsFor(songInfo);
+      _loadPatternsFor(songInfo);
       initFav(songInfo.titletranslit, songState.modes);
       initNote(songInfo.titletranslit, songState.modes);
       initScore(songInfo.titletranslit, songState.modes);
@@ -250,68 +269,65 @@ class _SongPageState extends State<SongPage> {
         return Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: Card(
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ChartPreviewPage(
-                    stepsFuture: _stepsFuture!,
-                    mode: mode,
-                    difficultyKey: diffKey,
-                    difficultyLevel: difficultyLevel,
-                    title: songInfo.title,
-                    songLength: songInfo.songLength,
-                    chartBpm: _chart.dominantBpm,
-                    minBpm: _chart.trueMin,
-                    maxBpm: _chart.trueMax,
-                    bpms: _chart.bpms,
-                    stops: _chart.stops,
-                    // The same measured sync this page's Sync card shows
-                    // (cabinet block when present, else simfile), so ARCADE
-                    // SYNC can report the song's own bias.
-                    sync: songInfo.displaySyncFor(_chart),
-                  ),
-                ),
-              );
-            },
-            child: ListTile(
-              // Matches the ExpansionTile cards' tilePadding, so every section
-              // header starts and ends on the same x.
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              // Same header shape as the Sync card.
-              title: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  const Text(
-                    "Chart Preview",
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    difficultyLevel != null
-                        ? "$diffLabel $difficultyLevel"
-                        : diffLabel,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      color: diffColor,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChartPreviewPage(
+                      stepsFuture: _stepsFuture!,
+                      mode: mode,
+                      difficultyKey: diffKey,
+                      difficultyLevel: difficultyLevel,
+                      title: songInfo.title,
+                      songLength: songInfo.songLength,
+                      chartBpm: _chart.dominantBpm,
+                      minBpm: _chart.trueMin,
+                      maxBpm: _chart.trueMax,
+                      bpms: _chart.bpms,
+                      stops: _chart.stops,
+                      // The same measured sync this page's Sync card shows
+                      // (cabinet block when present, else simfile), so ARCADE
+                      // SYNC can report the song's own bias.
+                      sync: songInfo.displaySyncFor(_chart),
                     ),
                   ),
-                ],
-              ),
-              // Not the neighbours' expand_more: this row pushes a route
-              // instead of expanding in place.
-              trailing: Icon(
-                Icons.chevron_right,
-                color: Theme.of(context).hintColor,
+                );
+              },
+              child: ListTile(
+                // Matches the ExpansionTile cards' tilePadding, so every section
+                // header starts and ends on the same x.
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                // Same header shape as the Sync card.
+                title: Wrap(
+                  spacing: 10,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const CardHeading('Chart Preview',
+                        icon: Icons.play_circle_outline),
+                    Text(
+                      difficultyLevel != null
+                          ? "$diffLabel $difficultyLevel"
+                          : diffLabel,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: diffColor,
+                      ),
+                    ),
+                  ],
+                ),
+                // Not the neighbours' expand_more: this row pushes a route
+                // instead of expanding in place.
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: Theme.of(context).hintColor,
+                ),
               ),
             ),
-          ),
           ),
         );
       },
@@ -340,10 +356,21 @@ class _SongPageState extends State<SongPage> {
             songInfo.radarFor(songState.modes, songState.chosenDifficulty);
         if (radar == null) return null;
         return SongRadarChart(radar: radar);
+      case SongSection.patterns:
+        final available = (songState.modes == Modes.singles
+                ? songInfo.singles
+                : songInfo.doubles)
+            .availableTypes;
+        if (available.isEmpty) return null;
+        final chart = _patterns?.chartFor(
+            songState.modes,
+            available[
+                songState.chosenDifficulty.clamp(0, available.length - 1)]);
+        if (chart == null) return null;
+        return SongPatternsCard(patterns: chart);
       case SongSection.bpmGraph:
         if (!_isBpmChange && _chart.stops.isEmpty) return null;
-        return SongChart(
-            context: context, songInfo: songInfo, chart: _chart);
+        return SongChart(context: context, songInfo: songInfo, chart: _chart);
       case SongSection.latestScore:
         return GestureDetector(
           onTap: () => openHistory(HistoryPage.scoresTab),
@@ -359,11 +386,20 @@ class _SongPageState extends State<SongPage> {
             child: ListTile(
               title: Column(
                 children: [
-                  Text(
-                    "Latest Note",
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.sticky_note_2_outlined,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        "Latest Note",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary),
+                      ),
+                    ],
                   ),
                   Text(
                     latestNote!.contents,

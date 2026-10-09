@@ -26,6 +26,7 @@ void main() {
         SongSection.grooveRadar,
         SongSection.speedMod,
         SongSection.sync,
+        SongSection.patterns,
         SongSection.bpmGraph,
         SongSection.latestScore,
         SongSection.latestNote,

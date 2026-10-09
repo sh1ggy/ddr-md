@@ -202,7 +202,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               onToggleDancingFeet: _toggleDancingFeet,
               onToggleAssistTick: _toggleAssistTick,
               onToggleArcadeQuant: _toggleArcadeQuant,
-              headerBuilder: (context) => _buildHeader(context, diffColor),
+              headerBuilder: (context, patternsButton) =>
+                  _buildHeader(context, diffColor, patternsButton),
               // The footing editor stays a debug tool until it ships to users.
               footingRef: kDebugMode
                   ? ChartRef(snapshot.data!.name,
@@ -220,11 +221,12 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
 
   // The floating top bar laid over the field: back + title/mode/difficulty only.
   // The assist-tick and foot-guide toggles moved into the scroller's settings
-  // shade (its own segment); the shade itself opens from the scroller's left-edge
+  // shade (its own segment); the shade itself opens from the scroller's menu
   // pull-tab, so the header carries no action affordances at all. A translucent
   // gradient alone keeps it legible against the scrolling arrows — it fades into
   // the field rather than being fenced off by a rule.
-  Widget _buildHeader(BuildContext context, Color diffColor) {
+  Widget _buildHeader(
+      BuildContext context, Color diffColor, Widget patternsButton) {
     final difficultyLabel = widget.difficultyLevel != null
         ? "${_pretty(widget.difficultyKey)} ${widget.difficultyLevel}"
         : _pretty(widget.difficultyKey);
@@ -249,6 +251,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 icon: const Icon(Icons.arrow_back, color: Colors.blueGrey),
                 onPressed: () => Navigator.of(context).pop(),
               ),
+              if (kDebugMode) const SizedBox(width: 48),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -272,8 +275,9 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                   ],
                 ),
               ),
-              // Balances the leading back button so the title stays optically
-              // centred. Debug builds put the footing editor's toggle there.
+              // The pattern breakdown, balanced by an empty slot on the left
+              // when the footing editor's toggle joins it (debug builds).
+              patternsButton,
               if (kDebugMode)
                 IconButton(
                   icon: Icon(_editFooting ? Icons.check : Icons.edit_note,
@@ -281,9 +285,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                   tooltip: _editFooting ? 'Done editing' : 'Edit footing',
                   onPressed: () =>
                       setState(() => _editFooting = !_editFooting),
-                )
-              else
-                const SizedBox(width: 48),
+                ),
             ],
           ),
         ),

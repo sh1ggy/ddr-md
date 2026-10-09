@@ -3,6 +3,7 @@
 /// Description: Page that displays selected song chart information
 library;
 
+import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
@@ -125,10 +126,7 @@ class SongChartState extends State<SongChart> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: true,
-          title: const Text(
-            'BPM Graph',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-          ),
+          title: const CardHeading('BPM Graph', icon: Icons.show_chart),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
           children: [
@@ -369,10 +367,7 @@ class _SongSyncChartState extends State<SongSyncChart> {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              const Text(
-                'Sync',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-              ),
+              const CardHeading('Sync', icon: Icons.av_timer),
               const SizedBox(width: 10),
               Text(
                 adjustLabel,
@@ -559,10 +554,7 @@ class SongRadarChart extends StatelessWidget {
         // expanded state doesn't show a stray line against the card.
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          title: const Text(
-            'Groove Radar',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-          ),
+          title: const CardHeading('Groove Radar', icon: Icons.radar),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(28, 8, 28, 16),
           children: [

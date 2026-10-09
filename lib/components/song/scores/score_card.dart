@@ -2,8 +2,8 @@
 /// Parent: ScoresTab, SongPage
 /// Description: Card to display a saved score's fields from the DB.
 /// When [header] is given (e.g. "Latest Score" on the song page) it is
-/// shown on top and the date moves to the bottom, matching the
-/// latest-note card layout.
+/// shown on top behind [kLatestScoreIcon] and the date moves to the bottom,
+/// matching the latest-note card layout.
 library;
 
 import 'package:ddr_md/components/song_json.dart' show Modes;
@@ -13,6 +13,8 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+const kLatestScoreIcon = Icons.emoji_events_outlined;
 
 class ScoreCard extends StatelessWidget {
   const ScoreCard({
@@ -135,6 +137,11 @@ class ScoreCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                if (header != null) ...[
+                  Icon(kLatestScoreIcon,
+                      size: 18, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 6),
+                ],
                 _SourceBadge(source: score.source),
                 const SizedBox(width: 6),
                 Flexible(
@@ -189,12 +196,20 @@ class NoScoreCard extends StatelessWidget {
       child: ListTile(
         title: Column(
           children: [
-            Text(
-              header,
-              style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(kLatestScoreIcon,
+                    size: 18, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 6),
+                Text(
+                  header,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary),
+                ),
+              ],
             ),
             Text(
               "No score recorded",

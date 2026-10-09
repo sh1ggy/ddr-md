@@ -17,7 +17,6 @@ class Settings {
   // stale. Kept persisted so the last dialled value remains inspectable.
   static const String constantMsKey = "chartPreviewConstantMs";
   static const String constantOnKey = "chartPreviewConstantOn";
-
   // DDR TURN modifier for the chart preview: which column-permutation is applied
   // to the notes (receptors stay fixed). Stored as an int: 0 = OFF, 1 = MIRROR,
   // 2 = LEFT, 3 = RIGHT. See [_Turn] in chart_scroller.
