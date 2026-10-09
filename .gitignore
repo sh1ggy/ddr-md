@@ -159,6 +159,9 @@ app.*.symbols
 # Kept locally only — must never be committed. See CLAUDE.md.
 /_private
 
+# Cabinet-behaviour reference derived from the arcade build. Kept locally only.
+/docs/arcade
+
 # The simfile-scraping pipeline is its own nested git repo with its own history.
 # Checked out here for convenience; must never be committed into this one.
 /DDR-BPM-prep

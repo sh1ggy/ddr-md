@@ -35,6 +35,7 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 1. **DDR-BPM-prep/** — a *separate, nested git repo* (Python/poetry pipeline). Scrapes StepMania simfiles, parses BPM/stops/levels/steps, outputs JSON. Do not commit it into this repo. It has its own CODEBASE.md.
 2. **assets/songs/*.json** (~1260 files, committed) — the repo's source of truth for song metadata. Parsed into `SongInfo` by [lib/components/song_json.dart](lib/components/song_json.dart) (quicktype-style manual JSON classes).
 3. **assets/songlist.json** (gitignored, generated) — all songs merged into one file so startup does 1 asset read instead of ~1100. `Songs.load()` in [lib/models/song_model.dart](lib/models/song_model.dart) prefers it and falls back to per-song files. **A stale songlist.json silently shadows fresh per-song data** — regenerate it after touching assets/songs/.
+   Each song's `pattern_analysis` (prep's per-chart pattern/footwork counts, ~10x the rest of the song) is split out by `generate_songlist.sh` into gitignored `assets/patterns/<name>.json`, read lazily by [lib/models/pattern_model.dart](lib/models/pattern_model.dart) for the song page's Patterns card.
 4. **assets/steps/<name>.json** — per-difficulty note streams. Deliberately NOT merged into the songlist: large, loaded lazily by [lib/models/steps_model.dart](lib/models/steps_model.dart) only when a chart view opens, discarded on close.
 
 ## Architecture
@@ -53,6 +54,7 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 ## Gotchas
 
 - `pubspec.yaml` asset entries carry load-bearing comments (noteskin is optional/gitignored; only one model triplet ships). Don't "clean them up" or blindly add `assets/models/` as a directory.
-- Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songlist.json`, `assets/noteskin/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive).
+- Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songlist.json`, `assets/noteskin/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive), `docs/arcade/`.
 - Shell scripts here inline pure commands — don't extract fetch/copy/check helper functions.
 - `docs/` holds design and migration plan docs (OCR engine migrations, parity port, noteskin); check there before re-deriving intent for those subsystems.
+- `docs/arcade/` (gitignored, kept locally) is the cabinet-behaviour reference. Check it, when present, before claiming or changing anything "arcade accurate". Never commit it or anything else derived from Konami material.
