@@ -250,8 +250,12 @@ class PatternLevels {
         "schema": kPatternsSchema,
         for (final MapEntry(key: m, value: levels) in rates.entries)
           _key(m): {
-            for (final MapEntry(key: level, value: byPattern) in levels.entries)
-              "$level": {for (final e in byPattern.entries) e.key.name: e.value}
+            // Sorted, so the file is byte-identical whatever order charts
+            // were analysed in (directory listing order differs by OS).
+            for (final level in levels.keys.toList()..sort())
+              "$level": {
+                for (final e in levels[level]!.entries) e.key.name: e.value
+              }
           }
       };
 }
