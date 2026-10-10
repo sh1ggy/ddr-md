@@ -6,7 +6,7 @@ behind it. App-side behaviour is in [AGENTS.md](../AGENTS.md) (data flow §6).
 
 ```
 DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
-                          │ push / daily 03:17 UTC / manual
+                          │ push to master / daily 03:17 UTC / manual
                           ▼
             .github/workflows/publish.yml   (written by Terraform)
                           │ calls
@@ -33,7 +33,7 @@ DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
 | `CLOUDFLARE_API_TOKEN` secret, `CONTENT_URL` / `PAGES_PROJECT` / `CLOUDFLARE_ACCOUNT_ID` variables | content repo | Terraform |
 | The publish logic | [publish-content.yml](../.github/workflows/publish-content.yml) here | git |
 | The content itself | content repo's commits | you (pushed from prep output) |
-| Content number | the live `manifest.json` | CI (live + 1 when files change) |
+| Content number | the live `manifest.json`, and a `content-<number>` tag on the content commit that published it | CI (+ 1 when files change) |
 | Terraform state | `infra/terraform.tfstate`, local, gitignored | you |
 
 ## Reproducible from scratch?
@@ -94,11 +94,12 @@ curl -s https://ddr-md-content.pages.dev/latest.json
 
 | To... | Do |
 |---|---|
-| Publish new songs / chart fixes | Copy prep output into `ddr-md-content`, commit, push |
+| Publish new songs / chart fixes | Copy prep output into `ddr-md-content`, commit, push to `master` (other branches don't publish) |
 | Publish generator or parity engine changes | Merge to `workflow_ref`; the daily run picks it up, or `gh workflow run Publish -R sh1ggy/ddr-md-content` |
 | Make a store build | `bash scripts/build_store.sh ipa` (or `appbundle`): fetches the live content, then builds with `CONTENT_URL` set |
 | Remove a song | Delete its four files, add its name to `removed.txt` in `ddr-md-content`, push. Without the `removed.txt` line CI refuses |
 | Watch a publish | `gh run list -R sh1ggy/ddr-md-content` |
+| Find what a publish was built from | `curl -s <content_url>/manifest.json \| jq .source`: the content and ddr-md commits behind that content number |
 | Try ddr-md changes before merging | Set `workflow_ref` to the branch and apply; set it back to `master` and apply again **before** deleting the branch, or every run fails |
 | Roll back a bad publish | Revert the commit in `ddr-md-content` and push. The republish gets a *higher* content number with the old files, so apps take it like any update |
 
@@ -168,6 +169,7 @@ or is caught before it ships. The ones that need you are marked.
 | A parity change without a `kPatternEngineVersion` bump | CI fails if counts change for any song whose charts didn't, while `engine` still matches live |
 | A store build bundling stale or local content | `scripts/build_store.sh` always fetches the live content first |
 | Live manifest briefly unreachable from CI | The run fails rather than restarting the content number |
+| Pages project recreated, or rolled back in the dashboard | Numbering continues from the highest `content-<number>` tag, so it never goes backwards |
 | Two publishes at once | They queue (`concurrency: publish-content`); deploys are atomic, so a phone never sees a half-uploaded publish |
 | CI and a Mac generate different bytes | Was real (level order in `pattern_levels.json`); fixed and checked: a local build matches the live publish file for file |
 

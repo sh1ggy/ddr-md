@@ -48,9 +48,11 @@ void main() {
     };
 
     final bundled = File('assets/content_manifest.json');
-    final previous = bundled.existsSync()
-        ? ContentManifest.fromJson(jsonDecode(bundled.readAsStringSync()))
-        : ContentManifest.empty;
+    final Map<String, dynamic> previousJson =
+        bundled.existsSync() ? jsonDecode(bundled.readAsStringSync()) : {};
+    final previous = previousJson.isEmpty
+        ? ContentManifest.empty
+        : ContentManifest.fromJson(previousJson);
     final changed = previous.engine != kPatternEngineVersion ||
         previous.files.length != files.length ||
         files.entries.any((e) => previous.files[e.key] != e.value);
@@ -60,7 +62,17 @@ void main() {
       engine: kPatternEngineVersion,
       files: files,
     );
-    final text = const JsonEncoder.withIndent(' ').convert(manifest);
+    // The commits this content number was built from (CI sets both), kept
+    // while the content doesn't change so an unchanged run matches the live
+    // manifest byte for byte.
+    final env = Platform.environment;
+    final source = !changed
+        ? previousJson['source']
+        : env.containsKey('CONTENT_COMMIT')
+            ? {'content': env['CONTENT_COMMIT'], 'app': env['APP_COMMIT']}
+            : null;
+    final text = const JsonEncoder.withIndent(' ')
+        .convert({...manifest.toJson(), if (source != null) 'source': source});
     bundled.writeAsStringSync(text);
 
     final out = Directory('build/content/objects')..createSync(recursive: true);
