@@ -55,19 +55,7 @@ flutter build ipa --dart-define=CONTENT_URL="$CONTENT_URL"
 
 Installed apps check `latest.json` on launch, download what differs from their bundle (each file hash-checked), and apply it on the next launch.
 
-#### Setting up the infra
-
-Needs Terraform (or OpenTofu), a Cloudflare API token that can edit Pages and create account API tokens (*Account › Cloudflare Pages › Edit*, *Account › Account API Tokens › Edit*), and a GitHub token with `workflow` scope:
-
-```bash
-gh auth refresh -s workflow
-cd infra
-export CLOUDFLARE_API_TOKEN=<bootstrap token> GITHUB_TOKEN=$(gh auth token)
-terraform init
-terraform apply -var cloudflare_account_id=<account id>
-```
-
-State (which holds the deploy token) stays in `infra/` and is gitignored, so keep it backed up. The content repo's workflow calls this repo's `master`, so merge `publish-content.yml` before the first push to `ddr-md-content`.
+Setup, day-to-day publishing, and recovery are in [infra/README.md](infra/README.md).
 
 ### Lite Builds
 

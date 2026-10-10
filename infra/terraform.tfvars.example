@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars (gitignored). `cf accounts list` shows the account ID.
+cloudflare_account_id = ""
+
+# ddr-md branch the content repo's CI runs; a feature branch to try changes first.
+workflow_ref = "master"
