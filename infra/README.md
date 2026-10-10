@@ -98,7 +98,8 @@ curl -s https://ddr-md-content.pages.dev/latest.json
 | Publish generator or parity engine changes | Merge to `workflow_ref`; the daily run picks it up, or `gh workflow run Publish -R sh1ggy/ddr-md-content` |
 | Make a store build | `bash scripts/fetch_content.sh "$(terraform -chdir=infra output -raw content_url)"`, then build with `--dart-define=CONTENT_URL=<same url>` |
 | Watch a publish | `gh run list -R sh1ggy/ddr-md-content` |
-| Try ddr-md changes before merging | Set `workflow_ref` to the branch and apply; set it back after merging |
+| Try ddr-md changes before merging | Set `workflow_ref` to the branch and apply; set it back to `master` and apply again **before** deleting the branch, or every run fails |
+| Roll back a bad publish | Revert the commit in `ddr-md-content` and push. The republish gets a *higher* content number with the old files, so apps take it like any update |
 
 A run with nothing changed skips the deploy, so the daily run costs only
 Actions minutes (~4–5 of the private repo's 2,000 free per month).
@@ -129,6 +130,39 @@ Don't import the CI token or its secret: a token's value can't be read back.
 Delete the old *ddr-md-content CI deploy* token in the Cloudflare dashboard
 (*Manage Account › Account API Tokens*) and let `terraform apply` create a new
 one and update the secret.
+
+## What can go wrong
+
+Every failure below either leaves players on the content they already have,
+or is caught before it ships. The ones that need you are marked.
+
+| Failure | What happens |
+|---|---|
+| Phone offline, host down, request fails mid-download | The update is retried next launch. Downloads land as `.part` files, are hash-checked, and the overlay swaps in with one rename, so a half-finished update is never read |
+| A downloaded file is corrupt | Its sha256 doesn't match the manifest: the whole update is abandoned, the current content stays |
+| A store build ships newer content than a phone downloaded | The bundle's content number is higher, so the old download is ignored |
+| Patterns made by a different parity engine | Skipped (`engine` ≠ the app's `kPatternEngineVersion`); the app keeps its own patterns |
+| Content in a shape an older app can't read | Skipped (`format` ≠ `kContentFormat`), as long as the format was bumped |
+| ddr-md `master` breaks a generator | CI fails before deploying; live content is untouched. GitHub emails you about the failed run |
+| A bad prep run (missing steps, truncated songlist) | The pre-deploy check fails the run if any listed song lacks steps or more than 2% of songs would disappear |
+| Live manifest briefly unreachable from CI | The run fails rather than restarting the content number |
+| Two publishes at once | They queue (`concurrency: publish-content`); deploys are atomic, so a phone never sees a half-uploaded publish |
+| CI and a Mac generate different bytes | Was real (level order in `pattern_levels.json`); fixed and checked: a local build matches the live publish file for file |
+
+**Needs you:**
+
+- **Bump `kPatternEngineVersion`** when a parity change alters the counts. Nothing
+  catches a missed bump: older apps would take patterns that disagree with
+  their own chart preview.
+- **Run `scripts/fetch_content.sh` before every store build.** Skip it and the
+  bundle carries whatever content number your local manifest has; if that's
+  ahead of live with different files, those installs ignore publishes until
+  live catches up.
+- **Never rename a song.** `name` keys jackets, steps, scores and footing edits.
+- **Keep the state file and the bootstrap token.** Losing the state is
+  recoverable ([Lost state](#lost-state)); applies need the token, so give it
+  an expiry measured in months.
+- **Content repo size.** ~675 MB now; jackets in git history only grow.
 
 ## Limits to keep in mind
 
