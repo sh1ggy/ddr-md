@@ -132,8 +132,8 @@ class ParityWeights {
 
   static const defaults = ParityWeights();
 
-  /// Above SMEditor's 750, as is [sideswitch] above its own: with every stance
-  /// kept through the solve, that's what agrees with the hand-labelled charts.
+  /// Above SMEditor's 750, as is [sideswitch] above its own: that's what
+  /// agrees with the hand-labelled charts.
   final double doublestep;
   final double bracketJack;
   final double jack;
@@ -1100,10 +1100,9 @@ class _ParityEngine {
 
       void expand(Iterable<List<int>> candidates) {
         for (final action in candidates) {
-          // The best way into each distinct stance this action can leave, not
-          // just the best overall: where the idle foot stands decides what the
-          // next notes cost, so collapsing them can throw away the cheaper path.
-          final byStance = <int, int>{};
+          double best = double.infinity;
+          int bestPrev = 0;
+          _State? bestResult;
           for (int p = 0; p < prevLayer.length; p++) {
             if (r > 0 && !_holdsKeepTheirFoot(prevLayer[p], row, action)) {
               continue;
@@ -1114,20 +1113,17 @@ class _ParityEngine {
             }
             final result = _initResultState(prevLayer[p], row, action);
             final c = prevCost[p] + _cost(prevLayer[p], result, rows, r);
-            final key = result.footColumns
-                .fold(0, (k, col) => k * (layout.columnCount + 1) + col + 1);
-            final at = byStance[key];
-            if (at == null) {
-              byStance[key] = curStates.length;
-              curStates.add(result);
-              curCost.add(c);
-              curBack.add(p);
-            } else if (c < curCost[at]) {
-              curStates[at] = result;
-              curCost[at] = c;
-              curBack[at] = p;
+            if (c < best) {
+              best = c;
+              bestPrev = p;
+              bestResult = result;
             }
           }
+          // Every predecessor would have released a hold — not a reachable state.
+          if (bestResult == null) continue;
+          curStates.add(bestResult);
+          curCost.add(best);
+          curBack.add(bestPrev);
         }
       }
 
