@@ -101,6 +101,24 @@ curl -s https://ddr-md-content.pages.dev/latest.json
 | Try ddr-md changes before merging | Set `workflow_ref` to the branch and apply; set it back to `master` and apply again **before** deleting the branch, or every run fails |
 | Roll back a bad publish | Revert the commit in `ddr-md-content` and push. The republish gets a *higher* content number with the old files, so apps take it like any update |
 
+### Adding one song
+
+Run prep for it, then copy its four files into `ddr-md-content` and push:
+
+```
+songs/<name>.json        metadata: title, artist, version, BPM, levels, radar
+steps/<name>.json        the charts
+jackets/<name>.png       full jacket
+jackets-160/<name>.png   list thumbnail
+```
+
+CI derives everything else: the songlist, the song's pattern file, and the
+levels table its charts are ranked in. Existing songs' files don't change
+(ranks are computed on the device), so each install downloads about 900 KB:
+the songlist (567 KB compressed, replaced whole), both jackets (~260 KB), the
+levels table (58 KB), and ~10 KB of steps and patterns. `<name>` must match
+across all four files and never change afterwards.
+
 A run with nothing changed skips the deploy, so the daily run costs only
 Actions minutes (~4–5 of the private repo's 2,000 free per month).
 
