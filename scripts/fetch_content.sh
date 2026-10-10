@@ -11,7 +11,9 @@ python3 - "$CONTENT_URL" "$REPO_ROOT/assets" <<'PY'
 import hashlib, json, pathlib, sys, urllib.request
 
 base, assets = sys.argv[1].rstrip("/") + "/", pathlib.Path(sys.argv[2])
-manifest = urllib.request.urlopen(base + "manifest.json").read()
+# Cloudflare turns away Python's default user agent.
+ua = {"User-Agent": "ddr-md-fetch-content"}
+manifest = urllib.request.urlopen(urllib.request.Request(base + "manifest.json", headers=ua)).read()
 files = json.loads(manifest)["files"]
 fetched = 0
 for path, sha in files.items():
@@ -19,7 +21,7 @@ for path, sha in files.items():
     if dest.exists() and hashlib.sha256(dest.read_bytes()).hexdigest() == sha:
         continue
     name = sha + pathlib.PurePosixPath(path).suffix
-    data = urllib.request.urlopen(base + "objects/" + name).read()
+    data = urllib.request.urlopen(urllib.request.Request(base + "objects/" + name, headers=ua)).read()
     if hashlib.sha256(data).hexdigest() != sha:
         sys.exit(f"{path}: downloaded file failed its hash")
     dest.parent.mkdir(parents=True, exist_ok=True)

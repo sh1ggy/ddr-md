@@ -19,7 +19,7 @@ flutter test --plain-name "substring of test name"   # one test
 bash scripts/generate_songlist.sh    # rebuild merged assets/songlist.json — run after ANY change under assets/songs/
 flutter test tool/generate_patterns.dart  # rebuild assets/patterns/ + pattern_levels.json (~25 s) — run after changing assets/steps/, parity.dart or pattern_analysis.dart
 flutter test tool/content_manifest.dart   # hash content into assets/content_manifest.json, lay out build/content/ (CI runs this to publish)
-bash scripts/fetch_content.sh <CONTENT_URL>  # before a store build: make assets/ exactly the live publish
+bash scripts/build_store.sh <ipa|appbundle>  # store builds: fetch the live content into assets/, build with CONTENT_URL
 bash scripts/build_lite.sh [apk --release]  # build without jackets/per-song JSONs (~430 MB smaller)
 bash scripts/init.sh                 # Android only: download OpenCV + ONNX Runtime into native_opencv/.../jniLibs/ (gitignored; rerun after clean checkout)
 cd ios && pod install                # iOS native deps (vendored opencv2 + onnxruntime frameworks)

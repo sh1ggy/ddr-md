@@ -69,24 +69,63 @@ jobs:
           esac
       - run: flutter test tool/content_manifest.dart
 
-      # The songlist replaces the whole list on devices, so a bad prep run would
-      # reach everyone. Every listed song needs its steps, and no more than 2% of
-      # songs may disappear in one publish (raise it here for a deliberate cull).
+      # Checks a bad publish would otherwise slip past:
+      # - every listed song has its steps (the songlist replaces the whole list
+      #   on devices, so a bad prep run would reach everyone);
+      # - no song disappears unless removed.txt in the content repo names it
+      #   (a rename looks like remove + add, and orphans players' scores,
+      #   notes and footing edits);
+      # - counts can't change for a chart whose steps didn't, unless
+      #   kPatternEngineVersion was bumped (else older apps take patterns that
+      #   disagree with their own chart preview).
       - name: Check the content before it ships
+        env:
+          CONTENT_URL: ${{ inputs.content-url }}
         run: |
           python3 - <<'PY'
-          import json, sys
-          files = json.load(open("build/content/manifest.json"))["files"]
-          live = json.load(open("live_manifest.json")).get("files", {})
+          import json, os, sys, urllib.request
+          new = json.load(open("build/content/manifest.json"))
+          live = json.load(open("live_manifest.json"))
+          files, old = new["files"], live.get("files", {})
           songs = [s["name"] for s in json.load(open("assets/songlist.json"))]
+          problems = []
+
           missing = [n for n in songs if f"steps/{n}.json" not in files]
-          new = sum(p.startswith("steps/") for p in files)
-          old = sum(p.startswith("steps/") for p in live)
-          print(f"{len(songs)} songs, {new} charts files (live {old})")
           if not songs or missing:
-              sys.exit(f"::error::{len(missing)} songs have no steps, e.g. {missing[:3]}")
-          if old and new < old * 0.98:
-              sys.exit(f"::error::{old - new} songs would disappear in one publish")
+              problems.append(f"{len(missing)} songs have no steps, e.g. {missing[:3]}")
+
+          allowed = set()
+          if os.path.exists("_content/removed.txt"):
+              allowed = {l.strip() for l in open("_content/removed.txt") if l.strip()}
+          gone = sorted(p[6:-5] for p in old if p.startswith("steps/") and p not in files)
+          if [n for n in gone if n not in allowed]:
+              problems.append(f"songs would disappear: {[n for n in gone if n not in allowed]}. "
+                              "If deliberate, list them in removed.txt in the content repo")
+
+          if old and new["engine"] == live["engine"]:
+              changed = []
+              for path, sha in files.items():
+                  name = path[9:-5]
+                  if (not path.startswith("patterns/") or old.get(path) in (None, sha)
+                          or old.get(f"steps/{name}.json") != files.get(f"steps/{name}.json")):
+                      continue
+                  # Cloudflare turns away Python's default user agent.
+                  before = json.load(urllib.request.urlopen(urllib.request.Request(
+                      f"{os.environ['CONTENT_URL']}/objects/{old[path]}.json",
+                      headers={"User-Agent": "ddr-md-publish-check"})))
+                  after = json.load(open(f"assets/{path}"))
+                  strip = lambda song: {m: {d: {k: v for k, v in c.items() if k != "level"}
+                                            for d, c in song.get(m, {}).items()} for m in ("sp", "dp")}
+                  if strip(before) != strip(after):
+                      changed.append(name)
+              if changed:
+                  problems.append(f"counts changed for {len(changed)} songs whose charts didn't "
+                                  f"(e.g. {changed[:3]}): bump kPatternEngineVersion")
+
+          print(f"{len(songs)} songs, {len(gone)} removed, engine {new['engine']} (live {live.get('engine')})")
+          for p in problems:
+              print(f"::error::{p}")
+          sys.exit(1 if problems else 0)
           PY
 
       - name: Deploy if anything changed

@@ -96,7 +96,8 @@ curl -s https://ddr-md-content.pages.dev/latest.json
 |---|---|
 | Publish new songs / chart fixes | Copy prep output into `ddr-md-content`, commit, push |
 | Publish generator or parity engine changes | Merge to `workflow_ref`; the daily run picks it up, or `gh workflow run Publish -R sh1ggy/ddr-md-content` |
-| Make a store build | `bash scripts/fetch_content.sh "$(terraform -chdir=infra output -raw content_url)"`, then build with `--dart-define=CONTENT_URL=<same url>` |
+| Make a store build | `bash scripts/build_store.sh ipa` (or `appbundle`): fetches the live content, then builds with `CONTENT_URL` set |
+| Remove a song | Delete its four files, add its name to `removed.txt` in `ddr-md-content`, push. Without the `removed.txt` line CI refuses |
 | Watch a publish | `gh run list -R sh1ggy/ddr-md-content` |
 | Try ddr-md changes before merging | Set `workflow_ref` to the branch and apply; set it back to `master` and apply again **before** deleting the branch, or every run fails |
 | Roll back a bad publish | Revert the commit in `ddr-md-content` and push. The republish gets a *higher* content number with the old files, so apps take it like any update |
@@ -162,21 +163,20 @@ or is caught before it ships. The ones that need you are marked.
 | Patterns made by a different parity engine | Skipped (`engine` ≠ the app's `kPatternEngineVersion`); the app keeps its own patterns |
 | Content in a shape an older app can't read | Skipped (`format` ≠ `kContentFormat`), as long as the format was bumped |
 | ddr-md `master` breaks a generator | CI fails before deploying; live content is untouched. GitHub emails you about the failed run |
-| A bad prep run (missing steps, truncated songlist) | The pre-deploy check fails the run if any listed song lacks steps or more than 2% of songs would disappear |
+| A bad prep run (missing steps, truncated songlist) | The pre-deploy check fails the run if any listed song lacks steps |
+| A song renamed or dropped by accident | CI fails if any live song disappears without being named in the content repo's `removed.txt`; a rename looks like remove + add, which would orphan players' scores, notes and footing edits |
+| A parity change without a `kPatternEngineVersion` bump | CI fails if counts change for any song whose charts didn't, while `engine` still matches live |
+| A store build bundling stale or local content | `scripts/build_store.sh` always fetches the live content first |
 | Live manifest briefly unreachable from CI | The run fails rather than restarting the content number |
 | Two publishes at once | They queue (`concurrency: publish-content`); deploys are atomic, so a phone never sees a half-uploaded publish |
 | CI and a Mac generate different bytes | Was real (level order in `pattern_levels.json`); fixed and checked: a local build matches the live publish file for file |
 
 **Needs you:**
 
-- **Bump `kPatternEngineVersion`** when a parity change alters the counts. Nothing
-  catches a missed bump: older apps would take patterns that disagree with
-  their own chart preview.
-- **Run `scripts/fetch_content.sh` before every store build.** Skip it and the
-  bundle carries whatever content number your local manifest has; if that's
-  ahead of live with different files, those installs ignore publishes until
-  live catches up.
-- **Never rename a song.** `name` keys jackets, steps, scores and footing edits.
+- **Bump `kPatternEngineVersion`** when CI tells you to (it can't bump it for
+  you: the number ships inside the app).
+- **Use `scripts/build_store.sh`** for store builds rather than `flutter build`
+  directly.
 - **Keep the state file and the bootstrap token.** Losing the state is
   recoverable ([Lost state](#lost-state)); applies need the token, so give it
   an expiry measured in months.

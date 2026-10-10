@@ -48,9 +48,7 @@ Songs, charts, patterns and jackets reach installed apps without a store release
 - **Store builds** bundle exactly what's live, so installs only download what's newer:
 
 ```bash
-CONTENT_URL=$(terraform -chdir=infra output -raw content_url)
-bash scripts/fetch_content.sh "$CONTENT_URL"
-flutter build ipa --dart-define=CONTENT_URL="$CONTENT_URL"
+bash scripts/build_store.sh ipa        # or appbundle; fetches live content, sets CONTENT_URL
 ```
 
 Installed apps check `latest.json` on launch, download what differs from their bundle (each file hash-checked), and apply it on the next launch.
