@@ -3,7 +3,7 @@
 /// parity engine ([analyseParity]) decides the footing; this reads that
 /// footing row by row and counts crossovers, footswitches, jacks and the rest,
 /// each by a fixed rule, with the beat of every occurrence. Run offline over the
-/// whole library by tool/generate_patterns.dart (see docs/patterns/PLAN.md),
+/// whole library by tool/generate_patterns.dart,
 /// and live by the chart preview on its own footing.
 library;
 
