@@ -58,17 +58,23 @@ gh auth refresh -h github.com -s workflow
 cf auth login && cf accounts list          # account ID (or the dashboard URL)
 ```
 
-Create the bootstrap Cloudflare token (permissions above), then from `infra/`,
-in one terminal:
+Create the bootstrap Cloudflare token (permissions above). Copy
+[terraform.tfvars.example](terraform.tfvars.example) to `terraform.tfvars`
+(gitignored), fill in the account ID, and either put the token in it as
+`cloudflare_api_token` or load it per session instead:
 
 ```bash
 read -s "CLOUDFLARE_API_TOKEN?Cloudflare token: " && export CLOUDFLARE_API_TOKEN
-GITHUB_TOKEN=$(gh auth token) terraform init
+```
+
+Then, from `infra/`:
+
+```bash
+terraform init
 GITHUB_TOKEN=$(gh auth token) terraform apply
 ```
 
-Variables come from `terraform.tfvars` (gitignored; copy
-[terraform.tfvars.example](terraform.tfvars.example)). Expect *8 to add*.
+Expect *8 to add*.
 Committing the workflow file triggers a run that fails on an empty repo; that's
 expected. Then push the content:
 
@@ -99,8 +105,8 @@ Actions minutes (~4–5 of the private repo's 2,000 free per month).
 
 ## Changing the infra
 
-Edit the `.tf` files, then `terraform plan` / `apply` with the bootstrap
-token loaded as above. Never hand-edit the content repo's workflow, secret or
+Edit the `.tf` files, then `GITHUB_TOKEN=$(gh auth token) terraform plan` / `apply`,
+with the bootstrap token in `terraform.tfvars` or loaded as above. Never hand-edit the content repo's workflow, secret or
 variables; the next apply overwrites them.
 
 To rotate the CI token: `terraform apply -replace=cloudflare_account_token.ci`

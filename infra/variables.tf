@@ -3,6 +3,13 @@ variable "cloudflare_account_id" {
   type        = string
 }
 
+variable "cloudflare_api_token" {
+  description = "Bootstrap token (Pages Edit + Account API Tokens Edit); unset falls back to CLOUDFLARE_API_TOKEN"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "github_owner" {
   type    = string
   default = "sh1ggy"
