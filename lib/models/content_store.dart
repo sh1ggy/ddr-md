@@ -26,6 +26,13 @@ const kContentFormat = 1;
 bool isPatternPath(String path) =>
     path.startsWith('patterns/') || path == 'pattern_levels.json';
 
+/// [path]'s file in objects/: its sha256 plus its extension, so the host
+/// serves JSON as JSON (and compresses it).
+String objectName(String path, String sha) {
+  final dot = path.lastIndexOf('.');
+  return dot > path.lastIndexOf('/') ? '$sha${path.substring(dot)}' : sha;
+}
+
 class ContentManifest {
   final int format;
 
@@ -70,7 +77,11 @@ class ContentStore {
   /// Content path -> downloaded file, for the paths the overlay overrides.
   static Map<String, File> _overlay = {};
 
-  /// <app support>/content: overlay.json, plus objects/<sha256>.
+  /// Downloaded files this run reads from, which the updater must keep.
+  static Set<String> get inUse =>
+      {for (final f in _overlay.values) f.uri.pathSegments.last};
+
+  /// <app support>/content: overlay.json, plus objects/ ([objectName]).
   static Directory contentDir(Directory support) =>
       Directory('${support.path}/content');
 
@@ -89,22 +100,23 @@ class ContentStore {
     } catch (_) {
       return;
     }
-    if (overlay.format != kContentFormat || overlay.content <= bundled.content) {
+    if (overlay.format != kContentFormat ||
+        overlay.content <= bundled.content) {
       return;
     }
     final patternsOk = overlay.engine == kPatternEngineVersion;
     for (final MapEntry(key: path, value: sha) in overlay.files.entries) {
       if (!patternsOk && isPatternPath(path)) continue;
-      final object = File('${dir.path}/objects/$sha');
+      final object = File('${dir.path}/objects/${objectName(path, sha)}');
       if (object.existsSync()) _overlay[path] = object;
     }
   }
 
   static Future<ContentManifest> _bundledManifest() async {
     try {
-      return ContentManifest.fromJson(json.decode(await rootBundle
-              .loadString('assets/content_manifest.json', cache: false))
-          as Map<String, dynamic>);
+      return ContentManifest.fromJson(json.decode(await rootBundle.loadString(
+          'assets/content_manifest.json',
+          cache: false)) as Map<String, dynamic>);
     } catch (_) {
       return ContentManifest.empty;
     }

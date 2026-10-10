@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Chart content updates (lib/models/content_updater.dart). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="ddr_md"
         android:name="${applicationName}"

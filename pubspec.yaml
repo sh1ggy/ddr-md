@@ -30,6 +30,7 @@ dependencies:
   # audioplayers backend had no scheduling API. See
   # lib/components/song/notes/tick_clock.dart.
   flutter_soloud: ^4.0.13
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

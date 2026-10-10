@@ -143,6 +143,9 @@ app.*.symbols
 /assets/songs
 /assets/steps
 /assets/patterns
+/assets/pattern_levels.json
+# Copied from the live publish by CI and scripts/fetch_content.sh
+/assets/content_manifest.json
 /assets/noteskin
 
 # OpenCV downloaded SDK
@@ -166,3 +169,8 @@ app.*.symbols
 # The simfile-scraping pipeline is its own nested git repo with its own history.
 # Checked out here for convenience; must never be committed into this one.
 /DDR-BPM-prep
+
+# Terraform (infra/): state holds the CI deploy token
+/infra/.terraform/
+/infra/*.tfstate*
+/infra/terraform.tfvars

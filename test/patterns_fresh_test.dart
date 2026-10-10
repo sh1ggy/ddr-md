@@ -36,7 +36,8 @@ void main() {
           final stored = shipped.chartFor(mode, diff);
           if (stored == null) continue;
           expect(
-              ChartPatterns.fromAnalysis(analyseChart(chart.notes, mode))
+              ChartPatterns.fromAnalysis(
+                      analyseChart(chart.notes, mode), stored.level)
                   .counts,
               stored.counts,
               reason: '${song.name} ${mode.name} $diff');

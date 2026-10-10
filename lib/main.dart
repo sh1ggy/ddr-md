@@ -8,11 +8,14 @@ import 'dart:io';
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/songlist/difficultylist_page.dart';
+import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 void main() async {
@@ -21,6 +24,8 @@ void main() async {
   // Initialise global objects
   await Settings.init();
   await DatabaseProvider.init();
+  final support = await getApplicationSupportDirectory();
+  await ContentStore.init(support);
   await Songs.load();
 
   // Wrapped app with providers
@@ -28,6 +33,12 @@ void main() async {
     providers: [ChangeNotifierProvider(create: (context) => SongState())],
     child: const App(),
   ));
+
+  // Newer chart content, if any, applies on the next launch.
+  ContentUpdater.check(support).catchError((Object e) {
+    debugPrint('Content update failed: $e');
+    return false;
+  });
 }
 
 class App extends StatelessWidget {

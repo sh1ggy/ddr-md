@@ -1,9 +1,9 @@
 /// Name: Pattern generator
 /// Parent: tool (dev only)
 /// Description: Runs [analyseChart] over every chart in assets/steps with the
-/// shipped footing weights, ranks each pattern against charts of the same
-/// style and level, and writes assets/patterns/<name>.json for the song page.
-/// Rerun after the steps or the parity engine change.
+/// shipped footing weights and writes assets/patterns/<name>.json for the song
+/// page, plus assets/pattern_levels.json, the table each chart is ranked
+/// against at its level. Rerun after the steps or the parity engine change.
 ///
 ///   flutter test tool/generate_patterns.dart
 library;
@@ -21,23 +21,9 @@ class _Entry {
   final String song;
   final Modes mode;
   final String difficulty;
-  final int level;
-  ChartPatterns chart;
+  final ChartPatterns chart;
 
-  _Entry(this.song, this.mode, this.difficulty, this.level, this.chart);
-}
-
-/// Share (0-100) of [cohort] strictly below [value], ties counting half.
-int _percentile(double value, List<double> cohort) {
-  var below = 0.0;
-  for (final v in cohort) {
-    if (v < value) {
-      below += 1;
-    } else if (v == value) {
-      below += 0.5;
-    }
-  }
-  return (below * 100 / cohort.length).round();
+  _Entry(this.song, this.mode, this.difficulty, this.chart);
 }
 
 void main() {
@@ -59,24 +45,18 @@ void main() {
         for (final MapEntry(key: diff, value: chart) in charts.entries) {
           final level = levels[diff] as int?;
           if (level == null || chart.notes.isEmpty) continue;
-          entries.add(_Entry(steps.name, mode, diff, level,
-              ChartPatterns.fromAnalysis(analyseChart(chart.notes, mode))));
+          entries.add(_Entry(
+              steps.name,
+              mode,
+              diff,
+              ChartPatterns.fromAnalysis(
+                  analyseChart(chart.notes, mode), level)));
         }
       }
     }
 
-    // Rank within the same style, a level either side.
-    for (final e in entries) {
-      final cohort = entries
-          .where((o) => o.mode == e.mode && (o.level - e.level).abs() <= 1)
-          .map((o) => o.chart)
-          .toList();
-      e.chart = e.chart.withPercentiles({
-        for (final p in Pattern.values)
-          p.name:
-              _percentile(e.chart.rate(p), [for (final c in cohort) c.rate(p)]),
-      });
-    }
+    File('assets/pattern_levels.json').writeAsStringSync(jsonEncode(
+        PatternLevels.of([for (final e in entries) (e.mode, e.chart)])));
 
     final bySong = <String, Map<Modes, Map<String, ChartPatterns>>>{};
     for (final e in entries) {
