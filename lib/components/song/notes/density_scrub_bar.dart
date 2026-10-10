@@ -5,6 +5,7 @@
 /// and a playhead listenable, so it neither reads nor mutates scroller state.
 library;
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'chart_models.dart';
@@ -25,6 +26,7 @@ class DensityScrubBar extends StatelessWidget {
     required this.accent,
     required this.bpmFractions,
     required this.stopFractions,
+    this.highlightFractions = const [],
     required this.onSeek,
   });
 
@@ -36,6 +38,10 @@ class DensityScrubBar extends StatelessWidget {
   /// 0..1 positions of BPM-change and stop markers along the track.
   final List<double> bpmFractions;
   final List<double> stopFractions;
+
+  /// 0..1 (start, end) spans to shade behind the bars: the occurrences of the
+  /// pattern picked in the preview's breakdown.
+  final List<(double, double)> highlightFractions;
   final ValueChanged<double> onSeek;
 
   @override
@@ -61,6 +67,7 @@ class DensityScrubBar extends StatelessWidget {
                   accent: accent,
                   bpmFractions: bpmFractions,
                   stopFractions: stopFractions,
+                  highlightFractions: highlightFractions,
                 ),
                 size: Size.infinite,
                 willChange: true,
@@ -81,6 +88,7 @@ class _DensityPainter extends CustomPainter {
     required this.accent,
     required this.bpmFractions,
     required this.stopFractions,
+    required this.highlightFractions,
   }) : super(repaint: playhead);
 
   final List<MinimapBucket> buckets;
@@ -89,6 +97,7 @@ class _DensityPainter extends CustomPainter {
   final Color accent;
   final List<double> bpmFractions;
   final List<double> stopFractions;
+  final List<(double, double)> highlightFractions;
 
   // The track (bars, hold underlay, shock and timing ticks) is static per
   // layout: record it once into two pictures — played styling and unplayed
@@ -110,6 +119,13 @@ class _DensityPainter extends CustomPainter {
         .withValues(alpha: played ? 0.36 : 0.18);
     final shockColor = const Color(0xFF79E7FF)
         .withValues(alpha: played ? 0.95 : 0.55);
+    paint.color = Colors.white.withValues(alpha: 0.22);
+    for (final (a, b) in highlightFractions) {
+      final x = size.width * a;
+      canvas.drawRect(
+          Rect.fromLTRB(x - 1, 0, math.max(size.width * b, x) + 1, size.height),
+          paint);
+    }
     for (int i = 0; i < buckets.length; i++) {
       final x = i * barW;
       final bucket = buckets[i];
@@ -253,5 +269,6 @@ class _DensityPainter extends CustomPainter {
       old.endSecond != endSecond ||
       old.accent != accent ||
       old.bpmFractions != bpmFractions ||
-      old.stopFractions != stopFractions;
+      old.stopFractions != stopFractions ||
+      old.highlightFractions != highlightFractions;
 }

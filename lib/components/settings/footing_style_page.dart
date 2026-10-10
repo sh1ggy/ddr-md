@@ -15,6 +15,7 @@ import 'package:ddr_md/components/song/notes/dancing_feet.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_profile.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -132,7 +133,7 @@ class _FootingStylePageState extends State<FootingStylePage>
     // Learn from the latest edits first, so Yours is current.
     final fit = await refitFromEdits();
     final picks =
-        json.decode(await rootBundle.loadString('assets/parity_patterns.json'))
+        json.decode(await ContentStore.loadString('assets/parity_patterns.json'))
             as List;
     final moments = <_Moment>[];
     for (final p in picks) {

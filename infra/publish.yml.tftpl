@@ -1,0 +1,25 @@
+# Managed by Terraform in sh1ggy/ddr-md (infra/), edits here are overwritten.
+# Publishes this repo's content on every push to master, daily (to pick up
+# generator or parity engine changes in ddr-md), or by hand.
+name: Publish
+
+on:
+  push:
+    branches: [master]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    # Tags each published commit content-<number>.
+    permissions:
+      contents: write
+    uses: sh1ggy/ddr-md/.github/workflows/publish-content.yml@${ref}
+    with:
+      app-ref: ${ref}
+      content-url: $${{ vars.CONTENT_URL }}
+      pages-project: $${{ vars.PAGES_PROJECT }}
+      cloudflare-account-id: $${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    secrets:
+      CLOUDFLARE_API_TOKEN: $${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -111,7 +111,7 @@ class _Foot {
 
 class ParityWeights {
   const ParityWeights({
-    this.doublestep = 750,
+    this.doublestep = 1125,
     this.bracketJack = 60,
     this.jack = 40,
     this.jump = 0,
@@ -127,11 +127,13 @@ class ParityWeights {
     this.startXo = 10000,
     this.samePanel = 250,
     this.bracket = 200,
-    this.sideswitch = 50,
+    this.sideswitch = 150,
   });
 
   static const defaults = ParityWeights();
 
+  /// Above SMEditor's 750, as is [sideswitch] above its own: that's what
+  /// agrees with the hand-labelled charts.
   final double doublestep;
   final double bracketJack;
   final double jack;
@@ -862,7 +864,10 @@ class _ParityEngine {
     total += _spinCost(d);
 
     // FOOTSWITCH: slow ones, and any on a side panel.
-    total += _footswitchCost(d, row, elapsed);
+    total += _footswitchCost(d, lastRow, row, elapsed);
+
+    // SWAP: a jump that trades the feet's panels.
+    total += _swapCost(d);
 
     // SIDESWITCH
     total += _sideswitchCost(d);
@@ -947,7 +952,8 @@ class _ParityEngine {
     return 0;
   }
 
-  double _footswitchCost(_Placement d, _Row row, double elapsed) {
+  double _footswitchCost(
+      _Placement d, _Row? lastRow, _Row row, double elapsed) {
     if (d.jumped) return 0;
     if (_rowHasMine(row)) return 0;
     double cost = 0;
@@ -960,14 +966,36 @@ class _ParityEngine {
       // Footswitches belong on Up/Down; swapping feet on a side panel isn't a
       // technique players use. With 0.4s to spare a jack is free, so a switch
       // there only dodges something — usually a slow doublestep. Price both as
-      // one so neither pays.
-      if (layout.sideArrows.contains(col) || elapsed >= 0.4) {
+      // one so neither pays. Nor is a foot taking the panel the other has just
+      // let go of a freeze on a technique: the feet trade places, however fast.
+      if (layout.sideArrows.contains(col) ||
+          elapsed >= 0.4 ||
+          (lastRow != null && lastRow.holdTails.contains(col))) {
         cost += weights.doublestep;
       } else if (elapsed >= 0.2) {
         cost += ((elapsed - 0.2) / elapsed) * weights.footswitch;
       }
     }
     return cost;
+  }
+
+  /// A jump landing each foot on a panel the other foot stood on: the feet
+  /// trade places mid-air. [_footswitchCost] skips jumps, so without this the
+  /// trade is free whenever it sets up the next notes. A jump that shifts both
+  /// feet one panel along (only one foot landing on the other's panel) isn't
+  /// a trade.
+  double _swapCost(_Placement d) {
+    if (!d.jumped) return 0;
+    bool takes(int heel, int toe, bool otherIsLeft) => [heel, toe].any((part) {
+          final col = d.result.footColumns[part];
+          if (col == -1) return false;
+          final prev = d.initial.combinedColumns[col];
+          return prev != _Foot.none && _Foot.isLeft(prev) == otherIsLeft;
+        });
+    return takes(_Foot.leftHeel, _Foot.leftToe, false) &&
+            takes(_Foot.rightHeel, _Foot.rightToe, true)
+        ? weights.doublestep
+        : 0;
   }
 
   double _sideswitchCost(_Placement d) {
@@ -1084,8 +1112,7 @@ class _ParityEngine {
               continue;
             }
             final result = _initResultState(prevLayer[p], row, action);
-            final edge = _cost(prevLayer[p], result, rows, r);
-            final c = prevCost[p] + edge;
+            final c = prevCost[p] + _cost(prevLayer[p], result, rows, r);
             if (c < best) {
               best = c;
               bestPrev = p;

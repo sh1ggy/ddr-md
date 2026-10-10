@@ -1,0 +1,157 @@
+# Publishes chart content for over-the-air updates. Called by the private
+# content repo (its caller, infra/publish.yml, is written there by Terraform):
+# builds that repo's songs, steps and jackets with this repo's generators and
+# deploys build/content to Cloudflare Pages, only when something changed.
+name: Publish content
+
+on:
+  workflow_call:
+    inputs:
+      content-url:
+        description: Live content URL, to continue from its manifest
+        type: string
+        required: true
+      pages-project:
+        type: string
+        required: true
+      cloudflare-account-id:
+        type: string
+        required: true
+      app-ref:
+        description: Ref of sh1ggy/ddr-md whose generators and engine to use
+        type: string
+        default: master
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+
+concurrency: publish-content
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: sh1ggy/ddr-md
+          ref: ${{ inputs.app-ref }}
+      # The calling (content) repo.
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository }}
+          path: _content
+      - name: Move the content into assets/
+        run: |
+          for d in songs steps jackets jackets-160; do
+            rm -rf "assets/$d"
+            mv "_content/$d" "assets/$d"
+          done
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.4
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: bash scripts/generate_songlist.sh
+      - run: flutter test tool/generate_patterns.dart
+
+      # The content number continues from what's live, or from the content
+      # repo's highest content-<number> tag if that's higher (a recreated or
+      # rolled-back host): going backwards would make every installed app ignore
+      # publishes until the number caught up. Only a 404 means "nothing live";
+      # any other failure stops here.
+      - name: Fetch the live manifest
+        run: |
+          status=$(curl -sS -o live_manifest.json -w '%{http_code}' "${{ inputs.content-url }}/manifest.json")
+          case "$status" in
+            200) cp live_manifest.json assets/content_manifest.json ;;
+            404) echo '{}' > live_manifest.json
+                 echo '{"format":0,"content":0,"engine":0,"files":{}}' > assets/content_manifest.json ;;
+            *) echo "::error::Live manifest returned HTTP $status"; exit 1 ;;
+          esac
+          tagged=$(git -C _content ls-remote --tags origin 'content-*' | sed -n 's|.*refs/tags/content-\([0-9]*\)$|\1|p' | sort -n | tail -1)
+          if [ "${tagged:-0}" -gt "$(jq .content assets/content_manifest.json)" ]; then
+            echo "Continuing from tag content-$tagged"
+            jq --argjson n "$tagged" '.content = $n' assets/content_manifest.json > tagged.json
+            mv tagged.json assets/content_manifest.json
+          fi
+      - run: APP_COMMIT=$(git rev-parse HEAD) flutter test tool/content_manifest.dart
+        env:
+          CONTENT_COMMIT: ${{ github.sha }}
+
+      # Checks a bad publish would otherwise slip past:
+      # - every listed song has its steps (the songlist replaces the whole list
+      #   on devices, so a bad prep run would reach everyone);
+      # - no song disappears unless removed.txt in the content repo names it
+      #   (a rename looks like remove + add, and orphans players' scores,
+      #   notes and footing edits);
+      # - counts can't change for a chart whose steps didn't, unless
+      #   kPatternEngineVersion was bumped (else older apps take patterns that
+      #   disagree with their own chart preview).
+      - name: Check the content before it ships
+        env:
+          CONTENT_URL: ${{ inputs.content-url }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.request
+          new = json.load(open("build/content/manifest.json"))
+          live = json.load(open("live_manifest.json"))
+          files, old = new["files"], live.get("files", {})
+          songs = [s["name"] for s in json.load(open("assets/songlist.json"))]
+          problems = []
+
+          missing = [n for n in songs if f"steps/{n}.json" not in files]
+          if not songs or missing:
+              problems.append(f"{len(missing)} songs have no steps, e.g. {missing[:3]}")
+
+          allowed = set()
+          if os.path.exists("_content/removed.txt"):
+              allowed = {l.strip() for l in open("_content/removed.txt") if l.strip()}
+          gone = sorted(p[6:-5] for p in old if p.startswith("steps/") and p not in files)
+          if [n for n in gone if n not in allowed]:
+              problems.append(f"songs would disappear: {[n for n in gone if n not in allowed]}. "
+                              "If deliberate, list them in removed.txt in the content repo")
+
+          if old and new["engine"] == live["engine"]:
+              changed = []
+              for path, sha in files.items():
+                  name = path[9:-5]
+                  if (not path.startswith("patterns/") or old.get(path) in (None, sha)
+                          or old.get(f"steps/{name}.json") != files.get(f"steps/{name}.json")):
+                      continue
+                  # Cloudflare turns away Python's default user agent.
+                  before = json.load(urllib.request.urlopen(urllib.request.Request(
+                      f"{os.environ['CONTENT_URL']}/objects/{old[path]}.json",
+                      headers={"User-Agent": "ddr-md-publish-check"})))
+                  after = json.load(open(f"assets/{path}"))
+                  strip = lambda song: {m: {d: {k: v for k, v in c.items() if k != "level"}
+                                            for d, c in song.get(m, {}).items()} for m in ("sp", "dp")}
+                  if strip(before) != strip(after):
+                      changed.append(name)
+              if changed:
+                  problems.append(f"counts changed for {len(changed)} songs whose charts didn't "
+                                  f"(e.g. {changed[:3]}): bump kPatternEngineVersion")
+
+          print(f"{len(songs)} songs, {len(gone)} removed, engine {new['engine']} (live {live.get('engine')})")
+          for p in problems:
+              print(f"::error::{p}")
+          sys.exit(1 if problems else 0)
+          PY
+
+      - name: Deploy if anything changed
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        run: |
+          if cmp -s build/content/manifest.json live_manifest.json; then
+            echo "Unchanged since the live publish, nothing to deploy"
+            exit 0
+          fi
+          # Tagged before deploying, so the tags never fall behind what's live.
+          tag="content-$(jq .content build/content/manifest.json)"
+          git -C _content tag "$tag" && git -C _content push origin "$tag"
+          npx --yes wrangler@4 pages deploy build/content \
+            --project-name "${{ inputs.pages-project }}" --branch main --commit-dirty=true

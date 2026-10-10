@@ -9,8 +9,8 @@ library;
 import 'dart:convert';
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/parity.dart';
-import 'package:flutter/services.dart';
 
 /// Note type codes, matching the pipeline's SimfileParser step encoding.
 enum StepType { tap, hold, roll, mine }
@@ -119,13 +119,7 @@ class SongSteps {
 class StepsLoader {
   static Future<SongSteps?> load(String songName) async {
     try {
-      // `cache: false`: the decoded string is large and only needed to build
-      // the model once; keeping it pinned in rootBundle's cache would hold the
-      // whole note stream in memory after the view closes.
-      final raw = await rootBundle.loadString(
-        "assets/steps/$songName.json",
-        cache: false,
-      );
+      final raw = await ContentStore.loadString("assets/steps/$songName.json");
       return SongSteps.fromJson(json.decode(raw) as Map<String, dynamic>);
     } catch (_) {
       return null;

@@ -278,7 +278,8 @@ class ControlPane extends StatelessWidget {
         onHorizontalDragUpdate: onDragUpdate,
         child: Container(
           decoration: BoxDecoration(
-            color: fill ?? scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            color:
+                fill ?? scheme.surfaceContainerHighest.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(borderRadius),
           ),
           child: child,
@@ -303,22 +304,36 @@ class ShadeSection {
 /// doesn't dominate the field. Framed like the bottom transport so the two read
 /// as one family, height-capped with a scrollable body. The caller positions its
 /// top, seating it under the title or at the status bar.
-class SettingsShade extends StatelessWidget {
+class SettingsShade extends StatefulWidget {
   const SettingsShade({
     super.key,
     required this.sections,
+    required this.maxHeight,
   });
 
   final List<ShadeSection> sections;
+  final double maxHeight;
+
+  @override
+  State<SettingsShade> createState() => _SettingsShadeState();
+}
+
+class _SettingsShadeState extends State<SettingsShade> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
     final scheme = Theme.of(context).colorScheme;
     // Empty sections are dropped before the dividers are placed, so a hidden
     // leading group can't leave a rule with nothing above it.
     final shown = [
-      for (final s in sections)
+      for (final s in widget.sections)
         if (s.content != null) s,
     ];
     return Padding(
@@ -326,39 +341,53 @@ class SettingsShade extends StatelessWidget {
       // matching how the transport floats above the bottom edge.
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Container(
-        // Same framing as the bottom transport ([_buildTransport]) so the top
-        // and bottom chrome read as one surface: identical padding, fill and
-        // corner radius. The solidity comes from the filled tiles inside (like
-        // the transport's read/song-speed panes), not the thin outer wash.
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        constraints: BoxConstraints(maxHeight: media.size.height * 0.4),
+        // The tiles sit 8px from every edge; the horizontal inset lives on
+        // the scroll content so the thumb can occupy that same edge gutter.
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        constraints: BoxConstraints(maxHeight: widget.maxHeight),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(12),
         ),
-        // No close button — the left-edge pull-tab dismisses the card.
+        // No close button — the menu tab dismisses the card.
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final (i, section) in shown.indexed) ...[
-                      // A hairline between groups so the TURN mods, the viewing
-                      // aids and ARCADE SYNC read as three sets rather than one
-                      // long stack of tiles. Kept faint — it separates, it isn't
-                      // chrome of its own.
-                      if (i > 0)
-                        Divider(
-                          height: 17,
-                          thickness: 1,
-                          color: scheme.onSurface.withValues(alpha: 0.12),
-                        ),
-                      section.content!,
-                    ],
-                  ],
+              child: RawScrollbar(
+                controller: _scrollController,
+                // Left gutter: the menu tab sits over the card's right edge.
+                scrollbarOrientation: ScrollbarOrientation.left,
+                thickness: 3,
+                radius: const Radius.circular(3),
+                thumbColor: scheme.onSurface.withValues(alpha: 0.55),
+                crossAxisMargin: 2,
+                mainAxisMargin: 4,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context)
+                      .copyWith(scrollbars: false),
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    // Keep the tiles evenly inset while leaving a clear
+                    // gutter beside the thumb.
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final (i, section) in shown.indexed) ...[
+                          // A hairline between groups so the TURN mods, the
+                          // viewing aids and ARCADE SYNC read as three sets.
+                          if (i > 0)
+                            Divider(
+                              height: 17,
+                              thickness: 1,
+                              color: scheme.onSurface.withValues(alpha: 0.12),
+                            ),
+                          section.content!,
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -498,10 +527,10 @@ class ConstantChip extends StatelessWidget {
 /// Identifies the tempo badge for tests reading its BPM/READ values.
 const Key tempoBadgeKey = Key('chart-preview-tempo-badge');
 
-/// Identifies the settings shade's pull-tab. The shade is slid off-screen and
+/// Identifies the menu tab. The settings shade is slid off-screen and
 /// pointer-ignoring while closed, so tests must open it before driving anything
 /// inside.
-const Key shadeTabKey = Key('chart-preview-shade-tab');
+const Key menuTabKey = Key('chart-preview-menu-tab');
 
 /// Identifies the ARCADE SYNC tile and its two offset chips, for tests driving
 /// their tap/drag.
@@ -696,8 +725,7 @@ class ArcadeSyncHeader extends StatelessWidget {
                       fontWeight: summaryAccent != null
                           ? FontWeight.w700
                           : FontWeight.w500,
-                      color:
-                          summaryAccent ?? c.fgMuted.withValues(alpha: 0.75),
+                      color: summaryAccent ?? c.fgMuted.withValues(alpha: 0.75),
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),

@@ -51,15 +51,10 @@ them as lightning bars instead of individual mines.
 
 `assets/noteskin/` is registered in `pubspec.yaml` and git-ignored (copyrighted
 Konami art, like the step charts and jackets). Present → `SpriteNoteskin`
-renders real arrows; absent → `VectorNoteskin`. No runtime `.arc` parsing is
-involved — the app only ever loads PNGs.
+renders real arrows; absent → `VectorNoteskin`. The app only ever loads PNGs.
 
-An older extraction path (`DDR-BPM-prep/src/extract_noteskin.py`, `make
-noteskin`) produced a single **colourless grey** arrow plus a green hold
-body/tail and tinted it per quantisation at runtime. `SpriteNoteskin` no
-longer consumes that output — the sprites below are the current,
-better-fidelity set (pre-coloured, pre-shaded, matching the in-game glossy
-chevron look) and must be sourced by hand.
+The sprites below are pre-coloured and pre-shaded, and must be sourced by
+hand.
 
 ### Sprite files the app consumes
 
