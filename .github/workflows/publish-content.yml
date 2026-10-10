@@ -1,0 +1,80 @@
+# Publishes chart content for over-the-air updates. Called by the private
+# content repo (its caller, infra/publish.yml, is written there by Terraform):
+# builds that repo's songs, steps and jackets with this repo's generators and
+# deploys build/content to Cloudflare Pages, only when something changed.
+name: Publish content
+
+on:
+  workflow_call:
+    inputs:
+      content-url:
+        description: Live content URL, to continue from its manifest
+        type: string
+        required: true
+      pages-project:
+        type: string
+        required: true
+      cloudflare-account-id:
+        type: string
+        required: true
+      app-ref:
+        description: Ref of sh1ggy/ddr-md whose generators and engine to use
+        type: string
+        default: master
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+
+concurrency: publish-content
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: sh1ggy/ddr-md
+          ref: ${{ inputs.app-ref }}
+      # The calling (content) repo.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          path: _content
+      - name: Move the content into assets/
+        run: |
+          for d in songs steps jackets jackets-160; do
+            rm -rf "assets/$d"
+            mv "_content/$d" "assets/$d"
+          done
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.4
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: bash scripts/generate_songlist.sh
+      - run: flutter test tool/generate_patterns.dart
+
+      # The content number continues from what's live; first publish starts at 1.
+      - name: Fetch the live manifest
+        run: |
+          if curl -fsS "${{ inputs.content-url }}/manifest.json" -o assets/content_manifest.json; then
+            cp assets/content_manifest.json live_manifest.json
+          else
+            rm -f assets/content_manifest.json
+            echo '{}' > live_manifest.json
+          fi
+      - run: flutter test tool/content_manifest.dart
+
+      - name: Deploy if anything changed
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        run: |
+          if cmp -s build/content/manifest.json live_manifest.json; then
+            echo "Unchanged since the live publish, nothing to deploy"
+            exit 0
+          fi
+          npx --yes wrangler@4 pages deploy build/content \
+            --project-name "${{ inputs.pages-project }}" --branch main --commit-dirty=true

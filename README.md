@@ -39,6 +39,36 @@ The song page's Patterns card reads `assets/patterns/` (gitignored), generated f
 flutter test tool/generate_patterns.dart
 ```
 
+### Content Updates
+
+Songs, charts, patterns and jackets reach installed apps without a store release:
+
+- **Infra** is Terraform in `infra/`: a Cloudflare Pages project serving the content, a deploy-only Cloudflare token, and the private `ddr-md-content` repo with its publish workflow, secret and variables.
+- **Publishing** is a push to `ddr-md-content` (raw `songs/`, `steps/`, `jackets/`, `jackets-160/` straight from DDR-BPM-prep). Its workflow calls [publish-content.yml](.github/workflows/publish-content.yml) here, which runs the generators and the manifest tool and deploys `build/content/` to Pages, only when something changed. It also runs daily, to pick up generator or parity engine changes on `master`.
+- **Store builds** bundle exactly what's live, so installs only download what's newer:
+
+```bash
+CONTENT_URL=$(terraform -chdir=infra output -raw content_url)
+bash scripts/fetch_content.sh "$CONTENT_URL"
+flutter build ipa --dart-define=CONTENT_URL="$CONTENT_URL"
+```
+
+Installed apps check `latest.json` on launch, download what differs from their bundle (each file hash-checked), and apply it on the next launch.
+
+#### Setting up the infra
+
+Needs Terraform (or OpenTofu), a Cloudflare API token that can edit Pages and create account API tokens (*Account › Cloudflare Pages › Edit*, *Account › Account API Tokens › Edit*), and a GitHub token with `workflow` scope:
+
+```bash
+gh auth refresh -s workflow
+cd infra
+export CLOUDFLARE_API_TOKEN=<bootstrap token> GITHUB_TOKEN=$(gh auth token)
+terraform init
+terraform apply -var cloudflare_account_id=<account id>
+```
+
+State (which holds the deploy token) stays in `infra/` and is gitignored, so keep it backed up. The content repo's workflow calls this repo's `master`, so merge `publish-content.yml` before the first push to `ddr-md-content`.
+
 ### Lite Builds
 
 `scripts/build_lite.sh` builds the app without the jacket images and per-song JSONs (~430 MB of assets), bundling the merged songlist instead; missing jackets render as placeholder icons.
