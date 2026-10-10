@@ -31,12 +31,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: sh1ggy/ddr-md
           ref: ${{ inputs.app-ref }}
       # The calling (content) repo.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: ${{ github.repository }}
           path: _content
@@ -56,16 +56,38 @@ jobs:
       - run: bash scripts/generate_songlist.sh
       - run: flutter test tool/generate_patterns.dart
 
-      # The content number continues from what's live; first publish starts at 1.
+      # The content number continues from what's live. Only a 404 means "first
+      # publish"; any other failure stops here, since restarting at 1 would make
+      # every installed app ignore publishes until the number caught up.
       - name: Fetch the live manifest
         run: |
-          if curl -fsS "${{ inputs.content-url }}/manifest.json" -o assets/content_manifest.json; then
-            cp assets/content_manifest.json live_manifest.json
-          else
-            rm -f assets/content_manifest.json
-            echo '{}' > live_manifest.json
-          fi
+          status=$(curl -sS -o live_manifest.json -w '%{http_code}' "${{ inputs.content-url }}/manifest.json")
+          case "$status" in
+            200) cp live_manifest.json assets/content_manifest.json ;;
+            404) rm -f assets/content_manifest.json; echo '{}' > live_manifest.json ;;
+            *) echo "::error::Live manifest returned HTTP $status"; exit 1 ;;
+          esac
       - run: flutter test tool/content_manifest.dart
+
+      # The songlist replaces the whole list on devices, so a bad prep run would
+      # reach everyone. Every listed song needs its steps, and no more than 2% of
+      # songs may disappear in one publish (raise it here for a deliberate cull).
+      - name: Check the content before it ships
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          files = json.load(open("build/content/manifest.json"))["files"]
+          live = json.load(open("live_manifest.json")).get("files", {})
+          songs = [s["name"] for s in json.load(open("assets/songlist.json"))]
+          missing = [n for n in songs if f"steps/{n}.json" not in files]
+          new = sum(p.startswith("steps/") for p in files)
+          old = sum(p.startswith("steps/") for p in live)
+          print(f"{len(songs)} songs, {new} charts files (live {old})")
+          if not songs or missing:
+              sys.exit(f"::error::{len(missing)} songs have no steps, e.g. {missing[:3]}")
+          if old and new < old * 0.98:
+              sys.exit(f"::error::{old - new} songs would disappear in one publish")
+          PY
 
       - name: Deploy if anything changed
         env:
