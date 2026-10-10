@@ -17,6 +17,7 @@ flutter test test/parity_test.dart   # one test file
 flutter test --plain-name "substring of test name"   # one test
 
 bash scripts/generate_songlist.sh    # rebuild merged assets/songlist.json — run after ANY change under assets/songs/
+flutter test tool/generate_patterns.dart  # rebuild assets/patterns/ (~90 s) — run after changing assets/steps/, parity.dart or pattern_analysis.dart
 bash scripts/build_lite.sh [apk --release]  # build without jackets/per-song JSONs (~430 MB smaller)
 bash scripts/init.sh                 # Android only: download OpenCV + ONNX Runtime into native_opencv/.../jniLibs/ (gitignored; rerun after clean checkout)
 cd ios && pod install                # iOS native deps (vendored opencv2 + onnxruntime frameworks)
@@ -33,10 +34,11 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 ## Data flow (the big picture)
 
 1. **DDR-BPM-prep/** — a *separate, nested git repo* (Python/poetry pipeline). Scrapes StepMania simfiles, parses BPM/stops/levels/steps, outputs JSON. Do not commit it into this repo. It has its own CODEBASE.md.
-2. **assets/songs/*.json** (~1260 files, committed) — the repo's source of truth for song metadata. Parsed into `SongInfo` by [lib/components/song_json.dart](lib/components/song_json.dart) (quicktype-style manual JSON classes).
+2. **assets/songs/*.json** (~1260 files, gitignored — produced by DDR-BPM-prep and kept locally; a fresh clone has none) — the source of truth for song metadata. Parsed into `SongInfo` by [lib/components/song_json.dart](lib/components/song_json.dart) (quicktype-style manual JSON classes).
 3. **assets/songlist.json** (gitignored, generated) — all songs merged into one file so startup does 1 asset read instead of ~1100. `Songs.load()` in [lib/models/song_model.dart](lib/models/song_model.dart) prefers it and falls back to per-song files. **A stale songlist.json silently shadows fresh per-song data** — regenerate it after touching assets/songs/.
-   Each song's `pattern_analysis` (prep's per-chart pattern/footwork counts, ~10x the rest of the song) is split out by `generate_songlist.sh` into gitignored `assets/patterns/<name>.json`, read lazily by [lib/models/pattern_model.dart](lib/models/pattern_model.dart) for the song page's Patterns card.
-4. **assets/steps/<name>.json** — per-difficulty note streams. Deliberately NOT merged into the songlist: large, loaded lazily by [lib/models/steps_model.dart](lib/models/steps_model.dart) only when a chart view opens, discarded on close.
+   `generate_songlist.sh` drops each song's prep `pattern_analysis` (the old v1 analysis, ~10x the rest of the song); the app doesn't read it.
+4. **assets/steps/<name>.json** (gitignored, from DDR-BPM-prep) — per-difficulty note streams. Deliberately NOT merged into the songlist: large, loaded lazily by [lib/models/steps_model.dart](lib/models/steps_model.dart) only when a chart view opens, discarded on close.
+5. **assets/patterns/<name>.json** (gitignored, generated) — per-chart pattern counts for the song page's Patterns card, read lazily by [lib/models/pattern_model.dart](lib/models/pattern_model.dart). Written only by [tool/generate_patterns.dart](tool/generate_patterns.dart), which runs the app's own parity engine with the Default weights over every chart in assets/steps and ranks each chart against same-style charts within a level. So the whole directory is stale after any change to the steps, [parity.dart](lib/models/parity.dart) or [pattern_analysis.dart](lib/models/pattern_analysis.dart); [test/patterns_fresh_test.dart](test/patterns_fresh_test.dart) fails until it's regenerated. Files carry `schema` (`kPatternsSchema`); the loader refuses other versions.
 
 ## Architecture
 
@@ -54,7 +56,7 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 ## Gotchas
 
 - `pubspec.yaml` asset entries carry load-bearing comments (noteskin is optional/gitignored; only one model triplet ships). Don't "clean them up" or blindly add `assets/models/` as a directory.
-- Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songlist.json`, `assets/noteskin/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive), `docs/arcade/`.
+- Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songs/`, `assets/steps/`, `assets/patterns/`, `assets/songlist.json`, `assets/noteskin/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive), `docs/arcade/`.
 - Shell scripts here inline pure commands — don't extract fetch/copy/check helper functions.
 - `docs/` holds design and migration plan docs (OCR engine migrations, parity port, noteskin); check there before re-deriving intent for those subsystems.
 - `docs/arcade/` (gitignored, kept locally) is the cabinet-behaviour reference. Check it, when present, before claiming or changing anything "arcade accurate". Never commit it or anything else derived from Konami material.

@@ -1,5 +1,14 @@
 # Pattern analysis v2 — plan
 
+> **Status (what shipped differs from §6–7).** The Patterns card's counts are computed
+> by the app's own engine ([parity.dart](../../lib/models/parity.dart) +
+> [pattern_analysis.dart](../../lib/models/pattern_analysis.dart)) with the Default
+> weights, offline by [tool/generate_patterns.dart](../../tool/generate_patterns.dart),
+> not by an ITG-standard port in prep. They are DDR-tuned numbers, not comparable
+> one-for-one with Simply Love or the spreadsheet. Prep's v1 `pattern_analysis` is
+> dropped by `generate_songlist.sh` and not used. The ITG port (phases 0–2) hasn't
+> been done.
+
 Replace the prep repo's first-pass `PatternAnalyzer` with an analysis that reproduces
 the community-standard tech counts (ITGmania / Simply Love), and add the part
 nobody ships: **for every counted pattern, the rule that classified it and the reason

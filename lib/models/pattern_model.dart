@@ -41,6 +41,10 @@ const kPatternIcons = <Pattern, IconData>{
 const kStandoutMinCount = 4;
 const kStandoutPercentile = 80;
 
+/// Format of assets/patterns/<name>.json. Bump when [SongPatterns.toJson]
+/// changes shape, so files in an older format are refused rather than misread.
+const kPatternsSchema = 2;
+
 class ChartPatterns {
   final int steps;
   final Map<Pattern, int> counts;
@@ -151,6 +155,7 @@ class SongPatterns {
       SongPatterns(singles: _charts(j["sp"]), doubles: _charts(j["dp"]));
 
   Map<String, dynamic> toJson() => {
+        "schema": kPatternsSchema,
         "sp": singles.map((k, v) => MapEntry(k, v.toJson())),
         "dp": doubles.map((k, v) => MapEntry(k, v.toJson())),
       };
@@ -162,14 +167,21 @@ class SongPatterns {
 class PatternsLoader {
   /// Null when the song has no analysis, so the page hides the section.
   static Future<SongPatterns?> load(String songName) async {
+    final String raw;
     try {
-      final raw = await rootBundle.loadString(
+      raw = await rootBundle.loadString(
         "assets/patterns/$songName.json",
         cache: false,
       );
-      return SongPatterns.fromJson(json.decode(raw) as Map<String, dynamic>);
     } catch (_) {
       return null;
     }
+    final j = json.decode(raw);
+    if (j is! Map<String, dynamic> || j["schema"] != kPatternsSchema) {
+      debugPrint("assets/patterns/$songName.json is not schema "
+          "$kPatternsSchema; rerun tool/generate_patterns.dart");
+      return null;
+    }
+    return SongPatterns.fromJson(j);
   }
 }
