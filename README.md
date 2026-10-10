@@ -52,7 +52,7 @@ The script regenerates the songlist, strips the jacket and songs asset entries f
 
 ### OCR Pipeline
 
-OCR is implemented in native C++ on top of OpenCV and the ONNX Runtime, calling PaddleOCR's PP-OCRv6 models for text detection and recognition. The score panel runs detection + recognition over a single combined ROI; other fields (title, username, difficulty, details) run recognition only over hand-picked crops. If detection fails, the pipeline falls back to recognition over hardcoded ROIs. The migration from the previous Tesseract engine and the v5→v6 model swap are documented in the plan docs under [docs/](./docs/) ([plan-paddle-det-integration.md](./docs/plan-paddle-det-integration.md), [plan-paddle-v6-migration.md](./docs/plan-paddle-v6-migration.md)).
+OCR is implemented in native C++ on top of OpenCV and the ONNX Runtime, calling PaddleOCR's PP-OCRv6 models for text detection and recognition. The score panel runs detection + recognition over a single combined ROI; other fields (title, username, difficulty, details) run recognition only over hand-picked crops. If detection fails, the pipeline falls back to recognition over hardcoded ROIs.
 
 #### ONNX Runtime
 
@@ -71,7 +71,7 @@ All models live under `assets/models/`, are bundled via the `assets/models/` dir
 
 The active triplet is selected in native code — the default is **small v6**, set at [ocr_onnx.cpp:95-97](./native_opencv/ios/Classes/ocr_onnx.cpp#L95-L97). A `ModelSet` override lets the offline `model_compare` harness swap tiers without rebuilding the app. The recogniser is required; the detector is loaded inside a try/catch and the pipeline degrades to recogniser-only (hardcoded ROIs) if it's missing.
 
-The PP-OCRv6 tiny/small/medium variants ship pre-converted to ONNX on Hugging Face, so no `paddle2onnx` step is needed — download the `.onnx` and dict from the corresponding [PaddlePaddle](https://huggingface.co/PaddlePaddle) repo and drop them into `assets/models/`. (The legacy v5 mobile models were produced with `paddle2onnx`; see [docs/plan-paddle-v6-migration.md](./docs/plan-paddle-v6-migration.md) for that history.)
+The PP-OCRv6 tiny/small/medium variants ship pre-converted to ONNX on Hugging Face, so no `paddle2onnx` step is needed — download the `.onnx` and dict from the corresponding [PaddlePaddle](https://huggingface.co/PaddlePaddle) repo and drop them into `assets/models/`. (The legacy v5 mobile models were produced with `paddle2onnx`.)
 
 #### Android Build Steps
 
