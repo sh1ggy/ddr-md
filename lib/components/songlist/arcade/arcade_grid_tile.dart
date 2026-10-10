@@ -10,6 +10,7 @@ import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:flutter/material.dart';
 
 // Gap each tile leaves around its jacket, so neighbouring artwork doesn't abut.
@@ -124,7 +125,7 @@ class ArcadeGridTile extends StatelessWidget {
         fit: StackFit.expand,
         children: <Widget>[
           Image(
-            image: AssetImage('assets/jackets-160/${item.songInfo.name}.png'),
+            image: ContentStore.image('assets/jackets-160/${item.songInfo.name}.png'),
             fit: BoxFit.cover,
             filterQuality: FilterQuality.low,
             errorBuilder: (context, error, stackTrace) => ColoredBox(

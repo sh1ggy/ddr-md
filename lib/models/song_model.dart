@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
@@ -79,7 +80,7 @@ class SongMatch {
   const SongMatch(this.song, this.similarity);
 }
 
-/// Master song list, loaded once at startup from assets/songs/*.json.
+/// Master song list, loaded once at startup from the songlist.
 class Songs {
   static List<String> assets = [];
   static List<SongInfo> list = [];
@@ -89,15 +90,14 @@ class Songs {
   // string in its cache for the app's lifetime, doubling what the parsed
   // SongInfo list already holds.
   static Future<void> load() async {
-    AssetManifest asset = await AssetManifest.loadFromAssetBundle(rootBundle);
-    assets = asset.listAssets();
-
-    // Prefer the merged songlist (scripts/generate_songlist.sh): one asset
-    // read instead of ~1100 sequential ones. Bundled by lite builds, or by
-    // any build made after generating it.
-    if (assets.contains("assets/songlist.json")) {
-      var response =
-          await rootBundle.loadString("assets/songlist.json", cache: false);
+    // Prefer the merged songlist (scripts/generate_songlist.sh): one read
+    // instead of ~1100 sequential ones. A downloaded one replaces the bundled
+    // one whole (ContentStore), so new songs arrive without a store release.
+    String? response;
+    try {
+      response = await ContentStore.loadString("assets/songlist.json");
+    } catch (_) {}
+    if (response != null) {
       for (final entry in json.decode(response) as List<dynamic>) {
         try {
           list.add(SongInfo.fromJson(entry));
@@ -109,6 +109,8 @@ class Songs {
       return;
     }
 
+    AssetManifest asset = await AssetManifest.loadFromAssetBundle(rootBundle);
+    assets = asset.listAssets();
     List<String> songDataPaths = assets
       .where((string) => string.startsWith("assets/songs/"))
         .where((string) => string.endsWith(".json"))

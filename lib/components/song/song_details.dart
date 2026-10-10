@@ -6,9 +6,9 @@ library;
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 /// Builds the BPM range shown after the dominant BPM, e.g. " (75~) 100~200 (~400)".
@@ -211,14 +211,8 @@ class SongDetails extends StatelessWidget {
   }
 }
 
-class _JacketLookup {
-  const _JacketLookup({required this.exactPaths, required this.normalizedPath});
-
-  final Set<String> exactPaths;
-  final Map<String, String> normalizedPath;
-}
-
-class _ResolvedJacketImage extends StatefulWidget {
+/// A song's jacket, `<prefix><song name>.png`, or a note icon when it has none.
+class _ResolvedJacketImage extends StatelessWidget {
   const _ResolvedJacketImage({
     required this.songName,
     required this.assetPrefix,
@@ -232,86 +226,10 @@ class _ResolvedJacketImage extends StatefulWidget {
   final double fallbackSize;
 
   @override
-  State<_ResolvedJacketImage> createState() => _ResolvedJacketImageState();
-}
-
-class _ResolvedJacketImageState extends State<_ResolvedJacketImage> {
-  static final Map<String, Future<_JacketLookup>> _lookupByPrefix =
-      <String, Future<_JacketLookup>>{};
-
-  static String _normalize(String input) {
-    return input.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-  }
-
-  static String _jacketBaseName(String filename) {
-    if (!filename.endsWith('.png')) {
-      return filename;
-    }
-    final noExt = filename.substring(0, filename.length - '.png'.length);
-    if (noExt.endsWith('-jacket')) {
-      return noExt.substring(0, noExt.length - '-jacket'.length);
-    }
-    return noExt;
-  }
-
-  static Future<_JacketLookup> _buildLookup(String assetPrefix) async {
-    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-    final assets = manifest
-        .listAssets()
-        .where((path) => path.startsWith(assetPrefix) && path.endsWith('.png'))
-        .toList();
-
-    final exact = <String>{};
-    final normalized = <String, String>{};
-    for (final path in assets) {
-      exact.add(path);
-      final file = path.substring(assetPrefix.length);
-      final base = _jacketBaseName(file);
-      normalized.putIfAbsent(_normalize(base), () => path);
-    }
-
-    return _JacketLookup(exactPaths: exact, normalizedPath: normalized);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final lookupFuture = _lookupByPrefix.putIfAbsent(
-      widget.assetPrefix,
-      () => _buildLookup(widget.assetPrefix),
-    );
-
-    return FutureBuilder<_JacketLookup>(
-      future: lookupFuture,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return SizedBox(
-            height: widget.height,
-            child: const Center(
-                child: CircularProgressIndicator(strokeWidth: 1.5)),
-          );
-        }
-
-        final lookup = snapshot.data!;
-        final exactPngPath = '${widget.assetPrefix}${widget.songName}.png';
-        final exactLegacyPath =
-            '${widget.assetPrefix}${widget.songName}-jacket.png';
-        final resolvedPath = lookup.exactPaths.contains(exactPngPath)
-            ? exactPngPath
-            : lookup.exactPaths.contains(exactLegacyPath)
-                ? exactLegacyPath
-                : lookup.normalizedPath[_normalize(widget.songName)];
-
-        if (resolvedPath == null) {
-          return Icon(Icons.music_note, size: widget.fallbackSize);
-        }
-
-        return Image(
-          image: AssetImage(resolvedPath),
-          height: widget.height,
-          errorBuilder: (context, error, stackTrace) =>
-              Icon(Icons.music_note, size: widget.fallbackSize),
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => Image(
+        image: ContentStore.image('$assetPrefix$songName.png'),
+        height: height,
+        errorBuilder: (context, error, stackTrace) =>
+            Icon(Icons.music_note, size: fallbackSize),
+      );
 }

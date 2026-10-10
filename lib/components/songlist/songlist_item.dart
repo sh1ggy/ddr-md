@@ -7,6 +7,7 @@ import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -66,7 +67,8 @@ class _SongListItemState extends State<SongListItem> {
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Image(
-          image: AssetImage('assets/jackets-160/${widget.songInfo.name}.png'),
+          image: ContentStore.image(
+              'assets/jackets-160/${widget.songInfo.name}.png'),
           errorBuilder: (context, error, stackTrace) =>
               const Icon(Icons.music_note, size: 40),
         ),
