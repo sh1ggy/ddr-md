@@ -195,8 +195,10 @@ class ChartPainter extends CustomPainter {
   // [size]: as wide as the lanes allow, unless the cabinet's travel below the
   // receptor wouldn't then fit on screen.
   static double arcadeArrowSize(Size size, int columns, double topInset) =>
-      math.min(size.width / columns,
-          (size.height - receptorBase - topInset) / cabinetTravelArrows);
+      math.max(
+          0,
+          math.min(size.width / columns,
+              (size.height - receptorBase - topInset) / cabinetTravelArrows));
 
   // Impact flash lifetime. DDR's is 120ms; the preview has no input or
   // judgement, so every arrival draws the clean-hit flash rather than one of

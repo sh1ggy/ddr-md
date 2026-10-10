@@ -356,6 +356,8 @@ class _SettingsShadeState extends State<SettingsShade> {
             Flexible(
               child: RawScrollbar(
                 controller: _scrollController,
+                // Left gutter: the menu tab sits over the card's right edge.
+                scrollbarOrientation: ScrollbarOrientation.left,
                 thickness: 3,
                 radius: const Radius.circular(3),
                 thumbColor: scheme.onSurface.withValues(alpha: 0.55),
