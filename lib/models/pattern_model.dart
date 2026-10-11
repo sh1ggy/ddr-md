@@ -264,6 +264,9 @@ class PatternsLoader {
   /// Loaded with the first song and kept: it covers the whole library.
   static PatternLevels? _levels;
 
+  /// Drops the cached levels table, after an update replaced it.
+  static void reset() => _levels = null;
+
   /// Null when the song has no analysis, so the page hides the section.
   static Future<SongPatterns?> load(String songName) async {
     final song = await _read("assets/patterns/$songName.json");

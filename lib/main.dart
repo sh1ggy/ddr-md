@@ -34,8 +34,8 @@ void main() async {
     child: const App(),
   ));
 
-  // Newer chart content, if any, applies on the next launch.
-  ContentUpdater.check(support).catchError((Object e) {
+  // Newer chart content, if any, is downloaded and applied in the background.
+  ContentUpdater.update(support).catchError((Object e) {
     debugPrint('Content update failed: $e');
     return false;
   });

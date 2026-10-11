@@ -2,10 +2,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONTENT_URL="${1:?usage: bash scripts/fetch_content.sh <CONTENT_URL>}"
+CONTENT_URL="${1:-https://ddr-md-content.pages.dev}"
 
 # Make assets/ exactly the live publish (songlist, steps, patterns, jackets,
-# manifest) before a store build, so installs start in sync with it rather than
+# manifest) before a release build (build_store.sh, or by hand before
+# `flutter run --release`), so installs start in sync with it rather than
 # re-downloading what they already bundle. Files that already match are kept.
 python3 - "$CONTENT_URL" "$REPO_ROOT/assets" <<'PY'
 import hashlib, json, pathlib, sys, urllib.request
@@ -28,5 +29,5 @@ for path, sha in files.items():
     dest.write_bytes(data)
     fetched += 1
 (assets / "content_manifest.json").write_bytes(manifest)
-print(f"content {json.loads(manifest)['content']}: fetched {fetched} of {len(files)} files")
+print(f"content {json.loads(manifest)['id']}: fetched {fetched} of {len(files)} files")
 PY

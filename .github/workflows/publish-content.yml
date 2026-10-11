@@ -8,7 +8,7 @@ on:
   workflow_call:
     inputs:
       content-url:
-        description: Live content URL, to continue from its manifest
+        description: Live content URL, whose manifest the checks compare against
         type: string
         required: true
       pages-project:
@@ -30,8 +30,6 @@ concurrency: publish-content
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -58,26 +56,17 @@ jobs:
       - run: bash scripts/generate_songlist.sh
       - run: flutter test tool/generate_patterns.dart
 
-      # The content number continues from what's live, or from the content
-      # repo's highest content-<number> tag if that's higher (a recreated or
-      # rolled-back host): going backwards would make every installed app ignore
-      # publishes until the number caught up. Only a 404 means "nothing live";
-      # any other failure stops here.
+      # The live manifest is what the checks below compare against. Only a 404
+      # means "nothing live"; any other failure stops here, since the checks
+      # would otherwise pass against nothing.
       - name: Fetch the live manifest
         run: |
           status=$(curl -sS -o live_manifest.json -w '%{http_code}' "${{ inputs.content-url }}/manifest.json")
           case "$status" in
             200) cp live_manifest.json assets/content_manifest.json ;;
-            404) echo '{}' > live_manifest.json
-                 echo '{"format":0,"content":0,"engine":0,"files":{}}' > assets/content_manifest.json ;;
+            404) echo '{}' > live_manifest.json; rm -f assets/content_manifest.json ;;
             *) echo "::error::Live manifest returned HTTP $status"; exit 1 ;;
           esac
-          tagged=$(git -C _content ls-remote --tags origin 'content-*' | sed -n 's|.*refs/tags/content-\([0-9]*\)$|\1|p' | sort -n | tail -1)
-          if [ "${tagged:-0}" -gt "$(jq .content assets/content_manifest.json)" ]; then
-            echo "Continuing from tag content-$tagged"
-            jq --argjson n "$tagged" '.content = $n' assets/content_manifest.json > tagged.json
-            mv tagged.json assets/content_manifest.json
-          fi
       - run: APP_COMMIT=$(git rev-parse HEAD) flutter test tool/content_manifest.dart
         env:
           CONTENT_COMMIT: ${{ github.sha }}
@@ -146,12 +135,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
         run: |
-          if cmp -s build/content/manifest.json live_manifest.json; then
+          if [ "$(jq -r .id build/content/manifest.json)" = "$(jq -r '.id // empty' live_manifest.json)" ]; then
             echo "Unchanged since the live publish, nothing to deploy"
             exit 0
           fi
-          # Tagged before deploying, so the tags never fall behind what's live.
-          tag="content-$(jq .content build/content/manifest.json)"
-          git -C _content tag "$tag" && git -C _content push origin "$tag"
           npx --yes wrangler@4 pages deploy build/content \
             --project-name "${{ inputs.pages-project }}" --branch main --commit-dirty=true

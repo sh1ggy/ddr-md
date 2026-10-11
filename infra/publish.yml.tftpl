@@ -12,9 +12,6 @@ on:
 
 jobs:
   publish:
-    # Tags each published commit content-<number>.
-    permissions:
-      contents: write
     uses: sh1ggy/ddr-md/.github/workflows/publish-content.yml@${ref}
     with:
       app-ref: ${ref}

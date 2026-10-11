@@ -4,6 +4,7 @@
 /// song list and favourites list to pass to children widgets.
 library;
 
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
@@ -247,6 +248,12 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
 
   Modes? _lastGenMode;
 
+  /// New songs or chart fixes were applied while this page was open.
+  void _onContentUpdated() {
+    final songState = context.read<SongState>();
+    regenSongItems(songState.modes, songState.sortType);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -254,6 +261,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     _lastGenMode = songState.modes;
     _songItemsPromise = Future<List<SongItem>>(() => generateSongItems(
         songState.modes, songState.sortType, songState.sortDescending));
+    ContentStore.revision.addListener(_onContentUpdated);
+  }
+
+  @override
+  void dispose() {
+    ContentStore.revision.removeListener(_onContentUpdated);
+    super.dispose();
   }
 
   @override
