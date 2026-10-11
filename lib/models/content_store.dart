@@ -6,21 +6,30 @@
 ///
 /// Both sides are described by a [ContentManifest]: the bundle's is
 /// assets/content_manifest.json (tool/content_manifest.dart), the download's is
-/// the overlay's own. The overlay only applies while it is newer than the
-/// bundle, so an app update that ships fresher content wins over an old
-/// download, and its patterns only apply when they came from this app's engine.
+/// the overlay's own, read at launch and again when an update is applied
+/// mid-run (ContentUpdater.update). Each is identified by [ContentManifest.id],
+/// a hash of what it holds; the app follows whatever is live, so there's no
+/// "newer". The overlay only applies to the bundle it was diffed against (an app
+/// update re-syncs), and its patterns only when they came from this app's
+/// engine.
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:ddr_md/models/pattern_analysis.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 
-/// Shape of the content and its manifest. Bump when either changes in a way
-/// an older app can't read; a manifest in another format is ignored.
-const kContentFormat = 1;
+/// Whether this app reads [path] (relative to assets/), and so downloads it.
+/// Content only changes additively; a breaking change to a file ships its new
+/// shape under a new path next to the old one, which older apps never fetch.
+bool appReads(String path) =>
+    const ['songlist.json', 'parity_patterns.json', 'pattern_levels.json']
+        .contains(path) ||
+    const ['steps/', 'patterns/', 'jackets/', 'jackets-160/']
+        .any(path.startsWith);
 
 /// Content paths (relative to assets/) the engine version gates.
 bool isPatternPath(String path) =>
@@ -34,10 +43,9 @@ String objectName(String path, String sha) {
 }
 
 class ContentManifest {
-  final int format;
-
-  /// Increases with every publish; the newer of bundle and overlay wins.
-  final int content;
+  /// Hash of [engine] and [files]: the same content always has the same id.
+  /// Which commits built it is in the published manifest's `source`.
+  final String id;
 
   /// [kPatternEngineVersion] the patterns were generated with.
   final int engine;
@@ -46,25 +54,21 @@ class ContentManifest {
   final Map<String, String> files;
 
   const ContentManifest({
-    required this.format,
-    required this.content,
+    required this.id,
     required this.engine,
     required this.files,
   });
 
-  static const empty =
-      ContentManifest(format: kContentFormat, content: 0, engine: 0, files: {});
+  static const empty = ContentManifest(id: '', engine: 0, files: {});
 
   factory ContentManifest.fromJson(Map<String, dynamic> j) => ContentManifest(
-        format: j['format'] as int,
-        content: j['content'] as int,
+        id: j['id'] as String,
         engine: j['engine'] as int,
         files: (j['files'] as Map<String, dynamic>).cast<String, String>(),
       );
 
   Map<String, dynamic> toJson() => {
-        'format': format,
-        'content': content,
+        'id': id,
         'engine': engine,
         'files': files,
       };
@@ -73,6 +77,14 @@ class ContentManifest {
 class ContentStore {
   /// The bundle's manifest, for the updater to diff against.
   static ContentManifest bundled = ContentManifest.empty;
+
+  /// Id of the content this run reads: the overlay's when it applied, else
+  /// the bundle's.
+  static String current = '';
+
+  /// Bumped when an update is applied mid-run, so pages built from the content
+  /// (the song list) rebuild. Pages already open keep what they loaded.
+  static final revision = ValueNotifier<int>(0);
 
   /// Content path -> downloaded file, for the paths the overlay overrides.
   static Map<String, File> _overlay = {};
@@ -89,26 +101,31 @@ class ContentStore {
   /// stands in for the bundled manifest in tests.
   static Future<void> init(Directory support, {ContentManifest? bundle}) async {
     bundled = bundle ?? await _bundledManifest();
+    current = bundled.id;
     _overlay = {};
+    final overlay = downloaded(support);
+    if (overlay == null) return;
     final dir = contentDir(support);
-    final file = File('${dir.path}/overlay.json');
-    if (!file.existsSync()) return;
-    final ContentManifest overlay;
-    try {
-      overlay = ContentManifest.fromJson(
-          json.decode(file.readAsStringSync()) as Map<String, dynamic>);
-    } catch (_) {
-      return;
-    }
-    if (overlay.format != kContentFormat ||
-        overlay.content <= bundled.content) {
-      return;
-    }
     final patternsOk = overlay.engine == kPatternEngineVersion;
     for (final MapEntry(key: path, value: sha) in overlay.files.entries) {
       if (!patternsOk && isPatternPath(path)) continue;
       final object = File('${dir.path}/objects/${objectName(path, sha)}');
       if (object.existsSync()) _overlay[path] = object;
+    }
+    current = overlay.id;
+  }
+
+  /// The downloaded overlay, when it was diffed against this bundle; null when
+  /// there's none or the app has been updated since.
+  static ContentManifest? downloaded(Directory support) {
+    try {
+      final j = json.decode(
+          File('${contentDir(support).path}/overlay.json').readAsStringSync());
+      if (j['base'] != bundled.id) return null;
+      final overlay = ContentManifest.fromJson(j);
+      return overlay.id == bundled.id ? null : overlay;
+    } catch (_) {
+      return null;
     }
   }
 

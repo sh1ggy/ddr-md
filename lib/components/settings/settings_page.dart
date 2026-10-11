@@ -7,11 +7,13 @@ import 'package:ddr_md/components/settings/footing_style_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -137,6 +139,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         },
                       ),
                     ),
+                    const _SectionHeader('Content'),
+                    const _ContentCard(),
                   ],
                 ),
               ),
@@ -191,11 +195,11 @@ class _PlayStyleCard extends StatelessWidget {
           child: Image.asset(asset, height: 15),
         ));
     return Card(
-      child: ListTile(
-        title: const Text("Play Style",
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        trailing: SegmentedButton<Modes>(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: SegmentedButton<Modes>(
           showSelectedIcon: false,
+          expandedInsets: EdgeInsets.zero,
           style: const ButtonStyle(visualDensity: VisualDensity.compact),
           segments: [
             segment(Modes.singles, 'assets/icons/style_single.png'),
@@ -208,6 +212,65 @@ class _PlayStyleCard extends StatelessWidget {
                 "Set play style to ${s.first == Modes.singles ? "singles" : "doubles"}");
           },
         ),
+      ),
+    );
+  }
+}
+
+/// Manual check for new songs and chart fixes, applied straight away like the
+/// one at startup.
+class _ContentCard extends StatefulWidget {
+  const _ContentCard();
+
+  @override
+  State<_ContentCard> createState() => _ContentCardState();
+}
+
+class _ContentCardState extends State<_ContentCard> {
+  bool _syncing = false;
+  bool _checked = false;
+
+  Future<void> _sync() async {
+    setState(() => _syncing = true);
+    String message;
+    try {
+      final support = await getApplicationSupportDirectory();
+      final applied = await ContentUpdater.update(support);
+      _checked = true;
+      message = applied
+          ? "Added new songs and chart fixes"
+          : "Songs and charts are up to date";
+    } catch (_) {
+      message = "Couldn't check for updates";
+    }
+    if (!mounted) return;
+    setState(() => _syncing = false);
+    showToast(context, message);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String subtitle;
+    if (kContentUrl.isEmpty) {
+      subtitle = "Updates are off in this build";
+    } else if (_checked) {
+      subtitle = "Up to date";
+    } else {
+      subtitle = "New songs and chart fixes";
+    }
+    return Card(
+      child: ListTile(
+        title: const Text("Song Updates",
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(subtitle),
+        trailing: _syncing
+            ? const SizedBox.square(
+                dimension: 24, child: CircularProgressIndicator(strokeWidth: 2))
+            : IconButton(
+                tooltip: "Check for updates",
+                icon: const Icon(Icons.sync),
+                onPressed: kContentUrl.isEmpty ? null : _sync,
+              ),
       ),
     );
   }

@@ -90,6 +90,9 @@ class Songs {
   // string in its cache for the app's lifetime, doubling what the parsed
   // SongInfo list already holds.
   static Future<void> load() async {
+    // Built aside and swapped in whole, so a reload (an applied update) never
+    // shows a half-filled list.
+    final loaded = <SongInfo>[];
     // Prefer the merged songlist (scripts/generate_songlist.sh): one read
     // instead of ~1100 sequential ones. A downloaded one replaces the bundled
     // one whole (ContentStore), so new songs arrive without a store release.
@@ -100,12 +103,13 @@ class Songs {
     if (response != null) {
       for (final entry in json.decode(response) as List<dynamic>) {
         try {
-          list.add(SongInfo.fromJson(entry));
+          loaded.add(SongInfo.fromJson(entry));
         } catch (e) {
           // ignore: avoid_print
           print("Error parsing songlist entry: $e");
         }
       }
+      list = loaded;
       return;
     }
 
@@ -123,13 +127,14 @@ class Songs {
       SongInfo songInfo;
       try {
         songInfo = parseJson(response);
-        list.add(songInfo);
+        loaded.add(songInfo);
       } catch (e) {
         // ignore: avoid_print
         print("Error parsing JSON for ${songDataPaths[i]}: $e");
         continue;
       }
     }
+    list = loaded;
   }
 
   // Lowercase and strip everything but letters/digits (any script) so OCR

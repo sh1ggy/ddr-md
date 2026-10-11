@@ -4,10 +4,11 @@
 /// (songlist, steps, patterns, jackets, parity moments) into
 /// assets/content_manifest.json, which the app bundles, and lays out
 /// build/content/ (latest.json, manifest.json, objects/) to upload to
-/// CONTENT_URL: objects first and latest.json last, so an app never sees a
-/// content number whose files aren't up yet.
-/// The content number goes up whenever a file changed, so installed apps fetch
-/// only what differs from their bundle. Run after generate_songlist.sh and
+/// CONTENT_URL: objects first and latest.json last, so an app never sees an
+/// id whose files aren't up yet.
+/// The id is a hash of what's published, so it changes exactly when a file (or
+/// the pattern engine) does; installed apps follow it and fetch only what
+/// differs from their bundle. Run after generate_songlist.sh and
 /// generate_patterns.dart:
 ///
 ///   flutter test tool/content_manifest.dart
@@ -22,7 +23,8 @@ import 'package:ddr_md/models/pattern_analysis.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Content paths relative to assets/: single files, then directories with the
-/// extension their files carry.
+/// extension their files carry. Everything any app still in use reads: during
+/// a breaking change, both the old path and its replacement (see `appReads`).
 const _files = ['songlist.json', 'parity_patterns.json', 'pattern_levels.json'];
 const _dirs = {
   'steps': '.json',
@@ -48,26 +50,24 @@ void main() {
     };
 
     final bundled = File('assets/content_manifest.json');
-    final Map<String, dynamic> previousJson =
+    final Map<String, dynamic> previous =
         bundled.existsSync() ? jsonDecode(bundled.readAsStringSync()) : {};
-    final previous = previousJson.isEmpty
-        ? ContentManifest.empty
-        : ContentManifest.fromJson(previousJson);
-    final changed = previous.engine != kPatternEngineVersion ||
-        previous.files.length != files.length ||
-        files.entries.any((e) => previous.files[e.key] != e.value);
+    final id = sha256
+        .convert(utf8.encode(jsonEncode([kPatternEngineVersion, files])))
+        .toString()
+        .substring(0, 12);
+    final changed = previous['id'] != id;
     final manifest = ContentManifest(
-      format: kContentFormat,
-      content: changed ? previous.content + 1 : previous.content,
+      id: id,
       engine: kPatternEngineVersion,
       files: files,
     );
-    // The commits this content number was built from (CI sets both), kept
-    // while the content doesn't change so an unchanged run matches the live
-    // manifest byte for byte.
+    // The commits this content was first built from (CI sets both), kept
+    // while it doesn't change so an unchanged run matches the live manifest
+    // byte for byte.
     final env = Platform.environment;
     final source = !changed
-        ? previousJson['source']
+        ? previous['source']
         : env.containsKey('CONTENT_COMMIT')
             ? {'content': env['CONTENT_COMMIT'], 'app': env['APP_COMMIT']}
             : null;
@@ -88,8 +88,8 @@ void main() {
       if (!names.containsKey(f.uri.pathSegments.last)) f.deleteSync();
     }
     File('build/content/manifest.json').writeAsStringSync(text);
-    File('build/content/latest.json').writeAsStringSync(
-        jsonEncode({'format': manifest.format, 'content': manifest.content}));
+    File('build/content/latest.json')
+        .writeAsStringSync(jsonEncode({'id': manifest.id}));
     // Cloudflare Pages headers: objects never change once published, the two
     // indexes must always be checked.
     File('build/content/_headers').writeAsStringSync('''
@@ -104,7 +104,7 @@ void main() {
     File('build/content/404.html').writeAsStringSync('Not found\n');
 
     // ignore: avoid_print
-    print('content ${manifest.content}${changed ? ' (changed)' : ''}: '
+    print('content ${manifest.id}${changed ? ' (changed)' : ''}: '
         '${files.length} files');
   }, timeout: Timeout.none);
 }
