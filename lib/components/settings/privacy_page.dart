@@ -2,18 +2,19 @@
 /// Parent: SettingsPage
 /// Description: Privacy notice: what DDR MD keeps on the device, what touches
 /// the network, its permissions, and where the song data comes from. Keep it
-/// true to the code, and update it (and [_updated]) when storage, permissions,
-/// network use or the content updates change.
+/// true to the code, and update it (and [privacyUpdated]) when storage,
+/// permissions, network use or the content updates change.
 library;
 
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const _updated = '11 October 2026';
+const privacyUpdated = '12 October 2026';
 
-/// Heading, then paragraphs; a paragraph starting "- " is a bullet.
-const _sections = <(String, List<String>)>[
+/// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
+/// published as the stores' privacy policy page by tool/content_manifest.dart.
+const privacySections = <(String, List<String>)>[
   (
     'In short',
     [
@@ -103,8 +104,8 @@ const _sections = <(String, List<String>)>[
   (
     'Changes',
     [
-      'If this notice changes, the new version comes with an app update and '
-          "a new date above. Song updates never change it.",
+      'If this notice changes, it gets a new date above and comes with an '
+          'app update. Song updates never change it.',
     ]
   ),
 ];
@@ -127,8 +128,8 @@ class PrivacyPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
-          Text('Last updated $_updated', style: theme.textTheme.bodySmall),
-          for (final (heading, paragraphs) in _sections) ...[
+          Text('Last updated $privacyUpdated', style: theme.textTheme.bodySmall),
+          for (final (heading, paragraphs) in privacySections) ...[
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 6),
               child: Text(heading, style: theme.textTheme.titleMedium),

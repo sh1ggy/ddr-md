@@ -18,6 +18,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:ddr_md/components/settings/privacy_page.dart';
+import 'package:ddr_md/constants.dart' show github;
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -102,6 +104,30 @@ void main() {
 ''');
     // Without one, Pages answers a missing file with its app fallback page.
     File('build/content/404.html').writeAsStringSync('Not found\n');
+    // The in-app privacy notice, as the public page both stores ask for
+    // (served at /privacy).
+    const esc = HtmlEscape();
+    File('build/content/privacy.html').writeAsStringSync('''
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DDR MD privacy</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40em;margin:2em auto;padding:0 1em}</style>
+<h1>DDR MD privacy</h1>
+<p><small>Last updated $privacyUpdated</small></p>
+${[
+      for (final (heading, paragraphs) in privacySections) ...[
+        '<h2>${esc.convert(heading)}</h2>',
+        for (final p in paragraphs)
+          p.startsWith('- ')
+              ? '<ul><li>${esc.convert(p.substring(2))}</li></ul>'
+              : '<p>${esc.convert(p)}</p>',
+      ],
+    ].join('\n').replaceAll('</li></ul>\n<ul><li>', '</li>\n<li>')}
+<h2>Contact</h2>
+<p><a href="$github">${github.replaceFirst('https://', '')}</a></p>
+''');
 
     // ignore: avoid_print
     print('content ${manifest.id}${changed ? ' (changed)' : ''}: '
