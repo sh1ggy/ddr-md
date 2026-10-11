@@ -1,16 +1,16 @@
 /// Name: PrivacyPage
 /// Parent: SettingsPage
 /// Description: Privacy notice: what DDR MD keeps on the device, what touches
-/// the network, its permissions, and the fan-app notice. Keep it true to the
-/// code, and update it (and [_updated]) when storage, permissions or network
-/// use change.
+/// the network, its permissions, and where the song data comes from. Keep it
+/// true to the code, and update it (and [_updated]) when storage, permissions,
+/// network use or the content updates change.
 library;
 
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const _updated = '10 October 2026';
+const _updated = '11 October 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet.
 const _sections = <(String, List<String>)>[
@@ -19,7 +19,8 @@ const _sections = <(String, List<String>)>[
     [
       "DDR MD keeps everything on your device. There's no account, no ads, "
           "no analytics and no tracking, and nothing you save, type or "
-          "photograph is sent anywhere.",
+          "photograph is sent anywhere. The only thing it downloads is song "
+          'data, and those requests carry nothing about you.',
     ]
   ),
   (
@@ -31,17 +32,24 @@ const _sections = <(String, List<String>)>[
           'learned from them',
       '- Settings such as read speed, rival code, username and play style',
       'Result screens are read by OCR running on your phone. Camera frames '
-          'and photos are never uploaded.',
+          'and photos are never uploaded. On iPhone, saved score photos sit in '
+          "DDR MD's folder in the Files app. Like any app's data, all of this "
+          "is included in your device's own backups (iCloud or Google).",
     ]
   ),
   (
     'What uses the network',
     [
-      '- Chart updates: when DDR MD opens, it checks for new songs and chart '
-          'fixes and downloads them from a static file host (Cloudflare). '
-          'These requests contain nothing about you or your data. As with '
-          'any download, the host sees your IP address and the time of the '
-          "request; I don't collect or look at these.",
+      '- Song updates: when DDR MD opens, and when you tap sync under '
+          'Settings → Song Updates, it checks DDR MD\'s update server (hosted '
+          'on Cloudflare) for new songs and chart fixes and downloads only '
+          'what changed. These are plain file downloads with no account, '
+          'device ID or anything you\'ve saved attached. As with any '
+          'download, Cloudflare sees your IP address and the time of the '
+          "request; DDR MD doesn't log or keep these.",
+      '- Updates only ever contain song data (the song list, charts, jackets '
+          'and pattern counts), never code, and each file is checked against '
+          "its fingerprint before it's used.",
       "- Links: the GitHub, LinkedIn and PayPal buttons open in your browser, "
           "where those sites' own privacy policies apply.",
     ]
@@ -74,20 +82,29 @@ const _sections = <(String, List<String>)>[
     ]
   ),
   (
-    'Game content',
+    'Song data',
     [
+      'Charts and song details come from community-made simfiles, mostly '
+          'from Zenius-I-vanisher, and all credit for them goes to their '
+          "authors. They're fan transcriptions of the arcade charts and can "
+          'have mistakes; fixes arrive through song updates. BPM behaviour, '
+          'timing and pattern counts are worked out from those charts by '
+          'DDR MD.',
       "DDR MD is an independent fan-made app. It isn't affiliated with or "
-          'endorsed by Konami. DanceDanceRevolution, song titles, jacket '
-          'artwork and charts belong to their respective owners and are shown '
-          'for reference. If you hold rights to content in the app and want it '
-          'removed, get in touch below.',
+          'endorsed by Konami. DanceDanceRevolution, song titles, artists, '
+          'jacket artwork and charts belong to their respective owners and '
+          'are shown for reference.',
+      'If you hold rights to content in the app and want it removed, get in '
+          'touch below. Removed songs come off the update server, so they '
+          'disappear from the app at its next update check, and from the app '
+          'download with the next release.',
     ]
   ),
   (
     'Changes',
     [
       'If this notice changes, the new version comes with an app update and '
-          'a new date above.',
+          "a new date above. Song updates never change it.",
     ]
   ),
 ];
