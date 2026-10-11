@@ -191,11 +191,11 @@ class _PlayStyleCard extends StatelessWidget {
           child: Image.asset(asset, height: 15),
         ));
     return Card(
-      child: ListTile(
-        title: const Text("Play Style",
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        trailing: SegmentedButton<Modes>(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: SegmentedButton<Modes>(
           showSelectedIcon: false,
+          expandedInsets: EdgeInsets.zero,
           style: const ButtonStyle(visualDensity: VisualDensity.compact),
           segments: [
             segment(Modes.singles, 'assets/icons/style_single.png'),
