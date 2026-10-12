@@ -1,7 +1,7 @@
 /// Name: SectionBar
 /// Parent: ChartScroller
 /// Description: The bar over the transport while picking a snippet's section:
-/// what to tap next, the section picked so far, and play/clear.
+/// minimal Preview and Add actions.
 library;
 
 import 'package:ddr_md/components/song/notes/chart_models.dart';
@@ -18,78 +18,43 @@ String sectionLabel(BeatRange range, List<TimeSignature> timeSignatures) {
 }
 
 class SectionBar extends StatelessWidget {
-  const SectionBar({
-    super.key,
-    required this.range,
-    required this.started,
-    required this.timeSignatures,
-    required this.playing,
-    required this.onPlay,
-    required this.onClear,
-  });
-
+  const SectionBar(
+      {super.key,
+      required this.range,
+      required this.playing,
+      required this.onPlay,
+      this.onSave});
   final BeatRange? range;
-
-  /// The first row is tapped and the last isn't yet.
-  final bool started;
-  final List<TimeSignature> timeSignatures;
   final bool playing;
   final VoidCallback onPlay;
-  final VoidCallback onClear;
+  final VoidCallback? onSave;
 
   @override
-  Widget build(BuildContext context) {
-    final range = this.range;
-    final prompt = started
-        ? "Tap the last arrow"
-        : range == null
-            ? "Tap the first arrow"
-            : "Tap near an end to move it";
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kSectionColor.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (range != null)
-                  Text(
-                    sectionLabel(range, timeSignatures),
-                    style: const TextStyle(
-                        color: kSectionColor,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700),
-                  ),
-                Text(
-                  prompt,
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-          if (range != null || started)
-            IconButton(
-              icon: const Icon(Icons.close, color: Colors.white70),
-              tooltip: 'Clear',
-              onPressed: onClear,
-            ),
-          IconButton(
-            icon: Icon(playing ? Icons.pause : Icons.play_arrow,
-                color: range == null ? Colors.white38 : kSectionColor),
-            tooltip: playing ? 'Pause' : 'Play the section',
-            onPressed: range == null ? null : onPlay,
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Row(children: [
+        Expanded(
+            child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.black.withValues(alpha: 0.75),
+                    side: const BorderSide(color: Colors.white38),
+                    minimumSize: const Size(0, 48),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: range == null ? null : onPlay,
+                icon: Icon(
+                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                label: Text(playing ? 'Pause' : 'Preview'))),
+        const SizedBox(width: 10),
+        Expanded(
+            child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: kSectionColor,
+                    foregroundColor: Colors.black,
+                    minimumSize: const Size(0, 48),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: range == null ? null : onSave,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Add'))),
+      ]);
 }

@@ -120,6 +120,7 @@ class ChartScroller extends StatefulWidget {
     this.section,
     this.pickSection = false,
     this.onSectionChanged,
+    this.onSaveSection,
   });
 
   final ChartSteps steps;
@@ -127,8 +128,9 @@ class ChartScroller extends StatefulWidget {
   /// A snippet's section: playback loops it, with a bar's run-up, and the rest
   /// of the chart dims.
   final BeatRange? section;
+  final VoidCallback? onSaveSection;
 
-  /// Taps pick [section]'s rows instead of playing: the first and last row,
+  /// A selector button picks [section]'s first and last rows,
   /// then whichever end is nearer moves. Reported through [onSectionChanged].
   final bool pickSection;
   final ValueChanged<BeatRange?>? onSectionChanged;
@@ -334,8 +336,8 @@ class _ChartScrollerState extends State<ChartScroller>
   // put). OFF by default; persisted across previews. See [_Turn].
   _Turn _turn = _Turn.off;
 
-  Guideline _guideline = Guideline.values[
-      Settings.getInt(Settings.guidelineKey).clamp(0, Guideline.values.length - 1)];
+  Guideline _guideline = Guideline.values[Settings.getInt(Settings.guidelineKey)
+      .clamp(0, Guideline.values.length - 1)];
 
   // ARCADE SYNC: master switch for the cabinet timing simulation. While off,
   // both offsets below are ignored and their controls stay hidden. Turning it
@@ -451,6 +453,8 @@ class _ChartScrollerState extends State<ChartScroller>
   double? _momentSecond;
   String _chartHash = '';
   ChartPainter? _painter;
+  Size _fieldSize = Size.zero;
+  Timer? _selectionScroll;
 
   // [ChartScroller.section] in seconds: its first and last rows, the loop it
   // plays (a bar's run-up to a beat past its last note or hold tail), and its
@@ -624,6 +628,16 @@ class _ChartScrollerState extends State<ChartScroller>
     _buildTimingMarkers();
     _buildSection();
     _buildDensity();
+    if (widget.pickSection && widget.section == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.section != null) return;
+        final rows = _notes.where((n) => n.type != StepType.mine).toList();
+        if (rows.isEmpty) return;
+        final end = rows.firstWhere((n) => n.beat >= rows.first.beat + 4,
+            orElse: () => rows.last);
+        widget.onSectionChanged?.call((rows.first.beat, end.beat));
+      });
+    }
     if (widget.initialSecond case final second?) {
       _openAt(second);
     } else if (_loop case (final from, _)) {
@@ -1544,7 +1558,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // Editing footing, a paused tap on a note swaps its foot; anywhere else (or
   // not editing) it plays/pauses as usual.
   void _onFieldTap(Offset pos, Size size) {
-    if (widget.pickSection && !_playing) return _pickRow(pos, size);
+    if (widget.pickSection && !_playing) return;
     final n =
         widget.editFooting && !_playing ? _painter?.noteAt(pos, size) : null;
     if (n != null) return _flipFoot(n);
@@ -1742,35 +1756,88 @@ class _ChartScrollerState extends State<ChartScroller>
     _buildTickTimes();
   }
 
-  // Picking: the first tap marks a row, the second closes the section, and
-  // after that a tap moves whichever end is nearer.
-  void _pickRow(Offset pos, Size size) {
-    final row = _painter?.rowAt(pos.dy, size);
-    if (row == null) return;
-    HapticFeedback.selectionClick();
+  void _moveEndpoint(bool start, double y) {
+    final row = _painter?.nearestRow(y, _fieldSize);
     final range = widget.section;
-    final start = _sectionStart;
-    if (range == null && start == null) {
-      setState(() => _sectionStart = row);
-      return;
+    if (row == null || range == null) return;
+    final next = start
+        ? (math.min(row.beat, range.$2), range.$2)
+        : (range.$1, math.max(row.beat, range.$1));
+    if (next != range) {
+      HapticFeedback.selectionClick();
+      widget.onSectionChanged?.call(next);
     }
-    final BeatRange next;
-    if (start != null) {
-      next = (math.min(start.beat, row.beat), math.max(start.beat, row.beat));
-    } else {
-      final (a, b) = range!;
-      next = (row.beat - a).abs() <= (row.beat - b).abs()
-          ? (math.min(row.beat, b), b)
-          : (a, math.max(row.beat, a));
-    }
-    setState(() => _sectionStart = null);
-    widget.onSectionChanged?.call(next);
   }
 
-  void _clearSection() {
-    setState(() => _sectionStart = null);
-    widget.onSectionChanged?.call(null);
-  }
+  Widget _selectionHandles(Size size) => ValueListenableBuilder<double>(
+        valueListenable: _playhead,
+        builder: (context, _, child) {
+          final range = _sectionRows;
+          final painter = _painter;
+          if (range == null || painter == null) return const SizedBox.shrink();
+          final top = MediaQuery.of(context).padding.top + 100;
+          final bottom = math.max(top + 64, size.height - 280);
+          Widget handle(bool start, double second) {
+            final y = painter.rowY(second, size);
+            final clamped = y.clamp(top, bottom);
+            return Positioned(
+              top: clamped - 22,
+              left: start ? 8 : null,
+              right: start ? null : 8,
+              child: GestureDetector(
+                onVerticalDragStart: (_) {
+                  _pause();
+                  _flingVel = 0;
+                },
+                onVerticalDragEnd: (_) => _selectionScroll?.cancel(),
+                onVerticalDragCancel: () => _selectionScroll?.cancel(),
+                onVerticalDragUpdate: (d) {
+                  final local = (context.findRenderObject() as RenderBox)
+                      .globalToLocal(d.globalPosition);
+                  _selectionScroll?.cancel();
+                  if (local.dy < top + 24 || local.dy > bottom - 24) {
+                    final direction = local.dy < top + 24 ? -1 : 1;
+                    _selectionScroll =
+                        Timer.periodic(const Duration(milliseconds: 40), (_) {
+                      if (!mounted) return;
+                      _second =
+                          (_second + direction * 0.08).clamp(0.0, _endSecond);
+                      _moveEndpoint(start, local.dy);
+                    });
+                  }
+                  _moveEndpoint(start, local.dy);
+                },
+                onTap: () {
+                  _pause();
+                  _second = math.max(0.0, second - 0.5);
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                      color: kSectionColor,
+                      borderRadius: BorderRadius.circular(10)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                        y != clamped
+                            ? Icons.swap_vert_rounded
+                            : Icons.drag_handle_rounded,
+                        size: 18,
+                        color: Colors.black),
+                    const SizedBox(width: 6),
+                    Text(start ? 'START' : 'END',
+                        style: const TextStyle(
+                            color: Colors.black, fontWeight: FontWeight.bold)),
+                  ]),
+                ),
+              ),
+            );
+          }
+
+          return Stack(
+              children: [handle(true, range.$1), handle(false, range.$2)]);
+        },
+      );
 
   void _buildTickTimes() {
     final Set<int> keys = {};
@@ -1885,7 +1952,8 @@ class _ChartScrollerState extends State<ChartScroller>
   void _play() {
     if (_playing) return;
     if (_second >= _endSecond) _second = 0;
-    if (_loop case (final from, final to) when _second < from || _second >= to) {
+    if (_loop case (final from, final to)
+        when _second < from || _second >= to) {
       _second = from;
     }
     _flingVel = 0;
@@ -2287,6 +2355,7 @@ class _ChartScrollerState extends State<ChartScroller>
 
   @override
   void dispose() {
+    _selectionScroll?.cancel();
     _tapOverlayTimer?.cancel();
     _scrubOverlayTimer?.cancel();
     _seekOverlayTimer?.cancel();
@@ -2298,11 +2367,31 @@ class _ChartScrollerState extends State<ChartScroller>
 
   @override
   Widget build(BuildContext context) {
+    final snippet = widget.section != null;
+    final visibleFeet = {
+      for (final entry
+          in (widget.showFootGuide || widget.editFooting ? _feet : _hitFeet)
+              .entries)
+        if (!snippet || _sectionNotes.contains(entry.key))
+          entry.key: entry.value,
+    };
+    final visibleLinks = {
+      for (final entry in _footPrev.entries)
+        if (!snippet ||
+            (_sectionNotes.contains(entry.key) &&
+                _sectionNotes.contains(entry.value)))
+          entry.key: entry.value,
+    };
+    final stanceSeconds = _sectionNotes.map((n) => n.second).toSet();
+    final visibleStances = snippet
+        ? _stances.where((s) => stanceSeconds.contains(s.second)).toList()
+        : _stances;
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
       // Feed the field geometry into the speed law: an arrow's travel is the
       // cabinet's bottom edge up to the receptor line, scaled to the arrow size
       // this screen allows (see ChartPainter.arcadeArrowSize).
+      _fieldSize = constraints.biggest;
       final topInset = MediaQuery.of(context).padding.top;
       final travel = ChartPainter.arcadeArrowSize(
               constraints.biggest, dirs.length, topInset) *
@@ -2352,16 +2441,16 @@ class _ChartScrollerState extends State<ChartScroller>
                         showMeasureLines: widget.showMeasureLines,
                         guideline: _guideline,
                         timeSignatures: widget.timeSignatures,
-                        feet: widget.showFootGuide || widget.editFooting
-                            ? _feet
-                            : _hitFeet,
+                        feet: visibleFeet,
                         highlights: _hits,
                         highlightIcon:
                             _pattern == null ? null : kPatternIcons[_pattern],
                         focus: widget.editFooting ? _focus : _sectionNotes,
                         section: _sectionRows,
                         sectionStart: _sectionStart?.second,
-                        footPrev: widget.showFootTrails ? _footPrev : const {},
+                        showSelector: false,
+                        footPrev:
+                            widget.showFootTrails ? visibleLinks : const {},
                         dirs: dirs,
                         colMap: _colMap,
                         playhead: _playhead,
@@ -2560,13 +2649,31 @@ class _ChartScrollerState extends State<ChartScroller>
               // The pad places itself within these bounds; the rest of the
               // layer stays transparent to taps, so the field (and the controls
               // under it) still get everything the pad itself doesn't cover.
-              child: DancingFeet(
-                stances: _stances,
-                playhead: _playhead,
-                columnCount: dirs.length,
-                visualOffset: _visualOffsetSeconds,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _playhead,
+                builder: (context, second, child) {
+                  final active = !snippet ||
+                      (_sectionRows != null &&
+                          second + _visualOffsetSeconds >= _sectionRows!.$1 &&
+                          second + _visualOffsetSeconds <=
+                              _sectionNotes
+                                  .map((n) => n.endSecond ?? n.second)
+                                  .reduce(math.max));
+                  return IgnorePointer(
+                      ignoring: !active,
+                      child: Opacity(opacity: active ? 1 : 0, child: child));
+                },
+                child: DancingFeet(
+                  stances: visibleStances,
+                  playhead: _playhead,
+                  columnCount: dirs.length,
+                  visualOffset: _visualOffsetSeconds,
+                ),
               ),
             ),
+
+          if (widget.pickSection && !_playing)
+            Positioned.fill(child: _selectionHandles(constraints.biggest)),
 
           // Floating header (song title / difficulty): shown whenever paused,
           // slides up out of view once playback starts so the running chart owns
@@ -2626,11 +2733,9 @@ class _ChartScrollerState extends State<ChartScroller>
                     if (widget.pickSection) ...[
                       SectionBar(
                         range: _sectionRows == null ? null : widget.section,
-                        started: _sectionStart != null,
-                        timeSignatures: widget.timeSignatures,
+                        onSave: widget.onSaveSection,
                         playing: _playing,
                         onPlay: _togglePlay,
-                        onClear: _clearSection,
                       ),
                       const SizedBox(height: 6),
                     ],
@@ -2956,57 +3061,57 @@ class _ChartScrollerState extends State<ChartScroller>
                 ],
               ),
             Row(
-                spacing: 8,
-                children: [
-                  if (widget.onToggleAssistTick != null)
-                    Expanded(
-                      child: TurnTile(
-                        label: "ASSIST TICK",
-                        icon: widget.assistTickOn
-                            ? Icons.volume_up
-                            : Icons.volume_off_outlined,
-                        selected: widget.assistTickOn,
-                        onTap: widget.onToggleAssistTick!,
-                      ),
-                    ),
-                  if (widget.onToggleMeasureLines != null)
-                    Expanded(
-                      child: TurnTile(
-                        label: "MEASURES",
-                        icon: widget.showMeasureLines
-                            ? Icons.straighten
-                            : Icons.straighten_outlined,
-                        selected: widget.showMeasureLines,
-                        onTap: widget.onToggleMeasureLines!,
-                      ),
-                    ),
+              spacing: 8,
+              children: [
+                if (widget.onToggleAssistTick != null)
                   Expanded(
                     child: TurnTile(
-                      label: switch (_guideline) {
-                        Guideline.off => "GUIDELINE",
-                        Guideline.center => "GUIDE CENTER",
-                        Guideline.border => "GUIDE BORDER",
-                      },
-                      icon: _guideline == Guideline.border
-                          ? Icons.border_horizontal
-                          : Icons.drag_handle,
-                      selected: _guideline != Guideline.off,
-                      onTap: _cycleGuideline,
+                      label: "ASSIST TICK",
+                      icon: widget.assistTickOn
+                          ? Icons.volume_up
+                          : Icons.volume_off_outlined,
+                      selected: widget.assistTickOn,
+                      onTap: widget.onToggleAssistTick!,
                     ),
                   ),
-                  if (widget.onToggleArcadeQuant != null)
-                    Expanded(
-                      child: TurnTile(
-                        label: "DDR PALETTE",
-                        icon: widget.arcadeQuantOn
-                            ? Icons.music_note
-                            : Icons.music_note_outlined,
-                        selected: widget.arcadeQuantOn,
-                        onTap: widget.onToggleArcadeQuant!,
-                      ),
+                if (widget.onToggleMeasureLines != null)
+                  Expanded(
+                    child: TurnTile(
+                      label: "MEASURES",
+                      icon: widget.showMeasureLines
+                          ? Icons.straighten
+                          : Icons.straighten_outlined,
+                      selected: widget.showMeasureLines,
+                      onTap: widget.onToggleMeasureLines!,
                     ),
-                ],
-              ),
+                  ),
+                Expanded(
+                  child: TurnTile(
+                    label: switch (_guideline) {
+                      Guideline.off => "GUIDELINE",
+                      Guideline.center => "GUIDE CENTER",
+                      Guideline.border => "GUIDE BORDER",
+                    },
+                    icon: _guideline == Guideline.border
+                        ? Icons.border_horizontal
+                        : Icons.drag_handle,
+                    selected: _guideline != Guideline.off,
+                    onTap: _cycleGuideline,
+                  ),
+                ),
+                if (widget.onToggleArcadeQuant != null)
+                  Expanded(
+                    child: TurnTile(
+                      label: "DDR PALETTE",
+                      icon: widget.arcadeQuantOn
+                          ? Icons.music_note
+                          : Icons.music_note_outlined,
+                      selected: widget.arcadeQuantOn,
+                      onTap: widget.onToggleArcadeQuant!,
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

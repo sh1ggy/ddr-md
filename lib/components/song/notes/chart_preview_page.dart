@@ -271,7 +271,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
             }
-            final steps = snapshot.data?.chartFor(widget.mode, widget.difficultyKey);
+            final steps =
+                snapshot.data?.chartFor(widget.mode, widget.difficultyKey);
             if (steps == null || steps.notes.isEmpty) {
               return Stack(
                 children: [
@@ -333,7 +334,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               // The footing editor stays a debug tool until it ships to users,
               // and keeps out of snippets, where taps pick the section.
               footingRef: kDebugMode && !_isSnippet
-                  ? ChartRef(snapshot.data!.name,
+                  ? ChartRef(
+                      snapshot.data!.name,
                       widget.mode == Modes.doubles ? 'dp' : 'sp',
                       widget.difficultyKey)
                   : null,
@@ -341,6 +343,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               initialSecond: widget.initialSecond,
               section: _section,
               pickSection: _picking,
+              onSaveSection: () => _saveSnippet(snapshot.data!, steps),
               onSectionChanged: (s) => setState(() => _section = s),
             );
           },
