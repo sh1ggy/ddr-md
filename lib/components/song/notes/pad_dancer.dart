@@ -22,12 +22,20 @@ import 'package:flutter/material.dart';
 
 // World units are metres: x to the player's right, y up, z toward the screen.
 const double _u = 0.2794; // one panel
-const double _padY = 0.11; // top of the pad
+const double _padY = 0.15; // top of the pad
+const double _stageDepth = 1.085;
+const double _stageFront = 1.5 * _u + 0.035;
+const double _stageBack = _stageFront - _stageDepth;
 const double _thigh = 0.44, _shin = 0.43, _upperArm = 0.30, _foreArm = 0.30;
-const double _barY = _padY + 0.94;
-const double _barHalfWidth = 0.235;
-const double _gripHalfWidth = 0.17;
-const double _barZ = -1.5 * _u - 0.08;
+// Rail centreline dimensions; the padded outside top is 1.09 m above the
+// floor and the outside width is 0.456 m. Geometry notes kept locally.
+const double _barTubeRadius = 0.021;
+const double _barPaddingRadius = 0.032;
+const double _barY = 1.09 - _barPaddingRadius;
+const double _barHalfWidth = 0.196;
+const double _barBendRadius = 0.125;
+const double _gripHalfWidth = 0.055;
+const double _barZ = _stageBack + 0.085;
 
 /// Panel centres in panel units, matching the parity solver's stage.
 const List<(double, double)> _singles = [(-1, 0), (0, -1), (0, 1), (1, 0)];
@@ -623,8 +631,8 @@ _Pose _pose(_Track tr, double t) {
 }
 
 void _buildPad(_Scene s, _Track tr, double t, double pcx, int base) {
-  s.box(_V(pcx * _u, _padY / 2, 0), _xAxis, _up, _zAxis, 1.5 * _u + 0.035,
-      _padY / 2, 1.5 * _u + 0.035, _padBase,
+  s.box(_V(pcx * _u, _padY / 2, (_stageFront + _stageBack) / 2), _xAxis, _up,
+      _zAxis, 1.5 * _u + 0.035, _padY / 2, _stageDepth / 2, _padBase,
       layer: 1);
   const y = _padY + 0.002;
   for (int gx = -1; gx <= 1; gx++) {
@@ -673,14 +681,20 @@ List<_V> _arrowTris(double cx, double cz, double turn, double size, double y) {
 
 void _buildBar(_Scene s, _Track tr) {
   for (final centre in tr.columnCount > 4 ? [-1.5 * _u, 1.5 * _u] : [0.0]) {
-    s.box(_V(centre, 0.02, _barZ), _xAxis, _up, _zAxis, 1.5 * _u + 0.035, 0.02,
-        0.10, _padBase,
-        layer: 1);
-    const radius = 0.055;
+    const radius = _barBendRadius;
     const hx = _barHalfWidth;
     for (final sign in [-1.0, 1.0]) {
-      s.tube(_V(centre + sign * hx, _padY, _barZ),
-          _V(centre + sign * hx, _barY - radius, _barZ), 0.025, _chrome);
+      s.tube(
+          _V(centre + sign * hx, _padY, _barZ),
+          _V(centre + sign * hx, _barY - radius, _barZ),
+          _barTubeRadius,
+          _chrome);
+      // The padding extends below both bends, over the narrower upright tube.
+      s.tube(
+          _V(centre + sign * hx, _barY - radius - 0.10, _barZ),
+          _V(centre + sign * hx, _barY - radius, _barZ),
+          _barPaddingRadius,
+          _chrome);
       for (var i = 0; i < 6; i++) {
         _V point(int j) {
           final angle = j / 6 * math.pi / 2;
@@ -688,11 +702,11 @@ void _buildBar(_Scene s, _Track tr) {
               _barY - radius + radius * math.sin(angle), _barZ);
         }
 
-        s.tube(point(i), point(i + 1), 0.025, _chrome);
+        s.tube(point(i), point(i + 1), _barPaddingRadius, _chrome);
       }
     }
     s.tube(_V(centre - hx + radius, _barY, _barZ),
-        _V(centre + hx - radius, _barY, _barZ), 0.025, _chrome);
+        _V(centre + hx - radius, _barY, _barZ), _barPaddingRadius, _chrome);
   }
 }
 
