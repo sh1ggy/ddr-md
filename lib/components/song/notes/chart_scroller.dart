@@ -30,6 +30,7 @@ import 'chart_painter.dart';
 import 'chart_timing.dart';
 import 'dancing_feet.dart';
 import 'density_scrub_bar.dart';
+import 'section_bar.dart';
 import 'tick_clock.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -116,9 +117,21 @@ class ChartScroller extends StatefulWidget {
     this.footingRef,
     this.editFooting = false,
     this.initialSecond,
+    this.section,
+    this.pickSection = false,
+    this.onSectionChanged,
   });
 
   final ChartSteps steps;
+
+  /// A snippet's section: playback loops it, with a bar's run-up, and the rest
+  /// of the chart dims.
+  final BeatRange? section;
+
+  /// Taps pick [section]'s rows instead of playing: the first and last row,
+  /// then whichever end is nearer moves. Reported through [onSectionChanged].
+  final bool pickSection;
+  final ValueChanged<BeatRange?>? onSectionChanged;
   final Modes mode;
 
   /// Optional floating header (title / back / actions) over the full-bleed
@@ -439,6 +452,15 @@ class _ChartScrollerState extends State<ChartScroller>
   String _chartHash = '';
   ChartPainter? _painter;
 
+  // [ChartScroller.section] in seconds: its first and last rows, the loop it
+  // plays (a bar's run-up to a beat past its last note or hold tail), and its
+  // notes, which stay lit while the rest dims. [_sectionStart] is the first
+  // row tapped while picking, until the last one is.
+  (double, double)? _sectionRows;
+  (double, double)? _loop;
+  Set<StepNote> _sectionNotes = const {};
+  StepNote? _sectionStart;
+
   // Chart notes ascending by second, plus the holds alone in the same order.
   // Sorted order is what lets the painter binary-search the visible window each
   // frame instead of walking the whole chart.
@@ -600,8 +622,13 @@ class _ChartScrollerState extends State<ChartScroller>
     _buildFootLinks();
     _buildTickTimes();
     _buildTimingMarkers();
+    _buildSection();
     _buildDensity();
-    if (widget.initialSecond case final second?) _openAt(second);
+    if (widget.initialSecond case final second?) {
+      _openAt(second);
+    } else if (_loop case (final from, _)) {
+      _second = from;
+    }
     // Prefer real DDR World sprites if they're bundled; repaint once loaded.
     if (_skin == null) {
       SpriteNoteskin.tryLoad().then((skin) {
@@ -641,6 +668,7 @@ class _ChartScrollerState extends State<ChartScroller>
       _buildFootLinks();
       _buildTickTimes();
       _buildTimingMarkers();
+      _buildSection();
       _buildDensity();
       setState(() {
         _second = 0;
@@ -685,6 +713,13 @@ class _ChartScrollerState extends State<ChartScroller>
     // rebuild it — the field itself re-reads the colours on the next paint.
     if (old.arcadeQuantOn != widget.arcadeQuantOn) {
       _buildDensity();
+    }
+    if (old.section != widget.section) {
+      setState(_buildSection);
+      _resyncTickClock();
+    }
+    if (old.pickSection && !widget.pickSection) {
+      setState(() => _sectionStart = null);
     }
   }
 
@@ -1509,6 +1544,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // Editing footing, a paused tap on a note swaps its foot; anywhere else (or
   // not editing) it plays/pauses as usual.
   void _onFieldTap(Offset pos, Size size) {
+    if (widget.pickSection && !_playing) return _pickRow(pos, size);
     final n =
         widget.editFooting && !_playing ? _painter?.noteAt(pos, size) : null;
     if (n != null) return _flipFoot(n);
@@ -1676,10 +1712,71 @@ class _ChartScrollerState extends State<ChartScroller>
   // Distinct row seconds for the assist tick: taps and hold/roll heads tick,
   // mines don't (shock rows are mines, so they drop out with them). Chords
   // collapse to one tick via the same 1ms rounding [_detectShocks] uses.
+  double _secondAtBeat(double beat) => _timing.isEmpty
+      ? beat * 60.0 / _effectiveChartBpm
+      : _timing.secondAt(beat);
+
+  // Resolve [ChartScroller.section] against this chart; also re-derives the
+  // tick rows, which keep to the section.
+  void _buildSection() {
+    final range = widget.section;
+    final notes = range == null
+        ? const <StepNote>[]
+        : [
+            for (final n in _notes)
+              if (n.beat >= range.$1 - 1e-3 && n.beat <= range.$2 + 1e-3) n
+          ];
+    if (range == null || notes.isEmpty) {
+      _sectionRows = null;
+      _loop = null;
+      _sectionNotes = const {};
+    } else {
+      final lastBeat = notes.map((n) => n.endBeat ?? n.beat).reduce(math.max);
+      _sectionRows = (notes.first.second, notes.last.second);
+      _loop = (
+        math.max(0.0, _secondAtBeat(range.$1 - 4)),
+        _secondAtBeat(lastBeat + 1),
+      );
+      _sectionNotes = notes.toSet();
+    }
+    _buildTickTimes();
+  }
+
+  // Picking: the first tap marks a row, the second closes the section, and
+  // after that a tap moves whichever end is nearer.
+  void _pickRow(Offset pos, Size size) {
+    final row = _painter?.rowAt(pos.dy, size);
+    if (row == null) return;
+    HapticFeedback.selectionClick();
+    final range = widget.section;
+    final start = _sectionStart;
+    if (range == null && start == null) {
+      setState(() => _sectionStart = row);
+      return;
+    }
+    final BeatRange next;
+    if (start != null) {
+      next = (math.min(start.beat, row.beat), math.max(start.beat, row.beat));
+    } else {
+      final (a, b) = range!;
+      next = (row.beat - a).abs() <= (row.beat - b).abs()
+          ? (math.min(row.beat, b), b)
+          : (a, math.max(row.beat, a));
+    }
+    setState(() => _sectionStart = null);
+    widget.onSectionChanged?.call(next);
+  }
+
+  void _clearSection() {
+    setState(() => _sectionStart = null);
+    widget.onSectionChanged?.call(null);
+  }
+
   void _buildTickTimes() {
     final Set<int> keys = {};
     for (final n in widget.steps.notes) {
       if (n.type == StepType.mine) continue;
+      if (_sectionNotes.isNotEmpty && !_sectionNotes.contains(n)) continue;
       keys.add((n.second * 1000).round());
     }
     _tickSeconds = [for (final k in keys) k / 1000.0]..sort();
@@ -1739,8 +1836,13 @@ class _ChartScrollerState extends State<ChartScroller>
     // the HUD listeners directly. Only the end-of-song auto-pause (inside
     // [_pause]) flips real widget state.
     double next = _second;
+    var looped = false;
     if (_playing) {
       next += dt * _playbackRate;
+      if (_loop case (final from, final to) when next >= to) {
+        next = from;
+        looped = true;
+      }
     } else if (_flingVel != 0) {
       // Inertial scrub: advance by the current velocity, then decay it.
       next += _flingVel * dt;
@@ -1761,6 +1863,7 @@ class _ChartScrollerState extends State<ChartScroller>
       _stopTickerIfIdle();
     }
     _second = next;
+    if (looped) _resyncTickClock();
     // The render loop no longer schedules ticks — [_tickClock] fires them off
     // SoLoud's audio-thread clock, immune to this loop's jank. Playback state
     // changes (play/pause/seek/rate) drive the clock via [_resyncTickClock].
@@ -1782,6 +1885,9 @@ class _ChartScrollerState extends State<ChartScroller>
   void _play() {
     if (_playing) return;
     if (_second >= _endSecond) _second = 0;
+    if (_loop case (final from, final to) when _second < from || _second >= to) {
+      _second = from;
+    }
     _flingVel = 0;
     _ensureTicking();
     // Starting playback closes the menu so the running chart owns the screen.
@@ -2252,7 +2358,9 @@ class _ChartScrollerState extends State<ChartScroller>
                         highlights: _hits,
                         highlightIcon:
                             _pattern == null ? null : kPatternIcons[_pattern],
-                        focus: widget.editFooting ? _focus : const {},
+                        focus: widget.editFooting ? _focus : _sectionNotes,
+                        section: _sectionRows,
+                        sectionStart: _sectionStart?.second,
                         footPrev: widget.showFootTrails ? _footPrev : const {},
                         dirs: dirs,
                         colMap: _colMap,
@@ -2515,6 +2623,17 @@ class _ChartScrollerState extends State<ChartScroller>
                       _buildFootingBar(context),
                       const SizedBox(height: 6),
                     ],
+                    if (widget.pickSection) ...[
+                      SectionBar(
+                        range: _sectionRows == null ? null : widget.section,
+                        started: _sectionStart != null,
+                        timeSignatures: widget.timeSignatures,
+                        playing: _playing,
+                        onPlay: _togglePlay,
+                        onClear: _clearSection,
+                      ),
+                      const SizedBox(height: 6),
+                    ],
                     // Always-visible tempo readout: the BPM of the section under
                     // the playhead and the read speed it actually scrolls at
                     // (CONSTANT-aware). Centred over the bottom controls and kept
@@ -2648,7 +2767,11 @@ class _ChartScrollerState extends State<ChartScroller>
                   _markerFractions(_stopMarkers.map((m) => m.second)),
               highlightFractions: [
                 if (_endSecond > 0)
-                  for (final (a, b) in _hits) (a / _endSecond, b / _endSecond)
+                  for (final (a, b) in [
+                    ..._hits,
+                    if (_sectionRows case final rows?) rows,
+                  ])
+                    (a / _endSecond, b / _endSecond)
               ],
               onSeek: (frac) {
                 _pause();

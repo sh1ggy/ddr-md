@@ -239,4 +239,13 @@ class BarGrid {
       if (end > to) break;
     }
   }
+
+  /// The 1-based number of the bar [beat] falls in.
+  int barAt(double beat) {
+    int? number;
+    for (final l in lines(math.max(0, beat - 64), beat)) {
+      number = l.number ?? number;
+    }
+    return number ?? 1;
+  }
 }

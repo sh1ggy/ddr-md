@@ -54,7 +54,16 @@ class ChartPainter extends CustomPainter {
     this.focus = const {},
     this.highlights = const [],
     this.highlightIcon,
+    this.section,
+    this.sectionStart,
   }) : super(repaint: playhead);
+
+  /// The snippet's (first, last) row seconds, banded in [kSectionColor].
+  final (double, double)? section;
+
+  /// The first row tapped while picking a section, ruled across the field
+  /// until the last row is tapped.
+  final double? sectionStart;
 
   /// Pattern occurrences to mark, (first, last) row seconds sorted by first,
   /// each banded across the field with [highlightIcon] at its start.
@@ -316,6 +325,21 @@ class ChartPainter extends CustomPainter {
       canvas.drawRRect(band, _highlightFillPaint);
       canvas.drawRRect(band, _highlightEdgePaint);
     }
+    if (section case (final from, final to) when from <= maxT && to >= second) {
+      final band = RRect.fromLTRBR(
+          fieldLeft - 6,
+          yFor(from) - arrowSize * 0.6,
+          fieldRight + 6,
+          yFor(to) + arrowSize * 0.6,
+          const Radius.circular(10));
+      canvas.drawRRect(band, _sectionFillPaint);
+      canvas.drawRRect(band, _sectionEdgePaint);
+    }
+    if (sectionStart case final s? when s <= maxT) {
+      final y = yFor(s) - arrowSize * 0.6;
+      canvas.drawLine(
+          Offset(fieldLeft - 6, y), Offset(fieldRight + 6, y), _sectionEdgePaint);
+    }
 
     // 1) Freeze/hold bodies, behind the receptor and arrowheads. A hold being
     // held has its head clamped to the line, so the body shrinks upward into it
@@ -546,6 +570,27 @@ class ChartPainter extends CustomPainter {
       final col = (n.col >= 0 && n.col < colMap.length) ? colMap[n.col] : n.col;
       final d = (Offset(g.laneCenterX(col), y) - pos).distance;
       if (d < g.arrowSize * 0.6 && d < bestDist) {
+        best = n;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  /// A note (not a mine) of the row drawn nearest [y], in any lane: picking a
+  /// section takes whole rows, so a tap anywhere across one counts. Rows just
+  /// past the receptor still count, so the row under it can be picked.
+  StepNote? rowAt(double y, Size size) {
+    final g = _geometry(size);
+    StepNote? best;
+    double bestDist = g.arrowSize;
+    for (int i = _lowerBoundBySecond(notes, second - 1); i < notes.length; i++) {
+      final n = notes[i];
+      if (n.type == StepType.mine) continue;
+      final ny = g.yFor(n.second);
+      if (ny - g.arrowSize > size.height) break;
+      final d = (ny - y).abs();
+      if (d < bestDist) {
         best = n;
         bestDist = d;
       }
@@ -861,6 +906,12 @@ class ChartPainter extends CustomPainter {
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.5
     ..color = Colors.white.withValues(alpha: 0.35);
+  static final Paint _sectionFillPaint = Paint()
+    ..color = kSectionColor.withValues(alpha: 0.08);
+  static final Paint _sectionEdgePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2
+    ..color = kSectionColor.withValues(alpha: 0.7);
   static final Paint _patternBadgePaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.75);
   static final Map<int, TextPainter> _iconTpCache = {};
@@ -999,5 +1050,7 @@ class ChartPainter extends CustomPainter {
       // would report the repaint.
       old.visualOffset != visualOffset ||
       old.focus != focus ||
-      old.highlights != highlights;
+      old.highlights != highlights ||
+      old.section != section ||
+      old.sectionStart != sectionStart;
 }
