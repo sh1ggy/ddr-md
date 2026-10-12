@@ -242,12 +242,16 @@ class ChartPainter extends CustomPainter {
             1
         : second + ((size.height - _receptorTop) / pxPerSecond) + 1;
 
-    // Receptors pulse only while playing, riding the beat when beat-locked
-    // (freezing on stops, quickening with the tempo) and a fixed half-second
-    // cadence otherwise. A triangle wave rather than a sawtooth, which snapped
-    // back discontinuously and read as a flash each beat.
-    final phase = (beatLocked ? currentBeat : second * 2) % 1.0;
-    final glow = playing ? 1.0 - (2.0 * phase - 1.0).abs() : 0.0;
+    // DDR's beat flash: receptors are lit for the first quarter of each beat
+    // and dim for the rest, a hard step keyed to beat position, so it holds
+    // through stops and follows the tempo. Before the first beat, and whenever
+    // the preview is paused, they rest halfway.
+    final double glow;
+    if (!playing || !beatLocked || currentBeat < 0) {
+      glow = 0.5;
+    } else {
+      glow = currentBeat % 1.0 < 0.25 ? 1.0 : 0.0;
+    }
 
     // Clip only the far top, so a note sitting ON the receptor draws in full
     // while notes well past it are hidden. Sized for the impact flash, which
