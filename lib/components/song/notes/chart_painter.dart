@@ -12,12 +12,17 @@ import 'dart:math' as math;
 import 'chart_models.dart';
 import 'chart_timing.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 // A compact seconds label for a stop's duration, e.g. "0.16s".
 String _fmtDur(double s) => "${s.toStringAsFixed(2)}s";
+
+/// DDR's GUIDELINE option: beat lines through the arrows' centres, or along
+/// their leading edges.
+enum Guideline { off, center, border }
 
 class ChartPainter extends CustomPainter {
   ChartPainter({
@@ -39,6 +44,8 @@ class ChartPainter extends CustomPainter {
     required this.skin,
     required this.playing,
     this.showMeasureLines = false,
+    this.guideline = Guideline.off,
+    this.timeSignatures = const [],
     this.zoom = 1.0,
     this.constantMs,
     this.topInset = 0,
@@ -118,6 +125,12 @@ class ChartPainter extends CustomPainter {
   /// Rule the field into numbered 4-beat measures. Needs the beat axis, so it
   /// does nothing on charts with no BPM data.
   final bool showMeasureLines;
+
+  /// Needs the beat axis too.
+  final Guideline guideline;
+
+  /// Bar lengths for the measure rules and the guideline; empty = 4/4.
+  final List<TimeSignature> timeSignatures;
 
   /// Mirrors [QuantColors.arcadeMode]. The skins read that global directly, so
   /// the painter never uses this value — it exists purely so [shouldRepaint]
@@ -264,18 +277,29 @@ class ChartPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
 
+    // Marker lines sit on the guideline (BORDER moves it to the arrows' leading
+    // edge) so a BPM change or stop never draws as a second line beside it.
+    final lineShift = guideline == Guideline.border ? -arrowSize / 2 : 0.0;
+    double markY(double t) => yFor(t) + lineShift;
+
     // 0a) Measure rules, under everything else: they are scaffolding for reading
     // position, not part of the field.
     if (showMeasureLines && beatLocked) {
-      _paintMeasureLines(canvas, size, yFor, currentBeat,
+      _paintMeasureLines(canvas, size, markY, currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat,
           labels: false);
+    }
+
+    if (guideline != Guideline.off && beatLocked) {
+      _paintGuideline(canvas, yFor, lineShift, currentBeat,
+          currentBeat + (size.height - _receptorTop) / pxPerBeat + 1,
+          fieldLeft, laneStride * columnCount, arrowSize);
     }
 
     // 0) Timing markers (BPM changes and stops), base layer: lines/bands drawn
     // first inside the clip so notes, holds and foot paths render on top. Their
     // pill labels come later (after the notes) so they stay legible.
-    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
+    _paintTimingMarkers(canvas, size, markY, maxT, beatLocked, expandStops,
         labels: false);
 
     // 0b) Pattern bands, under the notes they group.
@@ -444,10 +468,10 @@ class ChartPainter extends CustomPainter {
         _paintPatternBadge(canvas, fieldLeft, yFor(from), icon);
       }
     }
-    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
+    _paintTimingMarkers(canvas, size, markY, maxT, beatLocked, expandStops,
         labels: true);
     if (showMeasureLines && beatLocked) {
-      _paintMeasureLines(canvas, size, yFor, currentBeat,
+      _paintMeasureLines(canvas, size, markY, currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat,
           labels: true);
     }
@@ -657,33 +681,62 @@ class ChartPainter extends CustomPainter {
     ..strokeWidth = 1.5;
   static final Paint _labelPillPaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.55);
+  static final Paint _measurePillPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.85);
 
   static const Color _measureColor = Color(0xFF8FA3B8);
   static final Paint _measureLinePaint = Paint()
     ..color = _measureColor.withValues(alpha: 0.22)
     ..strokeWidth = 1;
 
-  // Rule the field every 4 beats and number each measure at the left edge, the
-  // way a stepchart editor does, so a spot in the chart can be named. Positions
-  // go through [yFor], so the rules ride BPM changes and stops rather than being
-  // a fixed pixel grid; measures number from 1 at beat 0 (editor convention).
-  // Two z-layers, like [_paintTimingMarkers].
+  // Rule the field at every bar and number each at the left edge, the way a
+  // stepchart editor does, so a spot in the chart can be named. Positions go
+  // through [yFor], so the rules ride BPM changes and stops rather than being a
+  // fixed pixel grid; bars number from 1 at beat 0 (editor convention). Two
+  // z-layers, like [_paintTimingMarkers].
   void _paintMeasureLines(Canvas canvas, Size size, double Function(double) yFor,
       double currentBeat, double maxBeat, {required bool labels}) {
-    var m = (currentBeat / 4).floor();
-    if (m < 0) m = 0;
     // Zoomed out the rules crowd together, so number only every fourth one and
     // let the rest read as plain ruling.
     final labelEvery = pxPerBeat * 4 < 46 ? 4 : 1;
-    for (; m * 4 <= maxBeat; m++) {
-      final y = yFor(timing.secondAt(m * 4.0));
+    for (final l in BarGrid(timeSignatures).lines(currentBeat - 8, maxBeat)) {
+      final number = l.number;
+      if (number == null) continue;
+      final y = yFor(timing.secondAt(l.beat));
       if (!labels) {
         canvas.drawLine(Offset(0, y), Offset(size.width, y), _measureLinePaint);
         continue;
       }
-      if (m % labelEvery != 0) continue;
-      _paintMarkerLabel(canvas, size, y, "${m + 1}", _measureColor,
-          alignLeft: true);
+      if ((number - 1) % labelEvery != 0) continue;
+      _paintMarkerLabel(canvas, size, y, "$number", _measureColor,
+          alignLeft: true, pill: _measurePillPaint);
+    }
+  }
+
+  // DDR's guideline: a line on every beat across the lanes, bar lines at full
+  // strength and the rest at a quarter. Lines ride the scroll like the
+  // arrows, hang down from their position, and fade out over two thirds of an
+  // arrow once the beat itself has passed the receptor, whatever the [shift].
+  // A beat carrying a BPM change or stop gives its line to that marker.
+  void _paintGuideline(Canvas canvas, double Function(double) yFor,
+      double shift, double currentBeat, double maxBeat, double left,
+      double width, double arrowSize) {
+    final taken = [
+      for (final b in bpmMarkers) timing.beatAt(b.second),
+      for (final s in stopMarkers) timing.beatAt(s.second),
+    ];
+    final paint = Paint();
+    final thickness = math.max(1.0, arrowSize * 3 / 96);
+    final fade = arrowSize * 2 / 3;
+    for (final l in BarGrid(timeSignatures).lines(currentBeat - 1, maxBeat)) {
+      if (taken.any((t) => (t - l.beat).abs() < 0.01)) continue;
+      final y = yFor(timing.secondAt(l.beat));
+      final past = (_receptorTop - y) / fade;
+      if (past >= 1) continue;
+      final alpha = (l.bar ? 255 : 63) / 255 * (1 - past.clamp(0.0, 1.0));
+      paint.color = Colors.white.withValues(alpha: alpha);
+      canvas.drawRect(
+          Rect.fromLTWH(left, y + shift, width, thickness), paint);
     }
   }
 
@@ -784,6 +837,7 @@ class ChartPainter extends CustomPainter {
     String text,
     Color color, {
     bool alignLeft = false,
+    Paint? pill,
   }) {
     final tp = _labelTp(text, color);
     const padX = 5.0;
@@ -797,7 +851,7 @@ class ChartPainter extends CustomPainter {
       Rect.fromLTWH(left, top, boxW, boxH),
       const Radius.circular(4),
     );
-    canvas.drawRRect(rect, _labelPillPaint);
+    canvas.drawRRect(rect, pill ?? _labelPillPaint);
     tp.paint(canvas, Offset(left + padX, top + padY));
   }
 
@@ -934,6 +988,8 @@ class ChartPainter extends CustomPainter {
       old.skin != skin ||
       old.playing != playing ||
       old.showMeasureLines != showMeasureLines ||
+      old.guideline != guideline ||
+      old.timeSignatures != timeSignatures ||
       old.zoom != zoom ||
       old.constantMs != constantMs ||
       old.topInset != topInset ||

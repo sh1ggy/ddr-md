@@ -55,4 +55,23 @@ void main() {
       expect(t.secondAt(6), closeTo(4, 1e-6));
     });
   });
+
+  test('BarGrid steps bars from each time signature', () {
+    List<(double, int?)> bars(List<TimeSignature> sigs, double from, double to) =>
+        [
+          for (final l in BarGrid(sigs).lines(from, to))
+            if (l.bar) (l.beat, l.number)
+        ];
+    expect(bars(const [], 0, 8), [(0.0, 1), (4.0, 2), (8.0, 3)]);
+    // A 7/4 section cut short at 43.5, then 4/4 counted from there.
+    const centaur = [
+      TimeSignature(beat: 0, beats: 4),
+      TimeSignature(beat: 36, beats: 7),
+      TimeSignature(beat: 43.5, beats: 4),
+    ];
+    expect(bars(centaur, 32, 48),
+        [(32.0, 9), (36.0, 10), (43.0, 11), (43.5, 12), (47.5, 13)]);
+    expect(BarGrid(centaur).lines(43, 44.5).map((l) => l.beat),
+        [43.0, 43.5, 44.5]);
+  });
 }

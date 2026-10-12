@@ -291,6 +291,7 @@ class _SongPageState extends State<SongPage> {
                       // (cabinet block when present, else simfile), so ARCADE
                       // SYNC can report the song's own bias.
                       sync: songInfo.displaySyncFor(_chart),
+                      timeSignatures: songInfo.timeSignatures,
                     ),
                   ),
                 );

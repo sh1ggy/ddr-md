@@ -99,6 +99,7 @@ class ChartScroller extends StatefulWidget {
     this.bpms = const [],
     this.stops = const [],
     this.sync,
+    this.timeSignatures = const [],
     this.showFootGuide = false,
     this.showFootTrails = false,
     this.showDancingFeet = false,
@@ -146,6 +147,9 @@ class ChartScroller extends StatefulWidget {
   /// The song's measured audio-vs-chart sync, reported under ARCADE SYNC so the
   /// dials are set against a known bias. Null when the song has no sync data.
   final Sync? sync;
+
+  /// Bar lengths through the song, for the measure rules and the guideline.
+  final List<TimeSignature> timeSignatures;
 
   /// The chart's authored BPM extremes (`true_min`/`true_max`), bracketing
   /// [chartBpm]. 0 means "not supplied" — the note stream is the fallback.
@@ -316,6 +320,9 @@ class _ChartScrollerState extends State<ChartScroller>
   // DDR TURN modifier: permutes which panel each note lands on (receptors stay
   // put). OFF by default; persisted across previews. See [_Turn].
   _Turn _turn = _Turn.off;
+
+  Guideline _guideline = Guideline.values[
+      Settings.getInt(Settings.guidelineKey).clamp(0, Guideline.values.length - 1)];
 
   // ARCADE SYNC: master switch for the cabinet timing simulation. While off,
   // both offsets below are ignored and their controls stay hidden. Turning it
@@ -1022,6 +1029,16 @@ class _ChartScrollerState extends State<ChartScroller>
     });
     Settings.setInt(Settings.chartPreviewTurnKey, next.index);
     _flashScrubOverlay(_turnLabel(next), "TURN");
+  }
+
+  // Step GUIDELINE through OFF → CENTER → BORDER.
+  void _cycleGuideline() {
+    HapticFeedback.selectionClick();
+    final next =
+        Guideline.values[(_guideline.index + 1) % Guideline.values.length];
+    setState(() => _guideline = next);
+    Settings.setInt(Settings.guidelineKey, next.index);
+    _flashScrubOverlay(next.name.toUpperCase(), "GUIDELINE");
   }
 
   String _turnLabel(_Turn turn) => switch (turn) {
@@ -2227,6 +2244,8 @@ class _ChartScrollerState extends State<ChartScroller>
                         bpmMarkers: _bpmMarkers,
                         stopMarkers: _stopMarkers,
                         showMeasureLines: widget.showMeasureLines,
+                        guideline: _guideline,
+                        timeSignatures: widget.timeSignatures,
                         feet: widget.showFootGuide || widget.editFooting
                             ? _feet
                             : _hitFeet,
@@ -2763,106 +2782,111 @@ class _ChartScrollerState extends State<ChartScroller>
       // Viewing aids, split off into their own segment and laid out as two rows
       // of tiles: the parity readings (the on-arrow L/R guide, the same-foot
       // trails and the dancing-feet pad, all three drawn from one solve) above,
-      // the rest — the assist tick, the measure rules and the arcade quant
-      // palette — below.
+      // the rest — the assist tick, the measure rules, the guideline and the
+      // arcade quant palette — below.
       // These moved out of the floating header so it carries only title/back;
       // the toggles read the same as the TURN tiles, so they slot in as more
       // rows of the options card.
-      if (widget.onToggleAssistTick != null ||
-          widget.onToggleFootGuide != null ||
-          widget.onToggleFootTrails != null ||
-          widget.onToggleDancingFeet != null ||
-          widget.onToggleMeasureLines != null ||
-          widget.onToggleArcadeQuant != null)
-        ShadeSection(
-          content: Column(
-            spacing: 8,
-            children: [
-              if (widget.onToggleFootGuide != null ||
-                  widget.onToggleFootTrails != null ||
-                  widget.onToggleDancingFeet != null)
-                Row(
-                  spacing: 8,
-                  children: [
-                    if (widget.onToggleFootGuide != null)
-                      Expanded(
-                        child: TurnTile(
-                          label: "FOOT GUIDE",
-                          icon: widget.showFootGuide
-                              ? Icons.directions_walk
-                              : Icons.directions_walk_outlined,
-                          selected: widget.showFootGuide,
-                          onTap: widget.onToggleFootGuide!,
-                        ),
+      ShadeSection(
+        content: Column(
+          spacing: 8,
+          children: [
+            if (widget.onToggleFootGuide != null ||
+                widget.onToggleFootTrails != null ||
+                widget.onToggleDancingFeet != null)
+              Row(
+                spacing: 8,
+                children: [
+                  if (widget.onToggleFootGuide != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "FOOT GUIDE",
+                        icon: widget.showFootGuide
+                            ? Icons.directions_walk
+                            : Icons.directions_walk_outlined,
+                        selected: widget.showFootGuide,
+                        onTap: widget.onToggleFootGuide!,
                       ),
-                    if (widget.onToggleFootTrails != null)
-                      Expanded(
-                        child: TurnTile(
-                          label: "FOOT TRAILS",
-                          icon: widget.showFootTrails
-                              ? Icons.timeline
-                              : Icons.timeline_outlined,
-                          selected: widget.showFootTrails,
-                          onTap: widget.onToggleFootTrails!,
-                        ),
+                    ),
+                  if (widget.onToggleFootTrails != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "FOOT TRAILS",
+                        icon: widget.showFootTrails
+                            ? Icons.timeline
+                            : Icons.timeline_outlined,
+                        selected: widget.showFootTrails,
+                        onTap: widget.onToggleFootTrails!,
                       ),
-                    if (widget.onToggleDancingFeet != null)
-                      Expanded(
-                        child: TurnTile(
-                          label: "DANCING FEET",
-                          icon: widget.showDancingFeet
-                              ? Icons.do_not_step
-                              : Icons.do_not_step_outlined,
-                          selected: widget.showDancingFeet,
-                          onTap: widget.onToggleDancingFeet!,
-                        ),
+                    ),
+                  if (widget.onToggleDancingFeet != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "DANCING FEET",
+                        icon: widget.showDancingFeet
+                            ? Icons.do_not_step
+                            : Icons.do_not_step_outlined,
+                        selected: widget.showDancingFeet,
+                        onTap: widget.onToggleDancingFeet!,
                       ),
-                  ],
-                ),
-              if (widget.onToggleAssistTick != null ||
-                  widget.onToggleMeasureLines != null ||
-                  widget.onToggleArcadeQuant != null)
-                Row(
-                  spacing: 8,
-                  children: [
-                    if (widget.onToggleAssistTick != null)
-                      Expanded(
-                        child: TurnTile(
-                          label: "ASSIST TICK",
-                          icon: widget.assistTickOn
-                              ? Icons.volume_up
-                              : Icons.volume_off_outlined,
-                          selected: widget.assistTickOn,
-                          onTap: widget.onToggleAssistTick!,
-                        ),
+                    ),
+                ],
+              ),
+            Row(
+                spacing: 8,
+                children: [
+                  if (widget.onToggleAssistTick != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "ASSIST TICK",
+                        icon: widget.assistTickOn
+                            ? Icons.volume_up
+                            : Icons.volume_off_outlined,
+                        selected: widget.assistTickOn,
+                        onTap: widget.onToggleAssistTick!,
                       ),
-                    if (widget.onToggleMeasureLines != null)
-                      Expanded(
-                        child: TurnTile(
-                          label: "MEASURES",
-                          icon: widget.showMeasureLines
-                              ? Icons.straighten
-                              : Icons.straighten_outlined,
-                          selected: widget.showMeasureLines,
-                          onTap: widget.onToggleMeasureLines!,
-                        ),
+                    ),
+                  if (widget.onToggleMeasureLines != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "MEASURES",
+                        icon: widget.showMeasureLines
+                            ? Icons.straighten
+                            : Icons.straighten_outlined,
+                        selected: widget.showMeasureLines,
+                        onTap: widget.onToggleMeasureLines!,
                       ),
-                    if (widget.onToggleArcadeQuant != null)
-                      Expanded(
-                        child: TurnTile(
-                          label: "DDR PALETTE",
-                          icon: widget.arcadeQuantOn
-                              ? Icons.music_note
-                              : Icons.music_note_outlined,
-                          selected: widget.arcadeQuantOn,
-                          onTap: widget.onToggleArcadeQuant!,
-                        ),
+                    ),
+                  Expanded(
+                    child: TurnTile(
+                      label: switch (_guideline) {
+                        Guideline.off => "GUIDELINE",
+                        Guideline.center => "GUIDE CENTER",
+                        Guideline.border => "GUIDE BORDER",
+                      },
+                      icon: _guideline == Guideline.border
+                          ? Icons.border_horizontal
+                          : Icons.drag_handle,
+                      selected: _guideline != Guideline.off,
+                      onTap: _cycleGuideline,
+                    ),
+                  ),
+                  if (widget.onToggleArcadeQuant != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "DDR PALETTE",
+                        icon: widget.arcadeQuantOn
+                            ? Icons.music_note
+                            : Icons.music_note_outlined,
+                        selected: widget.arcadeQuantOn,
+                        onTap: widget.onToggleArcadeQuant!,
                       ),
-                  ],
-                ),
-            ],
-          ),
+                    ),
+                ],
+              ),
+          ],
         ),
+      ),
       // ARCADE SYNC: the cabinet timing simulation. The master toggle always
       // shows; its two dials appear only while it's engaged, so the shade stays
       // uncluttered for the common case and the offsets can't be dialled into a

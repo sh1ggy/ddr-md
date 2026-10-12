@@ -32,6 +32,7 @@ class ChartPreviewPage extends StatefulWidget {
     required this.bpms,
     required this.stops,
     this.sync,
+    this.timeSignatures = const [],
     this.initialSecond,
   });
 
@@ -65,6 +66,9 @@ class ChartPreviewPage extends StatefulWidget {
   /// ARCADE SYNC so the offsets are dialled against the song's known bias
   /// rather than in the dark. Null when the song ships no sync data.
   final Sync? sync;
+
+  /// The song's bar lengths ([SongInfo.timeSignatures]).
+  final List<TimeSignature> timeSignatures;
 
   /// Opens on this second rather than the top, straight into the footing
   /// editor where there is one — to judge a moment picked elsewhere.
@@ -189,6 +193,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               bpms: widget.bpms,
               stops: widget.stops,
               sync: widget.sync,
+              timeSignatures: widget.timeSignatures,
               showFootGuide: _showFootGuide,
               showFootTrails: _showFootTrails,
               showDancingFeet: _dancingFeet,

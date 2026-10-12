@@ -28,6 +28,9 @@ class SongInfo {
   Sync? sync;
   Sync? arcadeSync;
 
+  /// The song's bar lengths, when it isn't plain 4/4 from beat 0 (empty then).
+  List<TimeSignature> timeSignatures;
+
   SongInfo({
     required this.ssc,
     required this.version,
@@ -47,6 +50,7 @@ class SongInfo {
     required this.charts,
     this.sync,
     this.arcadeSync,
+    this.timeSignatures = const [],
   });
 
   /// Simfile sync data for [chart]: per_chart songs carry it on the chart
@@ -114,6 +118,9 @@ class SongInfo {
       arcadeSync: json["arcade_sync"] == null
           ? null
           : Sync.fromJson(json["arcade_sync"]),
+      timeSignatures: List<TimeSignature>.from(
+        (json["time_signatures"] ?? []).map((x) => TimeSignature.fromJson(x)),
+      ),
     );
   }
 
@@ -140,7 +147,26 @@ class SongInfo {
         "chart": List<dynamic>.from(charts.map((x) => x.toJson())),
         if (sync != null) "sync": sync!.toJson(),
         if (arcadeSync != null) "arcade_sync": arcadeSync!.toJson(),
+        if (timeSignatures.isNotEmpty)
+          "time_signatures":
+              List<dynamic>.from(timeSignatures.map((x) => x.toJson())),
       };
+}
+
+/// From [beat] on, bars are [beats] quarter notes long, until the next entry.
+/// The first entry also covers any beats before it.
+class TimeSignature {
+  final double beat;
+  final int beats;
+
+  const TimeSignature({required this.beat, required this.beats});
+
+  factory TimeSignature.fromJson(Map<String, dynamic> json) => TimeSignature(
+        beat: (json["beat"] as num).toDouble(),
+        beats: json["beats"] as int,
+      );
+
+  Map<String, dynamic> toJson() => {"beat": beat, "beats": beats};
 }
 
 class Chart {
