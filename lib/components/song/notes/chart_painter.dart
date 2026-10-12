@@ -286,7 +286,7 @@ class ChartPainter extends CustomPainter {
     }
 
     if (guideline != Guideline.off && beatLocked) {
-      _paintGuideline(canvas, markY, currentBeat,
+      _paintGuideline(canvas, yFor, lineShift, currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat + 1,
           fieldLeft, laneStride * columnCount, arrowSize);
     }
@@ -710,11 +710,12 @@ class ChartPainter extends CustomPainter {
 
   // DDR's guideline: a line on every beat across the lanes, measure lines at
   // full strength and the rest at a quarter. Lines ride the scroll like the
-  // arrows and fade out over two thirds of an arrow once past the receptor.
+  // arrows, hang down from their position, and fade out over two thirds of an
+  // arrow once the beat itself has passed the receptor, whatever the [shift].
   // A beat carrying a BPM change or stop gives its line to that marker.
   void _paintGuideline(Canvas canvas, double Function(double) yFor,
-      double currentBeat, double maxBeat, double left, double width,
-      double arrowSize) {
+      double shift, double currentBeat, double maxBeat, double left,
+      double width, double arrowSize) {
     final taken = <int>{};
     for (final t in [
       for (final b in bpmMarkers) b.second,
@@ -723,16 +724,19 @@ class ChartPainter extends CustomPainter {
       final beat = timing.beatAt(t);
       if ((beat - beat.round()).abs() < 0.01) taken.add(beat.round());
     }
-    final paint = Paint()..strokeWidth = math.max(1.0, arrowSize * 3 / 96);
+    final paint = Paint();
+    final thickness = math.max(1.0, arrowSize * 3 / 96);
     final fade = arrowSize * 2 / 3;
     for (var b = math.max(0, currentBeat.floor() - 1); b <= maxBeat; b++) {
       if (taken.contains(b)) continue;
       final y = yFor(timing.secondAt(b.toDouble()));
       final past = (_receptorTop - y) / fade;
       if (past >= 1) continue;
-      final alpha = (b % 4 == 0 ? 1.0 : 0.25) * (1 - past.clamp(0.0, 1.0));
+      final alpha =
+          (b % 4 == 0 ? 255 : 63) / 255 * (1 - past.clamp(0.0, 1.0));
       paint.color = Colors.white.withValues(alpha: alpha);
-      canvas.drawLine(Offset(left, y), Offset(left + width, y), paint);
+      canvas.drawRect(
+          Rect.fromLTWH(left, y + shift, width, thickness), paint);
     }
   }
 
