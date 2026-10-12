@@ -102,8 +102,8 @@ abstract class Noteskin {
   void paintShock(
       Canvas canvas, List<(double x, NoteDir dir)> lanes, double y, double size);
 
-  /// A receptor ring for one lane, centred at (x,y). [glow] 0..1 pulses on the
-  /// beat.
+  /// A receptor ring for one lane, centred at (x,y). [glow] 0..1, high on the
+  /// beat flash, low between beats.
   void paintReceptor(
       Canvas canvas, double x, double y, double size, NoteDir dir, double glow);
 
@@ -780,11 +780,10 @@ class SpriteNoteskin implements Noteskin {
     canvas.translate(x, y);
     canvas.rotate(rotationForDir(dir));
     final dst = Rect.fromCenter(center: Offset.zero, width: size, height: size);
-    // Dim the grey arrow to a faint receptacle; brighten slightly on the beat
-    // pulse. modulate by a grey scales all channels + alpha down uniformly.
-    // The glow is quantised to 1/64 steps so the pulse reuses a bounded set of
-    // cached tint paints instead of minting a ColorFilter per receptor per
-    // frame (the step is far below what the eye can pick out of the pulse).
+    // Dim the grey arrow to a faint receptacle, brightened on the beat flash
+    // (kept well short of a live note's brightness). modulate by a grey scales all
+    // channels + alpha down uniformly. Quantised to 1/64 steps so a bounded set
+    // of cached tint paints is reused instead of a ColorFilter per frame.
     final v = ((0.30 + 0.25 * glow).clamp(0.0, 1.0) * 64).round() / 64;
     _drawImage(canvas, _note, dst,
         paint: _tintPaint(Color.from(alpha: 1, red: v, green: v, blue: v)));
