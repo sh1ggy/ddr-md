@@ -272,16 +272,21 @@ class ChartPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
 
+    // Marker lines sit on the guideline (BORDER moves it to the arrows' leading
+    // edge) so a BPM change or stop never draws as a second line beside it.
+    final lineShift = guideline == Guideline.border ? -arrowSize / 2 : 0.0;
+    double markY(double t) => yFor(t) + lineShift;
+
     // 0a) Measure rules, under everything else: they are scaffolding for reading
     // position, not part of the field.
     if (showMeasureLines && beatLocked) {
-      _paintMeasureLines(canvas, size, yFor, currentBeat,
+      _paintMeasureLines(canvas, size, markY, currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat,
           labels: false);
     }
 
     if (guideline != Guideline.off && beatLocked) {
-      _paintGuideline(canvas, yFor, currentBeat,
+      _paintGuideline(canvas, markY, currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat + 1,
           fieldLeft, laneStride * columnCount, arrowSize);
     }
@@ -289,7 +294,7 @@ class ChartPainter extends CustomPainter {
     // 0) Timing markers (BPM changes and stops), base layer: lines/bands drawn
     // first inside the clip so notes, holds and foot paths render on top. Their
     // pill labels come later (after the notes) so they stay legible.
-    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
+    _paintTimingMarkers(canvas, size, markY, maxT, beatLocked, expandStops,
         labels: false);
 
     // 0b) Pattern bands, under the notes they group.
@@ -458,10 +463,10 @@ class ChartPainter extends CustomPainter {
         _paintPatternBadge(canvas, fieldLeft, yFor(from), icon);
       }
     }
-    _paintTimingMarkers(canvas, size, yFor, maxT, beatLocked, expandStops,
+    _paintTimingMarkers(canvas, size, markY, maxT, beatLocked, expandStops,
         labels: true);
     if (showMeasureLines && beatLocked) {
-      _paintMeasureLines(canvas, size, yFor, currentBeat,
+      _paintMeasureLines(canvas, size, markY, currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat,
           labels: true);
     }
@@ -671,6 +676,8 @@ class ChartPainter extends CustomPainter {
     ..strokeWidth = 1.5;
   static final Paint _labelPillPaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.55);
+  static final Paint _measurePillPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.85);
 
   static const Color _measureColor = Color(0xFF8FA3B8);
   static final Paint _measureLinePaint = Paint()
@@ -697,21 +704,30 @@ class ChartPainter extends CustomPainter {
       }
       if (m % labelEvery != 0) continue;
       _paintMarkerLabel(canvas, size, y, "${m + 1}", _measureColor,
-          alignLeft: true);
+          alignLeft: true, pill: _measurePillPaint);
     }
   }
 
   // DDR's guideline: a line on every beat across the lanes, measure lines at
   // full strength and the rest at a quarter. Lines ride the scroll like the
   // arrows and fade out over two thirds of an arrow once past the receptor.
+  // A beat carrying a BPM change or stop gives its line to that marker.
   void _paintGuideline(Canvas canvas, double Function(double) yFor,
       double currentBeat, double maxBeat, double left, double width,
       double arrowSize) {
-    final shift = guideline == Guideline.border ? -arrowSize / 2 : 0.0;
+    final taken = <int>{};
+    for (final t in [
+      for (final b in bpmMarkers) b.second,
+      for (final s in stopMarkers) s.second,
+    ]) {
+      final beat = timing.beatAt(t);
+      if ((beat - beat.round()).abs() < 0.01) taken.add(beat.round());
+    }
     final paint = Paint()..strokeWidth = math.max(1.0, arrowSize * 3 / 96);
     final fade = arrowSize * 2 / 3;
     for (var b = math.max(0, currentBeat.floor() - 1); b <= maxBeat; b++) {
-      final y = yFor(timing.secondAt(b.toDouble())) + shift;
+      if (taken.contains(b)) continue;
+      final y = yFor(timing.secondAt(b.toDouble()));
       final past = (_receptorTop - y) / fade;
       if (past >= 1) continue;
       final alpha = (b % 4 == 0 ? 1.0 : 0.25) * (1 - past.clamp(0.0, 1.0));
@@ -817,6 +833,7 @@ class ChartPainter extends CustomPainter {
     String text,
     Color color, {
     bool alignLeft = false,
+    Paint? pill,
   }) {
     final tp = _labelTp(text, color);
     const padX = 5.0;
@@ -830,7 +847,7 @@ class ChartPainter extends CustomPainter {
       Rect.fromLTWH(left, top, boxW, boxH),
       const Radius.circular(4),
     );
-    canvas.drawRRect(rect, _labelPillPaint);
+    canvas.drawRRect(rect, pill ?? _labelPillPaint);
     tp.paint(canvas, Offset(left + padX, top + padY));
   }
 
