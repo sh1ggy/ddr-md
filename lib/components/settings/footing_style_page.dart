@@ -244,6 +244,7 @@ class _FootingStylePageState extends State<FootingStylePage>
           bpms: chart.bpms,
           stops: chart.stops,
           sync: info.displaySyncFor(chart),
+          timeSignatures: info.timeSignatures,
           initialSecond: m.key,
         ),
       ),

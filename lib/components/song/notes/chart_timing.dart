@@ -5,6 +5,8 @@
 /// than through a mounted widget.
 library;
 
+import 'dart:math' as math;
+
 import 'package:ddr_md/components/song_json.dart';
 
 /// Maps wall-clock seconds to chart beats so the field can scroll beat-locked
@@ -191,4 +193,50 @@ class ChartTiming {
   double _extrapolate(double second, int i, int j,
           {required double fallbackSlope}) =>
       _beats[i] + (second - _seconds[i]) * fallbackSlope;
+}
+
+/// The chart's beat and bar lines: one per beat, stepped from each time
+/// signature's own beat, every [TimeSignature.beats]-th starting a bar. A
+/// signature runs until the next; the first also runs backwards. No
+/// signatures means 4/4 from beat 0.
+class BarGrid {
+  BarGrid(List<TimeSignature> sigs)
+      : _sigs = sigs.isEmpty ? const [TimeSignature(beat: 0, beats: 4)] : sigs;
+
+  final List<TimeSignature> _sigs;
+
+  static const double _eps = 1e-6;
+
+  // Bar starts of a signature at [s] every [n] beats within [a, b).
+  static int _barsIn(double s, int n, double a, double b) => b <= a
+      ? 0
+      : ((b - s - _eps) / n).ceil() - ((a - s - _eps) / n).ceil();
+
+  /// Lines with beat in [from, to], in order. [number] is the bar's 1-based
+  /// count from beat 0, set on bar lines at or after it.
+  Iterable<({double beat, bool bar, int? number})> lines(
+      double from, double to) sync* {
+    var barsBefore = 0;
+    for (var i = 0; i < _sigs.length; i++) {
+      final s = _sigs[i].beat;
+      final n = math.max(1, _sigs[i].beats);
+      final start = i == 0 ? double.negativeInfinity : s;
+      final end = i + 1 < _sigs.length ? _sigs[i + 1].beat : double.infinity;
+      final counted = math.max(0.0, start);
+      for (var k = (math.max(from, start) - s - _eps).ceil();; k++) {
+        final b = s + k;
+        if (b > to + _eps || b >= end - _eps) break;
+        final bar = k % n == 0;
+        yield (
+          beat: b,
+          bar: bar,
+          number: bar && b >= -_eps
+              ? barsBefore + _barsIn(s, n, counted, b) + 1
+              : null,
+        );
+      }
+      if (end.isFinite) barsBefore += _barsIn(s, n, counted, math.max(0.0, end));
+      if (end > to) break;
+    }
+  }
 }

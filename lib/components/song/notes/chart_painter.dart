@@ -12,6 +12,7 @@ import 'dart:math' as math;
 import 'chart_models.dart';
 import 'chart_timing.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -44,6 +45,7 @@ class ChartPainter extends CustomPainter {
     required this.playing,
     this.showMeasureLines = false,
     this.guideline = Guideline.off,
+    this.timeSignatures = const [],
     this.zoom = 1.0,
     this.constantMs,
     this.topInset = 0,
@@ -126,6 +128,9 @@ class ChartPainter extends CustomPainter {
 
   /// Needs the beat axis too.
   final Guideline guideline;
+
+  /// Bar lengths for the measure rules and the guideline; empty = 4/4.
+  final List<TimeSignature> timeSignatures;
 
   /// Mirrors [QuantColors.arcadeMode]. The skins read that global directly, so
   /// the painter never uses this value — it exists purely so [shouldRepaint]
@@ -684,56 +689,51 @@ class ChartPainter extends CustomPainter {
     ..color = _measureColor.withValues(alpha: 0.22)
     ..strokeWidth = 1;
 
-  // Rule the field every 4 beats and number each measure at the left edge, the
-  // way a stepchart editor does, so a spot in the chart can be named. Positions
-  // go through [yFor], so the rules ride BPM changes and stops rather than being
-  // a fixed pixel grid; measures number from 1 at beat 0 (editor convention).
-  // Two z-layers, like [_paintTimingMarkers].
+  // Rule the field at every bar and number each at the left edge, the way a
+  // stepchart editor does, so a spot in the chart can be named. Positions go
+  // through [yFor], so the rules ride BPM changes and stops rather than being a
+  // fixed pixel grid; bars number from 1 at beat 0 (editor convention). Two
+  // z-layers, like [_paintTimingMarkers].
   void _paintMeasureLines(Canvas canvas, Size size, double Function(double) yFor,
       double currentBeat, double maxBeat, {required bool labels}) {
-    var m = (currentBeat / 4).floor();
-    if (m < 0) m = 0;
     // Zoomed out the rules crowd together, so number only every fourth one and
     // let the rest read as plain ruling.
     final labelEvery = pxPerBeat * 4 < 46 ? 4 : 1;
-    for (; m * 4 <= maxBeat; m++) {
-      final y = yFor(timing.secondAt(m * 4.0));
+    for (final l in BarGrid(timeSignatures).lines(currentBeat - 8, maxBeat)) {
+      final number = l.number;
+      if (number == null) continue;
+      final y = yFor(timing.secondAt(l.beat));
       if (!labels) {
         canvas.drawLine(Offset(0, y), Offset(size.width, y), _measureLinePaint);
         continue;
       }
-      if (m % labelEvery != 0) continue;
-      _paintMarkerLabel(canvas, size, y, "${m + 1}", _measureColor,
+      if ((number - 1) % labelEvery != 0) continue;
+      _paintMarkerLabel(canvas, size, y, "$number", _measureColor,
           alignLeft: true, pill: _measurePillPaint);
     }
   }
 
-  // DDR's guideline: a line on every beat across the lanes, measure lines at
-  // full strength and the rest at a quarter. Lines ride the scroll like the
+  // DDR's guideline: a line on every beat across the lanes, bar lines at full
+  // strength and the rest at a quarter. Lines ride the scroll like the
   // arrows, hang down from their position, and fade out over two thirds of an
   // arrow once the beat itself has passed the receptor, whatever the [shift].
   // A beat carrying a BPM change or stop gives its line to that marker.
   void _paintGuideline(Canvas canvas, double Function(double) yFor,
       double shift, double currentBeat, double maxBeat, double left,
       double width, double arrowSize) {
-    final taken = <int>{};
-    for (final t in [
-      for (final b in bpmMarkers) b.second,
-      for (final s in stopMarkers) s.second,
-    ]) {
-      final beat = timing.beatAt(t);
-      if ((beat - beat.round()).abs() < 0.01) taken.add(beat.round());
-    }
+    final taken = [
+      for (final b in bpmMarkers) timing.beatAt(b.second),
+      for (final s in stopMarkers) timing.beatAt(s.second),
+    ];
     final paint = Paint();
     final thickness = math.max(1.0, arrowSize * 3 / 96);
     final fade = arrowSize * 2 / 3;
-    for (var b = math.max(0, currentBeat.floor() - 1); b <= maxBeat; b++) {
-      if (taken.contains(b)) continue;
-      final y = yFor(timing.secondAt(b.toDouble()));
+    for (final l in BarGrid(timeSignatures).lines(currentBeat - 1, maxBeat)) {
+      if (taken.any((t) => (t - l.beat).abs() < 0.01)) continue;
+      final y = yFor(timing.secondAt(l.beat));
       final past = (_receptorTop - y) / fade;
       if (past >= 1) continue;
-      final alpha =
-          (b % 4 == 0 ? 255 : 63) / 255 * (1 - past.clamp(0.0, 1.0));
+      final alpha = (l.bar ? 255 : 63) / 255 * (1 - past.clamp(0.0, 1.0));
       paint.color = Colors.white.withValues(alpha: alpha);
       canvas.drawRect(
           Rect.fromLTWH(left, y + shift, width, thickness), paint);
@@ -989,6 +989,7 @@ class ChartPainter extends CustomPainter {
       old.playing != playing ||
       old.showMeasureLines != showMeasureLines ||
       old.guideline != guideline ||
+      old.timeSignatures != timeSignatures ||
       old.zoom != zoom ||
       old.constantMs != constantMs ||
       old.topInset != topInset ||

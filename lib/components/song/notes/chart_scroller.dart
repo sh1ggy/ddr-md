@@ -99,6 +99,7 @@ class ChartScroller extends StatefulWidget {
     this.bpms = const [],
     this.stops = const [],
     this.sync,
+    this.timeSignatures = const [],
     this.showFootGuide = false,
     this.showFootTrails = false,
     this.showDancingFeet = false,
@@ -146,6 +147,9 @@ class ChartScroller extends StatefulWidget {
   /// The song's measured audio-vs-chart sync, reported under ARCADE SYNC so the
   /// dials are set against a known bias. Null when the song has no sync data.
   final Sync? sync;
+
+  /// Bar lengths through the song, for the measure rules and the guideline.
+  final List<TimeSignature> timeSignatures;
 
   /// The chart's authored BPM extremes (`true_min`/`true_max`), bracketing
   /// [chartBpm]. 0 means "not supplied" — the note stream is the fallback.
@@ -2241,6 +2245,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         stopMarkers: _stopMarkers,
                         showMeasureLines: widget.showMeasureLines,
                         guideline: _guideline,
+                        timeSignatures: widget.timeSignatures,
                         feet: widget.showFootGuide || widget.editFooting
                             ? _feet
                             : _hitFeet,
