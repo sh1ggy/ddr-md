@@ -19,6 +19,10 @@ import 'package:flutter/material.dart';
 // A compact seconds label for a stop's duration, e.g. "0.16s".
 String _fmtDur(double s) => "${s.toStringAsFixed(2)}s";
 
+/// DDR's GUIDELINE option: beat lines through the arrows' centres, or along
+/// their leading edges.
+enum Guideline { off, center, border }
+
 class ChartPainter extends CustomPainter {
   ChartPainter({
     required this.notes,
@@ -39,6 +43,7 @@ class ChartPainter extends CustomPainter {
     required this.skin,
     required this.playing,
     this.showMeasureLines = false,
+    this.guideline = Guideline.off,
     this.zoom = 1.0,
     this.constantMs,
     this.topInset = 0,
@@ -118,6 +123,9 @@ class ChartPainter extends CustomPainter {
   /// Rule the field into numbered 4-beat measures. Needs the beat axis, so it
   /// does nothing on charts with no BPM data.
   final bool showMeasureLines;
+
+  /// Needs the beat axis too.
+  final Guideline guideline;
 
   /// Mirrors [QuantColors.arcadeMode]. The skins read that global directly, so
   /// the painter never uses this value — it exists purely so [shouldRepaint]
@@ -270,6 +278,12 @@ class ChartPainter extends CustomPainter {
       _paintMeasureLines(canvas, size, yFor, currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat,
           labels: false);
+    }
+
+    if (guideline != Guideline.off && beatLocked) {
+      _paintGuideline(canvas, yFor, currentBeat,
+          currentBeat + (size.height - _receptorTop) / pxPerBeat + 1,
+          fieldLeft, laneStride * columnCount, arrowSize);
     }
 
     // 0) Timing markers (BPM changes and stops), base layer: lines/bands drawn
@@ -687,6 +701,25 @@ class ChartPainter extends CustomPainter {
     }
   }
 
+  // DDR's guideline: a line on every beat across the lanes, measure lines at
+  // full strength and the rest at a quarter. Lines ride the scroll like the
+  // arrows and fade out over two thirds of an arrow once past the receptor.
+  void _paintGuideline(Canvas canvas, double Function(double) yFor,
+      double currentBeat, double maxBeat, double left, double width,
+      double arrowSize) {
+    final shift = guideline == Guideline.border ? -arrowSize / 2 : 0.0;
+    final paint = Paint()..strokeWidth = math.max(1.0, arrowSize * 3 / 96);
+    final fade = arrowSize * 2 / 3;
+    for (var b = math.max(0, currentBeat.floor() - 1); b <= maxBeat; b++) {
+      final y = yFor(timing.secondAt(b.toDouble())) + shift;
+      final past = (_receptorTop - y) / fade;
+      if (past >= 1) continue;
+      final alpha = (b % 4 == 0 ? 1.0 : 0.25) * (1 - past.clamp(0.0, 1.0));
+      paint.color = Colors.white.withValues(alpha: alpha);
+      canvas.drawLine(Offset(left, y), Offset(left + width, y), paint);
+    }
+  }
+
   // Full-width markers for stops (a band spanning the halt) and BPM changes (a
   // line + label), on the same seconds axis the notes scroll on, culled to the
   // visible window. Drawn in two z-layers: lines/bands before the notes so
@@ -934,6 +967,7 @@ class ChartPainter extends CustomPainter {
       old.skin != skin ||
       old.playing != playing ||
       old.showMeasureLines != showMeasureLines ||
+      old.guideline != guideline ||
       old.zoom != zoom ||
       old.constantMs != constantMs ||
       old.topInset != topInset ||

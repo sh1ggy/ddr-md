@@ -317,6 +317,9 @@ class _ChartScrollerState extends State<ChartScroller>
   // put). OFF by default; persisted across previews. See [_Turn].
   _Turn _turn = _Turn.off;
 
+  Guideline _guideline = Guideline.values[
+      Settings.getInt(Settings.guidelineKey).clamp(0, Guideline.values.length - 1)];
+
   // ARCADE SYNC: master switch for the cabinet timing simulation. While off,
   // both offsets below are ignored and their controls stay hidden. Turning it
   // on forces the assist tick on (restoring the previous state on the way out),
@@ -1022,6 +1025,15 @@ class _ChartScrollerState extends State<ChartScroller>
     });
     Settings.setInt(Settings.chartPreviewTurnKey, next.index);
     _flashScrubOverlay(_turnLabel(next), "TURN");
+  }
+
+  // Pick a GUIDELINE style; tapping the active one turns it off.
+  void _setGuideline(Guideline g) {
+    HapticFeedback.selectionClick();
+    final next = _guideline == g ? Guideline.off : g;
+    setState(() => _guideline = next);
+    Settings.setInt(Settings.guidelineKey, next.index);
+    _flashScrubOverlay(next.name.toUpperCase(), "GUIDELINE");
   }
 
   String _turnLabel(_Turn turn) => switch (turn) {
@@ -2227,6 +2239,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         bpmMarkers: _bpmMarkers,
                         stopMarkers: _stopMarkers,
                         showMeasureLines: widget.showMeasureLines,
+                        guideline: _guideline,
                         feet: widget.showFootGuide || widget.editFooting
                             ? _feet
                             : _hitFeet,
@@ -2713,8 +2726,8 @@ class _ChartScrollerState extends State<ChartScroller>
     return [
       ShadeSection(
         // Tiled: CONSTANT spans the full top row; below it a row split three
-        // ways — MIRROR (flip L↔R), LEFT and RIGHT turns — mirroring DDR World's
-        // appearance options.
+        // ways — MIRROR (flip L↔R), LEFT and RIGHT turns — then the two
+        // GUIDELINE styles, mirroring DDR World's appearance options.
         content: Column(
           children: [
             ConstantChip(
@@ -2753,6 +2766,28 @@ class _ChartScrollerState extends State<ChartScroller>
                     icon: Icons.rotate_right,
                     selected: _turn == _Turn.right,
                     onTap: () => _setTurn(_Turn.right),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              spacing: 8,
+              children: [
+                Expanded(
+                  child: TurnTile(
+                    label: "GUIDE CENTER",
+                    icon: Icons.drag_handle,
+                    selected: _guideline == Guideline.center,
+                    onTap: () => _setGuideline(Guideline.center),
+                  ),
+                ),
+                Expanded(
+                  child: TurnTile(
+                    label: "GUIDE BORDER",
+                    icon: Icons.border_horizontal,
+                    selected: _guideline == Guideline.border,
+                    onTap: () => _setGuideline(Guideline.border),
                   ),
                 ),
               ],

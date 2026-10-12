@@ -29,6 +29,10 @@ class Settings {
   // Measure rules for the chart preview: numbered lines every 4 beats. 0/1.
   static const String measureLinesOnKey = "chartPreviewMeasureLinesOn";
 
+  // GUIDELINE for the chart preview, a [Guideline] index: 0 = OFF, 1 = CENTER,
+  // 2 = BORDER.
+  static const String guidelineKey = "chartPreviewGuideline";
+
   // FOOT TRAILS for the chart preview: the lines joining each note to the
   // previous one struck by the same foot. Separate from the badges because the
   // trails read the chart's movement while the badges read its footing, and
