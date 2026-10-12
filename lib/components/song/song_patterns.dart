@@ -23,7 +23,7 @@ const _rhythmBuckets = <(String, List<String>, Color)>[
   ("Other", ["other"], QuantColors.other),
 ];
 
-/// The same under ARCADE NOTES, where only 4ths, 8ths and 16ths keep a colour.
+/// The same under DDR PALETTE, where only 4ths, 8ths and 16ths keep a colour.
 const _arcadeRhythmBuckets = <(String, List<String>, Color)>[
   ("4th", ["4"], QuantColors.quarter),
   ("8th", ["8"], QuantColors.eighth),

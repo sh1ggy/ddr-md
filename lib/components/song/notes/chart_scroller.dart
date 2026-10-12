@@ -2850,7 +2850,7 @@ class _ChartScrollerState extends State<ChartScroller>
                     if (widget.onToggleArcadeQuant != null)
                       Expanded(
                         child: TurnTile(
-                          label: "ARCADE NOTES",
+                          label: "DDR PALETTE",
                           icon: widget.arcadeQuantOn
                               ? Icons.music_note
                               : Icons.music_note_outlined,

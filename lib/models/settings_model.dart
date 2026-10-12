@@ -47,7 +47,7 @@ class Settings {
   static const String dancingFeetXKey = "chartPreviewDancingFeetX";
   static const String dancingFeetYKey = "chartPreviewDancingFeetY";
 
-  // ARCADE NOTES for the chart preview: colour arrows with the cabinet's coarser
+  // DDR PALETTE for the chart preview: colour arrows with the cabinet's coarser
   // palette (4ths/8ths/16ths only, everything else green) instead of the full
   // ITG-style one. Stored as 0/1. See [QuantColors.arcadeMode].
   static const String arcadeQuantOnKey = "chartPreviewArcadeQuantOn";

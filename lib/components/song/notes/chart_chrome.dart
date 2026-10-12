@@ -356,8 +356,7 @@ class _SettingsShadeState extends State<SettingsShade> {
             Flexible(
               child: RawScrollbar(
                 controller: _scrollController,
-                // Left gutter: the menu tab sits over the card's right edge.
-                scrollbarOrientation: ScrollbarOrientation.left,
+                scrollbarOrientation: ScrollbarOrientation.right,
                 thickness: 3,
                 radius: const Radius.circular(3),
                 thumbColor: scheme.onSurface.withValues(alpha: 0.55),
@@ -774,7 +773,7 @@ class TurnTile extends StatelessWidget {
   final VoidCallback onTap;
 
   /// Fixed so every tile in the shade lines up regardless of its label: at a
-  /// third of the width a two-word label ("ARCADE NOTES") would wrap where
+  /// third of the width a two-word label ("DDR PALETTE") would wrap where
   /// "LEFT" doesn't, and content-sized tiles would leave the rows ragged. The
   /// label scales down to fit one line rather than the tile growing to fit it.
   static const double height = 56;
