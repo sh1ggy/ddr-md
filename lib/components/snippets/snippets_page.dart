@@ -135,6 +135,8 @@ class _SnippetsPageState extends State<SnippetsPage> {
     final snippets = _snippets;
     return Scaffold(
       appBar: AppBar(
+        surfaceTintColor: Colors.black,
+        shadowColor: Colors.black,
         elevation: 2,
         iconTheme: const IconThemeData(color: Colors.blueGrey),
         title: const Text('Snippets',

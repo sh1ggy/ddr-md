@@ -15,6 +15,23 @@ import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// The snippet to deal after [dealt]: never one of the last few (half the
+/// pool), and another song than the last when there is one.
+Snippet dealSnippet(List<Snippet> pool, List<Snippet> dealt, Random random) {
+  final gap = pool.length < 2 ? 0 : max(1, pool.length ~/ 2);
+  final recent = {for (final s in dealt.reversed.take(gap)) s.id};
+  var candidates = [
+    for (final s in pool)
+      if (!recent.contains(s.id)) s
+  ];
+  final otherSong = [
+    for (final s in candidates)
+      if (s.song != dealt.lastOrNull?.song) s
+  ];
+  if (otherSong.isNotEmpty) candidates = otherSong;
+  return candidates[random.nextInt(candidates.length)];
+}
+
 class SnippetFeedPage extends StatefulWidget {
   const SnippetFeedPage({super.key, required this.snippets});
   final List<Snippet> snippets;
@@ -45,24 +62,15 @@ class _SnippetFeedPageState extends State<SnippetFeedPage> {
   void initState() {
     super.initState();
     if (_pool.isEmpty) return;
-    _appendRound();
+    _history.add(dealSnippet(_pool, _history, _random));
     _current = StepsLoader.load(_history.first.song);
     _preload();
   }
 
-  void _appendRound() {
-    final round = [..._pool]..shuffle(_random);
-    if (round.length > 1 &&
-        _history.isNotEmpty &&
-        round.first.id == _history.last.id) {
-      final first = round.removeAt(0);
-      round.add(first);
-    }
-    _history.addAll(round);
-  }
-
   void _preload() {
-    if (_index + 1 >= _history.length) _appendRound();
+    if (_index + 1 >= _history.length) {
+      _history.add(dealSnippet(_pool, _history, _random));
+    }
     final song = _history[_index + 1].song;
     _next = song == _history[_index].song ? _current : StepsLoader.load(song);
   }
@@ -92,6 +100,10 @@ class _SnippetFeedPageState extends State<SnippetFeedPage> {
     }
     final snippet = _history[_index];
     final song = _songs[snippet.song]!;
+    final name = snippet.label.isEmpty
+        ? sectionLabel(
+            (snippet.startBeat, snippet.endBeat), song.timeSignatures)
+        : snippet.label;
     return KeyedSubtree(
       key: ValueKey(_index),
       child: ChartPreviewPage.forChart(
@@ -102,10 +114,7 @@ class _SnippetFeedPageState extends State<SnippetFeedPage> {
         stepsFuture: _current,
         autoPlay: true,
         onSwipeSnippet: _navigate,
-        feedLabel: '${snippet.label.isEmpty ? sectionLabel((
-                snippet.startBeat,
-                snippet.endBeat
-              ), song.timeSignatures) : snippet.label} · ${_index + 1} · Swipe up for next',
+        feedLabel: '$name · ${_index + 1} · Swipe up for next',
       ),
     );
   }

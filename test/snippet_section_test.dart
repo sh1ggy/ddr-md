@@ -3,11 +3,15 @@
 /// Description: Picking a snippet with the selector button and scrub control.
 library;
 
+import 'dart:math';
+
+import 'package:ddr_md/components/snippets/snippet_feed_page.dart';
 import 'package:ddr_md/components/song/notes/chart_models.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song/notes/chart_painter.dart';
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -103,5 +107,30 @@ void main() {
     expect(direction, -1);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 400));
+  });
+  test('shuffle skips recent snippets and alternates songs', () {
+    final pool = [
+      for (int i = 0; i < 6; i++)
+        Snippet(
+            createdAt: '',
+            song: 'song${i % 3}',
+            mode: Modes.singles,
+            difficulty: 'hard',
+            chartHash: '',
+            startBeat: 0,
+            endBeat: 4)
+    ];
+    final random = Random(1);
+    final dealt = <Snippet>[];
+    for (int i = 0; i < 300; i++) {
+      dealt.add(dealSnippet(pool, dealt, random));
+    }
+    for (int i = 1; i < dealt.length; i++) {
+      expect(dealt[i].song, isNot(dealt[i - 1].song));
+      for (int back = 1; back <= 3 && back <= i; back++) {
+        expect(dealt[i].id, isNot(dealt[i - back].id));
+      }
+    }
+    expect(dealt.map((s) => s.id).toSet(), hasLength(6));
   });
 }

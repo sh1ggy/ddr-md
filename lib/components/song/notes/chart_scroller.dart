@@ -1256,10 +1256,19 @@ class _ChartScrollerState extends State<ChartScroller>
     }
   }
 
+  // The footwork's occurrences, kept to the snippet's section when there is one.
+  Iterable<(Pattern, double, double)> get _spans {
+    final rows = _sectionRows;
+    return rows == null
+        ? _footwork!.spans
+        : _footwork!.spans
+            .where((s) => s.$2 >= rows.$1 - 1e-6 && s.$3 <= rows.$2 + 1e-6);
+  }
+
   void _collectHits() {
     final p = _pattern;
     final spans = [
-      for (final s in _footwork!.spans)
+      for (final s in _spans)
         if (s.$1 == p) (s.$2, s.$3)
     ]..sort((a, b) => a.$1.compareTo(b.$1));
     _hits = [
@@ -1309,21 +1318,27 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
-  // The chart's patterns as this preview foots them; tapping one highlights it.
+  // The chart's (or snippet's) patterns as this preview foots them; tapping one
+  // highlights it.
   Future<void> _openBreakdown(BuildContext context) async {
-    final counts = _footwork!;
+    final counts = <Pattern, int>{};
+    for (final s in _spans) {
+      counts[s.$1] = (counts[s.$1] ?? 0) + 1;
+    }
     final present = [
       for (final p in Pattern.values)
-        if (counts.count(p) > 0) p
+        if (counts.containsKey(p)) p
     ];
     final picked = await showModalBottomSheet<Pattern>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
         child: present.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Text('No patterns in this chart'),
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Text(_sectionRows == null
+                    ? 'No patterns in this chart'
+                    : 'No patterns in this section'),
               )
             : ListView(
                 shrinkWrap: true,
@@ -1332,7 +1347,7 @@ class _ChartScrollerState extends State<ChartScroller>
                     ListTile(
                       leading: Icon(kPatternIcons[p]),
                       title: Text(kPatternLabels[p]!),
-                      trailing: Text('${counts.count(p)}',
+                      trailing: Text('${counts[p]}',
                           style: const TextStyle(
                               fontSize: 15, fontWeight: FontWeight.w700)),
                       selected: p == _pattern,
@@ -1758,6 +1773,7 @@ class _ChartScrollerState extends State<ChartScroller>
       _sectionNotes = notes.toSet();
     }
     _buildTickTimes();
+    if (_footwork != null) _collectHits();
   }
 
   void _moveEndpoint(bool start, double y) {
