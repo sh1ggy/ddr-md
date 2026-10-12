@@ -29,9 +29,9 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>your usage description here</string>
+	<string>DDR MD uses the camera to read your score from a cabinet's result screen. Frames are processed on your device and never uploaded.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>your usage description here</string>
+	<string>DDR MD never records audio. iOS lists this because of the audio engine behind the assist tick.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

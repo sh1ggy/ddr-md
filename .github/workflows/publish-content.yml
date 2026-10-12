@@ -1,7 +1,8 @@
 # Publishes chart content for over-the-air updates. Called by the private
 # content repo (its caller, infra/publish.yml, is written there by Terraform):
 # builds that repo's songs, steps and jackets with this repo's generators and
-# deploys build/content to Cloudflare Pages, only when something changed.
+# deploys build/content (and the privacy page) to Cloudflare Pages, only when
+# something changed.
 name: Publish content
 
 on:
@@ -135,7 +136,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
         run: |
-          if [ "$(jq -r .id build/content/manifest.json)" = "$(jq -r '.id // empty' live_manifest.json)" ]; then
+          curl -sS -o live_privacy.html "${{ inputs.content-url }}/privacy" || true
+          if [ "$(jq -r .id build/content/manifest.json)" = "$(jq -r '.id // empty' live_manifest.json)" ] \
+              && cmp -s build/content/privacy.html live_privacy.html; then
             echo "Unchanged since the live publish, nothing to deploy"
             exit 0
           fi

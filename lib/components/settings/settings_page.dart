@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/settings/footing_style_page.dart';
+import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
@@ -141,6 +142,17 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     const _SectionHeader('Content'),
                     const _ContentCard(),
+                    const _SectionHeader('About'),
+                    Card(
+                      child: ListTile(
+                        title: const Text("Privacy",
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => const PrivacyPage())),
+                      ),
+                    ),
                   ],
                 ),
               ),
