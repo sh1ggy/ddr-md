@@ -5,6 +5,7 @@
 library;
 
 import 'package:ddr_md/components/snippets/snippet_chart_picker.dart';
+import 'package:ddr_md/components/snippets/snippet_feed_page.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song/notes/section_bar.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -42,8 +43,8 @@ class _SnippetsPageState extends State<SnippetsPage> {
 
   Future<void> _add() async {
     HapticFeedback.selectionClick();
-    await Navigator.push<Snippet>(context,
-        MaterialPageRoute(builder: (_) => const SnippetChartPicker()));
+    await Navigator.push<Snippet>(
+        context, MaterialPageRoute(builder: (_) => const SnippetChartPicker()));
     _load();
   }
 
@@ -86,6 +87,31 @@ class _SnippetsPageState extends State<SnippetsPage> {
     _load();
   }
 
+  Future<void> _menu(Snippet s) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(
+            leading: const Icon(Icons.edit_outlined),
+            title: const Text('Rename'),
+            onTap: () => Navigator.pop(context, 'rename')),
+        ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: const Text('Delete'),
+            onTap: () => Navigator.pop(context, 'delete')),
+      ])),
+    );
+    if (!mounted) return;
+    if (action == 'rename') await _rename(s);
+    if (action == 'delete') {
+      setState(() =>
+          _snippets = _snippets?.where((item) => item.id != s.id).toList());
+      await _delete(s);
+    }
+  }
+
   Future<void> _delete(Snippet s) async {
     await DatabaseProvider.deleteSnippet(s.id);
     _load();
@@ -108,11 +134,20 @@ class _SnippetsPageState extends State<SnippetsPage> {
   Widget build(BuildContext context) {
     final snippets = _snippets;
     return Scaffold(
-      appBar: AppBar(title: const Text('Snippets')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _add,
-        icon: const Icon(Icons.add),
-        label: const Text('Add snippet'),
+      appBar: AppBar(
+        elevation: 2,
+        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        title: const Text('Snippets',
+            style: TextStyle(
+                fontSize: 20,
+                color: Colors.blueGrey,
+                fontWeight: FontWeight.w600)),
+        actions: [
+          IconButton(
+              onPressed: _add,
+              tooltip: 'Add snippet',
+              icon: const Icon(Icons.add_rounded))
+        ],
       ),
       body: snippets == null
           ? const Center(child: CircularProgressIndicator())
@@ -127,11 +162,33 @@ class _SnippetsPageState extends State<SnippetsPage> {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 88),
-                  itemCount: snippets.length,
-                  itemBuilder: (context, i) => _tile(snippets[i]),
-                ),
+              : Column(children: [
+                  Align(
+                      alignment: Alignment.centerRight,
+                      child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          child: FilledButton.icon(
+                            onPressed: snippets.any((s) => _songOf(s) != null)
+                                ? () async {
+                                    await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) => SnippetFeedPage(
+                                                snippets: snippets)));
+                                    _load();
+                                  }
+                                : null,
+                            icon: const Icon(Icons.shuffle_rounded),
+                            label: const Text('Play shuffle'),
+                          ))),
+                  Expanded(
+                      child: ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    itemCount: snippets.length,
+                    itemBuilder: (context, i) => _tile(snippets[i]),
+                  )),
+                ]),
     );
   }
 
@@ -185,7 +242,11 @@ class _SnippetsPageState extends State<SnippetsPage> {
         isThreeLine: true,
         enabled: song != null,
         onTap: song == null ? null : () => _open(s, song),
-        onLongPress: () => _rename(s),
+        onLongPress: () => _menu(s),
+        trailing: IconButton(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'Snippet actions',
+            onPressed: () => _menu(s)),
       ),
     );
   }

@@ -121,6 +121,8 @@ class ChartScroller extends StatefulWidget {
     this.pickSection = false,
     this.onSectionChanged,
     this.onSaveSection,
+    this.autoPlay = false,
+    this.onSwipeSnippet,
   });
 
   final ChartSteps steps;
@@ -129,6 +131,8 @@ class ChartScroller extends StatefulWidget {
   /// of the chart dims.
   final BeatRange? section;
   final VoidCallback? onSaveSection;
+  final bool autoPlay;
+  final ValueChanged<int>? onSwipeSnippet;
 
   /// A selector button picks [section]'s first and last rows,
   /// then whichever end is nearer moves. Reported through [onSectionChanged].
@@ -458,12 +462,10 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // [ChartScroller.section] in seconds: its first and last rows, the loop it
   // plays (a bar's run-up to a beat past its last note or hold tail), and its
-  // notes, which stay lit while the rest dims. [_sectionStart] is the first
-  // row tapped while picking, until the last one is.
+  // notes, which stay lit while the rest dims.
   (double, double)? _sectionRows;
   (double, double)? _loop;
   Set<StepNote> _sectionNotes = const {};
-  StepNote? _sectionStart;
 
   // Chart notes ascending by second, plus the holds alone in the same order.
   // Sorted order is what lets the painter binary-search the visible window each
@@ -643,6 +645,11 @@ class _ChartScrollerState extends State<ChartScroller>
     } else if (_loop case (final from, _)) {
       _second = from;
     }
+    if (widget.autoPlay) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _play();
+      });
+    }
     // Prefer real DDR World sprites if they're bundled; repaint once loaded.
     if (_skin == null) {
       SpriteNoteskin.tryLoad().then((skin) {
@@ -731,9 +738,6 @@ class _ChartScrollerState extends State<ChartScroller>
     if (old.section != widget.section) {
       setState(_buildSection);
       _resyncTickClock();
-    }
-    if (old.pickSection && !widget.pickSection) {
-      setState(() => _sectionStart = null);
     }
   }
 
@@ -2268,8 +2272,10 @@ class _ChartScrollerState extends State<ChartScroller>
   static const int _gestureZoom = 3;
   int _gestureMode = _gestureNone;
   Offset _lastScaleFocal = Offset.zero;
+  double _feedSwipeDistance = 0;
 
   void _onScaleStart(ScaleStartDetails d) {
+    _feedSwipeDistance = 0;
     _gestureMode = _gestureNone; // decided on first movement
     _lastScaleFocal = d.localFocalPoint;
     _pinchStartZoom = _zoom;
@@ -2301,17 +2307,30 @@ class _ChartScrollerState extends State<ChartScroller>
       if (delta == Offset.zero) return;
       _gestureMode =
           delta.dy.abs() >= delta.dx.abs() ? _gestureScrub : _gestureSpeed;
-      if (_gestureMode == _gestureScrub) _onScrubStart();
+      if (_gestureMode == _gestureScrub && widget.onSwipeSnippet == null) {
+        _onScrubStart();
+      }
     }
 
     if (_gestureMode == _gestureScrub) {
-      _onScrubMove(delta.dy);
+      if (widget.onSwipeSnippet != null) {
+        _feedSwipeDistance += delta.dy;
+      } else {
+        _onScrubMove(delta.dy);
+      }
     } else if (_gestureMode == _gestureSpeed) {
       _onPlaybackRateDrag(delta.dx);
     }
   }
 
   void _onScaleEnd(ScaleEndDetails d) {
+    if (_gestureMode == _gestureScrub && widget.onSwipeSnippet != null) {
+      _gestureMode = _gestureNone;
+      if (_feedSwipeDistance.abs() >= 60) {
+        widget.onSwipeSnippet!(_feedSwipeDistance < 0 ? 1 : -1);
+      }
+      return;
+    }
     if (_gestureMode == _gestureScrub) {
       // Coast a fling from the release velocity, as the old vertical drag did.
       final vPx = d.velocity.pixelsPerSecond.dy;
@@ -2447,8 +2466,6 @@ class _ChartScrollerState extends State<ChartScroller>
                             _pattern == null ? null : kPatternIcons[_pattern],
                         focus: widget.editFooting ? _focus : _sectionNotes,
                         section: _sectionRows,
-                        sectionStart: _sectionStart?.second,
-                        showSelector: false,
                         footPrev:
                             widget.showFootTrails ? visibleLinks : const {},
                         dirs: dirs,

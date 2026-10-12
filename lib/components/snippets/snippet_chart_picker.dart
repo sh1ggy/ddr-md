@@ -61,8 +61,14 @@ class _SnippetChartPickerState extends State<SnippetChartPicker> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        elevation: 2,
+        iconTheme: const IconThemeData(color: Colors.blueGrey),
         title: TextField(
           autofocus: true,
+          style: const TextStyle(
+              fontSize: 20,
+              color: Colors.blueGrey,
+              fontWeight: FontWeight.w600),
           decoration: const InputDecoration(
               hintText: 'Search song...', border: InputBorder.none),
           onChanged: _search,
@@ -78,7 +84,8 @@ class _SnippetChartPickerState extends State<SnippetChartPicker> {
               child: Image(
                 width: 48,
                 height: 48,
-                image: ContentStore.image('assets/jackets-160/${song.name}.png'),
+                image:
+                    ContentStore.image('assets/jackets-160/${song.name}.png'),
                 errorBuilder: (_, __, ___) =>
                     const Icon(Icons.music_note, size: 40),
               ),

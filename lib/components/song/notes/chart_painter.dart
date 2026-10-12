@@ -55,17 +55,10 @@ class ChartPainter extends CustomPainter {
     this.highlights = const [],
     this.highlightIcon,
     this.section,
-    this.sectionStart,
-    this.showSelector = false,
   }) : super(repaint: playhead);
 
   /// The snippet's (first, last) row seconds, banded in [kSectionColor].
   final (double, double)? section;
-
-  /// The first row tapped while picking a section, ruled across the field
-  /// until the last row is tapped.
-  final double? sectionStart;
-  final bool showSelector;
 
   /// Pattern occurrences to mark, (first, last) row seconds sorted by first,
   /// each banded across the field with [highlightIcon] at its start.
@@ -336,14 +329,7 @@ class ChartPainter extends CustomPainter {
       canvas.drawRRect(band, _highlightFillPaint);
       canvas.drawRRect(band, _highlightEdgePaint);
     }
-    final liveSection = sectionStart == null
-        ? section
-        : (
-            math.min(sectionStart!, selectorRow(size)?.second ?? second),
-            math.max(sectionStart!, selectorRow(size)?.second ?? second)
-          );
-    if (liveSection case (final from, final to)
-        when from <= maxT && to >= second) {
+    if (section case (final from, final to) when from <= maxT && to >= second) {
       final band = RRect.fromLTRBR(
           fieldLeft - 6,
           yFor(from) - arrowSize * 0.6,
@@ -360,20 +346,6 @@ class ChartPainter extends CustomPainter {
       canvas.drawLine(
           Offset(x, b), Offset(fieldLeft + 8, b), _sectionEdgePaint);
     }
-    if (sectionStart case final s? when s <= maxT) {
-      final y = yFor(s) - arrowSize * 0.6;
-      canvas.drawLine(Offset(fieldLeft - 6, y), Offset(fieldRight + 6, y),
-          _sectionEdgePaint);
-    }
-
-    if (showSelector) {
-      canvas.drawLine(Offset(0, selectorY(size)),
-          Offset(size.width, selectorY(size)), _sectionEdgePaint);
-      _paintMarkerLabel(
-          canvas, size, selectorY(size), 'SELECTOR', kSectionColor,
-          alignLeft: true);
-    }
-
     // 1) Freeze/hold bodies, behind the receptor and arrowheads. A hold being
     // held has its head clamped to the line, so the body shrinks upward into it
     // and vanishes at the tail.
@@ -646,46 +618,6 @@ class ChartPainter extends CustomPainter {
       if (d < distance) {
         best = n;
         distance = d;
-      }
-    }
-    return best;
-  }
-
-  double selectorY(Size size) => math.max(_receptorTop + 40, size.height * 0.4);
-
-  StepNote? selectorRow(Size size) {
-    final g = _geometry(size);
-    StepNote? best;
-    var distance = double.infinity;
-    for (final n in notes) {
-      if (n.type == StepType.mine) continue;
-      final d = (g.yFor(n.second) - selectorY(size)).abs();
-      if (d < distance) {
-        best = n;
-        distance = d;
-      }
-    }
-    return best;
-  }
-
-  /// A note (not a mine) of the row drawn nearest [y], in any lane: picking a
-  /// section takes whole rows, so a tap anywhere across one counts. Rows just
-  /// past the receptor still count, so the row under it can be picked.
-  StepNote? rowAt(double y, Size size) {
-    final g = _geometry(size);
-    StepNote? best;
-    double bestDist = g.arrowSize;
-    for (int i = _lowerBoundBySecond(notes, second - 1);
-        i < notes.length;
-        i++) {
-      final n = notes[i];
-      if (n.type == StepType.mine) continue;
-      final ny = g.yFor(n.second);
-      if (ny - g.arrowSize > size.height) break;
-      final d = (ny - y).abs();
-      if (d < bestDist) {
-        best = n;
-        bestDist = d;
       }
     }
     return best;
@@ -1152,7 +1084,5 @@ class ChartPainter extends CustomPainter {
       old.visualOffset != visualOffset ||
       old.focus != focus ||
       old.highlights != highlights ||
-      old.section != section ||
-      old.sectionStart != sectionStart ||
-      old.showSelector != showSelector;
+      old.section != section;
 }

@@ -40,6 +40,9 @@ class ChartPreviewPage extends StatefulWidget {
     this.initialSecond,
     this.snippet,
     this.newSnippet = false,
+    this.autoPlay = false,
+    this.onSwipeSnippet,
+    this.feedLabel,
   });
 
   /// The preview of [info]'s [mode] [difficultyKey], its timing taken from the
@@ -52,6 +55,9 @@ class ChartPreviewPage extends StatefulWidget {
     double? initialSecond,
     Snippet? snippet,
     bool newSnippet = false,
+    bool autoPlay = false,
+    ValueChanged<int>? onSwipeSnippet,
+    String? feedLabel,
   }) {
     final difficulty = mode == Modes.singles ? info.singles : info.doubles;
     final i = difficulty.availableTypes.indexOf(difficultyKey);
@@ -77,6 +83,9 @@ class ChartPreviewPage extends StatefulWidget {
       initialSecond: initialSecond,
       snippet: snippet,
       newSnippet: newSnippet,
+      autoPlay: autoPlay,
+      onSwipeSnippet: onSwipeSnippet,
+      feedLabel: feedLabel,
     );
   }
 
@@ -85,6 +94,9 @@ class ChartPreviewPage extends StatefulWidget {
 
   /// Opens picking a new snippet's section; Add saves it and pops with it.
   final bool newSnippet;
+  final bool autoPlay;
+  final ValueChanged<int>? onSwipeSnippet;
+  final String? feedLabel;
 
   /// The (already in-flight) lazy load of the song's step file, shared with the
   /// song page so opening the preview doesn't re-read the asset.
@@ -304,6 +316,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               key: ValueKey(
                   "${widget.title}-${widget.mode.name}-${widget.difficultyKey}"),
               steps: steps,
+              autoPlay: widget.autoPlay,
+              onSwipeSnippet: _picking ? null : widget.onSwipeSnippet,
               mode: widget.mode,
               songLength: widget.songLength,
               chartBpm: widget.chartBpm,
@@ -421,6 +435,10 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                           fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (widget.feedLabel != null)
+                      Text(widget.feedLabel!,
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 12)),
                     Text(
                       difficultyLabel,
                       style: TextStyle(
