@@ -43,6 +43,10 @@ class Settings {
   // where the parity solve stands the player at the playhead. 0/1.
   static const String dancingFeetOnKey = "chartPreviewDancingFeetOn";
 
+  // The 3D dancer behind the chart preview (an easter egg: triple-tap the
+  // dancing-feet pad). 0/1.
+  static const String padDancerOnKey = "chartPreviewPadDancerOn";
+
   // Where the user has dragged the dancing-feet pad, as THOUSANDTHS of the
   // field's free space, PLUS ONE. Stored as a fraction rather than pixels so
   // the pad returns to the same spot on a different screen size or after a

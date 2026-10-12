@@ -30,6 +30,7 @@ import 'chart_painter.dart';
 import 'chart_timing.dart';
 import 'dancing_feet.dart';
 import 'density_scrub_bar.dart';
+import 'pad_dancer.dart';
 import 'tick_clock.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -321,8 +322,8 @@ class _ChartScrollerState extends State<ChartScroller>
   // put). OFF by default; persisted across previews. See [_Turn].
   _Turn _turn = _Turn.off;
 
-  Guideline _guideline = Guideline.values[
-      Settings.getInt(Settings.guidelineKey).clamp(0, Guideline.values.length - 1)];
+  Guideline _guideline = Guideline.values[Settings.getInt(Settings.guidelineKey)
+      .clamp(0, Guideline.values.length - 1)];
 
   // ARCADE SYNC: master switch for the cabinet timing simulation. While off,
   // both offsets below are ignored and their controls stay hidden. Turning it
@@ -418,6 +419,18 @@ class _ChartScrollerState extends State<ChartScroller>
   // always agree.
   Map<StepNote, Foot> _feet = const {};
   List<ParityStance> _stances = const [];
+  // The notes that solve ran on (turned), for the pad dancer's holds.
+  List<StepNote> _turnedNotes = const [];
+
+  // The pad dancer behind the field, toggled by triple-tapping the dancing-feet
+  // pad. Persisted like the pad itself.
+  bool _padDancer = Settings.getInt(Settings.padDancerOnKey) == 1;
+  bool get _dancerOn => _padDancer && _stances.isNotEmpty;
+
+  void _togglePadDancer() {
+    setState(() => _padDancer = !_padDancer);
+    Settings.setInt(Settings.padDancerOnKey, _padDancer ? 1 : 0);
+  }
 
   // Patterns read off that same solve, so they agree with the foot guide, and
   // the one picked from the breakdown: its occurrences as (first, last) row
@@ -1192,6 +1205,7 @@ class _ChartScrollerState extends State<ChartScroller>
           source[i]: foot == ParityFoot.left ? Foot.left : Foot.right,
     };
     _stances = analysis.stances;
+    _turnedNotes = turned;
     _footwork = footworkOf(turned, analysis, widget.mode);
     _collectHits();
     if (widget.footingRef != null) {
@@ -2231,6 +2245,20 @@ class _ChartScrollerState extends State<ChartScroller>
                 // Until the skin resolves (first preview of the app run only)
                 // paint nothing: a blank frame is invisible, a receptor-skin
                 // swap is not.
+                if (_dancerOn)
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      painter: PadDancerPainter(
+                        stances: _stances,
+                        notes: _turnedNotes,
+                        playhead: _playhead,
+                        columnCount: dirs.length,
+                        visualOffset: _visualOffsetSeconds,
+                      ),
+                      size: Size.infinite,
+                      willChange: true,
+                    ),
+                  ),
                 if (_skin == null)
                   const SizedBox.expand()
                 else
@@ -2244,6 +2272,7 @@ class _ChartScrollerState extends State<ChartScroller>
                         bpmMarkers: _bpmMarkers,
                         stopMarkers: _stopMarkers,
                         showMeasureLines: widget.showMeasureLines,
+                        paintBackground: !_dancerOn,
                         guideline: _guideline,
                         timeSignatures: widget.timeSignatures,
                         feet: widget.showFootGuide || widget.editFooting
@@ -2457,6 +2486,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 playhead: _playhead,
                 columnCount: dirs.length,
                 visualOffset: _visualOffsetSeconds,
+                onTripleTap: _togglePadDancer,
               ),
             ),
 
@@ -2833,57 +2863,57 @@ class _ChartScrollerState extends State<ChartScroller>
                 ],
               ),
             Row(
-                spacing: 8,
-                children: [
-                  if (widget.onToggleAssistTick != null)
-                    Expanded(
-                      child: TurnTile(
-                        label: "ASSIST TICK",
-                        icon: widget.assistTickOn
-                            ? Icons.volume_up
-                            : Icons.volume_off_outlined,
-                        selected: widget.assistTickOn,
-                        onTap: widget.onToggleAssistTick!,
-                      ),
-                    ),
-                  if (widget.onToggleMeasureLines != null)
-                    Expanded(
-                      child: TurnTile(
-                        label: "MEASURES",
-                        icon: widget.showMeasureLines
-                            ? Icons.straighten
-                            : Icons.straighten_outlined,
-                        selected: widget.showMeasureLines,
-                        onTap: widget.onToggleMeasureLines!,
-                      ),
-                    ),
+              spacing: 8,
+              children: [
+                if (widget.onToggleAssistTick != null)
                   Expanded(
                     child: TurnTile(
-                      label: switch (_guideline) {
-                        Guideline.off => "GUIDELINE",
-                        Guideline.center => "GUIDE CENTER",
-                        Guideline.border => "GUIDE BORDER",
-                      },
-                      icon: _guideline == Guideline.border
-                          ? Icons.border_horizontal
-                          : Icons.drag_handle,
-                      selected: _guideline != Guideline.off,
-                      onTap: _cycleGuideline,
+                      label: "ASSIST TICK",
+                      icon: widget.assistTickOn
+                          ? Icons.volume_up
+                          : Icons.volume_off_outlined,
+                      selected: widget.assistTickOn,
+                      onTap: widget.onToggleAssistTick!,
                     ),
                   ),
-                  if (widget.onToggleArcadeQuant != null)
-                    Expanded(
-                      child: TurnTile(
-                        label: "DDR PALETTE",
-                        icon: widget.arcadeQuantOn
-                            ? Icons.music_note
-                            : Icons.music_note_outlined,
-                        selected: widget.arcadeQuantOn,
-                        onTap: widget.onToggleArcadeQuant!,
-                      ),
+                if (widget.onToggleMeasureLines != null)
+                  Expanded(
+                    child: TurnTile(
+                      label: "MEASURES",
+                      icon: widget.showMeasureLines
+                          ? Icons.straighten
+                          : Icons.straighten_outlined,
+                      selected: widget.showMeasureLines,
+                      onTap: widget.onToggleMeasureLines!,
                     ),
-                ],
-              ),
+                  ),
+                Expanded(
+                  child: TurnTile(
+                    label: switch (_guideline) {
+                      Guideline.off => "GUIDELINE",
+                      Guideline.center => "GUIDE CENTER",
+                      Guideline.border => "GUIDE BORDER",
+                    },
+                    icon: _guideline == Guideline.border
+                        ? Icons.border_horizontal
+                        : Icons.drag_handle,
+                    selected: _guideline != Guideline.off,
+                    onTap: _cycleGuideline,
+                  ),
+                ),
+                if (widget.onToggleArcadeQuant != null)
+                  Expanded(
+                    child: TurnTile(
+                      label: "DDR PALETTE",
+                      icon: widget.arcadeQuantOn
+                          ? Icons.music_note
+                          : Icons.music_note_outlined,
+                      selected: widget.arcadeQuantOn,
+                      onTap: widget.onToggleArcadeQuant!,
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

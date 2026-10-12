@@ -44,6 +44,7 @@ class ChartPainter extends CustomPainter {
     required this.skin,
     required this.playing,
     this.showMeasureLines = false,
+    this.paintBackground = true,
     this.guideline = Guideline.off,
     this.timeSignatures = const [],
     this.zoom = 1.0,
@@ -126,6 +127,9 @@ class ChartPainter extends CustomPainter {
   /// does nothing on charts with no BPM data.
   final bool showMeasureLines;
 
+  /// Off when something behind the field (the pad dancer) paints its own.
+  final bool paintBackground;
+
   /// Needs the beat axis too.
   final Guideline guideline;
 
@@ -185,7 +189,8 @@ class ChartPainter extends CustomPainter {
       draw();
       return;
     }
-    canvas.saveLayer(bounds, Paint()..color = Colors.white.withValues(alpha: alpha));
+    canvas.saveLayer(
+        bounds, Paint()..color = Colors.white.withValues(alpha: alpha));
     draw();
     canvas.restore();
   }
@@ -220,7 +225,7 @@ class ChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    _paintBackground(canvas, size);
+    if (paintBackground) _paintBackground(canvas, size);
     // The cabinet's screen ends where its bottom edge falls; arrows emerge from
     // there rather than from the bottom of a taller phone.
     final edge = _receptorTop +
@@ -241,8 +246,7 @@ class ChartPainter extends CustomPainter {
     // TURN modifier: a note originally in column `c` is drawn in `turned(c)`,
     // taking that panel's glyph orientation. Bounds-guarded so a mismatched map
     // (e.g. mode/width change mid-frame) falls back to the note's own column.
-    int turned(int c) =>
-        (c >= 0 && c < colMap.length) ? colMap[c] : c;
+    int turned(int c) => (c >= 0 && c < colMap.length) ? colMap[c] : c;
 
     _paintLanes(canvas, size, fieldLeft, laneStride, _receptorTop);
 
@@ -275,7 +279,8 @@ class ChartPainter extends CustomPainter {
         _receptorTop - arrowSize * noteFlashPeakScale / 2 - arrowSize * 0.12;
     final clipTop = flashTop < topInset ? topInset : flashTop;
     canvas.save();
-    canvas.clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
+    canvas
+        .clipRect(Rect.fromLTWH(0, clipTop, size.width, size.height - clipTop));
 
     // Marker lines sit on the guideline (BORDER moves it to the arrows' leading
     // edge) so a BPM change or stop never draws as a second line beside it.
@@ -291,9 +296,15 @@ class ChartPainter extends CustomPainter {
     }
 
     if (guideline != Guideline.off && beatLocked) {
-      _paintGuideline(canvas, yFor, lineShift, currentBeat,
+      _paintGuideline(
+          canvas,
+          yFor,
+          lineShift,
+          currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat + 1,
-          fieldLeft, laneStride * columnCount, arrowSize);
+          fieldLeft,
+          laneStride * columnCount,
+          arrowSize);
     }
 
     // 0) Timing markers (BPM changes and stops), base layer: lines/bands drawn
@@ -336,12 +347,12 @@ class ChartPainter extends CustomPainter {
       _fadeLayer(
           canvas,
           holdAlpha,
-          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize,
-              holdX + arrowSize, tailY + arrowSize), () {
+          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize, holdX + arrowSize,
+              tailY + arrowSize), () {
         skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
             n.type == StepType.roll);
-        skin.paintHoldTail(
-            canvas, holdX, tailY, arrowSize, dirs[col], n.type == StepType.roll);
+        skin.paintHoldTail(canvas, holdX, tailY, arrowSize, dirs[col],
+            n.type == StepType.roll);
       });
     }
 
@@ -352,8 +363,9 @@ class ChartPainter extends CustomPainter {
     // arrivals past the playhead at arbitrary speed, strobing the whole field.
     final arrivals = <int, double>{};
     if (playing) {
-      const longest =
-          _flashSeconds > receptorRecoilSeconds ? _flashSeconds : receptorRecoilSeconds;
+      const longest = _flashSeconds > receptorRecoilSeconds
+          ? _flashSeconds
+          : receptorRecoilSeconds;
       for (int i = _lowerBoundBySecond(notes, second) - 1; i >= 0; i--) {
         final n = notes[i];
         final age = second - n.second;
@@ -369,9 +381,8 @@ class ChartPainter extends CustomPainter {
     // there is no input here, so it hangs off the note instead.
     for (int c = 0; c < columnCount; c++) {
       final age = arrivals[c];
-      final recoil = age == null
-          ? 1.0
-          : receptorRecoilCurve(age / receptorRecoilSeconds);
+      final recoil =
+          age == null ? 1.0 : receptorRecoilCurve(age / receptorRecoilSeconds);
       skin.paintReceptor(canvas, laneCenterX(c), _receptorTop,
           arrowSize * recoil, dirs[c], glow * 0.9);
     }
@@ -443,9 +454,7 @@ class ChartPainter extends CustomPainter {
       if ((n.endSecond ?? n.second) < second) continue;
       drawHead(n, true);
     }
-    for (int i = _lowerBoundBySecond(notes, second);
-        i < notes.length;
-        i++) {
+    for (int i = _lowerBoundBySecond(notes, second); i < notes.length; i++) {
       final n = notes[i];
       if (n.second > maxT) break;
       drawHead(n, false);
@@ -498,7 +507,8 @@ class ChartPainter extends CustomPainter {
     final laneStride = arrowSize;
     final fieldLeft = (size.width - laneStride * columnCount) / 2;
 
-    double laneCenterX(int col) => fieldLeft + laneStride * col + laneStride / 2;
+    double laneCenterX(int col) =>
+        fieldLeft + laneStride * col + laneStride / 2;
 
     // Beat-locked scroll (true DDR): a note's screen position is its beat
     // distance from the playhead's, so BPM changes speed the field up/down and
@@ -509,8 +519,7 @@ class ChartPainter extends CustomPainter {
     // can scroll through rather than the collapsed seam playback shows. This
     // deliberately shifts the layout between play and scroll.
     final bool expandStops = beatLocked && !playing;
-    final double currentStop =
-        expandStops ? timing.stopSecondsAt(second) : 0;
+    final double currentStop = expandStops ? timing.stopSecondsAt(second) : 0;
     double yFor(double t) {
       if (!beatLocked) return _receptorTop + (t - second) * pxPerSecond;
       var y = _receptorTop + (timing.beatAt(t) - currentBeat) * pxPerBeat;
@@ -694,8 +703,9 @@ class ChartPainter extends CustomPainter {
   // through [yFor], so the rules ride BPM changes and stops rather than being a
   // fixed pixel grid; bars number from 1 at beat 0 (editor convention). Two
   // z-layers, like [_paintTimingMarkers].
-  void _paintMeasureLines(Canvas canvas, Size size, double Function(double) yFor,
-      double currentBeat, double maxBeat, {required bool labels}) {
+  void _paintMeasureLines(Canvas canvas, Size size,
+      double Function(double) yFor, double currentBeat, double maxBeat,
+      {required bool labels}) {
     // Zoomed out the rules crowd together, so number only every fourth one and
     // let the rest read as plain ruling.
     final labelEvery = pxPerBeat * 4 < 46 ? 4 : 1;
@@ -718,9 +728,15 @@ class ChartPainter extends CustomPainter {
   // arrows, hang down from their position, and fade out over two thirds of an
   // arrow once the beat itself has passed the receptor, whatever the [shift].
   // A beat carrying a BPM change or stop gives its line to that marker.
-  void _paintGuideline(Canvas canvas, double Function(double) yFor,
-      double shift, double currentBeat, double maxBeat, double left,
-      double width, double arrowSize) {
+  void _paintGuideline(
+      Canvas canvas,
+      double Function(double) yFor,
+      double shift,
+      double currentBeat,
+      double maxBeat,
+      double left,
+      double width,
+      double arrowSize) {
     final taken = [
       for (final b in bpmMarkers) timing.beatAt(b.second),
       for (final s in stopMarkers) timing.beatAt(s.second),
@@ -735,8 +751,7 @@ class ChartPainter extends CustomPainter {
       if (past >= 1) continue;
       final alpha = (l.bar ? 255 : 63) / 255 * (1 - past.clamp(0.0, 1.0));
       paint.color = Colors.white.withValues(alpha: alpha);
-      canvas.drawRect(
-          Rect.fromLTWH(left, y + shift, width, thickness), paint);
+      canvas.drawRect(Rect.fromLTWH(left, y + shift, width, thickness), paint);
     }
   }
 
@@ -783,8 +798,10 @@ class ChartPainter extends CustomPainter {
       final band = Rect.fromLTRB(0, yBot, size.width, yTop);
       canvas.drawRect(band, _stopBandPaint);
       // Edges of the band, brighter, so even a near-instant stop stays visible.
-      canvas.drawLine(Offset(0, yTop), Offset(size.width, yTop), _stopEdgePaint);
-      canvas.drawLine(Offset(0, yBot), Offset(size.width, yBot), _stopEdgePaint);
+      canvas.drawLine(
+          Offset(0, yTop), Offset(size.width, yTop), _stopEdgePaint);
+      canvas.drawLine(
+          Offset(0, yBot), Offset(size.width, yBot), _stopEdgePaint);
     }
 
     // BPM changes: a thin cool line with the new tempo labelled at the edge.
@@ -988,6 +1005,7 @@ class ChartPainter extends CustomPainter {
       old.skin != skin ||
       old.playing != playing ||
       old.showMeasureLines != showMeasureLines ||
+      old.paintBackground != paintBackground ||
       old.guideline != guideline ||
       old.timeSignatures != timeSignatures ||
       old.zoom != zoom ||

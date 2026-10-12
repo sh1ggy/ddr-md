@@ -77,9 +77,8 @@ double turnFor(int leftCol, int rightCol, {double previous = 0}) {
 /// a scooby walks you round step by step. Landing crossed off a jump, re-pressing
 /// a panel or stepping back out of a cross never turns you further — you stay
 /// facing the screen with your legs crossed, or ease back towards it.
-@visibleForTesting
-double stepTurn(double previous, int fromLeft, int fromRight, int leftCol,
-    int rightCol) {
+double stepTurn(
+    double previous, int fromLeft, int fromRight, int leftCol, int rightCol) {
   final target = turnFor(leftCol, rightCol, previous: previous);
   final leftMoved = leftCol != fromLeft;
   final rightMoved = rightCol != fromRight;
@@ -115,8 +114,8 @@ const double _pressSeconds = 0.2;
 @visibleForTesting
 double padPressFactor(double sinceStep) {
   if (sinceStep < 0 || sinceStep >= _pressSeconds) return 1.0;
-  final recovered =
-      Curves.easeOutCubic.transform((sinceStep / _pressSeconds).clamp(0.0, 1.0));
+  final recovered = Curves.easeOutCubic
+      .transform((sinceStep / _pressSeconds).clamp(0.0, 1.0));
   return _pressScale + (1 - _pressScale) * recovered;
 }
 
@@ -141,7 +140,11 @@ class DancingFeet extends StatefulWidget {
     required this.playhead,
     required this.columnCount,
     this.visualOffset = 0,
+    this.onTripleTap,
   });
+
+  /// Three quick taps on the pad. Unadvertised: it toggles the pad dancer.
+  final VoidCallback? onTripleTap;
 
   /// The solved stance timeline, ascending by second.
   final List<ParityStance> stances;
@@ -177,6 +180,22 @@ class _DancingFeetState extends State<DancingFeet> {
   // Picked up by a long press: while held, the pad follows the finger and lifts
   // visually so it's clear it's being moved rather than merely touched.
   bool _dragging = false;
+
+  DateTime? _firstTap;
+  int _taps = 0;
+
+  void _onTap() {
+    final now = DateTime.now();
+    if (_firstTap == null ||
+        now.difference(_firstTap!) > const Duration(milliseconds: 700)) {
+      _firstTap = now;
+      _taps = 0;
+    }
+    if (++_taps == 3) {
+      _firstTap = null;
+      widget.onTripleTap?.call();
+    }
+  }
 
   // The previous update's cumulative offset, so moves apply as deltas.
   Offset _lastDrag = Offset.zero;
@@ -242,6 +261,12 @@ class _DancingFeetState extends State<DancingFeet> {
               // letting them fall through to the field.
               behavior: HitTestBehavior.opaque,
               gestures: {
+                if (widget.onTripleTap != null)
+                  TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                      TapGestureRecognizer>(
+                    () => TapGestureRecognizer(debugOwner: this),
+                    (r) => r.onTap = _onTap,
+                  ),
                 LongPressGestureRecognizer:
                     GestureRecognizerFactoryWithHandlers<
                         LongPressGestureRecognizer>(
@@ -455,11 +480,10 @@ class _PadPainter extends CustomPainter {
     final sinceStep = second - current.second;
     final t = sinceStep >= _stepSeconds
         ? 1.0
-        : Curves.easeOutCubic.transform((sinceStep / _stepSeconds).clamp(0.0, 1.0));
+        : Curves.easeOutCubic
+            .transform((sinceStep / _stepSeconds).clamp(0.0, 1.0));
 
-    final lit = sinceStep <= _flashSeconds
-        ? current.stepped
-        : const <int>{};
+    final lit = sinceStep <= _flashSeconds ? current.stepped : const <int>{};
     _paintPanels(canvas, pointFor, unit, lit,
         flash: sinceStep <= _flashSeconds
             ? 1 - (sinceStep / _flashSeconds).clamp(0.0, 1.0)
@@ -468,8 +492,8 @@ class _PadPainter extends CustomPainter {
     // The body's turn, slid alongside the feet so a crossover winds round as the
     // foot travels rather than snapping square on the landing frame. One angle
     // for both feet: the waist turns and the whole body follows.
-    final turn = _lerpAngle(_turns[previous == null ? idx - 1 : idx - 2],
-        _turns[idx - 1], t);
+    final turn = _lerpAngle(
+        _turns[previous == null ? idx - 1 : idx - 2], _turns[idx - 1], t);
 
     for (final foot in ParityFoot.values) {
       final to = _poseFor(current, foot);
@@ -512,7 +536,8 @@ class _PadPainter extends CustomPainter {
     // foot on the left half, rather than drawn on top of each other.
     final left = stance.columnsFor(ParityFoot.left);
     final right = stance.columnsFor(ParityFoot.right);
-    final sharing = left.length == 1 && right.length == 1 && left[0] == right[0];
+    final sharing =
+        left.length == 1 && right.length == 1 && left[0] == right[0];
     return _FootPose(heel == -1 ? toe : heel, toe == -1 ? heel : toe,
         sharing ? (foot == ParityFoot.left ? -0.28 : 0.28) : 0);
   }
@@ -620,7 +645,8 @@ class _PadPainter extends CustomPainter {
     final path = Path()
       ..moveTo(outer, -halfL + width * 0.35)
       // Toe: a rounded cap across the front.
-      ..quadraticBezierTo(outer, -halfL - width * 0.12, 0, -halfL - width * 0.12)
+      ..quadraticBezierTo(
+          outer, -halfL - width * 0.12, 0, -halfL - width * 0.12)
       ..quadraticBezierTo(
           inner, -halfL - width * 0.12, inner, -halfL + width * 0.35)
       // Inner edge: scooped in at the arch before meeting the heel — the hollow
@@ -628,11 +654,13 @@ class _PadPainter extends CustomPainter {
       ..quadraticBezierTo(
           inner * 0.62, halfL * 0.30, innerHeel, halfL - heelW * 0.4)
       // Heel: a rounded cap across the back.
-      ..quadraticBezierTo(innerHeel, halfL + heelW * 0.35, 0, halfL + heelW * 0.35)
+      ..quadraticBezierTo(
+          innerHeel, halfL + heelW * 0.35, 0, halfL + heelW * 0.35)
       ..quadraticBezierTo(
           outerHeel, halfL + heelW * 0.35, outerHeel, halfL - heelW * 0.4)
       // Outer edge: stays full and convex all the way back to the toe.
-      ..quadraticBezierTo(outer * 1.02, halfL * 0.32, outer, -halfL + width * 0.35)
+      ..quadraticBezierTo(
+          outer * 1.02, halfL * 0.32, outer, -halfL + width * 0.35)
       ..close();
 
     canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.55));

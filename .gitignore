@@ -174,3 +174,6 @@ app.*.symbols
 /infra/.terraform/
 /infra/*.tfstate*
 /infra/terraform.tfvars
+
+# Optional local character surface.
+/assets/pad_dancer_body.json
