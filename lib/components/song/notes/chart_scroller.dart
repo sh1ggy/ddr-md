@@ -444,6 +444,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // frame instead of walking the whole chart.
   List<StepNote> _notes = const [];
   List<StepNote> _holds = const [];
+  double _lastNoteEnd = 0;
 
   // Previous same-foot note for each footed note, precomputed so the foot-path
   // pass touches only on-screen notes instead of replaying the chart's L/R walk
@@ -465,6 +466,8 @@ class _ChartScrollerState extends State<ChartScroller>
       for (final n in _notes)
         if (n.isHold) n,
     ];
+    _lastNoteEnd =
+        _notes.fold(0.0, (m, n) => math.max(m, n.endSecond ?? n.second));
   }
 
   // Chain each footed note to the previous note struck by the same foot. Mines
@@ -576,14 +579,11 @@ class _ChartScrollerState extends State<ChartScroller>
   // scroll velocity, and the cabinet's readout ignores it too.
   int get _liveReadSpeed => (_localBpm * _rate).round();
 
-  double get _endSecond =>
-      widget.songLength > 0 ? widget.songLength : _lastNoteSecond();
-
-  double _lastNoteSecond() {
-    if (_notes.isEmpty) return 0;
-    final n = _notes.last;
-    return (n.endSecond ?? n.second) + 1;
-  }
+  // songLength can stop short of the last notes, so playback always runs a
+  // second past them.
+  double get _endSecond => _notes.isEmpty
+      ? widget.songLength
+      : math.max(widget.songLength, _lastNoteEnd + 1);
 
   @override
   void initState() {
