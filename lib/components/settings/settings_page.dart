@@ -30,6 +30,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String _rivalCode = constants.rivalCode;
   String _username = constants.username;
   int _heightCm = 0;
+  int _shoeTenths = 0;
 
   @override
   void initState() {
@@ -45,6 +46,18 @@ class _SettingsPageState extends State<SettingsPage> {
       _rivalCode = Settings.getString(Settings.rivalCodeSpeedKey);
       _username = Settings.getString(Settings.usernameKey);
       _heightCm = Settings.getInt(Settings.heightKey);
+      _shoeTenths = Settings.getInt(Settings.shoeSizeKey);
+    });
+  }
+
+  /// EU shoe size, which sizes the pad dancer's shoes against the panels.
+  Future<void> _setShoeSize(String newValue) async {
+    final size = double.tryParse(newValue.replaceAll(',', '.'));
+    if (size == null) return;
+    setState(() {
+      Settings.setInt(
+          Settings.shoeSizeKey, (size * 10).round().clamp(300, 520));
+      _shoeTenths = Settings.getInt(Settings.shoeSizeKey);
     });
   }
 
@@ -143,6 +156,17 @@ class _SettingsPageState extends State<SettingsPage> {
                           : _heightCm,
                       field: "Height (cm)",
                       maxLength: 3,
+                    ),
+                    SettingCard<String>(
+                      setValue: _setShoeSize,
+                      chosenValue:
+                          ((_shoeTenths == 0 ? kShoeSize * 10 : _shoeTenths) /
+                                  10)
+                              .toString()
+                              .replaceFirst(RegExp(r'\.0$'), ''),
+                      field: "Shoe Size (EU)",
+                      maxLength: 4,
+                      digitsOnly: false,
                     ),
                     const _BarGripCard(),
                     const _SectionHeader('Play'),

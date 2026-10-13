@@ -57,6 +57,8 @@ class Settings {
   static const String heightKey = "profileHeightCm";
   static const String barGripKey = "profileBarGrip";
   static const String gripSpotKey = "profileGripSpot";
+  // EU shoe size, tenths (425 = 42.5); 0 = unset.
+  static const String shoeSizeKey = "profileShoeSizeEu10";
 
   // Where the user has dragged the dancing-feet pad, as THOUSANDTHS of the
   // field's free space, PLUS ONE. Stored as a fraction rather than pixels so

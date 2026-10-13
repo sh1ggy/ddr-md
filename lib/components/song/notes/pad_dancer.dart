@@ -23,10 +23,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 // World units are metres: x to the player's right, y up, z toward the screen.
-const double _u = 0.2794; // one panel
+// One stage unit is 910 mm wide: a 3x3 grid of 283 mm panels in a 30 mm rim.
+const double _u = 0.283; // one panel
+const double _rim = 0.0305;
 const double _padY = 0.15; // top of the pad
 const double _stageDepth = 1.085;
-const double _stageFront = 1.5 * _u + 0.035;
+const double _stageFront = 1.5 * _u + _rim;
 const double _stageBack = _stageFront - _stageDepth;
 const double _thigh = 0.44, _shin = 0.43, _upperArm = 0.30, _foreArm = 0.30;
 
@@ -41,7 +43,20 @@ enum BarGrip { overhand, underhand }
 /// Where on the bar the hands go: together on the top, or out on the bends.
 enum GripSpot { middle, edges }
 
-typedef _Rig = ({bool bar, BarGrip grip, GripSpot spot, double k});
+/// Outsole length in metres of a shoe in EU [size]: the last is two thirds of
+/// a centimetre per size, the sole a little longer.
+double shoeLength(double size) => (size * 6.667 + 15) / 1000;
+
+/// EU 42, for a player who hasn't set theirs.
+const double kShoeSize = 42;
+
+typedef _Rig = ({
+  bool bar,
+  BarGrip grip,
+  GripSpot spot,
+  double k,
+  double shoe,
+});
 // Rail centreline dimensions; the padded outside top is 1.09 m above the
 // floor and the outside width is 0.456 m. Geometry notes kept locally.
 const double _barTubeRadius = 0.021;
@@ -645,9 +660,9 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
       side: shoeS,
       up: shoeU,
       fwd: shoeF,
-      len: f.bracket ? 0.16 : 0.135,
+      len: rig.shoe / 2 * (f.bracket ? 1.18 : 1),
     );
-    ankles[foot] = centre + shoeF * -0.07 + shoeU * 0.045;
+    ankles[foot] = centre + shoeF * (-0.26 * rig.shoe) + shoeU * 0.045;
   }
   final fl = pose.feet[ParityFoot.left]!, fr = pose.feet[ParityFoot.right]!;
   final ankL = ankles[ParityFoot.left]!, ankR = ankles[ParityFoot.right]!;
@@ -775,7 +790,7 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
 
 void _buildPad(_Scene s, _Track tr, double t, double pcx, int base) {
   s.box(_V(pcx * _u, _padY / 2, (_stageFront + _stageBack) / 2), _xAxis, _up,
-      _zAxis, 1.5 * _u + 0.035, _padY / 2, _stageDepth / 2, _padBase,
+      _zAxis, 1.5 * _u + _rim, _padY / 2, _stageDepth / 2, _padBase,
       layer: 0);
   const y = _padY + 0.002;
   for (int gx = -1; gx <= 1; gx++) {
@@ -928,7 +943,8 @@ void _buildHands(_Scene s, _Pose p, double k) {
   }
 }
 
-void _buildDancer(_Scene s, _Pose p, double k) {
+void _buildDancer(_Scene s, _Pose p, _Rig rig) {
+  final k = rig.k;
   List<(double, double, double)> sized(List<(double, double, double)> rings) =>
       [for (final (h, w, d) in rings) (h * k, w * k, d * k)];
   final fwd = _fwdOf(p.yaw), side = _rightOf(p.yaw);
@@ -936,7 +952,9 @@ void _buildDancer(_Scene s, _Pose p, double k) {
   for (final foot in ParityFoot.values) {
     final shoe = p.shoes[foot]!, f = p.feet[foot]!;
     final leg = p.legs[foot]!, arm = p.arms[foot]!;
-    s.box(shoe.centre, shoe.side, shoe.up, shoe.fwd, 0.05, 0.035, shoe.len,
+    // About as wide as it is long, the way a trainer is.
+    final halfW = rig.shoe * 0.185;
+    s.box(shoe.centre, shoe.side, shoe.up, shoe.fwd, halfW, 0.035, shoe.len,
         _shoe);
     // Soles in the foot's colour, flaring as it lands.
     final glow = f.stepped && f.landAge < 0.2 ? 1 - f.landAge / 0.2 : 0.0;
@@ -945,7 +963,7 @@ void _buildDancer(_Scene s, _Pose p, double k) {
         shoe.side,
         shoe.up,
         shoe.fwd,
-        0.053,
+        halfW + 0.003,
         0.008,
         shoe.len + 0.004,
         _mix(foot == ParityFoot.left ? _leftC : _rightC, _white, glow * 0.5),
@@ -1021,6 +1039,7 @@ class PadDancerPainter extends CustomPainter {
     this.grip = BarGrip.overhand,
     this.gripSpot = GripSpot.middle,
     this.height = kDancerHeight,
+    this.shoeSize = kShoeSize,
   }) : super(repaint: playhead);
 
   /// The solve's stances and the notes it was solved on (turned), for holds.
@@ -1039,8 +1058,16 @@ class PadDancerPainter extends CustomPainter {
   /// The player's height in metres.
   final double height;
 
-  _Rig get _rig =>
-      (bar: bar, grip: grip, spot: gripSpot, k: height / kDancerHeight);
+  /// EU shoe size, drawn to scale against the panels.
+  final double shoeSize;
+
+  _Rig get _rig => (
+        bar: bar,
+        grip: grip,
+        spot: gripSpot,
+        k: height / kDancerHeight,
+        shoe: shoeLength(shoeSize),
+      );
 
   static _Track? _cache;
 
@@ -1109,7 +1136,7 @@ class PadDancerPainter extends CustomPainter {
     // From behind, the body stands over the centre and Up; drawn see-through
     // so every panel and its lamp stays readable through it.
     final body = _Scene(cam);
-    _buildDancer(body, pose, _rig.k);
+    _buildDancer(body, pose, _rig);
     canvas.saveLayer(body.bounds, _bodyPaint);
     body.draw(canvas);
     canvas.restore();
@@ -1155,6 +1182,7 @@ class PadDancerPainter extends CustomPainter {
       old.grip != grip ||
       old.gripSpot != gripSpot ||
       old.height != height ||
+      old.shoeSize != shoeSize ||
       old.playhead != playhead;
 }
 
@@ -1186,7 +1214,8 @@ class PadDancerPainter extends CustomPainter {
           bar: bar,
           grip: BarGrip.overhand,
           spot: GripSpot.middle,
-          k: 1
+          k: 1,
+          shoe: shoeLength(kShoeSize),
         )).chest +
         const _V(0, 0.06, 0);
     shoulders.add((c.x, c.y, c.z));
