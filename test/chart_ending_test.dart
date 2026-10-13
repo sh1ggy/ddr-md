@@ -64,7 +64,10 @@ void main() {
       await tester.tapAt(const Offset(400, 250));
       await tester.pump(const Duration(milliseconds: 350));
       expect(painter().playing, isTrue);
-      for (var i = 0; i < ((tail - length + 10) * 20).ceil(); i++) {
+      // Opening a chart snaps back to a note row; long ending holds can put
+      // that row well before the requested initial second.
+      final remaining = tail + 2 - painter().playhead.value;
+      for (var i = 0; i < (remaining * 20).ceil(); i++) {
         await tester.pump(const Duration(milliseconds: 50));
       }
       expect(painter().playhead.value, closeTo(tail + 1, 0.001));
