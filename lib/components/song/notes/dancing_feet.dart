@@ -813,9 +813,11 @@ class _PadPainter extends CustomPainter {
     // About 1.8:1, the way a real foot is and the way SMEditor's bot draws it.
     // The length is what gives the silhouette a direction and keeps a bracket's
     // heel/toe legible at this size.
-    // To scale: the shoe's length against the 283 mm panel.
+    // To scale: the shoe's length against the 283 mm panel. The outline
+    // tapers to the heel and scoops at the arch, so it takes a wider forefoot
+    // than a real sole to read as one.
     final length = unit * shoeLength(shoeSize) / kPanelMetres;
-    _drawFootPath(canvas, length * 0.4, length, color, inward);
+    _drawFootPath(canvas, length * 0.55, length, color, inward);
     canvas.restore();
   }
 
