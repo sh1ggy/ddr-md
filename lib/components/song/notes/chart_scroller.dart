@@ -441,7 +441,7 @@ class _ChartScrollerState extends State<ChartScroller>
   };
   final double _shoeSize = switch (Settings.getInt(Settings.shoeSizeKey)) {
     0 => kShoeSize,
-    final tenths => tenths.clamp(300, 520) / 10,
+    final tenths => tenths.clamp(30, 180) / 10,
   };
 
   void _togglePadDancer() {
@@ -2521,6 +2521,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 columnCount: dirs.length,
                 visualOffset: _visualOffsetSeconds,
                 form: _form,
+                shoeSize: _shoeSize,
               ),
             ),
 

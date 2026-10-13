@@ -6,6 +6,7 @@ library;
 import 'package:ddr_md/components/settings/footing_style_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
+import 'package:ddr_md/components/song/notes/dancing_feet.dart';
 import 'package:ddr_md/components/song/notes/pad_dancer.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
@@ -50,13 +51,12 @@ class _SettingsPageState extends State<SettingsPage> {
     });
   }
 
-  /// EU shoe size, which sizes the pad dancer's shoes against the panels.
+  /// Men's US shoe size, which sizes the pad dancer's shoes against the panels.
   Future<void> _setShoeSize(String newValue) async {
     final size = double.tryParse(newValue.replaceAll(',', '.'));
     if (size == null) return;
     setState(() {
-      Settings.setInt(
-          Settings.shoeSizeKey, (size * 10).round().clamp(300, 520));
+      Settings.setInt(Settings.shoeSizeKey, (size * 10).round().clamp(30, 180));
       _shoeTenths = Settings.getInt(Settings.shoeSizeKey);
     });
   }
@@ -164,7 +164,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                   10)
                               .toString()
                               .replaceFirst(RegExp(r'\.0$'), ''),
-                      field: "Shoe Size (EU)",
+                      field: "Shoe Size (US)",
                       maxLength: 4,
                       digitsOnly: false,
                     ),

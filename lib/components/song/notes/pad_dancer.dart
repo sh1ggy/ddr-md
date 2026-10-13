@@ -16,7 +16,15 @@ import 'dart:ui' as ui;
 
 import 'chart_models.dart';
 import 'dancing_feet.dart'
-    show DancerForm, arrowPolygon, formSpot, kPanelChamfer, stepTurn;
+    show
+        DancerForm,
+        arrowPolygon,
+        formSpot,
+        kPanelChamfer,
+        kPanelMetres,
+        kShoeSize,
+        shoeLength,
+        stepTurn;
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
@@ -24,7 +32,7 @@ import 'package:flutter/material.dart';
 
 // World units are metres: x to the player's right, y up, z toward the screen.
 // One stage unit is 910 mm wide: a 3x3 grid of 283 mm panels in a 30 mm rim.
-const double _u = 0.283; // one panel
+const double _u = kPanelMetres; // one panel
 const double _rim = 0.0305;
 const double _padY = 0.15; // top of the pad
 const double _stageDepth = 1.085;
@@ -42,13 +50,6 @@ enum BarGrip { overhand, underhand }
 
 /// Where on the bar the hands go: together on the top, or out on the bends.
 enum GripSpot { middle, edges }
-
-/// Outsole length in metres of a shoe in EU [size]: the last is two thirds of
-/// a centimetre per size, the sole a little longer.
-double shoeLength(double size) => (size * 6.667 + 15) / 1000;
-
-/// EU 42, for a player who hasn't set theirs.
-const double kShoeSize = 42;
 
 typedef _Rig = ({
   bool bar,

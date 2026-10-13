@@ -161,6 +161,16 @@ final Path _arrowPath = () {
   return path..close();
 }();
 
+/// One panel of the gold cabinet's stage: a 283 mm cell.
+const double kPanelMetres = 0.283;
+
+/// Outsole length in metres of a men's US [size] shoe: the last is a third of
+/// an inch per size from 22/3 in, the sole a little longer.
+double shoeLength(double size) => ((size + 22) / 3 * 25.4 + 15) / 1000;
+
+/// US 9, for a player who hasn't set theirs.
+const double kShoeSize = 9;
+
 /// The corners an arrow panel's plate is cut away at, in panel units.
 const double kPanelChamfer = 0.15;
 
@@ -256,9 +266,13 @@ class DancingFeet extends StatefulWidget {
     required this.columnCount,
     this.visualOffset = 0,
     this.form = DancerForm.standard,
+    this.shoeSize = kShoeSize,
   });
 
   final DancerForm form;
+
+  /// US shoe size; the feet are drawn to scale against the panels.
+  final double shoeSize;
 
   /// The solved stance timeline, ascending by second.
   final List<ParityStance> stances;
@@ -394,6 +408,7 @@ class _DancingFeetState extends State<DancingFeet> {
                 columnCount: widget.columnCount,
                 visualOffset: widget.visualOffset,
                 form: widget.form,
+                shoeSize: widget.shoeSize,
               ),
             ),
           ),
@@ -414,6 +429,7 @@ class DancePad extends StatelessWidget {
     required this.columnCount,
     this.visualOffset = 0,
     this.form = DancerForm.standard,
+    this.shoeSize = kShoeSize,
   });
 
   final bool dragging;
@@ -422,6 +438,7 @@ class DancePad extends StatelessWidget {
   final int columnCount;
   final double visualOffset;
   final DancerForm form;
+  final double shoeSize;
 
   @override
   Widget build(BuildContext context) {
@@ -446,6 +463,7 @@ class DancePad extends StatelessWidget {
               columnCount: columnCount,
               visualOffset: visualOffset,
               form: form,
+              shoeSize: shoeSize,
             ),
             size: Size.infinite,
           ),
@@ -482,6 +500,7 @@ class _PadPainter extends CustomPainter {
     required this.columnCount,
     required this.visualOffset,
     required this.form,
+    required this.shoeSize,
   }) : super(repaint: playhead);
 
   final List<ParityStance> stances;
@@ -489,6 +508,7 @@ class _PadPainter extends CustomPainter {
   final int columnCount;
   final double visualOffset;
   final DancerForm form;
+  final double shoeSize;
 
   /// The body's turn at each stance, solved in order since whether a stance
   /// turns you depends on how you stepped into it (see [stepTurn]). Doubles has
@@ -712,7 +732,8 @@ class _PadPainter extends CustomPainter {
     double unit,
     Set<int> lit,
   ) {
-    final h = unit * 0.44, c = unit * 0.88 * kPanelChamfer;
+    // Plates fill their cells but for the seams between them.
+    final h = unit * 0.485, c = unit * 0.97 * kPanelChamfer;
     // Scaled with the canvas, so the blur is in panel units.
     final glow = Paint()
       ..color = _lamp.withValues(alpha: 0.3)
@@ -792,7 +813,9 @@ class _PadPainter extends CustomPainter {
     // About 1.8:1, the way a real foot is and the way SMEditor's bot draws it.
     // The length is what gives the silhouette a direction and keeps a bracket's
     // heel/toe legible at this size.
-    _drawFootPath(canvas, unit * 0.46, unit * 0.82, color, inward);
+    // To scale: the shoe's length against the 283 mm panel.
+    final length = unit * shoeLength(shoeSize) / kPanelMetres;
+    _drawFootPath(canvas, length * 0.4, length, color, inward);
     canvas.restore();
   }
 
@@ -854,5 +877,6 @@ class _PadPainter extends CustomPainter {
       // Without this the feet wouldn't move while dialling VISUAL OFFSET
       // paused — same reason the field's painter watches it.
       old.visualOffset != visualOffset ||
-      old.form != form;
+      old.form != form ||
+      old.shoeSize != shoeSize;
 }
