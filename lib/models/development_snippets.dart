@@ -8,12 +8,13 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:flutter/foundation.dart';
 
 Future<void> seedDevelopmentSnippets() async {
   const marker = 'developmentSnippetsSeededV1';
-  if (Settings.getInt(marker) == 1) return;
   final existing =
       (await DatabaseProvider.getAllSnippets()).map((s) => s.id).toSet();
+  if (Settings.getInt(marker) == 1 && existing.isNotEmpty) return;
   final samples = <Snippet>[
     Snippet(
         id: 'sweep-speed-0',
@@ -292,4 +293,6 @@ Future<void> seedDevelopmentSnippets() async {
     }
   }
   await Settings.setInt(marker, 1);
+  debugPrint(
+      'Development snippets: ${(await DatabaseProvider.getAllSnippets()).length} saved');
 }

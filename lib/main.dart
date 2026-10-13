@@ -27,10 +27,10 @@ void main() async {
   // Initialise global objects
   await Settings.init();
   await DatabaseProvider.init();
+  if (kDebugMode) await seedDevelopmentSnippets();
   final support = await getApplicationSupportDirectory();
   await ContentStore.init(support);
   await Songs.load();
-  if (kDebugMode) await seedDevelopmentSnippets();
 
   // Wrapped app with providers
   runApp(MultiProvider(
