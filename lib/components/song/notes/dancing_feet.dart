@@ -98,14 +98,32 @@ const List<Offset> _panelOffsets = [
   Offset(1, 0), // right
 ];
 
+/// Arrow heading per panel (L D U R) on the canvas, 0 pointing up the pad.
+const List<double> _arrowTurn = [-math.pi / 2, math.pi, 0, math.pi / 2];
+
+/// An arrow in panel units about its panel's centre, pointing up, in the
+/// cabinet pad's proportions (the pad dancer draws the same outline).
+final Path _arrowPath = Path()
+  ..moveTo(0, -0.34)
+  ..lineTo(0.325, -0.05)
+  ..lineTo(0.18, -0.05)
+  ..lineTo(0.18, 0.235)
+  ..lineTo(-0.18, 0.235)
+  ..lineTo(-0.18, -0.05)
+  ..lineTo(-0.325, -0.05)
+  ..close();
+
+/// A lit panel's lamp.
+const Color _lamp = Color(0xFFECF2FF);
+
 /// How far a foot shrinks at the bottom of its press. Seen from above, a foot
 /// coming down reads smaller for the moment it lands, which is what separates a
 /// PLANTED foot from one hovering. Kept small so a stream of steps doesn't turn
 /// into a row of pulsing blobs.
 const double _pressScale = 0.82;
 
-/// Recovery is a shade longer than the panel flash, so the foot is still
-/// settling as the light fades rather than snapping back before it.
+/// Long enough to read as the weight settling, short enough to finish before
+/// the next step in a stream.
 const double _pressSeconds = 0.2;
 
 /// Size multiplier for a foot [sinceStep] seconds after landing: smallest on
@@ -455,8 +473,57 @@ class _PadPainter extends CustomPainter {
   /// that a fast run reads as movement instead of teleporting.
   static const double _stepSeconds = 0.09;
 
-  /// How long a stepped panel stays lit after it is hit.
-  static const double _flashSeconds = 0.16;
+  /// Each foot's arrivals in order: when it lands and the panels under it.
+  late final List<List<(double, List<int>)>> _arrivals = [
+    for (final foot in ParityFoot.values)
+      () {
+        final out = <(double, List<int>)>[];
+        String? prev;
+        for (final s in stances) {
+          final cols = s.columnsFor(foot);
+          if (cols.isEmpty) continue;
+          final key = cols.join(',');
+          if (!cols.any(s.stepped.contains) && key == prev) continue;
+          prev = key;
+          out.add((s.second, cols));
+        }
+        return out;
+      }(),
+  ];
+
+  /// The panels with a foot drawn on them at [t]: lit once a sliding foot is
+  /// halfway onto its panel until it's halfway off, with a short blink before
+  /// a jack re-presses the same panel.
+  Set<int> _pressed(double t) {
+    final lit = <int>{};
+    for (final ev in _arrivals) {
+      var lo = 0, hi = ev.length;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (ev[mid].$1 <= t) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
+        }
+      }
+      // The arrival in force, and the one before it still sliding off.
+      for (final k in [lo - 1, lo - 2]) {
+        if (k < 0) continue;
+        final (at, cols) = ev[k];
+        bool same(int j) => listEquals(ev[j].$2, cols);
+        final start = k > 0 && !same(k - 1) ? at + _stepSeconds / 2 : at;
+        var end = double.infinity;
+        if (k + 1 < ev.length) {
+          final next = ev[k + 1].$1;
+          end = same(k + 1)
+              ? next - math.min(0.05, (next - at) / 3)
+              : next + _stepSeconds / 2;
+        }
+        if (start <= t && t < end) lit.addAll(cols);
+      }
+    }
+    return lit;
+  }
 
   /// The drawn centre of a column, in panel units from the whole pad's centre.
   /// A doubles column past the fourth belongs to the second panel, shifted
@@ -513,11 +580,7 @@ class _PadPainter extends CustomPainter {
         : Curves.easeOutCubic
             .transform((sinceStep / _stepSeconds).clamp(0.0, 1.0));
 
-    final lit = sinceStep <= _flashSeconds ? current.stepped : const <int>{};
-    _paintPanels(canvas, pointFor, unit, lit,
-        flash: sinceStep <= _flashSeconds
-            ? 1 - (sinceStep / _flashSeconds).clamp(0.0, 1.0)
-            : 0);
+    _paintPanels(canvas, pointFor, unit, _pressed(second));
 
     // The body's turn, slid alongside the feet so a crossover winds round as the
     // foot travels rather than snapping square on the landing frame. One angle
@@ -583,28 +646,40 @@ class _PadPainter extends CustomPainter {
     ..strokeWidth = 1
     ..color = Colors.white.withValues(alpha: 0.12);
 
-  /// The four arrow panels, lit briefly as they are stepped on.
+  static final Paint _arrowIdlePaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.16);
+  static final Paint _arrowLitPaint = Paint()..color = _lamp;
+  static final Paint _panelLitPaint = Paint()
+    ..color = _lamp.withValues(alpha: 0.22);
+
+  /// The arrow panels, each arrow lit while a foot is on its panel, the way
+  /// the cabinet's lamps follow the press.
   void _paintPanels(
     Canvas canvas,
     Offset Function(int) pointFor,
     double unit,
-    Set<int> lit, {
-    double flash = 0,
-  }) {
+    Set<int> lit,
+  ) {
     final side = unit * 0.88;
+    final glow = Paint()
+      ..color = _lamp.withValues(alpha: 0.7)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, unit * 0.1);
     for (int col = 0; col < columnCount; col++) {
+      final centre = pointFor(col);
       final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: pointFor(col), width: side, height: side),
+        Rect.fromCenter(center: centre, width: side, height: side),
         Radius.circular(unit * 0.12),
       );
-      canvas.drawRRect(rect, _panelPaint);
+      final on = lit.contains(col);
+      canvas.drawRRect(rect, on ? _panelLitPaint : _panelPaint);
       canvas.drawRRect(rect, _panelBorderPaint);
-      if (lit.contains(col) && flash > 0) {
-        canvas.drawRRect(
-          rect,
-          Paint()..color = Colors.white.withValues(alpha: 0.20 * flash),
-        );
-      }
+      canvas.save();
+      canvas.translate(centre.dx, centre.dy);
+      canvas.rotate(_arrowTurn[col % 4]);
+      canvas.scale(unit);
+      if (on) canvas.drawPath(_arrowPath, glow);
+      canvas.drawPath(_arrowPath, on ? _arrowLitPaint : _arrowIdlePaint);
+      canvas.restore();
     }
   }
 
