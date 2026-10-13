@@ -69,13 +69,21 @@ class ChartTiming {
       stopAccum.add(stopped);
     }
 
+    final segments = [...bpms]..sort((a, b) => a.st.compareTo(b.st));
     int si = 0;
-    for (final seg in bpms) {
+    for (int i = 0; i < segments.length; i++) {
+      final seg = segments[i];
+      // A later tempo starts immediately, even if the previous segment's
+      // metadata extends beyond it. Never integrate overlapping time twice.
+      final end = i + 1 < segments.length
+          ? math.min(seg.ed, segments[i + 1].st)
+          : seg.ed;
+      if (end <= seg.st) continue;
       final bps = seg.val / 60.0; // beats per (musical) second at this tempo
       double cursor = seg.st; // real-second cursor inside this segment
       add(cursor, beat);
       // Fold in any stops that begin within this segment, in order.
-      while (si < sortedStops.length && sortedStops[si].st < seg.ed - 1e-9) {
+      while (si < sortedStops.length && sortedStops[si].st < end - 1e-9) {
         final stop = sortedStops[si];
         if (stop.st >= cursor - 1e-9) {
           // Advance to the stop start, accruing beats over the moving time.
@@ -90,8 +98,8 @@ class ChartTiming {
         si++;
       }
       // Remainder of the segment after the last contained stop.
-      beat += (seg.ed - cursor) * bps;
-      add(seg.ed, beat);
+      beat += (end - cursor) * bps;
+      add(end, beat);
     }
     if (seconds.length < 2) return empty;
     return ChartTiming._(seconds, beats, stopAccum);
@@ -132,7 +140,8 @@ class ChartTiming {
       return _extrapolate(second, 0, 1, fallbackSlope: _slope(0, 1));
     }
     if (second >= _seconds.last) {
-      return _extrapolate(second, n - 2, n - 1, fallbackSlope: _slope(n - 2, n - 1));
+      return _extrapolate(second, n - 2, n - 1,
+          fallbackSlope: _slope(n - 2, n - 1));
     }
     // Binary search for the segment [lo, lo+1] containing `second`.
     int lo = 0, hi = n - 1;
@@ -155,11 +164,15 @@ class ChartTiming {
     if (n == 0) return beat;
     if (beat <= _beats.first) {
       final s = _slope(0, 1);
-      return s.abs() < 1e-9 ? _seconds.first : _seconds.first + (beat - _beats.first) / s;
+      return s.abs() < 1e-9
+          ? _seconds.first
+          : _seconds.first + (beat - _beats.first) / s;
     }
     if (beat >= _beats.last) {
       final s = _slope(n - 2, n - 1);
-      return s.abs() < 1e-9 ? _seconds.last : _seconds.last + (beat - _beats.last) / s;
+      return s.abs() < 1e-9
+          ? _seconds.last
+          : _seconds.last + (beat - _beats.last) / s;
     }
     // Upper-bound search: last index whose beat <= target (beats non-decreasing).
     int lo = 0, hi = n - 1;
@@ -208,9 +221,8 @@ class BarGrid {
   static const double _eps = 1e-6;
 
   // Bar starts of a signature at [s] every [n] beats within [a, b).
-  static int _barsIn(double s, int n, double a, double b) => b <= a
-      ? 0
-      : ((b - s - _eps) / n).ceil() - ((a - s - _eps) / n).ceil();
+  static int _barsIn(double s, int n, double a, double b) =>
+      b <= a ? 0 : ((b - s - _eps) / n).ceil() - ((a - s - _eps) / n).ceil();
 
   /// Lines with beat in [from, to], in order. [number] is the bar's 1-based
   /// count from beat 0, set on bar lines at or after it.
@@ -235,7 +247,9 @@ class BarGrid {
               : null,
         );
       }
-      if (end.isFinite) barsBefore += _barsIn(s, n, counted, math.max(0.0, end));
+      if (end.isFinite) {
+        barsBefore += _barsIn(s, n, counted, math.max(0.0, end));
+      }
       if (end > to) break;
     }
   }

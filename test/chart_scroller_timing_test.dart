@@ -8,6 +8,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('ChartTiming', () {
+    test('overlapping tempo segments switch at the next start', () {
+      final timing = ChartTiming.build([
+        Bpm(st: 0, ed: 10, val: 120),
+        Bpm(st: 5, ed: 10, val: 240),
+      ], const []);
+      expect(timing.beatAt(5), closeTo(10, 1e-6));
+      expect(timing.beatAt(7), closeTo(18, 1e-6));
+      expect(timing.secondAt(18), closeTo(7, 1e-6));
+    });
+
     test('empty without BPM data', () {
       expect(ChartTiming.build(const [], const []).isEmpty, isTrue);
     });
@@ -57,7 +67,8 @@ void main() {
   });
 
   test('BarGrid steps bars from each time signature', () {
-    List<(double, int?)> bars(List<TimeSignature> sigs, double from, double to) =>
+    List<(double, int?)> bars(
+            List<TimeSignature> sigs, double from, double to) =>
         [
           for (final l in BarGrid(sigs).lines(from, to))
             if (l.bar) (l.beat, l.number)
