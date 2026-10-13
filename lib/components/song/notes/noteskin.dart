@@ -7,6 +7,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -96,11 +97,12 @@ abstract class Noteskin {
   /// A single mine centred at (x,y).
   void paintMine(Canvas canvas, double x, double y, double size);
 
-  /// A shock arrow: a light-blue arrow in every lit lane linked by electricity
-  /// across the row at [y]. Each entry of [lanes] is a lane centre-x paired with
-  /// its arrow direction. In DDR a shock is a full row of arrows to avoid.
+  /// A shock row across the affected pad at [y]. Each entry of [lanes] is a
+  /// lane centre-x paired with its arrow direction. [chartSecond] drives the
+  /// animation, keeping all visible shock rows in the same phase.
   void paintShock(
-      Canvas canvas, List<(double x, NoteDir dir)> lanes, double y, double size);
+      Canvas canvas, List<(double x, NoteDir dir)> lanes, double y, double size,
+      {double chartSecond = 0});
 
   /// A receptor ring for one lane, centred at (x,y). [glow] 0..1, high on the
   /// beat flash, low between beats.
@@ -373,7 +375,8 @@ class VectorNoteskin implements Noteskin {
 
   @override
   void paintShock(
-      Canvas canvas, List<(double x, NoteDir dir)> lanes, double y, double size) {
+      Canvas canvas, List<(double x, NoteDir dir)> lanes, double y, double size,
+      {double chartSecond = 0}) {
     if (lanes.isEmpty) return;
     // A DDR shock arrow is an ARROW shape charged with electricity — an
     // electric-blue arrow with a bright glow, a white-hot rim, and a lightning
@@ -530,7 +533,7 @@ class VectorNoteskin implements Noteskin {
 /// grey `note.png` rotated and tinted per quantisation for taps, direction-
 /// oriented `hold-*-{body,tail}.png` for freezes (see docs/noteskin.md). The
 /// tint keeps the authentic arrow shape reading its rhythm at a glance. Mines,
-/// shock arrows and receptors fall back to the vector skin.
+/// receptors fall back to the vector skin. Shocks use a full-pad animated bolt.
 ///
 /// [tryLoad] returns null when the sprites aren't bundled (fresh clone / lite
 /// build), so the caller uses [VectorNoteskin] everywhere instead.
@@ -538,15 +541,21 @@ class SpriteNoteskin implements Noteskin {
   SpriteNoteskin._(
     this._note,
     this._holdBodies,
+    this._holdTails,
+    this._shockRow,
+    this._shockAura,
   );
 
   final ui.Image _note;
   // Per-direction freeze body sprites, keyed by NoteDir.index. Unlike the note
   // glyph (one down-facing arrow rotated per lane), the DDR World freeze body art
   // is authored already oriented for each of L/D/U/R, so we pick the matching
-  // sprite and draw it upright rather than rotating a single one. The tail
-  // end-cap reuses the tinted note sprite instead.
+  // sprite and draw it upright rather than rotating a single one. The tails are
+  // authored the same way.
   final List<ui.Image> _holdBodies;
+  final List<ui.Image> _holdTails;
+  final ui.Image? _shockRow;
+  final ui.Image _shockAura;
 
   // Vector skin handles the elements we didn't extract sprites for.
   static const VectorNoteskin _vector = VectorNoteskin();
@@ -573,9 +582,21 @@ class SpriteNoteskin implements Noteskin {
       final note = await _load('assets/noteskin/note.png');
       // NoteDir order: left, down, up, right (see enum NoteDir).
       const dirNames = ['left', 'down', 'up', 'right'];
-      final bodies = await Future.wait(
-          dirNames.map((d) => _load('assets/noteskin/hold-$d-body.png')));
-      _loadedSkin = SpriteNoteskin._(note, bodies);
+      Future<List<ui.Image>> perDir(String name) => Future.wait(
+          dirNames.map((d) => _load('assets/noteskin/$name'.replaceAll('*', d))));
+      ui.Image? shockRow;
+      try {
+        shockRow = await _load('assets/noteskin/shock-row.png');
+      } catch (_) {
+        // Older asset bundles keep the fallback shock rendering.
+      }
+      _loadedSkin = SpriteNoteskin._(
+        note,
+        await perDir('hold-*-body.png'),
+        await perDir('hold-*-tail.png'),
+        shockRow,
+        await _bakeShockAura(note),
+      );
     } catch (_) {
       _loadedSkin = null; // sprites absent -> vector fallback
     }
@@ -629,48 +650,62 @@ class SpriteNoteskin implements Noteskin {
     canvas.restore();
   }
 
+  static final Paint _rollPaint = Paint()
+    ..colorFilter =
+        const ColorFilter.mode(Color(0xFFF2A03B), BlendMode.modulate)
+    ..filterQuality = FilterQuality.medium;
+  static final Paint _holdPaint = Paint()..filterQuality = FilterQuality.medium;
+
+  // note.png pads its arrow with a 3px margin (90 of 96), while the freeze art
+  // runs edge to edge. Drawn at the arrow's own width, a tail cap's outline is
+  // exactly the bottom half of its arrow's, and the body is the arrow's width.
+  static const double _freezeScale = 90 / 96;
+  // The tail cap's top row continues the body texture 4 texels into a tile.
+  static const double _tailPhaseTexels = 4;
+
   @override
   void paintHoldBody(Canvas canvas, double x, double yHead, double yTail,
       double size, NoteDir dir, bool isRoll) {
-    if (yTail <= yHead) return;
-    // DDR freeze: a GREEN sustain body (constant colour regardless of the head's
-    // quantisation), capped by the note arrow itself. Use full note width so the
-    // freeze reads as the same thickness as the note itself.
-    final w = size;
+    // The body runs from the head down to the top of the tail cap, which sits
+    // where a tap at the tail's second would, so the freeze ends on its beat.
+    final w = size * _freezeScale;
+    final bottom = yTail - w / 2;
+    if (bottom <= yHead) return;
     final body = _holdBodies[dir.index];
-    final bodyRect = Rect.fromLTRB(x - w / 2, yHead, x + w / 2, yTail);
-    canvas.save();
-    canvas.clipRect(bodyRect);
-    final tileH = w * body.height / body.width;
-    final paint = Paint()..filterQuality = FilterQuality.medium;
-    if (isRoll) {
-      paint.colorFilter = const ColorFilter.mode(
-          Color(0xFFF2A03B), BlendMode.modulate);
-    }
-    for (double ty = yHead; ty < yTail; ty += tileH) {
-      _drawImage(canvas, body, Rect.fromLTWH(x - w / 2, ty, w, tileH),
-          paint: paint);
-    }
-    canvas.restore();
-    // The freeze head is the note arrow itself; the painter draws it in the
-    // tap pass, so nothing more is stamped here (avoids the mismatched
-    // hold_head transition frame).
+    final texel = w / body.width;
+    // One rect with the texture repeating down it, so there are no tile edges
+    // to seam. It hangs from the cap in the cap's phase, so the chevrons run on
+    // into it and travel with the chart even while the head is pinned to the
+    // receptor, swallowed there as on the cabinet rather than standing still
+    // under an approaching tail.
+    final anchor = bottom - _tailPhaseTexels * texel;
+    final shader = ImageShader(
+        body,
+        TileMode.clamp,
+        TileMode.repeated,
+        Float64List.fromList([
+          texel, 0, 0, 0, //
+          0, texel, 0, 0, //
+          0, 0, 1, 0, //
+          x - w / 2, anchor, 0, 1,
+        ]),
+        filterQuality: FilterQuality.medium);
+    // Runs on under the cap's opaque top half: two antialiased edges meeting on
+    // one row would leave a hairline.
+    canvas.drawRect(
+        Rect.fromLTRB(x - w / 2, yHead, x + w / 2, bottom + w / 4),
+        Paint()
+          ..shader = shader
+          ..colorFilter = isRoll ? _rollPaint.colorFilter : null);
   }
 
   @override
   void paintHoldTail(
       Canvas canvas, double x, double y, double size, NoteDir dir, bool isRoll) {
-    // End-cap: the ordinary note sprite (keeps its texture/shading), tinted to
-    // the tail colour. No hold-body texture.
-    final tailColor = isRoll
-      ? const Color(0xFFF2A03B)
-      : const Color(0xFF39C46B);
-    canvas.save();
-    canvas.translate(x, y);
-    canvas.rotate(rotationForDir(dir));
-    final dst = Rect.fromCenter(center: Offset.zero, width: size, height: size);
-    _drawImage(canvas, _note, dst, paint: _tintPaint(tailColor));
-    canvas.restore();
+    final w = size * _freezeScale;
+    _drawImage(canvas, _holdTails[dir.index],
+        Rect.fromCenter(center: Offset(x, y), width: w, height: w),
+        paint: isRoll ? _rollPaint : _holdPaint);
   }
 
   @override
@@ -701,9 +736,97 @@ class SpriteNoteskin implements Noteskin {
     canvas.restore();
   }
 
+  static final Paint _shockPaint = Paint()
+    ..filterQuality = FilterQuality.medium
+    ..color = const Color(0xBFFFFFFF);
+
+  // Match the shock palette from dark teal shadows to pale blue highlights,
+  // retaining the tap glyph's silhouette and bevels.
+  static final Paint _shockArrowPaint = Paint()
+    ..filterQuality = FilterQuality.medium
+    ..colorFilter = const ColorFilter.matrix([
+      0.265155, 0.265155, 0.265155, 0.000000, 32.129194,
+      0.263384, 0.263384, 0.263384, 0.000000, 63.284161,
+      0.263384, 0.263384, 0.263384, 0.000000, 67.451100,
+      0.000000, 0.000000, 0.000000, 1.000000, 0.000000,
+    ]);
+
+  static final Paint _shockAuraPaint = Paint()
+    ..filterQuality = FilterQuality.medium
+    ..colorFilter = const ColorFilter.mode(Color(0xC000DFFF), BlendMode.srcIn);
+
+  static final Paint _shockAuraStampPaint = Paint()
+    ..filterQuality = FilterQuality.medium
+    ..blendMode = BlendMode.plus;
+
+  static Future<ui.Image> _bakeShockAura(ui.Image note) async {
+    // One padded, neutral-orientation texture for all lanes and zoom levels.
+    // The source arrow occupies 256px; 64px on each edge contains the blur.
+    const arrow = 256.0;
+    const padding = arrow / 4;
+    const extent = arrow + padding * 2;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.saveLayer(const Rect.fromLTWH(0, 0, extent, extent), Paint()
+      ..imageFilter = ui.ImageFilter.blur(
+          sigmaX: arrow * 0.055, sigmaY: arrow * 0.055));
+    canvas.drawImageRect(note,
+        Rect.fromLTWH(0, 0, note.width.toDouble(), note.height.toDouble()),
+        const Rect.fromLTWH(padding, padding, arrow, arrow),
+        _shockAuraPaint);
+    canvas.restore();
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(extent.toInt(), extent.toInt());
+    picture.dispose();
+    return image;
+  }
+
   @override
   void paintShock(Canvas canvas, List<(double x, NoteDir dir)> lanes, double y,
-      double size) {
+      double size, {double chartSecond = 0}) {
+    final row = _shockRow;
+    if (row != null && lanes.isNotEmpty) {
+      final sorted = [...lanes]..sort((a, b) => a.$1.compareTo(b.$1));
+      // A preblurred texture has padding beyond the arrow, so the aura has
+      // room to spread and the raster thread does no per-row blur work.
+      for (final (x, dir) in sorted) {
+        canvas.save();
+        canvas.translate(x, y);
+        canvas.rotate(rotationForDir(dir));
+        _drawImage(canvas, _shockAura,
+            Rect.fromCenter(center: Offset.zero,
+                width: size * 1.5, height: size * 1.5),
+            paint: _shockAuraStampPaint);
+        canvas.restore();
+      }
+      // Keep directional silhouettes clear underneath the connected electricity.
+      // Each arrow shares the tap geometry; the bolt is composited once per pad.
+      for (final (x, dir) in sorted) {
+        canvas.save();
+        canvas.translate(x, y);
+        canvas.rotate(rotationForDir(dir));
+        _drawImage(canvas, _note,
+            Rect.fromCenter(center: Offset.zero, width: size, height: size),
+            paint: _shockArrowPaint);
+        canvas.restore();
+      }
+      final frame = (math.max(0, chartSecond) * 1000 / 33).floor() % 8;
+      final frameW = row.width / 2;
+      final frameH = row.height / 4;
+      // One animated bolt per pad, spanning all four lanes as one image.
+      for (var i = 0; i < sorted.length; i += 4) {
+        final count = math.min(4, sorted.length - i);
+        final left = sorted[i].$1 - size / 2;
+        final right = sorted[i + count - 1].$1 + size / 2;
+        canvas.drawImageRect(
+            row,
+            Rect.fromLTWH((frame % 2) * frameW,
+                (frame ~/ 2) * frameH, frameW, frameH),
+            Rect.fromLTRB(left, y - size / 2, right, y + size / 2),
+            _shockPaint);
+      }
+      return;
+    }
     if (lanes.isEmpty) return;
     final sorted = [...lanes]..sort((a, b) => a.$1.compareTo(b.$1));
     const glow = Color(0xFF79E7FF);
