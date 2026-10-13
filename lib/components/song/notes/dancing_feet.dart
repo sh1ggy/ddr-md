@@ -14,6 +14,7 @@ import 'dart:math' as math;
 
 import 'chart_models.dart';
 import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_shocks.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -161,22 +162,6 @@ final Path _arrowPath = () {
   return path..close();
 }();
 
-/// Move clear before a shock and stay clear through its timing window.
-double shockDodge(List<double> shocks, double second) {
-  var amount = 0.0;
-  for (final shock in shocks) {
-    final dt = second - shock;
-    if (dt < -0.22 || dt > 0.22) continue;
-    final a = dt < -0.09
-        ? (dt + 0.22) / 0.13
-        : dt > 0.09
-            ? (0.22 - dt) / 0.13
-            : 1.0;
-    amount = math.max(amount, Curves.easeInOut.transform(a.clamp(0.0, 1.0)));
-  }
-  return amount;
-}
-
 /// One panel of the gold cabinet's stage: a 283 mm cell.
 const double kPanelMetres = 0.283;
 
@@ -284,6 +269,7 @@ class DancingFeet extends StatefulWidget {
     this.form = DancerForm.standard,
     this.shoeSize = kShoeSize,
     this.shocks = const [],
+    this.shockPlans = const [],
   });
 
   final DancerForm form;
@@ -291,6 +277,7 @@ class DancingFeet extends StatefulWidget {
   /// US shoe size; the feet are drawn to scale against the panels.
   final double shoeSize;
   final List<double> shocks;
+  final List<ShockEvasion> shockPlans;
 
   /// The solved stance timeline, ascending by second.
   final List<ParityStance> stances;
@@ -428,6 +415,7 @@ class _DancingFeetState extends State<DancingFeet> {
                 form: widget.form,
                 shoeSize: widget.shoeSize,
                 shocks: widget.shocks,
+                shockPlans: widget.shockPlans,
               ),
             ),
           ),
@@ -450,6 +438,7 @@ class DancePad extends StatelessWidget {
     this.form = DancerForm.standard,
     this.shoeSize = kShoeSize,
     this.shocks = const [],
+    this.shockPlans = const [],
   });
 
   final bool dragging;
@@ -460,6 +449,7 @@ class DancePad extends StatelessWidget {
   final DancerForm form;
   final double shoeSize;
   final List<double> shocks;
+  final List<ShockEvasion> shockPlans;
 
   @override
   Widget build(BuildContext context) {
@@ -486,6 +476,7 @@ class DancePad extends StatelessWidget {
               form: form,
               shoeSize: shoeSize,
               shocks: shocks,
+              shockPlans: shockPlans,
             ),
             size: Size.infinite,
           ),
@@ -524,6 +515,7 @@ class _PadPainter extends CustomPainter {
     required this.form,
     required this.shoeSize,
     required this.shocks,
+    required this.shockPlans,
   }) : super(repaint: playhead);
 
   final List<ParityStance> stances;
@@ -533,6 +525,7 @@ class _PadPainter extends CustomPainter {
   final DancerForm form;
   final double shoeSize;
   final List<double> shocks;
+  final List<ShockEvasion> shockPlans;
 
   /// The body's turn at each stance, solved in order since whether a stance
   /// turns you depends on how you stepped into it (see [stepTurn]). Doubles has
@@ -675,9 +668,15 @@ class _PadPainter extends CustomPainter {
         : Curves.easeOutCubic
             .transform((sinceStep / _stepSeconds).clamp(0.0, 1.0));
 
-    final dodge = shockDodge(shocks, second);
+    final evasion = shockAt(shockPlans, second);
+    final dodge = evasion?.amount(second) ?? 0;
     _paintPanels(
-        canvas, pointFor, unit, dodge > 0.99 ? const {} : _pressed(second));
+        canvas,
+        pointFor,
+        unit,
+        dodge > 0.99
+            ? (_pressed(second)..removeAll(evasion!.columns))
+            : _pressed(second));
 
     // The body's turn, slid alongside the feet so a crossover winds round as the
     // foot travels rather than snapping square on the landing frame. One angle
@@ -693,14 +692,16 @@ class _PadPainter extends CustomPainter {
       // its partner steps is holding its weight, not landing, and bobbing it too
       // would read as both feet hitting on every note.
       final press = _stepped(current, foot) ? padPressFactor(sinceStep) : 1.0;
-      final padX = columnCount <= 4
-          ? 0.0
-          : (_panelCenter(to.heelCol).dx < 0 ? -1.5 : 1.5);
+      final footDodge = (evasion?.affects(foot) ?? false) ? dodge : 0.0;
+      final target =
+          evasion?.pose(foot, shoeLength(shoeSize) / kPanelMetres, second);
       final safe =
-          center + Offset(padX + (foot == ParityFoot.left ? -1 : 1), 1) * unit;
-      Offset dodgePoint(int col) => Offset.lerp(pointFor(col), safe, dodge)!;
-      _paintFoot(canvas, dodgePoint, unit, foot, from, to, t,
-          turn * (1 - dodge), press);
+          target == null ? center : center + Offset(target.x, -target.y) * unit;
+      _paintFoot(canvas, pointFor, unit, foot, from, to, t, turn, press,
+          shockTarget: evasion?.method == ShockMethod.standard ? null : safe,
+          dodge: footDodge,
+          tilt: (target?.tilt ?? 0) * footDodge,
+          lifted: (target?.airborne ?? false) ? 0.10 * footDodge : 0);
     }
   }
 
@@ -814,8 +815,12 @@ class _PadPainter extends CustomPainter {
     _FootPose to,
     double t,
     double bodyTurn,
-    double press,
-  ) {
+    double press, {
+    Offset? shockTarget,
+    double dodge = 0,
+    double tilt = 0,
+    double lifted = 0,
+  }) {
     final heel =
         Offset.lerp(from.heel(pointFor, unit), to.heel(pointFor, unit), t)!;
     final toe =
@@ -829,16 +834,19 @@ class _PadPainter extends CustomPainter {
     final angle =
         len < 0.001 ? bodyTurn : math.atan2(axis.dy, axis.dx) + math.pi / 2;
 
-    final color = foot == ParityFoot.left ? kLeftFootColor : kRightFootColor;
+    final color = (foot == ParityFoot.left ? kLeftFootColor : kRightFootColor)
+        .withValues(alpha: lifted > 0.075 ? 0.55 : 1);
     canvas.save();
-    canvas.translate((heel.dx + toe.dx) / 2, (heel.dy + toe.dy) / 2);
-    canvas.rotate(angle);
+    final position =
+        Offset.lerp((heel + toe) / 2, shockTarget ?? (heel + toe) / 2, dodge)!;
+    canvas.translate(position.dx, position.dy);
+    canvas.rotate(angle * (1 - dodge));
     // Scaled about the foot's own centre (already translated there) so the press
     // squashes it in place rather than sliding it toward the panel's corner. A
     // foot never STRETCHES to its stance — a bracket only turns to point along
     // its heel->toe line, since one stretched across two panels reads as a
     // rendering glitch. The press is the only thing that changes a foot's size.
-    canvas.scale(press);
+    canvas.scale(press, press * math.cos(tilt));
     // Which way is "inward" in the foot's own rotated frame: the left foot's
     // body is to its right (+x) and vice versa. Constant per foot rather than
     // derived from the pad centre, so the arch never flips sides on a crossover.
@@ -914,5 +922,6 @@ class _PadPainter extends CustomPainter {
       old.visualOffset != visualOffset ||
       old.form != form ||
       old.shoeSize != shoeSize ||
-      old.shocks != shocks;
+      old.shocks != shocks ||
+      old.shockPlans != shockPlans;
 }

@@ -24,9 +24,10 @@ import 'dancing_feet.dart'
         kPanelMetres,
         kShoeSize,
         shoeLength,
-        stepTurn,
-        shockDodge;
+        stepTurn;
 import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_shocks.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -225,8 +226,10 @@ double _liftAt(_Step cur, _Step next, _Style st) {
 /// body's turn at each stance, and when each panel is pressed. Built once per
 /// solve and kept with the motion state carried between frames.
 class _Track {
-  _Track(this.stances, List<StepNote> notes, this.columnCount, this.form)
+  _Track(this.stances, List<StepNote> notes, this.columnCount, this.form,
+      [List<ShockEvasion>? plannedShocks])
       : style = _Style.of(form) {
+    sourcePlans = plannedShocks;
     final layout = columnCount > 4 ? _doubles : _singles;
     times = [for (final s in stances) s.second];
 
@@ -240,6 +243,9 @@ class _Track {
       for (final e in mines.entries)
         if (e.value.length >= 3) e.key / 1000
     ];
+    shockPlans = plannedShocks ??
+        planShockEvasions(
+            notes, stances, columnCount == 4 ? Modes.singles : Modes.doubles);
     final holdEnds = <double, Map<int, double>>{};
     for (final n in notes) {
       if (n.isHold && n.endSecond != null) {
@@ -327,6 +333,8 @@ class _Track {
   final DancerForm form;
   final _Style style;
   late final List<double> shocks;
+  late final List<ShockEvasion> shockPlans;
+  List<ShockEvasion>? sourcePlans;
   late final List<double> times;
   final List<double> turns = [];
   final List<_Step> left = [], right = [];
@@ -351,7 +359,12 @@ class _Track {
 
   /// Is a foot on panel [col] at [t]?
   bool lit(int col, double t) {
-    if (shockDodge(shocks, t) > 0.99) return false;
+    final evasion = shockAt(shockPlans, t);
+    if (evasion != null &&
+        evasion.columns.contains(col) &&
+        evasion.amount(t) > 0.99) {
+      return false;
+    }
     for (final spans in pressed[col]) {
       var lo = 0, hi = spans.length;
       while (lo < hi) {
@@ -660,12 +673,22 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
     final isLeft = foot == ParityFoot.left;
     final f = _footAt(isLeft ? tr.left : tr.right,
         isLeft ? tr.restLeft : tr.restRight, t, st);
-    final dodge = shockDodge(tr.shocks, t);
-    final padX = tr.columnCount <= 4 ? 0.0 : (f.x < 0 ? -1.5 : 1.5);
-    f.x = _lerp(f.x, padX + (isLeft ? -1 : 1), dodge);
-    f.z = _lerp(f.z, -1, dodge);
-    f.h *= 1 - dodge;
-    f.bracket = dodge < 0.5 && f.bracket;
+    final evasion = shockAt(tr.shockPlans, t);
+    final dodge = (evasion?.affects(foot) ?? false) ? evasion!.amount(t) : 0.0;
+    if (evasion != null && dodge > 0) {
+      final target = evasion.pose(foot, rig.shoe / _u, t);
+      if (evasion.method != ShockMethod.standard) {
+        f.x = _lerp(f.x, target.x, dodge);
+        f.z = _lerp(f.z, target.y, dodge);
+      }
+      f.h = _lerp(f.h, target.lift, dodge);
+      f.tilt = _lerp(f.tilt, target.tilt, dodge);
+      f.air = _lerp(f.air, target.airborne ? 1 : 0, dodge);
+      if (evasion.method == ShockMethod.launch) {
+        f.h += 0.06 * math.sin(math.pi * dodge);
+      }
+      f.bracket = dodge < 0.5 && f.bracket;
+    }
     final splay = yaw * (1 - dodge) + (isLeft ? -0.16 : 0.16);
     final ff = _fwdOf(_angLerp(f.yawA ?? splay, f.yawB ?? splay, f.e));
     // Toes dip while the foot is in the air.
@@ -1060,11 +1083,13 @@ class PadDancerPainter extends CustomPainter {
     this.gripSpot = GripSpot.middle,
     this.height = kDancerHeight,
     this.shoeSize = kShoeSize,
+    this.shockPlans,
   }) : super(repaint: playhead);
 
   /// The solve's stances and the notes it was solved on (turned), for holds.
   final List<ParityStance> stances;
   final List<StepNote> notes;
+  final List<ShockEvasion>? shockPlans;
   final ValueListenable<double> playhead;
   final int columnCount;
   final double visualOffset;
@@ -1096,10 +1121,11 @@ class PadDancerPainter extends CustomPainter {
     if (c != null &&
         identical(c.stances, stances) &&
         c.columnCount == columnCount &&
-        c.form == form) {
+        c.form == form &&
+        identical(c.sourcePlans, shockPlans)) {
       return c;
     }
-    return _cache = _Track(stances, notes, columnCount, form);
+    return _cache = _Track(stances, notes, columnCount, form, shockPlans);
   }
 
   @override
@@ -1195,6 +1221,7 @@ class PadDancerPainter extends CustomPainter {
   @override
   bool shouldRepaint(PadDancerPainter old) =>
       !identical(old.stances, stances) ||
+      !identical(old.shockPlans, shockPlans) ||
       old.columnCount != columnCount ||
       old.visualOffset != visualOffset ||
       old.form != form ||

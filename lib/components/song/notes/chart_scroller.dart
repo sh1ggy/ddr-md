@@ -37,6 +37,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_shocks.dart';
 import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/parity_profile.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
@@ -419,6 +420,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // always agree.
   Map<StepNote, Foot> _feet = const {};
   List<ParityStance> _stances = const [];
+  List<ShockEvasion> _shockPlans = const [];
   // The notes that solve ran on (turned), for the pad dancer's holds.
   List<StepNote> _turnedNotes = const [];
 
@@ -1233,6 +1235,7 @@ class _ChartScrollerState extends State<ChartScroller>
           source[i]: foot == ParityFoot.left ? Foot.left : Foot.right,
     };
     _stances = analysis.stances;
+    _shockPlans = planShockEvasions(turned, _stances, widget.mode);
     _turnedNotes = turned;
     _footwork = footworkOf(turned, analysis, widget.mode);
     _collectHits();
@@ -2279,6 +2282,7 @@ class _ChartScrollerState extends State<ChartScroller>
                       painter: PadDancerPainter(
                         stances: _stances,
                         notes: _turnedNotes,
+                        shockPlans: _shockPlans,
                         playhead: _playhead,
                         columnCount: dirs.length,
                         visualOffset: _visualOffsetSeconds,
@@ -2523,6 +2527,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 form: _form,
                 shoeSize: _shoeSize,
                 shocks: [for (final shock in _shocks) shock.second],
+                shockPlans: _shockPlans,
               ),
             ),
 

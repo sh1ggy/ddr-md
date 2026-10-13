@@ -4,15 +4,6 @@ import 'package:ddr_md/components/song/notes/dancing_feet.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('shock dodge clears the arrows across the timing window', () {
-    for (final t in [9.91, 10.0, 10.09]) {
-      expect(shockDodge([10], t), closeTo(1, 1e-9));
-    }
-    expect(shockDodge([10], 9.7), 0);
-    expect(shockDodge([10], 10.3), 0);
-    expect(shockDodge([10], 9.85), inExclusiveRange(0, 1));
-  });
-
   // Chart column indices — turnFor asks about the player's legs, so it reads
   // the chart, not the TURN-mapped panels on screen.
   const l = 0, d = 1, u = 2, r = 3;
@@ -102,7 +93,8 @@ void main() {
     var last = onImpact;
     for (var s = 0.01; s <= 0.3; s += 0.01) {
       final now = padPressFactor(s);
-      expect(now, greaterThanOrEqualTo(last - 1e-9), reason: 'dipped again at $s');
+      expect(now, greaterThanOrEqualTo(last - 1e-9),
+          reason: 'dipped again at $s');
       last = now;
     }
   });
