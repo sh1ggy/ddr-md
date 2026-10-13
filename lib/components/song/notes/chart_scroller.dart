@@ -121,8 +121,9 @@ class ChartScroller extends StatefulWidget {
     this.pickSection = false,
     this.onSectionChanged,
     this.onSaveSection,
-    this.autoPlay = false,
-    this.onSwipeSnippet,
+    this.feedActive,
+    this.playbackRate = 1.0,
+    this.onPlaybackRateChanged,
   });
 
   final ChartSteps steps;
@@ -131,8 +132,17 @@ class ChartScroller extends StatefulWidget {
   /// of the chart dims.
   final BeatRange? section;
   final VoidCallback? onSaveSection;
-  final bool autoPlay;
-  final ValueChanged<int>? onSwipeSnippet;
+
+  /// Set on a page of the snippet feed, which pages sideways: true plays the
+  /// section from its run-up, false pauses it. The header stays hidden until
+  /// a tap pauses, and the field takes only vertical drags (scrub), so sideways
+  /// swipes page instead of setting song speed or zoom. Null everywhere else.
+  final bool? feedActive;
+
+  /// Song speed to open at, and each change made to it (not hold-to-speed), so
+  /// the feed keeps one speed from snippet to snippet.
+  final double playbackRate;
+  final ValueChanged<double>? onPlaybackRateChanged;
 
   /// A selector button picks [section]'s first and last rows,
   /// then whichever end is nearer moves. Reported through [onSectionChanged].
@@ -396,7 +406,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // Playback-rate multiplier: how fast the chart plays back in wall-clock time.
   // 1.0 = true speed; <1 slows the song, >1 speeds it up. Independent of the
   // read-speed (note-spacing) mod above.
-  double _playbackRate = 1.0;
+  late double _playbackRate = widget.playbackRate;
   static const double _minPlaybackRate = 0.25;
   static const double _maxPlaybackRate = 1.0;
 
@@ -645,7 +655,7 @@ class _ChartScrollerState extends State<ChartScroller>
     } else if (_loop case (final from, _)) {
       _second = from;
     }
-    if (widget.autoPlay) {
+    if (widget.feedActive == true) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _play();
       });
@@ -734,6 +744,15 @@ class _ChartScrollerState extends State<ChartScroller>
     // rebuild it — the field itself re-reads the colours on the next paint.
     if (old.arcadeQuantOn != widget.arcadeQuantOn) {
       _buildDensity();
+    }
+    if (old.feedActive != widget.feedActive && widget.feedActive != null) {
+      if (widget.feedActive!) {
+        _heldInFeed = false;
+        if (_loop case (final from, _)) _second = from;
+        _play();
+      } else {
+        _pause();
+      }
     }
     if (old.section != widget.section) {
       setState(_buildSection);
@@ -2030,9 +2049,15 @@ class _ChartScrollerState extends State<ChartScroller>
     });
   }
 
+  // A feed page's header shows only once a tap has paused it.
+  bool _heldInFeed = false;
+  bool get _headerShown =>
+      !_playing && (widget.feedActive == null || _heldInFeed);
+
   void _togglePlay({bool showOverlay = false}) {
     HapticFeedback.selectionClick();
     final willPlay = !_playing;
+    _heldInFeed = !willPlay;
     _playing ? _pause() : _play();
     if (showOverlay) _flashTapOverlay(willPlay);
   }
@@ -2214,6 +2239,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (next == _playbackRate) return;
     final crossedStep = (next * 20).round() != (_playbackRate * 20).round();
     setState(() => _playbackRate = next);
+    widget.onPlaybackRateChanged?.call(next);
     _resyncTickClock(); // re-anchor at the new rate
     if (crossedStep) HapticFeedback.selectionClick();
     _flashScrubOverlay("${next.toStringAsFixed(2)}×", "SONG SPEED");
@@ -2223,6 +2249,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_playbackRate == 1.0) return;
     HapticFeedback.selectionClick();
     setState(() => _playbackRate = 1.0);
+    widget.onPlaybackRateChanged?.call(1.0);
     _resyncTickClock(); // re-anchor at 1.0×
   }
 
@@ -2290,10 +2317,8 @@ class _ChartScrollerState extends State<ChartScroller>
   static const int _gestureZoom = 3;
   int _gestureMode = _gestureNone;
   Offset _lastScaleFocal = Offset.zero;
-  double _feedSwipeDistance = 0;
 
   void _onScaleStart(ScaleStartDetails d) {
-    _feedSwipeDistance = 0;
     _gestureMode = _gestureNone; // decided on first movement
     _lastScaleFocal = d.localFocalPoint;
     _pinchStartZoom = _zoom;
@@ -2325,41 +2350,29 @@ class _ChartScrollerState extends State<ChartScroller>
       if (delta == Offset.zero) return;
       _gestureMode =
           delta.dy.abs() >= delta.dx.abs() ? _gestureScrub : _gestureSpeed;
-      if (_gestureMode == _gestureScrub && widget.onSwipeSnippet == null) {
-        _onScrubStart();
-      }
+      if (_gestureMode == _gestureScrub) _onScrubStart();
     }
 
     if (_gestureMode == _gestureScrub) {
-      if (widget.onSwipeSnippet != null) {
-        _feedSwipeDistance += delta.dy;
-      } else {
-        _onScrubMove(delta.dy);
-      }
+      _onScrubMove(delta.dy);
     } else if (_gestureMode == _gestureSpeed) {
       _onPlaybackRateDrag(delta.dx);
     }
   }
 
   void _onScaleEnd(ScaleEndDetails d) {
-    if (_gestureMode == _gestureScrub && widget.onSwipeSnippet != null) {
-      _gestureMode = _gestureNone;
-      if (_feedSwipeDistance.abs() >= 60) {
-        widget.onSwipeSnippet!(_feedSwipeDistance < 0 ? 1 : -1);
-      }
-      return;
-    }
-    if (_gestureMode == _gestureScrub) {
-      // Coast a fling from the release velocity, as the old vertical drag did.
-      final vPx = d.velocity.pixelsPerSecond.dy;
-      _flingVel = -_pxToSeconds(vPx);
-      if (_flingVel.abs() < _flingMin) {
-        _flingVel = 0;
-      } else {
-        _ensureTicking();
-      }
-    }
+    if (_gestureMode == _gestureScrub) _endScrub(d.velocity.pixelsPerSecond.dy);
     _gestureMode = _gestureNone;
+  }
+
+  // Coast a fling from the release velocity.
+  void _endScrub(double vPx) {
+    _flingVel = -_pxToSeconds(vPx);
+    if (_flingVel.abs() < _flingMin) {
+      _flingVel = 0;
+    } else {
+      _ensureTicking();
+    }
   }
 
   // Map a live pinch scale (1.0 at gesture start) onto the zoom multiplier,
@@ -2405,6 +2418,7 @@ class _ChartScrollerState extends State<ChartScroller>
   @override
   Widget build(BuildContext context) {
     final snippet = widget.section != null;
+    final feed = widget.feedActive != null;
     final visibleFeet = {
       for (final entry
           in (widget.showFootGuide || widget.editFooting ? _feet : _hitFeet)
@@ -2450,9 +2464,15 @@ class _ChartScrollerState extends State<ChartScroller>
             onLongPressStart: (_) => _onHoldSpeedStart(),
             onLongPressEnd: (_) => _onHoldSpeedEnd(),
             onLongPressCancel: _onHoldSpeedEnd,
-            onScaleStart: _onScaleStart,
-            onScaleUpdate: _onScaleUpdate,
-            onScaleEnd: _onScaleEnd,
+            // A feed page claims only vertical drags, leaving every sideways
+            // swipe to the pager.
+            onVerticalDragStart: feed ? (_) => _onScrubStart() : null,
+            onVerticalDragUpdate: feed ? (d) => _onScrubMove(d.delta.dy) : null,
+            onVerticalDragEnd:
+                feed ? (d) => _endScrub(d.velocity.pixelsPerSecond.dy) : null,
+            onScaleStart: feed ? null : _onScaleStart,
+            onScaleUpdate: feed ? null : _onScaleUpdate,
+            onScaleEnd: feed ? null : _onScaleEnd,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -2720,13 +2740,13 @@ class _ChartScrollerState extends State<ChartScroller>
               left: 0,
               right: 0,
               child: IgnorePointer(
-                ignoring: _playing,
+                ignoring: !_headerShown,
                 child: AnimatedSlide(
-                  offset: _playing ? const Offset(0, -1) : Offset.zero,
+                  offset: _headerShown ? Offset.zero : const Offset(0, -1),
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
                   child: AnimatedOpacity(
-                    opacity: _playing ? 0 : 1,
+                    opacity: _headerShown ? 1 : 0,
                     duration: const Duration(milliseconds: 180),
                     child: widget.headerBuilder!(
                         context, _buildPatternsButton(context)),
@@ -2947,7 +2967,7 @@ class _ChartScrollerState extends State<ChartScroller>
     // detached from the header rather than glued to its underside; otherwise
     // there is no title above it, so it hugs the status-bar inset. Animated so it
     // glides down/up as the header appears/disappears on pause/play.
-    final headerShowing = widget.headerBuilder != null && !_playing;
+    final headerShowing = widget.headerBuilder != null && _headerShown;
     final top = topInset + (headerShowing ? 64 + 16 : 8);
     // Leave space for the bottom controls on short phones and in landscape.
     // The shade's own scroller handles any content beyond this height.

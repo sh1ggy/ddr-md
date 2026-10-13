@@ -70,41 +70,50 @@ void main() {
         isTrue);
     expect(tester.takeException(), isNull);
   });
-  testWidgets('feed swipes navigate while playback remains active',
+  testWidgets('feed page plays only while active, header hidden',
       (tester) async {
-    int? direction;
-    await tester.pumpWidget(MaterialApp(
+    Widget page(bool active) => MaterialApp(
         home: Scaffold(
             body: ChartScroller(
-      steps: ChartSteps(notes: [
-        for (int b = 0; b < 16; b++)
-          StepNote(
-              beat: b.toDouble(),
-              second: b * 0.5,
-              col: b % 4,
-              type: StepType.tap),
-      ]),
-      mode: Modes.singles,
-      songLength: 10,
-      chartBpm: 120,
-      bpms: [Bpm(st: 0, ed: 10, val: 120)],
-      section: (4.0, 8.0),
-      autoPlay: true,
-      onSwipeSnippet: (d) => direction = d,
-    ))));
-    await tester.pump();
-    await tester.dragFrom(const Offset(200, 350), const Offset(0, -150));
-    await tester.pump();
-    expect(direction, 1);
-    final painter = tester
+                steps: ChartSteps(notes: [
+                  for (int b = 0; b < 16; b++)
+                    StepNote(
+                        beat: b.toDouble(),
+                        second: b * 0.5,
+                        col: b % 4,
+                        type: StepType.tap),
+                ]),
+                mode: Modes.singles,
+                songLength: 10,
+                chartBpm: 120,
+                bpms: [Bpm(st: 0, ed: 10, val: 120)],
+                section: (4.0, 8.0),
+                feedActive: active,
+                headerBuilder: (_, __) => const Text('HEADER'))));
+    ChartPainter painter() => tester
         .widgetList<CustomPaint>(find.byType(CustomPaint))
         .map((p) => p.painter)
         .whereType<ChartPainter>()
         .first;
-    expect(painter.playing, isTrue);
-    await tester.dragFrom(const Offset(200, 250), const Offset(0, 150));
+    double headerOpacity() => tester
+        .widget<AnimatedOpacity>(find
+            .ancestor(
+                of: find.text('HEADER'),
+                matching: find.byType(AnimatedOpacity))
+            .first)
+        .opacity;
+
+    await tester.pumpWidget(page(false));
     await tester.pump();
-    expect(direction, -1);
+    expect(painter().playing, isFalse);
+    expect(headerOpacity(), 0);
+    await tester.pumpWidget(page(true));
+    await tester.pump();
+    expect(painter().playing, isTrue);
+    expect(headerOpacity(), 0);
+    await tester.pumpWidget(page(false));
+    await tester.pump();
+    expect(painter().playing, isFalse);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 400));
   });

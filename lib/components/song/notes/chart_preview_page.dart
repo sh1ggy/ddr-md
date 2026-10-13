@@ -40,8 +40,9 @@ class ChartPreviewPage extends StatefulWidget {
     this.initialSecond,
     this.snippet,
     this.newSnippet = false,
-    this.autoPlay = false,
-    this.onSwipeSnippet,
+    this.feedActive,
+    this.playbackRate = 1.0,
+    this.onPlaybackRateChanged,
     this.feedLabel,
   });
 
@@ -51,12 +52,14 @@ class ChartPreviewPage extends StatefulWidget {
     SongInfo info,
     Modes mode,
     String difficultyKey, {
+    Key? key,
     Future<SongSteps?>? stepsFuture,
     double? initialSecond,
     Snippet? snippet,
     bool newSnippet = false,
-    bool autoPlay = false,
-    ValueChanged<int>? onSwipeSnippet,
+    bool? feedActive,
+    double playbackRate = 1.0,
+    ValueChanged<double>? onPlaybackRateChanged,
     String? feedLabel,
   }) {
     final difficulty = mode == Modes.singles ? info.singles : info.doubles;
@@ -67,6 +70,7 @@ class ChartPreviewPage extends StatefulWidget {
         ? info.charts[i.clamp(0, info.charts.length - 1)]
         : info.charts.first;
     return ChartPreviewPage(
+      key: key,
       stepsFuture: stepsFuture ?? StepsLoader.load(info.name),
       mode: mode,
       difficultyKey: difficultyKey,
@@ -85,8 +89,9 @@ class ChartPreviewPage extends StatefulWidget {
       initialSecond: initialSecond,
       snippet: snippet,
       newSnippet: newSnippet,
-      autoPlay: autoPlay,
-      onSwipeSnippet: onSwipeSnippet,
+      feedActive: feedActive,
+      playbackRate: playbackRate,
+      onPlaybackRateChanged: onPlaybackRateChanged,
       feedLabel: feedLabel,
     );
   }
@@ -96,8 +101,11 @@ class ChartPreviewPage extends StatefulWidget {
 
   /// Opens picking a new snippet's section; Add saves it and pops with it.
   final bool newSnippet;
-  final bool autoPlay;
-  final ValueChanged<int>? onSwipeSnippet;
+
+  /// See [ChartScroller.feedActive] and [ChartScroller.playbackRate].
+  final bool? feedActive;
+  final double playbackRate;
+  final ValueChanged<double>? onPlaybackRateChanged;
   final String? feedLabel;
 
   /// The (already in-flight) lazy load of the song's step file, shared with the
@@ -318,8 +326,9 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               key: ValueKey(
                   "${widget.title}-${widget.mode.name}-${widget.difficultyKey}"),
               steps: steps,
-              autoPlay: widget.autoPlay,
-              onSwipeSnippet: _picking ? null : widget.onSwipeSnippet,
+              feedActive: widget.feedActive,
+              playbackRate: widget.playbackRate,
+              onPlaybackRateChanged: widget.onPlaybackRateChanged,
               mode: widget.mode,
               songLength: widget.songLength,
               chartBpm: widget.chartBpm,

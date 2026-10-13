@@ -1,7 +1,8 @@
 /// Name: SnippetFeedPage
 /// Parent: SnippetsPage
-/// Description: Shuffled saved snippets, one active chart preview at a time.
-/// Vertical swipes navigate; the next chart loads ahead of time.
+/// Description: Shuffled saved snippets as pages swiped sideways, so a vertical
+/// drag still scrubs the chart. Only the page on screen plays; its neighbours
+/// are built and loaded ahead so they slide in ready. Song speed carries over.
 library;
 
 import 'dart:math';
@@ -55,39 +56,28 @@ class _SnippetFeedPageState extends State<SnippetFeedPage> {
             .contains(s.difficulty);
   }).toList();
   int _index = 0;
-  Future<SongSteps?>? _current;
-  Future<SongSteps?>? _next;
+  double _rate = 1.0;
+  final _steps = <String, Future<SongSteps?>>{};
 
-  @override
-  void initState() {
-    super.initState();
-    if (_pool.isEmpty) return;
-    _history.add(dealSnippet(_pool, _history, _random));
-    _current = StepsLoader.load(_history.first.song);
-    _preload();
-  }
-
-  void _preload() {
-    if (_index + 1 >= _history.length) {
+  Snippet _dealt(int i) {
+    while (_history.length <= i) {
       _history.add(dealSnippet(_pool, _history, _random));
     }
-    final song = _history[_index + 1].song;
-    _next = song == _history[_index].song ? _current : StepsLoader.load(song);
+    return _history[i];
   }
 
-  void _navigate(int direction) {
-    if (direction < 0 && _index == 0) return;
+  Future<SongSteps?> _stepsOf(String song) =>
+      _steps[song] ??= StepsLoader.load(song);
+
+  void _onPage(int i) {
     HapticFeedback.selectionClick();
-    setState(() {
-      if (direction > 0) {
-        _current = _next;
-        _index++;
-      } else {
-        _index--;
-        _current = StepsLoader.load(_history[_index].song);
-      }
-      _preload();
-    });
+    setState(() => _index = i);
+    // Keep only the neighbours' charts in memory.
+    final near = {for (int j = max(0, i - 1); j <= i + 1; j++) _dealt(j).song};
+    _steps.removeWhere((song, _) => !near.contains(song));
+    for (final song in near) {
+      _stepsOf(song);
+    }
   }
 
   @override
@@ -98,23 +88,31 @@ class _SnippetFeedPageState extends State<SnippetFeedPage> {
           body: const Center(
               child: Text('No available charts in your snippets.')));
     }
-    final snippet = _history[_index];
-    final song = _songs[snippet.song]!;
-    final name = snippet.label.isEmpty
-        ? sectionLabel(
-            (snippet.startBeat, snippet.endBeat), song.timeSignatures)
-        : snippet.label;
-    return KeyedSubtree(
-      key: ValueKey(_index),
-      child: ChartPreviewPage.forChart(
-        song,
-        snippet.mode,
-        snippet.difficulty,
-        snippet: snippet,
-        stepsFuture: _current,
-        autoPlay: true,
-        onSwipeSnippet: _navigate,
-        feedLabel: '$name · ${_index + 1} · Swipe up for next',
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: PageView.builder(
+        allowImplicitScrolling: true,
+        onPageChanged: _onPage,
+        itemBuilder: (context, i) {
+          final snippet = _dealt(i);
+          final song = _songs[snippet.song]!;
+          final name = snippet.label.isEmpty
+              ? sectionLabel(
+                  (snippet.startBeat, snippet.endBeat), song.timeSignatures)
+              : snippet.label;
+          return ChartPreviewPage.forChart(
+            song,
+            snippet.mode,
+            snippet.difficulty,
+            key: ValueKey(i),
+            snippet: snippet,
+            stepsFuture: _stepsOf(snippet.song),
+            feedActive: i == _index,
+            playbackRate: _rate,
+            onPlaybackRateChanged: (rate) => _rate = rate,
+            feedLabel: '$name · ${i + 1} · Swipe for next',
+          );
+        },
       ),
     );
   }
