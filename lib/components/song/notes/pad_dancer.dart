@@ -89,7 +89,7 @@ int _argb(_Rgb c) =>
 
 const _Rgb _jacket = (184, 190, 202);
 const _Rgb _pants = (116, 124, 140);
-const _Rgb _skin = (184, 190, 202);
+const _Rgb _skin = (208, 212, 222);
 const _Rgb _shoe = (244, 244, 246);
 const _Rgb _padBase = (34, 32, 40);
 const _Rgb _panelArrow = (48, 46, 58);
@@ -613,6 +613,10 @@ class _Pose {
   final Map<ParityFoot, _FootAt> feet = {};
   final Map<ParityFoot, ({_V hip, _V knee, _V ankle})> legs = {};
   final Map<ParityFoot, ({_V shoulder, _V elbow, _V hand})> arms = {};
+
+  /// Where each hand closes round the bar: the tube's centre there, its
+  /// direction, and the side the palm is on.
+  final Map<ParityFoot, ({_V at, _V axis, _V palm})> grips = {};
 }
 
 _Pose _pose(_Track tr, double t, _Rig rig) {
@@ -705,14 +709,22 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
       ? _barHalfWidth - _barBendRadius + _barBendRadius * math.cos(bend)
       : _gripHalfWidth;
   final drop = edges ? _barBendRadius * (1 - math.sin(bend)) : 0.0;
-  final wrap = rig.grip == BarGrip.overhand ? 0.03 : -0.035;
-  _V grip(double sign) {
+  final overhand = rig.grip == BarGrip.overhand;
+  ({_V at, _V axis, _V palm}) hold(double sign) {
     final d = doubles ? -sign : sign;
-    final normal =
+    final out =
         edges ? _V(d * math.cos(bend), math.sin(bend), 0) : const _V(0, 1, 0);
-    return _V(
-            (doubles ? sign * 1.5 * _u : 0) + d * along, _barY - drop, _barZ) +
-        normal * wrap;
+    return (
+      at: _V((doubles ? sign * 1.5 * _u : 0) + d * along, _barY - drop, _barZ),
+      axis: out.cross(_zAxis).unit,
+      palm: overhand ? out : out * -1,
+    );
+  }
+
+  // The wrist sits off the palm's side of the bar, toward the body.
+  _V grip(double sign) {
+    final h = hold(sign);
+    return h.at + h.palm * 0.04 + _zAxis * 0.03;
   }
 
   final armReach = (upperArm + foreArm) * 0.97;
@@ -742,6 +754,7 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
           ? (tf * -0.4 + ts * (0.7 * sgn) + const _V(0, -0.3, 0)).unit
           : (tf * -0.3 + ts * (0.15 * sgn) + const _V(0, -0.9, 0)).unit;
       final (elbow, _) = _ik(shoulder, target, upperArm, foreArm, pole);
+      pose.grips[foot] = hold(sgn);
       pose.arms[foot] = (shoulder: shoulder, elbow: elbow, hand: target);
     } else {
       // Hands free: hanging by the hips, swinging against the leg on that
@@ -873,6 +886,48 @@ void _buildBar(_Scene s, _Track tr) {
   }
 }
 
+/// Each hand closed round the bar: a band of palm and fingers wrapped from
+/// the wrist's side over the far side of the tube, so the grip reads from
+/// behind. Drawn solid, after the bar.
+void _buildHands(_Scene s, _Pose p, double k) {
+  const r = _barPaddingRadius + 0.004, steps = 8;
+  // The tube's side facing the camera, away from the body.
+  const side = _V(0, 0, -1);
+  // From the heel of the palm on the body's side, the back of the hand over
+  // the palm's side, then the fingers round the far side to their tips just
+  // past the opposite side.
+  const from = -0.3 * math.pi, knuckles = 0.25 * math.pi, tips = 1.1 * math.pi;
+  for (final g in p.grips.values) {
+    final width = 0.085 * k;
+    _V ring(double a, double radius, double w) =>
+        g.at +
+        (g.palm * math.cos(a) + side * math.sin(a)) * radius +
+        g.axis * w;
+    for (int i = 0; i < steps; i++) {
+      final a0 = from + i / steps * (tips - from);
+      final a1 = from + (i + 1) / steps * (tips - from);
+      final depth = (a0 + a1) / 2 < knuckles ? 0.036 * k : 0.018 * k;
+      for (final (rad, out) in [(r + depth, 1.0), (r, -1.0)]) {
+        final mid = (a0 + a1) / 2;
+        s.quad([
+          ring(a0, rad, -width / 2),
+          ring(a1, rad, -width / 2),
+          ring(a1, rad, width / 2),
+          ring(a0, rad, width / 2),
+        ], (g.palm * math.cos(mid) + side * math.sin(mid)) * out, _skin);
+      }
+      for (final w in [-width / 2, width / 2]) {
+        s.quad([
+          ring(a0, r, w),
+          ring(a1, r, w),
+          ring(a1, r + depth, w),
+          ring(a0, r + depth, w),
+        ], g.axis * w.sign, _skin);
+      }
+    }
+  }
+}
+
 void _buildDancer(_Scene s, _Pose p, double k) {
   List<(double, double, double)> sized(List<(double, double, double)> rings) =>
       [for (final (h, w, d) in rings) (h * k, w * k, d * k)];
@@ -899,8 +954,10 @@ void _buildDancer(_Scene s, _Pose p, double k) {
     s.limb(leg.knee, leg.ankle, 0.056 * k, 0.06 * k, _pants, fwd);
     s.limb(arm.shoulder, arm.elbow, 0.046 * k, 0.046 * k, _jacket, tf);
     s.limb(arm.elbow, arm.hand, 0.036 * k, 0.036 * k, _skin, tf);
-    final h = 0.035 * k;
-    s.box(arm.hand, _xAxis, _up, _zAxis, h, h, h, _skin);
+    if (!p.grips.containsKey(foot)) {
+      final h = 0.035 * k;
+      s.box(arm.hand, _xAxis, _up, _zAxis, h, h, h, _skin);
+    }
   }
   s.rings(
       p.pelvis,
@@ -1060,6 +1117,9 @@ class PadDancerPainter extends CustomPainter {
       final rail = _Scene(cam);
       _buildBar(rail, tr);
       rail.draw(canvas);
+      final hands = _Scene(cam);
+      _buildHands(hands, pose, _rig.k);
+      hands.draw(canvas);
     }
   }
 
