@@ -15,7 +15,8 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'chart_models.dart';
-import 'dancing_feet.dart' show DancerForm, formSpot, stepTurn;
+import 'dancing_feet.dart'
+    show DancerForm, arrowPolygon, formSpot, kPanelChamfer, stepTurn;
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
@@ -54,22 +55,9 @@ const List<(double, double)> _doubles = [
 /// Arrow heading per panel (L D U R), 0 pointing up the pad.
 const List<double> _arrowTurn = [-math.pi / 2, math.pi, 0, math.pi / 2];
 
-/// Arrow outline in panel units from the panel's centre, pointing up: tip,
-/// right wing, shaft right, shaft bottom right, shaft bottom left, shaft left,
-/// left wing, in the cabinet pad's proportions.
-const List<(double, double)> _arrow = [
-  (0, 0.34),
-  (0.325, 0.05),
-  (0.18, 0.05),
-  (0.18, -0.235),
-  (-0.18, -0.235),
-  (-0.18, 0.05),
-  (-0.325, 0.05),
-];
-
-/// The corners an arrow panel's plate is cut away at, in panel units; the
-/// brackets holding it show through.
-const double _chamfer = 0.12;
+/// The arrow acrylic as a fan of triangles about a point in its head, which
+/// sees the whole outline.
+final List<(double, double)> _arrow = arrowPolygon();
 
 typedef _Rgb = (double, double, double);
 
@@ -764,7 +752,7 @@ void _buildPad(_Scene s, _Track tr, double t, double pcx, int base) {
       }
       // An octagonal plate with the corner brackets showing at its cut
       // corners; the arrow on it lights while a foot is on the panel.
-      const c = _chamfer * _u;
+      const c = kPanelChamfer * _u;
       for (final (cx, cz, sx, sz) in [
         (x0, z0, 1.0, 1.0),
         (x0, z1, 1.0, -1.0),
@@ -812,8 +800,10 @@ List<_V> _arrowTris(double cx, double cz, double turn, double size, double y) {
     for (final (u, v) in _arrow)
       _V(cx + (u * c + v * sn) * size, y, cz + (-u * sn + v * c) * size)
   ];
-  // Head, then the shaft as two triangles.
-  return [p[0], p[1], p[6], p[2], p[3], p[4], p[2], p[4], p[5]];
+  final hub = _V(cx + 0.06 * sn * size, y, cz + 0.06 * c * size);
+  return [
+    for (int i = 0; i < p.length; i++) ...[hub, p[i], p[(i + 1) % p.length]]
+  ];
 }
 
 void _buildBar(_Scene s, _Track tr) {

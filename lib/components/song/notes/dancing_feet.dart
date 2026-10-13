@@ -101,17 +101,68 @@ const List<Offset> _panelOffsets = [
 /// Arrow heading per panel (L D U R) on the canvas, 0 pointing up the pad.
 const List<double> _arrowTurn = [-math.pi / 2, math.pi, 0, math.pi / 2];
 
-/// An arrow in panel units about its panel's centre, pointing up, in the
-/// cabinet pad's proportions (the pad dancer draws the same outline).
-final Path _arrowPath = Path()
-  ..moveTo(0, -0.34)
-  ..lineTo(0.325, -0.05)
-  ..lineTo(0.18, -0.05)
-  ..lineTo(0.18, 0.235)
-  ..lineTo(-0.18, 0.235)
-  ..lineTo(-0.18, -0.05)
-  ..lineTo(-0.325, -0.05)
-  ..close();
+/// The cabinet's arrow acrylic in panel units about its panel's centre,
+/// pointing up the pad (+y): rounded tip and wing tips, filleted shoulders,
+/// and a shaft that flares into a bowed base. From [kArrowStart], each entry
+/// is a line to (x, y) or a cubic through (x1, y1, x2, y2, x, y).
+const (double, double) kArrowStart = (-0.1137, -0.2233);
+const List<List<double>> kArrowOutline = [
+  [-0.0766, -0.2179, -0.0387, -0.2151, 0, -0.2151],
+  [0.0387, -0.2151, 0.0766, -0.2179, 0.1137, -0.2233],
+  [0.1758, -0.2332, 0.1787, -0.1818, 0.1787, -0.1758],
+  [0.1787, 0.0313],
+  [0.1787, 0.0373, 0.1835, 0.0422, 0.1895, 0.0422],
+  [0.2886, 0.0422],
+  [0.3184, 0.0422, 0.3246, 0.0585, 0.3024, 0.0784],
+  [0.0404, 0.3138],
+  [0.0182, 0.3337, -0.0182, 0.3337, -0.0404, 0.3138],
+  [-0.3024, 0.0784],
+  [-0.3246, 0.0585, -0.3184, 0.0422, -0.2886, 0.0422],
+  [-0.1895, 0.0422],
+  [-0.1835, 0.0422, -0.1787, 0.0373, -0.1787, 0.0313],
+  [-0.1787, -0.1758],
+  [-0.1787, -0.1818, -0.1758, -0.2332, -0.1137, -0.2233],
+];
+
+/// [kArrowOutline] as a polygon, each curve cut into [steps] straight pieces.
+List<(double, double)> arrowPolygon([int steps = 6]) {
+  var (x0, y0) = kArrowStart;
+  final out = <(double, double)>[];
+  for (final seg in kArrowOutline) {
+    if (seg.length == 2) {
+      out.add((seg[0], seg[1]));
+    } else {
+      for (int i = 1; i <= steps; i++) {
+        final t = i / steps, u = 1 - t;
+        double at(double a, double b, double c, double d) =>
+            u * u * u * a +
+            3 * u * u * t * b +
+            3 * u * t * t * c +
+            t * t * t * d;
+        out.add(
+            (at(x0, seg[0], seg[2], seg[4]), at(y0, seg[1], seg[3], seg[5])));
+      }
+    }
+    (x0, y0) = (seg[seg.length - 2], seg[seg.length - 1]);
+  }
+  return out;
+}
+
+/// The arrow on the canvas, where y runs down.
+final Path _arrowPath = () {
+  final path = Path()..moveTo(kArrowStart.$1, -kArrowStart.$2);
+  for (final s in kArrowOutline) {
+    if (s.length == 2) {
+      path.lineTo(s[0], -s[1]);
+    } else {
+      path.cubicTo(s[0], -s[1], s[2], -s[3], s[4], -s[5]);
+    }
+  }
+  return path..close();
+}();
+
+/// The corners an arrow panel's plate is cut away at, in panel units.
+const double kPanelChamfer = 0.15;
 
 /// A lit panel's lamp.
 const Color _lamp = Color(0xFFECF2FF);
@@ -647,10 +698,11 @@ class _PadPainter extends CustomPainter {
     ..color = Colors.white.withValues(alpha: 0.12);
 
   static final Paint _arrowIdlePaint = Paint()
-    ..color = Colors.white.withValues(alpha: 0.16);
-  static final Paint _arrowLitPaint = Paint()..color = _lamp;
+    ..color = Colors.white.withValues(alpha: 0.14);
+  static final Paint _arrowLitPaint = Paint()
+    ..color = _lamp.withValues(alpha: 0.72);
   static final Paint _panelLitPaint = Paint()
-    ..color = _lamp.withValues(alpha: 0.22);
+    ..color = _lamp.withValues(alpha: 0.1);
 
   /// The arrow panels, each arrow lit while a foot is on its panel, the way
   /// the cabinet's lamps follow the press.
@@ -660,19 +712,31 @@ class _PadPainter extends CustomPainter {
     double unit,
     Set<int> lit,
   ) {
-    final side = unit * 0.88;
+    final h = unit * 0.44, c = unit * 0.88 * kPanelChamfer;
+    // Scaled with the canvas, so the blur is in panel units.
     final glow = Paint()
-      ..color = _lamp.withValues(alpha: 0.7)
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, unit * 0.1);
+      ..color = _lamp.withValues(alpha: 0.3)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.08);
     for (int col = 0; col < columnCount; col++) {
       final centre = pointFor(col);
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: centre, width: side, height: side),
-        Radius.circular(unit * 0.12),
-      );
+      // The plate, its corners cut away where the brackets hold it.
+      final plate = Path()
+        ..addPolygon([
+          for (final (x, y) in [
+            (-h + c, -h),
+            (h - c, -h),
+            (h, -h + c),
+            (h, h - c),
+            (h - c, h),
+            (-h + c, h),
+            (-h, h - c),
+            (-h, -h + c),
+          ])
+            centre + Offset(x, y),
+        ], true);
       final on = lit.contains(col);
-      canvas.drawRRect(rect, on ? _panelLitPaint : _panelPaint);
-      canvas.drawRRect(rect, _panelBorderPaint);
+      canvas.drawPath(plate, on ? _panelLitPaint : _panelPaint);
+      canvas.drawPath(plate, _panelBorderPaint);
       canvas.save();
       canvas.translate(centre.dx, centre.dy);
       canvas.rotate(_arrowTurn[col % 4]);
@@ -772,14 +836,14 @@ class _PadPainter extends CustomPainter {
           outer * 1.02, halfL * 0.32, outer, -halfL + width * 0.35)
       ..close();
 
-    canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.55));
+    canvas.drawPath(path, Paint()..color = color);
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5
         ..strokeJoin = StrokeJoin.round
-        ..color = color,
+        ..color = Color.lerp(color, Colors.black, 0.35)!,
     );
   }
 
