@@ -233,16 +233,6 @@ class _Track {
     final layout = columnCount > 4 ? _doubles : _singles;
     times = [for (final s in stances) s.second];
 
-    final mines = <int, Set<int>>{};
-    for (final n in notes) {
-      if (n.type == StepType.mine) {
-        (mines[(n.second * 1000).round()] ??= {}).add(n.col);
-      }
-    }
-    shocks = [
-      for (final e in mines.entries)
-        if (e.value.length >= 3) e.key / 1000
-    ];
     shockPlans = plannedShocks ??
         planShockEvasions(
             notes, stances, columnCount == 4 ? Modes.singles : Modes.doubles);
@@ -332,7 +322,6 @@ class _Track {
   final int columnCount;
   final DancerForm form;
   final _Style style;
-  late final List<double> shocks;
   late final List<ShockEvasion> shockPlans;
   List<ShockEvasion>? sourcePlans;
   late final List<double> times;
@@ -357,15 +346,13 @@ class _Track {
     lastT = t;
   }
 
-  /// Is a foot on panel [col] at [t]?
+  /// Is a foot on panel [col] at [t]? Not one that's evading a shock.
   bool lit(int col, double t) {
-    final evasion = shockAt(shockPlans, t);
-    if (evasion != null &&
-        evasion.columns.contains(col) &&
-        evasion.amount(t) > 0.99) {
-      return false;
-    }
-    for (final spans in pressed[col]) {
+    for (final foot in ParityFoot.values) {
+      if ((shockFor(shockPlans, foot, t)?.amount(foot, t) ?? 0) > 0.99) {
+        continue;
+      }
+      final spans = pressed[col][foot.index];
       var lo = 0, hi = spans.length;
       while (lo < hi) {
         final m = (lo + hi) >> 1;
@@ -385,6 +372,8 @@ class _Track {
 /// that lands it on the next note.
 class _FootAt {
   double x = 0, z = 0, h = 0, air = 0, e = 0, tilt = 0, landAge = 0;
+  // Where the foot's next step lands.
+  double nx = 0, nz = 0;
   double? yawA, yawB;
   bool stepped = false, bracket = false;
 }
@@ -405,6 +394,8 @@ _FootAt _footAt(List<_Step> ev, _Step rest, double t, _Style st) {
   final f = _FootAt()
     ..x = cur.x
     ..z = cur.z
+    ..nx = next?.x ?? cur.x
+    ..nz = next?.z ?? cur.z
     ..yawA = cur.bracketYaw
     ..yawB = cur.bracketYaw
     ..landAge = t - cur.t
@@ -673,19 +664,46 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
     final isLeft = foot == ParityFoot.left;
     final f = _footAt(isLeft ? tr.left : tr.right,
         isLeft ? tr.restLeft : tr.restRight, t, st);
-    final evasion = shockAt(tr.shockPlans, t);
-    final dodge = (evasion?.affects(foot) ?? false) ? evasion!.amount(t) : 0.0;
+    final evasion = shockFor(tr.shockPlans, foot, t);
+    var dodge = evasion?.amount(foot, t) ?? 0.0;
     if (evasion != null && dodge > 0) {
       final target = evasion.pose(foot, rig.shoe / _u, t);
-      if (evasion.method != ShockMethod.standard) {
-        f.x = _lerp(f.x, target.x, dodge);
-        f.z = _lerp(f.z, target.y, dodge);
-      }
-      f.h = _lerp(f.h, target.lift, dodge);
-      f.tilt = _lerp(f.tilt, target.tilt, dodge);
-      f.air = _lerp(f.air, target.airborne ? 1 : 0, dodge);
-      if (evasion.method == ShockMethod.launch) {
-        f.h += 0.06 * math.sin(math.pi * dodge);
+      final role = evasion.of(foot)!.role;
+      final out = evasion.exit(foot, t);
+      if (out > 0) {
+        // Off the metal onto the next arrow: the step's arc starts from here.
+        final e = _smooth(out), arc = math.sin(math.pi * out);
+        final d = math
+            .sqrt(math.pow(f.nx - target.x, 2) + math.pow(f.nz - target.y, 2));
+        f
+          ..x = _lerp(target.x, f.nx, e)
+          ..z = _lerp(target.y, f.nz, e)
+          ..h = target.lift * (1 - e) +
+              (0.05 + 0.06 * d).clamp(0.05, 0.2) * st.lift * arc
+          ..tilt = target.tilt * (1 - e) + arc * 0.4 * math.min(1.0, st.lift)
+          ..air = math.max(arc, target.airborne ? 1 - e : 0)
+          ..e = e;
+        dodge = 1 - e;
+      } else {
+        if (role != ShockRole.air) {
+          f.x = _lerp(f.x, target.x, dodge);
+          f.z = _lerp(f.z, target.y, dodge);
+        }
+        f.h = _lerp(f.h, target.lift, dodge);
+        f.tilt = _lerp(f.tilt, target.tilt, dodge);
+        f.air = _lerp(f.air, target.airborne ? 1 : 0, dodge);
+        if (role == ShockRole.centre || role == ShockRole.hover) {
+          // A launch springs off the arrows like a step-jump, so the body
+          // leaves the pad with the feet before landing on the metal.
+          final arc = math.sin(math.pi * evasion.hop(t));
+          f.h += 0.08 * arc;
+          f.air = math.max(f.air, arc);
+          if (role == ShockRole.centre && t >= evasion.land) {
+            f
+              ..stepped = true
+              ..landAge = t - evasion.land;
+          }
+        }
       }
       f.bracket = dodge < 0.5 && f.bracket;
     }

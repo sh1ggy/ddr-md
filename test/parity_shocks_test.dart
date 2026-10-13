@@ -42,35 +42,43 @@ void main() {
       ], Modes.singles)
           .single;
       expect(p.method, ShockMethod.heelToe);
-      expect(p.support, ParityFoot.left);
-      expect(p.amount(1), 0);
-      expect(p.amount(1.3), 1);
-      expect(p.amount(1.6), 0);
+      expect(p.left!.role, ShockRole.pivot);
+      expect(p.right!.role, ShockRole.hover);
+      expect(p.amount(ParityFoot.left, 1), 0);
+      expect(p.amount(ParityFoot.left, 1.3), 1);
+      expect(p.amount(ParityFoot.left, 1.6), 0);
       final foot = p.pose(ParityFoot.left, 1, 1.3);
       expect(foot.tilt.sign, col == 2 ? -1 : 1);
       // The supporting heel/toe touches centre metal, the arrow-facing end rises.
       final pivotY = foot.y + (col == 2 ? -1 : 1) * math.cos(foot.tilt) / 2;
       expect(pivotY, closeTo(0, 1e-9));
       expect(foot.lift, closeTo(math.sin(foot.tilt.abs()) * .283 / 2, 1e-9));
-      expect(p.transfer, isFalse);
     });
   }
-  test('next foot determines launch support', () {
+  test('launch lands the other foot flat on centre until its own next step',
+      () {
     final p = planShockEvasions([
       note(1, 0),
       ...shocks(1.3),
-      note(1.6, 3)
+      note(1.6, 3),
+      note(2, 0)
     ], [
       stance(1, 0, 3, {0}),
-      stance(1.6, 0, 3, {3})
+      stance(1.6, 0, 3, {3}),
+      stance(2, 0, 3, {0})
     ], Modes.singles)
         .single;
     expect(p.method, ShockMethod.launch);
-    expect(p.support, ParityFoot.left);
-    expect(p.pose(ParityFoot.right, 1, 1.3).lift, greaterThan(.075));
+    expect(p.left!.role, ShockRole.centre);
+    expect(p.right!.role, ShockRole.hover);
+    expect(p.pose(ParityFoot.left, 1, p.start + .01).airborne, isTrue);
+    final landed = p.pose(ParityFoot.left, 1, 1.3);
+    expect((landed.airborne, landed.lift, landed.tilt), (false, 0, 0));
+    expect(p.amount(ParityFoot.right, 1.6), 0);
+    expect(p.amount(ParityFoot.left, 1.8), 1);
+    expect(p.exit(ParityFoot.left, 1.95), inExclusiveRange(0, 1));
   });
-  test('heel/toe prepares a support transfer when the pivot foot steps next',
-      () {
+  test('heel/toe lands the spare foot when the pivot foot steps next', () {
     final p = planShockEvasions([
       note(1, 2),
       ...shocks(1.3),
@@ -80,7 +88,24 @@ void main() {
       stance(1.6, 0, 3, {0})
     ], Modes.singles)
         .single;
-    expect(p.transfer, isTrue);
+    expect(p.left!.role, ShockRole.pivot);
+    expect(p.right!.role, ShockRole.centre);
+  });
+  test('a foot on centre stays there through the next shock', () {
+    final plans = planShockEvasions([
+      note(1, 0),
+      ...shocks(1.3),
+      note(1.5, 3),
+      ...shocks(1.7),
+      note(2, 0)
+    ], [
+      stance(1, 0, 3, {0}),
+      stance(1.5, 0, 3, {3}),
+      stance(2, 0, 3, {0})
+    ], Modes.singles);
+    expect(plans[1].left, isNull);
+    expect(shockFor(plans, ParityFoot.left, 1.7), plans[0]);
+    expect(plans[0].amount(ParityFoot.left, 1.7 + .084), 1);
   });
   test('hold is never released early to evade a shock', () {
     final p = planShockEvasions([
@@ -91,7 +116,7 @@ void main() {
     ], Modes.singles)
         .single;
     expect(p.feasible, isFalse);
-    expect(p.amount(1.3), 0);
+    expect(p.amount(ParityFoot.left, 1.3), 0);
   });
   test('finished hold bounds the launch transition', () {
     final p = planShockEvasions([
@@ -102,26 +127,26 @@ void main() {
     ], Modes.singles)
         .single;
     expect(p.start, 1.2);
-    expect(p.amount(1.19), 0);
+    expect(p.amount(ParityFoot.left, 1.19), 0);
   });
-  test('DP split stance uses airborne evasion rather than crossing the seam',
-      () {
+  test('DP split stance evades on each foot\'s own pad', () {
     final p = planShockEvasions([
       note(1, 0),
-      ...shocks(1.3),
+      for (var c = 0; c < 8; c++)
+        StepNote(beat: 2.6, second: 1.3, col: c, type: StepType.mine),
       note(1.6, 7)
     ], [
       stance(1, 0, 7, {0}),
       stance(1.6, 0, 7, {7})
     ], Modes.doubles)
         .single;
-    expect(p.method, ShockMethod.standard);
+    expect(p.left!.padX, -1.5);
+    expect(p.right!.padX, 1.5);
   });
   test('isolated mines do not become shocks', () {
     expect(planShockEvasions([shocks(1).first], [], Modes.singles), isEmpty);
   });
-  test('large shoes are pitched to fit the centre and both feet fit sideways',
-      () {
+  test('only shoes longer than a panel are pitched to fit centre', () {
     final p = planShockEvasions([
       note(1, 0),
       ...shocks(1.3)
@@ -133,9 +158,8 @@ void main() {
       for (final f in ParityFoot.values) {
         final q = p.pose(f, size, 1.3);
         expect(q.x.abs() + size * .185, lessThan(.5));
-        if (q.lift < .075) {
-          expect(size * math.cos(q.tilt), lessThanOrEqualTo(.800001));
-        }
+        expect(q.tilt == 0, size <= 1);
+        expect(size * math.cos(q.tilt), lessThanOrEqualTo(1 + 1e-9));
       }
     }
   });
@@ -155,9 +179,9 @@ void main() {
             Modes.doubles)
         .single;
     expect(p.feasible, isTrue);
-    expect(p.affects(ParityFoot.left), isTrue);
-    expect(p.affects(ParityFoot.right), isFalse);
+    expect(p.left, isNotNull);
+    expect(p.right, isNull);
     expect(p.columns.contains(7), isFalse);
-    expect(p.amount(1.3), 1);
+    expect(p.amount(ParityFoot.left, 1.3), 1);
   });
 }

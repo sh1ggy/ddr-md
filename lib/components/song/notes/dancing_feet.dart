@@ -582,9 +582,11 @@ class _PadPainter extends CustomPainter {
   /// The panels with a foot drawn on them at [t]: lit once a sliding foot is
   /// halfway onto its panel until it's halfway off, with a short blink before
   /// a jack re-presses the same panel.
-  Set<int> _pressed(double t) {
+  Set<int> _pressed(double t, [Set<ParityFoot> away = const {}]) {
     final lit = <int>{};
-    for (final ev in _arrivals) {
+    for (final foot in ParityFoot.values) {
+      if (away.contains(foot)) continue;
+      final ev = _arrivals[foot.index];
       var lo = 0, hi = ev.length;
       while (lo < hi) {
         final mid = (lo + hi) >> 1;
@@ -599,18 +601,29 @@ class _PadPainter extends CustomPainter {
         if (k < 0) continue;
         final (at, cols) = ev[k];
         bool same(int j) => listEquals(ev[j].$2, cols);
-        final start = k > 0 && !same(k - 1) ? at + _stepSeconds / 2 : at;
+        final start = k > 0 && !same(k - 1) && !_offMetal(foot, at)
+            ? at + _stepSeconds / 2
+            : at;
         var end = double.infinity;
         if (k + 1 < ev.length) {
           final next = ev[k + 1].$1;
           end = same(k + 1)
               ? next - math.min(0.05, (next - at) / 3)
-              : next + _stepSeconds / 2;
+              : _offMetal(foot, next)
+                  ? next
+                  : next + _stepSeconds / 2;
         }
         if (start <= t && t < end) lit.addAll(cols);
       }
     }
     return lit;
+  }
+
+  /// Did [foot] arrive at [at] by stepping off centre metal after a shock,
+  /// rather than sliding over from its previous panel?
+  bool _offMetal(ParityFoot foot, double at) {
+    final away = shockFor(shockPlans, foot, at - 1e-6)?.of(foot);
+    return away != null && away.steps && (away.release - at).abs() < 1e-6;
   }
 
   /// The drawn centre of a column, in panel units from the whole pad's centre.
@@ -668,15 +681,18 @@ class _PadPainter extends CustomPainter {
         : Curves.easeOutCubic
             .transform((sinceStep / _stepSeconds).clamp(0.0, 1.0));
 
-    final evasion = shockAt(shockPlans, second);
-    final dodge = evasion?.amount(second) ?? 0;
+    final evasions = {
+      for (final foot in ParityFoot.values)
+        foot: shockFor(shockPlans, foot, second)
+    };
     _paintPanels(
         canvas,
         pointFor,
         unit,
-        dodge > 0.99
-            ? (_pressed(second)..removeAll(evasion!.columns))
-            : _pressed(second));
+        _pressed(second, {
+          for (final e in evasions.entries)
+            if ((e.value?.amount(e.key, second) ?? 0) > 0.99) e.key
+        }));
 
     // The body's turn, slid alongside the feet so a crossover winds round as the
     // foot travels rather than snapping square on the landing frame. One angle
@@ -687,21 +703,40 @@ class _PadPainter extends CustomPainter {
     for (final foot in ParityFoot.values) {
       final to = _poseFor(current, foot);
       if (to == null) continue; // foot not on the pad yet
-      final from = (previous == null ? null : _poseFor(previous, foot)) ?? to;
+      var from = (previous == null ? null : _poseFor(previous, foot)) ?? to;
       // Only the foot that actually stepped presses. A foot standing still while
       // its partner steps is holding its weight, not landing, and bobbing it too
       // would read as both feet hitting on every note.
-      final press = _stepped(current, foot) ? padPressFactor(sinceStep) : 1.0;
-      final footDodge = (evasion?.affects(foot) ?? false) ? dodge : 0.0;
+      var press = _stepped(current, foot) ? padPressFactor(sinceStep) : 1.0;
+      var evasion = evasions[foot];
+      var dodge = evasion?.amount(foot, second) ?? 0.0;
+      if (evasion == null &&
+          _stepped(current, foot) &&
+          _offMetal(foot, current.second)) {
+        // This step left the metal: slide from there, not the old arrow.
+        evasion = shockFor(shockPlans, foot, current.second - 1e-6);
+        from = to;
+        dodge = 1 - t;
+      }
+      final role = evasion?.of(foot)?.role;
       final target =
           evasion?.pose(foot, shoeLength(shoeSize) / kPanelMetres, second);
       final safe =
           target == null ? center : center + Offset(target.x, -target.y) * unit;
+      var lifted = (target?.airborne ?? false) ? 0.10 * dodge : 0.0;
+      if (evasion != null &&
+          (role == ShockRole.centre || role == ShockRole.hover)) {
+        lifted =
+            math.max(lifted, 0.10 * math.sin(math.pi * evasion.hop(second)));
+        if (role == ShockRole.centre && second >= evasion.land) {
+          press = padPressFactor(second - evasion.land);
+        }
+      }
       _paintFoot(canvas, pointFor, unit, foot, from, to, t, turn, press,
-          shockTarget: evasion?.method == ShockMethod.standard ? null : safe,
-          dodge: footDodge,
-          tilt: (target?.tilt ?? 0) * footDodge,
-          lifted: (target?.airborne ?? false) ? 0.10 * footDodge : 0);
+          shockTarget: role == ShockRole.air ? null : safe,
+          dodge: dodge,
+          tilt: (target?.tilt ?? 0) * dodge,
+          lifted: lifted);
     }
   }
 

@@ -54,13 +54,19 @@ void main() {
       final plan = ShockEvasion(
           second: 1.3,
           start: 1.08,
-          end: 1.52,
-          method: method,
-          support: ParityFoot.left,
-          padX: 0,
-          up: true,
-          transfer: false,
-          feasible: true);
+          land: 1.21,
+          feasible: true,
+          left: switch (method) {
+            ShockMethod.standard =>
+              const ShockFoot(ShockRole.air, 0, 1.52, 1.39, steps: false),
+            ShockMethod.launch =>
+              const ShockFoot(ShockRole.centre, 0, 2, 1.82),
+            ShockMethod.heelToe =>
+              const ShockFoot(ShockRole.pivot, 0, 1.6, 1.42, up: true),
+          },
+          right: method == ShockMethod.standard
+              ? const ShockFoot(ShockRole.air, 0, 1.52, 1.39, steps: false)
+              : const ShockFoot(ShockRole.hover, 0, 1.6, 1.42));
       final key = GlobalKey();
       await tester.pumpWidget(MaterialApp(
           home: RepaintBoundary(
@@ -99,7 +105,7 @@ void main() {
           image.dispose();
         });
       }
-      for (final t in [1.05, 1.15, 1.25, 1.35, 1.45, 1.55, 1.65]) {
+      for (final t in [1.05, 1.15, 1.25, 1.35, 1.45, 1.55, 1.65, 1.9]) {
         playhead.value = t;
         await tester.pump();
         expect(tester.takeException(), isNull);
