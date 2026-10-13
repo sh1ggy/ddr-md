@@ -372,12 +372,18 @@ class ChartPainter extends CustomPainter {
       _fadeLayer(
           canvas,
           holdAlpha,
-          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize, holdX + arrowSize,
-              tailY + arrowSize), () {
+          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize,
+              holdX + arrowSize, tailY + arrowSize), () {
+        // Nothing of a freeze shows above its head's centre: a freeze shorter
+        // than the tail cap would otherwise poke the cap out around the head.
+        canvas.save();
+        canvas.clipRect(Rect.fromLTRB(
+            holdX - arrowSize, headY, holdX + arrowSize, tailY + arrowSize));
         skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
             n.type == StepType.roll);
-        skin.paintHoldTail(canvas, holdX, tailY, arrowSize, dirs[col],
-            n.type == StepType.roll);
+        skin.paintHoldTail(
+            canvas, holdX, tailY, arrowSize, dirs[col], n.type == StepType.roll);
+        canvas.restore();
       });
     }
 
@@ -422,8 +428,8 @@ class ChartPainter extends CustomPainter {
       _paintFootPaths(canvas, laneCenterX, yFor, arrowSize, second, maxT);
     }
 
-    // 2) Shock rows: a light-blue arrow in every lit lane linked by electricity,
-    // spanning the whole row (also vanishes once hit).
+    // 2) Shock rows: an animated bolt spanning each affected pad,
+    // disappearing once it reaches the receptor.
     for (final s in shocks) {
       if (s.second > maxT) break; // sorted by second
       if (s.second < second) continue;
@@ -435,7 +441,7 @@ class ChartPainter extends CustomPainter {
       ];
       _fadeLayer(canvas, shockAlpha,
           Rect.fromLTRB(0, y - arrowSize, size.width, y + arrowSize), () {
-        skin.paintShock(canvas, lanes, y, arrowSize);
+        skin.paintShock(canvas, lanes, y, arrowSize, chartSecond: second);
       });
     }
 
