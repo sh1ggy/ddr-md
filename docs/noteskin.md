@@ -13,10 +13,15 @@ Two implementations exist:
   `assets/noteskin/` when present: four pre-coloured down-facing tap arrows
   (`arrow-note-down-{red,blue,yellow,green}.png`, rotated per lane), four
   direction-oriented freeze bodies/tails (`hold-{left,down,up,right}-{body,
-  tail}.png`), and four direction-oriented shock arrows
-  (`arrow-shock-{left,down,up,right}.png`). The freeze **tail** sprite is
-  modulated to the freeze green (roll orange for rolls) so its end cap matches
-  the hold body's colour. Mines/receptors fall back to the vector skin.
+  tail}.png`). Shocks use an optional `shock-row.png` animation (two columns by
+  four rows), drawn once per pad over colour-matched tap glyphs. Their padded
+  aura texture is cached once and reused across directions and zoom levels;
+  older bundles retain the fallback.
+  The freeze body ends at the top of
+  the **tail** cap, which is centred on the tail's second like a tap, and its
+  tiles hang from the cap so they scroll with the chart while the freeze is
+  held. Rolls tint body and cap orange. Mines/receptors fall back to the vector
+  skin.
   `SpriteNoteskin.tryLoad()` returns `null` when the sprites aren't bundled
   (fresh clone / lite build), and `ChartScroller` uses the vector skin in that
   case.
