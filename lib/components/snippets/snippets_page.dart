@@ -119,6 +119,8 @@ class _SnippetsPageState extends State<SnippetsPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
+        // A snackbar with an action otherwise stays up until dismissed.
+        persist: false,
         content: const Text('Snippet deleted'),
         action: SnackBarAction(
           label: 'Undo',

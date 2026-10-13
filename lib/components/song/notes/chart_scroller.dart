@@ -1766,9 +1766,11 @@ class _ChartScrollerState extends State<ChartScroller>
     } else {
       final lastBeat = notes.map((n) => n.endBeat ?? n.beat).reduce(math.max);
       _sectionRows = (notes.first.second, notes.last.second);
+      // Kept inside the song, so a section ending on its last freeze still
+      // loops rather than running into the end.
       _loop = (
         math.max(0.0, _secondAtBeat(range.$1 - 4)),
-        _secondAtBeat(lastBeat + 1),
+        math.min(_secondAtBeat(lastBeat + 1), _endSecond),
       );
       _sectionNotes = notes.toSet();
     }
