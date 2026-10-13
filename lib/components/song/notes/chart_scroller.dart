@@ -2522,6 +2522,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 visualOffset: _visualOffsetSeconds,
                 form: _form,
                 shoeSize: _shoeSize,
+                shocks: [for (final shock in _shocks) shock.second],
               ),
             ),
 

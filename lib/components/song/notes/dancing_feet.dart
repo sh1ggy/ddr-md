@@ -161,6 +161,22 @@ final Path _arrowPath = () {
   return path..close();
 }();
 
+/// Move clear before a shock and stay clear through its timing window.
+double shockDodge(List<double> shocks, double second) {
+  var amount = 0.0;
+  for (final shock in shocks) {
+    final dt = second - shock;
+    if (dt < -0.22 || dt > 0.22) continue;
+    final a = dt < -0.09
+        ? (dt + 0.22) / 0.13
+        : dt > 0.09
+            ? (0.22 - dt) / 0.13
+            : 1.0;
+    amount = math.max(amount, Curves.easeInOut.transform(a.clamp(0.0, 1.0)));
+  }
+  return amount;
+}
+
 /// One panel of the gold cabinet's stage: a 283 mm cell.
 const double kPanelMetres = 0.283;
 
@@ -267,12 +283,14 @@ class DancingFeet extends StatefulWidget {
     this.visualOffset = 0,
     this.form = DancerForm.standard,
     this.shoeSize = kShoeSize,
+    this.shocks = const [],
   });
 
   final DancerForm form;
 
   /// US shoe size; the feet are drawn to scale against the panels.
   final double shoeSize;
+  final List<double> shocks;
 
   /// The solved stance timeline, ascending by second.
   final List<ParityStance> stances;
@@ -409,6 +427,7 @@ class _DancingFeetState extends State<DancingFeet> {
                 visualOffset: widget.visualOffset,
                 form: widget.form,
                 shoeSize: widget.shoeSize,
+                shocks: widget.shocks,
               ),
             ),
           ),
@@ -430,6 +449,7 @@ class DancePad extends StatelessWidget {
     this.visualOffset = 0,
     this.form = DancerForm.standard,
     this.shoeSize = kShoeSize,
+    this.shocks = const [],
   });
 
   final bool dragging;
@@ -439,6 +459,7 @@ class DancePad extends StatelessWidget {
   final double visualOffset;
   final DancerForm form;
   final double shoeSize;
+  final List<double> shocks;
 
   @override
   Widget build(BuildContext context) {
@@ -464,6 +485,7 @@ class DancePad extends StatelessWidget {
               visualOffset: visualOffset,
               form: form,
               shoeSize: shoeSize,
+              shocks: shocks,
             ),
             size: Size.infinite,
           ),
@@ -501,6 +523,7 @@ class _PadPainter extends CustomPainter {
     required this.visualOffset,
     required this.form,
     required this.shoeSize,
+    required this.shocks,
   }) : super(repaint: playhead);
 
   final List<ParityStance> stances;
@@ -509,6 +532,7 @@ class _PadPainter extends CustomPainter {
   final double visualOffset;
   final DancerForm form;
   final double shoeSize;
+  final List<double> shocks;
 
   /// The body's turn at each stance, solved in order since whether a stance
   /// turns you depends on how you stepped into it (see [stepTurn]). Doubles has
@@ -651,7 +675,9 @@ class _PadPainter extends CustomPainter {
         : Curves.easeOutCubic
             .transform((sinceStep / _stepSeconds).clamp(0.0, 1.0));
 
-    _paintPanels(canvas, pointFor, unit, _pressed(second));
+    final dodge = shockDodge(shocks, second);
+    _paintPanels(
+        canvas, pointFor, unit, dodge > 0.99 ? const {} : _pressed(second));
 
     // The body's turn, slid alongside the feet so a crossover winds round as the
     // foot travels rather than snapping square on the landing frame. One angle
@@ -667,7 +693,14 @@ class _PadPainter extends CustomPainter {
       // its partner steps is holding its weight, not landing, and bobbing it too
       // would read as both feet hitting on every note.
       final press = _stepped(current, foot) ? padPressFactor(sinceStep) : 1.0;
-      _paintFoot(canvas, pointFor, unit, foot, from, to, t, turn, press);
+      final padX = columnCount <= 4
+          ? 0.0
+          : (_panelCenter(to.heelCol).dx < 0 ? -1.5 : 1.5);
+      final safe =
+          center + Offset(padX + (foot == ParityFoot.left ? -1 : 1), 1) * unit;
+      Offset dodgePoint(int col) => Offset.lerp(pointFor(col), safe, dodge)!;
+      _paintFoot(canvas, dodgePoint, unit, foot, from, to, t,
+          turn * (1 - dodge), press);
     }
   }
 
@@ -880,5 +913,6 @@ class _PadPainter extends CustomPainter {
       // paused — same reason the field's painter watches it.
       old.visualOffset != visualOffset ||
       old.form != form ||
-      old.shoeSize != shoeSize;
+      old.shoeSize != shoeSize ||
+      old.shocks != shocks;
 }

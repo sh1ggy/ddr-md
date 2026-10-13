@@ -24,7 +24,8 @@ import 'dancing_feet.dart'
         kPanelMetres,
         kShoeSize,
         shoeLength,
-        stepTurn;
+        stepTurn,
+        shockDodge;
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
@@ -229,6 +230,16 @@ class _Track {
     final layout = columnCount > 4 ? _doubles : _singles;
     times = [for (final s in stances) s.second];
 
+    final mines = <int, Set<int>>{};
+    for (final n in notes) {
+      if (n.type == StepType.mine) {
+        (mines[(n.second * 1000).round()] ??= {}).add(n.col);
+      }
+    }
+    shocks = [
+      for (final e in mines.entries)
+        if (e.value.length >= 3) e.key / 1000
+    ];
     final holdEnds = <double, Map<int, double>>{};
     for (final n in notes) {
       if (n.isHold && n.endSecond != null) {
@@ -315,6 +326,7 @@ class _Track {
   final int columnCount;
   final DancerForm form;
   final _Style style;
+  late final List<double> shocks;
   late final List<double> times;
   final List<double> turns = [];
   final List<_Step> left = [], right = [];
@@ -339,6 +351,7 @@ class _Track {
 
   /// Is a foot on panel [col] at [t]?
   bool lit(int col, double t) {
+    if (shockDodge(shocks, t) > 0.99) return false;
     for (final spans in pressed[col]) {
       var lo = 0, hi = spans.length;
       while (lo < hi) {
@@ -647,7 +660,13 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
     final isLeft = foot == ParityFoot.left;
     final f = _footAt(isLeft ? tr.left : tr.right,
         isLeft ? tr.restLeft : tr.restRight, t, st);
-    final splay = yaw + (isLeft ? -0.16 : 0.16);
+    final dodge = shockDodge(tr.shocks, t);
+    final padX = tr.columnCount <= 4 ? 0.0 : (f.x < 0 ? -1.5 : 1.5);
+    f.x = _lerp(f.x, padX + (isLeft ? -1 : 1), dodge);
+    f.z = _lerp(f.z, -1, dodge);
+    f.h *= 1 - dodge;
+    f.bracket = dodge < 0.5 && f.bracket;
+    final splay = yaw * (1 - dodge) + (isLeft ? -0.16 : 0.16);
     final ff = _fwdOf(_angLerp(f.yawA ?? splay, f.yawB ?? splay, f.e));
     // Toes dip while the foot is in the air.
     final cp = math.cos(f.tilt), sp = math.sin(f.tilt);
