@@ -52,6 +52,12 @@ class Settings {
   // DancerForm index shared by the dancing feet and the pad dancer.
   static const String dancerFormKey = "chartPreviewDancerForm";
 
+  // Profile: the player's height in cm for the pad dancer (0 = unset), and
+  // how they hold the bar (BarGrip / GripSpot index).
+  static const String heightKey = "profileHeightCm";
+  static const String barGripKey = "profileBarGrip";
+  static const String gripSpotKey = "profileGripSpot";
+
   // Where the user has dragged the dancing-feet pad, as THOUSANDTHS of the
   // field's free space, PLUS ONE. Stored as a fraction rather than pixels so
   // the pad returns to the same spot on a different screen size or after a

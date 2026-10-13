@@ -29,6 +29,19 @@ const double _stageDepth = 1.085;
 const double _stageFront = 1.5 * _u + 0.035;
 const double _stageBack = _stageFront - _stageDepth;
 const double _thigh = 0.44, _shin = 0.43, _upperArm = 0.30, _foreArm = 0.30;
+
+/// How tall the mannequin stands at its own proportions, in metres; a set
+/// height scales the body from here.
+const double kDancerHeight = 1.71;
+
+/// How the player holds the bar: palms down over it, or palms up under it
+/// with the elbows tucked.
+enum BarGrip { overhand, underhand }
+
+/// Where on the bar the hands go: together on the top, or out on the bends.
+enum GripSpot { middle, edges }
+
+typedef _Rig = ({bool bar, BarGrip grip, GripSpot spot, double k});
 // Rail centreline dimensions; the padded outside top is 1.09 m above the
 // floor and the outside width is 0.456 m. Geometry notes kept locally.
 const double _barTubeRadius = 0.021;
@@ -602,8 +615,11 @@ class _Pose {
   final Map<ParityFoot, ({_V shoulder, _V elbow, _V hand})> arms = {};
 }
 
-_Pose _pose(_Track tr, double t, bool bar) {
+_Pose _pose(_Track tr, double t, _Rig rig) {
   final st = tr.style;
+  final bar = rig.bar, k = rig.k;
+  final thigh = _thigh * k, shin = _shin * k;
+  final upperArm = _upperArm * k, foreArm = _foreArm * k;
   final pose = _Pose(tr.yaw);
   final yaw = tr.yaw, fwd = _fwdOf(yaw), side = _rightOf(yaw);
   final ankles = <ParityFoot, _V>{};
@@ -642,11 +658,12 @@ _Pose _pose(_Track tr, double t, bool bar) {
   final dip = (0.03 * math.max(dl, dr) + 0.02 * math.min(dl, dr)) * st.dip;
   final jump =
       math.min(fl.air, fr.air) > 0.2 ? math.min(fl.h, fr.h) * 0.9 : 0.0;
-  var py = _padY + 0.88 - dip + jump;
+  var py = _padY + 0.88 * k - dip + jump;
   // Never higher than both legs can reach, so the feet stay on the pad.
-  const reach = (_thigh + _shin) * 0.985;
+  final reach = (thigh + shin) * 0.985;
   for (final (a, sgn) in [(ankL, -1.0), (ankR, 1.0)]) {
-    final hx = px + side.x * 0.095 * sgn, hz = pz + side.z * 0.095 * sgn;
+    final hx = px + side.x * 0.095 * k * sgn,
+        hz = pz + side.z * 0.095 * k * sgn;
     final hd = math.sqrt((hx - a.x) * (hx - a.x) + (hz - a.z) * (hz - a.z));
     py = math.min(py, a.y + math.sqrt(math.max(0.01, reach * reach - hd * hd)));
   }
@@ -657,9 +674,9 @@ _Pose _pose(_Track tr, double t, bool bar) {
     (ParityFoot.left, -1.0),
     (ParityFoot.right, 1.0)
   ]) {
-    final hip = pelvis + side * (0.095 * sgn);
+    final hip = pelvis + side * (0.095 * k * sgn);
     final pole = (fwd + pose.shoes[foot]!.fwd * 0.6 + side * (0.15 * sgn)).unit;
-    final (knee, ankle) = _ik(hip, ankles[foot]!, _thigh, _shin, pole);
+    final (knee, ankle) = _ik(hip, ankles[foot]!, thigh, shin, pole);
     pose.legs[foot] = (hip: hip, knee: knee, ankle: ankle);
   }
 
@@ -676,18 +693,34 @@ _Pose _pose(_Track tr, double t, bool bar) {
   final lean = bar
       ? -0.08 - (pz - _barZ - 0.45).clamp(0.0, 0.5) * 0.45 + dip * 0.4
       : 0.02 + dip * 0.4;
-  var chest = over + tf * lean + _V(0, 0.46 - dip * 0.4, 0);
+  var chest = over + tf * lean + _V(0, 0.46 * k - dip * 0.4, 0);
   // Grips belong to the stage, not the moving pelvis. On doubles the player
   // holds the inner side of each bar; neither hand slides during a transfer.
-  final gripWidth =
-      tr.columnCount > 4 ? 1.5 * _u - _gripHalfWidth : _gripHalfWidth;
-  _V grip(double sign) => _V(gripWidth * sign, _barY, _barZ);
-  const armReach = (_upperArm + _foreArm) * 0.97;
+  // EDGES takes the bend halfway round; overhand sits on the tube, underhand
+  // under it.
+  final doubles = tr.columnCount > 4;
+  final edges = rig.spot == GripSpot.edges;
+  const bend = math.pi / 4;
+  final along = edges
+      ? _barHalfWidth - _barBendRadius + _barBendRadius * math.cos(bend)
+      : _gripHalfWidth;
+  final drop = edges ? _barBendRadius * (1 - math.sin(bend)) : 0.0;
+  final wrap = rig.grip == BarGrip.overhand ? 0.03 : -0.035;
+  _V grip(double sign) {
+    final d = doubles ? -sign : sign;
+    final normal =
+        edges ? _V(d * math.cos(bend), math.sin(bend), 0) : const _V(0, 1, 0);
+    return _V(
+            (doubles ? sign * 1.5 * _u : 0) + d * along, _barY - drop, _barZ) +
+        normal * wrap;
+  }
+
+  final armReach = (upperArm + foreArm) * 0.97;
   if (bar) {
     // Lean the shoulders into the reachable intersection of both arm chains.
     for (var pass = 0; pass < 12; pass++) {
       for (final sign in [-1.0, 1.0]) {
-        final shoulder = chest + ts * (0.2 * sign) + const _V(0, 0.06, 0);
+        final shoulder = chest + ts * (0.2 * k * sign) + _V(0, 0.06 * k, 0);
         final delta = shoulder - grip(sign);
         if (delta.length > armReach) {
           chest = chest - delta.unit * (delta.length - armReach);
@@ -696,16 +729,19 @@ _Pose _pose(_Track tr, double t, bool bar) {
     }
   }
   pose.chest = chest;
-  pose.head = chest + tf * 0.02 + const _V(0, 0.27, 0);
+  pose.head = chest + tf * 0.02 + _V(0, 0.27 * k, 0);
   for (final (foot, sgn) in [
     (ParityFoot.left, -1.0),
     (ParityFoot.right, 1.0)
   ]) {
-    final shoulder = chest + ts * (0.2 * sgn) + const _V(0, 0.06, 0);
+    final shoulder = chest + ts * (0.2 * k * sgn) + _V(0, 0.06 * k, 0);
     if (bar) {
       final target = grip(sgn);
-      final pole = (tf * -0.4 + ts * (0.7 * sgn) + const _V(0, -0.3, 0)).unit;
-      final (elbow, _) = _ik(shoulder, target, _upperArm, _foreArm, pole);
+      // Overhand flares the elbows out; underhand tucks them down by the ribs.
+      final pole = rig.grip == BarGrip.overhand
+          ? (tf * -0.4 + ts * (0.7 * sgn) + const _V(0, -0.3, 0)).unit
+          : (tf * -0.3 + ts * (0.15 * sgn) + const _V(0, -0.9, 0)).unit;
+      final (elbow, _) = _ik(shoulder, target, upperArm, foreArm, pole);
       pose.arms[foot] = (shoulder: shoulder, elbow: elbow, hand: target);
     } else {
       // Hands free: hanging by the hips, swinging against the leg on that
@@ -714,10 +750,10 @@ _Pose _pose(_Track tr, double t, bool bar) {
       final theirs = foot == ParityFoot.left ? fr : fl;
       final swing = st.armSwing * (theirs.air - mine.air) * 2;
       final target = shoulder +
-          ts * ((0.06 + st.armSwing * 0.4) * sgn) +
-          tf * (0.08 + swing) +
-          const _V(0, -0.52, 0);
-      final (elbow, hand) = _ik(shoulder, target, _upperArm, _foreArm, tf * -1);
+          ts * ((0.06 + st.armSwing * 0.4) * k * sgn) +
+          tf * (0.08 + swing) * k +
+          _V(0, -0.52 * k, 0);
+      final (elbow, hand) = _ik(shoulder, target, upperArm, foreArm, tf * -1);
       pose.arms[foot] = (shoulder: shoulder, elbow: elbow, hand: hand);
     }
   }
@@ -837,7 +873,9 @@ void _buildBar(_Scene s, _Track tr) {
   }
 }
 
-void _buildDancer(_Scene s, _Pose p) {
+void _buildDancer(_Scene s, _Pose p, double k) {
+  List<(double, double, double)> sized(List<(double, double, double)> rings) =>
+      [for (final (h, w, d) in rings) (h * k, w * k, d * k)];
   final fwd = _fwdOf(p.yaw), side = _rightOf(p.yaw);
   final tf = _fwdOf(p.torsoYaw), ts = _rightOf(p.torsoYaw);
   for (final foot in ParityFoot.values) {
@@ -857,22 +895,23 @@ void _buildDancer(_Scene s, _Pose p) {
         shoe.len + 0.004,
         _mix(foot == ParityFoot.left ? _leftC : _rightC, _white, glow * 0.5),
         emissive: true);
-    s.limb(leg.hip, leg.knee, 0.068, 0.072, _pants, fwd);
-    s.limb(leg.knee, leg.ankle, 0.056, 0.06, _pants, fwd);
-    s.limb(arm.shoulder, arm.elbow, 0.046, 0.046, _jacket, tf);
-    s.limb(arm.elbow, arm.hand, 0.036, 0.036, _skin, tf);
-    s.box(arm.hand, _xAxis, _up, _zAxis, 0.035, 0.035, 0.035, _skin);
+    s.limb(leg.hip, leg.knee, 0.068 * k, 0.072 * k, _pants, fwd);
+    s.limb(leg.knee, leg.ankle, 0.056 * k, 0.06 * k, _pants, fwd);
+    s.limb(arm.shoulder, arm.elbow, 0.046 * k, 0.046 * k, _jacket, tf);
+    s.limb(arm.elbow, arm.hand, 0.036 * k, 0.036 * k, _skin, tf);
+    final h = 0.035 * k;
+    s.box(arm.hand, _xAxis, _up, _zAxis, h, h, h, _skin);
   }
   s.rings(
       p.pelvis,
       side,
       _up,
       fwd,
-      [
+      sized([
         (-0.08, 0.10, 0.08),
         (0.0, 0.145, 0.10),
         (0.08, 0.13, 0.09),
-      ],
+      ]),
       _pants);
   final torsoAxis = (p.chest - p.pelvis).unit;
   final torsoSide = ts;
@@ -884,15 +923,15 @@ void _buildDancer(_Scene s, _Pose p) {
       torsoAxis,
       torsoForward,
       [
-        (0.04, 0.13, 0.09),
-        (height * 0.4, 0.135, 0.095),
-        (height * 0.8, 0.18, 0.11),
-        (height, 0.19, 0.105),
-        (height + 0.085, 0.13, 0.08),
-        (height + 0.10, 0.035, 0.035),
+        (0.04 * k, 0.13 * k, 0.09 * k),
+        (height * 0.4, 0.135 * k, 0.095 * k),
+        (height * 0.8, 0.18 * k, 0.11 * k),
+        (height, 0.19 * k, 0.105 * k),
+        (height + 0.085 * k, 0.13 * k, 0.08 * k),
+        (height + 0.10 * k, 0.035 * k, 0.035 * k),
       ],
       _jacket);
-  s.tube(p.chest + const _V(0, 0.11, 0), p.head + const _V(0, -0.09, 0), 0.035,
+  s.tube(p.chest + _V(0, 0.11 * k, 0), p.head + _V(0, -0.09 * k, 0), 0.035 * k,
       _skin);
   final hf = _fwdOf(p.torsoYaw * 0.5), hs = _rightOf(p.torsoYaw * 0.5);
   s.rings(
@@ -900,14 +939,14 @@ void _buildDancer(_Scene s, _Pose p) {
       hs,
       _up,
       hf,
-      [
+      sized([
         (-0.105, 0.035, 0.05),
         (-0.075, 0.067, 0.075),
         (0.0, 0.085, 0.095),
         (0.065, 0.08, 0.09),
         (0.10, 0.025, 0.03),
         (0.105, 0.001, 0.001),
-      ],
+      ]),
       _skin);
 }
 
@@ -922,6 +961,9 @@ class PadDancerPainter extends CustomPainter {
     this.visualOffset = 0,
     this.form = DancerForm.standard,
     this.bar = true,
+    this.grip = BarGrip.overhand,
+    this.gripSpot = GripSpot.middle,
+    this.height = kDancerHeight,
   }) : super(repaint: playhead);
 
   /// The solve's stances and the notes it was solved on (turned), for holds.
@@ -934,6 +976,14 @@ class PadDancerPainter extends CustomPainter {
 
   /// Holding the cabinet's back bar, or hands free without one.
   final bool bar;
+  final BarGrip grip;
+  final GripSpot gripSpot;
+
+  /// The player's height in metres.
+  final double height;
+
+  _Rig get _rig =>
+      (bar: bar, grip: grip, spot: gripSpot, k: height / kDancerHeight);
 
   static _Track? _cache;
 
@@ -964,7 +1014,7 @@ class PadDancerPainter extends CustomPainter {
     final tr = _track;
     final t = playhead.value + visualOffset;
     tr.advance(t);
-    final pose = _pose(tr, t, bar);
+    final pose = _pose(tr, t, _rig);
 
     // The camera never moves: the stage stays put and the dancer moves on it.
     const dist = 3.3, pitch = 0.62;
@@ -1002,7 +1052,7 @@ class PadDancerPainter extends CustomPainter {
     // From behind, the body stands over the centre and Up; drawn see-through
     // so every panel and its lamp stays readable through it.
     final body = _Scene(cam);
-    _buildDancer(body, pose);
+    _buildDancer(body, pose, _rig.k);
     canvas.saveLayer(body.bounds, _bodyPaint);
     body.draw(canvas);
     canvas.restore();
@@ -1042,6 +1092,9 @@ class PadDancerPainter extends CustomPainter {
       old.visualOffset != visualOffset ||
       old.form != form ||
       old.bar != bar ||
+      old.grip != grip ||
+      old.gripSpot != gripSpot ||
+      old.height != height ||
       old.playhead != playhead;
 }
 
@@ -1069,7 +1122,13 @@ class PadDancerPainter extends CustomPainter {
   final shoulders = <(double, double, double)>[];
   for (final t in times) {
     tr.advance(t);
-    final c = _pose(tr, t, bar).chest + const _V(0, 0.06, 0);
+    final c = _pose(tr, t, (
+          bar: bar,
+          grip: BarGrip.overhand,
+          spot: GripSpot.middle,
+          k: 1
+        )).chest +
+        const _V(0, 0.06, 0);
     shoulders.add((c.x, c.y, c.z));
   }
   return (landings: landings, shoulders: shoulders);

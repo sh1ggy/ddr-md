@@ -429,6 +429,16 @@ class _ChartScrollerState extends State<ChartScroller>
   bool _dancerBar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
   DancerForm _form = DancerForm.values[Settings.getInt(Settings.dancerFormKey)
       .clamp(0, DancerForm.values.length - 1)];
+  // Set in the profile, not here.
+  final BarGrip _grip = BarGrip.values[
+      Settings.getInt(Settings.barGripKey).clamp(0, BarGrip.values.length - 1)];
+  final GripSpot _gripSpot = GripSpot.values[
+      Settings.getInt(Settings.gripSpotKey)
+          .clamp(0, GripSpot.values.length - 1)];
+  final double _height = switch (Settings.getInt(Settings.heightKey)) {
+    0 => kDancerHeight,
+    final cm => cm.clamp(120, 220) / 100,
+  };
 
   void _togglePadDancer() {
     setState(() => _padDancer = !_padDancer);
@@ -2270,6 +2280,9 @@ class _ChartScrollerState extends State<ChartScroller>
                         visualOffset: _visualOffsetSeconds,
                         form: _form,
                         bar: _dancerBar,
+                        grip: _grip,
+                        gripSpot: _gripSpot,
+                        height: _height,
                       ),
                       size: Size.infinite,
                       willChange: true,
