@@ -37,7 +37,9 @@ void main() {
           data['charts'][mode == Modes.singles ? 'sp' : 'dp'][difficulty]);
       final tail = steps.notes
           .fold(0.0, (double end, n) => math.max(end, n.endSecond ?? n.second));
-      final length = (song['song_length'] as num).toDouble();
+      // Keep reproducing truncated metadata after content fixes its lengths.
+      final length = math.min(
+          (song['song_length'] as num).toDouble(), tail - 0.5);
       expect(tail, greaterThan(length));
       await tester.pumpWidget(MaterialApp(
           home: Scaffold(
