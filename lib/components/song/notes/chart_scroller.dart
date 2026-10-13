@@ -128,8 +128,8 @@ class ChartScroller extends StatefulWidget {
 
   final ChartSteps steps;
 
-  /// A snippet's section: playback loops it, with a bar's run-up, and the rest
-  /// of the chart dims.
+  /// A snippet's section: playback loops it, with a two-beat run-up, and the
+  /// rest of the chart dims. Scrubbing keeps to the loop.
   final BeatRange? section;
   final VoidCallback? onSaveSection;
 
@@ -413,7 +413,8 @@ class _ChartScrollerState extends State<ChartScroller>
   // Tap-and-hold fast-forward: holding the field without dragging doubles
   // playback. Releasing restores the rate active before the hold rather than a
   // hardcoded 1.0, so it composes with the song-speed control.
-  static const double _holdSpeedMultiplier = 2.0;
+  // In a snippet the hold halves the speed instead, for drilling the section.
+  double get _holdSpeedMultiplier => widget.section != null ? 0.5 : 2.0;
   static const double _maxHoldPlaybackRate = 2.0;
   double? _preHoldPlaybackRate;
   bool _holdFastForward = false;
@@ -471,8 +472,8 @@ class _ChartScrollerState extends State<ChartScroller>
   Timer? _selectionScroll;
 
   // [ChartScroller.section] in seconds: its first and last rows, the loop it
-  // plays (a bar's run-up to a beat past its last note or hold tail), and its
-  // notes, which stay lit while the rest dims.
+  // plays (a two-beat run-up to half a beat past its last note or hold tail),
+  // and its notes, which stay lit while the rest dims.
   (double, double)? _sectionRows;
   (double, double)? _loop;
   Set<StepNote> _sectionNotes = const {};
@@ -1788,8 +1789,8 @@ class _ChartScrollerState extends State<ChartScroller>
       // Kept inside the song, so a section ending on its last freeze still
       // loops rather than running into the end.
       _loop = (
-        math.max(0.0, _secondAtBeat(range.$1 - 4)),
-        math.min(_secondAtBeat(lastBeat + 1), _endSecond),
+        math.max(0.0, _secondAtBeat(range.$1 - 2)),
+        math.min(_secondAtBeat(lastBeat + 0.5), _endSecond),
       );
       _sectionNotes = notes.toSet();
     }
@@ -1960,6 +1961,11 @@ class _ChartScrollerState extends State<ChartScroller>
         _stopTickerIfIdle();
       }
     }
+    if (!_playing && _loop != null && !widget.pickSection) {
+      final (from, to) = _scrubRange;
+      if (next <= from || next >= to) _flingVel = 0;
+      next = next.clamp(from, to);
+    }
     if (next >= _endSecond) {
       next = _endSecond;
       _flingVel = 0;
@@ -2071,7 +2077,7 @@ class _ChartScrollerState extends State<ChartScroller>
     HapticFeedback.mediumImpact();
     final delta = forward ? _seekStepSeconds : -_seekStepSeconds;
     // Playhead-only change: the notifier repaints every playhead listener.
-    _second = (_second + delta).clamp(0.0, _endSecond);
+    _second = (_second + delta).clamp(_scrubRange.$1, _scrubRange.$2);
     _resyncTickClock(); // re-anchor: the playhead jumped out from under the clock
     _flashSeekOverlay(!forward);
   }
@@ -2095,6 +2101,11 @@ class _ChartScrollerState extends State<ChartScroller>
   // the hold; `_resumeFromHold` tracks that so releasing returns to paused
   // rather than leaving playback running.
   bool _resumeFromHold = false;
+
+  // Where scrubbing and seeking may go: a snippet's loop (unless its section is
+  // being picked), else the whole chart.
+  (double, double) get _scrubRange =>
+      (widget.pickSection ? null : _loop) ?? (0.0, _endSecond);
 
   void _onHoldSpeedStart() {
     if (_holdFastForward) return;
@@ -2395,7 +2406,8 @@ class _ChartScrollerState extends State<ChartScroller>
 
   void _onScrubMove(double dy) {
     // Playhead-only change — no setState; the notifier drives the repaint.
-    _second = (_second - _pxToSeconds(dy)).clamp(0.0, _endSecond);
+    _second =
+        (_second - _pxToSeconds(dy)).clamp(_scrubRange.$1, _scrubRange.$2);
     final beat = _beatIndexAt(_second);
     if (_lastScrubBeat != null && beat != _lastScrubBeat) {
       HapticFeedback.selectionClick();
@@ -2666,12 +2678,15 @@ class _ChartScrollerState extends State<ChartScroller>
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.fast_forward_rounded,
+                              Icon(
+                                  _holdSpeedMultiplier < 1
+                                      ? Icons.slow_motion_video_rounded
+                                      : Icons.fast_forward_rounded,
                                   color: Colors.white.withValues(alpha: 0.92),
                                   size: 16),
                               const SizedBox(width: 4),
                               Text(
-                                "${_holdSpeedMultiplier.toInt()}x",
+                                "${_holdSpeedMultiplier < 1 ? _holdSpeedMultiplier : _holdSpeedMultiplier.toInt()}x",
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,

@@ -111,6 +111,14 @@ void main() {
     await tester.pump();
     expect(painter().playing, isTrue);
     expect(headerOpacity(), 0);
+    // Scrubbing stays inside the loop: a two-beat run-up from beat 4 (1 s) to
+    // half a beat past beat 8 (4.25 s).
+    await tester.dragFrom(const Offset(200, 100), const Offset(0, 3000));
+    await tester.pump(const Duration(seconds: 1));
+    expect(painter().playhead.value, closeTo(1.0, 1e-6));
+    await tester.dragFrom(const Offset(200, 500), const Offset(0, -3000));
+    await tester.pump(const Duration(seconds: 1));
+    expect(painter().playhead.value, closeTo(4.25, 1e-6));
     await tester.pumpWidget(page(false));
     await tester.pump();
     expect(painter().playing, isFalse);
