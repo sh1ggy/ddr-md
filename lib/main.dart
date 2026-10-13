@@ -14,7 +14,9 @@ import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:ddr_md/models/development_snippets.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -28,6 +30,7 @@ void main() async {
   final support = await getApplicationSupportDirectory();
   await ContentStore.init(support);
   await Songs.load();
+  if (kDebugMode) await seedDevelopmentSnippets();
 
   // Wrapped app with providers
   runApp(MultiProvider(
