@@ -55,10 +55,14 @@ class ChartPainter extends CustomPainter {
     this.highlights = const [],
     this.highlightIcon,
     this.section,
+    this.sectionTail,
   }) : super(repaint: playhead);
 
   /// The snippet's (first, last) row seconds, banded in [kSectionColor].
   final (double, double)? section;
+
+  /// End of the selected notes, including hold tails, for the A–B band.
+  final double? sectionTail;
 
   /// Pattern occurrences to mark, (first, last) row seconds sorted by first,
   /// each banded across the field with [highlightIcon] at its start.
@@ -329,7 +333,10 @@ class ChartPainter extends CustomPainter {
       canvas.drawRRect(band, _highlightFillPaint);
       canvas.drawRRect(band, _highlightEdgePaint);
     }
-    if (section case (final from, final to) when from <= maxT && to >= second) {
+    final bandSection =
+        section == null ? null : (section!.$1, sectionTail ?? section!.$2);
+    if (bandSection case (final from, final to)
+        when from <= maxT && to >= second) {
       final band = RRect.fromLTRBR(
           fieldLeft - 6,
           yFor(from) - arrowSize * 0.6,
@@ -1084,5 +1091,6 @@ class ChartPainter extends CustomPainter {
       old.visualOffset != visualOffset ||
       old.focus != focus ||
       old.highlights != highlights ||
-      old.section != section;
+      old.section != section ||
+      old.sectionTail != sectionTail;
 }

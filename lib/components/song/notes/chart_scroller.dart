@@ -2516,6 +2516,11 @@ class _ChartScrollerState extends State<ChartScroller>
                             _pattern == null ? null : kPatternIcons[_pattern],
                         focus: widget.editFooting ? _focus : _sectionNotes,
                         section: _sectionRows,
+                        sectionTail: _sectionNotes.isEmpty
+                            ? null
+                            : _sectionNotes
+                                .map((n) => n.endSecond ?? n.second)
+                                .reduce(math.max),
                         footPrev:
                             widget.showFootTrails ? visibleLinks : const {},
                         dirs: dirs,

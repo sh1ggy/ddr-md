@@ -7,13 +7,16 @@ library;
 import 'package:ddr_md/components/snippets/snippet_chart_picker.dart';
 import 'package:ddr_md/components/snippets/snippet_feed_page.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
-import 'package:ddr_md/components/song/notes/section_bar.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/models/steps_model.dart';
+import 'package:ddr_md/models/pattern_analysis.dart';
+import 'package:ddr_md/models/pattern_model.dart';
+import 'package:ddr_md/models/parity_profile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -26,6 +29,27 @@ class SnippetsPage extends StatefulWidget {
 
 class _SnippetsPageState extends State<SnippetsPage> {
   List<Snippet>? _snippets;
+  final _counts = <String, Future<Map<Pattern, int>>>{};
+
+  Future<Map<Pattern, int>> _patterns(Snippet s) async {
+    final steps = await StepsLoader.load(s.song);
+    final chart = steps?.chartFor(s.mode, s.difficulty);
+    if (chart == null) return {};
+    final selected = chart.notes
+        .where((n) => n.beat >= s.startBeat && n.beat <= s.endBeat)
+        .toList();
+    if (selected.isEmpty) return {};
+    final from = selected.first.second, to = selected.last.second;
+    final analysis =
+        analyseChart(chart.notes, s.mode, weights: ParityProfile.active);
+    final counts = <Pattern, int>{};
+    for (final span in analysis.footwork.spans) {
+      if (span.$2 >= from - 1e-6 && span.$3 <= to + 1e-6) {
+        counts[span.$1] = (counts[span.$1] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
 
   @override
   void initState() {
@@ -35,6 +59,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
 
   Future<void> _load() async {
     final snippets = await DatabaseProvider.getAllSnippets();
+    _counts.clear();
     if (mounted) setState(() => _snippets = snippets);
   }
 
@@ -167,6 +192,12 @@ class _SnippetsPageState extends State<SnippetsPage> {
                   ),
                 )
               : Column(children: [
+                  Expanded(
+                      child: ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    itemCount: snippets.length,
+                    itemBuilder: (context, i) => _tile(snippets[i]),
+                  )),
                   Align(
                       alignment: Alignment.centerRight,
                       child: Padding(
@@ -186,12 +217,6 @@ class _SnippetsPageState extends State<SnippetsPage> {
                             icon: const Icon(Icons.shuffle_rounded),
                             label: const Text('Play shuffle'),
                           ))),
-                  Expanded(
-                      child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    itemCount: snippets.length,
-                    itemBuilder: (context, i) => _tile(snippets[i]),
-                  )),
                 ]),
     );
   }
@@ -202,8 +227,6 @@ class _SnippetsPageState extends State<SnippetsPage> {
         ? null
         : (s.mode == Modes.singles ? song.singles : song.doubles)
             .toJson()[s.difficulty];
-    final bars = sectionLabel(
-        (s.startBeat, s.endBeat), song?.timeSignatures ?? const []);
     return Dismissible(
       key: ValueKey(s.id),
       direction: DismissDirection.endToStart,
@@ -225,25 +248,40 @@ class _SnippetsPageState extends State<SnippetsPage> {
                 const Icon(Icons.music_note, size: 40),
           ),
         ),
-        title: Text(s.label.isEmpty ? bars : s.label,
-            overflow: TextOverflow.ellipsis),
-        subtitle: Text.rich(
-          TextSpan(children: [
-            TextSpan(text: '${song?.title ?? s.song}\n'),
-            TextSpan(
-              text: '${s.mode == Modes.singles ? 'SP' : 'DP'} '
-                  '${kInGameDifficultyNames[s.difficulty] ?? s.difficulty}'
-                  '${difficulty == null ? '' : ' $difficulty'}',
-              style: TextStyle(
-                  color: difficultyColor(s.difficulty),
-                  fontWeight: FontWeight.w700),
+        title: Text(song?.title ?? s.song, overflow: TextOverflow.ellipsis),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                '${s.mode == Modes.singles ? 'SP' : 'DP'} '
+                '${kInGameDifficultyNames[s.difficulty] ?? s.difficulty}'
+                '${difficulty == null ? '' : ' $difficulty'}',
+                style: TextStyle(
+                    color: difficultyColor(s.difficulty),
+                    fontWeight: FontWeight.w700)),
+            if (s.label.isNotEmpty)
+              Text(s.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            FutureBuilder<Map<Pattern, int>>(
+              future: _counts.putIfAbsent(
+                  '${s.id}:${s.startBeat}:${s.endBeat}', () => _patterns(s)),
+              builder: (_, snapshot) => Wrap(
+                spacing: 10,
+                children: [
+                  for (final entry
+                      in (snapshot.data ?? <Pattern, int>{}).entries)
+                    Tooltip(
+                      message: '${kPatternLabels[entry.key]}: ${entry.value}',
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(kPatternIcons[entry.key], size: 16),
+                        const SizedBox(width: 3),
+                        Text('${entry.value}'),
+                      ]),
+                    ),
+                ],
+              ),
             ),
-            if (s.label.isNotEmpty) TextSpan(text: '  ·  $bars'),
-          ]),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+          ],
         ),
-        isThreeLine: true,
         enabled: song != null,
         onTap: song == null ? null : () => _open(s, song),
         onLongPress: () => _menu(s),

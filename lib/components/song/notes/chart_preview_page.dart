@@ -462,7 +462,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               ),
               // The pattern breakdown, balanced by an empty slot on the left
               // when an action joins it.
-              patternsButton,
+              if (widget.feedActive == null) patternsButton,
               if (action != null) action,
             ],
           ),

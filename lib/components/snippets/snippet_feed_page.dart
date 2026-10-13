@@ -110,7 +110,7 @@ class _SnippetFeedPageState extends State<SnippetFeedPage> {
             feedActive: i == _index,
             playbackRate: _rate,
             onPlaybackRateChanged: (rate) => _rate = rate,
-            feedLabel: '$name · ${i + 1} · Swipe for next',
+            feedLabel: snippet.label.isEmpty ? null : name,
           );
         },
       ),

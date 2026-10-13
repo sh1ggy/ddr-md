@@ -18,7 +18,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUpAll(() async { await SpriteNoteskin.tryLoad(); });
+  setUpAll(() async {
+    await SpriteNoteskin.tryLoad();
+  });
   testWidgets('trim selection opens with handles and minimal actions',
       (tester) async {
     final chart = ChartSteps(notes: [
@@ -70,6 +72,35 @@ void main() {
         isTrue);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('selection band includes the final freeze tail', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ChartScroller(
+      steps: ChartSteps(notes: [
+        StepNote(beat: 160, second: 96, col: 0, type: StepType.tap),
+        StepNote(
+            beat: 168,
+            second: 101.5,
+            col: 2,
+            type: StepType.hold,
+            endBeat: 172,
+            endSecond: 106.3),
+      ]),
+      mode: Modes.singles,
+      songLength: 106.3,
+      chartBpm: 100,
+      section: (160, 168),
+    ))));
+    await tester.pump();
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((p) => p.painter)
+        .whereType<ChartPainter>()
+        .first;
+    expect(painter.section, (96.0, 101.5));
+    expect(painter.sectionTail, 106.3);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('feed page plays only while active, header hidden',
       (tester) async {
     Widget page(bool active) => MaterialApp(
@@ -98,8 +129,7 @@ void main() {
     double headerOpacity() => tester
         .widget<AnimatedOpacity>(find
             .ancestor(
-                of: find.text('HEADER'),
-                matching: find.byType(AnimatedOpacity))
+                of: find.text('HEADER'), matching: find.byType(AnimatedOpacity))
             .first)
         .opacity;
 
