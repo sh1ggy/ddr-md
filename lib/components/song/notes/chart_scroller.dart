@@ -429,6 +429,12 @@ class _ChartScrollerState extends State<ChartScroller>
   bool _padDancer = Settings.getInt(Settings.padDancerOnKey) == 1;
   bool get _dancerOn => _padDancer && _stances.isNotEmpty;
   bool _dancerBar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
+  // The dancer at the cabinet, the chart on its monitor.
+  bool _dancerCabinet = Settings.getInt(Settings.padDancerCabinetKey) == 1;
+  bool get _cabinetOn => _dancerOn && _dancerCabinet;
+  // Cabinet screen pixels per field pixel, so a scrub over the cabinet view
+  // moves the arrows with the finger.
+  double _scrubScale = 1;
   DancerForm _form = DancerForm.values[Settings.getInt(Settings.dancerFormKey)
       .clamp(0, DancerForm.values.length - 1)];
   // Set in the profile, not here.
@@ -454,6 +460,11 @@ class _ChartScrollerState extends State<ChartScroller>
   void _toggleDancerBar() {
     setState(() => _dancerBar = !_dancerBar);
     Settings.setInt(Settings.padDancerNoBarKey, _dancerBar ? 0 : 1);
+  }
+
+  void _toggleDancerCabinet() {
+    setState(() => _dancerCabinet = !_dancerCabinet);
+    Settings.setInt(Settings.padDancerCabinetKey, _dancerCabinet ? 1 : 0);
   }
 
   void _cycleForm() {
@@ -2186,7 +2197,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_gestureMode == _gestureScrub) {
       // Coast a fling from the release velocity, as the old vertical drag did.
       final vPx = d.velocity.pixelsPerSecond.dy;
-      _flingVel = -_pxToSeconds(vPx);
+      _flingVel = -_pxToSeconds(vPx * _scrubScale);
       if (_flingVel.abs() < _flingMin) {
         _flingVel = 0;
       } else {
@@ -2216,7 +2227,8 @@ class _ChartScrollerState extends State<ChartScroller>
 
   void _onScrubMove(double dy) {
     // Playhead-only change — no setState; the notifier drives the repaint.
-    _second = (_second - _pxToSeconds(dy)).clamp(0.0, _endSecond);
+    _second =
+        (_second - _pxToSeconds(dy * _scrubScale)).clamp(0.0, _endSecond);
     final beat = _beatIndexAt(_second);
     if (_lastScrubBeat != null && beat != _lastScrubBeat) {
       HapticFeedback.selectionClick();
@@ -2242,11 +2254,58 @@ class _ChartScrollerState extends State<ChartScroller>
       // Feed the field geometry into the speed law: an arrow's travel is the
       // cabinet's bottom edge up to the receptor line, scaled to the arrow size
       // this screen allows (see ChartPainter.arcadeArrowSize).
-      final topInset = MediaQuery.of(context).padding.top;
-      final travel = ChartPainter.arcadeArrowSize(
-              constraints.biggest, dirs.length, topInset) *
-          ChartPainter.cabinetTravelArrows;
+      // At the cabinet the field is the cabinet's own lane panel, on its
+      // monitor.
+      final cabinet = _cabinetOn;
+      final topInset = cabinet
+          ? kCabinetReceptorY - ChartPainter.receptorBase
+          : MediaQuery.of(context).padding.top;
+      final fieldSize =
+          cabinet ? cabinetLaneSize(dirs.length) : constraints.biggest;
+      final travel =
+          ChartPainter.arcadeArrowSize(fieldSize, dirs.length, topInset) *
+              ChartPainter.cabinetTravelArrows;
       if (travel > 0) _travelPx = travel;
+      _scrubScale = cabinet
+          ? 1 / cabinetScreenScale(constraints.biggest, dirs.length)
+          : 1;
+      final chart = _skin == null
+          ? null
+          : ChartPainter(
+              notes: _notes,
+              holds: _holds,
+              shockNotes: _shockNotes,
+              shocks: _shocks,
+              bpmMarkers: _bpmMarkers,
+              stopMarkers: _stopMarkers,
+              showMeasureLines: widget.showMeasureLines,
+              paintBackground: !_dancerOn,
+              guideline: _guideline,
+              timeSignatures: widget.timeSignatures,
+              feet: widget.showFootGuide || widget.editFooting
+                  ? _feet
+                  : _hitFeet,
+              highlights: _hits,
+              highlightIcon: _pattern == null ? null : kPatternIcons[_pattern],
+              focus: widget.editFooting ? _focus : const {},
+              footPrev: widget.showFootTrails ? _footPrev : const {},
+              dirs: dirs,
+              colMap: _colMap,
+              playhead: _playhead,
+              pxPerSecond: _pxPerSecond,
+              pxPerBeat: _pxPerBeat,
+              timing: _timing,
+              columnCount: dirs.length,
+              skin: _skin!,
+              playing: _playing,
+              zoom: _zoom,
+              constantMs: _effectiveConstantMs,
+              topInset: topInset,
+              visualOffset: _visualOffsetSeconds,
+              arcadeQuant: widget.arcadeQuantOn,
+            );
+      // Taps find notes on the full-field chart only.
+      _painter = cabinet ? null : chart;
       return Stack(
         fit: StackFit.expand,
         children: [
@@ -2292,50 +2351,19 @@ class _ChartScrollerState extends State<ChartScroller>
                         gripSpot: _gripSpot,
                         height: _height,
                         shoeSize: _shoeSize,
+                        cabinet: cabinet,
+                        screen: cabinet ? chart : null,
                       ),
                       size: Size.infinite,
                       willChange: true,
                     ),
                   ),
-                if (_skin == null)
+                if (chart == null || cabinet)
                   const SizedBox.expand()
                 else
                   RepaintBoundary(
                     child: CustomPaint(
-                      painter: _painter = ChartPainter(
-                        notes: _notes,
-                        holds: _holds,
-                        shockNotes: _shockNotes,
-                        shocks: _shocks,
-                        bpmMarkers: _bpmMarkers,
-                        stopMarkers: _stopMarkers,
-                        showMeasureLines: widget.showMeasureLines,
-                        paintBackground: !_dancerOn,
-                        guideline: _guideline,
-                        timeSignatures: widget.timeSignatures,
-                        feet: widget.showFootGuide || widget.editFooting
-                            ? _feet
-                            : _hitFeet,
-                        highlights: _hits,
-                        highlightIcon:
-                            _pattern == null ? null : kPatternIcons[_pattern],
-                        focus: widget.editFooting ? _focus : const {},
-                        footPrev: widget.showFootTrails ? _footPrev : const {},
-                        dirs: dirs,
-                        colMap: _colMap,
-                        playhead: _playhead,
-                        pxPerSecond: _pxPerSecond,
-                        pxPerBeat: _pxPerBeat,
-                        timing: _timing,
-                        columnCount: dirs.length,
-                        skin: _skin!,
-                        playing: _playing,
-                        zoom: _zoom,
-                        constantMs: _effectiveConstantMs,
-                        topInset: topInset,
-                        visualOffset: _visualOffsetSeconds,
-                        arcadeQuant: widget.arcadeQuantOn,
-                      ),
+                      painter: chart,
                       size: Size.infinite,
                       willChange: true,
                     ),
@@ -2903,8 +2931,8 @@ class _ChartScrollerState extends State<ChartScroller>
                     ),
                 ],
               ),
-            // The pad dancer and how both dancers move. BAR only means
-            // something with the dancer on; FORM with either dancer.
+            // The pad dancer and how both dancers move. BAR and CABINET only
+            // mean something with the dancer on; FORM with either dancer.
             Row(
               spacing: 8,
               children: [
@@ -2925,6 +2953,15 @@ class _ChartScrollerState extends State<ChartScroller>
                       icon: Icons.horizontal_rule,
                       selected: _dancerBar,
                       onTap: _toggleDancerBar,
+                    ),
+                  ),
+                if (_padDancer)
+                  Expanded(
+                    child: TurnTile(
+                      label: "CABINET",
+                      icon: Icons.tv,
+                      selected: _dancerCabinet,
+                      onTap: _toggleDancerCabinet,
                     ),
                   ),
                 if (_padDancer || widget.showDancingFeet)

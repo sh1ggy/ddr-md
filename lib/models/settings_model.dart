@@ -49,6 +49,9 @@ class Settings {
   // The pad dancer without the cabinet's back bar, hands free. 0/1.
   static const String padDancerNoBarKey = "chartPreviewPadDancerNoBar";
 
+  // The pad dancer at the cabinet, the chart on its monitor. 0/1.
+  static const String padDancerCabinetKey = "chartPreviewPadDancerCabinet";
+
   // DancerForm index shared by the dancing feet and the pad dancer.
   static const String dancerFormKey = "chartPreviewDancerForm";
 

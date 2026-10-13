@@ -69,6 +69,35 @@ const double _barHalfWidth = 0.196;
 const double _barBendRadius = 0.125;
 const double _gripHalfWidth = 0.055;
 const double _barZ = _stageBack + 0.085;
+const double _stageHalfWidth = 1.5 * _u + _rim;
+
+// The cabinet in front of the stage, to its dimension drawings (notes kept
+// locally). Its base stands 60-90 cm in front of the stage (the near end here)
+// and is 585 mm deep and 1480 mm wide. The 55" 16:9 monitor stands upright
+// 198 mm back from the base's front edge, with a deeper bezel above it than
+// below. The top unit leans its title panel out over the player up to 2.51 m.
+const double _cabFront = _stageFront + 0.60;
+const double _cabBack = _cabFront + 0.585;
+const double _cabHalfWidth = 0.74;
+const double _deckY = 0.75; // where the control panel starts sloping back
+const double _screenZ = _cabFront + 0.198;
+const double _screenW = 1.218, _screenH = 0.685;
+const double _screenBottom = 1.026;
+const double _monitorBottom = 0.939, _monitorTop = 1.884;
+const double _topUnitY = 2.07, _cabTop = 2.51;
+
+/// The cabinet's game screen, in its own pixels.
+const Size kCabinetScreen = Size(1280, 720);
+
+/// Where the lane field sits on that screen: the left edge of lane 0 and the
+/// receptor line, for the 1P side (Singles) and centred (Doubles).
+const double kCabinetReceptorY = 117;
+double cabinetLaneLeft(int columnCount) => columnCount > 4 ? 256 : 88;
+
+/// The canvas the chart paints into on that screen: the cabinet's own lane
+/// panel, which centres the lanes as the chart painter does.
+Size cabinetLaneSize(int columnCount) =>
+    Size(columnCount > 4 ? 860 : 640, kCabinetScreen.height);
 
 /// Panel centres in panel units, matching the parity solver's stage.
 const List<(double, double)> _singles = [(-1, 0), (0, -1), (0, 1), (1, 0)];
@@ -118,6 +147,11 @@ const _Rgb _bracket = (58, 56, 66);
 const _Rgb _lamp = (236, 242, 255);
 const _Rgb _chrome = (170, 172, 184);
 const _Rgb _white = (255, 255, 255);
+const _Rgb _cabBody = (72, 70, 80);
+const _Rgb _cabTrim = (150, 132, 92);
+const _Rgb _cabDeck = (46, 44, 54);
+const _Rgb _marquee = (255, 214, 140);
+const _Rgb _sideLed = (150, 206, 255);
 final _Rgb _leftC = _rgb(kLeftFootColor);
 final _Rgb _rightC = _rgb(kRightFootColor);
 
@@ -440,12 +474,12 @@ double _landDip(_FootAt f) => f.stepped && f.landAge >= 0 && f.landAge < 0.16
 }
 
 class _Camera {
-  _Camera(this.eye, _V target, this.cx, this.cy, this.focal)
+  _Camera(this.eye, this.target, this.cx, this.cy, this.focal)
       : f = (target - eye).unit {
     r = _up.cross(f).unit;
     u = f.cross(r);
   }
-  final _V eye, f;
+  final _V eye, target, f;
   late final _V r, u;
   final double cx, cy, focal;
 
@@ -891,7 +925,7 @@ void _buildPad(_Scene s, _Track tr, double t, double pcx, int base) {
         ];
         s.quad(corner, _up, _bracket, layer: 1);
       }
-      final on = tr.lit(base + panel, t);
+      final on = base + panel < tr.columnCount && tr.lit(base + panel, t);
       s.quad(
           [
             _V(x0, y, z0 + c),
@@ -931,8 +965,134 @@ List<_V> _arrowTris(double cx, double cz, double turn, double size, double y) {
   ];
 }
 
-void _buildBar(_Scene s, _Track tr) {
-  for (final centre in tr.columnCount > 4 ? [-1.5 * _u, 1.5 * _u] : [0.0]) {
+/// The cabinet's body round its monitor, centred on [cx]. The screen itself is
+/// painted afterwards, through [_screenMatrix].
+void _buildCabinet(_Scene s, double cx) {
+  const hw = _cabHalfWidth;
+  s.box(_V(cx, _deckY / 2, (_cabFront + _cabBack) / 2), _xAxis, _up, _zAxis,
+      hw, _deckY / 2, (_cabBack - _cabFront) / 2, _cabBody,
+      layer: 0);
+  s.quad([
+    _V(cx - hw, _deckY, _cabFront),
+    _V(cx - hw, _monitorBottom, _screenZ),
+    _V(cx + hw, _monitorBottom, _screenZ),
+    _V(cx + hw, _deckY, _cabFront),
+  ], const _V(0, 0.198, _deckY - _monitorBottom), _cabDeck, layer: 0);
+  s.box(
+      _V(cx, (_monitorBottom + _monitorTop) / 2, (_screenZ + _cabBack) / 2),
+      _xAxis,
+      _up,
+      _zAxis,
+      hw,
+      (_monitorTop - _monitorBottom) / 2,
+      (_cabBack - _screenZ) / 2,
+      _cabBody,
+      layer: 0);
+  // The top unit overhangs the monitor, its title panel leaning out further.
+  s.box(
+      _V(cx, (_monitorTop + _topUnitY) / 2, (_screenZ - 0.117 + _cabBack) / 2),
+      _xAxis,
+      _up,
+      _zAxis,
+      hw - 0.015,
+      (_topUnitY - _monitorTop) / 2,
+      (_cabBack - _screenZ + 0.117) / 2,
+      _cabTrim,
+      layer: 0);
+  s.quad([
+    _V(cx - 0.70, _topUnitY, _cabFront + 0.222),
+    _V(cx - 0.70, _cabTop, _cabFront + 0.021),
+    _V(cx + 0.70, _cabTop, _cabFront + 0.021),
+    _V(cx + 0.70, _topUnitY, _cabFront + 0.222),
+  ], const _V(0, -0.201, -0.44), _marquee, layer: 0, lit: true);
+  // The side LEDs, a strip down each side of the screen.
+  for (final sign in [-1.0, 1.0]) {
+    final x = cx + sign * (_screenW / 2 + 0.045);
+    s.quad([
+      _V(x - 0.012, _screenBottom, _screenZ - 0.002),
+      _V(x - 0.012, _screenBottom + _screenH, _screenZ - 0.002),
+      _V(x + 0.012, _screenBottom + _screenH, _screenZ - 0.002),
+      _V(x + 0.012, _screenBottom, _screenZ - 0.002),
+    ], const _V(0, 0, -1), _sideLed, layer: 0, lit: true);
+  }
+}
+
+/// Maps the cabinet's screen pixels ([kCabinetScreen]) onto the monitor as
+/// [cam] sees it: a flat rectangle through a pinhole is exactly a projective
+/// map, so the chart can be painted under it like any other canvas.
+Float64List _screenMatrix(_Camera cam, double cx) {
+  final tl = _V(cx - _screenW / 2, _screenBottom + _screenH, _screenZ);
+  final a = _V(_screenW / kCabinetScreen.width, 0, 0);
+  final b = _V(0, -_screenH / kCabinetScreen.height, 0);
+  final o = tl - cam.eye;
+  final w = [cam.f.dot(a), cam.f.dot(b), cam.f.dot(o)];
+  final x = [cam.r.dot(a), cam.r.dot(b), cam.r.dot(o)];
+  final y = [cam.u.dot(a), cam.u.dot(b), cam.u.dot(o)];
+  double px(int i) => cam.cx * w[i] + cam.focal * x[i];
+  double py(int i) => cam.cy * w[i] - cam.focal * y[i];
+  return Float64List.fromList([
+    px(0), py(0), 0, w[0], //
+    px(1), py(1), 0, w[1], //
+    0, 0, 1, 0, //
+    px(2), py(2), 0, w[2],
+  ]);
+}
+
+/// Where the cabinet stands: centred between the two stages, so a Singles
+/// player on the 1P stage has it off to their right.
+double _cabinetX(int columnCount) => columnCount > 4 ? 0 : _stageHalfWidth;
+
+/// Looking down past the player's head at the screen, high enough that the
+/// sight line to its bottom edge clears a tall player, framing the lanes
+/// across and the screen down to the stage's back row on any shape of field.
+_Camera _cabinetCamera(Size size, int columnCount) {
+  final cabX = _cabinetX(columnCount);
+  double screenX(double px) =>
+      cabX + (px / kCabinetScreen.width - 0.5) * _screenW;
+  final laneL = screenX(cabinetLaneLeft(columnCount));
+  final laneR = screenX(cabinetLaneLeft(columnCount) + 96.0 * columnCount);
+  final fx = (laneL + laneR) / 2;
+  final eye = _V(fx, 2.6, _stageBack - 0.8);
+  final unit = _Camera(eye, _V(fx, 0.9, 0.6), 0, 0, 1);
+  final margin = columnCount > 4 ? 0.25 : 0.35;
+  final across = [
+    _V(laneL - margin, _screenBottom, _screenZ),
+    _V(laneR + margin, _screenBottom, _screenZ),
+  ];
+  final down = [
+    _V(fx, _monitorTop, _screenZ),
+    _V(fx, _padY, -1.5 * _u),
+  ];
+  double l = double.infinity, r = -double.infinity;
+  double t = double.infinity, b = -double.infinity;
+  for (final p in across) {
+    final (x, _, _) = unit.project(p)!;
+    l = math.min(l, x);
+    r = math.max(r, x);
+  }
+  for (final p in down) {
+    final (_, y, _) = unit.project(p)!;
+    t = math.min(t, y);
+    b = math.max(b, y);
+  }
+  final focal =
+      math.min(size.width / (r - l), size.height * 0.94 / (b - t));
+  return _Camera(eye, unit.target, size.width / 2 - focal * (l + r) / 2,
+      size.height / 2 - focal * (t + b) / 2, focal);
+}
+
+/// Field pixels per cabinet screen pixel at the middle of the screen, so a
+/// drag over the cabinet view scrubs at the speed the arrows move under it.
+double cabinetScreenScale(Size size, int columnCount) {
+  if (size.isEmpty) return 1;
+  final cam = _cabinetCamera(size, columnCount);
+  final z = (_V(cam.eye.x, _screenBottom + _screenH / 2, _screenZ) - cam.eye)
+      .dot(cam.f);
+  return cam.focal * (_screenH / kCabinetScreen.height) / z;
+}
+
+void _buildBar(_Scene s, List<double> centres) {
+  for (final centre in centres) {
     const radius = _barBendRadius;
     const hx = _barHalfWidth;
     for (final sign in [-1.0, 1.0]) {
@@ -1102,7 +1262,17 @@ class PadDancerPainter extends CustomPainter {
     this.height = kDancerHeight,
     this.shoeSize = kShoeSize,
     this.shockPlans,
+    this.cabinet = false,
+    this.screen,
   }) : super(repaint: playhead);
+
+  /// Seen from behind at the cabinet, with [screen] (the chart) on its
+  /// monitor, instead of the stage alone under a full-field chart.
+  final bool cabinet;
+
+  /// Paints the lane field into a [cabinetLaneSize] canvas whose receptor
+  /// line sits at [kCabinetReceptorY].
+  final CustomPainter? screen;
 
   /// The solve's stances and the notes it was solved on (turned), for holds.
   final List<ParityStance> stances;
@@ -1164,19 +1334,10 @@ class PadDancerPainter extends CustomPainter {
     tr.advance(t);
     final pose = _pose(tr, t, _rig);
 
-    // The camera never moves: the stage stays put and the dancer moves on it.
-    const dist = 3.3, pitch = 0.62;
-    const target = _V(0, 0.7, 0);
-    final eye = target + _V(0, math.sin(pitch), -math.cos(pitch)) * dist;
-    // Fit the stage's width on a portrait phone; the height on anything wider.
-    final sceneW = columnCount > 4 ? 2.6 : 2.0;
-    final focal = math.min(size.height / (2 * math.tan(30 * math.pi / 180)),
-        size.width * dist / sceneW);
-    final cam = _Camera(eye, target, size.width / 2, size.height * 0.56, focal);
-
-    final chest = cam.project(pose.chest);
+    final cam = cabinet ? _cabinetCamera(size, columnCount) : _stageCamera(size);
+    final chest = cabinet ? null : cam.project(pose.chest);
     if (chest != null) {
-      final r = 1.4 / chest.$3 * focal;
+      final r = 1.4 / chest.$3 * cam.focal;
       final c = Offset(chest.$1, chest.$2);
       canvas.drawCircle(
           c,
@@ -1188,6 +1349,7 @@ class PadDancerPainter extends CustomPainter {
             ]).createShader(Rect.fromCircle(center: c, radius: r)));
     }
     _floor(canvas, cam);
+    if (cabinet) _paintCabinet(canvas, cam);
 
     final pad = _Scene(cam);
     if (columnCount > 4) {
@@ -1195,6 +1357,8 @@ class PadDancerPainter extends CustomPainter {
       _buildPad(pad, tr, t, 1.5, 4);
     } else {
       _buildPad(pad, tr, t, 0, 0);
+      // The 2P stage beside it, never stepped on.
+      if (cabinet) _buildPad(pad, tr, t, 2 * _stageHalfWidth / _u, 4);
     }
     pad.draw(canvas);
     // From behind, the body stands over the centre and Up; drawn see-through
@@ -1206,13 +1370,68 @@ class PadDancerPainter extends CustomPainter {
     canvas.restore();
     if (bar) {
       final rail = _Scene(cam);
-      _buildBar(rail, tr);
+      _buildBar(rail, [
+        if (columnCount > 4) ...[-1.5 * _u, 1.5 * _u] else 0.0,
+        if (cabinet && columnCount <= 4) 2 * _stageHalfWidth,
+      ]);
       rail.draw(canvas);
       final hands = _Scene(cam);
       _buildHands(hands, pose, _rig.k);
       hands.draw(canvas);
     }
   }
+
+  // The camera never moves: the stage stays put and the dancer moves on it.
+  _Camera _stageCamera(Size size) {
+    const dist = 3.3, pitch = 0.62;
+    const target = _V(0, 0.7, 0);
+    final eye = target + _V(0, math.sin(pitch), -math.cos(pitch)) * dist;
+    // Fit the stage's width on a portrait phone; the height on anything wider.
+    final sceneW = columnCount > 4 ? 2.6 : 2.0;
+    final focal = math.min(size.height / (2 * math.tan(30 * math.pi / 180)),
+        size.width * dist / sceneW);
+    return _Camera(eye, target, size.width / 2, size.height * 0.56, focal);
+  }
+
+  void _paintCabinet(Canvas canvas, _Camera cam) {
+    final cx = _cabinetX(columnCount);
+    final body = _Scene(cam);
+    _buildCabinet(body, cx);
+    body.draw(canvas);
+
+    // The screen is lit: it skips the fog and dimming the room gets.
+    canvas.save();
+    canvas.transform(_screenMatrix(cam, cx));
+    final rect = Offset.zero & kCabinetScreen;
+    canvas.clipRect(rect);
+    canvas.drawRect(rect, _screenPaint);
+    final lanes = cabinetLaneSize(columnCount);
+    final left = cabinetLaneLeft(columnCount) -
+        (lanes.width - 96.0 * columnCount) / 2;
+    // The screen filter behind the lanes, a little wider than them.
+    canvas.drawRect(
+        Rect.fromCenter(
+            center: Offset(left + lanes.width / 2, rect.center.dy),
+            width: 107.5 * columnCount,
+            height: kCabinetScreen.height),
+        _filterPaint);
+    final chart = screen;
+    if (chart != null) {
+      canvas.translate(left, 0);
+      chart.paint(canvas, lanes);
+    }
+    canvas.restore();
+  }
+
+  static final Paint _screenPaint = Paint()
+    ..shader = const LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [Color(0xFF1C2433), Color(0xFF0E121A)],
+    ).createShader(Offset.zero & kCabinetScreen);
+
+  static final Paint _filterPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.5);
 
   static final Paint _bodyPaint = Paint()
     ..color = Colors.white.withValues(alpha: 0.62);
@@ -1248,6 +1467,8 @@ class PadDancerPainter extends CustomPainter {
       old.gripSpot != gripSpot ||
       old.height != height ||
       old.shoeSize != shoeSize ||
+      old.cabinet != cabinet ||
+      old.screen != screen ||
       old.playhead != playhead;
 }
 
