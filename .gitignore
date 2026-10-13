@@ -174,3 +174,7 @@ app.*.symbols
 /infra/.terraform/
 /infra/*.tfstate*
 /infra/terraform.tfvars
+
+# Claude Code: session worktrees and personal settings
+/.claude/worktrees/
+/.claude/settings.local.json
