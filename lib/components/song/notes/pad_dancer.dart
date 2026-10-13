@@ -1,10 +1,11 @@
 /// Name: PadDancer
 /// Parent: ChartScroller
-/// Description: Easter egg. A low-poly dancer on a cabinet pad behind the
-/// arrows, hanging on to the back bar and stepping the chart. It reads the same
-/// parity stances as [DancingFeet], so the body can never contradict the L/R
-/// badges; what the solve doesn't say (foot arcs, hips, knees, arms) is filled
-/// in every frame. Triple-tap the dancing-feet pad to toggle it.
+/// Description: A low-poly dancer on a cabinet pad behind the arrows, seen
+/// from behind by a fixed camera, stepping the chart with or without the back
+/// bar. It reads the same parity stances as [DancingFeet], so the body can
+/// never contradict the L/R badges; what the solve doesn't say (foot arcs,
+/// hips, knees, arms) is filled in every frame, in the chosen [DancerForm].
+/// Panels light while a foot is on them, the way the cabinet's do.
 ///
 /// No 3D engine: a few hundred flat-shaded quads, depth-sorted on the CPU and
 /// drawn with one [Canvas.drawVertices] call.
@@ -14,7 +15,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'chart_models.dart';
-import 'dancing_feet.dart' show stepTurn;
+import 'dancing_feet.dart' show DancerForm, formSpot, stepTurn;
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
@@ -53,17 +54,22 @@ const List<(double, double)> _doubles = [
 /// Arrow heading per panel (L D U R), 0 pointing up the pad.
 const List<double> _arrowTurn = [-math.pi / 2, math.pi, 0, math.pi / 2];
 
-/// Arrow outline in half-panel units, pointing up: tip, right wing, shaft
-/// right, shaft bottom right, shaft bottom left, shaft left, left wing.
+/// Arrow outline in panel units from the panel's centre, pointing up: tip,
+/// right wing, shaft right, shaft bottom right, shaft bottom left, shaft left,
+/// left wing, in the cabinet pad's proportions.
 const List<(double, double)> _arrow = [
-  (0, 0.9),
-  (0.78, 0.08),
-  (0.32, 0.08),
-  (0.32, -0.8),
-  (-0.32, -0.8),
-  (-0.32, 0.08),
-  (-0.78, 0.08),
+  (0, 0.34),
+  (0.325, 0.05),
+  (0.18, 0.05),
+  (0.18, -0.235),
+  (-0.18, -0.235),
+  (-0.18, 0.05),
+  (-0.325, 0.05),
 ];
+
+/// The corners an arrow panel's plate is cut away at, in panel units; the
+/// brackets holding it show through.
+const double _chamfer = 0.12;
 
 typedef _Rgb = (double, double, double);
 
@@ -88,7 +94,9 @@ const _Rgb _padBase = (34, 32, 40);
 const _Rgb _panelArrow = (48, 46, 58);
 const _Rgb _panelPlate = (78, 76, 88);
 const _Rgb _panelCentre = (62, 60, 72);
-const _Rgb _arrowIdle = (96, 92, 112);
+const _Rgb _arrowIdle = (118, 116, 136);
+const _Rgb _bracket = (58, 56, 66);
+const _Rgb _lamp = (236, 242, 255);
 const _Rgb _chrome = (170, 172, 184);
 const _Rgb _white = (255, 255, 255);
 final _Rgb _leftC = _rgb(kLeftFootColor);
@@ -149,22 +157,58 @@ int _upper(List<double> a, double x) {
   return lo;
 }
 
+/// How a [DancerForm] moves the body, as multipliers on the standard motion.
+class _Style {
+  const _Style(this.lift, this.air, this.torsoTurn, this.shoulderFollow,
+      this.dip, this.weightShift, this.armSwing);
+
+  /// Foot height off the panel, and how early it leaves for the next one.
+  final double lift, air;
+
+  /// How much of the hips' turn the shoulders take.
+  final double torsoTurn;
+
+  /// How much of the hips' travel the shoulders take (singles).
+  final double shoulderFollow;
+  final double dip, weightShift, armSwing;
+
+  static _Style of(DancerForm form) => switch (form) {
+        DancerForm.standard => const _Style(1, 1, 0.55, 1, 1, 0.28, 0.05),
+        DancerForm.minimal => const _Style(0.45, 0.75, 0, 0.15, 0.3, 0.1, 0),
+        DancerForm.exaggerated => const _Style(2.4, 1.5, 1, 1, 2.5, 0.45, 0.22),
+      };
+}
+
 /// A foot arriving somewhere: a step, or a move the solve made without one.
 class _Step {
-  const _Step(
-      this.t, this.x, this.z, this.bracketYaw, this.holdEnd, this.stepped);
+  const _Step(this.t, this.x, this.z, this.bracketYaw, this.holdEnd,
+      this.stepped, this.cols);
   final double t;
   final double x, z; // panel units
   final double? bracketYaw; // heel-to-toe heading when bracketing
   final double holdEnd; // the foot stays down until here
   final bool stepped;
+  final List<int> cols; // panels under the foot
+}
+
+/// When a foot planted at [cur] leaves for [next]: no earlier than the hold
+/// under it lets go, and only as early as the reach needs. A jack is a quick
+/// tap, a crossover a long swing.
+double _liftAt(_Step cur, _Step next, _Style st) {
+  final dx = next.x - cur.x, dz = next.z - cur.z;
+  final d = math.sqrt(dx * dx + dz * dz);
+  final free = math.max(cur.holdEnd, cur.t + 0.04);
+  final airT = math.min((0.11 + 0.08 * d).clamp(0.11, 0.3) * st.air,
+      math.max(0.03, next.t - free));
+  return math.max(free, next.t - airT);
 }
 
 /// The stances reworked into what the body needs: per-foot step events, the
-/// body's turn at each stance, and when each panel was hit. Built once per
+/// body's turn at each stance, and when each panel is pressed. Built once per
 /// solve and kept with the motion state carried between frames.
 class _Track {
-  _Track(this.stances, List<StepNote> notes, this.columnCount) {
+  _Track(this.stances, List<StepNote> notes, this.columnCount, this.form)
+      : style = _Style.of(form) {
     final layout = columnCount > 4 ? _doubles : _singles;
     times = [for (final s in stances) s.second];
 
@@ -191,11 +235,13 @@ class _Track {
 
     for (final foot in ParityFoot.values) {
       final out = foot == ParityFoot.left ? left : right;
+      final otherFoot =
+          foot == ParityFoot.left ? ParityFoot.right : ParityFoot.left;
       String? prevKey;
       for (final s in stances) {
         final heel = foot == ParityFoot.left ? s.leftHeel : s.rightHeel;
         final toe = foot == ParityFoot.left ? s.leftToe : s.rightToe;
-        final cols = [if (heel != -1) heel, if (toe != -1) toe];
+        final cols = [if (heel != -1) heel, if (toe != -1 && toe != heel) toe];
         if (cols.isEmpty) continue;
         final key = cols.join(',');
         final hit = [
@@ -206,77 +252,89 @@ class _Track {
         prevKey = key;
         double x, z;
         double? bracketYaw;
-        if (cols.length == 2 && cols[0] != cols[1]) {
+        if (cols.length == 2) {
           final a = layout[cols[0]], b = layout[cols[1]];
           x = (a.$1 + b.$1) / 2;
           z = (a.$2 + b.$2) / 2;
           bracketYaw = math.atan2(b.$1 - a.$1, b.$2 - a.$2);
         } else {
-          x = layout[cols[0]].$1;
-          z = layout[cols[0]].$2;
+          final other = s.columnsFor(otherFoot);
+          final spot =
+              formSpot(form, cols[0], foot, other.length == 1 ? other[0] : -1);
+          x = layout[cols[0]].$1 + spot.dx;
+          z = layout[cols[0]].$2 + spot.dy;
         }
         var holdEnd = s.second;
         for (final c in hit) {
           final e = holdEnds[s.second]?[c];
           if (e != null && e > holdEnd) holdEnd = e;
         }
-        out.add(_Step(s.second, x, z, bracketYaw, holdEnd, hit.isNotEmpty));
+        out.add(
+            _Step(s.second, x, z, bracketYaw, holdEnd, hit.isNotEmpty, cols));
       }
     }
 
+    // A panel is pressed from a foot landing on it until that foot lifts.
     for (int c = 0; c < columnCount; c++) {
-      hitTimes.add([]);
-      hitLeft.add([]);
-      holds.add([]);
+      pressed.add([[], []]);
     }
-    for (final s in stances) {
-      final lefts = s.columnsFor(ParityFoot.left);
-      for (final c in s.stepped) {
-        if (c >= columnCount) continue;
-        hitTimes[c].add(s.second);
-        hitLeft[c].add(lefts.contains(c));
-      }
-    }
-    for (final n in notes) {
-      if (n.isHold && n.endSecond != null && n.col < columnCount) {
-        holds[n.col].add((n.second, n.endSecond!));
+    for (final (f, ev) in [(0, left), (1, right)]) {
+      for (int k = 0; k < ev.length; k++) {
+        final end = k + 1 < ev.length ? _liftAt(ev[k], ev[k + 1], style) : 1e9;
+        for (final c in ev[k].cols) {
+          if (c < columnCount) pressed[c][f].add((ev[k].t, end));
+        }
       }
     }
 
     final cx = columnCount > 4
         ? (left.isNotEmpty && left.first.x > 0 ? 1.5 : -1.5)
         : 0.0;
-    restLeft = _Step(-1e9, cx - 0.42, 0, null, -1e9, false);
-    restRight = _Step(-1e9, cx + 0.42, 0, null, -1e9, false);
+    restLeft = _Step(-1e9, cx - 0.42, 0, null, -1e9, false, const []);
+    restRight = _Step(-1e9, cx + 0.42, 0, null, -1e9, false, const []);
   }
 
   final List<ParityStance> stances;
   final int columnCount;
+  final DancerForm form;
+  final _Style style;
   late final List<double> times;
   final List<double> turns = [];
   final List<_Step> left = [], right = [];
-  final List<List<double>> hitTimes = [];
-  final List<List<bool>> hitLeft = [];
-  final List<List<(double, double)>> holds = [];
+  // Per column, per foot: (from, to) while that foot is on the panel.
+  final List<List<List<(double, double)>>> pressed = [];
   late final _Step restLeft, restRight;
 
   // Motion carried between frames.
   double yaw = 0;
-  double camX = 0;
   double? lastT;
 
-  /// How lit a panel is at [t], and by which foot (null = nobody yet).
-  (double, bool?) light(int col, double t) {
-    final ts = hitTimes[col];
-    final i = _upper(ts, t) - 1;
-    if (i < 0) return (0, null);
-    var v = 0.0;
-    final age = t - ts[i];
-    if (age < 0.5) v = math.exp(-age * 8);
-    for (final h in holds[col]) {
-      if (h.$1 <= t && t < h.$2) v = math.max(v, 0.75);
+  /// Eases the body's turn toward the stance at [t]; snaps on a seek.
+  void advance(double t) {
+    final i = _upper(times, t + 0.05) - 1;
+    final turn = i >= 0 ? turns[i] : 0.0;
+    final dt = lastT == null ? -1.0 : t - lastT!;
+    yaw = dt < 0 || dt > 0.3
+        ? turn
+        : yaw + (turn - yaw) * (1 - math.exp(-dt * 12));
+    lastT = t;
+  }
+
+  /// Is a foot on panel [col] at [t]?
+  bool lit(int col, double t) {
+    for (final spans in pressed[col]) {
+      var lo = 0, hi = spans.length;
+      while (lo < hi) {
+        final m = (lo + hi) >> 1;
+        if (spans[m].$1 <= t) {
+          lo = m + 1;
+        } else {
+          hi = m;
+        }
+      }
+      if (lo > 0 && t < spans[lo - 1].$2) return true;
     }
-    return (v, hitLeft[col][i]);
+    return false;
   }
 }
 
@@ -288,7 +346,7 @@ class _FootAt {
   bool stepped = false, bracket = false;
 }
 
-_FootAt _footAt(List<_Step> ev, _Step rest, double t) {
+_FootAt _footAt(List<_Step> ev, _Step rest, double t, _Style st) {
   var lo = 0, hi = ev.length - 1, k = -1;
   while (lo <= hi) {
     final m = (lo + hi) >> 1;
@@ -310,25 +368,21 @@ _FootAt _footAt(List<_Step> ev, _Step rest, double t) {
     ..stepped = cur.stepped
     ..bracket = cur.bracketYaw != null;
   if (next == null) return f;
+  final lift = _liftAt(cur, next, st);
+  if (t < lift) return f;
   final dx = next.x - cur.x, dz = next.z - cur.z;
   final d = math.sqrt(dx * dx + dz * dz);
-  // Off the panel no earlier than the hold under it lets go, and only for as
-  // long as the reach needs: a jack is a quick tap, a crossover a long swing.
-  final free = math.max(cur.holdEnd, cur.t + 0.04);
-  final airT = math.min(
-      (0.11 + 0.08 * d).clamp(0.11, 0.3), math.max(0.03, next.t - free));
-  final lift = math.max(free, next.t - airT);
-  if (t < lift) return f;
   final s = ((t - lift) / math.max(1e-3, next.t - lift)).clamp(0.0, 1.0);
   final e = _smooth(s), arc = math.sin(math.pi * s);
   return f
     ..x = _lerp(cur.x, next.x, e)
     ..z = _lerp(cur.z, next.z, e)
-    ..h = (d < 0.01 ? 0.035 : (0.05 + 0.06 * d).clamp(0.05, 0.2)) * arc
+    ..h =
+        (d < 0.01 ? 0.035 : (0.05 + 0.06 * d).clamp(0.05, 0.2)) * st.lift * arc
     ..air = arc
     ..e = e
     ..yawB = next.bracketYaw
-    ..tilt = arc * (d < 0.01 ? 0.15 : 0.4)
+    ..tilt = arc * (d < 0.01 ? 0.15 : 0.4) * math.min(1.0, st.lift)
     ..bracket = e < 0.5 ? cur.bracketYaw != null : next.bracketYaw != null;
 }
 
@@ -375,8 +429,8 @@ class _Face {
   final List<Offset> pts;
   final double depth;
   final int color;
-  final int layer; // 1 pad, 2 everything standing on it
-  final List<(List<_V>, _Rgb)>? decals; // triangles drawn on top of this face
+  final int layer; // 0 stage, 1 panels, 2 everything standing on them
+  final List<(List<_V>, _Rgb, bool)>? decals; // lit triangles on this face
 }
 
 class _Scene {
@@ -387,7 +441,9 @@ class _Scene {
   late final _V light;
   final List<_Face> faces = [];
 
-  _Rgb _shade(_Rgb c, _V n, double depth, bool emissive) {
+  _Rgb _shade(_Rgb c, _V n, double depth, bool emissive, {bool lit = false}) {
+    // A lamp shines at full strength, past the fog and the dimming.
+    if (lit) return c;
     var col = c;
     if (!emissive) {
       final nn = n.unit;
@@ -401,9 +457,17 @@ class _Scene {
     return _mix(col, _fog, _dim);
   }
 
+  /// A flat convex polygon (three or more corners, in order).
   void quad(List<_V> p, _V n, _Rgb c,
-      {int layer = 2, bool emissive = false, List<(List<_V>, _Rgb)>? decals}) {
-    final centre = (p[0] + p[2]) * 0.5;
+      {int layer = 2,
+      bool emissive = false,
+      bool lit = false,
+      List<(List<_V>, _Rgb, bool)>? decals}) {
+    var centre = p[0];
+    for (int i = 1; i < p.length; i++) {
+      centre = centre + p[i];
+    }
+    centre = centre * (1 / p.length);
     if (n.dot(cam.eye - centre) <= 0) return;
     final pts = <Offset>[];
     var depth = 0.0;
@@ -414,8 +478,8 @@ class _Scene {
       depth += s.$3;
     }
     depth /= p.length;
-    faces.add(
-        _Face(pts, depth, _argb(_shade(c, n, depth, emissive)), layer, decals));
+    faces.add(_Face(pts, depth, _argb(_shade(c, n, depth, emissive, lit: lit)),
+        layer, decals));
   }
 
   void box(_V c, _V ax, _V ay, _V az, double hx, double hy, double hz, _Rgb col,
@@ -485,6 +549,21 @@ class _Scene {
     }
   }
 
+  /// Screen area the faces cover, so a layer drawn under them stays small.
+  Rect get bounds {
+    var l = double.infinity, t = double.infinity;
+    var r = -double.infinity, b = -double.infinity;
+    for (final f in faces) {
+      for (final p in f.pts) {
+        if (p.dx < l) l = p.dx;
+        if (p.dx > r) r = p.dx;
+        if (p.dy < t) t = p.dy;
+        if (p.dy > b) b = p.dy;
+      }
+    }
+    return l > r ? Rect.zero : Rect.fromLTRB(l, t, r, b).inflate(2);
+  }
+
   void draw(Canvas canvas) {
     faces.sort((a, b) =>
         a.layer != b.layer ? a.layer - b.layer : b.depth.compareTo(a.depth));
@@ -497,10 +576,12 @@ class _Scene {
 
     for (final f in faces) {
       final p = f.pts;
-      tri(p[0], p[1], p[2], f.color);
-      tri(p[0], p[2], p[3], f.color);
-      for (final (world, rgb) in f.decals ?? const <(List<_V>, _Rgb)>[]) {
-        final col = _argb(_shade(rgb, _up, f.depth, true));
+      for (int i = 1; i + 1 < p.length; i++) {
+        tri(p[0], p[i], p[i + 1], f.color);
+      }
+      for (final (world, rgb, lit)
+          in f.decals ?? const <(List<_V>, _Rgb, bool)>[]) {
+        final col = _argb(_shade(rgb, _up, f.depth, true, lit: lit));
         for (int i = 0; i + 2 < world.length; i += 3) {
           final a = cam.project(world[i]),
               b = cam.project(world[i + 1]),
@@ -524,6 +605,7 @@ class _Scene {
 class _Pose {
   _Pose(this.yaw);
   final double yaw;
+  late final double torsoYaw;
   late final _V pelvis, chest, head;
   final Map<ParityFoot, ({_V centre, _V side, _V up, _V fwd, double len})>
       shoes = {};
@@ -532,14 +614,15 @@ class _Pose {
   final Map<ParityFoot, ({_V shoulder, _V elbow, _V hand})> arms = {};
 }
 
-_Pose _pose(_Track tr, double t) {
+_Pose _pose(_Track tr, double t, bool bar) {
+  final st = tr.style;
   final pose = _Pose(tr.yaw);
   final yaw = tr.yaw, fwd = _fwdOf(yaw), side = _rightOf(yaw);
   final ankles = <ParityFoot, _V>{};
   for (final foot in ParityFoot.values) {
     final isLeft = foot == ParityFoot.left;
-    final f = _footAt(
-        isLeft ? tr.left : tr.right, isLeft ? tr.restLeft : tr.restRight, t);
+    final f = _footAt(isLeft ? tr.left : tr.right,
+        isLeft ? tr.restLeft : tr.restRight, t, st);
     final splay = yaw + (isLeft ? -0.16 : 0.16);
     final ff = _fwdOf(_angLerp(f.yawA ?? splay, f.yawB ?? splay, f.e));
     // Toes dip while the foot is in the air.
@@ -562,12 +645,13 @@ _Pose _pose(_Track tr, double t) {
   final ankL = ankles[ParityFoot.left]!, ankR = ankles[ParityFoot.right]!;
 
   // Hips ride over whichever foot is carrying the weight, and sit back toward
-  // the bar the player is holding.
-  final w = 0.5 + 0.28 * (fl.air - fr.air);
-  var px = _lerp(ankL.x, ankR.x, w) - fwd.x * 0.05;
-  var pz = _lerp(ankL.z, ankR.z, w) - fwd.z * 0.05;
+  // the bar when holding it.
+  final w = 0.5 + st.weightShift * (fl.air - fr.air);
+  final back = bar ? 0.05 : 0.0;
+  var px = _lerp(ankL.x, ankR.x, w) - fwd.x * back;
+  var pz = _lerp(ankL.z, ankR.z, w) - fwd.z * back;
   final dl = _landDip(fl), dr = _landDip(fr);
-  final dip = 0.03 * math.max(dl, dr) + 0.02 * math.min(dl, dr);
+  final dip = (0.03 * math.max(dl, dr) + 0.02 * math.min(dl, dr)) * st.dip;
   final jump =
       math.min(fl.air, fr.air) > 0.2 ? math.min(fl.h, fr.h) * 0.9 : 0.0;
   var py = _padY + 0.88 - dip + jump;
@@ -591,27 +675,35 @@ _Pose _pose(_Track tr, double t) {
     pose.legs[foot] = (hip: hip, knee: knee, ankle: ankle);
   }
 
-  // Upper body turns a little less than the hips, and leans back further the
-  // further the pelvis is from the bar, so the hands can keep hold of it.
-  final torsoYaw = (yaw * 0.55).clamp(-0.45, 0.45);
+  // The shoulders take only part of the hips' turn and travel: in MINIMAL
+  // they stay square over the middle of the pad while the legs do the work.
+  // On doubles the body has to travel between the pads.
+  final torsoYaw = (yaw * st.torsoTurn).clamp(-0.9, 0.9);
+  pose.torsoYaw = torsoYaw;
   final tf = _fwdOf(torsoYaw), ts = _rightOf(torsoYaw);
-  final fromBar = pz - _barZ;
-  final lean = -0.08 - (fromBar - 0.45).clamp(0.0, 0.5) * 0.45 + dip * 0.4;
-  var chest = pelvis + tf * lean + _V(0, 0.46 - dip * 0.4, 0);
+  final follow = tr.columnCount > 4 ? 1.0 : st.shoulderFollow;
+  final over = _V(_lerp(0, px, follow), py, _lerp(-back, pz, follow));
+  // Holding the bar, the chest leans back further the further the pelvis is
+  // from it, so the hands can keep hold.
+  final lean = bar
+      ? -0.08 - (pz - _barZ - 0.45).clamp(0.0, 0.5) * 0.45 + dip * 0.4
+      : 0.02 + dip * 0.4;
+  var chest = over + tf * lean + _V(0, 0.46 - dip * 0.4, 0);
   // Grips belong to the stage, not the moving pelvis. On doubles the player
   // holds the inner side of each bar; neither hand slides during a transfer.
   final gripWidth =
       tr.columnCount > 4 ? 1.5 * _u - _gripHalfWidth : _gripHalfWidth;
   _V grip(double sign) => _V(gripWidth * sign, _barY, _barZ);
   const armReach = (_upperArm + _foreArm) * 0.97;
-  // Lean the shoulders into the reachable intersection of both arm chains.
-  // The feet and hips remain driven by the solve, while the hands stay planted.
-  for (var pass = 0; pass < 12; pass++) {
-    for (final sign in [-1.0, 1.0]) {
-      final shoulder = chest + ts * (0.2 * sign) + const _V(0, 0.06, 0);
-      final delta = shoulder - grip(sign);
-      if (delta.length > armReach) {
-        chest = chest - delta.unit * (delta.length - armReach);
+  if (bar) {
+    // Lean the shoulders into the reachable intersection of both arm chains.
+    for (var pass = 0; pass < 12; pass++) {
+      for (final sign in [-1.0, 1.0]) {
+        final shoulder = chest + ts * (0.2 * sign) + const _V(0, 0.06, 0);
+        final delta = shoulder - grip(sign);
+        if (delta.length > armReach) {
+          chest = chest - delta.unit * (delta.length - armReach);
+        }
       }
     }
   }
@@ -622,10 +714,24 @@ _Pose _pose(_Track tr, double t) {
     (ParityFoot.right, 1.0)
   ]) {
     final shoulder = chest + ts * (0.2 * sgn) + const _V(0, 0.06, 0);
-    final target = grip(sgn);
-    final pole = (tf * -0.4 + ts * (0.7 * sgn) + const _V(0, -0.3, 0)).unit;
-    final (elbow, _) = _ik(shoulder, target, _upperArm, _foreArm, pole);
-    pose.arms[foot] = (shoulder: shoulder, elbow: elbow, hand: target);
+    if (bar) {
+      final target = grip(sgn);
+      final pole = (tf * -0.4 + ts * (0.7 * sgn) + const _V(0, -0.3, 0)).unit;
+      final (elbow, _) = _ik(shoulder, target, _upperArm, _foreArm, pole);
+      pose.arms[foot] = (shoulder: shoulder, elbow: elbow, hand: target);
+    } else {
+      // Hands free: hanging by the hips, swinging against the leg on that
+      // side the way a walking arm does.
+      final mine = foot == ParityFoot.left ? fl : fr;
+      final theirs = foot == ParityFoot.left ? fr : fl;
+      final swing = st.armSwing * (theirs.air - mine.air) * 2;
+      final target = shoulder +
+          ts * ((0.06 + st.armSwing * 0.4) * sgn) +
+          tf * (0.08 + swing) +
+          const _V(0, -0.52, 0);
+      final (elbow, hand) = _ik(shoulder, target, _upperArm, _foreArm, tf * -1);
+      pose.arms[foot] = (shoulder: shoulder, elbow: elbow, hand: hand);
+    }
   }
   return pose;
 }
@@ -633,14 +739,13 @@ _Pose _pose(_Track tr, double t) {
 void _buildPad(_Scene s, _Track tr, double t, double pcx, int base) {
   s.box(_V(pcx * _u, _padY / 2, (_stageFront + _stageBack) / 2), _xAxis, _up,
       _zAxis, 1.5 * _u + 0.035, _padY / 2, _stageDepth / 2, _padBase,
-      layer: 1);
+      layer: 0);
   const y = _padY + 0.002;
   for (int gx = -1; gx <= 1; gx++) {
     for (int gz = -1; gz <= 1; gz++) {
       final x0 = (pcx + gx - 0.5) * _u + 0.012,
           x1 = (pcx + gx + 0.5) * _u - 0.012;
       final z0 = (gz - 0.5) * _u + 0.012, z1 = (gz + 0.5) * _u - 0.012;
-      final pts = [_V(x0, y, z0), _V(x0, y, z1), _V(x1, y, z1), _V(x1, y, z0)];
       final panel = switch ((gx, gz)) {
         (-1, 0) => 0,
         (0, -1) => 1,
@@ -649,20 +754,52 @@ void _buildPad(_Scene s, _Track tr, double t, double pcx, int base) {
         _ => -1,
       };
       if (panel < 0) {
-        s.quad(pts, _up, gx == 0 && gz == 0 ? _panelCentre : _panelPlate,
-            layer: 1);
+        s.quad([
+          _V(x0, y, z0),
+          _V(x0, y, z1),
+          _V(x1, y, z1),
+          _V(x1, y, z0)
+        ], _up, gx == 0 && gz == 0 ? _panelCentre : _panelPlate, layer: 1);
         continue;
       }
-      final (v, isLeft) = tr.light(base + panel, t);
-      final fc = isLeft == null ? _white : (isLeft ? _leftC : _rightC);
-      s.quad(pts, _up, _mix(_panelArrow, fc, v * 0.45),
+      // An octagonal plate with the corner brackets showing at its cut
+      // corners; the arrow on it lights while a foot is on the panel.
+      const c = _chamfer * _u;
+      for (final (cx, cz, sx, sz) in [
+        (x0, z0, 1.0, 1.0),
+        (x0, z1, 1.0, -1.0),
+        (x1, z1, -1.0, -1.0),
+        (x1, z0, -1.0, 1.0),
+      ]) {
+        final corner = [
+          _V(cx, y, cz),
+          _V(cx, y, cz + c * sz),
+          _V(cx + c * sx, y, cz),
+        ];
+        s.quad(corner, _up, _bracket, layer: 1);
+      }
+      final on = tr.lit(base + panel, t);
+      s.quad(
+          [
+            _V(x0, y, z0 + c),
+            _V(x0, y, z1 - c),
+            _V(x0 + c, y, z1),
+            _V(x1 - c, y, z1),
+            _V(x1, y, z1 - c),
+            _V(x1, y, z0 + c),
+            _V(x1 - c, y, z0),
+            _V(x0 + c, y, z0),
+          ],
+          _up,
+          on ? _mix(_panelArrow, _lamp, 0.22) : _panelArrow,
           layer: 1,
-          emissive: v > 0.02,
+          lit: on,
           decals: [
             (
-              _arrowTris((pcx + gx) * _u, gz * _u, _arrowTurn[panel], _u * 0.4,
-                  y + 0.001),
-              _mix(_arrowIdle, _mix(fc, _white, 0.25), v),
+              _arrowTris(
+                  (pcx + gx) * _u, gz * _u, _arrowTurn[panel], _u, y + 0.001),
+              on ? _lamp : _arrowIdle,
+              on,
             )
           ]);
     }
@@ -712,8 +849,7 @@ void _buildBar(_Scene s, _Track tr) {
 
 void _buildDancer(_Scene s, _Pose p) {
   final fwd = _fwdOf(p.yaw), side = _rightOf(p.yaw);
-  final torsoYaw = (p.yaw * 0.55).clamp(-0.45, 0.45);
-  final tf = _fwdOf(torsoYaw), ts = _rightOf(torsoYaw);
+  final tf = _fwdOf(p.torsoYaw), ts = _rightOf(p.torsoYaw);
   for (final foot in ParityFoot.values) {
     final shoe = p.shoes[foot]!, f = p.feet[foot]!;
     final leg = p.legs[foot]!, arm = p.arms[foot]!;
@@ -768,7 +904,7 @@ void _buildDancer(_Scene s, _Pose p) {
       _jacket);
   s.tube(p.chest + const _V(0, 0.11, 0), p.head + const _V(0, -0.09, 0), 0.035,
       _skin);
-  final hf = _fwdOf(p.yaw * 0.25), hs = _rightOf(p.yaw * 0.25);
+  final hf = _fwdOf(p.torsoYaw * 0.5), hs = _rightOf(p.torsoYaw * 0.5);
   s.rings(
       p.head,
       hs,
@@ -794,6 +930,8 @@ class PadDancerPainter extends CustomPainter {
     required this.playhead,
     required this.columnCount,
     this.visualOffset = 0,
+    this.form = DancerForm.standard,
+    this.bar = true,
   }) : super(repaint: playhead);
 
   /// The solve's stances and the notes it was solved on (turned), for holds.
@@ -802,6 +940,10 @@ class PadDancerPainter extends CustomPainter {
   final ValueListenable<double> playhead;
   final int columnCount;
   final double visualOffset;
+  final DancerForm form;
+
+  /// Holding the cabinet's back bar, or hands free without one.
+  final bool bar;
 
   static _Track? _cache;
 
@@ -809,10 +951,11 @@ class PadDancerPainter extends CustomPainter {
     final c = _cache;
     if (c != null &&
         identical(c.stances, stances) &&
-        c.columnCount == columnCount) {
+        c.columnCount == columnCount &&
+        c.form == form) {
       return c;
     }
-    return _cache = _Track(stances, notes, columnCount);
+    return _cache = _Track(stances, notes, columnCount, form);
   }
 
   @override
@@ -830,24 +973,16 @@ class PadDancerPainter extends CustomPainter {
 
     final tr = _track;
     final t = playhead.value + visualOffset;
-    final i = _upper(tr.times, t + 0.05) - 1;
-    final turn = i >= 0 ? tr.turns[i] : 0.0;
-    final last = tr.lastT;
-    final dt = last == null ? -1.0 : t - last;
-    final snap = dt < 0 || dt > 0.3;
-    tr.yaw = snap ? turn : tr.yaw + (turn - tr.yaw) * (1 - math.exp(-dt * 12));
-    tr.lastT = t;
+    tr.advance(t);
+    final pose = _pose(tr, t, bar);
 
-    final pose = _pose(tr, t);
-    final follow = pose.pelvis.x * (columnCount > 4 ? 0.8 : 0.5);
-    tr.camX = snap ? follow : tr.camX + (follow - tr.camX) * 0.08;
-
-    const dist = 3.4, pitch = 0.40;
-    final target = _V(tr.camX, 0.88, 0);
+    // The camera never moves: the stage stays put and the dancer moves on it.
+    const dist = 3.3, pitch = 0.62;
+    const target = _V(0, 0.7, 0);
     final eye = target + _V(0, math.sin(pitch), -math.cos(pitch)) * dist;
     // Fit the stage's width on a portrait phone; the height on anything wider.
     final sceneW = columnCount > 4 ? 2.6 : 2.0;
-    final focal = math.min(size.height / (2 * math.tan(21 * math.pi / 180)),
+    final focal = math.min(size.height / (2 * math.tan(30 * math.pi / 180)),
         size.width * dist / sceneW);
     final cam = _Camera(eye, target, size.width / 2, size.height * 0.56, focal);
 
@@ -866,17 +1001,30 @@ class PadDancerPainter extends CustomPainter {
     }
     _floor(canvas, cam);
 
-    final scene = _Scene(cam);
+    final pad = _Scene(cam);
     if (columnCount > 4) {
-      _buildPad(scene, tr, t, -1.5, 0);
-      _buildPad(scene, tr, t, 1.5, 4);
+      _buildPad(pad, tr, t, -1.5, 0);
+      _buildPad(pad, tr, t, 1.5, 4);
     } else {
-      _buildPad(scene, tr, t, 0, 0);
+      _buildPad(pad, tr, t, 0, 0);
     }
-    _buildBar(scene, tr);
-    _buildDancer(scene, pose);
-    scene.draw(canvas);
+    pad.draw(canvas);
+    // From behind, the body stands over the centre and Up; drawn see-through
+    // so every panel and its lamp stays readable through it.
+    final body = _Scene(cam);
+    _buildDancer(body, pose);
+    canvas.saveLayer(body.bounds, _bodyPaint);
+    body.draw(canvas);
+    canvas.restore();
+    if (bar) {
+      final rail = _Scene(cam);
+      _buildBar(rail, tr);
+      rail.draw(canvas);
+    }
   }
+
+  static final Paint _bodyPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.62);
 
   static final Paint _gridPaint = Paint()
     ..color = const Color(0xFF8C6EFF).withValues(alpha: 0.10)
@@ -902,5 +1050,37 @@ class PadDancerPainter extends CustomPainter {
       !identical(old.stances, stances) ||
       old.columnCount != columnCount ||
       old.visualOffset != visualOffset ||
+      old.form != form ||
+      old.bar != bar ||
       old.playhead != playhead;
+}
+
+/// For tests: where each single-panel landing sits relative to its panel's
+/// centre (column, x, z in panel units, +z up the pad), and the shoulders'
+/// midpoint in metres at each of [times], walked in order like playback.
+@visibleForTesting
+({
+  List<(int, double, double)> landings,
+  List<(double, double, double)> shoulders
+}) padDancerTrace(List<ParityStance> stances, List<StepNote> notes,
+    int columnCount, DancerForm form,
+    {bool bar = true, List<double> times = const []}) {
+  final tr = _Track(stances, notes, columnCount, form);
+  final layout = columnCount > 4 ? _doubles : _singles;
+  final landings = [
+    for (final s in [...tr.left, ...tr.right])
+      if (s.cols.length == 1)
+        (
+          s.cols[0],
+          s.x - layout[s.cols[0]].$1,
+          s.z - layout[s.cols[0]].$2,
+        )
+  ];
+  final shoulders = <(double, double, double)>[];
+  for (final t in times) {
+    tr.advance(t);
+    final c = _pose(tr, t, bar).chest + const _V(0, 0.06, 0);
+    shoulders.add((c.x, c.y, c.z));
+  }
+  return (landings: landings, shoulders: shoulders);
 }

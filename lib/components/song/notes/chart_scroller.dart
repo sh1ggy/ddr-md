@@ -422,14 +422,28 @@ class _ChartScrollerState extends State<ChartScroller>
   // The notes that solve ran on (turned), for the pad dancer's holds.
   List<StepNote> _turnedNotes = const [];
 
-  // The pad dancer behind the field, toggled by triple-tapping the dancing-feet
-  // pad. Persisted like the pad itself.
+  // The pad dancer behind the field, with or without the back bar, and the
+  // form both dancers move in. Persisted across previews.
   bool _padDancer = Settings.getInt(Settings.padDancerOnKey) == 1;
   bool get _dancerOn => _padDancer && _stances.isNotEmpty;
+  bool _dancerBar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
+  DancerForm _form = DancerForm.values[Settings.getInt(Settings.dancerFormKey)
+      .clamp(0, DancerForm.values.length - 1)];
 
   void _togglePadDancer() {
     setState(() => _padDancer = !_padDancer);
     Settings.setInt(Settings.padDancerOnKey, _padDancer ? 1 : 0);
+  }
+
+  void _toggleDancerBar() {
+    setState(() => _dancerBar = !_dancerBar);
+    Settings.setInt(Settings.padDancerNoBarKey, _dancerBar ? 0 : 1);
+  }
+
+  void _cycleForm() {
+    setState(() => _form =
+        DancerForm.values[(_form.index + 1) % DancerForm.values.length]);
+    Settings.setInt(Settings.dancerFormKey, _form.index);
   }
 
   // Patterns read off that same solve, so they agree with the foot guide, and
@@ -2254,6 +2268,8 @@ class _ChartScrollerState extends State<ChartScroller>
                         playhead: _playhead,
                         columnCount: dirs.length,
                         visualOffset: _visualOffsetSeconds,
+                        form: _form,
+                        bar: _dancerBar,
                       ),
                       size: Size.infinite,
                       willChange: true,
@@ -2486,7 +2502,7 @@ class _ChartScrollerState extends State<ChartScroller>
                 playhead: _playhead,
                 columnCount: dirs.length,
                 visualOffset: _visualOffsetSeconds,
-                onTripleTap: _togglePadDancer,
+                form: _form,
               ),
             ),
 
@@ -2809,11 +2825,11 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
-      // Viewing aids, split off into their own segment and laid out as two rows
+      // Viewing aids, split off into their own segment and laid out as rows
       // of tiles: the parity readings (the on-arrow L/R guide, the same-foot
-      // trails and the dancing-feet pad, all three drawn from one solve) above,
-      // the rest — the assist tick, the measure rules, the guideline and the
-      // arcade quant palette — below.
+      // trails and the dancing-feet pad, all three drawn from one solve), the
+      // pad dancer, then the rest — the assist tick, the measure rules, the
+      // guideline and the arcade quant palette.
       // These moved out of the floating header so it carries only title/back;
       // the toggles read the same as the TURN tiles, so they slot in as more
       // rows of the options card.
@@ -2862,6 +2878,49 @@ class _ChartScrollerState extends State<ChartScroller>
                     ),
                 ],
               ),
+            // The pad dancer and how both dancers move. BAR only means
+            // something with the dancer on; FORM with either dancer.
+            Row(
+              spacing: 8,
+              children: [
+                Expanded(
+                  child: TurnTile(
+                    label: "PAD DANCER",
+                    icon: _padDancer
+                        ? Icons.accessibility_new
+                        : Icons.accessibility_new_outlined,
+                    selected: _padDancer,
+                    onTap: _togglePadDancer,
+                  ),
+                ),
+                if (_padDancer)
+                  Expanded(
+                    child: TurnTile(
+                      label: _dancerBar ? "BAR" : "NO BAR",
+                      icon: Icons.horizontal_rule,
+                      selected: _dancerBar,
+                      onTap: _toggleDancerBar,
+                    ),
+                  ),
+                if (_padDancer || widget.showDancingFeet)
+                  Expanded(
+                    child: TurnTile(
+                      label: switch (_form) {
+                        DancerForm.standard => "STANDARD FORM",
+                        DancerForm.minimal => "MINIMAL FORM",
+                        DancerForm.exaggerated => "EXAGGERATED FORM",
+                      },
+                      icon: switch (_form) {
+                        DancerForm.standard => Icons.directions_run,
+                        DancerForm.minimal => Icons.compress,
+                        DancerForm.exaggerated => Icons.open_in_full,
+                      },
+                      selected: _form != DancerForm.standard,
+                      onTap: _cycleForm,
+                    ),
+                  ),
+              ],
+            ),
             Row(
               spacing: 8,
               children: [

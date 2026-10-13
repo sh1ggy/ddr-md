@@ -126,6 +126,52 @@ const int _colRight = 3;
 /// A full crossover turns the feet a quarter circle.
 const double _maxTurn = math.pi / 2;
 
+/// How the dancers move. STANDARD lands on panel centres. MINIMAL is top-player
+/// economy: feet on the inner part of each panel, shoulders square and still,
+/// low quick lifts. EXAGGERATED is the opposite: high lifts and a body that
+/// turns and bounces with every step. The flat pad only tells MINIMAL apart.
+enum DancerForm { standard, minimal, exaggerated }
+
+/// Where [foot] lands on [col]'s panel in [form], as an offset from the panel's
+/// centre in panel units, +x right and +y up the pad. [otherCol] is the panel
+/// the other foot is on (-1 for none).
+///
+/// MINIMAL keeps every foot on the inner side of its panel: the inner edge of
+/// Left and Right, and the inner corner of Up and Down on the foot's own side,
+/// which shortens every reach between them. A foot crossing onto the far side
+/// panel takes its top corner in front of a partner on Down and its bottom
+/// corner behind one on Up; one crossing onto Up or Down takes its inner centre.
+///
+/// Both feet on one panel (a footswitch) stand side by side on it, left foot
+/// on the left; on a side panel MINIMAL puts them one ahead of the other
+/// against its inner edge instead.
+Offset formSpot(DancerForm form, int col, ParityFoot foot, int otherCol) {
+  final side = foot == ParityFoot.left ? -1.0 : 1.0;
+  final minimal = form == DancerForm.minimal;
+  final sideways = col % 4 == _colLeft || col % 4 == _colRight;
+  final inner = !minimal
+      ? 0.0
+      : sideways
+          ? 0.25
+          : 0.22;
+  final inward = sideways
+      ? Offset(col % 4 == _colLeft ? inner : -inner, 0)
+      : Offset(0, col % 4 == 2 ? -inner : inner);
+  if (otherCol == col) {
+    if (minimal && sideways) return inward + Offset(0, -0.18 * side);
+    return inward + Offset(0.28 * side, 0);
+  }
+  if (!minimal) return Offset.zero;
+  final own = foot == ParityFoot.left ? _colLeft : _colRight;
+  final far = foot == ParityFoot.left ? _colRight : _colLeft;
+  final other = otherCol < 0 ? -1 : otherCol % 4;
+  if (sideways) {
+    if (col % 4 != far) return inward;
+    return inward + Offset(0, other == 1 ? 0.2 : (other == 2 ? -0.2 : 0));
+  }
+  return inward + Offset(other == own ? 0 : 0.2 * side, 0);
+}
+
 /// The pad: a floating, draggable overlay showing where the parity solve stands
 /// the player at the playhead. Driven by the scroller's playhead notifier so the
 /// feet animate without rebuilding the widget tree per frame.
@@ -140,11 +186,10 @@ class DancingFeet extends StatefulWidget {
     required this.playhead,
     required this.columnCount,
     this.visualOffset = 0,
-    this.onTripleTap,
+    this.form = DancerForm.standard,
   });
 
-  /// Three quick taps on the pad. Unadvertised: it toggles the pad dancer.
-  final VoidCallback? onTripleTap;
+  final DancerForm form;
 
   /// The solved stance timeline, ascending by second.
   final List<ParityStance> stances;
@@ -180,22 +225,6 @@ class _DancingFeetState extends State<DancingFeet> {
   // Picked up by a long press: while held, the pad follows the finger and lifts
   // visually so it's clear it's being moved rather than merely touched.
   bool _dragging = false;
-
-  DateTime? _firstTap;
-  int _taps = 0;
-
-  void _onTap() {
-    final now = DateTime.now();
-    if (_firstTap == null ||
-        now.difference(_firstTap!) > const Duration(milliseconds: 700)) {
-      _firstTap = now;
-      _taps = 0;
-    }
-    if (++_taps == 3) {
-      _firstTap = null;
-      widget.onTripleTap?.call();
-    }
-  }
 
   // The previous update's cumulative offset, so moves apply as deltas.
   Offset _lastDrag = Offset.zero;
@@ -261,12 +290,6 @@ class _DancingFeetState extends State<DancingFeet> {
               // letting them fall through to the field.
               behavior: HitTestBehavior.opaque,
               gestures: {
-                if (widget.onTripleTap != null)
-                  TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<
-                      TapGestureRecognizer>(
-                    () => TapGestureRecognizer(debugOwner: this),
-                    (r) => r.onTap = _onTap,
-                  ),
                 LongPressGestureRecognizer:
                     GestureRecognizerFactoryWithHandlers<
                         LongPressGestureRecognizer>(
@@ -301,6 +324,7 @@ class _DancingFeetState extends State<DancingFeet> {
                 playhead: widget.playhead,
                 columnCount: widget.columnCount,
                 visualOffset: widget.visualOffset,
+                form: widget.form,
               ),
             ),
           ),
@@ -320,6 +344,7 @@ class DancePad extends StatelessWidget {
     required this.playhead,
     required this.columnCount,
     this.visualOffset = 0,
+    this.form = DancerForm.standard,
   });
 
   final bool dragging;
@@ -327,6 +352,7 @@ class DancePad extends StatelessWidget {
   final ValueListenable<double> playhead;
   final int columnCount;
   final double visualOffset;
+  final DancerForm form;
 
   @override
   Widget build(BuildContext context) {
@@ -350,6 +376,7 @@ class DancePad extends StatelessWidget {
               playhead: playhead,
               columnCount: columnCount,
               visualOffset: visualOffset,
+              form: form,
             ),
             size: Size.infinite,
           ),
@@ -367,15 +394,16 @@ class _FootPose {
   final int heelCol;
   final int toeCol;
 
-  /// Sideways nudge in panel units, for sharing a panel with the other foot.
-  final double shift;
+  /// Nudge off the panel centre in panel units (canvas axes): sharing a panel
+  /// with the other foot, or the spot the [DancerForm] puts it on.
+  final Offset shift;
 
-  const _FootPose(this.heelCol, this.toeCol, [this.shift = 0]);
+  const _FootPose(this.heelCol, this.toeCol, [this.shift = Offset.zero]);
 
   Offset heel(Offset Function(int) pointFor, double unit) =>
-      pointFor(heelCol) + Offset(shift * unit, 0);
+      pointFor(heelCol) + shift * unit;
   Offset toe(Offset Function(int) pointFor, double unit) =>
-      pointFor(toeCol) + Offset(shift * unit, 0);
+      pointFor(toeCol) + shift * unit;
 }
 
 class _PadPainter extends CustomPainter {
@@ -384,12 +412,14 @@ class _PadPainter extends CustomPainter {
     required this.playhead,
     required this.columnCount,
     required this.visualOffset,
+    required this.form,
   }) : super(repaint: playhead);
 
   final List<ParityStance> stances;
   final ValueListenable<double> playhead;
   final int columnCount;
   final double visualOffset;
+  final DancerForm form;
 
   /// The body's turn at each stance, solved in order since whether a stance
   /// turns you depends on how you stepped into it (see [stepTurn]). Doubles has
@@ -532,14 +562,18 @@ class _PadPainter extends CustomPainter {
     final heel = foot == ParityFoot.left ? stance.leftHeel : stance.rightHeel;
     final toe = foot == ParityFoot.left ? stance.leftToe : stance.rightToe;
     if (heel == -1 && toe == -1) return null;
-    // Both feet on one panel (mid-footswitch) stand side by side on it, left
-    // foot on the left half, rather than drawn on top of each other.
+    // Where on the panel comes from the form; both feet on one panel
+    // (mid-footswitch) stand side by side rather than on top of each other.
     final left = stance.columnsFor(ParityFoot.left);
     final right = stance.columnsFor(ParityFoot.right);
-    final sharing =
-        left.length == 1 && right.length == 1 && left[0] == right[0];
-    return _FootPose(heel == -1 ? toe : heel, toe == -1 ? heel : toe,
-        sharing ? (foot == ParityFoot.left ? -0.28 : 0.28) : 0);
+    final own = foot == ParityFoot.left ? left : right;
+    final other = foot == ParityFoot.left ? right : left;
+    if (own.length != 1) {
+      return _FootPose(heel == -1 ? toe : heel, toe == -1 ? heel : toe);
+    }
+    final spot =
+        formSpot(form, own[0], foot, other.length == 1 ? other[0] : -1);
+    return _FootPose(own[0], own[0], Offset(spot.dx, -spot.dy));
   }
 
   static final Paint _panelPaint = Paint()
@@ -680,5 +714,6 @@ class _PadPainter extends CustomPainter {
       old.columnCount != columnCount ||
       // Without this the feet wouldn't move while dialling VISUAL OFFSET
       // paused — same reason the field's painter watches it.
-      old.visualOffset != visualOffset;
+      old.visualOffset != visualOffset ||
+      old.form != form;
 }
