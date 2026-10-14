@@ -32,16 +32,21 @@ class DatabaseProvider {
   static const String _parityPinsDdl =
       'CREATE TABLE IF NOT EXISTS parity_pins(song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, chartHash TEXT NOT NULL, beat REAL NOT NULL, col INT NOT NULL, foot TEXT NOT NULL, PRIMARY KEY(song, mode, difficulty, beat, col))';
 
+  // v9: saved chart sections (Snippets tab).
+  static const String _snippetsDdl =
+      'CREATE TABLE IF NOT EXISTS snippets(id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, chartHash TEXT NOT NULL, startBeat REAL NOT NULL, endBeat REAL NOT NULL, label TEXT NOT NULL DEFAULT \'\')';
+
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
     await db.execute(_favoritesDdl);
     await db.execute(_scoresDdl);
     await db.execute(_parityPinsDdl);
+    await db.execute(_snippetsDdl);
   }
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 8, onCreate: (db, version) async {
+    return await openDatabase(path, version: 9, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -60,7 +65,28 @@ class DatabaseProvider {
         await db.execute('ALTER TABLE scores ADD COLUMN exScore INT');
       }
       if (oldVersion < 8) await db.execute(_parityPinsDdl);
+      if (oldVersion < 9) await db.execute(_snippetsDdl);
     });
+  }
+
+  // -- SNIPPET FUNCTIONS
+  // Insert or replace, keyed by id, so an edited snippet keeps its place.
+  static Future<void> saveSnippet(Snippet snippet) async {
+    final db = await _instance;
+    await db.insert("snippets", snippet.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<void> deleteSnippet(String id) async {
+    final db = await _instance;
+    await db.delete("snippets", where: "id = ?", whereArgs: [id]);
+  }
+
+  // Newest first.
+  static Future<List<Snippet>> getAllSnippets() async {
+    final db = await _instance;
+    final rows = await db.query("snippets", orderBy: "createdAt DESC");
+    return [for (final r in rows) Snippet.fromMap(r)];
   }
 
   // -- PARITY PIN FUNCTIONS

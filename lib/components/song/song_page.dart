@@ -275,24 +275,9 @@ class _SongPageState extends State<SongPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ChartPreviewPage(
-                      stepsFuture: _stepsFuture!,
-                      mode: mode,
-                      difficultyKey: diffKey,
-                      difficultyLevel: difficultyLevel,
-                      title: songInfo.title,
-                      songLength: songInfo.songLength,
-                      chartBpm: _chart.dominantBpm,
-                      minBpm: _chart.trueMin,
-                      maxBpm: _chart.trueMax,
-                      bpms: _chart.bpms,
-                      stops: _chart.stops,
-                      // The same measured sync this page's Sync card shows
-                      // (cabinet block when present, else simfile), so ARCADE
-                      // SYNC can report the song's own bias.
-                      sync: songInfo.displaySyncFor(_chart),
-                      timeSignatures: songInfo.timeSignatures,
-                    ),
+                    builder: (_) => ChartPreviewPage.forChart(
+                        songInfo, mode, diffKey,
+                        stepsFuture: _stepsFuture),
                   ),
                 );
               },

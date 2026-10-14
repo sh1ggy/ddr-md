@@ -65,3 +65,7 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 - Shell scripts here inline pure commands — don't extract fetch/copy/check helper functions.
 - `docs/` holds only how-tos the code relies on (noteskin assets, parity labelling, dancer form). Plans and design write-ups don't live in the repo.
 - `docs/arcade/` (gitignored, kept locally) is the cabinet-behaviour reference. Check it, when present, before claiming or changing anything "arcade accurate". Never commit it or anything else derived from Konami material.
+
+## Local validation preference
+
+For interactive validation, use `flutter run -d macos`. Run it from the feature worktree and reuse its running session for hot reload when possible.

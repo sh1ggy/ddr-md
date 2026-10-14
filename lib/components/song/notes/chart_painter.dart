@@ -55,7 +55,15 @@ class ChartPainter extends CustomPainter {
     this.focus = const {},
     this.highlights = const [],
     this.highlightIcon,
+    this.section,
+    this.sectionTail,
   }) : super(repaint: playhead);
+
+  /// The snippet's (first, last) row seconds, banded in [kSectionColor].
+  final (double, double)? section;
+
+  /// End of the selected notes, including hold tails, for the A–B band.
+  final double? sectionTail;
 
   /// Pattern occurrences to mark, (first, last) row seconds sorted by first,
   /// each banded across the field with [highlightIcon] at its start.
@@ -264,7 +272,9 @@ class ChartPainter extends CustomPainter {
     // through stops and follows the tempo. Before the first beat, and whenever
     // the preview is paused, they rest halfway.
     final double glow;
-    if (!playing || !beatLocked || currentBeat < 0) {
+    if (section != null && (second < section!.$1 || second > section!.$2)) {
+      glow = 0;
+    } else if (!playing || !beatLocked || currentBeat < 0) {
       glow = 0.5;
     } else {
       glow = currentBeat % 1.0 < 0.25 ? 1.0 : 0.0;
@@ -327,7 +337,19 @@ class ChartPainter extends CustomPainter {
       canvas.drawRRect(band, _highlightFillPaint);
       canvas.drawRRect(band, _highlightEdgePaint);
     }
-
+    final bandSection =
+        section == null ? null : (section!.$1, sectionTail ?? section!.$2);
+    if (bandSection case (final from, final to)
+        when from <= maxT && to >= second) {
+      final band = RRect.fromLTRBR(
+          fieldLeft - 6,
+          yFor(from) - arrowSize * 0.6,
+          fieldRight + 6,
+          yFor(to) + arrowSize * 0.6,
+          const Radius.circular(10));
+      canvas.drawRRect(band, _sectionFillPaint);
+      canvas.drawRRect(band, _sectionEdgePaint);
+    }
     // 1) Freeze/hold bodies, behind the receptor and arrowheads. A hold being
     // held has its head clamped to the line, so the body shrinks upward into it
     // and vanishes at the tail.
@@ -377,6 +399,10 @@ class ChartPainter extends CustomPainter {
         final age = second - n.second;
         if (age >= longest) break; // sorted: everything earlier is older
         if (n.type == StepType.mine) continue; // mines aren't "hit"
+        if (section != null &&
+            (n.second < section!.$1 || n.second > section!.$2)) {
+          continue;
+        }
         arrivals.putIfAbsent(turned(n.col), () => age); // newest wins the lane
       }
     }
@@ -432,7 +458,29 @@ class ChartPainter extends CustomPainter {
       if (n.type == StepType.mine && shockNotes.contains(n)) {
         return; // drawn in the shock pass
       }
-      if (focus.contains(n)) {
+      if (!playing &&
+          n.type != StepType.mine &&
+          section != null &&
+          (n.second == section!.$1 || n.second == section!.$2)) {
+        // Expand the arrow's alpha silhouette; the normal arrow drawn below
+        // covers the interior, leaving a border that follows the skin's shape.
+        final border = math.max(2.0, arrowSize * 0.045);
+        canvas.saveLayer(
+            Rect.fromCenter(
+                center: Offset(x, y),
+                width: arrowSize * 2,
+                height: arrowSize * 2),
+            Paint()
+              ..colorFilter =
+                  const ColorFilter.mode(kSectionColor, BlendMode.srcIn));
+        for (var i = 0; i < 12; i++) {
+          final angle = i * math.pi / 6;
+          skin.paintArrow(canvas, x + math.cos(angle) * border,
+              y + math.sin(angle) * border, arrowSize, dirs[col], n.beat);
+        }
+        canvas.restore();
+      }
+      if (section == null && focus.contains(n)) {
         canvas.drawCircle(
             Offset(x, y),
             arrowSize * 0.6,
@@ -567,6 +615,23 @@ class ChartPainter extends CustomPainter {
       if (d < g.arrowSize * 0.6 && d < bestDist) {
         best = n;
         bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  double rowY(double second, Size size) => _geometry(size).yFor(second);
+
+  StepNote? nearestRow(double y, Size size) {
+    final g = _geometry(size);
+    StepNote? best;
+    var distance = double.infinity;
+    for (final n in notes) {
+      if (n.type == StepType.mine) continue;
+      final d = (g.yFor(n.second) - y).abs();
+      if (d < distance) {
+        best = n;
+        distance = d;
       }
     }
     return best;
@@ -888,6 +953,12 @@ class ChartPainter extends CustomPainter {
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.5
     ..color = Colors.white.withValues(alpha: 0.35);
+  static final Paint _sectionFillPaint = Paint()
+    ..color = kSectionColor.withValues(alpha: 0.08);
+  static final Paint _sectionEdgePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2
+    ..color = kSectionColor.withValues(alpha: 0.7);
   static final Paint _patternBadgePaint = Paint()
     ..color = Colors.black.withValues(alpha: 0.75);
   static final Map<int, TextPainter> _iconTpCache = {};
@@ -1027,5 +1098,7 @@ class ChartPainter extends CustomPainter {
       // would report the repaint.
       old.visualOffset != visualOffset ||
       old.focus != focus ||
-      old.highlights != highlights;
+      old.highlights != highlights ||
+      old.section != section ||
+      old.sectionTail != sectionTail;
 }
