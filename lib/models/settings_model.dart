@@ -52,6 +52,9 @@ class Settings {
   // The pad dancer at the cabinet, the chart on its monitor. 0/1.
   static const String padDancerCabinetKey = "chartPreviewPadDancerCabinet";
 
+  // DancerView index: where the pad dancer's camera looks from.
+  static const String dancerViewKey = "chartPreviewDancerView";
+
   // DancerForm index shared by the dancing feet and the pad dancer.
   static const String dancerFormKey = "chartPreviewDancerForm";
 

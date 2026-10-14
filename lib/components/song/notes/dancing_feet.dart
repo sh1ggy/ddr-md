@@ -207,7 +207,7 @@ const int _colRight = 3;
 const double _maxTurn = math.pi / 2;
 
 /// How the dancers move. STANDARD lands on panel centres. MINIMAL is top-player
-/// economy: feet on the inner part of each panel, shoulders square and still,
+/// economy: feet on the inner part of each panel, shoulders quiet,
 /// low quick lifts. EXAGGERATED is the opposite: high lifts and a body that
 /// turns and bounces with every step. The flat pad only tells MINIMAL apart.
 enum DancerForm { standard, minimal, exaggerated }

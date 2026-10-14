@@ -137,7 +137,6 @@ int _argb(_Rgb c) =>
 const _Rgb _jacket = (184, 190, 202);
 const _Rgb _pants = (116, 124, 140);
 const _Rgb _skin = (208, 212, 222);
-const _Rgb _shoe = (244, 244, 246);
 const _Rgb _padBase = (34, 32, 40);
 const _Rgb _panelArrow = (48, 46, 58);
 const _Rgb _panelPlate = (78, 76, 88);
@@ -227,7 +226,7 @@ class _Style {
 
   static _Style of(DancerForm form) => switch (form) {
         DancerForm.standard => const _Style(1, 1, 0.55, 1, 1, 0.28, 0.05),
-        DancerForm.minimal => const _Style(0.45, 0.75, 0, 0.15, 0.3, 0.1, 0),
+        DancerForm.minimal => const _Style(0.45, 0.75, 0.3, 0.4, 0.3, 0.1, 0),
         DancerForm.exaggerated => const _Style(2.4, 1.5, 1, 1, 2.5, 0.45, 0.22),
       };
 }
@@ -242,6 +241,12 @@ class _Step {
   final double holdEnd; // the foot stays down until here
   final bool stepped;
   final List<int> cols; // panels under the foot
+}
+
+/// Which end of the foot carries a step on [s] (see [_FootAt.weight]).
+double _weightOf(_Step s) {
+  if (s.cols.length != 1 || s.bracketYaw != null) return 0;
+  return switch (s.cols[0] % 4) { 2 => 1, 1 => -1, _ => 0 };
 }
 
 /// When a foot planted at [cur] leaves for [next]: no earlier than the hold
@@ -406,6 +411,9 @@ class _Track {
 /// that lands it on the next note.
 class _FootAt {
   double x = 0, z = 0, h = 0, air = 0, e = 0, tilt = 0, landAge = 0;
+  // Which end of the foot is on the arrow: +1 the toes (Up), -1 the heel
+  // (Down), 0 flat (Left/Right, brackets, both feet on one panel).
+  double weight = 0;
   // Where the foot's next step lands.
   double nx = 0, nz = 0;
   double? yawA, yawB;
@@ -433,6 +441,7 @@ _FootAt _footAt(List<_Step> ev, _Step rest, double t, _Style st) {
     ..yawA = cur.bracketYaw
     ..yawB = cur.bracketYaw
     ..landAge = t - cur.t
+    ..weight = _weightOf(cur)
     ..stepped = cur.stepped
     ..bracket = cur.bracketYaw != null;
   if (next == null) return f;
@@ -450,6 +459,7 @@ _FootAt _footAt(List<_Step> ev, _Step rest, double t, _Style st) {
     ..air = arc
     ..e = e
     ..yawB = next.bracketYaw
+    ..weight = _lerp(_weightOf(cur), _weightOf(next), e)
     ..tilt = arc * (d < 0.01 ? 0.15 : 0.4) * math.min(1.0, st.lift)
     ..bracket = e < 0.5 ? cur.bracketYaw != null : next.bracketYaw != null;
 }
@@ -562,6 +572,28 @@ class _Scene {
     q([p(-1, -1, -1), p(1, -1, -1), p(1, -1, 1), p(-1, -1, 1)], ay * -1);
     q([p(-1, -1, 1), p(1, -1, 1), p(1, 1, 1), p(-1, 1, 1)], az);
     q([p(-1, -1, -1), p(-1, 1, -1), p(1, 1, -1), p(1, -1, -1)], az * -1);
+  }
+
+  /// A flat [outline] (across, along; around the origin) lifted from [y0] to
+  /// [y1] on the frame ([side], [up], [fwd]) at [c]: a shoe sole's footprint
+  /// with walls. The underside faces the pad, so it is left out.
+  void prism(_V c, _V side, _V up, _V fwd, List<(double, double)> outline,
+      double y0, double y1, _Rgb col,
+      {bool emissive = false}) {
+    _V at(int i, double y) =>
+        c + side * outline[i].$1 + up * y + fwd * outline[i].$2;
+    final n = outline.length;
+    for (int i = 0; i < n; i++) {
+      final j = (i + 1) % n;
+      final (ax, az) = outline[i];
+      final (bx, bz) = outline[j];
+      final ex = bx - ax, ez = bz - az;
+      var out = side * ez - fwd * ex;
+      if (out.dot(side * (ax + bx) + fwd * (az + bz)) < 0) out = out * -1;
+      quad([at(i, y0), at(j, y0), at(j, y1), at(i, y1)], out, col,
+          emissive: emissive);
+    }
+    quad([for (int i = 0; i < n; i++) at(i, y1)], up, col, emissive: emissive);
   }
 
   /// A box stretched from [p0] to [p1]: a bone, a bar, a post.
@@ -748,7 +780,12 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
     final shoeF = _V(ff.x * cp, -sp, ff.z * cp).unit;
     final shoeS = _up.cross(shoeF).unit;
     final shoeU = shoeF.cross(shoeS);
-    final centre = _V(f.x * _u, _padY + f.h + 0.04, f.z * _u);
+    // Flat-footed, but an Up is taken on the toes and a Down on the heel
+    // (docs/dancer-form.md): that half of the shoe sits on the spot, the rest
+    // reaches toward the centre. Shock dodges place the whole foot themselves.
+    final reach = f.weight * (1 - dodge) * rig.shoe / 4;
+    final centre = _V(
+        f.x * _u - ff.x * reach, _padY + f.h + 0.04, f.z * _u - ff.z * reach);
     pose.feet[foot] = f;
     pose.shoes[foot] = (
       centre: centre,
@@ -795,7 +832,7 @@ _Pose _pose(_Track tr, double t, _Rig rig) {
   }
 
   // The shoulders take only part of the hips' turn and travel: in MINIMAL
-  // they stay square over the middle of the pad while the legs do the work.
+  // they stay mostly over the middle of the pad while the legs do the work.
   // On doubles the body has to travel between the pads.
   final torsoYaw = (yaw * st.torsoTurn).clamp(-0.9, 0.9);
   pose.torsoYaw = torsoYaw;
@@ -969,8 +1006,8 @@ List<_V> _arrowTris(double cx, double cz, double turn, double size, double y) {
 /// painted afterwards, through [_screenMatrix].
 void _buildCabinet(_Scene s, double cx) {
   const hw = _cabHalfWidth;
-  s.box(_V(cx, _deckY / 2, (_cabFront + _cabBack) / 2), _xAxis, _up, _zAxis,
-      hw, _deckY / 2, (_cabBack - _cabFront) / 2, _cabBody,
+  s.box(_V(cx, _deckY / 2, (_cabFront + _cabBack) / 2), _xAxis, _up, _zAxis, hw,
+      _deckY / 2, (_cabBack - _cabFront) / 2, _cabBody,
       layer: 0);
   s.quad([
     _V(cx - hw, _deckY, _cabFront),
@@ -1038,6 +1075,13 @@ Float64List _screenMatrix(_Camera cam, double cx) {
   ]);
 }
 
+/// Where the stage camera looks from. BEHIND is the player's own view (the
+/// cabinet's, with CABINET on); the others are for studying the form with the
+/// chart still full size over them: FRONT as a coach filming the player,
+/// SIDE for posture and lean over the pad, OVERHEAD for where the feet land
+/// and face.
+enum DancerView { behind, front, side, overhead }
+
 /// Where the cabinet stands: centred between the two stages, so a Singles
 /// player on the 1P stage has it off to their right.
 double _cabinetX(int columnCount) => columnCount > 4 ? 0 : _stageHalfWidth;
@@ -1075,8 +1119,7 @@ _Camera _cabinetCamera(Size size, int columnCount) {
     t = math.min(t, y);
     b = math.max(b, y);
   }
-  final focal =
-      math.min(size.width / (r - l), size.height * 0.94 / (b - t));
+  final focal = math.min(size.width / (r - l), size.height * 0.94 / (b - t));
   return _Camera(eye, unit.target, size.width / 2 - focal * (l + r) / 2,
       size.height / 2 - focal * (t + b) / 2, focal);
 }
@@ -1164,6 +1207,73 @@ void _buildHands(_Scene s, _Pose p, double k) {
   }
 }
 
+/// The sole's footprint, the same shape the flat dancing feet draw: full
+/// forefoot with a rounded toe, a heel about 60% as wide, and the arch scooped
+/// into the body's side ([inward] is +1 for the left foot, -1 for the right,
+/// along the shoe's side axis). Across, then along toward the toe.
+List<(double, double)> _footOutline(
+    double width, double length, double inward) {
+  final halfW = width / 2, halfL = length / 2, heelW = halfW * 0.6;
+  final inner = halfW * inward, outer = -inner;
+  final innerHeel = heelW * inward, outerHeel = -innerHeel;
+  // The flat shape's y points at the toe (-y), here that is +along.
+  final out = <(double, double)>[(outer, halfL - width * 0.35)];
+  void curve((double, double) c, (double, double) e) {
+    final s = out.last;
+    for (int i = 1; i <= 5; i++) {
+      final t = i / 5, u = 1 - t;
+      out.add((
+        u * u * s.$1 + 2 * u * t * c.$1 + t * t * e.$1,
+        u * u * s.$2 + 2 * u * t * c.$2 + t * t * e.$2,
+      ));
+    }
+  }
+
+  curve((outer, halfL + width * 0.12), (0, halfL + width * 0.12));
+  curve((inner, halfL + width * 0.12), (inner, halfL - width * 0.35));
+  curve((inner * 0.62, -halfL * 0.30), (innerHeel, -halfL + heelW * 0.4));
+  curve((innerHeel, -halfL - heelW * 0.35), (0, -halfL - heelW * 0.35));
+  curve((outerHeel, -halfL - heelW * 0.35), (outerHeel, -halfL + heelW * 0.4));
+  curve((outer * 1.02, -halfL * 0.32), (outer, halfL - width * 0.35));
+  out.removeLast();
+  return out;
+}
+
+/// The shoes in each foot's colour, whole, so which is which reads at a
+/// glance. Drawn apart from the body so they sit over the legs, at the same
+/// see-through level.
+void _buildShoes(_Scene s, _Pose p, _Rig rig) {
+  for (final foot in ParityFoot.values) {
+    final shoe = p.shoes[foot]!, f = p.feet[foot]!;
+    // Wider than a real sole, the way the flat feet are, so the foot's
+    // direction reads at a glance.
+    final inward = foot == ParityFoot.left ? 1.0 : -1.0;
+    final width = rig.shoe * 0.5, length = shoe.len * 2;
+    final own = foot == ParityFoot.left ? _leftC : _rightC;
+    s.prism(
+        shoe.centre,
+        shoe.side,
+        shoe.up,
+        shoe.fwd,
+        _footOutline(width, length, inward),
+        -0.03,
+        0.035,
+        _mix(own, _white, 0.1));
+    // Soles brighter still, flaring as it lands.
+    final glow = f.stepped && f.landAge < 0.2 ? 1 - f.landAge / 0.2 : 0.0;
+    s.prism(
+        shoe.centre,
+        shoe.side,
+        shoe.up,
+        shoe.fwd,
+        _footOutline(width + 0.006, length + 0.006, inward),
+        -0.041,
+        -0.025,
+        _mix(own, _white, glow * 0.5),
+        emissive: true);
+  }
+}
+
 void _buildDancer(_Scene s, _Pose p, _Rig rig) {
   final k = rig.k;
   List<(double, double, double)> sized(List<(double, double, double)> rings) =>
@@ -1171,24 +1281,7 @@ void _buildDancer(_Scene s, _Pose p, _Rig rig) {
   final fwd = _fwdOf(p.yaw), side = _rightOf(p.yaw);
   final tf = _fwdOf(p.torsoYaw), ts = _rightOf(p.torsoYaw);
   for (final foot in ParityFoot.values) {
-    final shoe = p.shoes[foot]!, f = p.feet[foot]!;
     final leg = p.legs[foot]!, arm = p.arms[foot]!;
-    // About as wide as it is long, the way a trainer is.
-    final halfW = rig.shoe * 0.185;
-    s.box(shoe.centre, shoe.side, shoe.up, shoe.fwd, halfW, 0.035, shoe.len,
-        _shoe);
-    // Soles in the foot's colour, flaring as it lands.
-    final glow = f.stepped && f.landAge < 0.2 ? 1 - f.landAge / 0.2 : 0.0;
-    s.box(
-        shoe.centre + shoe.up * -0.033,
-        shoe.side,
-        shoe.up,
-        shoe.fwd,
-        halfW + 0.003,
-        0.008,
-        shoe.len + 0.004,
-        _mix(foot == ParityFoot.left ? _leftC : _rightC, _white, glow * 0.5),
-        emissive: true);
     s.limb(leg.hip, leg.knee, 0.068 * k, 0.072 * k, _pants, fwd);
     s.limb(leg.knee, leg.ankle, 0.056 * k, 0.06 * k, _pants, fwd);
     s.limb(arm.shoulder, arm.elbow, 0.046 * k, 0.046 * k, _jacket, tf);
@@ -1263,12 +1356,17 @@ class PadDancerPainter extends CustomPainter {
     this.shoeSize = kShoeSize,
     this.shockPlans,
     this.cabinet = false,
+    this.view = DancerView.behind,
     this.screen,
   }) : super(repaint: playhead);
 
   /// Seen from behind at the cabinet, with [screen] (the chart) on its
   /// monitor, instead of the stage alone under a full-field chart.
   final bool cabinet;
+
+  /// Where the stage camera looks from; anything but BEHIND leaves the
+  /// cabinet out of the picture.
+  final DancerView view;
 
   /// Paints the lane field into a [cabinetLaneSize] canvas whose receptor
   /// line sits at [kCabinetReceptorY].
@@ -1334,7 +1432,8 @@ class PadDancerPainter extends CustomPainter {
     tr.advance(t);
     final pose = _pose(tr, t, _rig);
 
-    final cam = cabinet ? _cabinetCamera(size, columnCount) : _stageCamera(size);
+    final cam =
+        cabinet ? _cabinetCamera(size, columnCount) : _stageCamera(size);
     final chest = cabinet ? null : cam.project(pose.chest);
     if (chest != null) {
       final r = 1.4 / chest.$3 * cam.focal;
@@ -1361,6 +1460,21 @@ class PadDancerPainter extends CustomPainter {
       if (cabinet) _buildPad(pad, tr, t, 2 * _stageHalfWidth / _u, 4);
     }
     pad.draw(canvas);
+    // Seen from the front the rail is behind the dancer, so it goes down first.
+    final railFirst = !cabinet && view == DancerView.front;
+    void rail() {
+      final rail = _Scene(cam);
+      _buildBar(rail, [
+        if (columnCount > 4) ...[-1.5 * _u, 1.5 * _u] else 0.0,
+        if (cabinet && columnCount <= 4) 2 * _stageHalfWidth,
+      ]);
+      // Faint, so the panels behind the rail stay readable through it.
+      canvas.saveLayer(rail.bounds, _barPaint);
+      rail.draw(canvas);
+      canvas.restore();
+    }
+
+    if (bar && railFirst) rail();
     // From behind, the body stands over the centre and Up; drawn see-through
     // so every panel and its lamp stays readable through it.
     final body = _Scene(cam);
@@ -1368,21 +1482,24 @@ class PadDancerPainter extends CustomPainter {
     canvas.saveLayer(body.bounds, _bodyPaint);
     body.draw(canvas);
     canvas.restore();
+    final shoes = _Scene(cam);
+    _buildShoes(shoes, pose, _rig);
+    canvas.saveLayer(shoes.bounds, _bodyPaint);
+    shoes.draw(canvas);
+    canvas.restore();
     if (bar) {
-      final rail = _Scene(cam);
-      _buildBar(rail, [
-        if (columnCount > 4) ...[-1.5 * _u, 1.5 * _u] else 0.0,
-        if (cabinet && columnCount <= 4) 2 * _stageHalfWidth,
-      ]);
-      rail.draw(canvas);
+      if (!railFirst) rail();
       final hands = _Scene(cam);
       _buildHands(hands, pose, _rig.k);
+      canvas.saveLayer(hands.bounds, _handsPaint);
       hands.draw(canvas);
+      canvas.restore();
     }
   }
 
   // The camera never moves: the stage stays put and the dancer moves on it.
   _Camera _stageCamera(Size size) {
+    if (view != DancerView.behind) return _orbitCamera(size);
     const dist = 3.3, pitch = 0.62;
     const target = _V(0, 0.7, 0);
     final eye = target + _V(0, math.sin(pitch), -math.cos(pitch)) * dist;
@@ -1391,6 +1508,40 @@ class PadDancerPainter extends CustomPainter {
     final focal = math.min(size.height / (2 * math.tan(30 * math.pi / 180)),
         size.width * dist / sceneW);
     return _Camera(eye, target, size.width / 2, size.height * 0.56, focal);
+  }
+
+  /// FRONT, SIDE and OVERHEAD: orbit the middle of the stage, scaled so the
+  /// stage and the standing dancer fill [size].
+  _Camera _orbitCamera(Size size) {
+    final (turn, pitch) = switch (view) {
+      DancerView.front => (math.pi, 0.2),
+      DancerView.side => (math.pi / 2, 0.1),
+      _ => (0.0, 1.5),
+    };
+    final hw = columnCount > 4 ? 3 * _u + _rim : _stageHalfWidth;
+    final target = _V(0, 0.8, (_stageBack + _stageFront) / 2);
+    final eye = target +
+        _V(-math.sin(turn) * math.cos(pitch), math.sin(pitch),
+                -math.cos(turn) * math.cos(pitch)) *
+            8;
+    final unit = _Camera(eye, target, 0, 0, 1);
+    double l = double.infinity, r = -double.infinity;
+    double t = double.infinity, b = -double.infinity;
+    for (final x in [-hw, hw]) {
+      for (final y in [0.0, _rig.k * 1.9]) {
+        for (final z in [_stageBack, _stageFront]) {
+          final (px, py, _) = unit.project(_V(x, y, z))!;
+          l = math.min(l, px);
+          r = math.max(r, px);
+          t = math.min(t, py);
+          b = math.max(b, py);
+        }
+      }
+    }
+    final focal =
+        math.min(size.width * 0.9 / (r - l), size.height * 0.8 / (b - t));
+    return _Camera(eye, target, size.width / 2 - focal * (l + r) / 2,
+        size.height / 2 - focal * (t + b) / 2, focal);
   }
 
   void _paintCabinet(Canvas canvas, _Camera cam) {
@@ -1406,8 +1557,8 @@ class PadDancerPainter extends CustomPainter {
     canvas.clipRect(rect);
     canvas.drawRect(rect, _screenPaint);
     final lanes = cabinetLaneSize(columnCount);
-    final left = cabinetLaneLeft(columnCount) -
-        (lanes.width - 96.0 * columnCount) / 2;
+    final left =
+        cabinetLaneLeft(columnCount) - (lanes.width - 96.0 * columnCount) / 2;
     // The screen filter behind the lanes, a little wider than them.
     canvas.drawRect(
         Rect.fromCenter(
@@ -1435,6 +1586,12 @@ class PadDancerPainter extends CustomPainter {
 
   static final Paint _bodyPaint = Paint()
     ..color = Colors.white.withValues(alpha: 0.62);
+
+  static final Paint _barPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.4);
+
+  static final Paint _handsPaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.75);
 
   static final Paint _gridPaint = Paint()
     ..color = const Color(0xFF8C6EFF).withValues(alpha: 0.10)
@@ -1468,6 +1625,7 @@ class PadDancerPainter extends CustomPainter {
       old.height != height ||
       old.shoeSize != shoeSize ||
       old.cabinet != cabinet ||
+      old.view != view ||
       old.screen != screen ||
       old.playhead != playhead;
 }
