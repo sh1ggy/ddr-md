@@ -345,13 +345,6 @@ class ChartPainter extends CustomPainter {
           const Radius.circular(10));
       canvas.drawRRect(band, _sectionFillPaint);
       canvas.drawRRect(band, _sectionEdgePaint);
-      final x = fieldLeft - 8;
-      final a = yFor(from), b = yFor(to);
-      canvas.drawLine(Offset(x, a), Offset(x, b), _sectionEdgePaint);
-      canvas.drawLine(
-          Offset(x, a), Offset(fieldLeft + 8, a), _sectionEdgePaint);
-      canvas.drawLine(
-          Offset(x, b), Offset(fieldLeft + 8, b), _sectionEdgePaint);
     }
     // 1) Freeze/hold bodies, behind the receptor and arrowheads. A hold being
     // held has its head clamped to the line, so the body shrinks upward into it
