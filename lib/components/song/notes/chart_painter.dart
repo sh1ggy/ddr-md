@@ -144,10 +144,11 @@ class ChartPainter extends CustomPainter {
   /// Bar lengths for the measure rules and the guideline; empty = 4/4.
   final List<TimeSignature> timeSignatures;
 
-  /// Mirrors [QuantColors.arcadeMode]. The skins read that global directly, so
-  /// the painter never uses this value — it exists purely so [shouldRepaint]
-  /// can see a palette change. Without it the field only recolours once
-  /// something else (the playhead ticking) forces a repaint.
+  /// Mirrors [QuantColors.arcadeMode]. The skins read that global for the arrow
+  /// colours; the painter uses this to pick the freeze head (DDR PALETTE draws
+  /// the freeze's own head, otherwise it is a quantised tap) and so
+  /// [shouldRepaint] sees a palette change. Without it the field only recolours
+  /// once something else (the playhead ticking) forces a repaint.
   final bool arcadeQuant;
 
   // Pinch-to-zoom, applied to the horizontal geometry (arrow size and lane
@@ -230,6 +231,9 @@ class ChartPainter extends CustomPainter {
   // judgement, so every arrival draws the clean-hit flash rather than one of
   // the per-judgement variants.
   static const double _flashSeconds = 0.12;
+
+  // A pressed receptor: 88 of its 96 px.
+  static const double _heldReceptorScale = 88 / 96;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -411,12 +415,21 @@ class ChartPainter extends CustomPainter {
     // a sustain slides under the frame while an arrow landing on the line covers
     // it. Each recoils when a note lands — DDR drives that off ghost taps, but
     // there is no input here, so it hangs off the note instead.
+    // A lane with a freeze under the playhead is held down: the receptor sits
+    // pressed and lit for as long as the freeze lasts.
+    final held = <int>{};
+    for (final n in holds) {
+      if (n.second > second) break; // sorted: nothing later has started
+      if ((n.endSecond ?? n.second) >= second) held.add(turned(n.col));
+    }
     for (int c = 0; c < columnCount; c++) {
       final age = arrivals[c];
-      final recoil =
+      var recoil =
           age == null ? 1.0 : receptorRecoilCurve(age / receptorRecoilSeconds);
+      final isHeld = held.contains(c);
+      if (isHeld) recoil = math.min(recoil, _heldReceptorScale);
       skin.paintReceptor(canvas, laneCenterX(c), _receptorTop,
-          arrowSize * recoil, dirs[c], glow * 0.9);
+          arrowSize * recoil, dirs[c], isHeld ? 1.0 : glow * 0.9);
     }
 
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
@@ -496,7 +509,7 @@ class ChartPainter extends CustomPainter {
         if (n.type == StepType.mine) {
           skin.paintMine(canvas, x, y, arrowSize);
         } else {
-          if (n.isHold) {
+          if (n.isHold && arcadeQuant) {
             skin.paintHoldHead(canvas, x, y, arrowSize, dirs[col], n.beat);
           } else {
             skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
