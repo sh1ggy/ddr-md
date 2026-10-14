@@ -448,7 +448,11 @@ class ChartPainter extends CustomPainter {
         if (n.type == StepType.mine) {
           skin.paintMine(canvas, x, y, arrowSize);
         } else {
-          skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
+          if (n.isHold) {
+            skin.paintHoldHead(canvas, x, y, arrowSize, dirs[col], n.beat);
+          } else {
+            skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
+          }
           final foot = feet[n];
           if (foot != null) _paintFootBadge(canvas, x, y, arrowSize, foot);
         }

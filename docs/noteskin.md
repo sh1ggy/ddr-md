@@ -75,6 +75,9 @@ assets/noteskin/
   hold-right-body.png  hold-right-tail.png   # direction. The tail is modulated
                                              # to the freeze green (roll orange)
                                              # so its cap matches the body.
+  hold-head.png        # 96x96 left-facing freeze head on note.png's grid
+                       # (same 3px margin), rotated per lane like a tap; optional,
+                       # older bundles draw the tinted tap arrow instead
   arrow-shock-left.png   arrow-shock-down.png    # 60x60 shock arrows,
   arrow-shock-up.png     arrow-shock-right.png   # pre-oriented per direction
 ```

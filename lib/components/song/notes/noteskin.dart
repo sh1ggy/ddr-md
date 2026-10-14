@@ -84,6 +84,11 @@ abstract class Noteskin {
   void paintArrow(Canvas canvas, double x, double y, double size, NoteDir dir,
       double beat);
 
+  /// The head of a freeze/hold (or roll) at (x,y), oriented by [dir]. Skins
+  /// without dedicated art draw it as a tap arrow of [beat].
+  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
+      double beat);
+
   /// A freeze/hold (or roll) body running from the head at [yHead] down to the
   /// tail at [yTail] in one lane.
   void paintHoldBody(Canvas canvas, double x, double yHead, double yTail,
@@ -301,6 +306,11 @@ class VectorNoteskin implements Noteskin {
     _stampGlyph(canvas, img, size);
     canvas.restore();
   }
+
+  @override
+  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
+          double beat) =>
+      paintArrow(canvas, x, y, size, dir, beat);
 
   @override
   void paintHoldBody(Canvas canvas, double x, double yHead, double yTail,
@@ -544,6 +554,7 @@ class SpriteNoteskin implements Noteskin {
     this._holdTails,
     this._shockRow,
     this._shockAura,
+    this._holdHead,
   );
 
   final ui.Image _note;
@@ -556,6 +567,10 @@ class SpriteNoteskin implements Noteskin {
   final List<ui.Image> _holdTails;
   final ui.Image? _shockRow;
   final ui.Image _shockAura;
+  // The freeze head, drawn like a tap (one left-facing arrow rotated per lane,
+  // on note.png's own 96 px grid). Null on older asset bundles, which keep the
+  // tinted tap arrow.
+  final ui.Image? _holdHead;
 
   // Vector skin handles the elements we didn't extract sprites for.
   static const VectorNoteskin _vector = VectorNoteskin();
@@ -590,12 +605,19 @@ class SpriteNoteskin implements Noteskin {
       } catch (_) {
         // Older asset bundles keep the fallback shock rendering.
       }
+      ui.Image? holdHead;
+      try {
+        holdHead = await _load('assets/noteskin/hold-head.png');
+      } catch (_) {
+        // Older asset bundles keep the tap arrow for freeze heads.
+      }
       _loadedSkin = SpriteNoteskin._(
         note,
         await perDir('hold-*-body.png'),
         await perDir('hold-*-tail.png'),
         shockRow,
         await _bakeShockAura(note),
+        holdHead,
       );
     } catch (_) {
       _loadedSkin = null; // sprites absent -> vector fallback
@@ -647,6 +669,20 @@ class SpriteNoteskin implements Noteskin {
     final dst = Rect.fromCenter(center: Offset.zero, width: size, height: size);
     // modulate: grey (~0.5) * tint keeps shading while colouring the arrow.
     _drawImage(canvas, _note, dst, paint: _tintPaint(color));
+    canvas.restore();
+  }
+
+  @override
+  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
+      double beat) {
+    final head = _holdHead;
+    if (head == null) return paintArrow(canvas, x, y, size, dir, beat);
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.rotate(rotationForDir(dir));
+    _drawImage(canvas, head,
+        Rect.fromCenter(center: Offset.zero, width: size, height: size),
+        paint: _holdPaint);
     canvas.restore();
   }
 
