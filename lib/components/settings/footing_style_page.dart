@@ -221,32 +221,13 @@ class _FootingStylePageState extends State<FootingStylePage>
   Future<void> _openChart(_Moment m) async {
     final info = Songs.list.where((s) => s.name == m.song).firstOrNull;
     if (info == null) return;
-    // Mirrors the song page: a per-chart song lists its charts in the order of
-    // its available difficulties.
-    final i = info.singles.availableTypes.indexOf(m.difficulty);
-    final chart = info.perChart
-        ? info.charts[i.clamp(0, info.charts.length - 1)]
-        : info.charts.first;
     HapticFeedback.selectionClick();
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ChartPreviewPage(
-          stepsFuture: StepsLoader.load(m.song),
-          mode: Modes.singles,
-          difficultyKey: m.difficulty,
-          difficultyLevel: info.singles.toJson()[m.difficulty] as int?,
-          title: info.title,
-          songLength: info.songLength,
-          chartBpm: chart.dominantBpm,
-          minBpm: chart.trueMin,
-          maxBpm: chart.trueMax,
-          bpms: chart.bpms,
-          stops: chart.stops,
-          sync: info.displaySyncFor(chart),
-          timeSignatures: info.timeSignatures,
-          initialSecond: m.key,
-        ),
+        builder: (_) => ChartPreviewPage.forChart(
+            info, Modes.singles, m.difficulty,
+            initialSecond: m.key),
       ),
     );
     final fit = await refitFromEdits();

@@ -1,15 +1,19 @@
 /// Name: ChartPreviewPage
-/// Parent: SongPage (opened via the "Chart preview" button)
+/// Parent: SongPage (opened via the "Chart preview" button), SnippetsPage
 /// Description: Full-screen route hosting the scrolling chart renderer for one
 /// song/mode/difficulty. Kept off the song page itself so its running Ticker
 /// and full-height canvas only exist while the user is actually watching the
 /// preview, not while scrolling the song details.
 library;
 
+import 'package:ddr_md/components/song/notes/chart_models.dart';
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
+import 'package:ddr_md/components/song/notes/section_bar.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
@@ -34,7 +38,75 @@ class ChartPreviewPage extends StatefulWidget {
     this.sync,
     this.timeSignatures = const [],
     this.initialSecond,
+    this.snippet,
+    this.newSnippet = false,
+    this.feedActive,
+    this.playbackRate = 1.0,
+    this.onPlaybackRateChanged,
+    this.feedLabel,
   });
+
+  /// The preview of [info]'s [mode] [difficultyKey], its timing taken from the
+  /// chart that difficulty uses. [stepsFuture] reuses a load already under way.
+  factory ChartPreviewPage.forChart(
+    SongInfo info,
+    Modes mode,
+    String difficultyKey, {
+    Key? key,
+    Future<SongSteps?>? stepsFuture,
+    double? initialSecond,
+    Snippet? snippet,
+    bool newSnippet = false,
+    bool? feedActive,
+    double playbackRate = 1.0,
+    ValueChanged<double>? onPlaybackRateChanged,
+    String? feedLabel,
+  }) {
+    final difficulty = mode == Modes.singles ? info.singles : info.doubles;
+    // Per-chart timing is listed by difficulty, Beginner to Challenge, for SP
+    // and DP alike.
+    final i = kInGameDifficultyNames.keys.toList().indexOf(difficultyKey);
+    final chart = info.perChart
+        ? info.charts[i.clamp(0, info.charts.length - 1)]
+        : info.charts.first;
+    return ChartPreviewPage(
+      key: key,
+      stepsFuture: stepsFuture ?? StepsLoader.load(info.name),
+      mode: mode,
+      difficultyKey: difficultyKey,
+      difficultyLevel: difficulty.toJson()[difficultyKey] as int?,
+      title: info.title,
+      songLength: info.songLength,
+      chartBpm: chart.dominantBpm,
+      minBpm: chart.trueMin,
+      maxBpm: chart.trueMax,
+      bpms: chart.bpms,
+      stops: chart.stops,
+      // The song page's Sync card reading (cabinet block when present, else
+      // simfile), so ARCADE SYNC can report the song's own bias.
+      sync: info.displaySyncFor(chart),
+      timeSignatures: info.timeSignatures,
+      initialSecond: initialSecond,
+      snippet: snippet,
+      newSnippet: newSnippet,
+      feedActive: feedActive,
+      playbackRate: playbackRate,
+      onPlaybackRateChanged: onPlaybackRateChanged,
+      feedLabel: feedLabel,
+    );
+  }
+
+  /// A saved snippet: its section loops, and Edit moves it.
+  final Snippet? snippet;
+
+  /// Opens picking a new snippet's section; Add saves it and pops with it.
+  final bool newSnippet;
+
+  /// See [ChartScroller.feedActive] and [ChartScroller.playbackRate].
+  final bool? feedActive;
+  final double playbackRate;
+  final ValueChanged<double>? onPlaybackRateChanged;
+  final String? feedLabel;
 
   /// The (already in-flight) lazy load of the song's step file, shared with the
   /// song page so opening the preview doesn't re-read the asset.
@@ -130,6 +202,74 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     QuantColors.arcadeMode = _arcadeQuant;
   }
 
+  bool get _isSnippet => widget.snippet != null || widget.newSnippet;
+
+  // The snippet's section and whether taps are picking it.
+  late BeatRange? _section = switch (widget.snippet) {
+    final s? => (s.startBeat, s.endBeat),
+    null => null,
+  };
+  late bool _picking = widget.newSnippet;
+
+  Future<void> _saveSnippet(SongSteps song, ChartSteps steps) async {
+    final section = _section;
+    if (section == null) return;
+    final hash = chartHash(steps.notes);
+    final Snippet snippet;
+    if (widget.snippet case final s?) {
+      snippet = s.copyWith(
+          chartHash: hash, startBeat: section.$1, endBeat: section.$2);
+    } else {
+      final label = await _askLabel(section);
+      if (label == null) return;
+      snippet = Snippet(
+        createdAt: DateTime.now().toIso8601String(),
+        song: song.name,
+        mode: widget.mode,
+        difficulty: widget.difficultyKey,
+        chartHash: hash,
+        startBeat: section.$1,
+        endBeat: section.$2,
+        label: label,
+      );
+    }
+    await DatabaseProvider.saveSnippet(snippet);
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    if (widget.newSnippet) {
+      Navigator.of(context).pop(snippet);
+    } else {
+      setState(() => _picking = false);
+    }
+  }
+
+  // An optional name; null when cancelled.
+  Future<String?> _askLabel(BeatRange section) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add snippet'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+              hintText: sectionLabel(section, widget.timeSignatures)),
+          onSubmitted: (v) => Navigator.pop(context, v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Add')),
+        ],
+      ),
+    );
+  }
+
   void _toggleArcadeQuant() {
     setState(() {
       _arcadeQuant = !_arcadeQuant;
@@ -153,7 +293,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
             }
-            final steps = snapshot.data?.chartFor(widget.mode, widget.difficultyKey);
+            final steps =
+                snapshot.data?.chartFor(widget.mode, widget.difficultyKey);
             if (steps == null || steps.notes.isEmpty) {
               return Stack(
                 children: [
@@ -185,6 +326,9 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               key: ValueKey(
                   "${widget.title}-${widget.mode.name}-${widget.difficultyKey}"),
               steps: steps,
+              feedActive: widget.feedActive,
+              playbackRate: widget.playbackRate,
+              onPlaybackRateChanged: widget.onPlaybackRateChanged,
               mode: widget.mode,
               songLength: widget.songLength,
               chartBpm: widget.chartBpm,
@@ -207,16 +351,25 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               onToggleDancingFeet: _toggleDancingFeet,
               onToggleAssistTick: _toggleAssistTick,
               onToggleArcadeQuant: _toggleArcadeQuant,
-              headerBuilder: (context, patternsButton) =>
-                  _buildHeader(context, diffColor, patternsButton),
-              // The footing editor stays a debug tool until it ships to users.
-              footingRef: kDebugMode
-                  ? ChartRef(snapshot.data!.name,
+              headerBuilder: (context, patternsButton) => _buildHeader(
+                  context,
+                  diffColor,
+                  patternsButton,
+                  () => _saveSnippet(snapshot.data!, steps)),
+              // The footing editor stays a debug tool until it ships to users,
+              // and keeps out of snippets, where taps pick the section.
+              footingRef: kDebugMode && !_isSnippet
+                  ? ChartRef(
+                      snapshot.data!.name,
                       widget.mode == Modes.doubles ? 'dp' : 'sp',
                       widget.difficultyKey)
                   : null,
               editFooting: _editFooting,
               initialSecond: widget.initialSecond,
+              section: _section,
+              pickSection: _picking,
+              onSaveSection: () => _saveSnippet(snapshot.data!, steps),
+              onSectionChanged: (s) => setState(() => _section = s),
             );
           },
         ),
@@ -230,11 +383,34 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   // pull-tab, so the header carries no action affordances at all. A translucent
   // gradient alone keeps it legible against the scrolling arrows — it fades into
   // the field rather than being fenced off by a rule.
-  Widget _buildHeader(
-      BuildContext context, Color diffColor, Widget patternsButton) {
+  Widget _buildHeader(BuildContext context, Color diffColor,
+      Widget patternsButton, VoidCallback onSaveSnippet) {
     final difficultyLabel = widget.difficultyLevel != null
         ? "${_pretty(widget.difficultyKey)} ${widget.difficultyLevel}"
         : _pretty(widget.difficultyKey);
+    // Beside the patterns: the snippet's Add/Save while picking, else its
+    // Edit; outside snippets, the footing editor's toggle (debug builds).
+    final Widget? action = _isSnippet
+        ? _picking
+            ? IconButton(
+                icon: Icon(Icons.check,
+                    color: _section == null ? Colors.white24 : kSectionColor),
+                tooltip: widget.newSnippet ? 'Add snippet' : 'Save section',
+                onPressed: _section == null ? null : onSaveSnippet,
+              )
+            : IconButton(
+                icon: const Icon(Icons.edit, color: Colors.blueGrey),
+                tooltip: 'Edit section',
+                onPressed: () => setState(() => _picking = true),
+              )
+        : kDebugMode
+            ? IconButton(
+                icon: Icon(_editFooting ? Icons.check : Icons.edit_note,
+                    color: _editFooting ? Colors.white : Colors.blueGrey),
+                tooltip: _editFooting ? 'Done editing' : 'Edit footing',
+                onPressed: () => setState(() => _editFooting = !_editFooting),
+              )
+            : null;
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -256,7 +432,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 icon: const Icon(Icons.arrow_back, color: Colors.blueGrey),
                 onPressed: () => Navigator.of(context).pop(),
               ),
-              if (kDebugMode) const SizedBox(width: 48),
+              if (action != null) const SizedBox(width: 48),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -270,6 +446,10 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                           fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (widget.feedLabel != null)
+                      Text(widget.feedLabel!,
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 12)),
                     Text(
                       difficultyLabel,
                       style: TextStyle(
@@ -281,16 +461,9 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 ),
               ),
               // The pattern breakdown, balanced by an empty slot on the left
-              // when the footing editor's toggle joins it (debug builds).
-              patternsButton,
-              if (kDebugMode)
-                IconButton(
-                  icon: Icon(_editFooting ? Icons.check : Icons.edit_note,
-                      color: _editFooting ? Colors.white : Colors.blueGrey),
-                  tooltip: _editFooting ? 'Done editing' : 'Edit footing',
-                  onPressed: () =>
-                      setState(() => _editFooting = !_editFooting),
-                ),
+              // when an action joins it.
+              if (widget.feedActive == null) patternsButton,
+              if (action != null) action,
             ],
           ),
         ),

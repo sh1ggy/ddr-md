@@ -14,6 +14,12 @@ import 'package:flutter/material.dart';
 const Color kLeftFootColor = Color(0xFFFF5D73);
 const Color kRightFootColor = Color(0xFF3FA9FF);
 
+/// A snippet's section, on the field, the scrub bar and its controls.
+const Color kSectionColor = Color(0xFF2DD4BF);
+
+/// A chart section as its first and last rows' beats.
+typedef BeatRange = (double start, double end);
+
 /// A row of simultaneous mines spanning most/all columns — a DDR shock arrow,
 /// which is drawn as a single bar per lane rather than individual mines.
 class ShockRow {

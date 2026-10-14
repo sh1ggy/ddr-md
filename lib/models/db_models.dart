@@ -231,3 +231,73 @@ class Favorite {
     return 'Favorite{id: $id, isFav: $isFav, song: $songTitle, mode: ${mode.name}}';
   }
 }
+
+/// A saved section of one chart, looped for practice. The range is in beats,
+/// which a timing fix in a content update leaves alone; [chartHash] marks a
+/// snippet whose notes have since changed.
+class Snippet {
+  final String id;
+  final String createdAt;
+  // Song `name`, the ID steps and jackets key on.
+  final String song;
+  final Modes mode;
+  final String difficulty;
+  final String chartHash;
+  final double startBeat;
+  final double endBeat;
+  final String label;
+
+  Snippet({
+    String? id,
+    required this.createdAt,
+    required this.song,
+    required this.mode,
+    required this.difficulty,
+    required this.chartHash,
+    required this.startBeat,
+    required this.endBeat,
+    this.label = '',
+  }) : id = id ?? _uuid.v4();
+
+  Snippet copyWith({
+    String? chartHash,
+    double? startBeat,
+    double? endBeat,
+    String? label,
+  }) =>
+      Snippet(
+        id: id,
+        createdAt: createdAt,
+        song: song,
+        mode: mode,
+        difficulty: difficulty,
+        chartHash: chartHash ?? this.chartHash,
+        startBeat: startBeat ?? this.startBeat,
+        endBeat: endBeat ?? this.endBeat,
+        label: label ?? this.label,
+      );
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'createdAt': createdAt,
+        'song': song,
+        'mode': mode.name,
+        'difficulty': difficulty,
+        'chartHash': chartHash,
+        'startBeat': startBeat,
+        'endBeat': endBeat,
+        'label': label,
+      };
+
+  factory Snippet.fromMap(Map<String, dynamic> json) => Snippet(
+        id: json["id"],
+        createdAt: json["createdAt"],
+        song: json["song"],
+        mode: _modeFromMap(json),
+        difficulty: json["difficulty"],
+        chartHash: json["chartHash"],
+        startBeat: (json["startBeat"] as num).toDouble(),
+        endBeat: (json["endBeat"] as num).toDouble(),
+        label: json["label"] as String? ?? '',
+      );
+}

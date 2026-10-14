@@ -7,13 +7,16 @@ import 'dart:io';
 
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
+import 'package:ddr_md/components/snippets/snippets_page.dart';
 import 'package:ddr_md/components/songlist/difficultylist_page.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:ddr_md/models/development_snippets.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +27,7 @@ void main() async {
   // Initialise global objects
   await Settings.init();
   await DatabaseProvider.init();
+  if (kDebugMode) await seedDevelopmentSnippets();
   final support = await getApplicationSupportDirectory();
   await ContentStore.init(support);
   await Songs.load();
@@ -123,6 +127,14 @@ class _LayoutState extends State<Layout> {
             ),
             NavigationDestination(
               selectedIcon: Icon(
+                Icons.content_cut,
+                color: Colors.white,
+              ),
+              icon: Icon(Icons.content_cut),
+              label: 'Snippets',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(
                 Icons.document_scanner,
                 color: Colors.white,
               ),
@@ -144,6 +156,7 @@ class _LayoutState extends State<Layout> {
           // Note that this removes the bottom navigator
           if (Platform.isAndroid) ...{
             const DifficultyListPage(),
+            const SnippetsPage(),
             const OcrPage(),
             const SettingsPage(),
           } else ...{
@@ -154,6 +167,12 @@ class _LayoutState extends State<Layout> {
                 return MaterialPageRoute(builder: (_) => page);
               },
             ),
+            Navigator(
+                key: const Key("Snippets"),
+                onGenerateRoute: (settings) {
+                  Widget page = const SnippetsPage();
+                  return MaterialPageRoute(builder: (_) => page);
+                }),
             Navigator(
                 key: const Key("Scan"),
                 onGenerateRoute: (settings) {
