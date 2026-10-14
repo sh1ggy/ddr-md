@@ -932,8 +932,7 @@ class _ChartScrollerState extends State<ChartScroller>
       widget.sync == null && _visualOffset == 0 && _audioOffsetMs == 0;
 
   /// FAST/SLOW hue for the current effective sync, or null when it's on the beat
-  /// (or unknown). Shared by the ARCADE SYNC caption and the tempo badge so the
-  /// two never disagree about which way the song leans.
+  /// (or unknown). Used by the ARCADE SYNC caption.
   Color? _syncAccent(BuildContext context) {
     if (_hasNoSyncReading) return null;
     final ms = _effectiveSyncMs;
@@ -941,18 +940,6 @@ class _ChartScrollerState extends State<ChartScroller>
       ms.abs() < _onBeatEpsilonMs ? 0 : ms,
       Theme.of(context).brightness == Brightness.dark,
     );
-  }
-
-  /// Compact effective sync for the tempo badge: a signed millisecond figure
-  /// ("+9.0ms" / "-4.5ms" / "0.0ms"), with FAST/SLOW carried by its colour since
-  /// the badge is tight for space. Same number [_arcadeSyncSummary] spells out.
-  /// Null hides the segment — including whenever ARCADE SYNC is off, where the
-  /// dials are gated to zero and a figure would describe an unapplied correction.
-  String? get _syncBadgeLabel {
-    if (!_arcadeSyncOn || _hasNoSyncReading) return null;
-    final ms = _effectiveSyncMs;
-    if (ms.abs() < _onBeatEpsilonMs) return "0.0ms";
-    return "${ms > 0 ? "+" : "-"}${ms.abs().toStringAsFixed(1)}ms";
   }
 
   // The ARCADE SYNC caption: the effective sync after both dials, in the same
@@ -2625,33 +2612,6 @@ class _ChartScrollerState extends State<ChartScroller>
                       _buildFootingBar(context),
                       const SizedBox(height: 6),
                     ],
-                    // Always-visible tempo readout: the BPM of the section under
-                    // the playhead and the read speed it actually scrolls at
-                    // (CONSTANT-aware). Centred over the bottom controls and kept
-                    // on screen in fullscreen too — the one place the current
-                    // tempo stays legible once its BPM marker has scrolled past.
-                    // IgnorePointer so taps fall through to the field below.
-                    // Rides the playhead notifier (the local BPM changes as the
-                    // playhead crosses tempo sections) inside its own repaint
-                    // boundary, so per-frame updates stay off the widget tree.
-                    IgnorePointer(
-                      child: RepaintBoundary(
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: _playhead,
-                          builder: (_, __, ___) => TempoBadge(
-                            bpm: _localBpm,
-                            readSpeed: _liveReadSpeed,
-                            // Same numbers and hue as the ARCADE SYNC caption —
-                            // both read [_effectiveSyncMs], so they can't drift
-                            // apart. Unlike BPM/READ this doesn't vary with the
-                            // playhead, so it's computed from the outer context.
-                            syncLabel: _syncBadgeLabel,
-                            syncAccent: _syncAccent(context),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
                     // Transport (read/song speed): shown with the menu.
                     IgnorePointer(
                       ignoring: !_menuOpen,
@@ -2719,23 +2679,33 @@ class _ChartScrollerState extends State<ChartScroller>
             child: ValueListenableBuilder<double>(
               valueListenable: _playhead,
               builder: (_, s, __) => Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text(
-                    fmtTime(s),
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontFeatures: const [FontFeature.tabularFigures()]),
+                  Expanded(
+                    child: Text(
+                      fmtTime(s),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
                   ),
-                  Text(
-                    fmtTime(_endSecond),
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontFeatures: const [FontFeature.tabularFigures()]),
+                  // The section under the playhead; its numbers change as the
+                  // playhead crosses tempo sections, so it rides the same
+                  // per-frame builder as the elapsed label.
+                  TempoBadge(bpm: _localBpm, readSpeed: _liveReadSpeed),
+                  Expanded(
+                    child: Text(
+                      fmtTime(_endSecond),
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
                   ),
                 ],
               ),
