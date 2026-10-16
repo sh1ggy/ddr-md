@@ -8,9 +8,11 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'chart_models.dart';
 import 'chart_timing.dart';
+import 'package:ddr_md/components/song/notes/ddr_atlas.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/steps_model.dart';
@@ -52,6 +54,7 @@ class ChartPainter extends CustomPainter {
     this.topInset = 0,
     this.visualOffset = 0,
     this.arcadeQuant = false,
+    this.ddr,
     this.focus = const {},
     this.highlights = const [],
     this.highlightIcon,
@@ -150,6 +153,10 @@ class ChartPainter extends CustomPainter {
   /// [shouldRepaint] sees a palette change. Without it the field only recolours
   /// once something else (the playhead ticking) forces a repaint.
   final bool arcadeQuant;
+
+  /// The cabinet's own arrow drawing, used for receptors, taps and freezes
+  /// under DDR PALETTE when its assets are present.
+  final DdrAtlas? ddr;
 
   // Pinch-to-zoom, applied to the horizontal geometry (arrow size and lane
   // spacing) so it shrinks arrows in step with the vertical compression already
@@ -259,6 +266,11 @@ class ChartPainter extends CustomPainter {
     // taking that panel's glyph orientation. Bounds-guarded so a mismatched map
     // (e.g. mode/width change mid-frame) falls back to the note's own column.
     int turned(int c) => (c >= 0 && c < colMap.length) ? colMap[c] : c;
+
+    // DDR PALETTE with the cabinet's art: its palettes move with the chart
+    // position, 1024 to a beat.
+    final atlas = arcadeQuant ? ddr : null;
+    final pos = (currentBeat * 1024).floor();
 
     _paintLanes(canvas, size, fieldLeft, laneStride, _receptorTop);
 
@@ -387,10 +399,15 @@ class ChartPainter extends CustomPainter {
         canvas.save();
         canvas.clipRect(Rect.fromLTRB(
             holdX - arrowSize, headY, holdX + arrowSize, tailY + arrowSize));
-        skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
-            n.type == StepType.roll);
-        skin.paintHoldTail(
-            canvas, holdX, tailY, arrowSize, dirs[col], n.type == StepType.roll);
+        if (atlas != null && n.type != StepType.roll) {
+          _paintDdrFreeze(canvas, atlas, holdX, headY, tailY, arrowSize,
+              dirs[col], ddrFreezeRow(second - n.second));
+        } else {
+          skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
+              n.type == StepType.roll);
+          skin.paintHoldTail(canvas, holdX, tailY, arrowSize, dirs[col],
+              n.type == StepType.roll);
+        }
         canvas.restore();
       });
     }
@@ -435,8 +452,15 @@ class ChartPainter extends CustomPainter {
           age == null ? 1.0 : receptorRecoilCurve(age / receptorRecoilSeconds);
       final isHeld = held.contains(c);
       if (isHeld) recoil = math.min(recoil, _heldReceptorScale);
-      skin.paintReceptor(canvas, laneCenterX(c), _receptorTop,
-          arrowSize * recoil, dirs[c], isHeld ? 1.0 : glow * 0.9);
+      if (atlas != null) {
+        // The cabinet's receptor is the tap art through the receptor palette,
+        // whose own beat flash replaces [glow].
+        _drawDdr(canvas, atlas.tap(DdrPalette.receptor, pos), laneCenterX(c),
+            _receptorTop.toDouble(), arrowSize * recoil, dirs[c]);
+      } else {
+        skin.paintReceptor(canvas, laneCenterX(c), _receptorTop,
+            arrowSize * recoil, dirs[c], isHeld ? 1.0 : glow * 0.9);
+      }
     }
 
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
@@ -516,7 +540,17 @@ class ChartPainter extends CustomPainter {
         if (n.type == StepType.mine) {
           skin.paintMine(canvas, x, y, arrowSize);
         } else {
-          if (n.isHold && arcadeQuant) {
+          if (atlas != null && n.type != StepType.roll) {
+            _drawDdr(
+                canvas,
+                n.isHold
+                    ? atlas.freezeHead(ddrFreezeRow(second - n.second))
+                    : atlas.tap(_ddrPalette(n.beat), pos),
+                x,
+                y,
+                arrowSize,
+                dirs[col]);
+          } else if (n.isHold && arcadeQuant) {
             skin.paintHoldHead(canvas, x, y, arrowSize, dirs[col], n.beat);
           } else {
             skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
@@ -540,10 +574,40 @@ class ChartPainter extends CustomPainter {
 
     // 3.5) Impact flashes for notes that just reached the line, one per lane
     // (matching DDR's one-live-flash-per-column).
-    for (final MapEntry(key: col, value: age) in arrivals.entries) {
-      if (age >= _flashSeconds) continue; // recoil outlasts the flash
-      skin.paintNoteFlash(canvas, laneCenterX(col), _receptorTop, arrowSize,
-          dirs[col], age / _flashSeconds);
+    // The cabinet throws no glow for a MARVELOUS step, so under its art taps
+    // land clean; a held freeze glows aqua every 4th frame, each glow growing
+    // and fading over 200 ms, added onto the field.
+    if (atlas == null) {
+      for (final MapEntry(key: col, value: age) in arrivals.entries) {
+        if (age >= _flashSeconds) continue; // recoil outlasts the flash
+        skin.paintNoteFlash(canvas, laneCenterX(col), _receptorTop, arrowSize,
+            dirs[col], age / _flashSeconds);
+      }
+    } else {
+      final frame = (second * 60).floor();
+      for (final n in holds) {
+        if (n.second > second) break;
+        if (n.type == StepType.roll) continue;
+        final end = n.endSecond ?? n.second;
+        final col = turned(n.col);
+        for (var f = frame - frame % 4; f >= 0; f -= 4) {
+          final age = second - f / 60;
+          if (age >= ddrGlowSeconds) break;
+          if (f / 60 < n.second || f / 60 >= end) continue;
+          final p = age / ddrGlowSeconds;
+          _drawDdr(
+              canvas,
+              atlas.tap(DdrPalette.other, pos),
+              laneCenterX(col),
+              _receptorTop.toDouble(),
+              arrowSize * (1 + (ddrGlowPeakScale - 1) * p),
+              dirs[col],
+              Paint()
+                ..blendMode = BlendMode.plus
+                ..colorFilter = ColorFilter.mode(
+                    ddrFreezeGlowColour(p), BlendMode.modulate));
+        }
+      }
     }
 
     // 4) Timing-marker labels and pattern badges, top layer: drawn last so they
@@ -568,6 +632,67 @@ class ChartPainter extends CustomPainter {
 
   // Lane and scroll geometry for a field of [size] at the current playhead,
   // shared by [paint] and [noteAt] so a tap lands on exactly what was drawn.
+  static final Paint _ddrPaint = Paint()..filterQuality = FilterQuality.medium;
+
+  /// [image] (left-facing, 96 px art) centred at (x,y), [size] across, turned
+  /// for [dir].
+  void _drawDdr(Canvas canvas, ui.Image image, double x, double y, double size,
+      NoteDir dir,
+      [Paint? paint]) {
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.rotate(rotationForDir(dir));
+    canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        Rect.fromCenter(center: Offset.zero, width: size, height: size),
+        paint ?? _ddrPaint);
+    canvas.restore();
+  }
+
+  static DdrPalette _ddrPalette(double beat) {
+    final c = QuantColors.forBeat(beat);
+    if (c == QuantColors.quarter) return DdrPalette.quarter;
+    if (c == QuantColors.eighth) return DdrPalette.eighth;
+    if (c == QuantColors.sixteenth) return DdrPalette.sixteenth;
+    return DdrPalette.other;
+  }
+
+  /// A freeze's body and tail the way the cabinet lays them out: the body runs
+  /// unturned from the head's centre to the top of the tail arrow, its art
+  /// repeating up from the tail; the tail arrow fills its own cell, cut from
+  /// the top when it comes within half an arrow of the head.
+  void _paintDdrFreeze(Canvas canvas, DdrAtlas atlas, double x, double headY,
+      double tailY, double size, NoteDir dir, int row) {
+    final k = size / 96;
+    final len = tailY - headY;
+    final tailTop = tailY - size / 2;
+    if (len > size / 2) {
+      final shader = ImageShader(
+          atlas.freezeBody(row, dir.index),
+          TileMode.clamp,
+          TileMode.repeated,
+          Float64List.fromList([
+            k, 0, 0, 0, //
+            0, k, 0, 0, //
+            0, 0, 1, 0, //
+            x - size / 2, tailTop - 192 * k, 0, 1,
+          ]),
+          filterQuality: FilterQuality.medium);
+      // Runs on under the tail's opaque top: two antialiased edges meeting on
+      // one row would leave a hairline.
+      canvas.drawRect(
+          Rect.fromLTRB(x - size / 2, headY, x + size / 2, tailTop + size / 4),
+          Paint()..shader = shader);
+    }
+    final m = math.max(size / 2 - len, 0.0);
+    canvas.drawImageRect(
+        atlas.freezeTail(row, dir.index),
+        Rect.fromLTWH(0, m / k, 96, 96 - m / k),
+        Rect.fromLTWH(x - size / 2, tailTop + m, size, size - m),
+        _ddrPaint);
+  }
+
   ({
     double fieldLeft,
     double laneStride,
@@ -1113,6 +1238,7 @@ class ChartPainter extends CustomPainter {
       old.constantMs != constantMs ||
       old.topInset != topInset ||
       old.arcadeQuant != arcadeQuant ||
+      old.ddr != ddr ||
       // Without this the field wouldn't move while dialling VISUAL OFFSET
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.

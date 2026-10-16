@@ -83,3 +83,20 @@ assets/noteskin/
 ```
 
 Mines and receptors are not covered by this set; the vector skin draws those.
+
+### DDR PALETTE art (optional)
+
+With DDR PALETTE on and these two present, receptors, taps and freezes are
+drawn the cabinet's way instead ([ddr_atlas.dart](../lib/components/song/notes/ddr_atlas.dart)):
+
+```
+assets/noteskin/
+  arrow-atlas.png      # 768x192 DDR World arrow sheet, unmodified: tap and
+                       # freeze-head cells on top, the four freeze tails below,
+                       # the four 96x192 freeze bodies on the right
+  freeze-palette.png   # 16x16 freeze palette, row = fade step, column = band
+```
+
+The sheet is index-coloured: each texel's red value names a band, and the
+band's colour comes from a palette, so it must be copied as-is (no resizing or
+recolouring). Without either file the sprite skin draws as before.

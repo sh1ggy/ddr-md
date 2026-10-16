@@ -33,6 +33,7 @@ import 'density_scrub_bar.dart';
 import 'pad_dancer.dart';
 import 'section_bar.dart';
 import 'tick_clock.dart';
+import 'package:ddr_md/components/song/notes/ddr_atlas.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
@@ -593,6 +594,9 @@ class _ChartScrollerState extends State<ChartScroller>
       ? SpriteNoteskin.resolvedSkin ?? const VectorNoteskin()
       : null;
 
+  // The cabinet's own arrow art for DDR PALETTE, when bundled.
+  DdrAtlas? _ddr = DdrAtlas.resolvedAtlas;
+
   // Note-density histogram for the scrub minimap, each bucket carrying its
   // rhythm colours so seeking shows both intensity and the kinds of notes there.
   List<MinimapBucket> _minimap = const [];
@@ -719,6 +723,11 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_skin == null) {
       SpriteNoteskin.tryLoad().then((skin) {
         if (mounted) setState(() => _skin = skin ?? const VectorNoteskin());
+      });
+    }
+    if (!DdrAtlas.resolved) {
+      DdrAtlas.tryLoad().then((atlas) {
+        if (mounted) setState(() => _ddr = atlas);
       });
     }
     _tickClock.load("assets/audio/assist_tick.wav").then((_) {
@@ -2572,6 +2581,7 @@ class _ChartScrollerState extends State<ChartScroller>
               topInset: topInset,
               visualOffset: _visualOffsetSeconds,
               arcadeQuant: widget.arcadeQuantOn,
+              ddr: _ddr,
             );
       // Taps find notes on the full-field chart only.
       _painter = cabinet ? null : chart;
