@@ -369,7 +369,14 @@ class ChartPainter extends CustomPainter {
           n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
       final col = turned(n.col);
       final holdX = laneCenterX(col);
-      final tailY = yFor(endS);
+      // Playback collapses stops, but a freeze keeps the length the stops
+      // inside it give it paused, draining through them as they play.
+      var tailY = yFor(endS);
+      if (beatLocked && !expandStops) {
+        final from = math.max(n.second, second);
+        tailY += (timing.stopSecondsAt(endS) - timing.stopSecondsAt(from)) *
+            pxPerSecond;
+      }
       _fadeLayer(
           canvas,
           holdAlpha,
