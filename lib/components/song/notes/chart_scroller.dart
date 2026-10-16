@@ -2491,9 +2491,28 @@ class _ChartScrollerState extends State<ChartScroller>
           entry.key: entry.value,
     };
     final stanceSeconds = _sectionNotes.map((n) => n.second).toSet();
-    final visibleStances = snippet
-        ? _stances.where((s) => stanceSeconds.contains(s.second)).toList()
-        : _stances;
+    final sectionStances =
+        _stances.where((s) => stanceSeconds.contains(s.second)).toList();
+    // Where the feet already stand as the section starts, held still through
+    // its lead-in, so its first row steps one foot instead of landing both.
+    final standing = sectionStances.isEmpty
+        ? null
+        : _stances
+            .where((s) => s.second < sectionStances.first.second)
+            .lastOrNull;
+    final visibleStances = !snippet
+        ? _stances
+        : [
+            if ((standing, _loop) case (final s?, (final from, _)))
+              ParityStance(
+                  second: from,
+                  leftHeel: s.leftHeel,
+                  leftToe: s.leftToe,
+                  rightHeel: s.rightHeel,
+                  rightToe: s.rightToe,
+                  stepped: const {}),
+            ...sectionStances,
+          ];
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
       // Feed the field geometry into the speed law: an arrow's travel is the
@@ -2811,8 +2830,8 @@ class _ChartScrollerState extends State<ChartScroller>
                 valueListenable: _playhead,
                 builder: (context, second, child) {
                   final active = !snippet ||
-                      (_sectionRows != null &&
-                          second + _visualOffsetSeconds >= _sectionRows!.$1 &&
+                      (_loop != null &&
+                          second + _visualOffsetSeconds >= _loop!.$1 &&
                           second + _visualOffsetSeconds <=
                               _sectionNotes
                                   .map((n) => n.endSecond ?? n.second)
