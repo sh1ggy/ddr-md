@@ -191,32 +191,32 @@ class _SnippetsPageState extends State<SnippetsPage> {
                     ),
                   ),
                 )
-              : Column(children: [
-                  Expanded(
-                      child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 16),
+              : Stack(children: [
+                  ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 88),
                     itemCount: snippets.length,
                     itemBuilder: (context, i) => _tile(snippets[i]),
-                  )),
-                  Align(
-                      alignment: Alignment.centerRight,
-                      child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          child: FilledButton.icon(
-                            onPressed: snippets.any((s) => _songOf(s) != null)
-                                ? () async {
-                                    await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                            builder: (_) => SnippetFeedPage(
-                                                snippets: snippets)));
-                                    _load();
-                                  }
-                                : null,
-                            icon: const Icon(Icons.shuffle_rounded),
-                            label: const Text('Play shuffle'),
-                          ))),
+                  ),
+                  Positioned(
+                      right: 16,
+                      bottom: 16,
+                      child: SafeArea(
+                          child: FloatingActionButton(
+                        heroTag: null,
+                        shape: const CircleBorder(),
+                        tooltip: 'Play shuffle',
+                        onPressed: snippets.any((s) => _songOf(s) != null)
+                            ? () async {
+                                await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => SnippetFeedPage(
+                                            snippets: snippets)));
+                                _load();
+                              }
+                            : null,
+                        child: const Icon(Icons.shuffle_rounded),
+                      ))),
                 ]),
     );
   }
