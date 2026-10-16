@@ -458,13 +458,11 @@ class _ChartScrollerState extends State<ChartScroller>
   // form both dancers move in. Persisted across previews.
   bool _padDancer = Settings.getInt(Settings.padDancerOnKey) == 1;
   bool get _dancerOn => _padDancer && _stances.isNotEmpty;
-  bool _dancerBar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
-  // The dancer at the cabinet, the chart on its monitor.
-  bool _dancerCabinet = Settings.getInt(Settings.padDancerCabinetKey) == 1;
-  // Only the player's own view stands at the cabinet; the study views show the
-  // stage under the full-size chart.
-  bool get _cabinetOn =>
-      _dancerOn && _dancerCabinet && _dancerView == DancerView.behind;
+  // Set in the profile, not here.
+  final bool _dancerBar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
+  // Only the CABINET view stands at the cabinet, the chart on its monitor;
+  // the others show the stage under the full-size chart.
+  bool get _cabinetOn => _dancerOn && _dancerView == DancerView.cabinet;
   DancerView _dancerView = DancerView.values[
       Settings.getInt(Settings.dancerViewKey)
           .clamp(0, DancerView.values.length - 1)];
@@ -491,16 +489,6 @@ class _ChartScrollerState extends State<ChartScroller>
   void _togglePadDancer() {
     setState(() => _padDancer = !_padDancer);
     Settings.setInt(Settings.padDancerOnKey, _padDancer ? 1 : 0);
-  }
-
-  void _toggleDancerBar() {
-    setState(() => _dancerBar = !_dancerBar);
-    Settings.setInt(Settings.padDancerNoBarKey, _dancerBar ? 0 : 1);
-  }
-
-  void _toggleDancerCabinet() {
-    setState(() => _dancerCabinet = !_dancerCabinet);
-    Settings.setInt(Settings.padDancerCabinetKey, _dancerCabinet ? 1 : 0);
   }
 
   void _cycleDancerView() {
@@ -3217,8 +3205,8 @@ class _ChartScrollerState extends State<ChartScroller>
                     ),
                 ],
               ),
-            // The pad dancer and how both dancers move. BAR and CABINET only
-            // mean something with the dancer on; FORM with either dancer.
+            // The pad dancer and how both dancers move. VIEW only
+            // means something with the dancer on; FORM with either dancer.
             Row(
               spacing: 8,
               children: [
@@ -3235,19 +3223,16 @@ class _ChartScrollerState extends State<ChartScroller>
                 if (_padDancer)
                   Expanded(
                     child: TurnTile(
-                      label: _dancerBar ? "BAR" : "NO BAR",
-                      icon: Icons.horizontal_rule,
-                      selected: _dancerBar,
-                      onTap: _toggleDancerBar,
-                    ),
-                  ),
-                if (_padDancer)
-                  Expanded(
-                    child: TurnTile(
-                      label: "CABINET",
-                      icon: Icons.tv,
-                      selected: _dancerCabinet,
-                      onTap: _toggleDancerCabinet,
+                      label: switch (_dancerView) {
+                        DancerView.behind => "VIEW: BEHIND",
+                        DancerView.cabinet => "VIEW: CABINET",
+                        DancerView.front => "VIEW: FRONT",
+                        DancerView.side => "VIEW: SIDE",
+                        DancerView.overhead => "VIEW: OVERHEAD",
+                      },
+                      icon: Icons.threed_rotation,
+                      selected: _dancerView != DancerView.behind,
+                      onTap: _cycleDancerView,
                     ),
                   ),
                 if (_padDancer || widget.showDancingFeet)
@@ -3269,24 +3254,6 @@ class _ChartScrollerState extends State<ChartScroller>
                   ),
               ],
             ),
-            if (_padDancer)
-              Row(
-                children: [
-                  Expanded(
-                    child: TurnTile(
-                      label: switch (_dancerView) {
-                        DancerView.behind => "VIEW: BEHIND",
-                        DancerView.front => "VIEW: FRONT",
-                        DancerView.side => "VIEW: SIDE",
-                        DancerView.overhead => "VIEW: OVERHEAD",
-                      },
-                      icon: Icons.threed_rotation,
-                      selected: _dancerView != DancerView.behind,
-                      onTap: _cycleDancerView,
-                    ),
-                  ),
-                ],
-              ),
             Row(
               spacing: 8,
               children: [

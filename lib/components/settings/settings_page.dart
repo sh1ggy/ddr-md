@@ -287,6 +287,7 @@ class _BarGripCardState extends State<_BarGripCard> {
       Settings.getInt(Settings.barGripKey).clamp(0, BarGrip.values.length - 1)];
   GripSpot _spot = GripSpot.values[Settings.getInt(Settings.gripSpotKey)
       .clamp(0, GripSpot.values.length - 1)];
+  bool _bar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
 
   @override
   Widget build(BuildContext context) {
@@ -312,6 +313,17 @@ class _BarGripCardState extends State<_BarGripCard> {
           children: [
             const Text("Bar Grip",
                 style: TextStyle(fontWeight: FontWeight.w600)),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text("Back bar"),
+              subtitle: const Text("Off: the pad dancer has hands free"),
+              value: _bar,
+              onChanged: (v) {
+                Settings.setInt(Settings.padDancerNoBarKey, v ? 0 : 1);
+                setState(() => _bar = v);
+              },
+            ),
             choice(
                 {BarGrip.overhand: "Overhand", BarGrip.underhand: "Underhand"},
                 _grip, (g) {

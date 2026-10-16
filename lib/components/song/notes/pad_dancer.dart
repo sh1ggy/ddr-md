@@ -1075,12 +1075,13 @@ Float64List _screenMatrix(_Camera cam, double cx) {
   ]);
 }
 
-/// Where the stage camera looks from. BEHIND is the player's own view (the
-/// cabinet's, with CABINET on); the others are for studying the form with the
+/// Where the stage camera looks from. BEHIND is the player's own view of the
+/// stage under the full-size chart and CABINET the same from the cabinet, the
+/// chart on its monitor; the others are for studying the form with the
 /// chart still full size over them: FRONT as a coach filming the player,
 /// SIDE for posture and lean over the pad, OVERHEAD for where the feet land
 /// and face.
-enum DancerView { behind, front, side, overhead }
+enum DancerView { behind, cabinet, front, side, overhead }
 
 /// Where the cabinet stands: centred between the two stages, so a Singles
 /// player on the 1P stage has it off to their right.
@@ -1364,7 +1365,7 @@ class PadDancerPainter extends CustomPainter {
   /// monitor, instead of the stage alone under a full-field chart.
   final bool cabinet;
 
-  /// Where the stage camera looks from; anything but BEHIND leaves the
+  /// Where the stage camera looks from; FRONT, SIDE and OVERHEAD leave the
   /// cabinet out of the picture.
   final DancerView view;
 
@@ -1499,7 +1500,9 @@ class PadDancerPainter extends CustomPainter {
 
   // The camera never moves: the stage stays put and the dancer moves on it.
   _Camera _stageCamera(Size size) {
-    if (view != DancerView.behind) return _orbitCamera(size);
+    if (view != DancerView.behind && view != DancerView.cabinet) {
+      return _orbitCamera(size);
+    }
     const dist = 3.3, pitch = 0.62;
     const target = _V(0, 0.7, 0);
     final eye = target + _V(0, math.sin(pitch), -math.cos(pitch)) * dist;
