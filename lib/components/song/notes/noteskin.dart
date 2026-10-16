@@ -136,21 +136,16 @@ const double noteFlashStartScale = 0.95;
 /// leaves room above the receptor for this so the flash draws uncut.
 const double noteFlashPeakScale = 1.15;
 
-/// How long the receptor's recoil lasts, in seconds, and how far it contracts.
-/// DDR's own is 75% over 60ms; pushed a little deeper and longer here so the
-/// recoil still registers on a phone-sized field.
-const double receptorRecoilSeconds = 0.09;
-const double receptorRecoilScale = 0.62;
+/// The cabinet's receptor press: it shrinks from 96 to 88 px and springs back
+/// in 20 ms steps over 80 ms.
+const double receptorRecoilSeconds = 0.08;
+const double receptorRecoilScale = 88 / 96;
 
-/// Receptor size multiplier [progress] through a recoil, as a multiple of the
-/// normal receptor size. Starts contracted and eases back out to 1.0 — the
-/// snap is on arrival, the visible motion is the recovery.
+/// Receptor size multiplier [progress] through a press, as a multiple of the
+/// normal receptor size: four 20 ms steps from pressed back to full.
 double receptorRecoilCurve(double progress) {
-  final p = progress.clamp(0.0, 1.0);
-  // Ease-out: most of the spring-back happens early, so it reads as a recoil
-  // rather than a slow grow.
-  final eased = 1 - (1 - p) * (1 - p);
-  return receptorRecoilScale + (1 - receptorRecoilScale) * eased;
+  final step = (progress.clamp(0.0, 1.0) * 4).floor();
+  return 1 - (4 - step).clamp(0, 4) / 48;
 }
 
 /// Shared shape of the DDR impact flash, so every skin grows and fades in step.
