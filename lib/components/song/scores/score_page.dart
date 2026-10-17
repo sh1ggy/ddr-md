@@ -7,7 +7,9 @@ library;
 
 import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/components/song/scores/score_details_page.dart';
-import 'package:ddr_md/helpers.dart' show kInGameDifficultyColors;
+import 'package:ddr_md/components/song_json.dart' show Modes;
+import 'package:ddr_md/helpers.dart'
+    show difficultyOptions, kInGameDifficultyColors;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -92,35 +94,28 @@ class _RecordsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final small = Theme.of(context).textTheme.bodySmall;
+    final songState = Provider.of<SongState>(context, listen: false);
+    final levels = {
+      for (final (name, level) in difficultyOptions(
+          songState.modes == Modes.singles
+              ? songState.songInfo!.singles
+              : songState.songInfo!.doubles))
+        name: level
+    };
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Best', style: Theme.of(context).textTheme.titleSmall),
+            Text('Best',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary)),
+            const SizedBox(height: 4),
             for (final r in records)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Row(children: [
-                  SizedBox(
-                      width: 90,
-                      child: Text(r.difficulty,
-                          style: TextStyle(
-                              color: kInGameDifficultyColors[r.difficulty]))),
-                  Expanded(
-                      child: Text([
-                    '${r.score ?? '-'}',
-                    r.rank,
-                    if (r.clearLamp != null) r.clearLamp!.name.toUpperCase(),
-                    if (r.flareRank.isNotEmpty) 'Flare ${r.flareRank}',
-                  ].join('  '))),
-                  Text(
-                      r.source == ScoreRecordSource.eamuse ? 'e-amu' : 'manual',
-                      style: small),
-                ]),
-              ),
+              ScoreRecordRow(record: r, level: levels[r.difficulty]),
           ],
         ),
       ),

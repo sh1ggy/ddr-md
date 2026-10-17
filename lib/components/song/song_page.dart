@@ -106,6 +106,7 @@ class _SongPageState extends State<SongPage> {
   Favorite? favorite;
   Note? latestNote;
   Score? latestScore;
+  List<ScoreRecord> records = [];
 
   late List<SongSection> _sectionOrder;
 
@@ -154,8 +155,14 @@ class _SongPageState extends State<SongPage> {
   void initScore(String songTitleTranslit, Modes mode) async {
     Score? initScore =
         await DatabaseProvider.getLatestScoreBySong(songTitleTranslit, mode);
+    final song = Provider.of<SongState>(context, listen: false).songInfo;
+    final initRecords = song == null
+        ? <ScoreRecord>[]
+        : await DatabaseProvider.getScoreRecordsBySong(song.name, mode);
+    if (!mounted) return;
     setState(() {
       latestScore = initScore;
+      records = initRecords;
     });
   }
 
@@ -321,6 +328,19 @@ class _SongPageState extends State<SongPage> {
     );
   }
 
+  // The synced best on the selected chart, if any.
+  ScoreRecord? _bestOnChart(SongState songState) {
+    final songInfo = songState.songInfo!;
+    final available = (songState.modes == Modes.singles
+            ? songInfo.singles
+            : songInfo.doubles)
+        .availableTypes;
+    if (available.isEmpty) return null;
+    final difficulty = kInGameDifficultyNames[
+        available[songState.chosenDifficulty.clamp(0, available.length - 1)]];
+    return records.where((r) => r.difficulty == difficulty).firstOrNull;
+  }
+
   // The widget for one section, or null when this song has nothing to show
   // there (a constant-BPM song has no BPM Graph, and so on). Null sections are
   // left out of the reorderable list but keep their place in the saved order.
@@ -370,8 +390,11 @@ class _SongPageState extends State<SongPage> {
         return GestureDetector(
           onTap: () => openHistory(HistoryPage.scoresTab),
           child: latestScore != null
-              ? ScoreCard(score: latestScore!, header: "Latest Score")
-              : const NoScoreCard(),
+              ? ScoreCard(
+                  score: latestScore!,
+                  header: "Latest Score",
+                  best: _bestOnChart(songState))
+              : NoScoreCard(best: _bestOnChart(songState)),
         );
       case SongSection.latestNote:
         if (latestNote == null) return null;
