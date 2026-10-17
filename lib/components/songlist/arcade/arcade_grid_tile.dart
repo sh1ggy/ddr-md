@@ -7,9 +7,9 @@
 library;
 
 import 'package:ddr_md/components/songlist/song_item.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
-import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:flutter/material.dart';
 
@@ -125,7 +125,8 @@ class ArcadeGridTile extends StatelessWidget {
         fit: StackFit.expand,
         children: <Widget>[
           Image(
-            image: ContentStore.image('assets/jackets-160/${item.songInfo.name}.png'),
+            image: ContentStore.image(
+                'assets/jackets-160/${item.songInfo.name}.png'),
             fit: BoxFit.cover,
             filterQuality: FilterQuality.low,
             errorBuilder: (context, error, stackTrace) => ColoredBox(
@@ -162,31 +163,13 @@ class ArcadeGridTile extends StatelessWidget {
   Widget _difficultyRow() {
     final Difficulty difficulty =
         mode == Modes.singles ? item.songInfo.singles : item.songInfo.doubles;
-    final Map<String, int?> levels = <String, int?>{
-      'beginner': difficulty.beginner,
-      'easy': difficulty.easy,
-      'medium': difficulty.medium,
-      'hard': difficulty.hard,
-      'challenge': difficulty.challenge,
-    };
-
-    // Charted entries only, so the position matches availableTypes' index.
-    final List<MapEntry<String, int?>> charted =
-        levels.entries.where((e) => e.value != null).toList();
-
-    final List<Widget> numbers = <Widget>[
-      for (int i = 0; i < charted.length; i++)
-        _levelText(
-          charted[i],
-          dimmed: item.isChartScoped && i != item.difficultyIndex,
-        ),
-    ];
-    if (numbers.isEmpty) return const SizedBox.shrink();
-
     // Clipped rather than wrapped: on a narrow tile a wrap would silently add
     // a row and overflow the band's fixed height.
     return ClipRect(
-      child: Row(mainAxisSize: MainAxisSize.min, children: numbers),
+      child: LevelRow(
+          levels: difficulty,
+          height: kSongListLevelHeight,
+          highlightIndex: item.isChartScoped ? item.difficultyIndex : null),
     );
   }
 
@@ -239,22 +222,4 @@ class ArcadeGridTile extends StatelessWidget {
           fontWeight: FontWeight.w600,
         ),
       );
-
-  Widget _levelText(MapEntry<String, int?> chart, {required bool dimmed}) {
-    final Color color = difficultyColor(chart.key);
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: Text(
-        '${chart.value}',
-        style: TextStyle(
-          // Dimmed numbers still have to read, so they recede by weight and
-          // size rather than by fading most of the way out.
-          color: dimmed ? color.withValues(alpha: 0.7) : color,
-          fontSize: dimmed ? 10 : 11,
-          height: 1.2,
-          fontWeight: dimmed ? FontWeight.w500 : FontWeight.w700,
-        ),
-      ),
-    );
-  }
 }

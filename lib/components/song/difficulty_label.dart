@@ -7,15 +7,26 @@
 /// the difficulty's colour.
 library;
 
-import 'package:ddr_md/helpers.dart' show kInGameDifficultyColors;
+import 'package:ddr_md/components/song_json.dart' show Difficulty;
+import 'package:ddr_md/helpers.dart'
+    show kInGameDifficultyColors, kInGameDifficultyNames;
 import 'package:flutter/material.dart';
+
+/// The size difficulty names and levels are drawn at on the song page and
+/// score cards, and the smaller one shared by the song list's rows and tiles.
+const double kLevelHeight = 19;
+const double kSongListLevelHeight = 14;
+
+// Every level sits in a box this wide for its height (the widest numeral's
+// shape), so one-digit and two-digit levels line up in rows.
+const double _kLevelAspect = 42 / 36;
 
 class DifficultyLabel extends StatelessWidget {
   const DifficultyLabel({
     super.key,
     required this.difficulty,
     this.level,
-    this.height = 16,
+    this.height = kLevelHeight,
   });
 
   // Upper-case in-game name, e.g. EXPERT.
@@ -55,24 +66,69 @@ class LevelNumber extends StatelessWidget {
     super.key,
     required this.level,
     required this.difficulty,
-    this.height = 18,
+    this.height = kLevelHeight,
+    this.dimmed = false,
   });
 
   final int level;
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final double height;
+  // Recedes beside a highlighted chart.
+  final bool dimmed;
 
   @override
-  Widget build(BuildContext context) => Image.asset(
-        'assets/difficulty/level_${difficulty.toLowerCase()}_$level.png',
-        height: height,
-        errorBuilder: (_, __, ___) => _CabinetText('$level',
-            difficulty: difficulty,
-            height: height,
-            fill: Colors.black,
-            outline: Colors.white),
+  Widget build(BuildContext context) => Opacity(
+        opacity: dimmed ? 0.35 : 1,
+        child: SizedBox(
+          width: height * _kLevelAspect,
+          height: height,
+          child: Image.asset(
+            'assets/difficulty/level_${difficulty.toLowerCase()}_$level.png',
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Center(
+              child: _CabinetText('$level',
+                  difficulty: difficulty,
+                  height: height,
+                  fill: Colors.black,
+                  outline: Colors.white),
+            ),
+          ),
+        ),
       );
+}
+
+/// A song's levels for one mode, Beginner to Challenge, skipping charts it
+/// doesn't have. [highlightIndex] (into availableTypes) picks one out.
+class LevelRow extends StatelessWidget {
+  const LevelRow(
+      {super.key,
+      required this.levels,
+      this.highlightIndex,
+      this.height = kLevelHeight});
+
+  final Difficulty levels;
+  final int? highlightIndex;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final charted = [
+      for (final e in levels.toJson().entries)
+        if (e.value != null) (kInGameDifficultyNames[e.key]!, e.value as int)
+    ];
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      for (final (i, (name, level)) in charted.indexed)
+        Padding(
+          padding: EdgeInsets.only(right: height * 0.2),
+          child: LevelNumber(
+              level: level,
+              difficulty: name,
+              height: height,
+              dimmed: highlightIndex != null && i != highlightIndex),
+        ),
+    ]);
+  }
 }
 
 class _CabinetText extends StatelessWidget {
