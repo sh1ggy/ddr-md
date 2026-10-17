@@ -100,8 +100,7 @@ void main() {
       save: (records) async => saved.addAll(records),
       host: 'http://${server.address.host}:${server.port}',
     );
-    await expectLater(
-        sync.run((_, __, ___) {}), throwsA(isA<EamuseUnavailable>()));
+    await expectLater(sync.run((_, __) {}), throwsA(isA<EamuseUnavailable>()));
     await server.close();
     // Two singles pages, then the first doubles page answers 503.
     expect(times, hasLength(3));
@@ -111,4 +110,67 @@ void main() {
     }
     expect(saved.map((r) => r.song), everyElement('MAX 300'));
   }, timeout: const Timeout(Duration(seconds: 30)));
+
+  test('recent plays decide what a sync fetches', () {
+    String row(String id, String date, String diff, String style) => '''
+<tr class="data"><td class="chart">
+  <a href="/game/ddr/ddrworld/playdata/music_detail.html?index=$id&style=0&difficulty=3" class="music_info cboxelement">
+  <div><div class="date">$date</div><div class="music-name">MAX 300</div>
+  <div class="diff-style-container"><div class="diff $diff">$diff<div class="level">$style</div></div></div></div></a></td>
+  <td class="score">970860</td><td class="rank"></td></tr>''';
+    const a = 'dD6DOI1lDI8o90iO006Dl96D1doDdQ69';
+    final plays = parseEamuseRecent('''
+<div id="search_result"><table><tbody>
+${row(a, '2026-10-16 16:57:59', 'EXPERT', 'SINGLE')}
+${row(a, '2026-10-16 16:55:06', 'EXPERT', 'SINGLE')}
+${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
+</tbody></table></div>''');
+    expect([
+      for (final p in plays) (p.mode, p.difficulty, p.playedAt)
+    ], [
+      (Modes.singles, 'EXPERT', '2026-10-16 16:57:59'),
+      (Modes.singles, 'EXPERT', '2026-10-16 16:55:06'),
+      (Modes.doubles, 'CHALLENGE', '2026-10-16 16:38:39'),
+    ]);
+
+    expect(planEamuseSync(plays, null, 3), isA<EamuseFullSync>());
+    expect(planEamuseSync(plays, '2026-10-16 16:57:59', 3),
+        isA<EamuseNothingNew>());
+    // Two plays of one chart since the last sync: one detail page.
+    final recentOnly = planEamuseSync(plays, '2026-10-16 16:40:00', 3);
+    expect((recentOnly as EamuseRecentSync).charts.map((p) => p.playedAt),
+        ['2026-10-16 16:57:59']);
+    // Every listed play is new and the list is full: some may be missing.
+    expect(
+        planEamuseSync(plays, '2026-10-16 16:00:00', 3), isA<EamuseFullSync>());
+
+    final best = parseEamuseDetail('''
+<div class="music-detail"><div class="music-text"><div class="music-name">MAX 300</div></div>
+<div class="play-data">
+  <div class="clearkind"><div class="value"><img src="$_img/cl_li4clear.png"></div></div>
+  <div class="clearrank"><div class="value"><img src="$_img/rank_aa_p.png"></div></div>
+  <div class="flarerank"><div class="value"><img src="$_img/flare_4.png"></div></div>
+  <div class="maxcombo"><div class="value">387</div></div>
+  <div class="best-score"><div class="value">974750</div></div>
+  <div class="flareskill"><div class="value">768</div></div>
+  <div class="lastplay"><div class="sub-header">LAST PLAY : 2026-10-16 16:57:59</div></div>
+</div></div>''', plays.first, DateTime(2026))!;
+    expect((
+      best.id,
+      best.score,
+      best.rank,
+      best.clearLamp,
+      best.flareRank,
+      best.maxCombo,
+      best.playedAt
+    ), (
+      'eamuse:$a:singles:EXPERT',
+      974750,
+      'AA+',
+      ClearLamp.life4,
+      'IV',
+      387,
+      DateTime.utc(2026, 10, 16, 7, 57, 59)
+    ));
+  });
 }

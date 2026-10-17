@@ -150,8 +150,11 @@ class Settings {
   // Id of the running play session ('' = none).
   static const String sessionIdKey = "sessionId";
 
-  // When the last e-amusement sync finished (ISO-8601, '' = never).
+  // When the last e-amusement sync finished (ISO-8601, '' = never), and the
+  // newest play it saw on the recent plays page (e-amusement's own Japan-time
+  // "YYYY-MM-DD HH:MM:SS", '' = walk every page next time).
   static const String eamuseSyncedAtKey = "eamuseSyncedAt";
+  static const String eamuseLastPlayKey = "eamuseLastPlay";
 
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();

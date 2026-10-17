@@ -1,9 +1,11 @@
 /// Name: EamuseSyncState
 /// Parent: main
 /// Description: App-wide owner of the e-amusement sync, so a sync started on
-/// Home keeps running while the player moves around the app. A tap while a
-/// sync runs, or within [EamuseSync.cooldown] of the last finished one, does
-/// nothing, and only charts whose best changed are written.
+/// Home keeps running while the player moves around the app. Each sync reads
+/// the recent plays page first and fetches only what [planEamuseSync] says it
+/// needs. A tap while a sync runs, or within [EamuseSync.cooldown] of the last
+/// finished one, does nothing, and only charts whose best changed are
+/// written.
 library;
 
 import 'package:ddr_md/models/database.dart';
@@ -68,20 +70,33 @@ class EamuseSyncState extends ChangeNotifier {
     progress = 0;
     error = '';
     notifyListeners();
-    // Doubles' page count is unknown until its first page; until then it's
-    // taken to match singles'.
-    var singlesPages = 1;
+    void onProgress(int done, int total) {
+      progress = total == 0 ? 0 : done / total;
+      notifyListeners();
+    }
+
     try {
-      await sync.run((mode, page, pages) {
-        if (mode.index == 0) singlesPages = pages;
-        final done = mode.index == 0 ? page : singlesPages + page;
-        progress =
-            done / (singlesPages + (mode.index == 0 ? singlesPages : pages));
-        notifyListeners();
-      });
+      final plays = await sync.recent();
+      switch (planEamuseSync(
+          plays,
+          stored.isEmpty
+              ? null
+              : Settings.getString(Settings.eamuseLastPlayKey),
+          EamuseSync.recentSize)) {
+        case EamuseFullSync():
+          await sync.run(onProgress);
+        case EamuseRecentSync(:final charts):
+          await sync.details(charts, onProgress);
+        case EamuseNothingNew():
+          break;
+      }
       if (!sync.cancelled) {
         await Settings.setString(
             Settings.eamuseSyncedAtKey, DateTime.now().toIso8601String());
+        if (plays.isNotEmpty) {
+          await Settings.setString(
+              Settings.eamuseLastPlayKey, plays.first.playedAt);
+        }
       }
       status = EamuseStatus.idle;
     } on EamuseSignedOut {
@@ -105,6 +120,8 @@ class EamuseSyncState extends ChangeNotifier {
   Future<void> signOut() async {
     await CookieManager.instance().deleteAllCookies();
     await Settings.setString(Settings.eamuseSyncedAtKey, '');
+    // Another account may sign in next, so its first sync walks every page.
+    await Settings.setString(Settings.eamuseLastPlayKey, '');
     status = EamuseStatus.signedOut;
     notifyListeners();
   }

@@ -370,6 +370,8 @@ class ScoreRecord {
     ClearLamp? clearLamp,
     String flareRank = '',
     int? flareSkill,
+    int? maxCombo,
+    DateTime? playedAt,
     required DateTime updatedAt,
   }) =>
       ScoreRecord(
@@ -385,6 +387,8 @@ class ScoreRecord {
         clearLamp: clearLamp,
         flareRank: flareRank,
         flareSkill: flareSkill,
+        maxCombo: maxCombo,
+        playedAt: playedAt,
         updatedAt: updatedAt,
       );
 

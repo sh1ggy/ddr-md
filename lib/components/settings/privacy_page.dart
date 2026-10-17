@@ -10,7 +10,7 @@ import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '17 October 2026';
+const privacyUpdated = '18 October 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
@@ -58,10 +58,12 @@ const privacySections = <(String, List<String>)>[
           'inside DDR MD. DDR MD never sees or stores your Konami ID or '
           "password; the page keeps Konami's sign-in cookie on your device "
           'like a browser would. When you tap Sync, and only then, DDR MD '
-          'uses that cookie to read your DDR WORLD play data pages from '
-          "Konami's e-amusement site, one page every few seconds, and saves "
-          'your best score, rank, clear lamp and flare on each chart on your '
-          'device. Nothing is sent to DDR MD or anyone else. Konami sees '
+          'uses that cookie to read your DDR WORLD play data from '
+          "Konami's e-amusement site: your recent plays first, then only the "
+          'charts you played since the last sync (or, the first time, every '
+          'page of your play data), one page every few seconds. It saves your '
+          'best score, rank, clear lamp, flare and max combo on each chart on '
+          'your device. Nothing is sent to DDR MD or anyone else. Konami sees '
           "these requests as coming from your account, and Konami's own "
           'privacy policy applies to them.',
       "- Links: the GitHub, LinkedIn and PayPal buttons open in your browser, "
