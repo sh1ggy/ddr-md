@@ -3,11 +3,10 @@
 /// Description: Settings page for use with shared_preferences
 library;
 
+import 'package:ddr_md/components/settings/dancer_type_page.dart';
 import 'package:ddr_md/components/settings/footing_style_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
-import 'package:ddr_md/components/song/notes/dancing_feet.dart';
-import 'package:ddr_md/components/song/notes/pad_dancer.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_updater.dart';
@@ -30,8 +29,6 @@ class _SettingsPageState extends State<SettingsPage> {
   int _chosenReadSpeed = 0;
   String _rivalCode = constants.rivalCode;
   String _username = constants.username;
-  int _heightCm = 0;
-  int _shoeTenths = 0;
 
   @override
   void initState() {
@@ -46,26 +43,6 @@ class _SettingsPageState extends State<SettingsPage> {
       _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
       _rivalCode = Settings.getString(Settings.rivalCodeSpeedKey);
       _username = Settings.getString(Settings.usernameKey);
-      _heightCm = Settings.getInt(Settings.heightKey);
-      _shoeTenths = Settings.getInt(Settings.shoeSizeKey);
-    });
-  }
-
-  /// Men's US shoe size, which sizes the pad dancer's shoes against the panels.
-  Future<void> _setShoeSize(String newValue) async {
-    final size = double.tryParse(newValue.replaceAll(',', '.'));
-    if (size == null) return;
-    setState(() {
-      Settings.setInt(Settings.shoeSizeKey, (size * 10).round().clamp(30, 180));
-      _shoeTenths = Settings.getInt(Settings.shoeSizeKey);
-    });
-  }
-
-  /// The player's height in cm, which sizes the pad dancer.
-  Future<void> _setHeight(String newValue) async {
-    setState(() {
-      Settings.setInt(Settings.heightKey, int.parse(newValue).clamp(120, 220));
-      _heightCm = Settings.getInt(Settings.heightKey);
     });
   }
 
@@ -100,133 +77,130 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
+        top: false,
         child: Directionality(
-      textDirection: TextDirection.ltr,
-      child: GestureDetector(
-        onTap: () {
-          FocusScope.of(context).unfocus();
-        },
-        child: Scaffold(
-          resizeToAvoidBottomInset: false,
-          appBar: AppBar(
-            surfaceTintColor: Colors.black,
-            shadowColor: Colors.black,
-            elevation: 2,
-            title: const Text(
-              'Settings',
-              style: TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600,
+          textDirection: TextDirection.ltr,
+          child: GestureDetector(
+            onTap: () {
+              FocusScope.of(context).unfocus();
+            },
+            child: Scaffold(
+              resizeToAvoidBottomInset: false,
+              appBar: AppBar(
+                surfaceTintColor: Colors.black,
+                shadowColor: Colors.black,
+                elevation: 2,
+                title: const Text(
+                  'Settings',
+                  style: TextStyle(
+                    fontSize: 20,
+                    color: Colors.blueGrey,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                iconTheme: const IconThemeData(color: Colors.blueGrey),
+              ),
+              // Settings scroll; the links stay pinned to the bottom.
+              body: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.all(8),
+                      children: [
+                        const _SectionHeader('Profile'),
+                        SettingCard<int>(
+                          setValue: _setReadSpeed,
+                          chosenValue: _chosenReadSpeed,
+                          field: "Read Speed",
+                          maxLength: 3,
+                        ),
+                        SettingCard<String>(
+                          setValue: _setRivalCode,
+                          chosenValue: _rivalCode,
+                          field: "Rival Code",
+                          maxLength: 8,
+                        ),
+                        SettingCard<String>(
+                          setValue: _setUsername,
+                          chosenValue: _username,
+                          field: "Username",
+                          maxLength: constants.usernameLength,
+                          digitsOnly: false,
+                        ),
+                        Card(
+                          child: ListTile(
+                            title: const Text("Dancer Type",
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle:
+                                const Text("Height, shoe size and bar grip"),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) => const DancerTypePage())),
+                          ),
+                        ),
+                        const _SectionHeader('Play'),
+                        const _PlayStyleCard(),
+                        Card(
+                          child: ListTile(
+                            title: const Text("Footing Style",
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            trailing: FootingStyleSwitch(
+                                onChanged: () => setState(() {})),
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                          const FootingStylePage()));
+                              if (mounted) setState(() {});
+                            },
+                          ),
+                        ),
+                        const _SectionHeader('Content'),
+                        const _ContentCard(),
+                        const _SectionHeader('About'),
+                        Card(
+                          child: ListTile(
+                            title: const Text("Privacy",
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) => const PrivacyPage())),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                            child: Padding(
+                          padding: EdgeInsets.only(left: 8.0),
+                          child: Text(constants.appVer),
+                        )),
+                        IconButton(
+                            onPressed: () => _launchUrl(constants.github),
+                            icon: const FaIcon(FontAwesomeIcons.github,
+                                size: 20)),
+                        IconButton(
+                            onPressed: () => _launchUrl(constants.linkedin),
+                            icon: const FaIcon(FontAwesomeIcons.linkedin,
+                                size: 20)),
+                        IconButton(
+                            onPressed: () => _launchUrl(constants.paypalDono),
+                            icon: const FaIcon(FontAwesomeIcons.paypal,
+                                size: 20)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            iconTheme: const IconThemeData(color: Colors.blueGrey),
           ),
-          // Settings scroll; the links stay pinned to the bottom.
-          body: Column(
-            children: [
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.all(8),
-                  children: [
-                    const _SectionHeader('Profile'),
-                    SettingCard<int>(
-                      setValue: _setReadSpeed,
-                      chosenValue: _chosenReadSpeed,
-                      field: "Read Speed",
-                      maxLength: 3,
-                    ),
-                    SettingCard<String>(
-                      setValue: _setRivalCode,
-                      chosenValue: _rivalCode,
-                      field: "Rival Code",
-                      maxLength: 8,
-                    ),
-                    SettingCard<String>(
-                      setValue: _setUsername,
-                      chosenValue: _username,
-                      field: "Username",
-                      maxLength: constants.usernameLength,
-                      digitsOnly: false,
-                    ),
-                    SettingCard<int>(
-                      setValue: _setHeight,
-                      chosenValue: _heightCm == 0
-                          ? (kDancerHeight * 100).round()
-                          : _heightCm,
-                      field: "Height (cm)",
-                      maxLength: 3,
-                    ),
-                    SettingCard<String>(
-                      setValue: _setShoeSize,
-                      chosenValue:
-                          ((_shoeTenths == 0 ? kShoeSize * 10 : _shoeTenths) /
-                                  10)
-                              .toString()
-                              .replaceFirst(RegExp(r'\.0$'), ''),
-                      field: "Shoe Size (US)",
-                      maxLength: 4,
-                      digitsOnly: false,
-                    ),
-                    const _BarGripCard(),
-                    const _SectionHeader('Play'),
-                    const _PlayStyleCard(),
-                    Card(
-                      child: ListTile(
-                        title: const Text("Footing Style",
-                            style: TextStyle(fontWeight: FontWeight.w600)),
-                        trailing: FootingStyleSwitch(
-                            onChanged: () => setState(() {})),
-                        onTap: () async {
-                          await Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) => const FootingStylePage()));
-                          if (mounted) setState(() {});
-                        },
-                      ),
-                    ),
-                    const _SectionHeader('Content'),
-                    const _ContentCard(),
-                    const _SectionHeader('About'),
-                    Card(
-                      child: ListTile(
-                        title: const Text("Privacy",
-                            style: TextStyle(fontWeight: FontWeight.w600)),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                                builder: (_) => const PrivacyPage())),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: [
-                    const Expanded(
-                        child: Padding(
-                      padding: EdgeInsets.only(left: 8.0),
-                      child: Text(constants.appVer),
-                    )),
-                    IconButton(
-                        onPressed: () => _launchUrl(constants.github),
-                        icon: const FaIcon(FontAwesomeIcons.github, size: 20)),
-                    IconButton(
-                        onPressed: () => _launchUrl(constants.linkedin),
-                        icon:
-                            const FaIcon(FontAwesomeIcons.linkedin, size: 20)),
-                    IconButton(
-                        onPressed: () => _launchUrl(constants.paypalDono),
-                        icon: const FaIcon(FontAwesomeIcons.paypal, size: 20)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ));
+        ));
   }
 
   Future<void> _launchUrl(String urlString) async {
@@ -267,75 +241,6 @@ class _PlayStyleCard extends StatelessWidget {
             showToast(context,
                 "Set play style to ${s.first == Modes.singles ? "singles" : "doubles"}");
           },
-        ),
-      ),
-    );
-  }
-}
-
-/// How the player holds the bar, for the pad dancer: overhand or underhand,
-/// in the middle or out on the bends.
-class _BarGripCard extends StatefulWidget {
-  const _BarGripCard();
-
-  @override
-  State<_BarGripCard> createState() => _BarGripCardState();
-}
-
-class _BarGripCardState extends State<_BarGripCard> {
-  BarGrip _grip = BarGrip.values[
-      Settings.getInt(Settings.barGripKey).clamp(0, BarGrip.values.length - 1)];
-  GripSpot _spot = GripSpot.values[Settings.getInt(Settings.gripSpotKey)
-      .clamp(0, GripSpot.values.length - 1)];
-  bool _bar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
-
-  @override
-  Widget build(BuildContext context) {
-    SegmentedButton<T> choice<T>(
-            Map<T, String> labels, T selected, void Function(T) onChanged) =>
-        SegmentedButton<T>(
-          showSelectedIcon: false,
-          expandedInsets: EdgeInsets.zero,
-          style: const ButtonStyle(visualDensity: VisualDensity.compact),
-          segments: [
-            for (final MapEntry(:key, :value) in labels.entries)
-              ButtonSegment(value: key, label: Text(value)),
-          ],
-          selected: {selected},
-          onSelectionChanged: (s) => onChanged(s.first),
-        );
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          spacing: 8,
-          children: [
-            const Text("Bar Grip",
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text("Back bar"),
-              subtitle: const Text("Off: the pad dancer has hands free"),
-              value: _bar,
-              onChanged: (v) {
-                Settings.setInt(Settings.padDancerNoBarKey, v ? 0 : 1);
-                setState(() => _bar = v);
-              },
-            ),
-            choice(
-                {BarGrip.overhand: "Overhand", BarGrip.underhand: "Underhand"},
-                _grip, (g) {
-              Settings.setInt(Settings.barGripKey, g.index);
-              setState(() => _grip = g);
-            }),
-            choice({GripSpot.middle: "Middle", GripSpot.edges: "Edges"}, _spot,
-                (g) {
-              Settings.setInt(Settings.gripSpotKey, g.index);
-              setState(() => _spot = g);
-            }),
-          ],
         ),
       ),
     );

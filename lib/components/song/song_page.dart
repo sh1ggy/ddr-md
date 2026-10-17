@@ -335,10 +335,9 @@ class _SongPageState extends State<SongPage> {
   // The synced best on the selected chart, if any.
   ScoreRecord? _bestOnChart(SongState songState) {
     final songInfo = songState.songInfo!;
-    final available = (songState.modes == Modes.singles
-            ? songInfo.singles
-            : songInfo.doubles)
-        .availableTypes;
+    final available =
+        (songState.modes == Modes.singles ? songInfo.singles : songInfo.doubles)
+            .availableTypes;
     if (available.isEmpty) return null;
     final difficulty = kInGameDifficultyNames[
         available[songState.chosenDifficulty.clamp(0, available.length - 1)]];
@@ -491,6 +490,7 @@ class _SongPageState extends State<SongPage> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: SafeArea(
+        top: false,
         child: LayoutBuilder(builder: (context, constraints) {
           return Directionality(
             textDirection: TextDirection.ltr,

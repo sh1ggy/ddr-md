@@ -211,8 +211,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       }
 
       if (sortType == SortType.level) {
-        songItems.addAll(chartItemsFor(song, mode,
-            isFav: isFav, levels: _filter.levels));
+        songItems.addAll(
+            chartItemsFor(song, mode, isFav: isFav, levels: _filter.levels));
       } else {
         songItems.add(_filter.levels.isEmpty
             ? SongItem(songInfo: song, isFav: isFav)
@@ -225,15 +225,14 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       // Level lives here rather than in compareSongInfo because it needs the
       // mode to know which chart set to read.
       songItems.sort((a, b) {
-        final byLevel = sign *
-            levelForItem(a, mode).compareTo(levelForItem(b, mode));
+        final byLevel =
+            sign * levelForItem(a, mode).compareTo(levelForItem(b, mode));
         return byLevel != 0
             ? byLevel
             : compareSongInfo(a.songInfo, b.songInfo, SortType.title);
       });
     } else {
-      songItems.sort((a, b) => compareSongInfo(
-          a.songInfo, b.songInfo, sortType,
+      songItems.sort((a, b) => compareSongInfo(a.songInfo, b.songInfo, sortType,
           descending: descending));
     }
     return songItems;
@@ -281,6 +280,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           songState.modes, songState.sortType, songState.sortDescending);
     }
     final Widget page = SafeArea(
+      top: false,
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
           textDirection: TextDirection.ltr,
@@ -419,7 +419,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         child: OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             shape: const StadiumBorder(),
-            side: BorderSide(color: active ? scheme.primary : Theme.of(context).dividerColor),
+            side: BorderSide(
+                color:
+                    active ? scheme.primary : Theme.of(context).dividerColor),
             backgroundColor:
                 active ? scheme.primary.withValues(alpha: 0.12) : null,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -552,11 +554,12 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     shape: const StadiumBorder(),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                   ),
                   onPressed: hasActiveFilters
-                      ? () => clearAllFilters(songState.modes, songState.sortType)
+                      ? () =>
+                          clearAllFilters(songState.modes, songState.sortType)
                       : null,
                   icon: const Icon(Icons.close),
                   label: const Text('Clear'),

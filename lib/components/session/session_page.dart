@@ -274,7 +274,17 @@ class SessionPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<SessionState>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Home')),
+      appBar: AppBar(
+        surfaceTintColor: Colors.black,
+        shadowColor: Colors.black,
+        elevation: 2,
+        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        title: const Text('Home',
+            style: TextStyle(
+                fontSize: 20,
+                color: Colors.blueGrey,
+                fontWeight: FontWeight.w600)),
+      ),
       body: Column(children: [
         const EamuseSyncCard(),
         Expanded(

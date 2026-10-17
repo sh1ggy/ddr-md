@@ -20,6 +20,7 @@ class HistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
+      top: false,
       child: DefaultTabController(
         length: 2,
         initialIndex: initialTab,

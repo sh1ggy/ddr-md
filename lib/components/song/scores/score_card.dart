@@ -222,6 +222,15 @@ String? scoreLampArt(Score score) {
   };
 }
 
+/// Clear art for a play with no full-combo tier, only when the synced best
+/// vouches for it: a clear lamp on the same score, since the OCR can't tell a
+/// pass from a fail and a lower play may not be the one that cleared.
+String? _syncedClear(Score score, ScoreRecord? best) {
+  final lamp = best?.clearLamp;
+  if (lamp == null || lamp.index < ClearLamp.clear.index) return null;
+  return score.score != null && score.score == best!.score ? clearIcon : null;
+}
+
 /// The song page's one-line score: a trophy, then the latest play, then the
 /// synced best on the selected chart (or whichever of the two exists).
 class LatestScoreLine extends StatelessWidget {
@@ -251,7 +260,8 @@ class LatestScoreLine extends StatelessWidget {
                       if (score?.score != null)
                         ScoreBadges(
                             score: score!.score!,
-                            lampArt: scoreLampArt(score!),
+                            lampArt: scoreLampArt(score!) ??
+                                _syncedClear(score!, best),
                             flare: score!.flare),
                       if (score?.score != null && best != null)
                         const SizedBox(width: 16),
@@ -275,13 +285,15 @@ class LatestScoreLine extends StatelessWidget {
   }
 }
 
-/// Clear lamp art, where the lamp has one: the full combos and LIFE4.
+/// Clear lamp art, where the lamp has one: the full combos, then the generic
+/// clear for any other pass. Only synced records carry a lamp, so a clear is
+/// always one Konami reported; failed and unknown show nothing.
 String? clearLampIcon(ClearLamp? lamp) => switch (lamp) {
       ClearLamp.mfc => fullComboIcon(FullComboTier.mfc),
       ClearLamp.pfc => fullComboIcon(FullComboTier.pfc),
       ClearLamp.gfc => fullComboIcon(FullComboTier.gfc),
       ClearLamp.fc => fullComboIcon(FullComboTier.fc),
-      ClearLamp.life4 => 'assets/icons/cl_li4clear.png',
+      ClearLamp.life4 || ClearLamp.clear || ClearLamp.assisted => clearIcon,
       _ => null,
     };
 
@@ -321,11 +333,21 @@ class ScoreBadges extends StatelessWidget {
     final grade = gradeForScore(score);
     final gradeArt = gradeIcon(grade);
     final unit = dense ? 0.8 : 1.0;
-    // Fixed-width slots so grade, score, lamp and flare line up down a list.
+    // Fixed-width slots so score, grade, lamp and flare line up down a list.
     final gap = SizedBox(width: 8 * unit);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        SizedBox(
+          width: 108 * unit,
+          child: Text(formatScore(score),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                  fontSize: 20 * unit,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+        ),
+        gap,
         SizedBox(
           width: 40 * unit,
           child: gradeArt != null
@@ -336,16 +358,6 @@ class ScoreBadges extends StatelessWidget {
               : Text(grade.label,
                   style: TextStyle(
                       fontSize: 16 * unit, fontWeight: FontWeight.bold)),
-        ),
-        gap,
-        SizedBox(
-          width: 108 * unit,
-          child: Text(formatScore(score),
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                  fontSize: 20 * unit,
-                  fontWeight: FontWeight.w600,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
         ),
         gap,
         SizedBox(
