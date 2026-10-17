@@ -5,11 +5,12 @@ library;
 
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/constants.dart';
-import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 class SongListItem extends StatefulWidget {
@@ -112,15 +113,9 @@ class _SongListItemState extends State<SongListItem> {
         ],
       ),
       onTap: () async {
-        songState.setSongInfo(widget.songInfo);
-        songState.setChosenDifficulty(widget.difficultyIndex ?? 0);
-        await Navigator.push(context,
-                MaterialPageRoute(builder: (context) => const SongPage()))
-            .then((_) {
-          if (widget.regenFavsCallback != null) {
-            widget.regenFavsCallback!();
-          }
-        });
+        await context.push(
+            songPath(widget.songInfo, difficulty: widget.difficultyIndex ?? 0));
+        widget.regenFavsCallback?.call();
       },
     );
   }

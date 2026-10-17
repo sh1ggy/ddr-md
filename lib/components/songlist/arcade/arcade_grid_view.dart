@@ -5,15 +5,14 @@
 /// jacket opens the song, matching the plain list view.
 library;
 
-import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_tile.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_section_header.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 
 class ArcadeGridView extends StatefulWidget {
   const ArcadeGridView({
@@ -74,13 +73,8 @@ class _ArcadeGridViewState extends State<ArcadeGridView> {
   // Opens the song, matching what a row in the plain list view does: a
   // chart-scoped tile opens the song page on the chart the tile stands for.
   Future<void> _open(SongItem item) async {
-    final songState = context.read<SongState>();
-    songState.setSongInfo(item.songInfo);
-    songState.setChosenDifficulty(item.difficultyIndex ?? 0);
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const SongPage()),
-    );
+    await context
+        .push(songPath(item.songInfo, difficulty: item.difficultyIndex ?? 0));
     widget.regenFavsCallback();
   }
 
