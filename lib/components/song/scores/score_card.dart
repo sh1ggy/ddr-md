@@ -356,11 +356,10 @@ class ScoreRecordRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
         SizedBox(
-          width: 108,
+          width: 112,
           child: Align(
             alignment: Alignment.centerLeft,
-            child: DifficultyLabel(
-                difficulty: record.difficulty, level: level, height: 13),
+            child: DifficultyLabel(difficulty: record.difficulty, level: level),
           ),
         ),
         Expanded(

@@ -47,7 +47,7 @@ class SongDifficultyPicker extends StatelessWidget {
           if (diff.value != null)
             LevelNumber(
                 level: diff.value as int,
-                height: 20,
-                color: difficultyColor(diff.key)),
+                difficulty: kInGameDifficultyNames[diff.key]!,
+                height: 22),
       ];
 }
