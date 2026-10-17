@@ -43,6 +43,27 @@ class Settings {
   // where the parity solve stands the player at the playhead. 0/1.
   static const String dancingFeetOnKey = "chartPreviewDancingFeetOn";
 
+  // The 3D dancer behind the chart preview. 0/1.
+  static const String padDancerOnKey = "chartPreviewPadDancerOn";
+
+  // The pad dancer without the cabinet's back bar, hands free. 0/1.
+  static const String padDancerNoBarKey = "chartPreviewPadDancerNoBar";
+
+
+  // DancerView index: where the pad dancer's camera looks from.
+  static const String dancerViewKey = "chartPreviewDancerView";
+
+  // DancerForm index shared by the dancing feet and the pad dancer.
+  static const String dancerFormKey = "chartPreviewDancerForm";
+
+  // Profile: the player's height in cm for the pad dancer (0 = unset), and
+  // how they hold the bar (BarGrip / GripSpot index).
+  static const String heightKey = "profileHeightCm";
+  static const String barGripKey = "profileBarGrip";
+  static const String gripSpotKey = "profileGripSpot";
+  // Men's US shoe size, tenths (95 = 9.5); 0 = unset.
+  static const String shoeSizeKey = "profileShoeSizeUs10";
+
   // Where the user has dragged the dancing-feet pad, as THOUSANDTHS of the
   // field's free space, PLUS ONE. Stored as a fraction rather than pixels so
   // the pad returns to the same spot on a different screen size or after a
@@ -51,10 +72,19 @@ class Settings {
   static const String dancingFeetXKey = "chartPreviewDancingFeetX";
   static const String dancingFeetYKey = "chartPreviewDancingFeetY";
 
-  // DDR PALETTE for the chart preview: colour arrows with the cabinet's coarser
-  // palette (4ths/8ths/16ths only, everything else green) instead of the full
-  // ITG-style one. Stored as 0/1. See [QuantColors.arcadeMode].
-  static const String arcadeQuantOnKey = "chartPreviewArcadeQuantOn";
+  // QUANT COLORS for the chart preview: colour arrows with the full ITG-style
+  // palette instead of the cabinet's coarser one (4ths/8ths/16ths only,
+  // everything else green). Stored as 0/1. See [QuantColors.arcadeMode].
+  static const String quantColorsOnKey = "chartPreviewQuantColorsOn";
+
+  // BLINKING for the chart preview, stored inverted so the 0 default keeps the
+  // cabinet's blinking arrow art on: 1 draws static sprites instead.
+  static const String staticArrowsOnKey = "chartPreviewStaticArrowsOn";
+
+  // QUANT FREEZES for the chart preview: draw freeze heads as quantised taps
+  // instead of the freeze head art, so a freeze's timing reads like a tap's.
+  // Stored as 0/1.
+  static const String quantFreezeHeadsOnKey = "chartPreviewQuantFreezeHeadsOn";
 
   // ARCADE SYNC for the chart preview: master switch for the cabinet timing
   // simulation below. Off by default; while off both offsets are ignored and

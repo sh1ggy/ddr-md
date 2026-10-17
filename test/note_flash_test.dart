@@ -17,16 +17,10 @@ void main() {
     expect(noteFlashCurve(-1).$1, closeTo(noteFlashStartScale, 1e-9));
   });
 
-  test('receptor recoils in and springs back to full', () {
-    // Snaps to the contracted size on arrival, recovers to normal by the end.
-    expect(receptorRecoilCurve(0), closeTo(receptorRecoilScale, 1e-9));
-    expect(receptorRecoilCurve(1), closeTo(1.0, 1e-9));
-    // Eases out: over half the spring-back is done by the midpoint.
-    final mid = receptorRecoilCurve(0.5);
-    expect(mid, greaterThan((receptorRecoilScale + 1) / 2));
-    expect(mid, lessThan(1.0));
-    // Never overshoots, and clamps outside 0..1.
-    expect(receptorRecoilCurve(1.5), closeTo(1.0, 1e-9));
-    expect(receptorRecoilCurve(-1), closeTo(receptorRecoilScale, 1e-9));
+  test('receptor press is 88 of 96 px, back to full in four 20 ms steps', () {
+    expect(receptorRecoilCurve(0), closeTo(88 / 96, 1e-9));
+    expect(receptorRecoilCurve(0.25), closeTo(90 / 96, 1e-9));
+    expect(receptorRecoilCurve(0.99), closeTo(94 / 96, 1e-9));
+    expect(receptorRecoilCurve(1), 1.0);
   });
 }

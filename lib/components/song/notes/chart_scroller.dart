@@ -30,12 +30,16 @@ import 'chart_painter.dart';
 import 'chart_timing.dart';
 import 'dancing_feet.dart';
 import 'density_scrub_bar.dart';
+import 'pad_dancer.dart';
+import 'section_bar.dart';
 import 'tick_clock.dart';
+import 'package:ddr_md/components/song/notes/ddr_atlas.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_shocks.dart';
 import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/parity_profile.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
@@ -105,20 +109,52 @@ class ChartScroller extends StatefulWidget {
     this.showDancingFeet = false,
     this.showMeasureLines = false,
     this.assistTickOn = false,
-    this.arcadeQuantOn = false,
+    this.quantColorsOn = false,
+    this.arrowBlinkOn = false,
+    this.quantFreezeHeadsOn = false,
     this.onToggleMeasureLines,
     this.onToggleFootGuide,
     this.onToggleFootTrails,
     this.onToggleDancingFeet,
     this.onToggleAssistTick,
-    this.onToggleArcadeQuant,
+    this.onToggleQuantColors,
+    this.onToggleArrowBlink,
+    this.onToggleQuantFreezeHeads,
     this.headerBuilder,
     this.footingRef,
     this.editFooting = false,
     this.initialSecond,
+    this.section,
+    this.pickSection = false,
+    this.onSectionChanged,
+    this.onSaveSection,
+    this.feedActive,
+    this.playbackRate = 1.0,
+    this.onPlaybackRateChanged,
   });
 
   final ChartSteps steps;
+
+  /// A snippet's section: playback loops it, with a two-beat run-up, and the
+  /// rest of the chart dims. Scrubbing keeps to the loop.
+  final BeatRange? section;
+  final VoidCallback? onSaveSection;
+
+  /// Set on a page of the snippet feed, which pages sideways: true plays the
+  /// section from its run-up, false pauses it. The header stays hidden until
+  /// a tap pauses, and the field takes only vertical drags (scrub), so sideways
+  /// swipes page instead of setting song speed or zoom. Null everywhere else.
+  final bool? feedActive;
+
+  /// Song speed to open at, and each change made to it (not hold-to-speed), so
+  /// the feed keeps one speed from snippet to snippet.
+  final double playbackRate;
+  final ValueChanged<double>? onPlaybackRateChanged;
+
+  /// A selector button picks [section]'s first and last rows,
+  /// then whichever end is nearer moves. Reported through [onSectionChanged].
+  final bool pickSection;
+  final ValueChanged<BeatRange?>? onSectionChanged;
   final Modes mode;
 
   /// Optional floating header (title / back / actions) over the full-bleed
@@ -173,9 +209,17 @@ class ChartScroller extends StatefulWidget {
   /// Play a short tick as each note row crosses the receptors during playback.
   final bool assistTickOn;
 
-  /// Colour arrows with the cabinet's coarser quantisation palette. Mirrors
-  /// [QuantColors.arcadeMode] so the tile and minimap repaint when it flips.
-  final bool arcadeQuantOn;
+  /// Colour arrows with the full quantisation palette rather than the
+  /// cabinet's coarser one. The inverse of [QuantColors.arcadeMode], passed so
+  /// the tile and minimap repaint when it flips.
+  final bool quantColorsOn;
+
+  /// Draw receptors and taps with the cabinet's blinking art when bundled,
+  /// instead of static sprites.
+  final bool arrowBlinkOn;
+
+  /// Draw freeze heads as quantised taps instead of the freeze head art.
+  final bool quantFreezeHeadsOn;
 
   /// Toggle callbacks for the options above, wired into the settings shade.
   /// Null hides the tile.
@@ -184,7 +228,9 @@ class ChartScroller extends StatefulWidget {
   final VoidCallback? onToggleDancingFeet;
   final VoidCallback? onToggleAssistTick;
   final VoidCallback? onToggleMeasureLines;
-  final VoidCallback? onToggleArcadeQuant;
+  final VoidCallback? onToggleQuantColors;
+  final VoidCallback? onToggleArrowBlink;
+  final VoidCallback? onToggleQuantFreezeHeads;
 
   /// Song length in seconds; bounds the scrub slider and the auto-stop point.
   final double songLength;
@@ -321,8 +367,8 @@ class _ChartScrollerState extends State<ChartScroller>
   // put). OFF by default; persisted across previews. See [_Turn].
   _Turn _turn = _Turn.off;
 
-  Guideline _guideline = Guideline.values[
-      Settings.getInt(Settings.guidelineKey).clamp(0, Guideline.values.length - 1)];
+  Guideline _guideline = Guideline.values[Settings.getInt(Settings.guidelineKey)
+      .clamp(0, Guideline.values.length - 1)];
 
   // ARCADE SYNC: master switch for the cabinet timing simulation. While off,
   // both offsets below are ignored and their controls stay hidden. Turning it
@@ -377,14 +423,15 @@ class _ChartScrollerState extends State<ChartScroller>
   // Playback-rate multiplier: how fast the chart plays back in wall-clock time.
   // 1.0 = true speed; <1 slows the song, >1 speeds it up. Independent of the
   // read-speed (note-spacing) mod above.
-  double _playbackRate = 1.0;
+  late double _playbackRate = widget.playbackRate;
   static const double _minPlaybackRate = 0.25;
   static const double _maxPlaybackRate = 1.0;
 
   // Tap-and-hold fast-forward: holding the field without dragging doubles
   // playback. Releasing restores the rate active before the hold rather than a
   // hardcoded 1.0, so it composes with the song-speed control.
-  static const double _holdSpeedMultiplier = 2.0;
+  // In a snippet the hold halves the speed instead, for drilling the section.
+  double get _holdSpeedMultiplier => widget.section != null ? 0.5 : 2.0;
   static const double _maxHoldPlaybackRate = 2.0;
   double? _preHoldPlaybackRate;
   bool _holdFastForward = false;
@@ -418,6 +465,58 @@ class _ChartScrollerState extends State<ChartScroller>
   // always agree.
   Map<StepNote, Foot> _feet = const {};
   List<ParityStance> _stances = const [];
+  List<ShockEvasion> _shockPlans = const [];
+  // The notes that solve ran on (turned), for the pad dancer's holds.
+  List<StepNote> _turnedNotes = const [];
+
+  // The pad dancer behind the field, with or without the back bar, and the
+  // form both dancers move in. Persisted across previews.
+  bool _padDancer = Settings.getInt(Settings.padDancerOnKey) == 1;
+  bool get _dancerOn => _padDancer && _stances.isNotEmpty;
+  // Set in the profile, not here.
+  final bool _dancerBar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
+  // Only the CABINET view stands at the cabinet, the chart on its monitor;
+  // the others show the stage under the full-size chart.
+  bool get _cabinetOn => _dancerOn && _dancerView == DancerView.cabinet;
+  DancerView _dancerView = DancerView.values[
+      Settings.getInt(Settings.dancerViewKey)
+          .clamp(0, DancerView.values.length - 1)];
+  // Cabinet screen pixels per field pixel, so a scrub over the cabinet view
+  // moves the arrows with the finger.
+  double _scrubScale = 1;
+  DancerForm _form = DancerForm.values[Settings.getInt(Settings.dancerFormKey)
+      .clamp(0, DancerForm.values.length - 1)];
+  // Set in the profile, not here.
+  final BarGrip _grip = BarGrip.values[
+      Settings.getInt(Settings.barGripKey).clamp(0, BarGrip.values.length - 1)];
+  final GripSpot _gripSpot = GripSpot.values[
+      Settings.getInt(Settings.gripSpotKey)
+          .clamp(0, GripSpot.values.length - 1)];
+  final double _height = switch (Settings.getInt(Settings.heightKey)) {
+    0 => kDancerHeight,
+    final cm => cm.clamp(120, 220) / 100,
+  };
+  final double _shoeSize = switch (Settings.getInt(Settings.shoeSizeKey)) {
+    0 => kShoeSize,
+    final tenths => tenths.clamp(30, 180) / 10,
+  };
+
+  void _togglePadDancer() {
+    setState(() => _padDancer = !_padDancer);
+    Settings.setInt(Settings.padDancerOnKey, _padDancer ? 1 : 0);
+  }
+
+  void _cycleDancerView() {
+    setState(() => _dancerView =
+        DancerView.values[(_dancerView.index + 1) % DancerView.values.length]);
+    Settings.setInt(Settings.dancerViewKey, _dancerView.index);
+  }
+
+  void _cycleForm() {
+    setState(() => _form =
+        DancerForm.values[(_form.index + 1) % DancerForm.values.length]);
+    Settings.setInt(Settings.dancerFormKey, _form.index);
+  }
 
   // Patterns read off that same solve, so they agree with the foot guide, and
   // the one picked from the breakdown: its occurrences as (first, last) row
@@ -438,6 +537,15 @@ class _ChartScrollerState extends State<ChartScroller>
   double? _momentSecond;
   String _chartHash = '';
   ChartPainter? _painter;
+  Size _fieldSize = Size.zero;
+  Timer? _selectionScroll;
+
+  // [ChartScroller.section] in seconds: its first and last rows, the loop it
+  // plays (a two-beat run-up to half a beat past its last note or hold tail),
+  // and its notes, which stay lit while the rest dims.
+  (double, double)? _sectionRows;
+  (double, double)? _loop;
+  Set<StepNote> _sectionNotes = const {};
 
   // Chart notes ascending by second, plus the holds alone in the same order.
   // Sorted order is what lets the painter binary-search the visible window each
@@ -499,6 +607,9 @@ class _ChartScrollerState extends State<ChartScroller>
   Noteskin? _skin = SpriteNoteskin.resolved
       ? SpriteNoteskin.resolvedSkin ?? const VectorNoteskin()
       : null;
+
+  // The cabinet's own arrow art, when bundled.
+  DdrAtlas? _ddr = DdrAtlas.resolvedAtlas;
 
   // Note-density histogram for the scrub minimap, each bucket carrying its
   // rhythm colours so seeking shows both intensity and the kinds of notes there.
@@ -600,12 +711,37 @@ class _ChartScrollerState extends State<ChartScroller>
     _buildFootLinks();
     _buildTickTimes();
     _buildTimingMarkers();
+    _buildSection();
     _buildDensity();
-    if (widget.initialSecond case final second?) _openAt(second);
+    if (widget.pickSection && widget.section == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.section != null) return;
+        final rows = _notes.where((n) => n.type != StepType.mine).toList();
+        if (rows.isEmpty) return;
+        final end = rows.firstWhere((n) => n.beat >= rows.first.beat + 4,
+            orElse: () => rows.last);
+        widget.onSectionChanged?.call((rows.first.beat, end.beat));
+      });
+    }
+    if (widget.initialSecond case final second?) {
+      _openAt(second);
+    } else if (_loop case (final from, _)) {
+      _second = from;
+    }
+    if (widget.feedActive == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _play();
+      });
+    }
     // Prefer real DDR World sprites if they're bundled; repaint once loaded.
     if (_skin == null) {
       SpriteNoteskin.tryLoad().then((skin) {
         if (mounted) setState(() => _skin = skin ?? const VectorNoteskin());
+      });
+    }
+    if (!DdrAtlas.resolved) {
+      DdrAtlas.tryLoad().then((atlas) {
+        if (mounted) setState(() => _ddr = atlas);
       });
     }
     _tickClock.load("assets/audio/assist_tick.wav").then((_) {
@@ -641,6 +777,7 @@ class _ChartScrollerState extends State<ChartScroller>
       _buildFootLinks();
       _buildTickTimes();
       _buildTimingMarkers();
+      _buildSection();
       _buildDensity();
       setState(() {
         _second = 0;
@@ -683,8 +820,21 @@ class _ChartScrollerState extends State<ChartScroller>
     }
     // The minimap bakes each note's quant bucket, so a palette change has to
     // rebuild it — the field itself re-reads the colours on the next paint.
-    if (old.arcadeQuantOn != widget.arcadeQuantOn) {
+    if (old.quantColorsOn != widget.quantColorsOn) {
       _buildDensity();
+    }
+    if (old.feedActive != widget.feedActive && widget.feedActive != null) {
+      if (widget.feedActive!) {
+        _heldInFeed = false;
+        if (_loop case (final from, _)) _second = from;
+        _play();
+      } else {
+        _pause();
+      }
+    }
+    if (old.section != widget.section) {
+      setState(_buildSection);
+      _resyncTickClock();
     }
   }
 
@@ -866,8 +1016,7 @@ class _ChartScrollerState extends State<ChartScroller>
       widget.sync == null && _visualOffset == 0 && _audioOffsetMs == 0;
 
   /// FAST/SLOW hue for the current effective sync, or null when it's on the beat
-  /// (or unknown). Shared by the ARCADE SYNC caption and the tempo badge so the
-  /// two never disagree about which way the song leans.
+  /// (or unknown). Used by the ARCADE SYNC caption.
   Color? _syncAccent(BuildContext context) {
     if (_hasNoSyncReading) return null;
     final ms = _effectiveSyncMs;
@@ -875,18 +1024,6 @@ class _ChartScrollerState extends State<ChartScroller>
       ms.abs() < _onBeatEpsilonMs ? 0 : ms,
       Theme.of(context).brightness == Brightness.dark,
     );
-  }
-
-  /// Compact effective sync for the tempo badge: a signed millisecond figure
-  /// ("+9.0ms" / "-4.5ms" / "0.0ms"), with FAST/SLOW carried by its colour since
-  /// the badge is tight for space. Same number [_arcadeSyncSummary] spells out.
-  /// Null hides the segment — including whenever ARCADE SYNC is off, where the
-  /// dials are gated to zero and a figure would describe an unapplied correction.
-  String? get _syncBadgeLabel {
-    if (!_arcadeSyncOn || _hasNoSyncReading) return null;
-    final ms = _effectiveSyncMs;
-    if (ms.abs() < _onBeatEpsilonMs) return "0.0ms";
-    return "${ms > 0 ? "+" : "-"}${ms.abs().toStringAsFixed(1)}ms";
   }
 
   // The ARCADE SYNC caption: the effective sync after both dials, in the same
@@ -1192,6 +1329,8 @@ class _ChartScrollerState extends State<ChartScroller>
           source[i]: foot == ParityFoot.left ? Foot.left : Foot.right,
     };
     _stances = analysis.stances;
+    _shockPlans = planShockEvasions(turned, _stances, widget.mode);
+    _turnedNotes = turned;
     _footwork = footworkOf(turned, analysis, widget.mode);
     _collectHits();
     if (widget.footingRef != null) {
@@ -1203,10 +1342,19 @@ class _ChartScrollerState extends State<ChartScroller>
     }
   }
 
+  // The footwork's occurrences, kept to the snippet's section when there is one.
+  Iterable<(Pattern, double, double)> get _spans {
+    final rows = _sectionRows;
+    return rows == null
+        ? _footwork!.spans
+        : _footwork!.spans
+            .where((s) => s.$2 >= rows.$1 - 1e-6 && s.$3 <= rows.$2 + 1e-6);
+  }
+
   void _collectHits() {
     final p = _pattern;
     final spans = [
-      for (final s in _footwork!.spans)
+      for (final s in _spans)
         if (s.$1 == p) (s.$2, s.$3)
     ]..sort((a, b) => a.$1.compareTo(b.$1));
     _hits = [
@@ -1256,21 +1404,27 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
-  // The chart's patterns as this preview foots them; tapping one highlights it.
+  // The chart's (or snippet's) patterns as this preview foots them; tapping one
+  // highlights it.
   Future<void> _openBreakdown(BuildContext context) async {
-    final counts = _footwork!;
+    final counts = <Pattern, int>{};
+    for (final s in _spans) {
+      counts[s.$1] = (counts[s.$1] ?? 0) + 1;
+    }
     final present = [
       for (final p in Pattern.values)
-        if (counts.count(p) > 0) p
+        if (counts.containsKey(p)) p
     ];
     final picked = await showModalBottomSheet<Pattern>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
         child: present.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Text('No patterns in this chart'),
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Text(_sectionRows == null
+                    ? 'No patterns in this chart'
+                    : 'No patterns in this section'),
               )
             : ListView(
                 shrinkWrap: true,
@@ -1279,7 +1433,7 @@ class _ChartScrollerState extends State<ChartScroller>
                     ListTile(
                       leading: Icon(kPatternIcons[p]),
                       title: Text(kPatternLabels[p]!),
-                      trailing: Text('${counts.count(p)}',
+                      trailing: Text('${counts[p]}',
                           style: const TextStyle(
                               fontSize: 15, fontWeight: FontWeight.w700)),
                       selected: p == _pattern,
@@ -1509,6 +1663,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // Editing footing, a paused tap on a note swaps its foot; anywhere else (or
   // not editing) it plays/pauses as usual.
   void _onFieldTap(Offset pos, Size size) {
+    if (widget.pickSection && !_playing) return;
     final n =
         widget.editFooting && !_playing ? _painter?.noteAt(pos, size) : null;
     if (n != null) return _flipFoot(n);
@@ -1676,10 +1831,127 @@ class _ChartScrollerState extends State<ChartScroller>
   // Distinct row seconds for the assist tick: taps and hold/roll heads tick,
   // mines don't (shock rows are mines, so they drop out with them). Chords
   // collapse to one tick via the same 1ms rounding [_detectShocks] uses.
+  double _secondAtBeat(double beat) => _timing.isEmpty
+      ? beat * 60.0 / _effectiveChartBpm
+      : _timing.secondAt(beat);
+
+  // Resolve [ChartScroller.section] against this chart; also re-derives the
+  // tick rows, which keep to the section.
+  void _buildSection() {
+    final range = widget.section;
+    final notes = range == null
+        ? const <StepNote>[]
+        : [
+            for (final n in _notes)
+              if (n.beat >= range.$1 - 1e-3 && n.beat <= range.$2 + 1e-3) n
+          ];
+    if (range == null || notes.isEmpty) {
+      _sectionRows = null;
+      _loop = null;
+      _sectionNotes = const {};
+    } else {
+      final lastBeat = notes.map((n) => n.endBeat ?? n.beat).reduce(math.max);
+      _sectionRows = (notes.first.second, notes.last.second);
+      // Kept inside the song, so a section ending on its last freeze still
+      // loops rather than running into the end.
+      _loop = (
+        math.max(0.0, _secondAtBeat(range.$1 - 2)),
+        math.min(_secondAtBeat(lastBeat + 0.5), _endSecond),
+      );
+      _sectionNotes = notes.toSet();
+    }
+    _buildTickTimes();
+    if (_footwork != null) _collectHits();
+  }
+
+  void _moveEndpoint(bool start, double y) {
+    final row = _painter?.nearestRow(y, _fieldSize);
+    final range = widget.section;
+    if (row == null || range == null) return;
+    final next = start
+        ? (math.min(row.beat, range.$2), range.$2)
+        : (range.$1, math.max(row.beat, range.$1));
+    if (next != range) {
+      HapticFeedback.selectionClick();
+      widget.onSectionChanged?.call(next);
+    }
+  }
+
+  Widget _selectionHandles(Size size) => ValueListenableBuilder<double>(
+        valueListenable: _playhead,
+        builder: (context, _, child) {
+          final range = _sectionRows;
+          final painter = _painter;
+          if (range == null || painter == null) return const SizedBox.shrink();
+          final top = MediaQuery.of(context).padding.top + 100;
+          final bottom = math.max(top + 64, size.height - 280);
+          Widget handle(bool start, double second) {
+            final y = painter.rowY(second, size);
+            final clamped = y.clamp(top, bottom);
+            return Positioned(
+              top: clamped - 22,
+              left: start ? 8 : null,
+              right: start ? null : 8,
+              child: GestureDetector(
+                onVerticalDragStart: (_) {
+                  _pause();
+                  _flingVel = 0;
+                },
+                onVerticalDragEnd: (_) => _selectionScroll?.cancel(),
+                onVerticalDragCancel: () => _selectionScroll?.cancel(),
+                onVerticalDragUpdate: (d) {
+                  final local = (context.findRenderObject() as RenderBox)
+                      .globalToLocal(d.globalPosition);
+                  _selectionScroll?.cancel();
+                  if (local.dy < top + 24 || local.dy > bottom - 24) {
+                    final direction = local.dy < top + 24 ? -1 : 1;
+                    _selectionScroll =
+                        Timer.periodic(const Duration(milliseconds: 40), (_) {
+                      if (!mounted) return;
+                      _second =
+                          (_second + direction * 0.08).clamp(0.0, _endSecond);
+                      _moveEndpoint(start, local.dy);
+                    });
+                  }
+                  _moveEndpoint(start, local.dy);
+                },
+                onTap: () {
+                  _pause();
+                  _second = math.max(0.0, second - 0.5);
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                      color: kSectionColor,
+                      borderRadius: BorderRadius.circular(10)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                        y != clamped
+                            ? Icons.swap_vert_rounded
+                            : Icons.drag_handle_rounded,
+                        size: 18,
+                        color: Colors.black),
+                    const SizedBox(width: 6),
+                    Text(start ? 'START' : 'END',
+                        style: const TextStyle(
+                            color: Colors.black, fontWeight: FontWeight.bold)),
+                  ]),
+                ),
+              ),
+            );
+          }
+
+          return Stack(
+              children: [handle(true, range.$1), handle(false, range.$2)]);
+        },
+      );
+
   void _buildTickTimes() {
     final Set<int> keys = {};
     for (final n in widget.steps.notes) {
       if (n.type == StepType.mine) continue;
+      if (_sectionNotes.isNotEmpty && !_sectionNotes.contains(n)) continue;
       keys.add((n.second * 1000).round());
     }
     _tickSeconds = [for (final k in keys) k / 1000.0]..sort();
@@ -1739,8 +2011,13 @@ class _ChartScrollerState extends State<ChartScroller>
     // the HUD listeners directly. Only the end-of-song auto-pause (inside
     // [_pause]) flips real widget state.
     double next = _second;
+    var looped = false;
     if (_playing) {
       next += dt * _playbackRate;
+      if (_loop case (final from, final to) when next >= to) {
+        next = from;
+        looped = true;
+      }
     } else if (_flingVel != 0) {
       // Inertial scrub: advance by the current velocity, then decay it.
       next += _flingVel * dt;
@@ -1749,6 +2026,11 @@ class _ChartScrollerState extends State<ChartScroller>
         _flingVel = 0;
         _stopTickerIfIdle();
       }
+    }
+    if (!_playing && _loop != null && !widget.pickSection) {
+      final (from, to) = _scrubRange;
+      if (next <= from || next >= to) _flingVel = 0;
+      next = next.clamp(from, to);
     }
     if (next >= _endSecond) {
       next = _endSecond;
@@ -1761,6 +2043,7 @@ class _ChartScrollerState extends State<ChartScroller>
       _stopTickerIfIdle();
     }
     _second = next;
+    if (looped) _resyncTickClock();
     // The render loop no longer schedules ticks — [_tickClock] fires them off
     // SoLoud's audio-thread clock, immune to this loop's jank. Playback state
     // changes (play/pause/seek/rate) drive the clock via [_resyncTickClock].
@@ -1782,6 +2065,10 @@ class _ChartScrollerState extends State<ChartScroller>
   void _play() {
     if (_playing) return;
     if (_second >= _endSecond) _second = 0;
+    if (_loop case (final from, final to)
+        when _second < from || _second >= to) {
+      _second = from;
+    }
     _flingVel = 0;
     _ensureTicking();
     // Starting playback closes the menu so the running chart owns the screen.
@@ -1834,9 +2121,15 @@ class _ChartScrollerState extends State<ChartScroller>
     });
   }
 
+  // A feed page's header shows only once a tap has paused it.
+  bool _heldInFeed = false;
+  bool get _headerShown =>
+      !_playing && (widget.feedActive == null || _heldInFeed);
+
   void _togglePlay({bool showOverlay = false}) {
     HapticFeedback.selectionClick();
     final willPlay = !_playing;
+    _heldInFeed = !willPlay;
     _playing ? _pause() : _play();
     if (showOverlay) _flashTapOverlay(willPlay);
   }
@@ -1850,7 +2143,7 @@ class _ChartScrollerState extends State<ChartScroller>
     HapticFeedback.mediumImpact();
     final delta = forward ? _seekStepSeconds : -_seekStepSeconds;
     // Playhead-only change: the notifier repaints every playhead listener.
-    _second = (_second + delta).clamp(0.0, _endSecond);
+    _second = (_second + delta).clamp(_scrubRange.$1, _scrubRange.$2);
     _resyncTickClock(); // re-anchor: the playhead jumped out from under the clock
     _flashSeekOverlay(!forward);
   }
@@ -1874,6 +2167,11 @@ class _ChartScrollerState extends State<ChartScroller>
   // the hold; `_resumeFromHold` tracks that so releasing returns to paused
   // rather than leaving playback running.
   bool _resumeFromHold = false;
+
+  // Where scrubbing and seeking may go: a snippet's loop (unless its section is
+  // being picked), else the whole chart.
+  (double, double) get _scrubRange =>
+      (widget.pickSection ? null : _loop) ?? (0.0, _endSecond);
 
   void _onHoldSpeedStart() {
     if (_holdFastForward) return;
@@ -2018,6 +2316,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (next == _playbackRate) return;
     final crossedStep = (next * 20).round() != (_playbackRate * 20).round();
     setState(() => _playbackRate = next);
+    widget.onPlaybackRateChanged?.call(next);
     _resyncTickClock(); // re-anchor at the new rate
     if (crossedStep) HapticFeedback.selectionClick();
     _flashScrubOverlay("${next.toStringAsFixed(2)}×", "SONG SPEED");
@@ -2027,6 +2326,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (_playbackRate == 1.0) return;
     HapticFeedback.selectionClick();
     setState(() => _playbackRate = 1.0);
+    widget.onPlaybackRateChanged?.call(1.0);
     _resyncTickClock(); // re-anchor at 1.0×
   }
 
@@ -2139,16 +2439,19 @@ class _ChartScrollerState extends State<ChartScroller>
 
   void _onScaleEnd(ScaleEndDetails d) {
     if (_gestureMode == _gestureScrub) {
-      // Coast a fling from the release velocity, as the old vertical drag did.
-      final vPx = d.velocity.pixelsPerSecond.dy;
-      _flingVel = -_pxToSeconds(vPx);
-      if (_flingVel.abs() < _flingMin) {
-        _flingVel = 0;
-      } else {
-        _ensureTicking();
-      }
+      _endScrub(d.velocity.pixelsPerSecond.dy * _scrubScale);
     }
     _gestureMode = _gestureNone;
+  }
+
+  // Coast a fling from the release velocity.
+  void _endScrub(double vPx) {
+    _flingVel = _pxToSeconds(-vPx);
+    if (_flingVel.abs() < _flingMin) {
+      _flingVel = 0;
+    } else {
+      _ensureTicking();
+    }
   }
 
   // Map a live pinch scale (1.0 at gesture start) onto the zoom multiplier,
@@ -2171,7 +2474,10 @@ class _ChartScrollerState extends State<ChartScroller>
 
   void _onScrubMove(double dy) {
     // Playhead-only change — no setState; the notifier drives the repaint.
-    _second = (_second - _pxToSeconds(dy)).clamp(0.0, _endSecond);
+    // Invert in the direction of playhead travel. Negating the resulting
+    // seconds instead would cross a different tempo/stop interval.
+    _second = (_second + _pxToSeconds(-dy * _scrubScale))
+        .clamp(_scrubRange.$1, _scrubRange.$2);
     final beat = _beatIndexAt(_second);
     if (_lastScrubBeat != null && beat != _lastScrubBeat) {
       HapticFeedback.selectionClick();
@@ -2181,6 +2487,7 @@ class _ChartScrollerState extends State<ChartScroller>
 
   @override
   void dispose() {
+    _selectionScroll?.cancel();
     _tapOverlayTimer?.cancel();
     _scrubOverlayTimer?.cancel();
     _seekOverlayTimer?.cancel();
@@ -2192,16 +2499,110 @@ class _ChartScrollerState extends State<ChartScroller>
 
   @override
   Widget build(BuildContext context) {
+    final snippet = widget.section != null;
+    final feed = widget.feedActive != null;
+    final visibleFeet = {
+      for (final entry
+          in (widget.showFootGuide || widget.editFooting ? _feet : _hitFeet)
+              .entries)
+        if (!snippet || _sectionNotes.contains(entry.key))
+          entry.key: entry.value,
+    };
+    final visibleLinks = {
+      for (final entry in _footPrev.entries)
+        if (!snippet ||
+            (_sectionNotes.contains(entry.key) &&
+                _sectionNotes.contains(entry.value)))
+          entry.key: entry.value,
+    };
+    final stanceSeconds = _sectionNotes.map((n) => n.second).toSet();
+    final sectionStances =
+        _stances.where((s) => stanceSeconds.contains(s.second)).toList();
+    // Where the feet already stand as the section starts, held still through
+    // its lead-in, so its first row steps one foot instead of landing both.
+    final standing = sectionStances.isEmpty
+        ? null
+        : _stances
+            .where((s) => s.second < sectionStances.first.second)
+            .lastOrNull;
+    final visibleStances = !snippet
+        ? _stances
+        : [
+            if ((standing, _loop) case (final s?, (final from, _)))
+              ParityStance(
+                  second: from,
+                  leftHeel: s.leftHeel,
+                  leftToe: s.leftToe,
+                  rightHeel: s.rightHeel,
+                  rightToe: s.rightToe,
+                  stepped: const {}),
+            ...sectionStances,
+          ];
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
       // Feed the field geometry into the speed law: an arrow's travel is the
       // cabinet's bottom edge up to the receptor line, scaled to the arrow size
       // this screen allows (see ChartPainter.arcadeArrowSize).
-      final topInset = MediaQuery.of(context).padding.top;
-      final travel = ChartPainter.arcadeArrowSize(
-              constraints.biggest, dirs.length, topInset) *
-          ChartPainter.cabinetTravelArrows;
+      // At the cabinet the field is the cabinet's own lane panel, on its
+      // monitor.
+      _fieldSize = constraints.biggest;
+      final cabinet = _cabinetOn;
+      final topInset = cabinet
+          ? kCabinetReceptorY - ChartPainter.receptorBase
+          : MediaQuery.of(context).padding.top;
+      final fieldSize =
+          cabinet ? cabinetLaneSize(dirs.length) : constraints.biggest;
+      final travel =
+          ChartPainter.arcadeArrowSize(fieldSize, dirs.length, topInset) *
+              ChartPainter.cabinetTravelArrows;
       if (travel > 0) _travelPx = travel;
+      _scrubScale = cabinet
+          ? 1 / cabinetScreenScale(constraints.biggest, dirs.length)
+          : 1;
+      final chart = _skin == null
+          ? null
+          : ChartPainter(
+              notes: _notes,
+              holds: _holds,
+              shockNotes: _shockNotes,
+              shocks: _shocks,
+              bpmMarkers: _bpmMarkers,
+              stopMarkers: _stopMarkers,
+              showMeasureLines: widget.showMeasureLines,
+              paintBackground: !_dancerOn,
+              guideline: _guideline,
+              timeSignatures: widget.timeSignatures,
+              feet: visibleFeet,
+              highlights: _hits,
+              highlightIcon: _pattern == null ? null : kPatternIcons[_pattern],
+              focus: widget.editFooting ? _focus : _sectionNotes,
+              section: _sectionRows,
+              sectionTail: _sectionNotes.isEmpty
+                  ? null
+                  : _sectionNotes
+                      .map((n) => n.endSecond ?? n.second)
+                      .reduce(math.max),
+              footPrev: widget.showFootTrails ? visibleLinks : const {},
+              dirs: dirs,
+              colMap: _colMap,
+              playhead: _playhead,
+              pxPerSecond: _pxPerSecond,
+              pxPerBeat: _pxPerBeat,
+              timing: _timing,
+              columnCount: dirs.length,
+              skin: _skin!,
+              playing: _playing,
+              zoom: _zoom,
+              constantMs: _effectiveConstantMs,
+              topInset: topInset,
+              visualOffset: _visualOffsetSeconds,
+              arcadeQuant: !widget.quantColorsOn,
+              arrowBlink: widget.arrowBlinkOn,
+              quantFreezeHeads: widget.quantFreezeHeadsOn,
+              ddr: _ddr,
+            );
+      // Taps find notes on the full-field chart only.
+      _painter = cabinet ? null : chart;
       return Stack(
         fit: StackFit.expand,
         children: [
@@ -2218,9 +2619,15 @@ class _ChartScrollerState extends State<ChartScroller>
             onLongPressStart: (_) => _onHoldSpeedStart(),
             onLongPressEnd: (_) => _onHoldSpeedEnd(),
             onLongPressCancel: _onHoldSpeedEnd,
-            onScaleStart: _onScaleStart,
-            onScaleUpdate: _onScaleUpdate,
-            onScaleEnd: _onScaleEnd,
+            // A feed page claims only vertical drags, leaving every sideways
+            // swipe to the pager.
+            onVerticalDragStart: feed ? (_) => _onScrubStart() : null,
+            onVerticalDragUpdate: feed ? (d) => _onScrubMove(d.delta.dy) : null,
+            onVerticalDragEnd:
+                feed ? (d) => _endScrub(d.velocity.pixelsPerSecond.dy) : null,
+            onScaleStart: feed ? null : _onScaleStart,
+            onScaleUpdate: feed ? null : _onScaleUpdate,
+            onScaleEnd: feed ? null : _onScaleEnd,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -2231,44 +2638,36 @@ class _ChartScrollerState extends State<ChartScroller>
                 // Until the skin resolves (first preview of the app run only)
                 // paint nothing: a blank frame is invisible, a receptor-skin
                 // swap is not.
-                if (_skin == null)
+                if (_dancerOn)
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      painter: PadDancerPainter(
+                        stances: _stances,
+                        notes: _turnedNotes,
+                        shockPlans: _shockPlans,
+                        playhead: _playhead,
+                        columnCount: dirs.length,
+                        visualOffset: _visualOffsetSeconds,
+                        form: _form,
+                        bar: _dancerBar,
+                        grip: _grip,
+                        gripSpot: _gripSpot,
+                        height: _height,
+                        shoeSize: _shoeSize,
+                        cabinet: cabinet,
+                        view: _dancerView,
+                        screen: cabinet ? chart : null,
+                      ),
+                      size: Size.infinite,
+                      willChange: true,
+                    ),
+                  ),
+                if (chart == null || cabinet)
                   const SizedBox.expand()
                 else
                   RepaintBoundary(
                     child: CustomPaint(
-                      painter: _painter = ChartPainter(
-                        notes: _notes,
-                        holds: _holds,
-                        shockNotes: _shockNotes,
-                        shocks: _shocks,
-                        bpmMarkers: _bpmMarkers,
-                        stopMarkers: _stopMarkers,
-                        showMeasureLines: widget.showMeasureLines,
-                        guideline: _guideline,
-                        timeSignatures: widget.timeSignatures,
-                        feet: widget.showFootGuide || widget.editFooting
-                            ? _feet
-                            : _hitFeet,
-                        highlights: _hits,
-                        highlightIcon:
-                            _pattern == null ? null : kPatternIcons[_pattern],
-                        focus: widget.editFooting ? _focus : const {},
-                        footPrev: widget.showFootTrails ? _footPrev : const {},
-                        dirs: dirs,
-                        colMap: _colMap,
-                        playhead: _playhead,
-                        pxPerSecond: _pxPerSecond,
-                        pxPerBeat: _pxPerBeat,
-                        timing: _timing,
-                        columnCount: dirs.length,
-                        skin: _skin!,
-                        playing: _playing,
-                        zoom: _zoom,
-                        constantMs: _effectiveConstantMs,
-                        topInset: topInset,
-                        visualOffset: _visualOffsetSeconds,
-                        arcadeQuant: widget.arcadeQuantOn,
-                      ),
+                      painter: chart,
                       size: Size.infinite,
                       willChange: true,
                     ),
@@ -2414,12 +2813,15 @@ class _ChartScrollerState extends State<ChartScroller>
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.fast_forward_rounded,
+                              Icon(
+                                  _holdSpeedMultiplier < 1
+                                      ? Icons.slow_motion_video_rounded
+                                      : Icons.fast_forward_rounded,
                                   color: Colors.white.withValues(alpha: 0.92),
                                   size: 16),
                               const SizedBox(width: 4),
                               Text(
-                                "${_holdSpeedMultiplier.toInt()}x",
+                                "${_holdSpeedMultiplier < 1 ? _holdSpeedMultiplier : _holdSpeedMultiplier.toInt()}x",
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,
@@ -2452,13 +2854,35 @@ class _ChartScrollerState extends State<ChartScroller>
               // The pad places itself within these bounds; the rest of the
               // layer stays transparent to taps, so the field (and the controls
               // under it) still get everything the pad itself doesn't cover.
-              child: DancingFeet(
-                stances: _stances,
-                playhead: _playhead,
-                columnCount: dirs.length,
-                visualOffset: _visualOffsetSeconds,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _playhead,
+                builder: (context, second, child) {
+                  final active = !snippet ||
+                      (_loop != null &&
+                          second + _visualOffsetSeconds >= _loop!.$1 &&
+                          second + _visualOffsetSeconds <=
+                              _sectionNotes
+                                  .map((n) => n.endSecond ?? n.second)
+                                  .reduce(math.max));
+                  return IgnorePointer(
+                      ignoring: !active,
+                      child: Opacity(opacity: active ? 1 : 0, child: child));
+                },
+                child: DancingFeet(
+                  stances: visibleStances,
+                  playhead: _playhead,
+                  columnCount: dirs.length,
+                  visualOffset: _visualOffsetSeconds,
+                  form: _form,
+                  shoeSize: _shoeSize,
+                  shocks: [for (final shock in _shocks) shock.second],
+                  shockPlans: _shockPlans,
+                ),
               ),
             ),
+
+          if (widget.pickSection && !_playing)
+            Positioned.fill(child: _selectionHandles(constraints.biggest)),
 
           // Floating header (song title / difficulty): shown whenever paused,
           // slides up out of view once playback starts so the running chart owns
@@ -2470,13 +2894,13 @@ class _ChartScrollerState extends State<ChartScroller>
               left: 0,
               right: 0,
               child: IgnorePointer(
-                ignoring: _playing,
+                ignoring: !_headerShown,
                 child: AnimatedSlide(
-                  offset: _playing ? const Offset(0, -1) : Offset.zero,
+                  offset: _headerShown ? Offset.zero : const Offset(0, -1),
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOutCubic,
                   child: AnimatedOpacity(
-                    opacity: _playing ? 0 : 1,
+                    opacity: _headerShown ? 1 : 0,
                     duration: const Duration(milliseconds: 180),
                     child: widget.headerBuilder!(
                         context, _buildPatternsButton(context)),
@@ -2515,33 +2939,15 @@ class _ChartScrollerState extends State<ChartScroller>
                       _buildFootingBar(context),
                       const SizedBox(height: 6),
                     ],
-                    // Always-visible tempo readout: the BPM of the section under
-                    // the playhead and the read speed it actually scrolls at
-                    // (CONSTANT-aware). Centred over the bottom controls and kept
-                    // on screen in fullscreen too — the one place the current
-                    // tempo stays legible once its BPM marker has scrolled past.
-                    // IgnorePointer so taps fall through to the field below.
-                    // Rides the playhead notifier (the local BPM changes as the
-                    // playhead crosses tempo sections) inside its own repaint
-                    // boundary, so per-frame updates stay off the widget tree.
-                    IgnorePointer(
-                      child: RepaintBoundary(
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: _playhead,
-                          builder: (_, __, ___) => TempoBadge(
-                            bpm: _localBpm,
-                            readSpeed: _liveReadSpeed,
-                            // Same numbers and hue as the ARCADE SYNC caption —
-                            // both read [_effectiveSyncMs], so they can't drift
-                            // apart. Unlike BPM/READ this doesn't vary with the
-                            // playhead, so it's computed from the outer context.
-                            syncLabel: _syncBadgeLabel,
-                            syncAccent: _syncAccent(context),
-                          ),
-                        ),
+                    if (widget.pickSection) ...[
+                      SectionBar(
+                        range: _sectionRows == null ? null : widget.section,
+                        onSave: widget.onSaveSection,
+                        playing: _playing,
+                        onPlay: _togglePlay,
                       ),
-                    ),
-                    const SizedBox(height: 6),
+                      const SizedBox(height: 6),
+                    ],
                     // Transport (read/song speed): shown with the menu.
                     IgnorePointer(
                       ignoring: !_menuOpen,
@@ -2609,23 +3015,33 @@ class _ChartScrollerState extends State<ChartScroller>
             child: ValueListenableBuilder<double>(
               valueListenable: _playhead,
               builder: (_, s, __) => Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text(
-                    fmtTime(s),
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontFeatures: const [FontFeature.tabularFigures()]),
+                  Expanded(
+                    child: Text(
+                      fmtTime(s),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
                   ),
-                  Text(
-                    fmtTime(_endSecond),
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontFeatures: const [FontFeature.tabularFigures()]),
+                  // The section under the playhead; its numbers change as the
+                  // playhead crosses tempo sections, so it rides the same
+                  // per-frame builder as the elapsed label.
+                  TempoBadge(bpm: _localBpm, readSpeed: _liveReadSpeed),
+                  Expanded(
+                    child: Text(
+                      fmtTime(_endSecond),
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
                   ),
                 ],
               ),
@@ -2648,7 +3064,11 @@ class _ChartScrollerState extends State<ChartScroller>
                   _markerFractions(_stopMarkers.map((m) => m.second)),
               highlightFractions: [
                 if (_endSecond > 0)
-                  for (final (a, b) in _hits) (a / _endSecond, b / _endSecond)
+                  for (final (a, b) in [
+                    ..._hits,
+                    if (_sectionRows case final rows?) rows,
+                  ])
+                    (a / _endSecond, b / _endSecond)
               ],
               onSeek: (frac) {
                 _pause();
@@ -2684,7 +3104,7 @@ class _ChartScrollerState extends State<ChartScroller>
     // detached from the header rather than glued to its underside; otherwise
     // there is no title above it, so it hugs the status-bar inset. Animated so it
     // glides down/up as the header appears/disappears on pause/play.
-    final headerShowing = widget.headerBuilder != null && !_playing;
+    final headerShowing = widget.headerBuilder != null && _headerShown;
     final top = topInset + (headerShowing ? 64 + 16 : 8);
     // Leave space for the bottom controls on short phones and in landscape.
     // The shade's own scroller handles any content beyond this height.
@@ -2779,11 +3199,11 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
-      // Viewing aids, split off into their own segment and laid out as two rows
+      // Viewing aids, split off into their own segment and laid out as rows
       // of tiles: the parity readings (the on-arrow L/R guide, the same-foot
-      // trails and the dancing-feet pad, all three drawn from one solve) above,
-      // the rest — the assist tick, the measure rules, the guideline and the
-      // arcade quant palette — below.
+      // trails and the dancing-feet pad, all three drawn from one solve), the
+      // pad dancer, then the rest — the assist tick, the measure rules, the
+      // guideline and the arcade quant palette.
       // These moved out of the floating header so it carries only title/back;
       // the toggles read the same as the TURN tiles, so they slot in as more
       // rows of the options card.
@@ -2832,54 +3252,135 @@ class _ChartScrollerState extends State<ChartScroller>
                     ),
                 ],
               ),
+            // The pad dancer and how both dancers move. VIEW only
+            // means something with the dancer on; FORM with either dancer.
             Row(
-                spacing: 8,
-                children: [
-                  if (widget.onToggleAssistTick != null)
-                    Expanded(
-                      child: TurnTile(
-                        label: "ASSIST TICK",
-                        icon: widget.assistTickOn
-                            ? Icons.volume_up
-                            : Icons.volume_off_outlined,
-                        selected: widget.assistTickOn,
-                        onTap: widget.onToggleAssistTick!,
-                      ),
-                    ),
-                  if (widget.onToggleMeasureLines != null)
-                    Expanded(
-                      child: TurnTile(
-                        label: "MEASURES",
-                        icon: widget.showMeasureLines
-                            ? Icons.straighten
-                            : Icons.straighten_outlined,
-                        selected: widget.showMeasureLines,
-                        onTap: widget.onToggleMeasureLines!,
-                      ),
-                    ),
+              spacing: 8,
+              children: [
+                Expanded(
+                  child: TurnTile(
+                    label: "PAD DANCER",
+                    icon: _padDancer
+                        ? Icons.accessibility_new
+                        : Icons.accessibility_new_outlined,
+                    selected: _padDancer,
+                    onTap: _togglePadDancer,
+                  ),
+                ),
+                if (_padDancer)
                   Expanded(
                     child: TurnTile(
-                      label: switch (_guideline) {
-                        Guideline.off => "GUIDELINE",
-                        Guideline.center => "GUIDE CENTER",
-                        Guideline.border => "GUIDE BORDER",
+                      label: switch (_dancerView) {
+                        DancerView.behind => "VIEW: BEHIND",
+                        DancerView.cabinet => "VIEW: CABINET",
+                        DancerView.front => "VIEW: FRONT",
+                        DancerView.side => "VIEW: SIDE",
+                        DancerView.overhead => "VIEW: OVERHEAD",
                       },
-                      icon: _guideline == Guideline.border
-                          ? Icons.border_horizontal
-                          : Icons.drag_handle,
-                      selected: _guideline != Guideline.off,
-                      onTap: _cycleGuideline,
+                      icon: Icons.threed_rotation,
+                      selected: _dancerView != DancerView.behind,
+                      onTap: _cycleDancerView,
                     ),
                   ),
-                  if (widget.onToggleArcadeQuant != null)
+                if (_padDancer || widget.showDancingFeet)
+                  Expanded(
+                    child: TurnTile(
+                      label: switch (_form) {
+                        DancerForm.standard => "STANDARD FORM",
+                        DancerForm.minimal => "MINIMAL FORM",
+                        DancerForm.exaggerated => "EXAGGERATED FORM",
+                      },
+                      icon: switch (_form) {
+                        DancerForm.standard => Icons.directions_run,
+                        DancerForm.minimal => Icons.compress,
+                        DancerForm.exaggerated => Icons.open_in_full,
+                      },
+                      selected: _form != DancerForm.standard,
+                      onTap: _cycleForm,
+                    ),
+                  ),
+              ],
+            ),
+            Row(
+              spacing: 8,
+              children: [
+                if (widget.onToggleAssistTick != null)
+                  Expanded(
+                    child: TurnTile(
+                      label: "ASSIST TICK",
+                      icon: widget.assistTickOn
+                          ? Icons.volume_up
+                          : Icons.volume_off_outlined,
+                      selected: widget.assistTickOn,
+                      onTap: widget.onToggleAssistTick!,
+                    ),
+                  ),
+                if (widget.onToggleMeasureLines != null)
+                  Expanded(
+                    child: TurnTile(
+                      label: "MEASURES",
+                      icon: widget.showMeasureLines
+                          ? Icons.straighten
+                          : Icons.straighten_outlined,
+                      selected: widget.showMeasureLines,
+                      onTap: widget.onToggleMeasureLines!,
+                    ),
+                  ),
+                Expanded(
+                  child: TurnTile(
+                    label: switch (_guideline) {
+                      Guideline.off => "GUIDELINE",
+                      Guideline.center => "GUIDE CENTER",
+                      Guideline.border => "GUIDE BORDER",
+                    },
+                    icon: _guideline == Guideline.border
+                        ? Icons.border_horizontal
+                        : Icons.drag_handle,
+                    selected: _guideline != Guideline.off,
+                    onTap: _cycleGuideline,
+                  ),
+                ),
+              ],
+            ),
+            if (widget.onToggleQuantColors != null ||
+                widget.onToggleQuantFreezeHeads != null ||
+                widget.onToggleArrowBlink != null)
+              Row(
+                spacing: 8,
+                children: [
+                  // Only the cabinet art blinks, so without it there's
+                  // nothing to switch.
+                  if (widget.onToggleArrowBlink != null && _ddr != null)
                     Expanded(
                       child: TurnTile(
-                        label: "DDR PALETTE",
-                        icon: widget.arcadeQuantOn
+                        label: "BLINKING",
+                        icon: widget.arrowBlinkOn
+                            ? Icons.flare
+                            : Icons.flare_outlined,
+                        selected: widget.arrowBlinkOn,
+                        onTap: widget.onToggleArrowBlink!,
+                      ),
+                    ),
+                  if (widget.onToggleQuantColors != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "QUANT COLORS",
+                        icon: widget.quantColorsOn
                             ? Icons.music_note
                             : Icons.music_note_outlined,
-                        selected: widget.arcadeQuantOn,
-                        onTap: widget.onToggleArcadeQuant!,
+                        selected: widget.quantColorsOn,
+                        onTap: widget.onToggleQuantColors!,
+                      ),
+                    ),
+                  if (widget.onToggleQuantFreezeHeads != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "QUANT FREEZES",
+                        icon: widget.quantFreezeHeadsOn
+                            ? Icons.palette
+                            : Icons.palette_outlined,
+                        selected: widget.quantFreezeHeadsOn,
+                        onTap: widget.onToggleQuantFreezeHeads!,
                       ),
                     ),
                 ],

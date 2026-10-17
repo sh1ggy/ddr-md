@@ -29,19 +29,11 @@ Two implementations exist:
 ## Arrow colouring
 
 Arrows are coloured by **note quantisation** (the fraction of a beat they land
-on), the standard DDR/ITG reading palette — see `QuantColors`. Only 4 sprite
-colours are extracted, so `SpriteNoteskin` maps the finer subdivisions onto
-the nearest sprite (`_nearestSpriteColor`):
-
-| Subdivision | Colour | Sprite used |
-|---|---|---|
-| 4th  | red | red |
-| 8th  | blue | blue |
-| 12th | purple | blue |
-| 16th | yellow | yellow |
-| 24th | pink | yellow |
-| 32nd | orange | green |
-| finer | green | green |
+on) — see `QuantColors`. QUANT COLORS gives the full reading palette (4ths red,
+8ths blue, 12ths purple, 16ths yellow, 24ths pink, 32nds orange, finer green);
+off, it's the cabinet's, where only 4ths, 8ths and 16ths keep a colour.
+`SpriteNoteskin` tints a grey tap arrow to the exact colour, so every quant
+shows.
 
 ## Note data
 
@@ -75,8 +67,34 @@ assets/noteskin/
   hold-right-body.png  hold-right-tail.png   # direction. The tail is modulated
                                              # to the freeze green (roll orange)
                                              # so its cap matches the body.
+  hold-head.png        # 96x96 left-facing freeze head on note.png's grid
+                       # (same 3px margin), rotated per lane like a tap; optional,
+                       # older bundles draw the tinted tap arrow instead
   arrow-shock-left.png   arrow-shock-down.png    # 60x60 shock arrows,
   arrow-shock-up.png     arrow-shock-right.png   # pre-oriented per direction
+  bomb.png             # 98x98 hit bursts with a 1px border: white for a
+  bomb-freeze.png      # step, yellow for a completed freeze; optional,
+                       # older bundles draw the blown-out arrow flash
 ```
 
 Mines and receptors are not covered by this set; the vector skin draws those.
+
+### Cabinet arrow art (optional)
+
+With these two present, freezes use the cabinet's head, body and cropped tail.
+BLINKING (on by default) also draws receptors and taps through their moving
+cabinet palettes; off, they're the static sprites above. Under QUANT COLORS,
+12ths, 24ths and 32nds get palettes of their own in the cabinet's shape
+([ddr_atlas.dart](../lib/components/song/notes/ddr_atlas.dart)):
+
+```
+assets/noteskin/
+  arrow-atlas.png      # 768x192 DDR World arrow sheet, unmodified: tap and
+                       # freeze-head cells on top, the four freeze tails below,
+                       # the four 96x192 freeze bodies on the right
+  freeze-palette.png   # 16x16 freeze palette, row = fade step, column = band
+```
+
+The sheet is index-coloured: each texel's red value names a band, and the
+band's colour comes from a palette, so it must be copied as-is (no resizing or
+recolouring). Without either file the sprite skin draws as before.

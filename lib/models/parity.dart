@@ -492,7 +492,8 @@ class _ParityEngine {
       }
 
       // A hold/roll is "active" across every row whose time falls within its
-      // span; its tail row is where it ends.
+      // span. Its tail row frees the foot: a freeze stays OK for a moment after
+      // release, so a note landing on the tail is a step, not a bracket.
       for (final n in notes) {
         if (!n.isHold) continue;
         if (n.col < 0 || n.col >= layout.columnCount) continue;
@@ -503,10 +504,7 @@ class _ParityEngine {
         if (t > start + _secondEps && t < end - _secondEps) {
           holds[n.col] = true;
         }
-        if ((t - end).abs() < _secondEps) {
-          holdTails.add(n.col);
-          holds[n.col] = true;
-        }
+        if ((t - end).abs() < _secondEps) holdTails.add(n.col);
       }
 
       // Mines landing on this row's time.
@@ -537,8 +535,7 @@ class _ParityEngine {
   /// check that stops a hold changing feet mid-sustain.
   bool _holdsKeepTheirFoot(_State initial, _Row row, List<int> action) {
     for (int col = 0; col < layout.columnCount; col++) {
-      // Only sustained columns; the head row is a normal step, and a tail row
-      // still needs the holding foot in place to release it.
+      // Only sustained columns; the head and tail rows leave the foot free.
       if (!row.holds[col]) continue;
       final was = initial.combinedColumns[col];
       if (was == _Foot.none) continue;
@@ -907,7 +904,9 @@ class _ParityEngine {
     // Allowed to double step if a hold lets the other foot stay planted.
     for (int i = 0; i < layout.columnCount; i++) {
       final lastHold = lastRow != null && lastRow.holds[i];
-      if ((lastHold && !(lastRow.holdTails.contains(i))) || row.holds[i]) {
+      if ((lastHold && !(lastRow.holdTails.contains(i))) ||
+          row.holds[i] ||
+          row.holdTails.contains(i)) {
         return 0;
       }
     }
