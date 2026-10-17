@@ -566,8 +566,16 @@ class ChartPainter extends CustomPainter {
                 arrowSize,
                 dirs[col]);
           } else if (atlas != null && n.type != StepType.roll) {
-            _drawDdr(canvas, atlas.tap(_ddrPalette(n.beat), pos), x, y,
-                arrowSize, dirs[col]);
+            // A quantised freeze head keeps its fill: the blink's clear bands
+            // would show the body through it.
+            _drawDdr(
+                canvas,
+                atlas.tap(_ddrPalette(n.beat), pos,
+                    filled: n.type == StepType.hold),
+                x,
+                y,
+                arrowSize,
+                dirs[col]);
           } else if (freezeHead) {
             skin.paintHoldHead(canvas, x, y, arrowSize, dirs[col], n.beat);
           } else {

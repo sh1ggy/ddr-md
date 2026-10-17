@@ -53,7 +53,8 @@ const _bands = {
 /// negative before the first beat). Band 1 is the outline; bands 2–4 fill in
 /// one by one through each beat's 16ths; bands 5–13 pulse on a two-beat cycle,
 /// each a ninth of a beat behind the last, so the pulse ripples across them.
-int ddrColour(DdrPalette p, int band, int pos) {
+/// [filled] keeps bands 2–4 in all beat long.
+int ddrColour(DdrPalette p, int band, int pos, {bool filled = false}) {
   if (band == 0) return 0;
   if (p == DdrPalette.receptor) {
     if (band == 1) return pos < 0 ? 0xff202020 : 0xffe0e0e0;
@@ -70,7 +71,7 @@ int ddrColour(DdrPalette p, int band, int pos) {
   if (band == 1) return 0xff080808;
   final hue = _extraHues[p];
   if (band < 5) {
-    if (((pos >> 8) - 1) & 3 <= band - 2) return 0x00080808;
+    if (!filled && ((pos >> 8) - 1) & 3 <= band - 2) return 0x00080808;
     if (hue != null) return _towardsWhite(hue, 0x80);
     return switch (p) {
       DdrPalette.quarter => 0xfff88080,
@@ -222,9 +223,10 @@ class DdrAtlas {
 
   /// The tap cell coloured through [p] at chart position [pos]. Composed once
   /// per distinct set of band colours.
-  ui.Image tap(DdrPalette p, int pos) {
+  ui.Image tap(DdrPalette p, int pos, {bool filled = false}) {
     final colours = [
-      for (final band in _tapBands.keys) ddrColour(p, band, pos),
+      for (final band in _tapBands.keys)
+        ddrColour(p, band, pos, filled: filled),
     ];
     final key = Object.hashAll(colours);
     final hit = _tapCache.remove(key);
