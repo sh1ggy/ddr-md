@@ -17,10 +17,6 @@ import 'package:flutter/material.dart';
 const double kLevelHeight = 19;
 const double kSongListLevelHeight = 14;
 
-// Every level sits in a box this wide for its height (the widest numeral's
-// shape), so one-digit and two-digit levels line up in rows.
-const double _kLevelAspect = 42 / 36;
-
 class DifficultyLabel extends StatelessWidget {
   const DifficultyLabel({
     super.key,
@@ -80,20 +76,14 @@ class LevelNumber extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Opacity(
         opacity: dimmed ? 0.35 : 1,
-        child: SizedBox(
-          width: height * _kLevelAspect,
+        child: Image.asset(
+          'assets/difficulty/level_${difficulty.toLowerCase()}_$level.png',
           height: height,
-          child: Image.asset(
-            'assets/difficulty/level_${difficulty.toLowerCase()}_$level.png',
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Center(
-              child: _CabinetText('$level',
-                  difficulty: difficulty,
-                  height: height,
-                  fill: Colors.black,
-                  outline: Colors.white),
-            ),
-          ),
+          errorBuilder: (_, __, ___) => _CabinetText('$level',
+              difficulty: difficulty,
+              height: height,
+              fill: Colors.black,
+              outline: Colors.white),
         ),
       );
 }
@@ -120,7 +110,9 @@ class LevelRow extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       for (final (i, (name, level)) in charted.indexed)
         Padding(
-          padding: EdgeInsets.only(right: height * 0.2),
+          // Each numeral at its own width with one gap between, so the
+          // spacing reads even whatever the digits.
+          padding: EdgeInsets.only(right: height * 0.4),
           child: LevelNumber(
               level: level,
               difficulty: name,
