@@ -73,6 +73,7 @@ class SongPatternsCard extends StatelessWidget {
           expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (present.isNotEmpty) ...[
+              const _Heading('Footwork', top: 0),
               for (final pattern in present)
                 _PatternRow(
                   pattern: pattern,
@@ -82,7 +83,7 @@ class SongPatternsCard extends StatelessWidget {
                   standout: standouts.contains(pattern),
                 ),
             ],
-            const SizedBox(height: 12),
+            const _Heading('Rhythm'),
             _RhythmBar(quantization: p.rhythm),
           ],
         ),
@@ -149,9 +150,8 @@ class _PatternRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = standout ? theme.colorScheme.primary : theme.hintColor;
-    // Fixed height so a row's detail line never changes the bars' spacing.
-    return SizedBox(
-      height: 40,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Icon(kPatternIcons[pattern], size: 18, color: color),
@@ -159,7 +159,6 @@ class _PatternRow extends StatelessWidget {
           SizedBox(
             width: 104,
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(kPatternLabels[pattern]!),
@@ -194,6 +193,26 @@ class _PatternRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _Heading extends StatelessWidget {
+  const _Heading(this.text, {this.top = 16});
+
+  final String text;
+  final double top;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.only(top: top, bottom: 6),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      );
 }
 
 /// Share of arrows on each beat grid, as one stacked bar plus a legend, in the
