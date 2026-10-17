@@ -269,6 +269,26 @@ class SessionState extends ChangeNotifier {
     changed();
   }
 
+  /// Deletes [credit] and its plays. The current credit falls back to the
+  /// one before it; a session left with none is discarded.
+  Future<void> deleteCredit(Credit credit) async {
+    await DatabaseProvider.deleteCredit(credit.id);
+    if (credit.id == _credit?.id) {
+      _credit = (await DatabaseProvider.getCredits(_session!.id)).firstOrNull;
+      if (_credit == null) return discard();
+    }
+    changed();
+  }
+
+  /// Ends the session and deletes it with everything logged in it.
+  Future<void> discard() async {
+    await DatabaseProvider.deleteSession(_session!.id);
+    _session = null;
+    _credit = null;
+    Settings.setString(Settings.sessionIdKey, '');
+    changed();
+  }
+
   Future<void> end() async {
     await DatabaseProvider.endSession(_session!.id);
     _session = null;

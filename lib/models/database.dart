@@ -205,6 +205,43 @@ class DatabaseProvider {
     return [for (final r in rows) Credit.fromMap(r)];
   }
 
+  // Deletes cascade to the plays logged under them.
+  static Future<void> deleteCredit(String id) async {
+    final db = await _instance;
+    await db.delete("timing_plays", where: "creditId = ?", whereArgs: [id]);
+    await db.delete("credits", where: "id = ?", whereArgs: [id]);
+  }
+
+  static Future<void> deleteSession(String id) async {
+    final db = await _instance;
+    await db.delete("timing_plays",
+        where: "creditId IN (SELECT id FROM credits WHERE sessionId = ?)",
+        whereArgs: [id]);
+    await db.delete("credits", where: "sessionId = ?", whereArgs: [id]);
+    await db.delete("sessions", where: "id = ?", whereArgs: [id]);
+  }
+
+  static Future<void> deleteCabinet(int id) async {
+    final db = await _instance;
+    for (final table in ["timing_plays", "sync_overrides", "credits"]) {
+      await db.delete(table, where: "cabinetId = ?", whereArgs: [id]);
+    }
+    await db.delete("cabinets", where: "id = ?", whereArgs: [id]);
+  }
+
+  static Future<void> deleteVenue(int id) async {
+    final db = await _instance;
+    for (final c
+        in await db.query("cabinets", where: "venueId = ?", whereArgs: [id])) {
+      await deleteCabinet(c['id'] as int);
+    }
+    for (final s
+        in await db.query("sessions", where: "venueId = ?", whereArgs: [id])) {
+      await deleteSession(s['id'] as String);
+    }
+    await db.delete("venues", where: "id = ?", whereArgs: [id]);
+  }
+
   // Every play logged in a session's credits, newest first.
   static Future<List<TimingPlay>> getSessionPlays(String sessionId) async {
     final db = await _instance;

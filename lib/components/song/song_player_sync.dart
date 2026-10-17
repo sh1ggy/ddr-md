@@ -9,6 +9,7 @@ import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +38,7 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
   final _average = TextEditingController();
   final _variation = TextEditingController();
   bool _fast = true;
+  bool _showAllHistory = false;
   // The sync the play was on, in whole ms like the cabinet setting. Follows
   // the computed sync until stepped.
   int? _playedOn;
@@ -135,6 +137,83 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
         _override == null ? playedOn.toDouble() : null);
     _playedOn = null;
     session.changed();
+  }
+
+  // This chart's plays on the cab + side, newest first: what was logged, the
+  // sync it was played on, and the sync that play alone points to.
+  List<Widget> _history(SessionState session, bool isDark) {
+    final chartPlays = [
+      for (final p in _plays)
+        if (p.song == widget.songInfo.name &&
+            p.mode == widget.mode &&
+            p.difficulty == widget.difficulty)
+          p
+    ];
+    if (chartPlays.isEmpty) return [];
+    final shown = _showAllHistory ? chartPlays : chartPlays.take(5);
+    String whole(double ms) => '${ms >= 0 ? '+' : ''}${ms.round()}';
+    const small = TextStyle(fontSize: 12, color: Colors.grey);
+    return [
+      const Divider(),
+      Row(
+        children: [
+          Text('History', style: Theme.of(context).textTheme.titleSmall),
+          const Spacer(),
+          if (chartPlays.length > 5)
+            TextButton(
+              onPressed: () =>
+                  setState(() => _showAllHistory = !_showAllHistory),
+              child: Text(_showAllHistory
+                  ? 'Show less'
+                  : 'Show all ${chartPlays.length}'),
+            ),
+        ],
+      ),
+      for (final p in shown)
+        Dismissible(
+          key: ValueKey(p.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 16),
+            color: Colors.red,
+            child: const Icon(Icons.delete, color: Colors.white),
+          ),
+          onDismissed: (_) async {
+            await DatabaseProvider.deleteTimingPlay(p.id);
+            session.changed();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                    child: Text(formatDate(DateTime.parse(p.playedAt)),
+                        style: small)),
+                Text(
+                  '${p.averageMs.abs().toStringAsFixed(1)} '
+                  '${p.averageMs < 0 ? 'FAST' : 'SLOW'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: p.averageMs < 0
+                        ? kFastColor(isDark)
+                        : kSlowColor(isDark),
+                  ),
+                ),
+                Text(' ± ${p.variationMs.toStringAsFixed(1)}', style: small),
+                const SizedBox(width: 12),
+                Text(
+                  'on ${whole(p.syncUsedMs)} → '
+                  '${whole(p.syncUsedMs - p.averageMs)} ms',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
   }
 
   @override
@@ -303,6 +382,7 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
                 ),
               ],
             ),
+            ..._history(session, isDark),
           ],
         ),
       ),

@@ -32,6 +32,25 @@ Future<void> showNewCreditSheet(BuildContext context) => showModalBottomSheet(
       builder: (_) => const _CreditSheet(newSession: false),
     );
 
+Future<bool> confirmDelete(
+        BuildContext context, String title, String body) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    ) ??
+    false;
+
 Future<String?> _askName(BuildContext context, String title, String hint) {
   final controller = TextEditingController();
   return showDialog<String>(
@@ -116,6 +135,34 @@ class _CreditSheetState extends State<_CreditSheet> {
     });
   }
 
+  Future<void> _deleteVenue(Venue venue) async {
+    if (!await confirmDelete(context, 'Delete ${venue.name}?',
+        'Its cabs, sessions and every play logged there go too.')) {
+      return;
+    }
+    await DatabaseProvider.deleteVenue(venue.id);
+    setState(() {
+      _venues = [..._venues.where((v) => v.id != venue.id)];
+      if (_venue?.id == venue.id) {
+        _venue = null;
+        _cabinets = [];
+        _cabinet = null;
+      }
+    });
+  }
+
+  Future<void> _deleteCabinet(Cabinet cabinet) async {
+    if (!await confirmDelete(context, 'Delete ${cabinet.label}?',
+        'Its credits, pins and every play logged on it go too.')) {
+      return;
+    }
+    await DatabaseProvider.deleteCabinet(cabinet.id);
+    setState(() {
+      _cabinets = [..._cabinets.where((c) => c.id != cabinet.id)];
+      if (_cabinet?.id == cabinet.id) _cabinet = _cabinets.firstOrNull;
+    });
+  }
+
   Future<void> _go() async {
     final session = context.read<SessionState>();
     if (widget.newSession) {
@@ -140,6 +187,8 @@ class _CreditSheetState extends State<_CreditSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const Text('Long-press a venue or cab to delete it',
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 12),
           if (widget.newSession)
             Wrap(
@@ -147,10 +196,13 @@ class _CreditSheetState extends State<_CreditSheet> {
               runSpacing: 4,
               children: [
                 for (final v in _venues)
-                  ChoiceChip(
-                    label: Text(v.name),
-                    selected: _venue?.id == v.id,
-                    onSelected: (_) => _pickVenue(v),
+                  GestureDetector(
+                    onLongPress: () => _deleteVenue(v),
+                    child: ChoiceChip(
+                      label: Text(v.name),
+                      selected: _venue?.id == v.id,
+                      onSelected: (_) => _pickVenue(v),
+                    ),
                   ),
                 ActionChip(
                   avatar: const Icon(Icons.add, size: 18),
@@ -168,10 +220,16 @@ class _CreditSheetState extends State<_CreditSheet> {
               children: [
                 if (_cabinets.length > 1)
                   for (final c in _cabinets)
-                    ChoiceChip(
-                      label: Text(c.name.isEmpty ? 'Main cab' : c.name),
-                      selected: _cabinet?.id == c.id,
-                      onSelected: (_) => setState(() => _cabinet = c),
+                    GestureDetector(
+                      // The running credit's cab stays: the session needs it.
+                      onLongPress: c.id == session.cabinet?.id
+                          ? null
+                          : () => _deleteCabinet(c),
+                      child: ChoiceChip(
+                        label: Text(c.name.isEmpty ? 'Main cab' : c.name),
+                        selected: _cabinet?.id == c.id,
+                        onSelected: (_) => setState(() => _cabinet = c),
+                      ),
                     ),
                 TextButton.icon(
                   icon: const Icon(Icons.add, size: 16),
@@ -200,6 +258,13 @@ class _CreditSheetState extends State<_CreditSheet> {
   }
 }
 
+final _deleteBackground = Container(
+  alignment: Alignment.centerRight,
+  padding: const EdgeInsets.only(right: 16),
+  color: Colors.red,
+  child: const Icon(Icons.delete, color: Colors.white),
+);
+
 class SessionPage extends StatelessWidget {
   const SessionPage({super.key});
 
@@ -213,6 +278,17 @@ class SessionPage extends StatelessWidget {
           : _NoSession(revision: session.revision),
     );
   }
+}
+
+Future<bool> _confirmSessionDelete(BuildContext context) => confirmDelete(
+    context,
+    'Delete this session?',
+    'Its credits and every play logged in them go too.');
+
+Future<void> _deleteSession(BuildContext context, PlaySession s) async {
+  final session = context.read<SessionState>();
+  await DatabaseProvider.deleteSession(s.id);
+  session.changed();
 }
 
 class _NoSession extends StatelessWidget {
@@ -249,10 +325,27 @@ class _NoSession extends StatelessWidget {
               Text('Past sessions',
                   style: Theme.of(context).textTheme.titleSmall),
               for (final s in past)
-                ListTile(
-                  dense: true,
-                  title: Text(s.venue.name),
-                  subtitle: Text(formatDate(s.startedAt)),
+                Dismissible(
+                  key: ValueKey(s.id),
+                  direction: DismissDirection.endToStart,
+                  background: _deleteBackground,
+                  confirmDismiss: (_) => _confirmSessionDelete(context),
+                  onDismissed: (_) => _deleteSession(context, s),
+                  child: ListTile(
+                    dense: true,
+                    title: Text(s.venue.name),
+                    subtitle: Text(formatDate(s.startedAt)),
+                    trailing: IconButton(
+                      tooltip: 'Delete session',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () async {
+                        if (await _confirmSessionDelete(context) &&
+                            context.mounted) {
+                          await _deleteSession(context, s);
+                        }
+                      },
+                    ),
+                  ),
                 ),
             ],
           ],
@@ -289,9 +382,27 @@ class _ActiveSession extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text('since ${formatDate(session.session!.startedAt)}'
                     ' · ${plays.length} ${plays.length == 1 ? 'play' : 'plays'}'),
-                trailing: TextButton(
-                  onPressed: session.end,
-                  child: const Text('End'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Discard session',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () async {
+                        if (await confirmDelete(
+                            context,
+                            'Discard this session?',
+                            'Its credits and every play logged in them go '
+                                'too.')) {
+                          await session.discard();
+                        }
+                      },
+                    ),
+                    TextButton(
+                      onPressed: session.end,
+                      child: const Text('End'),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -305,11 +416,30 @@ class _ActiveSession extends StatelessWidget {
             ),
             for (final credit in credits) ...[
               Padding(
-                padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
-                child: Text(
-                  'Credit ${credit.number} · ${sideLabel(credit.side)}'
-                  '${credit.cabinet.name.isEmpty ? '' : ' · ${credit.cabinet.name}'}',
-                  style: Theme.of(context).textTheme.titleSmall,
+                padding: const EdgeInsets.fromLTRB(4, 4, 0, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Credit ${credit.number} · ${sideLabel(credit.side)}'
+                        '${credit.cabinet.name.isEmpty ? '' : ' · ${credit.cabinet.name}'}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Delete credit',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      onPressed: () async {
+                        if (await confirmDelete(
+                            context,
+                            'Delete credit ${credit.number}?',
+                            'Every play logged in it goes too.')) {
+                          await session.deleteCredit(credit);
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
               if (!plays.any((p) => p.creditId == credit.id))
@@ -322,12 +452,7 @@ class _ActiveSession extends StatelessWidget {
                 Dismissible(
                   key: ValueKey(p.id),
                   direction: DismissDirection.endToStart,
-                  background: Container(
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16),
-                    color: Colors.red,
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
+                  background: _deleteBackground,
                   onDismissed: (_) async {
                     await DatabaseProvider.deleteTimingPlay(p.id);
                     session.changed();
