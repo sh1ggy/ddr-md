@@ -13,6 +13,7 @@ import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/components/song/song_player_sync.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -302,16 +303,20 @@ class _SongPageState extends State<SongPage> {
                   children: [
                     const CardHeading('Chart Preview',
                         icon: Icons.play_circle_outline),
-                    Text(
-                      difficultyLevel != null
-                          ? "$diffLabel $difficultyLevel"
-                          : diffLabel,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: diffColor,
+                    if (kInGameDifficultyColors.containsKey(diffLabel))
+                      DifficultyLabel(
+                          difficulty: diffLabel, level: difficultyLevel)
+                    else
+                      Text(
+                        difficultyLevel != null
+                            ? "$diffLabel $difficultyLevel"
+                            : diffLabel,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          color: diffColor,
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 // Not the neighbours' expand_more: this row pushes a route

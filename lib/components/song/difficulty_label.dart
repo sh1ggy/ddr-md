@@ -1,5 +1,5 @@
 /// Name: DifficultyLabel
-/// Parent: ScoreCard, ScoreRecordRow
+/// Parent: ScoreCard, ScoreRecordRow, SongPage, SongDifficultyPicker
 /// Description: A chart's difficulty name and level drawn with the cabinet's
 /// own lettering, from the optional git-ignored assets/difficulty/ art
 /// (name_<difficulty>.png, level_<n>.png). Each piece falls back to plain
@@ -45,13 +45,33 @@ class DifficultyLabel extends StatelessWidget {
         ),
         if (level != null) ...[
           SizedBox(width: height * 0.3),
-          Image.asset(
-            'assets/difficulty/level_$level.png',
-            height: height * 1.3,
-            errorBuilder: (_, __, ___) => text('$level'),
-          ),
+          LevelNumber(level: level!, height: height * 1.3),
         ],
       ],
     );
   }
+}
+
+/// A chart level in the cabinet's numerals, white unless [color] tints it.
+class LevelNumber extends StatelessWidget {
+  const LevelNumber(
+      {super.key, required this.level, this.height = 18, this.color});
+
+  final int level;
+  final double height;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+        'assets/difficulty/level_$level.png',
+        height: height,
+        color: color,
+        colorBlendMode: color == null ? null : BlendMode.srcIn,
+        errorBuilder: (_, __, ___) => Text('$level',
+            style: TextStyle(
+                fontSize: height * 0.75,
+                height: 1,
+                fontWeight: FontWeight.bold,
+                color: color)),
+      );
 }
