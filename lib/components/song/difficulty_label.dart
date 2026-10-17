@@ -8,7 +8,6 @@
 library;
 
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:ddr_md/components/song_json.dart' show Difficulty;
 import 'package:ddr_md/helpers.dart'
@@ -107,47 +106,30 @@ class LevelRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final charted = [
-      for (final e in levels.toJson().entries)
-        if (e.value != null) (kInGameDifficultyNames[e.key]!, e.value as int)
-    ];
-    final gap = height * 0.55;
-    Widget number(int i) => LevelNumber(
-        level: charted[i].$2,
-        difficulty: charted[i].$1,
-        height: height,
-        dimmed: highlightIndex != null && i != highlightIndex);
-    final profiles = [
-      for (final (name, level) in charted)
-        LevelProfiles.of('level_${name.toLowerCase()}_$level')
-    ];
-    if (charted.isEmpty || profiles.contains(null)) {
-      return Row(mainAxisSize: MainAxisSize.min, children: [
-        for (var i = 0; i < charted.length; i++)
-          Padding(padding: EdgeInsets.only(right: gap), child: number(i)),
-      ]);
-    }
-    // Kerned on the numerals' outlines: each one sits [gap] from the closest
-    // point of the one before, so the italic overhangs don't make one-digit
-    // and two-digit levels look unevenly spaced.
-    final k = height / profiles.first!.h;
-    final xs = <double>[0];
-    for (var i = 1; i < profiles.length; i++) {
-      final a = profiles[i - 1]!, b = profiles[i]!;
-      var tightest = a.w;
-      for (var y = 0; y < math.min(a.h, b.h); y++) {
-        tightest = math.min(tightest, a.r[y] + b.l[y]);
+    final entries = levels.toJson();
+    // One fixed slot per difficulty, Beginner to Challenge, so a level sits
+    // in the same column on every row; charts a song lacks leave their slot
+    // empty.
+    final slot = height * 1.7;
+    var charted = 0;
+    final cells = <Widget>[];
+    for (final key in kInGameDifficultyNames.keys) {
+      final level = entries[key] as int?;
+      Widget child = const SizedBox.shrink();
+      if (level != null) {
+        final i = charted++;
+        child = LevelNumber(
+            level: level,
+            difficulty: kInGameDifficultyNames[key]!,
+            height: height,
+            dimmed: highlightIndex != null && i != highlightIndex);
       }
-      xs.add(xs.last + (a.w - tightest) * k + gap);
+      cells.add(SizedBox(
+          width: slot,
+          height: height,
+          child: Align(alignment: Alignment.centerLeft, child: child)));
     }
-    return SizedBox(
-      width: xs.last + profiles.last!.w * k,
-      height: height,
-      child: Stack(children: [
-        for (var i = 0; i < xs.length; i++)
-          Positioned(left: xs[i], top: 0, bottom: 0, child: number(i)),
-      ]),
-    );
+    return Row(mainAxisSize: MainAxisSize.min, children: cells);
   }
 }
 

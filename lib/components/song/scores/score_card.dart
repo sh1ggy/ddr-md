@@ -321,26 +321,51 @@ class ScoreBadges extends StatelessWidget {
     final grade = gradeForScore(score);
     final gradeArt = gradeIcon(grade);
     final unit = dense ? 0.8 : 1.0;
+    // Fixed-width slots so grade, score, lamp and flare line up down a list.
+    final gap = SizedBox(width: 8 * unit);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (gradeArt != null)
-          Image.asset(gradeArt, height: 22 * unit)
-        else
-          Text(grade.label,
-              style:
-                  TextStyle(fontSize: 16 * unit, fontWeight: FontWeight.bold)),
-        SizedBox(width: 8 * unit),
-        Text(formatScore(score),
-            style: TextStyle(fontSize: 20 * unit, fontWeight: FontWeight.w600)),
-        if (lampArt != null) ...[
-          SizedBox(width: 8 * unit),
-          Image.asset(lampArt!, height: 16 * unit),
-        ],
-        if (flare.isNotEmpty) ...[
-          SizedBox(width: 8 * unit),
-          _FlareBadge(flare, height: 18 * unit),
-        ],
+        SizedBox(
+          width: 40 * unit,
+          child: gradeArt != null
+              ? Image.asset(gradeArt,
+                  height: 22 * unit,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft)
+              : Text(grade.label,
+                  style: TextStyle(
+                      fontSize: 16 * unit, fontWeight: FontWeight.bold)),
+        ),
+        gap,
+        SizedBox(
+          width: 108 * unit,
+          child: Text(formatScore(score),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                  fontSize: 20 * unit,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+        ),
+        gap,
+        SizedBox(
+          width: 36 * unit,
+          height: 16 * unit,
+          child: lampArt != null
+              ? Image.asset(lampArt!,
+                  fit: BoxFit.contain, alignment: Alignment.centerLeft)
+              : null,
+        ),
+        gap,
+        SizedBox(
+          width: 40 * unit,
+          height: 18 * unit,
+          child: flare.isNotEmpty
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: _FlareBadge(flare, height: 18 * unit))
+              : null,
+        ),
       ],
     );
   }
@@ -358,13 +383,24 @@ class ScoreRecordRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
+        // Name and level in their own columns, so levels line up whatever
+        // the name's length.
         SizedBox(
-          width: 112,
+          width: 86,
           child: Align(
             alignment: Alignment.centerLeft,
-            child: DifficultyLabel(difficulty: record.difficulty, level: level),
+            child: DifficultyLabel(difficulty: record.difficulty),
           ),
         ),
+        SizedBox(
+          width: 32,
+          child: level == null
+              ? null
+              : Center(
+                  child: LevelNumber(
+                      level: level!, difficulty: record.difficulty)),
+        ),
+        const SizedBox(width: 8),
         Expanded(
           child: FittedBox(
             fit: BoxFit.scaleDown,

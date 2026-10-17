@@ -301,8 +301,7 @@ class _SongPageState extends State<SongPage> {
                   runSpacing: 2,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const CardHeading('Chart Preview',
-                        icon: Icons.play_circle_outline),
+                    const CardHeading('Chart', icon: Icons.play_circle_outline),
                     if (kInGameDifficultyColors.containsKey(diffLabel))
                       DifficultyLabel(
                           difficulty: diffLabel, level: difficultyLevel)

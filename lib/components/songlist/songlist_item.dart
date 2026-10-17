@@ -45,9 +45,10 @@ class _SongListItemState extends State<SongListItem> {
     final sync = widget.songInfo.displaySyncFor(chart);
     if (sync == null) return null;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final adjustBy = -sync.biasMs;
+    // Rounded first, so a bias under half a ms reads +0, never +-0.
+    final adjustBy = (-sync.biasMs).round();
     return Text(
-      '${adjustBy >= 0 ? '+' : ''}${adjustBy.toStringAsFixed(1)} ms',
+      '${adjustBy >= 0 ? '+' : ''}$adjustBy ms',
       style: TextStyle(
         fontWeight: FontWeight.w700,
         color: sync.biasMs < 0
@@ -73,36 +74,44 @@ class _SongListItemState extends State<SongListItem> {
               const Icon(Icons.music_note, size: 40),
         ),
       ),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            widget.songInfo.title,
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                overflow: widget.isSearch
-                    ? TextOverflow.visible
-                    : TextOverflow.ellipsis),
-          ),
-          if (widget.songInfo.titletranslit.isNotEmpty &&
-              widget.songInfo.titletranslit != widget.songInfo.title)
+      // Fixed height so every row is the same size; a song without a
+      // transliteration centres its title and levels instead of leaving a gap.
+      title: SizedBox(
+        height: 54,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              widget.songInfo.titletranslit,
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                  overflow: widget.isSearch
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis),
+              widget.songInfo.title,
+              maxLines: 1,
+              style: const TextStyle(
+                  fontSize: 16,
+                  height: 1.25,
+                  fontWeight: FontWeight.w500,
+                  overflow: TextOverflow.ellipsis),
             ),
-        ],
+            if (widget.songInfo.titletranslit.isNotEmpty &&
+                widget.songInfo.titletranslit != widget.songInfo.title)
+              Text(
+                widget.songInfo.titletranslit,
+                maxLines: 1,
+                style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.25,
+                    color: Colors.grey,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            // Same fixed gap under every line so the rows read evenly.
+            const SizedBox(height: 4),
+            SongDifficulty(
+                difficulty: songState.modes == Modes.singles
+                    ? widget.songInfo.singles
+                    : widget.songInfo.doubles,
+                highlightIndex: widget.difficultyIndex),
+          ],
+        ),
       ),
-      subtitle: SongDifficulty(
-          difficulty: songState.modes == Modes.singles
-              ? widget.songInfo.singles
-              : widget.songInfo.doubles,
-          highlightIndex: widget.difficultyIndex),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
