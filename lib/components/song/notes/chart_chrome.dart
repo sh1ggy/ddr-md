@@ -743,7 +743,7 @@ class TurnTile extends StatelessWidget {
   final VoidCallback onTap;
 
   /// Fixed so every tile in the shade lines up regardless of its label: at a
-  /// third of the width a two-word label ("DDR PALETTE") would wrap where
+  /// third of the width a two-word label ("QUANT COLORS") would wrap where
   /// "LEFT" doesn't, and content-sized tiles would leave the rows ragged. The
   /// label scales down to fit one line rather than the tile growing to fit it.
   static const double height = 56;

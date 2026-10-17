@@ -1,6 +1,6 @@
 /// Name: DdrAtlas
 /// Parent: ChartPainter
-/// Description: DDR PALETTE's arrows, receptors and freezes drawn the way the
+/// Description: The cabinet's arrows, receptors and freezes drawn the way the
 /// cabinet draws them. The arrow art is index-coloured: a texel's red value
 /// names a band, and the band's colour comes from the arrow's palette. Tap and
 /// receptor palettes move with the chart position (a quarter-beat fill and a
@@ -14,8 +14,33 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart';
 
-/// The palettes the cabinet draws taps and receptors through.
-enum DdrPalette { quarter, eighth, sixteenth, other, receptor }
+/// The palettes the cabinet draws taps and receptors through, plus 12ths, 24ths
+/// and 32nds for QUANT COLORS, which the cabinet doesn't colour.
+enum DdrPalette {
+  quarter,
+  eighth,
+  twelfth,
+  sixteenth,
+  twentyfourth,
+  thirtysecond,
+  other,
+  receptor,
+}
+
+// Full-strength RGB of the palettes the cabinet lacks, in the QuantColors hues.
+// They take the red, blue and green palettes' shape: a channel at full stays
+// there, an empty one rises with the pulse, the rest in proportion.
+const _extraHues = {
+  DdrPalette.twelfth: (0xb0, 0x00, 0xf8),
+  DdrPalette.twentyfourth: (0xf8, 0x00, 0x98),
+  DdrPalette.thirtysecond: (0xf8, 0x88, 0x00),
+};
+
+int _towardsWhite((int, int, int) hue, int lift) {
+  int ch(int t) => t + lift * (0xf8 - t) ~/ 0xf8;
+  final (r, g, b) = hue;
+  return 0xff000000 | ch(r) << 16 | ch(g) << 8 | ch(b);
+}
 
 /// The band a texel's red value names; 0 (drawn clear) for any other value.
 int ddrBand(int red) => _bands[red] ?? 0;
@@ -43,8 +68,10 @@ int ddrColour(DdrPalette p, int band, int pos) {
     return 0xff000000 | g << 16 | g << 8 | g;
   }
   if (band == 1) return 0xff080808;
+  final hue = _extraHues[p];
   if (band < 5) {
     if (((pos >> 8) - 1) & 3 <= band - 2) return 0x00080808;
+    if (hue != null) return _towardsWhite(hue, 0x80);
     return switch (p) {
       DdrPalette.quarter => 0xfff88080,
       DdrPalette.eighth => 0xff8080f8,
@@ -59,6 +86,7 @@ int ddrColour(DdrPalette p, int band, int pos) {
     return (b8 * 0x10100 - 0xffffd8) & 0xffffffff;
   }
   final b8 = (24 - ((s * 24) >> 12).abs()) * 8 & 0xff;
+  if (hue != null) return _towardsWhite(hue, b8);
   final argb = switch (p) {
     DdrPalette.quarter => b8 * 0x101 - 0x80000,
     DdrPalette.eighth => b8 * 0x10100 - 0xffff08,

@@ -54,6 +54,8 @@ class ChartPainter extends CustomPainter {
     this.topInset = 0,
     this.visualOffset = 0,
     this.arcadeQuant = false,
+    this.arrowBlink = false,
+    this.quantFreezeHeads = false,
     this.ddr,
     this.focus = const {},
     this.highlights = const [],
@@ -148,14 +150,21 @@ class ChartPainter extends CustomPainter {
   final List<TimeSignature> timeSignatures;
 
   /// Mirrors [QuantColors.arcadeMode]. The skins read that global for the arrow
-  /// colours; the painter uses this to pick the freeze head (DDR PALETTE draws
-  /// the freeze's own head, otherwise it is a quantised tap) and so
-  /// [shouldRepaint] sees a palette change. Without it the field only recolours
-  /// once something else (the playhead ticking) forces a repaint.
+  /// colours; the painter takes it so [shouldRepaint] sees a palette change.
+  /// Without it the field only recolours once something else (the playhead
+  /// ticking) forces a repaint.
   final bool arcadeQuant;
 
-  /// The cabinet's own arrow drawing, used for receptors, taps and freezes
-  /// under DDR PALETTE when its assets are present.
+  /// Draw receptors and taps with the cabinet's blinking arrow art when [ddr]
+  /// is present; off, they're the skin's static sprites.
+  final bool arrowBlink;
+
+  /// Draw freeze heads as taps coloured by their beat, like rolls, instead of
+  /// the freeze head art.
+  final bool quantFreezeHeads;
+
+  /// The cabinet's arrow drawing: freezes whenever these assets are present,
+  /// plus receptors and taps under [arrowBlink].
   final DdrAtlas? ddr;
 
   // Pinch-to-zoom, applied to the horizontal geometry (arrow size and lane
@@ -267,9 +276,11 @@ class ChartPainter extends CustomPainter {
     // (e.g. mode/width change mid-frame) falls back to the note's own column.
     int turned(int c) => (c >= 0 && c < colMap.length) ? colMap[c] : c;
 
-    // DDR PALETTE with the cabinet's art: its palettes move with the chart
-    // position, 1024 to a beat.
-    final atlas = arcadeQuant ? ddr : null;
+    // The cabinet's blinking art: its palettes move with the chart position,
+    // 1024 to a beat.
+    final atlas = arrowBlink ? ddr : null;
+    // Freeze art and its palette are independent of the tap-arrow palette.
+    final freezeAtlas = ddr;
     final pos = (currentBeat * 1024).floor();
 
     _paintLanes(canvas, size, fieldLeft, laneStride, _receptorTop);
@@ -381,26 +392,32 @@ class ChartPainter extends CustomPainter {
           n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
       final col = turned(n.col);
       final holdX = laneCenterX(col);
-      // Playback collapses stops, but a freeze keeps the length the stops
-      // inside it give it paused, draining through them as they play.
+      // Freezes use the same beat-space as taps during playback: a stop adds
+      // time, not length, and the tail stays still until scrolling resumes.
+      // The paused mapping includes stop duration for studying and scrubbing.
       var tailY = yFor(endS);
-      if (beatLocked && !expandStops) {
-        final from = math.max(n.second, second);
-        tailY += (timing.stopSecondsAt(endS) - timing.stopSecondsAt(from)) *
-            pxPerSecond;
+      if (playing && beatLocked && n.endBeat != null) {
+        // Preserve the chart's stored sustain length rather than reconstructing
+        // it from rounded seconds. Only moving beats consume that length.
+        final elapsedBeats =
+            timing.beatAt(math.max(second, n.second)) - timing.beatAt(n.second);
+        final remaining = second >= endS
+            ? 0.0
+            : math.max(0.0, n.endBeat! - n.beat - elapsedBeats);
+        tailY = headY + remaining * pxPerBeat;
       }
       _fadeLayer(
           canvas,
           holdAlpha,
-          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize,
-              holdX + arrowSize, tailY + arrowSize), () {
+          Rect.fromLTRB(holdX - arrowSize, headY - arrowSize, holdX + arrowSize,
+              tailY + arrowSize), () {
         // Nothing of a freeze shows above its head's centre: a freeze shorter
         // than the tail cap would otherwise poke the cap out around the head.
         canvas.save();
         canvas.clipRect(Rect.fromLTRB(
             holdX - arrowSize, headY, holdX + arrowSize, tailY + arrowSize));
-        if (atlas != null && n.type != StepType.roll) {
-          _paintDdrFreeze(canvas, atlas, holdX, headY, tailY, arrowSize,
+        if (freezeAtlas != null && n.type != StepType.roll) {
+          _paintDdrFreeze(canvas, freezeAtlas, holdX, headY, tailY, arrowSize,
               dirs[col], ddrFreezeRow(second - n.second));
         } else {
           skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
@@ -540,17 +557,19 @@ class ChartPainter extends CustomPainter {
         if (n.type == StepType.mine) {
           skin.paintMine(canvas, x, y, arrowSize);
         } else {
-          if (atlas != null && n.type != StepType.roll) {
+          final freezeHead = n.type == StepType.hold && !quantFreezeHeads;
+          if (freezeHead && freezeAtlas != null) {
             _drawDdr(
                 canvas,
-                n.isHold
-                    ? atlas.freezeHead(ddrFreezeRow(second - n.second))
-                    : atlas.tap(_ddrPalette(n.beat), pos),
+                freezeAtlas.freezeHead(ddrFreezeRow(second - n.second)),
                 x,
                 y,
                 arrowSize,
                 dirs[col]);
-          } else if (n.isHold && arcadeQuant) {
+          } else if (atlas != null && n.type != StepType.roll) {
+            _drawDdr(canvas, atlas.tap(_ddrPalette(n.beat), pos), x, y,
+                arrowSize, dirs[col]);
+          } else if (freezeHead) {
             skin.paintHoldHead(canvas, x, y, arrowSize, dirs[col], n.beat);
           } else {
             skin.paintArrow(canvas, x, y, arrowSize, dirs[col], n.beat);
@@ -561,15 +580,20 @@ class ChartPainter extends CustomPainter {
       });
     }
 
+    // Farthest first, so a nearer arrow overlapping the next one sits on top
+    // of it, and held heads, on the line, over everything.
+    final first = _lowerBoundBySecond(notes, second);
+    var last = first;
+    while (last < notes.length && notes[last].second <= maxT) {
+      last++;
+    }
+    for (int i = last - 1; i >= first; i--) {
+      drawHead(notes[i], false);
+    }
     for (final n in holds) {
       if (n.second >= second) break; // at/after the playhead: scrolls normally
       if ((n.endSecond ?? n.second) < second) continue;
       drawHead(n, true);
-    }
-    for (int i = _lowerBoundBySecond(notes, second); i < notes.length; i++) {
-      final n = notes[i];
-      if (n.second > maxT) break;
-      drawHead(n, false);
     }
 
     // 3.5) Impact flashes for notes that just reached the line, one per lane
@@ -654,7 +678,10 @@ class ChartPainter extends CustomPainter {
     final c = QuantColors.forBeat(beat);
     if (c == QuantColors.quarter) return DdrPalette.quarter;
     if (c == QuantColors.eighth) return DdrPalette.eighth;
+    if (c == QuantColors.twelfth) return DdrPalette.twelfth;
     if (c == QuantColors.sixteenth) return DdrPalette.sixteenth;
+    if (c == QuantColors.twentyfourth) return DdrPalette.twentyfourth;
+    if (c == QuantColors.thirtysecond) return DdrPalette.thirtysecond;
     return DdrPalette.other;
   }
 
@@ -1238,6 +1265,8 @@ class ChartPainter extends CustomPainter {
       old.constantMs != constantMs ||
       old.topInset != topInset ||
       old.arcadeQuant != arcadeQuant ||
+      old.arrowBlink != arrowBlink ||
+      old.quantFreezeHeads != quantFreezeHeads ||
       old.ddr != ddr ||
       // Without this the field wouldn't move while dialling VISUAL OFFSET
       // paused: the playhead notifier hasn't changed, so nothing else here

@@ -29,19 +29,11 @@ Two implementations exist:
 ## Arrow colouring
 
 Arrows are coloured by **note quantisation** (the fraction of a beat they land
-on), the standard DDR/ITG reading palette — see `QuantColors`. Only 4 sprite
-colours are extracted, so `SpriteNoteskin` maps the finer subdivisions onto
-the nearest sprite (`_nearestSpriteColor`):
-
-| Subdivision | Colour | Sprite used |
-|---|---|---|
-| 4th  | red | red |
-| 8th  | blue | blue |
-| 12th | purple | blue |
-| 16th | yellow | yellow |
-| 24th | pink | yellow |
-| 32nd | orange | green |
-| finer | green | green |
+on) — see `QuantColors`. QUANT COLORS gives the full reading palette (4ths red,
+8ths blue, 12ths purple, 16ths yellow, 24ths pink, 32nds orange, finer green);
+off, it's the cabinet's, where only 4ths, 8ths and 16ths keep a colour.
+`SpriteNoteskin` tints a grey tap arrow to the exact colour, so every quant
+shows.
 
 ## Note data
 
@@ -84,10 +76,13 @@ assets/noteskin/
 
 Mines and receptors are not covered by this set; the vector skin draws those.
 
-### DDR PALETTE art (optional)
+### Cabinet arrow art (optional)
 
-With DDR PALETTE on and these two present, receptors, taps and freezes are
-drawn the cabinet's way instead ([ddr_atlas.dart](../lib/components/song/notes/ddr_atlas.dart)):
+With these two present, freezes use the cabinet's head, body and cropped tail.
+BLINKING (on by default) also draws receptors and taps through their moving
+cabinet palettes; off, they're the static sprites above. Under QUANT COLORS,
+12ths, 24ths and 32nds get palettes of their own in the cabinet's shape
+([ddr_atlas.dart](../lib/components/song/notes/ddr_atlas.dart)):
 
 ```
 assets/noteskin/

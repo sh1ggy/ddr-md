@@ -109,13 +109,17 @@ class ChartScroller extends StatefulWidget {
     this.showDancingFeet = false,
     this.showMeasureLines = false,
     this.assistTickOn = false,
-    this.arcadeQuantOn = false,
+    this.quantColorsOn = false,
+    this.arrowBlinkOn = false,
+    this.quantFreezeHeadsOn = false,
     this.onToggleMeasureLines,
     this.onToggleFootGuide,
     this.onToggleFootTrails,
     this.onToggleDancingFeet,
     this.onToggleAssistTick,
-    this.onToggleArcadeQuant,
+    this.onToggleQuantColors,
+    this.onToggleArrowBlink,
+    this.onToggleQuantFreezeHeads,
     this.headerBuilder,
     this.footingRef,
     this.editFooting = false,
@@ -205,9 +209,17 @@ class ChartScroller extends StatefulWidget {
   /// Play a short tick as each note row crosses the receptors during playback.
   final bool assistTickOn;
 
-  /// Colour arrows with the cabinet's coarser quantisation palette. Mirrors
-  /// [QuantColors.arcadeMode] so the tile and minimap repaint when it flips.
-  final bool arcadeQuantOn;
+  /// Colour arrows with the full quantisation palette rather than the
+  /// cabinet's coarser one. The inverse of [QuantColors.arcadeMode], passed so
+  /// the tile and minimap repaint when it flips.
+  final bool quantColorsOn;
+
+  /// Draw receptors and taps with the cabinet's blinking art when bundled,
+  /// instead of static sprites.
+  final bool arrowBlinkOn;
+
+  /// Draw freeze heads as quantised taps instead of the freeze head art.
+  final bool quantFreezeHeadsOn;
 
   /// Toggle callbacks for the options above, wired into the settings shade.
   /// Null hides the tile.
@@ -216,7 +228,9 @@ class ChartScroller extends StatefulWidget {
   final VoidCallback? onToggleDancingFeet;
   final VoidCallback? onToggleAssistTick;
   final VoidCallback? onToggleMeasureLines;
-  final VoidCallback? onToggleArcadeQuant;
+  final VoidCallback? onToggleQuantColors;
+  final VoidCallback? onToggleArrowBlink;
+  final VoidCallback? onToggleQuantFreezeHeads;
 
   /// Song length in seconds; bounds the scrub slider and the auto-stop point.
   final double songLength;
@@ -594,7 +608,7 @@ class _ChartScrollerState extends State<ChartScroller>
       ? SpriteNoteskin.resolvedSkin ?? const VectorNoteskin()
       : null;
 
-  // The cabinet's own arrow art for DDR PALETTE, when bundled.
+  // The cabinet's own arrow art, when bundled.
   DdrAtlas? _ddr = DdrAtlas.resolvedAtlas;
 
   // Note-density histogram for the scrub minimap, each bucket carrying its
@@ -806,7 +820,7 @@ class _ChartScrollerState extends State<ChartScroller>
     }
     // The minimap bakes each note's quant bucket, so a palette change has to
     // rebuild it — the field itself re-reads the colours on the next paint.
-    if (old.arcadeQuantOn != widget.arcadeQuantOn) {
+    if (old.quantColorsOn != widget.quantColorsOn) {
       _buildDensity();
     }
     if (old.feedActive != widget.feedActive && widget.feedActive != null) {
@@ -2582,7 +2596,9 @@ class _ChartScrollerState extends State<ChartScroller>
               constantMs: _effectiveConstantMs,
               topInset: topInset,
               visualOffset: _visualOffsetSeconds,
-              arcadeQuant: widget.arcadeQuantOn,
+              arcadeQuant: !widget.quantColorsOn,
+              arrowBlink: widget.arrowBlinkOn,
+              quantFreezeHeads: widget.quantFreezeHeadsOn,
               ddr: _ddr,
             );
       // Taps find notes on the full-field chart only.
@@ -3324,19 +3340,51 @@ class _ChartScrollerState extends State<ChartScroller>
                     onTap: _cycleGuideline,
                   ),
                 ),
-                if (widget.onToggleArcadeQuant != null)
-                  Expanded(
-                    child: TurnTile(
-                      label: "DDR PALETTE",
-                      icon: widget.arcadeQuantOn
-                          ? Icons.music_note
-                          : Icons.music_note_outlined,
-                      selected: widget.arcadeQuantOn,
-                      onTap: widget.onToggleArcadeQuant!,
-                    ),
-                  ),
               ],
             ),
+            if (widget.onToggleQuantColors != null ||
+                widget.onToggleQuantFreezeHeads != null ||
+                widget.onToggleArrowBlink != null)
+              Row(
+                spacing: 8,
+                children: [
+                  // Only the cabinet art blinks, so without it there's
+                  // nothing to switch.
+                  if (widget.onToggleArrowBlink != null && _ddr != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "BLINKING",
+                        icon: widget.arrowBlinkOn
+                            ? Icons.flare
+                            : Icons.flare_outlined,
+                        selected: widget.arrowBlinkOn,
+                        onTap: widget.onToggleArrowBlink!,
+                      ),
+                    ),
+                  if (widget.onToggleQuantColors != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "QUANT COLORS",
+                        icon: widget.quantColorsOn
+                            ? Icons.music_note
+                            : Icons.music_note_outlined,
+                        selected: widget.quantColorsOn,
+                        onTap: widget.onToggleQuantColors!,
+                      ),
+                    ),
+                  if (widget.onToggleQuantFreezeHeads != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "QUANT FREEZES",
+                        icon: widget.quantFreezeHeadsOn
+                            ? Icons.palette
+                            : Icons.palette_outlined,
+                        selected: widget.quantFreezeHeadsOn,
+                        onTap: widget.onToggleQuantFreezeHeads!,
+                      ),
+                    ),
+                ],
+              ),
           ],
         ),
       ),
