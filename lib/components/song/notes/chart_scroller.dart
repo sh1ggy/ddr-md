@@ -2432,7 +2432,7 @@ class _ChartScrollerState extends State<ChartScroller>
 
   // Coast a fling from the release velocity.
   void _endScrub(double vPx) {
-    _flingVel = -_pxToSeconds(vPx);
+    _flingVel = _pxToSeconds(-vPx);
     if (_flingVel.abs() < _flingMin) {
       _flingVel = 0;
     } else {
@@ -2460,7 +2460,9 @@ class _ChartScrollerState extends State<ChartScroller>
 
   void _onScrubMove(double dy) {
     // Playhead-only change — no setState; the notifier drives the repaint.
-    _second = (_second - _pxToSeconds(dy * _scrubScale))
+    // Invert in the direction of playhead travel. Negating the resulting
+    // seconds instead would cross a different tempo/stop interval.
+    _second = (_second + _pxToSeconds(-dy * _scrubScale))
         .clamp(_scrubRange.$1, _scrubRange.$2);
     final beat = _beatIndexAt(_second);
     if (_lastScrubBeat != null && beat != _lastScrubBeat) {
