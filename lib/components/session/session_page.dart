@@ -1,7 +1,7 @@
 /// Name: SessionPage
 /// Parent: Layout
-/// Description: Home tab: start a session on a named cabinet and pad side,
-/// and see the timing logged in it.
+/// Description: Home tab: start a session at a venue, play it credit by
+/// credit (cabinet + side), and see the timing logged in each.
 library;
 
 import 'package:ddr_md/constants.dart';
@@ -16,22 +16,58 @@ String sideLabel(PadSide side) => side == PadSide.p1 ? '1P' : '2P';
 String signedMs(double ms) =>
     '${ms >= 0 ? '+' : ''}${ms.toStringAsFixed(1)} ms';
 
-/// Pick a cabinet (or name a new one) and a side, then start the session.
+/// Pick a venue and side, then start the session on its first credit.
 Future<void> showStartSessionSheet(BuildContext context) =>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const _StartSessionSheet(),
+      builder: (_) => const _CreditSheet(newSession: true),
     );
 
-class _StartSessionSheet extends StatefulWidget {
-  const _StartSessionSheet();
+/// Start the running session's next credit, on the same cabinet and side
+/// unless changed.
+Future<void> showNewCreditSheet(BuildContext context) => showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _CreditSheet(newSession: false),
+    );
 
-  @override
-  State<_StartSessionSheet> createState() => _StartSessionSheetState();
+Future<String?> _askName(BuildContext context, String title, String hint) {
+  final controller = TextEditingController();
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: InputDecoration(hintText: hint),
+        onSubmitted: (v) => Navigator.pop(context, v.trim()),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Add')),
+      ],
+    ),
+  );
 }
 
-class _StartSessionSheetState extends State<_StartSessionSheet> {
+class _CreditSheet extends StatefulWidget {
+  const _CreditSheet({required this.newSession});
+
+  final bool newSession;
+
+  @override
+  State<_CreditSheet> createState() => _CreditSheetState();
+}
+
+class _CreditSheetState extends State<_CreditSheet> {
+  List<Venue> _venues = [];
+  Venue? _venue;
   List<Cabinet> _cabinets = [];
   Cabinet? _cabinet;
   late PadSide _side = context.read<SessionState>().side;
@@ -39,45 +75,63 @@ class _StartSessionSheetState extends State<_StartSessionSheet> {
   @override
   void initState() {
     super.initState();
-    DatabaseProvider.getCabinets().then((c) => setState(() {
-          _cabinets = c;
-          _cabinet = c.length == 1 ? c.first : null;
-        }));
+    final session = context.read<SessionState>();
+    if (widget.newSession) {
+      DatabaseProvider.getVenues().then((v) {
+        setState(() => _venues = v);
+        if (v.length == 1) _pickVenue(v.first);
+      });
+    } else {
+      _pickVenue(session.session!.venue, keep: session.cabinet);
+    }
+  }
+
+  Future<void> _pickVenue(Venue venue, {Cabinet? keep}) async {
+    final cabinets = await DatabaseProvider.getCabinets(venue.id);
+    setState(() {
+      _venue = venue;
+      _cabinets = cabinets;
+      _cabinet = cabinets.where((c) => c.id == keep?.id).firstOrNull ??
+          cabinets.firstOrNull;
+    });
+  }
+
+  Future<void> _addVenue() async {
+    final name = await _askName(context, 'New venue', 'e.g. Round1 Ludo');
+    if (name == null || name.isEmpty || _venues.any((v) => v.name == name)) {
+      return;
+    }
+    final venue = await DatabaseProvider.addVenue(name);
+    setState(() => _venues = [..._venues, venue]);
+    await _pickVenue(venue);
   }
 
   Future<void> _addCabinet() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New cabinet'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. Round1 Ludo #1'),
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, controller.text),
-              child: const Text('Add')),
-        ],
-      ),
-    );
-    final trimmed = name?.trim() ?? '';
-    if (trimmed.isEmpty || _cabinets.any((c) => c.name == trimmed)) return;
-    final cabinet = await DatabaseProvider.addCabinet(trimmed);
+    final name = await _askName(context, 'Another cab here', 'e.g. Cab 2');
+    if (name == null || name.isEmpty) return;
+    final cabinet = await DatabaseProvider.addCabinet(_venue!, name);
     setState(() {
       _cabinets = [..._cabinets, cabinet];
       _cabinet = cabinet;
     });
   }
 
+  Future<void> _go() async {
+    final session = context.read<SessionState>();
+    if (widget.newSession) {
+      await session.start(_venue!, _cabinet!, _side);
+    } else {
+      await session.newCredit(_cabinet!, _side);
+    }
+    if (mounted) Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final session = context.read<SessionState>();
+    final title = widget.newSession
+        ? 'Start session'
+        : 'Credit ${(session.credit?.number ?? 0) + 1}';
     return Padding(
       padding: EdgeInsets.fromLTRB(
           16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
@@ -85,26 +139,48 @@ class _StartSessionSheetState extends State<_StartSessionSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Start session', style: Theme.of(context).textTheme.titleLarge),
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final c in _cabinets)
-                ChoiceChip(
-                  label: Text(c.name),
-                  selected: _cabinet?.id == c.id,
-                  onSelected: (_) => setState(() => _cabinet = c),
+          if (widget.newSession)
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final v in _venues)
+                  ChoiceChip(
+                    label: Text(v.name),
+                    selected: _venue?.id == v.id,
+                    onSelected: (_) => _pickVenue(v),
+                  ),
+                ActionChip(
+                  avatar: const Icon(Icons.add, size: 18),
+                  label: const Text('New venue'),
+                  onPressed: _addVenue,
                 ),
-              ActionChip(
-                avatar: const Icon(Icons.add, size: 18),
-                label: const Text('New cabinet'),
-                onPressed: _addCabinet,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+              ],
+            ),
+          // Most venues have one cab, so the picker only shows for two+.
+          if (_venue != null)
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (_cabinets.length > 1)
+                  for (final c in _cabinets)
+                    ChoiceChip(
+                      label: Text(c.name.isEmpty ? 'Main cab' : c.name),
+                      selected: _cabinet?.id == c.id,
+                      onSelected: (_) => setState(() => _cabinet = c),
+                    ),
+                TextButton.icon(
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Another cab here'),
+                  onPressed: _addCabinet,
+                ),
+              ],
+            ),
+          const SizedBox(height: 8),
           SegmentedButton<PadSide>(
             segments: [
               for (final s in PadSide.values)
@@ -115,13 +191,8 @@ class _StartSessionSheetState extends State<_StartSessionSheet> {
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _cabinet == null
-                ? null
-                : () {
-                    context.read<SessionState>().start(_cabinet!, _side);
-                    Navigator.pop(context);
-                  },
-            child: const Text('Start'),
+            onPressed: _cabinet == null ? null : _go,
+            child: Text(widget.newSession ? 'Start' : 'Start $title'),
           ),
         ],
       ),
@@ -139,28 +210,54 @@ class SessionPage extends StatelessWidget {
       appBar: AppBar(title: const Text('Session')),
       body: session.active
           ? _ActiveSession(session: session)
-          : Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Start a session on the cabinet and side you\'re playing, '
-                      'then log each play\'s timing average and variation from '
-                      'its song page.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Start session'),
-                      onPressed: () => showStartSessionSheet(context),
-                    ),
-                  ],
-                ),
+          : _NoSession(revision: session.revision),
+    );
+  }
+}
+
+class _NoSession extends StatelessWidget {
+  const _NoSession({required this.revision});
+
+  final int revision;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<PlaySession>>(
+      key: ValueKey(revision),
+      future: DatabaseProvider.getSessions(),
+      builder: (context, snapshot) {
+        final past = snapshot.data ?? [];
+        return ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            const Text(
+              'Start a session at the venue you\'re playing, then a credit '
+              'for each side you play. Log each play\'s timing average and '
+              'variation from its song page.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: FilledButton.icon(
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Start session'),
+                onPressed: () => showStartSessionSheet(context),
               ),
             ),
+            if (past.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text('Past sessions',
+                  style: Theme.of(context).textTheme.titleSmall),
+              for (final s in past)
+                ListTile(
+                  dense: true,
+                  title: Text(s.venue.name),
+                  subtitle: Text(formatDate(s.startedAt)),
+                ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -172,86 +269,91 @@ class _ActiveSession extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cabinet = session.cabinet!;
+    final id = session.session!.id;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return FutureBuilder<List<TimingPlay>>(
+    return FutureBuilder<(List<Credit>, List<TimingPlay>)>(
       // Keyed on the revision so a logged or deleted play shows at once.
       key: ValueKey(session.revision),
-      future: DatabaseProvider.getTimingPlays(cabinet.id, session.side),
+      future: (
+        DatabaseProvider.getCredits(id),
+        DatabaseProvider.getSessionPlays(id),
+      ).wait,
       builder: (context, snapshot) {
-        final plays = snapshot.data ?? [];
-        final started = session.startedAt;
-        final thisSession = [
-          for (final p in plays)
-            if (started == null ||
-                !DateTime.parse(p.playedAt).isBefore(started))
-              p
-        ];
-        final correction = plays.isEmpty ? null : weightedPersonal(plays);
+        final (credits, plays) = snapshot.data ?? (<Credit>[], <TimingPlay>[]);
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
             Card(
               child: ListTile(
-                title: Text('${cabinet.name} · ${sideLabel(session.side)}',
+                title: Text(session.session!.venue.name,
                     style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text([
-                  if (started != null) 'since ${formatDate(started)}',
-                  correction == null
-                      ? 'no plays on this cab yet'
-                      : 'your correction ${signedMs(correction.$1)} '
-                          '± ${correction.$2.toStringAsFixed(1)} '
-                          '(${plays.length} plays)',
-                ].join('\n')),
+                subtitle: Text('since ${formatDate(session.session!.startedAt)}'
+                    ' · ${plays.length} ${plays.length == 1 ? 'play' : 'plays'}'),
                 trailing: TextButton(
                   onPressed: session.end,
                   child: const Text('End'),
                 ),
               ),
             ),
-            if (thisSession.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.add),
+                label: Text('Credit ${session.credit!.number + 1}'),
+                onPressed: () => showNewCreditSheet(context),
+              ),
+            ),
+            for (final credit in credits) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
                 child: Text(
-                  'Nothing logged this session yet. Open a song and fill in '
-                  'Your Sync after a play.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
+                  'Credit ${credit.number} · ${sideLabel(credit.side)}'
+                  '${credit.cabinet.name.isEmpty ? '' : ' · ${credit.cabinet.name}'}',
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
               ),
-            for (final p in thisSession)
-              Dismissible(
-                key: ValueKey(p.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 16),
-                  color: Colors.red,
-                  child: const Icon(Icons.delete, color: Colors.white),
+              if (!plays.any((p) => p.creditId == credit.id))
+                const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Text('Nothing logged yet.',
+                      style: TextStyle(color: Colors.grey)),
                 ),
-                onDismissed: (_) async {
-                  await DatabaseProvider.deleteTimingPlay(p.id);
-                  session.changed();
-                },
-                child: ListTile(
-                  title: Text(p.song),
-                  subtitle: Text(
-                      '${kInGameDifficultyNames[p.difficulty] ?? p.difficulty}'
-                      ' · ${p.mode.name} · played on ${p.syncUsedMs >= 0 ? '+' : ''}${p.syncUsedMs.round()} ms'),
-                  trailing: Text(
-                    '${p.averageMs.abs().toStringAsFixed(1)} '
-                    '${p.averageMs < 0 ? 'FAST' : 'SLOW'}\n'
-                    '± ${p.variationMs.toStringAsFixed(1)}',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: p.averageMs < 0
-                          ? kFastColor(isDark)
-                          : kSlowColor(isDark),
+              for (final p in plays.where((p) => p.creditId == credit.id))
+                Dismissible(
+                  key: ValueKey(p.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 16),
+                    color: Colors.red,
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  onDismissed: (_) async {
+                    await DatabaseProvider.deleteTimingPlay(p.id);
+                    session.changed();
+                  },
+                  child: ListTile(
+                    dense: true,
+                    title: Text(p.song),
+                    subtitle: Text(
+                        '${kInGameDifficultyNames[p.difficulty] ?? p.difficulty}'
+                        ' · ${p.mode.name} · played on '
+                        '${p.syncUsedMs >= 0 ? '+' : ''}${p.syncUsedMs.round()} ms'),
+                    trailing: Text(
+                      '${p.averageMs.abs().toStringAsFixed(1)} '
+                      '${p.averageMs < 0 ? 'FAST' : 'SLOW'}\n'
+                      '± ${p.variationMs.toStringAsFixed(1)}',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: p.averageMs < 0
+                            ? kFastColor(isDark)
+                            : kSlowColor(isDark),
+                      ),
                     ),
                   ),
                 ),
-              ),
+            ],
           ],
         );
       },

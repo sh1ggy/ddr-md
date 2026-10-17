@@ -101,6 +101,7 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
     if (average == null || variation == null) return null;
     return TimingPlay(
       playedAt: DateTime.now().toIso8601String(),
+      creditId: session.credit!.id,
       cabinetId: session.cabinet!.id,
       side: session.side,
       song: widget.songInfo.name,
@@ -209,9 +210,32 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
                 ),
             ],
           ),
-          subtitle: Text(
-            '${session.cabinet!.name} ${sideLabel(session.side)} · $from$spread',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          // Tapping the credit starts the next one, for a side or cab swap.
+          subtitle: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              InkWell(
+                onTap: () => showNewCreditSheet(context),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${session.cabinet!.label} ${sideLabel(session.side)}'
+                      ' · credit ${session.credit!.number}',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.primary),
+                    ),
+                    Icon(Icons.swap_horiz,
+                        size: 14, color: Theme.of(context).colorScheme.primary),
+                  ],
+                ),
+              ),
+              Text(
+                ' · $from$spread',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
           ),
           children: [
             // What the result screen showed.

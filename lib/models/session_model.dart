@@ -1,6 +1,7 @@
 /// Name: SessionModel
-/// Description: Play sessions on a named cabinet + pad side, the timing each
-/// play logged, and the sync the player should use from them.
+/// Description: Play sessions at a venue, split into credits (one cabinet +
+/// pad side each), the timing each play logged, and the sync the player
+/// should use from them.
 library;
 
 import 'dart:math';
@@ -15,14 +16,76 @@ const _uuid = Uuid();
 
 enum PadSide { p1, p2 }
 
-class Cabinet {
+class Venue {
   final int id;
   final String name;
 
-  const Cabinet(this.id, this.name);
+  const Venue(this.id, this.name);
 
-  factory Cabinet.fromMap(Map<String, dynamic> m) =>
-      Cabinet(m['id'] as int, m['name'] as String);
+  factory Venue.fromMap(Map<String, dynamic> m) =>
+      Venue(m['id'] as int, m['name'] as String);
+}
+
+/// A cabinet at a venue. Most venues have one, named '' — it then goes by
+/// the venue's name alone.
+class Cabinet {
+  final int id;
+  final int venueId;
+  final String venueName;
+  final String name;
+
+  const Cabinet(this.id, this.venueId, this.venueName, this.name);
+
+  String get label => name.isEmpty ? venueName : '$venueName · $name';
+
+  factory Cabinet.fromMap(Map<String, dynamic> m) => Cabinet(m['id'] as int,
+      m['venueId'] as int, m['venueName'] as String, m['name'] as String);
+}
+
+/// One outing at a venue.
+class PlaySession {
+  final String id;
+  final Venue venue;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+
+  const PlaySession(this.id, this.venue, this.startedAt, this.endedAt);
+
+  factory PlaySession.fromMap(Map<String, dynamic> m) => PlaySession(
+        m['id'] as String,
+        Venue(m['venueId'] as int, m['venueName'] as String),
+        DateTime.parse(m['startedAt'] as String),
+        m['endedAt'] == null ? null : DateTime.parse(m['endedAt'] as String),
+      );
+}
+
+/// One credit in a session: the cabinet and side it was played on.
+class Credit {
+  final String id;
+  final String sessionId;
+  final int number;
+  final Cabinet cabinet;
+  final PadSide side;
+  final DateTime startedAt;
+
+  Credit({
+    String? id,
+    required this.sessionId,
+    required this.number,
+    required this.cabinet,
+    required this.side,
+    required this.startedAt,
+  }) : id = id ?? _uuid.v4();
+
+  factory Credit.fromMap(Map<String, dynamic> m) => Credit(
+        id: m['id'] as String,
+        sessionId: m['sessionId'] as String,
+        number: m['number'] as int,
+        cabinet: Cabinet.fromMap(
+            {...m, 'id': m['cabinetId'], 'name': m['cabinetName']}),
+        side: PadSide.values.byName(m['side'] as String),
+        startedAt: DateTime.parse(m['startedAt'] as String),
+      );
 }
 
 /// One play's result-screen timing. [averageMs] is press − note, so FAST is
@@ -30,6 +93,8 @@ class Cabinet {
 class TimingPlay {
   final String id;
   final String playedAt;
+  // The credit it was logged in; null for plays from before credits.
+  final String? creditId;
   final int cabinetId;
   final PadSide side;
   final String song;
@@ -43,6 +108,7 @@ class TimingPlay {
   TimingPlay({
     String? id,
     required this.playedAt,
+    this.creditId,
     required this.cabinetId,
     required this.side,
     required this.song,
@@ -62,6 +128,7 @@ class TimingPlay {
   Map<String, Object?> toMap() => {
         'id': id,
         'playedAt': playedAt,
+        'creditId': creditId,
         'cabinetId': cabinetId,
         'side': side.name,
         'song': song,
@@ -76,6 +143,7 @@ class TimingPlay {
   factory TimingPlay.fromMap(Map<String, dynamic> m) => TimingPlay(
         id: m['id'],
         playedAt: m['playedAt'],
+        creditId: m['creditId'],
         cabinetId: m['cabinetId'],
         side: PadSide.values.byName(m['side']),
         song: m['song'],
@@ -151,50 +219,62 @@ PlayerSync resolvePlayerSync({
   return PlayerSync(songOffset, SyncSource.none);
 }
 
-/// The running session: which cabinet and side plays are logged against.
-/// Persisted so it survives the app being closed between songs.
+/// The running session and its current credit, which plays are logged
+/// against. Persisted so it survives the app being closed between songs.
 class SessionState extends ChangeNotifier {
-  Cabinet? _cabinet;
-  Cabinet? get cabinet => _cabinet;
+  PlaySession? _session;
+  PlaySession? get session => _session;
 
-  PadSide _side = PadSide.p1;
-  PadSide get side => _side;
+  Credit? _credit;
+  Credit? get credit => _credit;
+  Cabinet? get cabinet => _credit?.cabinet;
+  PadSide get side => _credit?.side ?? PadSide.p1;
 
-  DateTime? _startedAt;
-  DateTime? get startedAt => _startedAt;
+  bool get active => _credit != null;
 
-  bool get active => _cabinet != null;
-
-  // Bumped whenever a play or override changes, so cards re-query.
+  // Bumped whenever a play, credit or override changes, so views re-query.
   int _revision = 0;
   int get revision => _revision;
 
   Future<void> restore() async {
-    final id = Settings.getInt(Settings.sessionCabinetKey);
-    if (id == 0) return;
-    final cabinets = await DatabaseProvider.getCabinets();
-    _cabinet = cabinets.where((c) => c.id == id).firstOrNull;
-    _side = PadSide.values[Settings.getInt(Settings.sessionSideKey)];
-    _startedAt =
-        DateTime.tryParse(Settings.getString(Settings.sessionStartKey));
+    final id = Settings.getString(Settings.sessionIdKey);
+    if (id.isEmpty) return;
+    _session = await DatabaseProvider.getSession(id);
+    final credits = await DatabaseProvider.getCredits(id);
+    _credit = credits.firstOrNull;
+    if (_session?.endedAt != null || _credit == null) {
+      _session = null;
+      _credit = null;
+    }
     notifyListeners();
   }
 
-  void start(Cabinet cabinet, PadSide side) {
-    _cabinet = cabinet;
-    _side = side;
-    _startedAt = DateTime.now();
-    Settings.setInt(Settings.sessionCabinetKey, cabinet.id);
-    Settings.setInt(Settings.sessionSideKey, side.index);
-    Settings.setString(Settings.sessionStartKey, _startedAt!.toIso8601String());
-    notifyListeners();
+  Future<void> start(Venue venue, Cabinet cabinet, PadSide side) async {
+    _session = await DatabaseProvider.startSession(venue);
+    Settings.setString(Settings.sessionIdKey, _session!.id);
+    _credit = null;
+    await newCredit(cabinet, side);
   }
 
-  void end() {
-    _cabinet = null;
-    _startedAt = null;
-    Settings.setInt(Settings.sessionCabinetKey, 0);
-    notifyListeners();
+  Future<void> newCredit(Cabinet cabinet, PadSide side) async {
+    final credit = Credit(
+      sessionId: _session!.id,
+      number: (_credit?.number ?? 0) + 1,
+      cabinet: cabinet,
+      side: side,
+      startedAt: DateTime.now(),
+    );
+    await DatabaseProvider.saveCredit(credit);
+    _credit = credit;
+    changed();
+  }
+
+  Future<void> end() async {
+    await DatabaseProvider.endSession(_session!.id);
+    _session = null;
+    _credit = null;
+    Settings.setString(Settings.sessionIdKey, '');
+    changed();
   }
 
   void changed() {

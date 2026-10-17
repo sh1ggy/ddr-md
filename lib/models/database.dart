@@ -5,6 +5,7 @@ import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 class DatabaseProvider {
   static Future<Database> get _instance async =>
@@ -53,6 +54,7 @@ class DatabaseProvider {
     await db.execute(_parityPinsDdl);
     await db.execute(_snippetsDdl);
     await _createSessionSchema(db);
+    await _upgradeToVenues(db);
   }
 
   static Future<void> _createSessionSchema(Database db) async {
@@ -61,9 +63,33 @@ class DatabaseProvider {
     await db.execute(_syncOverridesDdl);
   }
 
+  // v11: cabinets belong to a venue, and plays to a credit (one cabinet +
+  // side) within a session at that venue. Each v10 cabinet becomes a venue
+  // of the same name with one unnamed cabinet.
+  static Future<void> _upgradeToVenues(Database db) async {
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS venues(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)');
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, venueId INT NOT NULL, startedAt TEXT NOT NULL, endedAt TEXT)');
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS credits(id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, number INT NOT NULL, cabinetId INT NOT NULL, side TEXT NOT NULL, startedAt TEXT NOT NULL)');
+    await db.execute('ALTER TABLE timing_plays ADD COLUMN creditId TEXT');
+    // Rebuilt rather than altered: v10's UNIQUE name can't be dropped, and
+    // every venue's lone cabinet is named ''.
+    await db.execute(
+        'CREATE TABLE cabinets_v11(id INTEGER PRIMARY KEY AUTOINCREMENT, venueId INT NOT NULL, name TEXT NOT NULL DEFAULT \'\')');
+    for (final c in await db.query('cabinets')) {
+      final venueId = await db.insert('venues', {'name': c['name']});
+      await db.insert(
+          'cabinets_v11', {'id': c['id'], 'venueId': venueId, 'name': ''});
+    }
+    await db.execute('DROP TABLE cabinets');
+    await db.execute('ALTER TABLE cabinets_v11 RENAME TO cabinets');
+  }
+
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 10, onCreate: (db, version) async {
+    return await openDatabase(path, version: 11, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -84,22 +110,109 @@ class DatabaseProvider {
       if (oldVersion < 8) await db.execute(_parityPinsDdl);
       if (oldVersion < 9) await db.execute(_snippetsDdl);
       if (oldVersion < 10) await _createSessionSchema(db);
+      if (oldVersion < 11) await _upgradeToVenues(db);
     });
   }
 
   // -- SESSION FUNCTIONS
-  static Future<List<Cabinet>> getCabinets() async {
+  static Future<List<Venue>> getVenues() async {
     final db = await _instance;
     return [
-      for (final r in await db.query("cabinets", orderBy: "name"))
-        Cabinet.fromMap(r)
+      for (final r in await db.query("venues", orderBy: "name"))
+        Venue.fromMap(r)
     ];
   }
 
-  static Future<Cabinet> addCabinet(String name) async {
+  // A new venue comes with its one cabinet.
+  static Future<Venue> addVenue(String name) async {
     final db = await _instance;
-    final id = await db.insert("cabinets", {'name': name});
-    return Cabinet(id, name);
+    final id = await db.insert("venues", {'name': name});
+    await db.insert("cabinets", {'venueId': id, 'name': ''});
+    return Venue(id, name);
+  }
+
+  static Future<List<Cabinet>> getCabinets(int venueId) async {
+    final db = await _instance;
+    final rows = await db.rawQuery(
+        'SELECT c.id, c.venueId, c.name, v.name AS venueName FROM cabinets c '
+        'JOIN venues v ON v.id = c.venueId WHERE c.venueId = ? ORDER BY c.id',
+        [venueId]);
+    return [for (final r in rows) Cabinet.fromMap(r)];
+  }
+
+  static Future<Cabinet> addCabinet(Venue venue, String name) async {
+    final db = await _instance;
+    final id = await db.insert("cabinets", {'venueId': venue.id, 'name': name});
+    return Cabinet(id, venue.id, venue.name, name);
+  }
+
+  static const _sessionSelect =
+      'SELECT s.*, v.name AS venueName FROM sessions s '
+      'JOIN venues v ON v.id = s.venueId';
+
+  static Future<PlaySession> startSession(Venue venue) async {
+    final db = await _instance;
+    final session = PlaySession(const Uuid().v4(), venue, DateTime.now(), null);
+    await db.insert("sessions", {
+      'id': session.id,
+      'venueId': venue.id,
+      'startedAt': session.startedAt.toIso8601String(),
+    });
+    return session;
+  }
+
+  static Future<void> endSession(String id) async {
+    final db = await _instance;
+    await db.update("sessions", {'endedAt': DateTime.now().toIso8601String()},
+        where: "id = ?", whereArgs: [id]);
+  }
+
+  static Future<PlaySession?> getSession(String id) async {
+    final db = await _instance;
+    final rows = await db.rawQuery('$_sessionSelect WHERE s.id = ?', [id]);
+    return rows.isEmpty ? null : PlaySession.fromMap(rows.first);
+  }
+
+  // Newest first.
+  static Future<List<PlaySession>> getSessions({int limit = 20}) async {
+    final db = await _instance;
+    final rows = await db
+        .rawQuery('$_sessionSelect ORDER BY s.startedAt DESC LIMIT ?', [limit]);
+    return [for (final r in rows) PlaySession.fromMap(r)];
+  }
+
+  static Future<void> saveCredit(Credit credit) async {
+    final db = await _instance;
+    await db.insert("credits", {
+      'id': credit.id,
+      'sessionId': credit.sessionId,
+      'number': credit.number,
+      'cabinetId': credit.cabinet.id,
+      'side': credit.side.name,
+      'startedAt': credit.startedAt.toIso8601String(),
+    });
+  }
+
+  // A session's credits, newest first.
+  static Future<List<Credit>> getCredits(String sessionId) async {
+    final db = await _instance;
+    final rows = await db.rawQuery(
+        'SELECT cr.*, c.venueId, c.name AS cabinetName, v.name AS venueName '
+        'FROM credits cr JOIN cabinets c ON c.id = cr.cabinetId '
+        'JOIN venues v ON v.id = c.venueId '
+        'WHERE cr.sessionId = ? ORDER BY cr.number DESC',
+        [sessionId]);
+    return [for (final r in rows) Credit.fromMap(r)];
+  }
+
+  // Every play logged in a session's credits, newest first.
+  static Future<List<TimingPlay>> getSessionPlays(String sessionId) async {
+    final db = await _instance;
+    final rows = await db.rawQuery(
+        'SELECT p.* FROM timing_plays p JOIN credits cr ON cr.id = p.creditId '
+        'WHERE cr.sessionId = ? ORDER BY p.playedAt DESC',
+        [sessionId]);
+    return [for (final r in rows) TimingPlay.fromMap(r)];
   }
 
   static Future<void> saveTimingPlay(TimingPlay play) async {
@@ -194,18 +307,17 @@ class DatabaseProvider {
   }
 
   // Every chart's pins, keyed by chart and the note hash they were set against.
-  static Future<Map<(ChartRef, String), List<ParityPin>>> getAllParityPins() async {
+  static Future<Map<(ChartRef, String), List<ParityPin>>>
+      getAllParityPins() async {
     final db = await _instance;
     final out = <(String, String, String, String), List<ParityPin>>{};
     for (final r in await db.query("parity_pins")) {
-      out.putIfAbsent(
-          (
-            r["song"] as String,
-            r["mode"] as String,
-            r["difficulty"] as String,
-            r["chartHash"] as String
-          ),
-          () => []).add((
+      out.putIfAbsent((
+        r["song"] as String,
+        r["mode"] as String,
+        r["difficulty"] as String,
+        r["chartHash"] as String
+      ), () => []).add((
         r["beat"] as double,
         r["col"] as int,
         r["foot"] == "L" ? ParityFoot.left : ParityFoot.right,
@@ -237,10 +349,12 @@ class DatabaseProvider {
     );
   }
 
-  static Future<void> deleteParityPin(ChartRef ref, double beat, int col) async {
+  static Future<void> deleteParityPin(
+      ChartRef ref, double beat, int col) async {
     final db = await _instance;
     await db.delete("parity_pins",
-        where: "song = ? AND mode = ? AND difficulty = ? AND beat = ? AND col = ?",
+        where:
+            "song = ? AND mode = ? AND difficulty = ? AND beat = ? AND col = ?",
         whereArgs: [ref.song, ref.mode, ref.difficulty, beat, col]);
   }
 
