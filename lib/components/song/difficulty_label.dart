@@ -111,7 +111,7 @@ class LevelRow extends StatelessWidget {
       for (final e in levels.toJson().entries)
         if (e.value != null) (kInGameDifficultyNames[e.key]!, e.value as int)
     ];
-    final gap = height * 0.3;
+    final gap = height * 0.55;
     Widget number(int i) => LevelNumber(
         level: charted[i].$2,
         difficulty: charted[i].$1,

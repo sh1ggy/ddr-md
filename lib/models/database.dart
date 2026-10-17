@@ -80,6 +80,10 @@ class DatabaseProvider {
   // side) within a session at that venue. Each v10 cabinet becomes a venue
   // of the same name with one unnamed cabinet.
   static Future<void> _upgradeToVenues(Database db) async {
+    // Already done: a build on an older schema (another worktree's, sharing
+    // this app's database) can wind user_version back without undoing it.
+    final plays = await db.rawQuery('PRAGMA table_info(timing_plays)');
+    if (plays.any((c) => c['name'] == 'creditId')) return;
     await db.execute(
         'CREATE TABLE IF NOT EXISTS venues(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)');
     await db.execute(
