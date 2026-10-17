@@ -49,7 +49,6 @@ class Settings {
   // The pad dancer without the cabinet's back bar, hands free. 0/1.
   static const String padDancerNoBarKey = "chartPreviewPadDancerNoBar";
 
-
   // DancerView index: where the pad dancer's camera looks from.
   static const String dancerViewKey = "chartPreviewDancerView";
 
@@ -150,6 +149,9 @@ class Settings {
 
   // Id of the running play session ('' = none).
   static const String sessionIdKey = "sessionId";
+
+  // When the last e-amusement sync finished (ISO-8601, '' = never).
+  static const String eamuseSyncedAtKey = "eamuseSyncedAt";
 
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();

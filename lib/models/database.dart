@@ -47,6 +47,13 @@ class DatabaseProvider {
   static const String _syncOverridesDdl =
       'CREATE TABLE IF NOT EXISTS sync_overrides(cabinetId INT NOT NULL, side TEXT NOT NULL, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, ms REAL NOT NULL, PRIMARY KEY(cabinetId, side, song, mode, difficulty))';
 
+  // v12: each chart's best from a source (manual or e-amusement), one row per
+  // source and chart. See [ScoreRecord].
+  static const String _scoreRecordsDdl =
+      'CREATE TABLE IF NOT EXISTS score_records(id TEXT PRIMARY KEY, source TEXT NOT NULL, song TEXT, konamiId TEXT, title TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, score INT, exScore INT, rank TEXT NOT NULL DEFAULT \'\', clearLamp TEXT, flareRank TEXT NOT NULL DEFAULT \'\', flareSkill INT, maxCombo INT, playedAt TEXT, updatedAt TEXT NOT NULL)';
+  static const String _scoreRecordsIndex =
+      'CREATE INDEX IF NOT EXISTS score_records_chart ON score_records(song, mode, difficulty)';
+
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
     await db.execute(_favoritesDdl);
@@ -55,6 +62,12 @@ class DatabaseProvider {
     await db.execute(_snippetsDdl);
     await _createSessionSchema(db);
     await _upgradeToVenues(db);
+    await _createScoreRecords(db);
+  }
+
+  static Future<void> _createScoreRecords(Database db) async {
+    await db.execute(_scoreRecordsDdl);
+    await db.execute(_scoreRecordsIndex);
   }
 
   static Future<void> _createSessionSchema(Database db) async {
@@ -89,7 +102,7 @@ class DatabaseProvider {
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 11, onCreate: (db, version) async {
+    return await openDatabase(path, version: 12, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -111,6 +124,7 @@ class DatabaseProvider {
       if (oldVersion < 9) await db.execute(_snippetsDdl);
       if (oldVersion < 10) await _createSessionSchema(db);
       if (oldVersion < 11) await _upgradeToVenues(db);
+      if (oldVersion < 12) await _createScoreRecords(db);
     });
   }
 
@@ -303,6 +317,51 @@ class DatabaseProvider {
       await db.insert("sync_overrides", {...key, 'ms': ms},
           conflictAlgorithm: ConflictAlgorithm.replace);
     }
+  }
+
+  // -- SCORE RECORD FUNCTIONS
+  // Insert or replace by id, all in one transaction.
+  static Future<void> saveScoreRecords(List<ScoreRecord> records) async {
+    final db = await _instance;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final r in records) {
+        batch.insert("score_records", r.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  // Every source's records for one song and mode.
+  static Future<List<ScoreRecord>> getScoreRecordsBySong(
+      String song, Modes mode) async {
+    final db = await _instance;
+    final rows = await db.query("score_records",
+        where: "song = ? AND mode = ?", whereArgs: [song, mode.name]);
+    return [for (final r in rows) ScoreRecord.fromMap(r)];
+  }
+
+  static Future<List<ScoreRecord>> getScoreRecords(
+      ScoreRecordSource source) async {
+    final db = await _instance;
+    final rows = await db
+        .query("score_records", where: "source = ?", whereArgs: [source.name]);
+    return [for (final r in rows) ScoreRecord.fromMap(r)];
+  }
+
+  static Future<int> countScoreRecords(ScoreRecordSource source) async {
+    final db = await _instance;
+    return Sqflite.firstIntValue(await db.rawQuery(
+            'SELECT COUNT(*) FROM score_records WHERE source = ?',
+            [source.name])) ??
+        0;
+  }
+
+  static Future<void> deleteScoreRecords(ScoreRecordSource source) async {
+    final db = await _instance;
+    await db
+        .delete("score_records", where: "source = ?", whereArgs: [source.name]);
   }
 
   // -- SNIPPET FUNCTIONS

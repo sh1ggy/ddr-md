@@ -13,6 +13,7 @@ import 'package:ddr_md/components/songlist/difficultylist_page.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -35,12 +36,15 @@ void main() async {
   await Songs.load();
   final session = SessionState();
   await session.restore();
+  final eamuse = EamuseSyncState();
+  await eamuse.restore();
 
   // Wrapped app with providers
   runApp(MultiProvider(
     providers: [
       ChangeNotifierProvider(create: (context) => SongState()),
       ChangeNotifierProvider.value(value: session),
+      ChangeNotifierProvider.value(value: eamuse),
     ],
     child: const App(),
   ));
@@ -126,11 +130,11 @@ class _LayoutState extends State<Layout> {
           destinations: const <Widget>[
             NavigationDestination(
               selectedIcon: Icon(
-                Icons.timer,
+                Icons.home,
                 color: Colors.white,
               ),
-              icon: Icon(Icons.timer_outlined),
-              label: 'Session',
+              icon: Icon(Icons.home_outlined),
+              label: 'Home',
             ),
             NavigationDestination(
               selectedIcon: Icon(

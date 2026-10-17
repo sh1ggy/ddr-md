@@ -1,9 +1,11 @@
 /// Name: SessionPage
 /// Parent: Layout
-/// Description: Home tab: start a session at a venue, play it credit by
-/// credit (cabinet + side), and see the timing logged in each.
+/// Description: Home tab: sync e-amusement scores, start a session at a
+/// venue, play it credit by credit (cabinet + side), and see the timing logged
+/// in each.
 library;
 
+import 'package:ddr_md/components/session/eamuse_sync_card.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
@@ -272,10 +274,15 @@ class SessionPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<SessionState>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Session')),
-      body: session.active
-          ? _ActiveSession(session: session)
-          : _NoSession(revision: session.revision),
+      appBar: AppBar(title: const Text('Home')),
+      body: Column(children: [
+        const EamuseSyncCard(),
+        Expanded(
+          child: session.active
+              ? _ActiveSession(session: session)
+              : _NoSession(revision: session.revision),
+        ),
+      ]),
     );
   }
 }
