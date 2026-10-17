@@ -596,7 +596,8 @@ class SpriteNoteskin implements Noteskin {
           dirNames.map((d) => _load('assets/noteskin/$name'.replaceAll('*', d))));
       ui.Image? shockRow;
       try {
-        shockRow = await _load('assets/noteskin/shock-row.png');
+        shockRow =
+            await _featherShockRow(await _load('assets/noteskin/shock-row.png'));
       } catch (_) {
         // Older asset bundles keep the fallback shock rendering.
       }
@@ -809,6 +810,36 @@ class SpriteNoteskin implements Noteskin {
     final picture = recorder.endRecording();
     final image = await picture.toImage(extent.toInt(), extent.toInt());
     picture.dispose();
+    return image;
+  }
+
+  // Some bolt frames run off their cell, so the art ends in a hard line at the
+  // top or bottom of the row. Fade each frame out over its outer eighth so
+  // every frame fits its quad.
+  static Future<ui.Image> _featherShockRow(ui.Image row) async {
+    final w = row.width.toDouble(), h = row.height.toDouble();
+    final frameH = h / 4;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final bounds = Rect.fromLTWH(0, 0, w, h);
+    canvas.saveLayer(bounds, Paint());
+    canvas.drawImage(row, Offset.zero, Paint());
+    for (var i = 0; i < 4; i++) {
+      final cell = Rect.fromLTWH(0, i * frameH, w, frameH);
+      canvas.drawRect(
+          cell,
+          Paint()
+            ..blendMode = BlendMode.dstIn
+            ..shader = ui.Gradient.linear(cell.topCenter, cell.bottomCenter,
+                const [Color(0x00FFFFFF), Color(0xFFFFFFFF),
+                  Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+                const [0.0, 0.125, 0.875, 1.0]));
+    }
+    canvas.restore();
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(row.width, row.height);
+    picture.dispose();
+    row.dispose();
     return image;
   }
 
