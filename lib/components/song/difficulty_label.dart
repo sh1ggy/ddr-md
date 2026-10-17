@@ -7,10 +7,14 @@
 /// the difficulty's colour.
 library;
 
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:ddr_md/components/song_json.dart' show Difficulty;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// The size difficulty names and levels are drawn at on the song page and
 /// score cards, and the smaller one shared by the song list's rows and tiles.
@@ -107,19 +111,72 @@ class LevelRow extends StatelessWidget {
       for (final e in levels.toJson().entries)
         if (e.value != null) (kInGameDifficultyNames[e.key]!, e.value as int)
     ];
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      for (final (i, (name, level)) in charted.indexed)
-        Padding(
-          // Each numeral at its own width with one gap between, so the
-          // spacing reads even whatever the digits.
-          padding: EdgeInsets.only(right: height * 0.4),
-          child: LevelNumber(
-              level: level,
-              difficulty: name,
-              height: height,
-              dimmed: highlightIndex != null && i != highlightIndex),
-        ),
-    ]);
+    final gap = height * 0.3;
+    Widget number(int i) => LevelNumber(
+        level: charted[i].$2,
+        difficulty: charted[i].$1,
+        height: height,
+        dimmed: highlightIndex != null && i != highlightIndex);
+    final profiles = [
+      for (final (name, level) in charted)
+        LevelProfiles.of('level_${name.toLowerCase()}_$level')
+    ];
+    if (charted.isEmpty || profiles.contains(null)) {
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        for (var i = 0; i < charted.length; i++)
+          Padding(padding: EdgeInsets.only(right: gap), child: number(i)),
+      ]);
+    }
+    // Kerned on the numerals' outlines: each one sits [gap] from the closest
+    // point of the one before, so the italic overhangs don't make one-digit
+    // and two-digit levels look unevenly spaced.
+    final k = height / profiles.first!.h;
+    final xs = <double>[0];
+    for (var i = 1; i < profiles.length; i++) {
+      final a = profiles[i - 1]!, b = profiles[i]!;
+      var tightest = a.w;
+      for (var y = 0; y < math.min(a.h, b.h); y++) {
+        tightest = math.min(tightest, a.r[y] + b.l[y]);
+      }
+      xs.add(xs.last + (a.w - tightest) * k + gap);
+    }
+    return SizedBox(
+      width: xs.last + profiles.last!.w * k,
+      height: height,
+      child: Stack(children: [
+        for (var i = 0; i < xs.length; i++)
+          Positioned(left: xs[i], top: 0, bottom: 0, child: number(i)),
+      ]),
+    );
+  }
+}
+
+/// Each level numeral's width and, per row, how far its outline sits in from
+/// the left and right edges, from the art's profiles.json. Empty without the
+/// art.
+class LevelProfiles {
+  static Map<String, ({int w, int h, List<int> l, List<int> r})> _all = {};
+
+  static ({int w, int h, List<int> l, List<int> r})? of(String name) =>
+      _all[name];
+
+  static Future<void> load() async {
+    try {
+      final json = jsonDecode(
+              await rootBundle.loadString('assets/difficulty/profiles.json'))
+          as Map<String, dynamic>;
+      _all = {
+        for (final MapEntry(:key, :value) in json.entries)
+          key: (
+            w: value['w'] as int,
+            h: value['h'] as int,
+            l: (value['l'] as List).cast<int>(),
+            r: (value['r'] as List).cast<int>(),
+          )
+      };
+    } catch (_) {
+      // No art bundled; LevelRow spaces the text fallback evenly instead.
+    }
   }
 }
 

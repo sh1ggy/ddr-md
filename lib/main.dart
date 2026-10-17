@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/session/session_page.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/snippets/snippets_page.dart';
 import 'package:ddr_md/components/songlist/difficultylist_page.dart';
@@ -34,6 +35,7 @@ void main() async {
   final support = await getApplicationSupportDirectory();
   await ContentStore.init(support);
   await Songs.load();
+  await LevelProfiles.load();
   final session = SessionState();
   await session.restore();
   final eamuse = EamuseSyncState();

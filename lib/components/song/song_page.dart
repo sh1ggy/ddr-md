@@ -394,12 +394,8 @@ class _SongPageState extends State<SongPage> {
       case SongSection.latestScore:
         return GestureDetector(
           onTap: () => openHistory(HistoryPage.scoresTab),
-          child: latestScore != null
-              ? ScoreCard(
-                  score: latestScore!,
-                  header: "Latest Score",
-                  best: _bestOnChart(songState))
-              : NoScoreCard(best: _bestOnChart(songState)),
+          child: LatestScoreLine(
+              score: latestScore, best: _bestOnChart(songState)),
         );
       case SongSection.latestNote:
         if (latestNote == null) return null;

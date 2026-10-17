@@ -23,42 +23,14 @@ class ScoreCard extends StatelessWidget {
     required this.score,
     this.header,
     this.onTap,
-    this.best,
   });
 
   final Score score;
-  // The synced best on the chart the song page has selected, shown under the
-  // latest play.
-  final ScoreRecord? best;
   final String? header;
   // When given (the scores list), tapping the card opens it — the score
   // details page. The song page's latest-score card leaves this null and
   // keeps its own open-history tap handler.
   final VoidCallback? onTap;
-
-  // The full-combo tier is only meaningful when OCR captured every judgment
-  // count; a missing field could hide the miss that breaks the combo.
-  FullComboTier? _fullComboTier() {
-    if (score.marvelous == null ||
-        score.perfect == null ||
-        score.great == null ||
-        score.good == null ||
-        score.miss == null) {
-      return null;
-    }
-    return fullComboTier(
-      marvelous: score.marvelous!,
-      perfect: score.perfect!,
-      great: score.great!,
-      good: score.good!,
-      miss: score.miss!,
-    );
-  }
-
-  String? get _lampArt => switch (_fullComboTier()) {
-        null || FullComboTier.none => null,
-        final tier => fullComboIcon(tier),
-      };
 
   // The chart level for this score's difficulty, resolved from the song the
   // page is showing. Null when the difficulty doesn't name one of the song's
@@ -124,8 +96,9 @@ class ScoreCard extends StatelessWidget {
             ),
             if (score.score != null)
               ScoreBadges(
-                  score: score.score!, lampArt: _lampArt, flare: score.flare),
-            if (best != null) _BestLine(best!),
+                  score: score.score!,
+                  lampArt: scoreLampArt(score),
+                  flare: score.flare),
             if (details.isNotEmpty)
               Wrap(
                 alignment: WrapAlignment.center,
@@ -144,52 +117,6 @@ class ScoreCard extends StatelessWidget {
                 dateText,
                 style:
                     const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-              ),
-          ].expand((x) => [const SizedBox(height: 8), x]).skip(1).toList(),
-        ),
-      ),
-    );
-  }
-}
-
-// Placeholder shown in place of [ScoreCard] when a song has no saved
-// score yet. Mirrors the Card + ListTile + header structure so the
-// song page layout stays consistent whether or not a score exists.
-class NoScoreCard extends StatelessWidget {
-  const NoScoreCard({super.key, this.header = "Latest Score", this.best});
-
-  final String header;
-  final ScoreRecord? best;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        title: Column(
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(kLatestScoreIcon,
-                    size: 18, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 6),
-                Text(
-                  header,
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary),
-                ),
-              ],
-            ),
-            if (best != null)
-              _BestLine(best!)
-            else
-              Text(
-                "No score recorded",
-                style: TextStyle(
-                    fontSize: 14,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
           ].expand((x) => [const SizedBox(height: 8), x]).skip(1).toList(),
         ),
@@ -268,6 +195,82 @@ class _ScoreJudgments extends StatelessWidget {
               ],
             ),
       ],
+    );
+  }
+}
+
+/// Full-combo lamp art for a play, from its judgements. Only meaningful when
+/// every count was captured; a missing one could hide the miss that breaks
+/// the combo.
+String? scoreLampArt(Score score) {
+  if (score.marvelous == null ||
+      score.perfect == null ||
+      score.great == null ||
+      score.good == null ||
+      score.miss == null) {
+    return null;
+  }
+  return switch (fullComboTier(
+    marvelous: score.marvelous!,
+    perfect: score.perfect!,
+    great: score.great!,
+    good: score.good!,
+    miss: score.miss!,
+  )) {
+    FullComboTier.none => null,
+    final tier => fullComboIcon(tier),
+  };
+}
+
+/// The song page's one-line score: a trophy, then the latest play, then the
+/// synced best on the selected chart (or whichever of the two exists).
+class LatestScoreLine extends StatelessWidget {
+  const LatestScoreLine({super.key, this.score, this.best});
+
+  final Score? score;
+  final ScoreRecord? best;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(children: [
+          Icon(kLatestScoreIcon, size: 20, color: scheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: score?.score == null && best == null
+                ? Text('No score recorded',
+                    style:
+                        TextStyle(fontSize: 14, color: scheme.onSurfaceVariant))
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(children: [
+                      if (score?.score != null)
+                        ScoreBadges(
+                            score: score!.score!,
+                            lampArt: scoreLampArt(score!),
+                            flare: score!.flare),
+                      if (score?.score != null && best != null)
+                        const SizedBox(width: 16),
+                      if (best != null) ...[
+                        Icon(Icons.cloud_done_outlined,
+                            size: 16, color: scheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        ScoreBadges(
+                          score: best!.score ?? 0,
+                          lampArt: clearLampIcon(best!.clearLamp),
+                          flare: best!.flareRank,
+                          dense: score?.score != null,
+                        ),
+                      ],
+                    ]),
+                  ),
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -382,28 +385,5 @@ class ScoreRecordRow extends StatelessWidget {
             color: Theme.of(context).colorScheme.onSurfaceVariant),
       ]),
     );
-  }
-}
-
-class _BestLine extends StatelessWidget {
-  const _BestLine(this.best);
-
-  final ScoreRecord best;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Text('BEST ',
-          style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      ScoreBadges(
-        score: best.score ?? 0,
-        lampArt: clearLampIcon(best.clearLamp),
-        flare: best.flareRank,
-        dense: true,
-      ),
-    ]);
   }
 }
