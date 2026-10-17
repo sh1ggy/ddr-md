@@ -72,6 +72,9 @@ assets/noteskin/
                        # older bundles draw the tinted tap arrow instead
   arrow-shock-left.png   arrow-shock-down.png    # 60x60 shock arrows,
   arrow-shock-up.png     arrow-shock-right.png   # pre-oriented per direction
+  bomb.png             # 98x98 hit bursts with a 1px border: white for a
+  bomb-freeze.png      # step, yellow for a completed freeze; optional,
+                       # older bundles draw the blown-out arrow flash
 ```
 
 Mines and receptors are not covered by this set; the vector skin draws those.

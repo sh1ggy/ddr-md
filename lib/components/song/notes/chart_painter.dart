@@ -436,9 +436,8 @@ class ChartPainter extends CustomPainter {
     // arrivals past the playhead at arbitrary speed, strobing the whole field.
     final arrivals = <int, double>{};
     if (playing) {
-      const longest = _flashSeconds > receptorRecoilSeconds
-          ? _flashSeconds
-          : receptorRecoilSeconds;
+      final longest =
+          [_flashSeconds, receptorRecoilSeconds, bombSeconds].reduce(math.max);
       for (int i = _lowerBoundBySecond(notes, second) - 1; i >= 0; i--) {
         final n = notes[i];
         final age = second - n.second;
@@ -598,16 +597,36 @@ class ChartPainter extends CustomPainter {
 
     // 3.5) Impact flashes for notes that just reached the line, one per lane
     // (matching DDR's one-live-flash-per-column).
-    // The cabinet throws no glow for a MARVELOUS step, so under its art taps
-    // land clean; a held freeze glows aqua every 4th frame, each glow growing
-    // and fading over 200 ms, added onto the field.
-    if (atlas == null) {
+    // A MARVELOUS step throws the skin's white burst and a completed freeze its
+    // yellow one. Under the cabinet's arrow art a held freeze also glows aqua
+    // every 4th frame, each glow growing and fading over 200 ms, added onto the
+    // field.
+    if (skin.hasBomb) {
+      for (final MapEntry(key: col, value: age) in arrivals.entries) {
+        skin.paintBomb(canvas, laneCenterX(col), _receptorTop, arrowSize, age);
+      }
+      if (playing) {
+        for (final n in holds) {
+          if (n.second > second) break;
+          final age = second - (n.endSecond ?? n.second);
+          if (age < 0 || age >= bombSeconds) continue;
+          if (section != null &&
+              (n.second < section!.$1 || n.second > section!.$2)) {
+            continue;
+          }
+          skin.paintBomb(
+              canvas, laneCenterX(turned(n.col)), _receptorTop, arrowSize, age,
+              freeze: true);
+        }
+      }
+    } else if (atlas == null) {
       for (final MapEntry(key: col, value: age) in arrivals.entries) {
         if (age >= _flashSeconds) continue; // recoil outlasts the flash
         skin.paintNoteFlash(canvas, laneCenterX(col), _receptorTop, arrowSize,
             dirs[col], age / _flashSeconds);
       }
-    } else {
+    }
+    if (atlas != null) {
       final frame = (second * 60).floor();
       for (final n in holds) {
         if (n.second > second) break;

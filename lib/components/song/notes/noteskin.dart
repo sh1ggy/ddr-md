@@ -124,7 +124,21 @@ abstract class Noteskin {
   /// the line.
   void paintNoteFlash(Canvas canvas, double x, double y, double size,
       NoteDir dir, double progress);
+
+  /// Whether [paintBomb] draws the cabinet's hit burst. Without it the painter
+  /// keeps [paintNoteFlash].
+  bool get hasBomb;
+
+  /// The cabinet's hit burst [age] seconds in, centred at (x,y): white for a
+  /// MARVELOUS step, yellow ([freeze]) for a completed freeze.
+  void paintBomb(Canvas canvas, double x, double y, double size, double age,
+      {bool freeze = false});
 }
+
+/// The hit burst lasts 8 frames at 60 fps, its 96 px quad stepping from 0.8x
+/// to 1.15x the arrow by 0.05 a frame, added onto the field at 80% alpha.
+const double bombSeconds = 8 / 60;
+double bombScale(double age) => 0.8 + 0.05 * (age * 60).floor().clamp(0, 7);
 
 /// Flash size as a multiple of the arrow, peaking slightly larger than the note
 /// so it blooms past the receptor and reads as an impact rather than a tint.
@@ -529,6 +543,13 @@ class VectorNoteskin implements Noteskin {
     canvas.restore();
   }
 
+  @override
+  bool get hasBomb => false;
+
+  @override
+  void paintBomb(Canvas canvas, double x, double y, double size, double age,
+      {bool freeze = false}) {}
+
   static Color _lighten(Color c, double amt) =>
       Color.lerp(c, Colors.white, amt)!;
   static Color _darken(Color c, double amt) => Color.lerp(c, Colors.black, amt)!;
@@ -550,6 +571,8 @@ class SpriteNoteskin implements Noteskin {
     this._shockRow,
     this._shockAura,
     this._holdHead,
+    this._bomb,
+    this._bombFreeze,
   );
 
   final ui.Image _note;
@@ -566,6 +589,10 @@ class SpriteNoteskin implements Noteskin {
   // on note.png's own 96 px grid). Null on older asset bundles, which keep the
   // tinted tap arrow.
   final ui.Image? _holdHead;
+  // The cabinet's hit bursts (white, and yellow for a completed freeze); null
+  // on older asset bundles, which keep the blown-out arrow flash.
+  final ui.Image? _bomb;
+  final ui.Image? _bombFreeze;
 
   // Vector skin handles the elements we didn't extract sprites for.
   static const VectorNoteskin _vector = VectorNoteskin();
@@ -607,6 +634,13 @@ class SpriteNoteskin implements Noteskin {
       } catch (_) {
         // Older asset bundles keep the tap arrow for freeze heads.
       }
+      ui.Image? bomb, bombFreeze;
+      try {
+        bomb = await _load('assets/noteskin/bomb.png');
+        bombFreeze = await _load('assets/noteskin/bomb-freeze.png');
+      } catch (_) {
+        bomb = bombFreeze = null; // older asset bundles keep the arrow flash
+      }
       _loadedSkin = SpriteNoteskin._(
         note,
         await perDir('hold-*-body.png'),
@@ -614,6 +648,8 @@ class SpriteNoteskin implements Noteskin {
         shockRow,
         await _bakeShockAura(note),
         holdHead,
+        bomb,
+        bombFreeze,
       );
     } catch (_) {
       _loadedSkin = null; // sprites absent -> vector fallback
@@ -766,6 +802,28 @@ class SpriteNoteskin implements Noteskin {
           ..color = Colors.white.withValues(alpha: alpha * 0.45)
           ..filterQuality = FilterQuality.medium);
     canvas.restore();
+  }
+
+  @override
+  bool get hasBomb => _bomb != null;
+
+  static final Paint _bombPaint = Paint()
+    ..blendMode = BlendMode.plus
+    ..color = const Color(0xCBFFFFFF)
+    ..filterQuality = FilterQuality.medium;
+
+  @override
+  void paintBomb(Canvas canvas, double x, double y, double size, double age,
+      {bool freeze = false}) {
+    final img = freeze ? _bombFreeze : _bomb;
+    if (img == null || age < 0 || age >= bombSeconds) return;
+    // The quad samples the burst inside its 1px border.
+    final s = size * bombScale(age);
+    canvas.drawImageRect(
+        img,
+        Rect.fromLTRB(1, 1, img.width - 1, img.height - 1),
+        Rect.fromCenter(center: Offset(x, y), width: s, height: s),
+        _bombPaint);
   }
 
   static final Paint _shockPaint = Paint()
