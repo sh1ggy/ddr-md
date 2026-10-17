@@ -73,7 +73,6 @@ class SongPatternsCard extends StatelessWidget {
           expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (present.isNotEmpty) ...[
-              const _Heading('Footwork', top: 0),
               for (final pattern in present)
                 _PatternRow(
                   pattern: pattern,
@@ -150,8 +149,9 @@ class _PatternRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = standout ? theme.colorScheme.primary : theme.hintColor;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    // Fixed height so a row's detail line never changes the bars' spacing.
+    return SizedBox(
+      height: 40,
       child: Row(
         children: [
           Icon(kPatternIcons[pattern], size: 18, color: color),
@@ -159,6 +159,7 @@ class _PatternRow extends StatelessWidget {
           SizedBox(
             width: 104,
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(kPatternLabels[pattern]!),
@@ -196,14 +197,13 @@ class _PatternRow extends StatelessWidget {
 }
 
 class _Heading extends StatelessWidget {
-  const _Heading(this.text, {this.top = 16});
+  const _Heading(this.text);
 
   final String text;
-  final double top;
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.only(top: top, bottom: 6),
+        padding: const EdgeInsets.only(top: 16, bottom: 6),
         child: Text(
           text,
           style: TextStyle(
