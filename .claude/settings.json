@@ -1,0 +1,16 @@
+{
+  "worktree": {
+    "symlinkDirectories": [
+      "assets/songs",
+      "assets/steps",
+      "assets/patterns",
+      "assets/jackets",
+      "assets/jackets-160",
+      "assets/noteskin",
+      "native_opencv/android/src/main/jniLibs",
+      "DDR-BPM-prep",
+      "_private",
+      "docs/arcade"
+    ]
+  }
+}

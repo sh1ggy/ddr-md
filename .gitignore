@@ -175,5 +175,9 @@ app.*.symbols
 /infra/*.tfstate*
 /infra/terraform.tfvars
 
+# Claude Code: session worktrees and personal settings
+/.claude/worktrees/
+/.claude/settings.local.json
+
 # Optional local character surface.
 /assets/pad_dancer_body.json

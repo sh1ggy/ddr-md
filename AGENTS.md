@@ -62,6 +62,7 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 
 - `pubspec.yaml` asset entries carry load-bearing comments (noteskin is optional/gitignored; only one model triplet ships). Don't "clean them up" or blindly add `assets/models/` as a directory.
 - Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songs/`, `assets/steps/`, `assets/patterns/`, `assets/pattern_levels.json`, `assets/content_manifest.json`, `infra/*.tfstate`, `assets/songlist.json`, `assets/noteskin/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive), `docs/arcade/`.
+- Session worktrees (`.claude/worktrees/`) need those gitignored directories from the main checkout; `.claude/settings.json` lists them for Claude Code to symlink. A worktree made without them (`ls assets/songs` fails) gets the same links by hand: `ln -s <main checkout>/<dir> <dir>` for each entry.
 - Shell scripts here inline pure commands — don't extract fetch/copy/check helper functions.
 - `docs/` holds only how-tos the code relies on (noteskin assets, parity labelling, dancer form). Plans and design write-ups don't live in the repo.
 - `docs/arcade/` (gitignored, kept locally) is the cabinet-behaviour reference. Check it, when present, before claiming or changing anything "arcade accurate". Never commit it or anything else derived from Konami material.
