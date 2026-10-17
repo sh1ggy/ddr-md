@@ -6,6 +6,7 @@
 /// matching the latest-note card layout.
 library;
 
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart' show Modes;
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
@@ -69,8 +70,7 @@ class ScoreCard extends StatelessWidget {
             song.title != score.songTitle)) {
       return null;
     }
-    final levels =
-        score.mode == Modes.singles ? song.singles : song.doubles;
+    final levels = score.mode == Modes.singles ? song.singles : song.doubles;
     for (final (name, level) in difficultyOptions(levels)) {
       if (name == score.difficulty) return level;
     }
@@ -84,11 +84,11 @@ class ScoreCard extends StatelessWidget {
     final level = _chartLevel(context);
     final details = <Widget>[
       if (score.difficulty.isNotEmpty)
-        Text(level != null ? '${score.difficulty} $level' : score.difficulty,
-            style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: kInGameDifficultyColors[score.difficulty])),
+        kInGameDifficultyColors.containsKey(score.difficulty)
+            ? DifficultyLabel(difficulty: score.difficulty, level: level)
+            : Text(score.difficulty,
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
       // The flare rank rides with the score row; it only lands here when
       // there is no score to attach it to.
       if (flare != null && score.score == null) flare,
@@ -209,7 +209,10 @@ class _SourceBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (icon, tooltip) = switch (source) {
-      ScoreSource.camera => (Icons.videocam_outlined, 'Captured with camera OCR'),
+      ScoreSource.camera => (
+          Icons.videocam_outlined,
+          'Captured with camera OCR'
+        ),
       ScoreSource.loadImage => (
           Icons.photo_library_outlined,
           'Imported from a screenshot'
@@ -257,7 +260,7 @@ class _ScoreJudgments extends StatelessWidget {
                 Text(label,
                     style: TextStyle(
                         fontSize: 11,
-                    color: judgmentColor(colorKey, context: context) ??
+                        color: judgmentColor(colorKey, context: context) ??
                             Theme.of(context).colorScheme.onSurfaceVariant)),
                 Text('$value',
                     style: const TextStyle(
@@ -322,12 +325,11 @@ class ScoreBadges extends StatelessWidget {
           Image.asset(gradeArt, height: 22 * unit)
         else
           Text(grade.label,
-              style: TextStyle(
-                  fontSize: 16 * unit, fontWeight: FontWeight.bold)),
+              style:
+                  TextStyle(fontSize: 16 * unit, fontWeight: FontWeight.bold)),
         SizedBox(width: 8 * unit),
         Text(formatScore(score),
-            style:
-                TextStyle(fontSize: 20 * unit, fontWeight: FontWeight.w600)),
+            style: TextStyle(fontSize: 20 * unit, fontWeight: FontWeight.w600)),
         if (lampArt != null) ...[
           SizedBox(width: 8 * unit),
           Image.asset(lampArt!, height: 16 * unit),
@@ -355,12 +357,11 @@ class ScoreRecordRow extends StatelessWidget {
       child: Row(children: [
         SizedBox(
           width: 108,
-          child: Text(
-              level != null ? '${record.difficulty} $level' : record.difficulty,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: kInGameDifficultyColors[record.difficulty])),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: DifficultyLabel(
+                difficulty: record.difficulty, level: level, height: 13),
+          ),
         ),
         Expanded(
           child: FittedBox(

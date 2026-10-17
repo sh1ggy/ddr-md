@@ -54,6 +54,9 @@ flutter:
     # Sprite noteskin (git-ignored, copyrighted Konami art). Absent by
     # default; the app falls back to a vector skin.
     - assets/noteskin/
+    # Difficulty name and level art (git-ignored, copyrighted Konami art).
+    # Absent by default; DifficultyLabel falls back to text.
+    - assets/difficulty/
     # Only the model triple the app loads at runtime (ocr_onnx.cpp defaults).
     # The other variants in assets/models/ exist for the offline
     # native_opencv/tools/model_compare harness and must not ship in the bundle.
