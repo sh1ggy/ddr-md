@@ -266,6 +266,30 @@ void main() {
     }
   });
 
+  test('a note on a freeze tail is stepped, not bracketed with the freeze',
+      () {
+    // The freeze foot is free at its tail, so it shouldn't stay heel-on-Left,
+    // toe-on-Up to take the Up there.
+    StepNote hold(double t, int col, double end) => StepNote(
+        beat: t * 4,
+        second: t,
+        col: col,
+        type: StepType.hold,
+        endBeat: end * 4,
+        endSecond: end);
+    final notes = [
+      hold(0, L, .25),
+      const StepNote(beat: 1, second: .25, col: U, type: StepType.tap),
+      hold(.5, R, .875),
+      const StepNote(beat: 3.5, second: .875, col: L, type: StepType.tap),
+    ];
+    final result = analyseParity(notes, Modes.singles);
+    for (final s in result.stances) {
+      expect(s.leftHeel == -1 || s.leftToe == -1, isTrue,
+          reason: 'left bracketed at ${s.second}');
+    }
+  });
+
   test('a jump into one of its own arrows does not stack both feet on it', () {
     // D+U jump, then U on its own. Taking that U with the foot that is not
     // already on Up parks both feet on one panel — which no pad allows.

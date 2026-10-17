@@ -84,6 +84,11 @@ abstract class Noteskin {
   void paintArrow(Canvas canvas, double x, double y, double size, NoteDir dir,
       double beat);
 
+  /// The head of a freeze/hold (or roll) at (x,y), oriented by [dir]. Skins
+  /// without dedicated art draw it as a tap arrow of [beat].
+  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
+      double beat);
+
   /// A freeze/hold (or roll) body running from the head at [yHead] down to the
   /// tail at [yTail] in one lane.
   void paintHoldBody(Canvas canvas, double x, double yHead, double yTail,
@@ -119,7 +124,21 @@ abstract class Noteskin {
   /// the line.
   void paintNoteFlash(Canvas canvas, double x, double y, double size,
       NoteDir dir, double progress);
+
+  /// Whether [paintBomb] draws the cabinet's hit burst. Without it the painter
+  /// keeps [paintNoteFlash].
+  bool get hasBomb;
+
+  /// The cabinet's hit burst [age] seconds in, centred at (x,y): white for a
+  /// MARVELOUS step, yellow ([freeze]) for a completed freeze.
+  void paintBomb(Canvas canvas, double x, double y, double size, double age,
+      {bool freeze = false});
 }
+
+/// The hit burst lasts 8 frames at 60 fps, its 96 px quad stepping from 0.8x
+/// to 1.15x the arrow by 0.05 a frame, added onto the field at 80% alpha.
+const double bombSeconds = 8 / 60;
+double bombScale(double age) => 0.8 + 0.05 * (age * 60).floor().clamp(0, 7);
 
 /// Flash size as a multiple of the arrow, peaking slightly larger than the note
 /// so it blooms past the receptor and reads as an impact rather than a tint.
@@ -131,21 +150,16 @@ const double noteFlashStartScale = 0.95;
 /// leaves room above the receptor for this so the flash draws uncut.
 const double noteFlashPeakScale = 1.15;
 
-/// How long the receptor's recoil lasts, in seconds, and how far it contracts.
-/// DDR's own is 75% over 60ms; pushed a little deeper and longer here so the
-/// recoil still registers on a phone-sized field.
-const double receptorRecoilSeconds = 0.09;
-const double receptorRecoilScale = 0.62;
+/// The cabinet's receptor press: it shrinks from 96 to 88 px and springs back
+/// in 20 ms steps over 80 ms.
+const double receptorRecoilSeconds = 0.08;
+const double receptorRecoilScale = 88 / 96;
 
-/// Receptor size multiplier [progress] through a recoil, as a multiple of the
-/// normal receptor size. Starts contracted and eases back out to 1.0 — the
-/// snap is on arrival, the visible motion is the recovery.
+/// Receptor size multiplier [progress] through a press, as a multiple of the
+/// normal receptor size: four 20 ms steps from pressed back to full.
 double receptorRecoilCurve(double progress) {
-  final p = progress.clamp(0.0, 1.0);
-  // Ease-out: most of the spring-back happens early, so it reads as a recoil
-  // rather than a slow grow.
-  final eased = 1 - (1 - p) * (1 - p);
-  return receptorRecoilScale + (1 - receptorRecoilScale) * eased;
+  final step = (progress.clamp(0.0, 1.0) * 4).floor();
+  return 1 - (4 - step).clamp(0, 4) / 48;
 }
 
 /// Shared shape of the DDR impact flash, so every skin grows and fades in step.
@@ -301,6 +315,11 @@ class VectorNoteskin implements Noteskin {
     _stampGlyph(canvas, img, size);
     canvas.restore();
   }
+
+  @override
+  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
+          double beat) =>
+      paintArrow(canvas, x, y, size, dir, beat);
 
   @override
   void paintHoldBody(Canvas canvas, double x, double yHead, double yTail,
@@ -524,6 +543,13 @@ class VectorNoteskin implements Noteskin {
     canvas.restore();
   }
 
+  @override
+  bool get hasBomb => false;
+
+  @override
+  void paintBomb(Canvas canvas, double x, double y, double size, double age,
+      {bool freeze = false}) {}
+
   static Color _lighten(Color c, double amt) =>
       Color.lerp(c, Colors.white, amt)!;
   static Color _darken(Color c, double amt) => Color.lerp(c, Colors.black, amt)!;
@@ -544,6 +570,9 @@ class SpriteNoteskin implements Noteskin {
     this._holdTails,
     this._shockRow,
     this._shockAura,
+    this._holdHead,
+    this._bomb,
+    this._bombFreeze,
   );
 
   final ui.Image _note;
@@ -556,6 +585,14 @@ class SpriteNoteskin implements Noteskin {
   final List<ui.Image> _holdTails;
   final ui.Image? _shockRow;
   final ui.Image _shockAura;
+  // The freeze head, drawn like a tap (one left-facing arrow rotated per lane,
+  // on note.png's own 96 px grid). Null on older asset bundles, which keep the
+  // tinted tap arrow.
+  final ui.Image? _holdHead;
+  // The cabinet's hit bursts (white, and yellow for a completed freeze); null
+  // on older asset bundles, which keep the blown-out arrow flash.
+  final ui.Image? _bomb;
+  final ui.Image? _bombFreeze;
 
   // Vector skin handles the elements we didn't extract sprites for.
   static const VectorNoteskin _vector = VectorNoteskin();
@@ -586,9 +623,23 @@ class SpriteNoteskin implements Noteskin {
           dirNames.map((d) => _load('assets/noteskin/$name'.replaceAll('*', d))));
       ui.Image? shockRow;
       try {
-        shockRow = await _load('assets/noteskin/shock-row.png');
+        shockRow =
+            await _featherShockRow(await _load('assets/noteskin/shock-row.png'));
       } catch (_) {
         // Older asset bundles keep the fallback shock rendering.
+      }
+      ui.Image? holdHead;
+      try {
+        holdHead = await _load('assets/noteskin/hold-head.png');
+      } catch (_) {
+        // Older asset bundles keep the tap arrow for freeze heads.
+      }
+      ui.Image? bomb, bombFreeze;
+      try {
+        bomb = await _load('assets/noteskin/bomb.png');
+        bombFreeze = await _load('assets/noteskin/bomb-freeze.png');
+      } catch (_) {
+        bomb = bombFreeze = null; // older asset bundles keep the arrow flash
       }
       _loadedSkin = SpriteNoteskin._(
         note,
@@ -596,6 +647,9 @@ class SpriteNoteskin implements Noteskin {
         await perDir('hold-*-tail.png'),
         shockRow,
         await _bakeShockAura(note),
+        holdHead,
+        bomb,
+        bombFreeze,
       );
     } catch (_) {
       _loadedSkin = null; // sprites absent -> vector fallback
@@ -647,6 +701,20 @@ class SpriteNoteskin implements Noteskin {
     final dst = Rect.fromCenter(center: Offset.zero, width: size, height: size);
     // modulate: grey (~0.5) * tint keeps shading while colouring the arrow.
     _drawImage(canvas, _note, dst, paint: _tintPaint(color));
+    canvas.restore();
+  }
+
+  @override
+  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
+      double beat) {
+    final head = _holdHead;
+    if (head == null) return paintArrow(canvas, x, y, size, dir, beat);
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.rotate(rotationForDir(dir));
+    _drawImage(canvas, head,
+        Rect.fromCenter(center: Offset.zero, width: size, height: size),
+        paint: _holdPaint);
     canvas.restore();
   }
 
@@ -736,6 +804,28 @@ class SpriteNoteskin implements Noteskin {
     canvas.restore();
   }
 
+  @override
+  bool get hasBomb => _bomb != null;
+
+  static final Paint _bombPaint = Paint()
+    ..blendMode = BlendMode.plus
+    ..color = const Color(0xCBFFFFFF)
+    ..filterQuality = FilterQuality.medium;
+
+  @override
+  void paintBomb(Canvas canvas, double x, double y, double size, double age,
+      {bool freeze = false}) {
+    final img = freeze ? _bombFreeze : _bomb;
+    if (img == null || age < 0 || age >= bombSeconds) return;
+    // The quad samples the burst inside its 1px border.
+    final s = size * bombScale(age);
+    canvas.drawImageRect(
+        img,
+        Rect.fromLTRB(1, 1, img.width - 1, img.height - 1),
+        Rect.fromCenter(center: Offset(x, y), width: s, height: s),
+        _bombPaint);
+  }
+
   static final Paint _shockPaint = Paint()
     ..filterQuality = FilterQuality.medium
     ..color = const Color(0xBFFFFFFF);
@@ -778,6 +868,36 @@ class SpriteNoteskin implements Noteskin {
     final picture = recorder.endRecording();
     final image = await picture.toImage(extent.toInt(), extent.toInt());
     picture.dispose();
+    return image;
+  }
+
+  // Some bolt frames run off their cell, so the art ends in a hard line at the
+  // top or bottom of the row. Fade each frame out over its outer eighth so
+  // every frame fits its quad.
+  static Future<ui.Image> _featherShockRow(ui.Image row) async {
+    final w = row.width.toDouble(), h = row.height.toDouble();
+    final frameH = h / 4;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final bounds = Rect.fromLTWH(0, 0, w, h);
+    canvas.saveLayer(bounds, Paint());
+    canvas.drawImage(row, Offset.zero, Paint());
+    for (var i = 0; i < 4; i++) {
+      final cell = Rect.fromLTWH(0, i * frameH, w, frameH);
+      canvas.drawRect(
+          cell,
+          Paint()
+            ..blendMode = BlendMode.dstIn
+            ..shader = ui.Gradient.linear(cell.topCenter, cell.bottomCenter,
+                const [Color(0x00FFFFFF), Color(0xFFFFFFFF),
+                  Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+                const [0.0, 0.125, 0.875, 1.0]));
+    }
+    canvas.restore();
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(row.width, row.height);
+    picture.dispose();
+    row.dispose();
     return image;
   }
 

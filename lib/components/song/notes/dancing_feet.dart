@@ -14,6 +14,7 @@ import 'dart:math' as math;
 
 import 'chart_models.dart';
 import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_shocks.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -77,9 +78,8 @@ double turnFor(int leftCol, int rightCol, {double previous = 0}) {
 /// a scooby walks you round step by step. Landing crossed off a jump, re-pressing
 /// a panel or stepping back out of a cross never turns you further — you stay
 /// facing the screen with your legs crossed, or ease back towards it.
-@visibleForTesting
-double stepTurn(double previous, int fromLeft, int fromRight, int leftCol,
-    int rightCol) {
+double stepTurn(
+    double previous, int fromLeft, int fromRight, int leftCol, int rightCol) {
   final target = turnFor(leftCol, rightCol, previous: previous);
   final leftMoved = leftCol != fromLeft;
   final rightMoved = rightCol != fromRight;
@@ -99,14 +99,93 @@ const List<Offset> _panelOffsets = [
   Offset(1, 0), // right
 ];
 
+/// Arrow heading per panel (L D U R) on the canvas, 0 pointing up the pad.
+const List<double> _arrowTurn = [-math.pi / 2, math.pi, 0, math.pi / 2];
+
+/// The cabinet's arrow acrylic in panel units about its panel's centre,
+/// pointing up the pad (+y): rounded tip and wing tips, filleted shoulders,
+/// and a shaft that flares into a bowed base. From [kArrowStart], each entry
+/// is a line to (x, y) or a cubic through (x1, y1, x2, y2, x, y).
+const (double, double) kArrowStart = (-0.1137, -0.2233);
+const List<List<double>> kArrowOutline = [
+  [-0.0766, -0.2179, -0.0387, -0.2151, 0, -0.2151],
+  [0.0387, -0.2151, 0.0766, -0.2179, 0.1137, -0.2233],
+  [0.1758, -0.2332, 0.1787, -0.1818, 0.1787, -0.1758],
+  [0.1787, 0.0313],
+  [0.1787, 0.0373, 0.1835, 0.0422, 0.1895, 0.0422],
+  [0.2886, 0.0422],
+  [0.3184, 0.0422, 0.3246, 0.0585, 0.3024, 0.0784],
+  [0.0404, 0.3138],
+  [0.0182, 0.3337, -0.0182, 0.3337, -0.0404, 0.3138],
+  [-0.3024, 0.0784],
+  [-0.3246, 0.0585, -0.3184, 0.0422, -0.2886, 0.0422],
+  [-0.1895, 0.0422],
+  [-0.1835, 0.0422, -0.1787, 0.0373, -0.1787, 0.0313],
+  [-0.1787, -0.1758],
+  [-0.1787, -0.1818, -0.1758, -0.2332, -0.1137, -0.2233],
+];
+
+/// [kArrowOutline] as a polygon, each curve cut into [steps] straight pieces.
+List<(double, double)> arrowPolygon([int steps = 6]) {
+  var (x0, y0) = kArrowStart;
+  final out = <(double, double)>[];
+  for (final seg in kArrowOutline) {
+    if (seg.length == 2) {
+      out.add((seg[0], seg[1]));
+    } else {
+      for (int i = 1; i <= steps; i++) {
+        final t = i / steps, u = 1 - t;
+        double at(double a, double b, double c, double d) =>
+            u * u * u * a +
+            3 * u * u * t * b +
+            3 * u * t * t * c +
+            t * t * t * d;
+        out.add(
+            (at(x0, seg[0], seg[2], seg[4]), at(y0, seg[1], seg[3], seg[5])));
+      }
+    }
+    (x0, y0) = (seg[seg.length - 2], seg[seg.length - 1]);
+  }
+  return out;
+}
+
+/// The arrow on the canvas, where y runs down.
+final Path _arrowPath = () {
+  final path = Path()..moveTo(kArrowStart.$1, -kArrowStart.$2);
+  for (final s in kArrowOutline) {
+    if (s.length == 2) {
+      path.lineTo(s[0], -s[1]);
+    } else {
+      path.cubicTo(s[0], -s[1], s[2], -s[3], s[4], -s[5]);
+    }
+  }
+  return path..close();
+}();
+
+/// One panel of the gold cabinet's stage: a 283 mm cell.
+const double kPanelMetres = 0.283;
+
+/// Outsole length in metres of a men's US [size] shoe: the last is a third of
+/// an inch per size from 22/3 in, the sole a little longer.
+double shoeLength(double size) => ((size + 22) / 3 * 25.4 + 15) / 1000;
+
+/// US 9, for a player who hasn't set theirs.
+const double kShoeSize = 9;
+
+/// The corners an arrow panel's plate is cut away at, in panel units.
+const double kPanelChamfer = 0.15;
+
+/// A lit panel's lamp.
+const Color _lamp = Color(0xFFECF2FF);
+
 /// How far a foot shrinks at the bottom of its press. Seen from above, a foot
 /// coming down reads smaller for the moment it lands, which is what separates a
 /// PLANTED foot from one hovering. Kept small so a stream of steps doesn't turn
 /// into a row of pulsing blobs.
 const double _pressScale = 0.82;
 
-/// Recovery is a shade longer than the panel flash, so the foot is still
-/// settling as the light fades rather than snapping back before it.
+/// Long enough to read as the weight settling, short enough to finish before
+/// the next step in a stream.
 const double _pressSeconds = 0.2;
 
 /// Size multiplier for a foot [sinceStep] seconds after landing: smallest on
@@ -115,8 +194,8 @@ const double _pressSeconds = 0.2;
 @visibleForTesting
 double padPressFactor(double sinceStep) {
   if (sinceStep < 0 || sinceStep >= _pressSeconds) return 1.0;
-  final recovered =
-      Curves.easeOutCubic.transform((sinceStep / _pressSeconds).clamp(0.0, 1.0));
+  final recovered = Curves.easeOutCubic
+      .transform((sinceStep / _pressSeconds).clamp(0.0, 1.0));
   return _pressScale + (1 - _pressScale) * recovered;
 }
 
@@ -126,6 +205,52 @@ const int _colRight = 3;
 
 /// A full crossover turns the feet a quarter circle.
 const double _maxTurn = math.pi / 2;
+
+/// How the dancers move. STANDARD lands on panel centres. MINIMAL is top-player
+/// economy: feet on the inner part of each panel, shoulders quiet,
+/// low quick lifts. EXAGGERATED is the opposite: high lifts and a body that
+/// turns and bounces with every step. The flat pad only tells MINIMAL apart.
+enum DancerForm { standard, minimal, exaggerated }
+
+/// Where [foot] lands on [col]'s panel in [form], as an offset from the panel's
+/// centre in panel units, +x right and +y up the pad. [otherCol] is the panel
+/// the other foot is on (-1 for none).
+///
+/// MINIMAL keeps every foot on the inner side of its panel: the inner edge of
+/// Left and Right, and the inner corner of Up and Down on the foot's own side,
+/// which shortens every reach between them. A foot crossing onto the far side
+/// panel takes its top corner in front of a partner on Down and its bottom
+/// corner behind one on Up; one crossing onto Up or Down takes its inner centre.
+///
+/// Both feet on one panel (a footswitch) stand side by side on it, left foot
+/// on the left; on a side panel MINIMAL puts them one ahead of the other
+/// against its inner edge instead.
+Offset formSpot(DancerForm form, int col, ParityFoot foot, int otherCol) {
+  final side = foot == ParityFoot.left ? -1.0 : 1.0;
+  final minimal = form == DancerForm.minimal;
+  final sideways = col % 4 == _colLeft || col % 4 == _colRight;
+  final inner = !minimal
+      ? 0.0
+      : sideways
+          ? 0.25
+          : 0.22;
+  final inward = sideways
+      ? Offset(col % 4 == _colLeft ? inner : -inner, 0)
+      : Offset(0, col % 4 == 2 ? -inner : inner);
+  if (otherCol == col) {
+    if (minimal && sideways) return inward + Offset(0, -0.18 * side);
+    return inward + Offset(0.28 * side, 0);
+  }
+  if (!minimal) return Offset.zero;
+  final own = foot == ParityFoot.left ? _colLeft : _colRight;
+  final far = foot == ParityFoot.left ? _colRight : _colLeft;
+  final other = otherCol < 0 ? -1 : otherCol % 4;
+  if (sideways) {
+    if (col % 4 != far) return inward;
+    return inward + Offset(0, other == 1 ? 0.2 : (other == 2 ? -0.2 : 0));
+  }
+  return inward + Offset(other == own ? 0 : 0.2 * side, 0);
+}
 
 /// The pad: a floating, draggable overlay showing where the parity solve stands
 /// the player at the playhead. Driven by the scroller's playhead notifier so the
@@ -141,7 +266,18 @@ class DancingFeet extends StatefulWidget {
     required this.playhead,
     required this.columnCount,
     this.visualOffset = 0,
+    this.form = DancerForm.standard,
+    this.shoeSize = kShoeSize,
+    this.shocks = const [],
+    this.shockPlans = const [],
   });
+
+  final DancerForm form;
+
+  /// US shoe size; the feet are drawn to scale against the panels.
+  final double shoeSize;
+  final List<double> shocks;
+  final List<ShockEvasion> shockPlans;
 
   /// The solved stance timeline, ascending by second.
   final List<ParityStance> stances;
@@ -276,6 +412,10 @@ class _DancingFeetState extends State<DancingFeet> {
                 playhead: widget.playhead,
                 columnCount: widget.columnCount,
                 visualOffset: widget.visualOffset,
+                form: widget.form,
+                shoeSize: widget.shoeSize,
+                shocks: widget.shocks,
+                shockPlans: widget.shockPlans,
               ),
             ),
           ),
@@ -295,6 +435,10 @@ class DancePad extends StatelessWidget {
     required this.playhead,
     required this.columnCount,
     this.visualOffset = 0,
+    this.form = DancerForm.standard,
+    this.shoeSize = kShoeSize,
+    this.shocks = const [],
+    this.shockPlans = const [],
   });
 
   final bool dragging;
@@ -302,6 +446,10 @@ class DancePad extends StatelessWidget {
   final ValueListenable<double> playhead;
   final int columnCount;
   final double visualOffset;
+  final DancerForm form;
+  final double shoeSize;
+  final List<double> shocks;
+  final List<ShockEvasion> shockPlans;
 
   @override
   Widget build(BuildContext context) {
@@ -325,6 +473,10 @@ class DancePad extends StatelessWidget {
               playhead: playhead,
               columnCount: columnCount,
               visualOffset: visualOffset,
+              form: form,
+              shoeSize: shoeSize,
+              shocks: shocks,
+              shockPlans: shockPlans,
             ),
             size: Size.infinite,
           ),
@@ -342,15 +494,16 @@ class _FootPose {
   final int heelCol;
   final int toeCol;
 
-  /// Sideways nudge in panel units, for sharing a panel with the other foot.
-  final double shift;
+  /// Nudge off the panel centre in panel units (canvas axes): sharing a panel
+  /// with the other foot, or the spot the [DancerForm] puts it on.
+  final Offset shift;
 
-  const _FootPose(this.heelCol, this.toeCol, [this.shift = 0]);
+  const _FootPose(this.heelCol, this.toeCol, [this.shift = Offset.zero]);
 
   Offset heel(Offset Function(int) pointFor, double unit) =>
-      pointFor(heelCol) + Offset(shift * unit, 0);
+      pointFor(heelCol) + shift * unit;
   Offset toe(Offset Function(int) pointFor, double unit) =>
-      pointFor(toeCol) + Offset(shift * unit, 0);
+      pointFor(toeCol) + shift * unit;
 }
 
 class _PadPainter extends CustomPainter {
@@ -359,12 +512,20 @@ class _PadPainter extends CustomPainter {
     required this.playhead,
     required this.columnCount,
     required this.visualOffset,
+    required this.form,
+    required this.shoeSize,
+    required this.shocks,
+    required this.shockPlans,
   }) : super(repaint: playhead);
 
   final List<ParityStance> stances;
   final ValueListenable<double> playhead;
   final int columnCount;
   final double visualOffset;
+  final DancerForm form;
+  final double shoeSize;
+  final List<double> shocks;
+  final List<ShockEvasion> shockPlans;
 
   /// The body's turn at each stance, solved in order since whether a stance
   /// turns you depends on how you stepped into it (see [stepTurn]). Doubles has
@@ -400,8 +561,70 @@ class _PadPainter extends CustomPainter {
   /// that a fast run reads as movement instead of teleporting.
   static const double _stepSeconds = 0.09;
 
-  /// How long a stepped panel stays lit after it is hit.
-  static const double _flashSeconds = 0.16;
+  /// Each foot's arrivals in order: when it lands and the panels under it.
+  late final List<List<(double, List<int>)>> _arrivals = [
+    for (final foot in ParityFoot.values)
+      () {
+        final out = <(double, List<int>)>[];
+        String? prev;
+        for (final s in stances) {
+          final cols = s.columnsFor(foot);
+          if (cols.isEmpty) continue;
+          final key = cols.join(',');
+          if (!cols.any(s.stepped.contains) && key == prev) continue;
+          prev = key;
+          out.add((s.second, cols));
+        }
+        return out;
+      }(),
+  ];
+
+  /// The panels with a foot drawn on them at [t]: lit once a sliding foot is
+  /// halfway onto its panel until it's halfway off, with a short blink before
+  /// a jack re-presses the same panel.
+  Set<int> _pressed(double t, [Set<ParityFoot> away = const {}]) {
+    final lit = <int>{};
+    for (final foot in ParityFoot.values) {
+      if (away.contains(foot)) continue;
+      final ev = _arrivals[foot.index];
+      var lo = 0, hi = ev.length;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (ev[mid].$1 <= t) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
+        }
+      }
+      // The arrival in force, and the one before it still sliding off.
+      for (final k in [lo - 1, lo - 2]) {
+        if (k < 0) continue;
+        final (at, cols) = ev[k];
+        bool same(int j) => listEquals(ev[j].$2, cols);
+        final start = k > 0 && !same(k - 1) && !_offMetal(foot, at)
+            ? at + _stepSeconds / 2
+            : at;
+        var end = double.infinity;
+        if (k + 1 < ev.length) {
+          final next = ev[k + 1].$1;
+          end = same(k + 1)
+              ? next - math.min(0.05, (next - at) / 3)
+              : _offMetal(foot, next)
+                  ? next
+                  : next + _stepSeconds / 2;
+        }
+        if (start <= t && t < end) lit.addAll(cols);
+      }
+    }
+    return lit;
+  }
+
+  /// Did [foot] arrive at [at] by stepping off centre metal after a shock,
+  /// rather than sliding over from its previous panel?
+  bool _offMetal(ParityFoot foot, double at) {
+    final away = shockFor(shockPlans, foot, at - 1e-6)?.of(foot);
+    return away != null && away.steps && (away.release - at).abs() < 1e-6;
+  }
 
   /// The drawn centre of a column, in panel units from the whole pad's centre.
   /// A doubles column past the fourth belongs to the second panel, shifted
@@ -455,31 +678,65 @@ class _PadPainter extends CustomPainter {
     final sinceStep = second - current.second;
     final t = sinceStep >= _stepSeconds
         ? 1.0
-        : Curves.easeOutCubic.transform((sinceStep / _stepSeconds).clamp(0.0, 1.0));
+        : Curves.easeOutCubic
+            .transform((sinceStep / _stepSeconds).clamp(0.0, 1.0));
 
-    final lit = sinceStep <= _flashSeconds
-        ? current.stepped
-        : const <int>{};
-    _paintPanels(canvas, pointFor, unit, lit,
-        flash: sinceStep <= _flashSeconds
-            ? 1 - (sinceStep / _flashSeconds).clamp(0.0, 1.0)
-            : 0);
+    final evasions = {
+      for (final foot in ParityFoot.values)
+        foot: shockFor(shockPlans, foot, second)
+    };
+    _paintPanels(
+        canvas,
+        pointFor,
+        unit,
+        _pressed(second, {
+          for (final e in evasions.entries)
+            if ((e.value?.amount(e.key, second) ?? 0) > 0.99) e.key
+        }));
 
     // The body's turn, slid alongside the feet so a crossover winds round as the
     // foot travels rather than snapping square on the landing frame. One angle
     // for both feet: the waist turns and the whole body follows.
-    final turn = _lerpAngle(_turns[previous == null ? idx - 1 : idx - 2],
-        _turns[idx - 1], t);
+    final turn = _lerpAngle(
+        _turns[previous == null ? idx - 1 : idx - 2], _turns[idx - 1], t);
 
     for (final foot in ParityFoot.values) {
       final to = _poseFor(current, foot);
       if (to == null) continue; // foot not on the pad yet
-      final from = (previous == null ? null : _poseFor(previous, foot)) ?? to;
+      var from = (previous == null ? null : _poseFor(previous, foot)) ?? to;
       // Only the foot that actually stepped presses. A foot standing still while
       // its partner steps is holding its weight, not landing, and bobbing it too
       // would read as both feet hitting on every note.
-      final press = _stepped(current, foot) ? padPressFactor(sinceStep) : 1.0;
-      _paintFoot(canvas, pointFor, unit, foot, from, to, t, turn, press);
+      var press = _stepped(current, foot) ? padPressFactor(sinceStep) : 1.0;
+      var evasion = evasions[foot];
+      var dodge = evasion?.amount(foot, second) ?? 0.0;
+      if (evasion == null &&
+          _stepped(current, foot) &&
+          _offMetal(foot, current.second)) {
+        // This step left the metal: slide from there, not the old arrow.
+        evasion = shockFor(shockPlans, foot, current.second - 1e-6);
+        from = to;
+        dodge = 1 - t;
+      }
+      final role = evasion?.of(foot)?.role;
+      final target =
+          evasion?.pose(foot, shoeLength(shoeSize) / kPanelMetres, second);
+      final safe =
+          target == null ? center : center + Offset(target.x, -target.y) * unit;
+      var lifted = (target?.airborne ?? false) ? 0.10 * dodge : 0.0;
+      if (evasion != null &&
+          (role == ShockRole.centre || role == ShockRole.hover)) {
+        lifted =
+            math.max(lifted, 0.10 * math.sin(math.pi * evasion.hop(second)));
+        if (role == ShockRole.centre && second >= evasion.land) {
+          press = padPressFactor(second - evasion.land);
+        }
+      }
+      _paintFoot(canvas, pointFor, unit, foot, from, to, t, turn, press,
+          shockTarget: role == ShockRole.air ? null : safe,
+          dodge: dodge,
+          tilt: (target?.tilt ?? 0) * dodge,
+          lifted: lifted);
     }
   }
 
@@ -508,13 +765,18 @@ class _PadPainter extends CustomPainter {
     final heel = foot == ParityFoot.left ? stance.leftHeel : stance.rightHeel;
     final toe = foot == ParityFoot.left ? stance.leftToe : stance.rightToe;
     if (heel == -1 && toe == -1) return null;
-    // Both feet on one panel (mid-footswitch) stand side by side on it, left
-    // foot on the left half, rather than drawn on top of each other.
+    // Where on the panel comes from the form; both feet on one panel
+    // (mid-footswitch) stand side by side rather than on top of each other.
     final left = stance.columnsFor(ParityFoot.left);
     final right = stance.columnsFor(ParityFoot.right);
-    final sharing = left.length == 1 && right.length == 1 && left[0] == right[0];
-    return _FootPose(heel == -1 ? toe : heel, toe == -1 ? heel : toe,
-        sharing ? (foot == ParityFoot.left ? -0.28 : 0.28) : 0);
+    final own = foot == ParityFoot.left ? left : right;
+    final other = foot == ParityFoot.left ? right : left;
+    if (own.length != 1) {
+      return _FootPose(heel == -1 ? toe : heel, toe == -1 ? heel : toe);
+    }
+    final spot =
+        formSpot(form, own[0], foot, other.length == 1 ? other[0] : -1);
+    return _FootPose(own[0], own[0], Offset(spot.dx, -spot.dy));
   }
 
   static final Paint _panelPaint = Paint()
@@ -524,28 +786,54 @@ class _PadPainter extends CustomPainter {
     ..strokeWidth = 1
     ..color = Colors.white.withValues(alpha: 0.12);
 
-  /// The four arrow panels, lit briefly as they are stepped on.
+  static final Paint _arrowIdlePaint = Paint()
+    ..color = Colors.white.withValues(alpha: 0.14);
+  static final Paint _arrowLitPaint = Paint()
+    ..color = _lamp.withValues(alpha: 0.72);
+  static final Paint _panelLitPaint = Paint()
+    ..color = _lamp.withValues(alpha: 0.1);
+
+  /// The arrow panels, each arrow lit while a foot is on its panel, the way
+  /// the cabinet's lamps follow the press.
   void _paintPanels(
     Canvas canvas,
     Offset Function(int) pointFor,
     double unit,
-    Set<int> lit, {
-    double flash = 0,
-  }) {
-    final side = unit * 0.88;
+    Set<int> lit,
+  ) {
+    // Plates fill their cells but for the seams between them.
+    final h = unit * 0.485, c = unit * 0.97 * kPanelChamfer;
+    // Scaled with the canvas, so the blur is in panel units.
+    final glow = Paint()
+      ..color = _lamp.withValues(alpha: 0.3)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.08);
     for (int col = 0; col < columnCount; col++) {
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: pointFor(col), width: side, height: side),
-        Radius.circular(unit * 0.12),
-      );
-      canvas.drawRRect(rect, _panelPaint);
-      canvas.drawRRect(rect, _panelBorderPaint);
-      if (lit.contains(col) && flash > 0) {
-        canvas.drawRRect(
-          rect,
-          Paint()..color = Colors.white.withValues(alpha: 0.20 * flash),
-        );
-      }
+      final centre = pointFor(col);
+      // The plate, its corners cut away where the brackets hold it.
+      final plate = Path()
+        ..addPolygon([
+          for (final (x, y) in [
+            (-h + c, -h),
+            (h - c, -h),
+            (h, -h + c),
+            (h, h - c),
+            (h - c, h),
+            (-h + c, h),
+            (-h, h - c),
+            (-h, -h + c),
+          ])
+            centre + Offset(x, y),
+        ], true);
+      final on = lit.contains(col);
+      canvas.drawPath(plate, on ? _panelLitPaint : _panelPaint);
+      canvas.drawPath(plate, _panelBorderPaint);
+      canvas.save();
+      canvas.translate(centre.dx, centre.dy);
+      canvas.rotate(_arrowTurn[col % 4]);
+      canvas.scale(unit);
+      if (on) canvas.drawPath(_arrowPath, glow);
+      canvas.drawPath(_arrowPath, on ? _arrowLitPaint : _arrowIdlePaint);
+      canvas.restore();
     }
   }
 
@@ -562,8 +850,12 @@ class _PadPainter extends CustomPainter {
     _FootPose to,
     double t,
     double bodyTurn,
-    double press,
-  ) {
+    double press, {
+    Offset? shockTarget,
+    double dodge = 0,
+    double tilt = 0,
+    double lifted = 0,
+  }) {
     final heel =
         Offset.lerp(from.heel(pointFor, unit), to.heel(pointFor, unit), t)!;
     final toe =
@@ -577,16 +869,19 @@ class _PadPainter extends CustomPainter {
     final angle =
         len < 0.001 ? bodyTurn : math.atan2(axis.dy, axis.dx) + math.pi / 2;
 
-    final color = foot == ParityFoot.left ? kLeftFootColor : kRightFootColor;
+    final color = (foot == ParityFoot.left ? kLeftFootColor : kRightFootColor)
+        .withValues(alpha: lifted > 0.075 ? 0.55 : 1);
     canvas.save();
-    canvas.translate((heel.dx + toe.dx) / 2, (heel.dy + toe.dy) / 2);
-    canvas.rotate(angle);
+    final position =
+        Offset.lerp((heel + toe) / 2, shockTarget ?? (heel + toe) / 2, dodge)!;
+    canvas.translate(position.dx, position.dy);
+    canvas.rotate(angle * (1 - dodge));
     // Scaled about the foot's own centre (already translated there) so the press
     // squashes it in place rather than sliding it toward the panel's corner. A
     // foot never STRETCHES to its stance — a bracket only turns to point along
     // its heel->toe line, since one stretched across two panels reads as a
     // rendering glitch. The press is the only thing that changes a foot's size.
-    canvas.scale(press);
+    canvas.scale(press, press * math.cos(tilt));
     // Which way is "inward" in the foot's own rotated frame: the left foot's
     // body is to its right (+x) and vice versa. Constant per foot rather than
     // derived from the pad centre, so the arch never flips sides on a crossover.
@@ -594,7 +889,11 @@ class _PadPainter extends CustomPainter {
     // About 1.8:1, the way a real foot is and the way SMEditor's bot draws it.
     // The length is what gives the silhouette a direction and keeps a bracket's
     // heel/toe legible at this size.
-    _drawFootPath(canvas, unit * 0.46, unit * 0.82, color, inward);
+    // To scale: the shoe's length against the 283 mm panel. The outline
+    // tapers to the heel and scoops at the arch, so it takes a wider forefoot
+    // than a real sole to read as one.
+    final length = unit * shoeLength(shoeSize) / kPanelMetres;
+    _drawFootPath(canvas, length * 0.55, length, color, inward);
     canvas.restore();
   }
 
@@ -620,7 +919,8 @@ class _PadPainter extends CustomPainter {
     final path = Path()
       ..moveTo(outer, -halfL + width * 0.35)
       // Toe: a rounded cap across the front.
-      ..quadraticBezierTo(outer, -halfL - width * 0.12, 0, -halfL - width * 0.12)
+      ..quadraticBezierTo(
+          outer, -halfL - width * 0.12, 0, -halfL - width * 0.12)
       ..quadraticBezierTo(
           inner, -halfL - width * 0.12, inner, -halfL + width * 0.35)
       // Inner edge: scooped in at the arch before meeting the heel — the hollow
@@ -628,21 +928,23 @@ class _PadPainter extends CustomPainter {
       ..quadraticBezierTo(
           inner * 0.62, halfL * 0.30, innerHeel, halfL - heelW * 0.4)
       // Heel: a rounded cap across the back.
-      ..quadraticBezierTo(innerHeel, halfL + heelW * 0.35, 0, halfL + heelW * 0.35)
+      ..quadraticBezierTo(
+          innerHeel, halfL + heelW * 0.35, 0, halfL + heelW * 0.35)
       ..quadraticBezierTo(
           outerHeel, halfL + heelW * 0.35, outerHeel, halfL - heelW * 0.4)
       // Outer edge: stays full and convex all the way back to the toe.
-      ..quadraticBezierTo(outer * 1.02, halfL * 0.32, outer, -halfL + width * 0.35)
+      ..quadraticBezierTo(
+          outer * 1.02, halfL * 0.32, outer, -halfL + width * 0.35)
       ..close();
 
-    canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.55));
+    canvas.drawPath(path, Paint()..color = color);
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5
         ..strokeJoin = StrokeJoin.round
-        ..color = color,
+        ..color = Color.lerp(color, Colors.black, 0.35)!,
     );
   }
 
@@ -652,5 +954,9 @@ class _PadPainter extends CustomPainter {
       old.columnCount != columnCount ||
       // Without this the feet wouldn't move while dialling VISUAL OFFSET
       // paused — same reason the field's painter watches it.
-      old.visualOffset != visualOffset;
+      old.visualOffset != visualOffset ||
+      old.form != form ||
+      old.shoeSize != shoeSize ||
+      old.shocks != shocks ||
+      old.shockPlans != shockPlans;
 }

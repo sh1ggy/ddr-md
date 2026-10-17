@@ -192,14 +192,33 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     Settings.setInt(Settings.dancingFeetOnKey, _dancingFeet ? 1 : 0);
   }
 
-  // Arcade-style quantisation colouring. QuantColors reads a global rather than
-  // taking the flag per call, so seed it from the stored setting on the way in.
-  bool _arcadeQuant = Settings.getInt(Settings.arcadeQuantOnKey) == 1;
+  // Full quantisation colouring; off is the cabinet's coarser palette.
+  // QuantColors reads a global rather than taking the flag per call, so seed it
+  // from the stored setting on the way in.
+  bool _quantColors = Settings.getInt(Settings.quantColorsOnKey) == 1;
+
+  // The cabinet's blinking arrow art, on unless static sprites were chosen.
+  bool _arrowBlink = Settings.getInt(Settings.staticArrowsOnKey) == 0;
+
+  void _toggleArrowBlink() {
+    setState(() => _arrowBlink = !_arrowBlink);
+    Settings.setInt(Settings.staticArrowsOnKey, _arrowBlink ? 0 : 1);
+  }
+
+  // Freeze heads drawn as quantised taps, persisted the same way.
+  bool _quantFreezeHeads =
+      Settings.getInt(Settings.quantFreezeHeadsOnKey) == 1;
+
+  void _toggleQuantFreezeHeads() {
+    setState(() => _quantFreezeHeads = !_quantFreezeHeads);
+    Settings.setInt(
+        Settings.quantFreezeHeadsOnKey, _quantFreezeHeads ? 1 : 0);
+  }
 
   @override
   void initState() {
     super.initState();
-    QuantColors.arcadeMode = _arcadeQuant;
+    QuantColors.arcadeMode = !_quantColors;
   }
 
   bool get _isSnippet => widget.snippet != null || widget.newSnippet;
@@ -270,12 +289,12 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     );
   }
 
-  void _toggleArcadeQuant() {
+  void _toggleQuantColors() {
     setState(() {
-      _arcadeQuant = !_arcadeQuant;
-      QuantColors.arcadeMode = _arcadeQuant;
+      _quantColors = !_quantColors;
+      QuantColors.arcadeMode = !_quantColors;
     });
-    Settings.setInt(Settings.arcadeQuantOnKey, _arcadeQuant ? 1 : 0);
+    Settings.setInt(Settings.quantColorsOnKey, _quantColors ? 1 : 0);
   }
 
   @override
@@ -343,14 +362,18 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               showDancingFeet: _dancingFeet,
               showMeasureLines: _measureLines,
               assistTickOn: _assistTick,
-              arcadeQuantOn: _arcadeQuant,
+              quantColorsOn: _quantColors,
+              arrowBlinkOn: _arrowBlink,
+              quantFreezeHeadsOn: _quantFreezeHeads,
               onToggleMeasureLines: _toggleMeasureLines,
               onToggleFootGuide: () =>
                   setState(() => _showFootGuide = !_showFootGuide),
               onToggleFootTrails: _toggleFootTrails,
               onToggleDancingFeet: _toggleDancingFeet,
               onToggleAssistTick: _toggleAssistTick,
-              onToggleArcadeQuant: _toggleArcadeQuant,
+              onToggleQuantColors: _toggleQuantColors,
+              onToggleArrowBlink: _toggleArrowBlink,
+              onToggleQuantFreezeHeads: _toggleQuantFreezeHeads,
               headerBuilder: (context, patternsButton) => _buildHeader(
                   context,
                   diffColor,

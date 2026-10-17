@@ -9,30 +9,19 @@ library;
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/material.dart';
 
+/// The tempo readout in the scrub bar's time row: the BPM of the section under
+/// the playhead and the read speed it reads at (localBpm × mod). CONSTANT is
+/// intentionally absent — like the cabinet, CONSTANT is a separate display-time
+/// setting that doesn't change the headline read speed.
 class TempoBadge extends StatelessWidget {
-  const TempoBadge({
-    super.key,
-    required this.bpm,
-    required this.readSpeed,
-    this.syncLabel,
-    this.syncAccent,
-  });
+  const TempoBadge({super.key, required this.bpm, required this.readSpeed});
 
   final int bpm;
   final int readSpeed;
 
-  /// The song's effective sync, in the SAME terms as the ARCADE SYNC caption
-  /// (e.g. "FAST 9.0ms" / "ON BEAT") so the two readouts always agree. Null
-  /// hides the segment entirely — a song with no sync data has nothing to say
-  /// here, and an empty slot would just be noise over the field.
-  final String? syncLabel;
-
-  /// FAST/SLOW hue for [syncLabel], or null for the badge's plain white.
-  final Color? syncAccent;
-
   @override
   Widget build(BuildContext context) {
-    Widget stat(String label, String value, {Color? valueColor}) => Row(
+    Widget stat(String label, String value) => Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
@@ -52,39 +41,20 @@ class TempoBadge extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
-                color: valueColor ?? Colors.white.withValues(alpha: 0.92),
+                color: Colors.white.withValues(alpha: 0.92),
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ],
         );
-    Widget divider() => Container(
-          width: 1,
-          height: 14,
-          margin: const EdgeInsets.symmetric(horizontal: 10),
-          color: Colors.white.withValues(alpha: 0.22),
-        );
-    return Container(
-      // Stable handle so tests can read THIS badge's numbers rather than
-      // matching bare text that the transport pane also shows.
+    return Row(
       key: tempoBadgeKey,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          stat("BPM", "$bpm"),
-          divider(),
-          stat("READ", "$readSpeed"),
-          if (syncLabel != null) ...[
-            divider(),
-            stat("SYNC", syncLabel!, valueColor: syncAccent),
-          ],
-        ],
-      ),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        stat("BPM", "$bpm"),
+        const SizedBox(width: 14),
+        stat("READ", "$readSpeed"),
+      ],
     );
   }
 }
@@ -773,7 +743,7 @@ class TurnTile extends StatelessWidget {
   final VoidCallback onTap;
 
   /// Fixed so every tile in the shade lines up regardless of its label: at a
-  /// third of the width a two-word label ("DDR PALETTE") would wrap where
+  /// third of the width a two-word label ("QUANT COLORS") would wrap where
   /// "LEFT" doesn't, and content-sized tiles would leave the rows ragged. The
   /// label scales down to fit one line rather than the tile growing to fit it.
   static const double height = 56;

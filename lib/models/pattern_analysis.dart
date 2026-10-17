@@ -14,7 +14,7 @@ import 'package:ddr_md/models/steps_model.dart';
 /// Version of what a chart's patterns come out as. Bump when a change to
 /// parity.dart or the counting rules here changes them, then regenerate: the
 /// app only takes downloaded patterns made by the same version as itself.
-const kPatternEngineVersion = 1;
+const kPatternEngineVersion = 2;
 
 /// Counted patterns, in display order. Values are the JSON keys.
 enum Pattern {

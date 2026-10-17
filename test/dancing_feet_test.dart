@@ -93,7 +93,8 @@ void main() {
     var last = onImpact;
     for (var s = 0.01; s <= 0.3; s += 0.01) {
       final now = padPressFactor(s);
-      expect(now, greaterThanOrEqualTo(last - 1e-9), reason: 'dipped again at $s');
+      expect(now, greaterThanOrEqualTo(last - 1e-9),
+          reason: 'dipped again at $s');
       last = now;
     }
   });

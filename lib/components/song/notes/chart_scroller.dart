@@ -30,13 +30,16 @@ import 'chart_painter.dart';
 import 'chart_timing.dart';
 import 'dancing_feet.dart';
 import 'density_scrub_bar.dart';
+import 'pad_dancer.dart';
 import 'section_bar.dart';
 import 'tick_clock.dart';
+import 'package:ddr_md/components/song/notes/ddr_atlas.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/parity.dart';
+import 'package:ddr_md/models/parity_shocks.dart';
 import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/parity_profile.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
@@ -106,13 +109,17 @@ class ChartScroller extends StatefulWidget {
     this.showDancingFeet = false,
     this.showMeasureLines = false,
     this.assistTickOn = false,
-    this.arcadeQuantOn = false,
+    this.quantColorsOn = false,
+    this.arrowBlinkOn = false,
+    this.quantFreezeHeadsOn = false,
     this.onToggleMeasureLines,
     this.onToggleFootGuide,
     this.onToggleFootTrails,
     this.onToggleDancingFeet,
     this.onToggleAssistTick,
-    this.onToggleArcadeQuant,
+    this.onToggleQuantColors,
+    this.onToggleArrowBlink,
+    this.onToggleQuantFreezeHeads,
     this.headerBuilder,
     this.footingRef,
     this.editFooting = false,
@@ -202,9 +209,17 @@ class ChartScroller extends StatefulWidget {
   /// Play a short tick as each note row crosses the receptors during playback.
   final bool assistTickOn;
 
-  /// Colour arrows with the cabinet's coarser quantisation palette. Mirrors
-  /// [QuantColors.arcadeMode] so the tile and minimap repaint when it flips.
-  final bool arcadeQuantOn;
+  /// Colour arrows with the full quantisation palette rather than the
+  /// cabinet's coarser one. The inverse of [QuantColors.arcadeMode], passed so
+  /// the tile and minimap repaint when it flips.
+  final bool quantColorsOn;
+
+  /// Draw receptors and taps with the cabinet's blinking art when bundled,
+  /// instead of static sprites.
+  final bool arrowBlinkOn;
+
+  /// Draw freeze heads as quantised taps instead of the freeze head art.
+  final bool quantFreezeHeadsOn;
 
   /// Toggle callbacks for the options above, wired into the settings shade.
   /// Null hides the tile.
@@ -213,7 +228,9 @@ class ChartScroller extends StatefulWidget {
   final VoidCallback? onToggleDancingFeet;
   final VoidCallback? onToggleAssistTick;
   final VoidCallback? onToggleMeasureLines;
-  final VoidCallback? onToggleArcadeQuant;
+  final VoidCallback? onToggleQuantColors;
+  final VoidCallback? onToggleArrowBlink;
+  final VoidCallback? onToggleQuantFreezeHeads;
 
   /// Song length in seconds; bounds the scrub slider and the auto-stop point.
   final double songLength;
@@ -448,6 +465,58 @@ class _ChartScrollerState extends State<ChartScroller>
   // always agree.
   Map<StepNote, Foot> _feet = const {};
   List<ParityStance> _stances = const [];
+  List<ShockEvasion> _shockPlans = const [];
+  // The notes that solve ran on (turned), for the pad dancer's holds.
+  List<StepNote> _turnedNotes = const [];
+
+  // The pad dancer behind the field, with or without the back bar, and the
+  // form both dancers move in. Persisted across previews.
+  bool _padDancer = Settings.getInt(Settings.padDancerOnKey) == 1;
+  bool get _dancerOn => _padDancer && _stances.isNotEmpty;
+  // Set in the profile, not here.
+  final bool _dancerBar = Settings.getInt(Settings.padDancerNoBarKey) == 0;
+  // Only the CABINET view stands at the cabinet, the chart on its monitor;
+  // the others show the stage under the full-size chart.
+  bool get _cabinetOn => _dancerOn && _dancerView == DancerView.cabinet;
+  DancerView _dancerView = DancerView.values[
+      Settings.getInt(Settings.dancerViewKey)
+          .clamp(0, DancerView.values.length - 1)];
+  // Cabinet screen pixels per field pixel, so a scrub over the cabinet view
+  // moves the arrows with the finger.
+  double _scrubScale = 1;
+  DancerForm _form = DancerForm.values[Settings.getInt(Settings.dancerFormKey)
+      .clamp(0, DancerForm.values.length - 1)];
+  // Set in the profile, not here.
+  final BarGrip _grip = BarGrip.values[
+      Settings.getInt(Settings.barGripKey).clamp(0, BarGrip.values.length - 1)];
+  final GripSpot _gripSpot = GripSpot.values[
+      Settings.getInt(Settings.gripSpotKey)
+          .clamp(0, GripSpot.values.length - 1)];
+  final double _height = switch (Settings.getInt(Settings.heightKey)) {
+    0 => kDancerHeight,
+    final cm => cm.clamp(120, 220) / 100,
+  };
+  final double _shoeSize = switch (Settings.getInt(Settings.shoeSizeKey)) {
+    0 => kShoeSize,
+    final tenths => tenths.clamp(30, 180) / 10,
+  };
+
+  void _togglePadDancer() {
+    setState(() => _padDancer = !_padDancer);
+    Settings.setInt(Settings.padDancerOnKey, _padDancer ? 1 : 0);
+  }
+
+  void _cycleDancerView() {
+    setState(() => _dancerView =
+        DancerView.values[(_dancerView.index + 1) % DancerView.values.length]);
+    Settings.setInt(Settings.dancerViewKey, _dancerView.index);
+  }
+
+  void _cycleForm() {
+    setState(() => _form =
+        DancerForm.values[(_form.index + 1) % DancerForm.values.length]);
+    Settings.setInt(Settings.dancerFormKey, _form.index);
+  }
 
   // Patterns read off that same solve, so they agree with the foot guide, and
   // the one picked from the breakdown: its occurrences as (first, last) row
@@ -538,6 +607,9 @@ class _ChartScrollerState extends State<ChartScroller>
   Noteskin? _skin = SpriteNoteskin.resolved
       ? SpriteNoteskin.resolvedSkin ?? const VectorNoteskin()
       : null;
+
+  // The cabinet's own arrow art, when bundled.
+  DdrAtlas? _ddr = DdrAtlas.resolvedAtlas;
 
   // Note-density histogram for the scrub minimap, each bucket carrying its
   // rhythm colours so seeking shows both intensity and the kinds of notes there.
@@ -667,6 +739,11 @@ class _ChartScrollerState extends State<ChartScroller>
         if (mounted) setState(() => _skin = skin ?? const VectorNoteskin());
       });
     }
+    if (!DdrAtlas.resolved) {
+      DdrAtlas.tryLoad().then((atlas) {
+        if (mounted) setState(() => _ddr = atlas);
+      });
+    }
     _tickClock.load("assets/audio/assist_tick.wav").then((_) {
       if (!mounted) {
         _tickClock.dispose();
@@ -743,7 +820,7 @@ class _ChartScrollerState extends State<ChartScroller>
     }
     // The minimap bakes each note's quant bucket, so a palette change has to
     // rebuild it — the field itself re-reads the colours on the next paint.
-    if (old.arcadeQuantOn != widget.arcadeQuantOn) {
+    if (old.quantColorsOn != widget.quantColorsOn) {
       _buildDensity();
     }
     if (old.feedActive != widget.feedActive && widget.feedActive != null) {
@@ -939,8 +1016,7 @@ class _ChartScrollerState extends State<ChartScroller>
       widget.sync == null && _visualOffset == 0 && _audioOffsetMs == 0;
 
   /// FAST/SLOW hue for the current effective sync, or null when it's on the beat
-  /// (or unknown). Shared by the ARCADE SYNC caption and the tempo badge so the
-  /// two never disagree about which way the song leans.
+  /// (or unknown). Used by the ARCADE SYNC caption.
   Color? _syncAccent(BuildContext context) {
     if (_hasNoSyncReading) return null;
     final ms = _effectiveSyncMs;
@@ -948,18 +1024,6 @@ class _ChartScrollerState extends State<ChartScroller>
       ms.abs() < _onBeatEpsilonMs ? 0 : ms,
       Theme.of(context).brightness == Brightness.dark,
     );
-  }
-
-  /// Compact effective sync for the tempo badge: a signed millisecond figure
-  /// ("+9.0ms" / "-4.5ms" / "0.0ms"), with FAST/SLOW carried by its colour since
-  /// the badge is tight for space. Same number [_arcadeSyncSummary] spells out.
-  /// Null hides the segment — including whenever ARCADE SYNC is off, where the
-  /// dials are gated to zero and a figure would describe an unapplied correction.
-  String? get _syncBadgeLabel {
-    if (!_arcadeSyncOn || _hasNoSyncReading) return null;
-    final ms = _effectiveSyncMs;
-    if (ms.abs() < _onBeatEpsilonMs) return "0.0ms";
-    return "${ms > 0 ? "+" : "-"}${ms.abs().toStringAsFixed(1)}ms";
   }
 
   // The ARCADE SYNC caption: the effective sync after both dials, in the same
@@ -1265,6 +1329,8 @@ class _ChartScrollerState extends State<ChartScroller>
           source[i]: foot == ParityFoot.left ? Foot.left : Foot.right,
     };
     _stances = analysis.stances;
+    _shockPlans = planShockEvasions(turned, _stances, widget.mode);
+    _turnedNotes = turned;
     _footwork = footworkOf(turned, analysis, widget.mode);
     _collectHits();
     if (widget.footingRef != null) {
@@ -2372,13 +2438,15 @@ class _ChartScrollerState extends State<ChartScroller>
   }
 
   void _onScaleEnd(ScaleEndDetails d) {
-    if (_gestureMode == _gestureScrub) _endScrub(d.velocity.pixelsPerSecond.dy);
+    if (_gestureMode == _gestureScrub) {
+      _endScrub(d.velocity.pixelsPerSecond.dy * _scrubScale);
+    }
     _gestureMode = _gestureNone;
   }
 
   // Coast a fling from the release velocity.
   void _endScrub(double vPx) {
-    _flingVel = -_pxToSeconds(vPx);
+    _flingVel = _pxToSeconds(-vPx);
     if (_flingVel.abs() < _flingMin) {
       _flingVel = 0;
     } else {
@@ -2406,8 +2474,10 @@ class _ChartScrollerState extends State<ChartScroller>
 
   void _onScrubMove(double dy) {
     // Playhead-only change — no setState; the notifier drives the repaint.
-    _second =
-        (_second - _pxToSeconds(dy)).clamp(_scrubRange.$1, _scrubRange.$2);
+    // Invert in the direction of playhead travel. Negating the resulting
+    // seconds instead would cross a different tempo/stop interval.
+    _second = (_second + _pxToSeconds(-dy * _scrubScale))
+        .clamp(_scrubRange.$1, _scrubRange.$2);
     final beat = _beatIndexAt(_second);
     if (_lastScrubBeat != null && beat != _lastScrubBeat) {
       HapticFeedback.selectionClick();
@@ -2446,20 +2516,93 @@ class _ChartScrollerState extends State<ChartScroller>
           entry.key: entry.value,
     };
     final stanceSeconds = _sectionNotes.map((n) => n.second).toSet();
-    final visibleStances = snippet
-        ? _stances.where((s) => stanceSeconds.contains(s.second)).toList()
-        : _stances;
+    final sectionStances =
+        _stances.where((s) => stanceSeconds.contains(s.second)).toList();
+    // Where the feet already stand as the section starts, held still through
+    // its lead-in, so its first row steps one foot instead of landing both.
+    final standing = sectionStances.isEmpty
+        ? null
+        : _stances
+            .where((s) => s.second < sectionStances.first.second)
+            .lastOrNull;
+    final visibleStances = !snippet
+        ? _stances
+        : [
+            if ((standing, _loop) case (final s?, (final from, _)))
+              ParityStance(
+                  second: from,
+                  leftHeel: s.leftHeel,
+                  leftToe: s.leftToe,
+                  rightHeel: s.rightHeel,
+                  rightToe: s.rightToe,
+                  stepped: const {}),
+            ...sectionStances,
+          ];
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     return LayoutBuilder(builder: (context, constraints) {
       // Feed the field geometry into the speed law: an arrow's travel is the
       // cabinet's bottom edge up to the receptor line, scaled to the arrow size
       // this screen allows (see ChartPainter.arcadeArrowSize).
+      // At the cabinet the field is the cabinet's own lane panel, on its
+      // monitor.
       _fieldSize = constraints.biggest;
-      final topInset = MediaQuery.of(context).padding.top;
-      final travel = ChartPainter.arcadeArrowSize(
-              constraints.biggest, dirs.length, topInset) *
-          ChartPainter.cabinetTravelArrows;
+      final cabinet = _cabinetOn;
+      final topInset = cabinet
+          ? kCabinetReceptorY - ChartPainter.receptorBase
+          : MediaQuery.of(context).padding.top;
+      final fieldSize =
+          cabinet ? cabinetLaneSize(dirs.length) : constraints.biggest;
+      final travel =
+          ChartPainter.arcadeArrowSize(fieldSize, dirs.length, topInset) *
+              ChartPainter.cabinetTravelArrows;
       if (travel > 0) _travelPx = travel;
+      _scrubScale = cabinet
+          ? 1 / cabinetScreenScale(constraints.biggest, dirs.length)
+          : 1;
+      final chart = _skin == null
+          ? null
+          : ChartPainter(
+              notes: _notes,
+              holds: _holds,
+              shockNotes: _shockNotes,
+              shocks: _shocks,
+              bpmMarkers: _bpmMarkers,
+              stopMarkers: _stopMarkers,
+              showMeasureLines: widget.showMeasureLines,
+              paintBackground: !_dancerOn,
+              guideline: _guideline,
+              timeSignatures: widget.timeSignatures,
+              feet: visibleFeet,
+              highlights: _hits,
+              highlightIcon: _pattern == null ? null : kPatternIcons[_pattern],
+              focus: widget.editFooting ? _focus : _sectionNotes,
+              section: _sectionRows,
+              sectionTail: _sectionNotes.isEmpty
+                  ? null
+                  : _sectionNotes
+                      .map((n) => n.endSecond ?? n.second)
+                      .reduce(math.max),
+              footPrev: widget.showFootTrails ? visibleLinks : const {},
+              dirs: dirs,
+              colMap: _colMap,
+              playhead: _playhead,
+              pxPerSecond: _pxPerSecond,
+              pxPerBeat: _pxPerBeat,
+              timing: _timing,
+              columnCount: dirs.length,
+              skin: _skin!,
+              playing: _playing,
+              zoom: _zoom,
+              constantMs: _effectiveConstantMs,
+              topInset: topInset,
+              visualOffset: _visualOffsetSeconds,
+              arcadeQuant: !widget.quantColorsOn,
+              arrowBlink: widget.arrowBlinkOn,
+              quantFreezeHeads: widget.quantFreezeHeadsOn,
+              ddr: _ddr,
+            );
+      // Taps find notes on the full-field chart only.
+      _painter = cabinet ? null : chart;
       return Stack(
         fit: StackFit.expand,
         children: [
@@ -2495,49 +2638,36 @@ class _ChartScrollerState extends State<ChartScroller>
                 // Until the skin resolves (first preview of the app run only)
                 // paint nothing: a blank frame is invisible, a receptor-skin
                 // swap is not.
-                if (_skin == null)
+                if (_dancerOn)
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      painter: PadDancerPainter(
+                        stances: _stances,
+                        notes: _turnedNotes,
+                        shockPlans: _shockPlans,
+                        playhead: _playhead,
+                        columnCount: dirs.length,
+                        visualOffset: _visualOffsetSeconds,
+                        form: _form,
+                        bar: _dancerBar,
+                        grip: _grip,
+                        gripSpot: _gripSpot,
+                        height: _height,
+                        shoeSize: _shoeSize,
+                        cabinet: cabinet,
+                        view: _dancerView,
+                        screen: cabinet ? chart : null,
+                      ),
+                      size: Size.infinite,
+                      willChange: true,
+                    ),
+                  ),
+                if (chart == null || cabinet)
                   const SizedBox.expand()
                 else
                   RepaintBoundary(
                     child: CustomPaint(
-                      painter: _painter = ChartPainter(
-                        notes: _notes,
-                        holds: _holds,
-                        shockNotes: _shockNotes,
-                        shocks: _shocks,
-                        bpmMarkers: _bpmMarkers,
-                        stopMarkers: _stopMarkers,
-                        showMeasureLines: widget.showMeasureLines,
-                        guideline: _guideline,
-                        timeSignatures: widget.timeSignatures,
-                        feet: visibleFeet,
-                        highlights: _hits,
-                        highlightIcon:
-                            _pattern == null ? null : kPatternIcons[_pattern],
-                        focus: widget.editFooting ? _focus : _sectionNotes,
-                        section: _sectionRows,
-                        sectionTail: _sectionNotes.isEmpty
-                            ? null
-                            : _sectionNotes
-                                .map((n) => n.endSecond ?? n.second)
-                                .reduce(math.max),
-                        footPrev:
-                            widget.showFootTrails ? visibleLinks : const {},
-                        dirs: dirs,
-                        colMap: _colMap,
-                        playhead: _playhead,
-                        pxPerSecond: _pxPerSecond,
-                        pxPerBeat: _pxPerBeat,
-                        timing: _timing,
-                        columnCount: dirs.length,
-                        skin: _skin!,
-                        playing: _playing,
-                        zoom: _zoom,
-                        constantMs: _effectiveConstantMs,
-                        topInset: topInset,
-                        visualOffset: _visualOffsetSeconds,
-                        arcadeQuant: widget.arcadeQuantOn,
-                      ),
+                      painter: chart,
                       size: Size.infinite,
                       willChange: true,
                     ),
@@ -2728,8 +2858,8 @@ class _ChartScrollerState extends State<ChartScroller>
                 valueListenable: _playhead,
                 builder: (context, second, child) {
                   final active = !snippet ||
-                      (_sectionRows != null &&
-                          second + _visualOffsetSeconds >= _sectionRows!.$1 &&
+                      (_loop != null &&
+                          second + _visualOffsetSeconds >= _loop!.$1 &&
                           second + _visualOffsetSeconds <=
                               _sectionNotes
                                   .map((n) => n.endSecond ?? n.second)
@@ -2743,6 +2873,10 @@ class _ChartScrollerState extends State<ChartScroller>
                   playhead: _playhead,
                   columnCount: dirs.length,
                   visualOffset: _visualOffsetSeconds,
+                  form: _form,
+                  shoeSize: _shoeSize,
+                  shocks: [for (final shock in _shocks) shock.second],
+                  shockPlans: _shockPlans,
                 ),
               ),
             ),
@@ -2814,33 +2948,6 @@ class _ChartScrollerState extends State<ChartScroller>
                       ),
                       const SizedBox(height: 6),
                     ],
-                    // Always-visible tempo readout: the BPM of the section under
-                    // the playhead and the read speed it actually scrolls at
-                    // (CONSTANT-aware). Centred over the bottom controls and kept
-                    // on screen in fullscreen too — the one place the current
-                    // tempo stays legible once its BPM marker has scrolled past.
-                    // IgnorePointer so taps fall through to the field below.
-                    // Rides the playhead notifier (the local BPM changes as the
-                    // playhead crosses tempo sections) inside its own repaint
-                    // boundary, so per-frame updates stay off the widget tree.
-                    IgnorePointer(
-                      child: RepaintBoundary(
-                        child: ValueListenableBuilder<double>(
-                          valueListenable: _playhead,
-                          builder: (_, __, ___) => TempoBadge(
-                            bpm: _localBpm,
-                            readSpeed: _liveReadSpeed,
-                            // Same numbers and hue as the ARCADE SYNC caption —
-                            // both read [_effectiveSyncMs], so they can't drift
-                            // apart. Unlike BPM/READ this doesn't vary with the
-                            // playhead, so it's computed from the outer context.
-                            syncLabel: _syncBadgeLabel,
-                            syncAccent: _syncAccent(context),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
                     // Transport (read/song speed): shown with the menu.
                     IgnorePointer(
                       ignoring: !_menuOpen,
@@ -2908,23 +3015,33 @@ class _ChartScrollerState extends State<ChartScroller>
             child: ValueListenableBuilder<double>(
               valueListenable: _playhead,
               builder: (_, s, __) => Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text(
-                    fmtTime(s),
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontFeatures: const [FontFeature.tabularFigures()]),
+                  Expanded(
+                    child: Text(
+                      fmtTime(s),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
                   ),
-                  Text(
-                    fmtTime(_endSecond),
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontFeatures: const [FontFeature.tabularFigures()]),
+                  // The section under the playhead; its numbers change as the
+                  // playhead crosses tempo sections, so it rides the same
+                  // per-frame builder as the elapsed label.
+                  TempoBadge(bpm: _localBpm, readSpeed: _liveReadSpeed),
+                  Expanded(
+                    child: Text(
+                      fmtTime(_endSecond),
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
                   ),
                 ],
               ),
@@ -3082,11 +3199,11 @@ class _ChartScrollerState extends State<ChartScroller>
           ],
         ),
       ),
-      // Viewing aids, split off into their own segment and laid out as two rows
+      // Viewing aids, split off into their own segment and laid out as rows
       // of tiles: the parity readings (the on-arrow L/R guide, the same-foot
-      // trails and the dancing-feet pad, all three drawn from one solve) above,
-      // the rest — the assist tick, the measure rules, the guideline and the
-      // arcade quant palette — below.
+      // trails and the dancing-feet pad, all three drawn from one solve), the
+      // pad dancer, then the rest — the assist tick, the measure rules, the
+      // guideline and the arcade quant palette.
       // These moved out of the floating header so it carries only title/back;
       // the toggles read the same as the TURN tiles, so they slot in as more
       // rows of the options card.
@@ -3135,6 +3252,55 @@ class _ChartScrollerState extends State<ChartScroller>
                     ),
                 ],
               ),
+            // The pad dancer and how both dancers move. VIEW only
+            // means something with the dancer on; FORM with either dancer.
+            Row(
+              spacing: 8,
+              children: [
+                Expanded(
+                  child: TurnTile(
+                    label: "PAD DANCER",
+                    icon: _padDancer
+                        ? Icons.accessibility_new
+                        : Icons.accessibility_new_outlined,
+                    selected: _padDancer,
+                    onTap: _togglePadDancer,
+                  ),
+                ),
+                if (_padDancer)
+                  Expanded(
+                    child: TurnTile(
+                      label: switch (_dancerView) {
+                        DancerView.behind => "VIEW: BEHIND",
+                        DancerView.cabinet => "VIEW: CABINET",
+                        DancerView.front => "VIEW: FRONT",
+                        DancerView.side => "VIEW: SIDE",
+                        DancerView.overhead => "VIEW: OVERHEAD",
+                      },
+                      icon: Icons.threed_rotation,
+                      selected: _dancerView != DancerView.behind,
+                      onTap: _cycleDancerView,
+                    ),
+                  ),
+                if (_padDancer || widget.showDancingFeet)
+                  Expanded(
+                    child: TurnTile(
+                      label: switch (_form) {
+                        DancerForm.standard => "STANDARD FORM",
+                        DancerForm.minimal => "MINIMAL FORM",
+                        DancerForm.exaggerated => "EXAGGERATED FORM",
+                      },
+                      icon: switch (_form) {
+                        DancerForm.standard => Icons.directions_run,
+                        DancerForm.minimal => Icons.compress,
+                        DancerForm.exaggerated => Icons.open_in_full,
+                      },
+                      selected: _form != DancerForm.standard,
+                      onTap: _cycleForm,
+                    ),
+                  ),
+              ],
+            ),
             Row(
               spacing: 8,
               children: [
@@ -3174,19 +3340,51 @@ class _ChartScrollerState extends State<ChartScroller>
                     onTap: _cycleGuideline,
                   ),
                 ),
-                if (widget.onToggleArcadeQuant != null)
-                  Expanded(
-                    child: TurnTile(
-                      label: "DDR PALETTE",
-                      icon: widget.arcadeQuantOn
-                          ? Icons.music_note
-                          : Icons.music_note_outlined,
-                      selected: widget.arcadeQuantOn,
-                      onTap: widget.onToggleArcadeQuant!,
-                    ),
-                  ),
               ],
             ),
+            if (widget.onToggleQuantColors != null ||
+                widget.onToggleQuantFreezeHeads != null ||
+                widget.onToggleArrowBlink != null)
+              Row(
+                spacing: 8,
+                children: [
+                  // Only the cabinet art blinks, so without it there's
+                  // nothing to switch.
+                  if (widget.onToggleArrowBlink != null && _ddr != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "BLINKING",
+                        icon: widget.arrowBlinkOn
+                            ? Icons.flare
+                            : Icons.flare_outlined,
+                        selected: widget.arrowBlinkOn,
+                        onTap: widget.onToggleArrowBlink!,
+                      ),
+                    ),
+                  if (widget.onToggleQuantColors != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "QUANT COLORS",
+                        icon: widget.quantColorsOn
+                            ? Icons.music_note
+                            : Icons.music_note_outlined,
+                        selected: widget.quantColorsOn,
+                        onTap: widget.onToggleQuantColors!,
+                      ),
+                    ),
+                  if (widget.onToggleQuantFreezeHeads != null)
+                    Expanded(
+                      child: TurnTile(
+                        label: "QUANT FREEZES",
+                        icon: widget.quantFreezeHeadsOn
+                            ? Icons.palette
+                            : Icons.palette_outlined,
+                        selected: widget.quantFreezeHeadsOn,
+                        onTap: widget.onToggleQuantFreezeHeads!,
+                      ),
+                    ),
+                ],
+              ),
           ],
         ),
       ),

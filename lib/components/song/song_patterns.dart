@@ -23,7 +23,7 @@ const _rhythmBuckets = <(String, List<String>, Color)>[
   ("Other", ["other"], QuantColors.other),
 ];
 
-/// The same under DDR PALETTE, where only 4ths, 8ths and 16ths keep a colour.
+/// The same without QUANT COLORS, where only 4ths, 8ths and 16ths keep a colour.
 const _arcadeRhythmBuckets = <(String, List<String>, Color)>[
   ("4th", ["4"], QuantColors.quarter),
   ("8th", ["8"], QuantColors.eighth),
@@ -224,7 +224,7 @@ class _RhythmBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final arcade = Settings.getInt(Settings.arcadeQuantOnKey) == 1;
+    final arcade = Settings.getInt(Settings.quantColorsOnKey) == 0;
     final buckets = [
       for (final (label, keys, color)
           in arcade ? _arcadeRhythmBuckets : _rhythmBuckets)
