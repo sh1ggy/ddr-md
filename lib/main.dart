@@ -6,12 +6,14 @@ library;
 import 'dart:io';
 
 import 'package:ddr_md/components/ocr/ocr_page.dart';
+import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/snippets/snippets_page.dart';
 import 'package:ddr_md/components/songlist/difficultylist_page.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/foundation.dart';
@@ -31,10 +33,15 @@ void main() async {
   final support = await getApplicationSupportDirectory();
   await ContentStore.init(support);
   await Songs.load();
+  final session = SessionState();
+  await session.restore();
 
   // Wrapped app with providers
   runApp(MultiProvider(
-    providers: [ChangeNotifierProvider(create: (context) => SongState())],
+    providers: [
+      ChangeNotifierProvider(create: (context) => SongState()),
+      ChangeNotifierProvider.value(value: session),
+    ],
     child: const App(),
   ));
 
@@ -119,6 +126,14 @@ class _LayoutState extends State<Layout> {
           destinations: const <Widget>[
             NavigationDestination(
               selectedIcon: Icon(
+                Icons.timer,
+                color: Colors.white,
+              ),
+              icon: Icon(Icons.timer_outlined),
+              label: 'Session',
+            ),
+            NavigationDestination(
+              selectedIcon: Icon(
                 Icons.music_note,
                 color: Colors.white,
               ),
@@ -155,11 +170,19 @@ class _LayoutState extends State<Layout> {
           // Android-specific removal of navigators to make back gesture work
           // Note that this removes the bottom navigator
           if (Platform.isAndroid) ...{
+            const SessionPage(),
             const DifficultyListPage(),
             const SnippetsPage(),
             const OcrPage(),
             const SettingsPage(),
           } else ...{
+            Navigator(
+              key: const Key("Session"),
+              onGenerateRoute: (settings) {
+                Widget page = const SessionPage();
+                return MaterialPageRoute(builder: (_) => page);
+              },
+            ),
             Navigator(
               key: const Key("SongList"),
               onGenerateRoute: (settings) {

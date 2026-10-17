@@ -2,6 +2,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_labels.dart';
+import 'package:ddr_md/models/session_model.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -36,17 +37,33 @@ class DatabaseProvider {
   static const String _snippetsDdl =
       'CREATE TABLE IF NOT EXISTS snippets(id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, chartHash TEXT NOT NULL, startBeat REAL NOT NULL, endBeat REAL NOT NULL, label TEXT NOT NULL DEFAULT \'\')';
 
+  // v10: named cabinets, each play's result-screen timing, and hard sync
+  // overrides per chart, cabinet and side.
+  static const String _cabinetsDdl =
+      'CREATE TABLE IF NOT EXISTS cabinets(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)';
+  static const String _timingPlaysDdl =
+      'CREATE TABLE IF NOT EXISTS timing_plays(id TEXT PRIMARY KEY, playedAt TEXT NOT NULL, cabinetId INT NOT NULL, side TEXT NOT NULL, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, songOffsetMs REAL NOT NULL, syncUsedMs REAL NOT NULL, averageMs REAL NOT NULL, variationMs REAL NOT NULL)';
+  static const String _syncOverridesDdl =
+      'CREATE TABLE IF NOT EXISTS sync_overrides(cabinetId INT NOT NULL, side TEXT NOT NULL, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, ms REAL NOT NULL, PRIMARY KEY(cabinetId, side, song, mode, difficulty))';
+
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
     await db.execute(_favoritesDdl);
     await db.execute(_scoresDdl);
     await db.execute(_parityPinsDdl);
     await db.execute(_snippetsDdl);
+    await _createSessionSchema(db);
+  }
+
+  static Future<void> _createSessionSchema(Database db) async {
+    await db.execute(_cabinetsDdl);
+    await db.execute(_timingPlaysDdl);
+    await db.execute(_syncOverridesDdl);
   }
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 9, onCreate: (db, version) async {
+    return await openDatabase(path, version: 10, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -66,7 +83,76 @@ class DatabaseProvider {
       }
       if (oldVersion < 8) await db.execute(_parityPinsDdl);
       if (oldVersion < 9) await db.execute(_snippetsDdl);
+      if (oldVersion < 10) await _createSessionSchema(db);
     });
+  }
+
+  // -- SESSION FUNCTIONS
+  static Future<List<Cabinet>> getCabinets() async {
+    final db = await _instance;
+    return [
+      for (final r in await db.query("cabinets", orderBy: "name"))
+        Cabinet.fromMap(r)
+    ];
+  }
+
+  static Future<Cabinet> addCabinet(String name) async {
+    final db = await _instance;
+    final id = await db.insert("cabinets", {'name': name});
+    return Cabinet(id, name);
+  }
+
+  static Future<void> saveTimingPlay(TimingPlay play) async {
+    final db = await _instance;
+    await db.insert("timing_plays", play.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<void> deleteTimingPlay(String id) async {
+    final db = await _instance;
+    await db.delete("timing_plays", where: "id = ?", whereArgs: [id]);
+  }
+
+  // Every play on one cabinet + side, newest first.
+  static Future<List<TimingPlay>> getTimingPlays(
+      int cabinetId, PadSide side) async {
+    final db = await _instance;
+    final rows = await db.query("timing_plays",
+        where: "cabinetId = ? AND side = ?",
+        whereArgs: [cabinetId, side.name],
+        orderBy: "playedAt DESC");
+    return [for (final r in rows) TimingPlay.fromMap(r)];
+  }
+
+  static Future<double?> getSyncOverride(int cabinetId, PadSide side,
+      String song, Modes mode, String difficulty) async {
+    final db = await _instance;
+    final rows = await db.query("sync_overrides",
+        where:
+            "cabinetId = ? AND side = ? AND song = ? AND mode = ? AND difficulty = ?",
+        whereArgs: [cabinetId, side.name, song, mode.name, difficulty]);
+    return rows.isEmpty ? null : (rows.first['ms'] as num).toDouble();
+  }
+
+  // A null [ms] clears the override.
+  static Future<void> setSyncOverride(int cabinetId, PadSide side, String song,
+      Modes mode, String difficulty, double? ms) async {
+    final db = await _instance;
+    final key = {
+      'cabinetId': cabinetId,
+      'side': side.name,
+      'song': song,
+      'mode': mode.name,
+      'difficulty': difficulty,
+    };
+    if (ms == null) {
+      await db.delete("sync_overrides",
+          where: key.keys.map((k) => "$k = ?").join(" AND "),
+          whereArgs: key.values.toList());
+    } else {
+      await db.insert("sync_overrides", {...key, 'ms': ms},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    }
   }
 
   // -- SNIPPET FUNCTIONS
