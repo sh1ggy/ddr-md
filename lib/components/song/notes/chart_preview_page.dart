@@ -63,12 +63,7 @@ class ChartPreviewPage extends StatefulWidget {
     String? feedLabel,
   }) {
     final difficulty = mode == Modes.singles ? info.singles : info.doubles;
-    // Per-chart timing is listed by difficulty, Beginner to Challenge, for SP
-    // and DP alike.
-    final i = kInGameDifficultyNames.keys.toList().indexOf(difficultyKey);
-    final chart = info.perChart
-        ? info.charts[i.clamp(0, info.charts.length - 1)]
-        : info.charts.first;
+    final chart = info.chartFor(difficultyKey);
     return ChartPreviewPage(
       key: key,
       stepsFuture: stepsFuture ?? StepsLoader.load(info.name),

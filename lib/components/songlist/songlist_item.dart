@@ -37,11 +37,11 @@ class _SongListItemState extends State<SongListItem> {
   // sync card leads with: the bias with its sign flipped. Null when this song
   // has no sync data, so the row can fall back to the version.
   Widget? _syncAdjust(BuildContext context) {
-    final charts = widget.songInfo.charts;
-    final chart = charts[widget.difficultyIndex != null &&
-            widget.difficultyIndex! < charts.length
-        ? widget.difficultyIndex!
-        : 0];
+    final chart = widget.difficultyIndex == null
+        ? widget.songInfo.charts.first
+        : widget.songInfo.chartAt(
+            Provider.of<SongState>(context, listen: false).modes,
+            widget.difficultyIndex!);
     final sync = widget.songInfo.displaySyncFor(chart);
     if (sync == null) return null;
     final isDark = Theme.of(context).brightness == Brightness.dark;
