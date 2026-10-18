@@ -24,6 +24,12 @@ String songPath(SongInfo song, {int? difficulty}) => Uri(
             difficulty == null ? null : {'difficulty': '$difficulty'})
     .toString();
 
+// go_router only builds Material pages for material_ui's MaterialApp, not
+// Flutter's, and otherwise falls back to pages with no transition and no iOS
+// back swipe; so every route builds its own.
+Page<void> _page(GoRouterState state, Widget child) =>
+    MaterialPage(key: state.pageKey, child: child);
+
 final router = GoRouter(
   initialLocation: '/songs',
   routes: [
@@ -33,7 +39,8 @@ final router = GoRouter(
         StatefulShellBranch(routes: [
           GoRoute(
             path: '/songs',
-            builder: (context, state) => const DifficultyListPage(),
+            pageBuilder: (context, state) =>
+                _page(state, const DifficultyListPage()),
             routes: [
               GoRoute(
                 path: 'song/:name',
@@ -54,7 +61,7 @@ final router = GoRouter(
                   }
                   return null;
                 },
-                builder: (context, state) => const SongPage(),
+                pageBuilder: (context, state) => _page(state, const SongPage()),
               ),
             ],
           ),
@@ -62,15 +69,19 @@ final router = GoRouter(
         StatefulShellBranch(routes: [
           GoRoute(
               path: '/snippets',
-              builder: (context, state) => const SnippetsPage()),
+              pageBuilder: (context, state) =>
+                  _page(state, const SnippetsPage())),
         ]),
         StatefulShellBranch(routes: [
-          GoRoute(path: '/scan', builder: (context, state) => const OcrPage()),
+          GoRoute(
+              path: '/scan',
+              pageBuilder: (context, state) => _page(state, const OcrPage())),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
               path: '/settings',
-              builder: (context, state) => const SettingsPage()),
+              pageBuilder: (context, state) =>
+                  _page(state, const SettingsPage())),
         ]),
       ],
     ),
