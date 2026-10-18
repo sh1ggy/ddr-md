@@ -62,6 +62,26 @@ class SongInfo {
   /// simfile fingerprint as a fallback.
   Sync? displaySyncFor(Chart chart) => arcadeSync ?? syncFor(chart);
 
+  /// Timing for [difficultyKey] (beginner..challenge). per_chart songs list
+  /// one entry per difficulty name, SP and DP alike, from the lowest name
+  /// either style charts.
+  Chart chartFor(String difficultyKey) {
+    if (!perChart) return charts.first;
+    const keys = ['beginner', 'easy', 'medium', 'hard', 'challenge'];
+    final first = keys.indexWhere((k) =>
+        singles.availableTypes.contains(k) ||
+        doubles.availableTypes.contains(k));
+    final i = keys.indexOf(difficultyKey) - first;
+    return charts[i.clamp(0, charts.length - 1)];
+  }
+
+  /// Timing for the chart at [chosenDifficulty], indexed as in [radarFor].
+  Chart chartAt(Modes mode, int chosenDifficulty) {
+    final available = (mode == Modes.singles ? singles : doubles).availableTypes;
+    if (available.isEmpty) return charts.first;
+    return chartFor(available[chosenDifficulty.clamp(0, available.length - 1)]);
+  }
+
   /// Radar for the chart at [chosenDifficulty], which indexes the non-null
   /// difficulties of [mode] in beginner..challenge order (as rendered by
   /// SongDifficultyPicker). Out-of-range indexes clamp to match the picker's
