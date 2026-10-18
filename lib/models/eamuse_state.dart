@@ -28,6 +28,8 @@ class EamuseSyncState extends ChangeNotifier {
   // Charts the last sync added or changed.
   int? changed;
   String error = '';
+  // Plays kept from the recent plays page.
+  int recentPlays = 0;
   // Bumped when a sync ends, so views of what it saved reload.
   int revision = 0;
   EamuseSync? _sync;
@@ -35,13 +37,18 @@ class EamuseSyncState extends ChangeNotifier {
   DateTime? get syncedAt =>
       DateTime.tryParse(Settings.getString(Settings.eamuseSyncedAtKey));
 
+  /// Within the cooldown of the last sync, unless that sync kept no plays
+  /// (one from before plays were kept), which leaves Home with nothing to show.
   bool get upToDate {
     final at = syncedAt;
-    return at != null && DateTime.now().difference(at) < EamuseSync.cooldown;
+    return at != null &&
+        recentPlays > 0 &&
+        DateTime.now().difference(at) < EamuseSync.cooldown;
   }
 
   Future<void> restore() async {
     charts = await DatabaseProvider.countScoreRecords(ScoreRecordSource.eamuse);
+    recentPlays = await DatabaseProvider.countRecentPlays();
     notifyListeners();
   }
 
@@ -134,6 +141,7 @@ class EamuseSyncState extends ChangeNotifier {
     changed = changedNow;
     revision++;
     charts = await DatabaseProvider.countScoreRecords(ScoreRecordSource.eamuse);
+    recentPlays = await DatabaseProvider.countRecentPlays();
     notifyListeners();
   }
 

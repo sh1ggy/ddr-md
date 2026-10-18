@@ -399,6 +399,13 @@ class DatabaseProvider {
     return [for (final r in rows) RecentPlay.fromMap(r)];
   }
 
+  static Future<int> countRecentPlays() async {
+    final db = await _instance;
+    return Sqflite.firstIntValue(
+            await db.rawQuery('SELECT COUNT(*) FROM recent_plays')) ??
+        0;
+  }
+
   // -- SNIPPET FUNCTIONS
   // Insert or replace, keyed by id, so an edited snippet keeps its place.
   static Future<void> saveSnippet(Snippet snippet) async {

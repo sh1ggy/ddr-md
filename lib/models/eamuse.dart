@@ -202,8 +202,7 @@ EamuseProfile parseEamuseProfile(String source) {
   return (
     name: fields['DANCER NAME'] ?? '',
     code: (fields['DDR-CODE'] ?? '').replaceAll(RegExp(r'\D'), ''),
-    plays: int.tryParse(
-        (fields['総プレー回数'] ?? '').replaceAll(RegExp(r'\D'), '')),
+    plays: int.tryParse((fields['総プレー回数'] ?? '').replaceAll(RegExp(r'\D'), '')),
     lastPlay: RegExp(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d')
             .firstMatch(fields['最終プレー日時'] ?? '')
             ?.group(0) ??
@@ -212,9 +211,8 @@ EamuseProfile parseEamuseProfile(String source) {
 }
 
 /// An 8-digit rival code as the cabinet shows it, 1234-5678.
-String formatRivalCode(String code) => code.length == 8
-    ? '${code.substring(0, 4)}-${code.substring(4)}'
-    : code;
+String formatRivalCode(String code) =>
+    code.length == 8 ? '${code.substring(0, 4)}-${code.substring(4)}' : code;
 
 /// A chart's music_detail page: its best for [play]'s chart, or null when
 /// the page says it has no play data.

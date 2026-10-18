@@ -54,14 +54,35 @@ class RecentPlaysCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final revision = context.select<EamuseSyncState, int>((s) => s.revision);
+    final sync = context.watch<EamuseSyncState>();
     return FutureBuilder<_Loaded>(
-      key: ValueKey(revision),
+      key: ValueKey(sync.revision),
       // Enough to hold the latest set's start for its header.
       future: _load(limit: 50),
       builder: (context, snapshot) {
         final data = snapshot.data;
-        if (data == null || data.plays.isEmpty) return const SizedBox.shrink();
+        if (data == null) return const SizedBox.shrink();
+        if (data.plays.isEmpty) {
+          // Synced before plays were kept: one more sync fills the history.
+          if (sync.charts == 0) return const SizedBox.shrink();
+          final signedOut = sync.status == EamuseStatus.signedOut;
+          return Card(
+            margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: ListTile(
+              title: const Text('Recent plays'),
+              subtitle: Text(
+                  signedOut ? 'Sign in above to load them' : 'Not loaded yet'),
+              trailing: signedOut
+                  ? null
+                  : FilledButton.tonal(
+                      onPressed: sync.status == EamuseStatus.syncing
+                          ? null
+                          : sync.sync,
+                      child: const Text('Load'),
+                    ),
+            ),
+          );
+        }
         final latest = groupPlaySets(data.plays).first;
         return Card(
           margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
