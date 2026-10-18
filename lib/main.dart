@@ -30,15 +30,13 @@ void main() async {
   await session.restore();
 
   // Wrapped app with providers
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (context) => SongState()),
-        ChangeNotifierProvider.value(value: session),
-      ],
-      child: const App(),
-    ),
-  );
+  runApp(MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (context) => SongState()),
+      ChangeNotifierProvider.value(value: session),
+    ],
+    child: const App(),
+  ));
 
   // Newer chart content, if any, is downloaded and applied in the background.
   ContentUpdater.update(support).catchError((Object e) {
@@ -58,11 +56,10 @@ class App extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xff8cb2dd),
-          primary: const Color(0xff2f4d89),
-          secondary: const Color(0xffb6445b),
-          tertiary: Colors.grey.shade800,
-        ),
+            seedColor: const Color(0xff8cb2dd),
+            primary: const Color(0xff2f4d89),
+            secondary: const Color(0xffb6445b),
+            tertiary: Colors.grey.shade800),
       ),
       darkTheme: ThemeData.dark(useMaterial3: true),
       themeMode: ThemeMode.system,

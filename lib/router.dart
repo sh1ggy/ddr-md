@@ -20,9 +20,10 @@ import 'package:provider/provider.dart';
 
 /// Path of a song's page; [difficulty] is the chart index to open on.
 String songPath(SongInfo song, {int? difficulty}) => Uri(
-  path: '/songs/song/${Uri.encodeComponent(song.name)}',
-  queryParameters: difficulty == null ? null : {'difficulty': '$difficulty'},
-).toString();
+        path: '/songs/song/${Uri.encodeComponent(song.name)}',
+        queryParameters:
+            difficulty == null ? null : {'difficulty': '$difficulty'})
+    .toString();
 
 // go_router only builds Material pages for material_ui's MaterialApp, not
 // Flutter's, and otherwise falls back to pages with no transition and no iOS
@@ -36,76 +37,59 @@ final router = GoRouter(
     StatefulShellRoute.indexedStack(
       builder: (context, state, shell) => Layout(shell: shell),
       branches: [
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
+        StatefulShellBranch(routes: [
+          GoRoute(
               path: '/session',
               pageBuilder: (context, state) =>
-                  _page(state, const SessionPage()),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/songs',
-              pageBuilder: (context, state) =>
-                  _page(state, const DifficultyListPage()),
-              routes: [
-                GoRoute(
-                  path: 'song/:name',
-                  // SongPage reads the selected song from SongState, so a link
-                  // selects it here before the page builds.
-                  redirect: (context, state) {
-                    final name = state.pathParameters['name'];
-                    final song = Songs.list
-                        .where((s) => s.name == name)
-                        .firstOrNull;
-                    if (song == null) return '/songs';
-                    final songState = context.read<SongState>();
-                    if (songState.songInfo != song) songState.setSongInfo(song);
-                    final difficulty = int.tryParse(
-                      state.uri.queryParameters['difficulty'] ?? '',
-                    );
-                    if (difficulty != null &&
-                        songState.chosenDifficulty != difficulty) {
-                      songState.setChosenDifficulty(difficulty);
-                    }
-                    return null;
-                  },
-                  pageBuilder: (context, state) =>
-                      _page(state, const SongPage()),
-                ),
-              ],
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
+                  _page(state, const SessionPage())),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(
+            path: '/songs',
+            pageBuilder: (context, state) =>
+                _page(state, const DifficultyListPage()),
+            routes: [
+              GoRoute(
+                path: 'song/:name',
+                // SongPage reads the selected song from SongState, so a link
+                // selects it here before the page builds.
+                redirect: (context, state) {
+                  final name = state.pathParameters['name'];
+                  final song =
+                      Songs.list.where((s) => s.name == name).firstOrNull;
+                  if (song == null) return '/songs';
+                  final songState = context.read<SongState>();
+                  if (songState.songInfo != song) songState.setSongInfo(song);
+                  final difficulty = int.tryParse(
+                      state.uri.queryParameters['difficulty'] ?? '');
+                  if (difficulty != null &&
+                      songState.chosenDifficulty != difficulty) {
+                    songState.setChosenDifficulty(difficulty);
+                  }
+                  return null;
+                },
+                pageBuilder: (context, state) => _page(state, const SongPage()),
+              ),
+            ],
+          ),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(
               path: '/snippets',
               pageBuilder: (context, state) =>
-                  _page(state, const SnippetsPage()),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
+                  _page(state, const SnippetsPage())),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(
               path: '/scan',
-              pageBuilder: (context, state) => _page(state, const OcrPage()),
-            ),
-          ],
-        ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
+              pageBuilder: (context, state) => _page(state, const OcrPage())),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(
               path: '/settings',
               pageBuilder: (context, state) =>
-                  _page(state, const SettingsPage()),
-            ),
-          ],
-        ),
+                  _page(state, const SettingsPage())),
+        ]),
       ],
     ),
   ],
@@ -124,22 +108,21 @@ class Layout extends StatelessWidget {
       return;
     }
     showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Exit Application'),
-        content: const Text('Do you really want to exit the app?'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => SystemNavigator.pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Exit Application'),
+              content: const Text('Do you really want to exit the app?'),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => SystemNavigator.pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ));
   }
 
   @override
@@ -163,10 +146,8 @@ class Layout extends StatelessWidget {
             elevation: 5,
             surfaceTintColor: Colors.black,
             // Re-tapping the current tab returns it to its root.
-            onDestinationSelected: (index) => shell.goBranch(
-              index,
-              initialLocation: index == shell.currentIndex,
-            ),
+            onDestinationSelected: (index) => shell.goBranch(index,
+                initialLocation: index == shell.currentIndex),
             indicatorColor: Colors.primaries.first,
             selectedIndex: shell.currentIndex,
             destinations: const <Widget>[
