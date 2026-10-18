@@ -1,5 +1,6 @@
 /// Name: DifficultyLabel
-/// Parent: ScoreCard, ScoreRecordRow, SongPage, SongDifficultyPicker
+/// Parent: ScoreCard, ScoreRecordRow, SongPage, SongDifficultyPicker,
+/// ChartPreviewPage
 /// Description: A chart's difficulty name and level drawn with the cabinet's
 /// own lettering, from the optional git-ignored assets/difficulty/ art
 /// (name_<difficulty>.png, level_<difficulty>_<n>.png). Without the art, the
