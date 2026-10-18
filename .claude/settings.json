@@ -8,6 +8,9 @@
       "assets/jackets-160",
       "assets/noteskin",
       "native_opencv/android/src/main/jniLibs",
+      "native_opencv/android/src/main/cpp",
+      "native_opencv/include",
+      "native_opencv/ios/opencv2.framework",
       "DDR-BPM-prep",
       "_private",
       "docs/arcade"
