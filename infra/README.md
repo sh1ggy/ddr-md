@@ -6,7 +6,7 @@ behind it. App-side behaviour is in [AGENTS.md](../AGENTS.md) (data flow §6).
 
 ```
 DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
-                          │ push to master / daily 03:17 UTC / manual
+                          │ push to master (or staging) / daily 03:17 UTC / manual
                           ▼
             .github/workflows/publish.yml   (written by Terraform)
                           │ calls
@@ -16,6 +16,7 @@ DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
                           │ only when something changed
                           ▼
          Cloudflare Pages: ddr-md-content.pages.dev
+                   (staging branch → staging.ddr-md-content.pages.dev)
            latest.json · manifest.json · objects/<sha256>.<ext>
                           │ polled on launch
                           ▼
@@ -30,7 +31,7 @@ DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
 | CI deploy token (Pages Write only) | Cloudflare, account-owned | Terraform |
 | Private repo `sh1ggy/ddr-md-content` | GitHub | Terraform (archived, not deleted, on destroy) |
 | Its `.github/workflows/publish.yml` | content repo | Terraform, from [publish.yml.tftpl](publish.yml.tftpl) |
-| `CLOUDFLARE_API_TOKEN` secret, `CONTENT_URL` / `PAGES_PROJECT` / `CLOUDFLARE_ACCOUNT_ID` variables | content repo | Terraform |
+| `CLOUDFLARE_API_TOKEN` secret, `CONTENT_URL` / `STAGING_CONTENT_URL` / `PAGES_PROJECT` / `CLOUDFLARE_ACCOUNT_ID` variables | content repo | Terraform |
 | The publish logic | [publish-content.yml](../.github/workflows/publish-content.yml) here | git |
 | The content itself | content repo's commits | you (pushed from prep output) |
 | Content id | the live `manifest.json`: a hash of what's published, with `source` naming the commits | CI |
@@ -74,7 +75,7 @@ terraform init
 GITHUB_TOKEN=$(gh auth token) terraform apply
 ```
 
-Expect *8 to add*.
+Expect *9 to add*.
 Committing the workflow file triggers a run that fails on an empty repo; that's
 expected. Then push the content:
 
@@ -94,7 +95,8 @@ curl -s https://ddr-md-content.pages.dev/latest.json
 
 | To... | Do |
 |---|---|
-| Publish new songs / chart fixes | Copy prep output into `ddr-md-content`, commit, push to `master` (other branches don't publish) |
+| Publish new songs / chart fixes | Copy prep output into `ddr-md-content`, commit, push to `master` (other branches don't publish, except `staging`) |
+| Try a chart before it goes live | Push it to the content repo's `staging` branch (branch it from `master`). It publishes to the staging URL with the same checks; run a build with `--dart-define=CONTENT_URL=https://staging.ddr-md-content.pages.dev` to take it. Happy → merge into `master` and push |
 | Publish generator or parity engine changes | Merge to `workflow_ref`; the daily run picks it up, or `gh workflow run Publish -R sh1ggy/ddr-md-content` |
 | Make a store build | `bash scripts/build_store.sh ipa` (or `appbundle`): fetches the live content, then builds with `CONTENT_URL` set |
 | Remove a song | Delete its four files, add its name to `removed.txt` in `ddr-md-content`, push. Without the `removed.txt` line CI refuses |

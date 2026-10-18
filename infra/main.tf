@@ -67,6 +67,8 @@ resource "cloudflare_account_token" "ci" {
 
 locals {
   content_url = var.custom_domain != "" ? "https://${var.custom_domain}" : "https://${cloudflare_pages_project.content.subdomain}"
+  # Pages serves every non-production branch deploy at <branch>.<subdomain>.
+  staging_content_url = "https://staging.${cloudflare_pages_project.content.subdomain}"
 }
 
 resource "github_repository" "content" {
@@ -94,6 +96,7 @@ resource "github_actions_secret" "cloudflare_token" {
 resource "github_actions_variable" "content" {
   for_each = {
     CONTENT_URL           = local.content_url
+    STAGING_CONTENT_URL   = local.staging_content_url
     PAGES_PROJECT         = cloudflare_pages_project.content.name
     CLOUDFLARE_ACCOUNT_ID = var.cloudflare_account_id
   }
