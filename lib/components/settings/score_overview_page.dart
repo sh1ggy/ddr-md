@@ -1,0 +1,767 @@
+/// Name: ScoreOverviewPage
+/// Parent: SettingsPage
+/// Description: The player's synced scores at a glance: flare skill with its
+/// best charts per group, clear lamps per level, and a year of plays as a
+/// day grid. Everything here comes from e-amusement syncs on Home.
+library;
+
+import 'dart:math';
+
+import 'package:ddr_md/components/session/recent_plays.dart'
+    show HomeCard, HomeSubpage;
+import 'package:ddr_md/components/song/difficulty_label.dart' show LevelNumber;
+import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/grades.dart' show flareRankIcon, gradeForScore;
+import 'package:ddr_md/helpers.dart' show kFlareRanks;
+import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
+import 'package:ddr_md/models/score_overview.dart';
+import 'package:ddr_md/models/song_model.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+typedef _Loaded = ({List<ScoreRecord> records, List<RecentPlay> plays});
+
+Future<_Loaded> _load() async => (
+      records: await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse),
+      plays: await DatabaseProvider.getRecentPlays(),
+    );
+
+class ScoreOverviewPage extends StatefulWidget {
+  const ScoreOverviewPage({super.key});
+
+  @override
+  State<ScoreOverviewPage> createState() => _ScoreOverviewPageState();
+}
+
+class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
+  Modes _mode = Modes.singles;
+
+  @override
+  Widget build(BuildContext context) {
+    final revision = context.select<EamuseSyncState, int>((s) => s.revision);
+    return HomeSubpage(
+      title: 'Scores',
+      body: FutureBuilder<_Loaded>(
+        key: ValueKey(revision),
+        future: _load(),
+        builder: (context, snapshot) {
+          final data = snapshot.data;
+          if (data == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (data.records.isEmpty) {
+            return const Center(
+                child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('Sync e-amusement on Home to see your scores here',
+                  textAlign: TextAlign.center),
+            ));
+          }
+          final levels = chartsByLevel(data.records, Songs.list, _mode);
+          return ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: SegmentedButton<Modes>(
+                  showSelectedIcon: false,
+                  expandedInsets: EdgeInsets.zero,
+                  style:
+                      const ButtonStyle(visualDensity: VisualDensity.compact),
+                  segments: [
+                    for (final (mode, asset) in [
+                      (Modes.singles, 'assets/icons/style_single.png'),
+                      (Modes.doubles, 'assets/icons/style_double.png'),
+                    ])
+                      ButtonSegment(
+                          value: mode,
+                          label: Opacity(
+                            opacity: _mode == mode ? 1 : 0.4,
+                            child: Image.asset(asset, height: 15),
+                          )),
+                  ],
+                  selected: {_mode},
+                  onSelectionChanged: (s) => setState(() => _mode = s.single),
+                ),
+              ),
+              _FlareCard(flareSkill(data.records, Songs.list, _mode)),
+              _LevelsCard(levels),
+              _LevelStatsCard(levels),
+              _ActivityCard(playsPerDay(data.plays, data.records)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+String _thousands(int n) =>
+    n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+$)'), (_) => ',');
+
+class _FlareCard extends StatelessWidget {
+  const _FlareCard(this.skill);
+
+  final FlareSkill skill;
+
+  static const _names = {
+    FlareGroup.classic: 'CLASSIC',
+    FlareGroup.white: 'WHITE',
+    FlareGroup.gold: 'GOLD',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final total = skill.total;
+    final cls = flareClass(total);
+    return HomeCard(
+      title: 'Flare skill',
+      icon: Icons.local_fire_department_outlined,
+      children: [
+        Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(_thousands(total),
+                  style: theme.textTheme.headlineMedium
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(width: 10),
+              Text(cls.name,
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                      color: theme.colorScheme.primary)),
+            ]),
+        if (cls.next != null)
+          Text('${_thousands(cls.next! - total)} to the next class',
+              textAlign: TextAlign.center, style: TextStyle(color: muted)),
+        const SizedBox(height: 4),
+        for (final g in FlareGroup.values)
+          Theme(
+            // No dividers around an open group.
+            data: theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: Row(children: [
+                SizedBox(
+                    width: 84,
+                    child: Text(_names[g]!,
+                        softWrap: false,
+                        style: const TextStyle(fontWeight: FontWeight.w600))),
+                Expanded(
+                  child: LinearProgressIndicator(
+                    value: skill.groups[g]!.length / kFlareChartsPerGroup,
+                    minHeight: 6,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                SizedBox(
+                    width: 64,
+                    child: Text(_thousands(skill.groupTotal(g)),
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                            fontFeatures: [FontFeature.tabularFigures()]))),
+              ]),
+              subtitle: Text(
+                  '${skill.groups[g]!.length} of $kFlareChartsPerGroup charts',
+                  style: TextStyle(fontSize: 12, color: muted)),
+              children: [
+                for (final r in skill.groups[g]!) _FlareChartRow(r),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _FlareChartRow extends StatelessWidget {
+  const _FlareChartRow(this.record);
+
+  final ScoreRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final song = Songs.list.where((s) => s.name == record.song).firstOrNull;
+    final level =
+        song == null ? null : chartLevel(song, record.mode, record.difficulty);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        SizedBox(
+            width: 28,
+            child: level == null
+                ? null
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: LevelNumber(
+                        level: level,
+                        difficulty: record.difficulty,
+                        height: 16),
+                  )),
+        Expanded(
+            child: Text(record.title,
+                maxLines: 1, overflow: TextOverflow.ellipsis)),
+        if (record.flareRank.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Image.asset(flareRankIcon(record.flareRank), height: 18),
+          ),
+        SizedBox(
+            width: 40,
+            child: Text('${record.flareSkill}',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()]))),
+      ]),
+    );
+  }
+}
+
+/// One band of the clear table's bars: which played charts it holds, its
+/// colour, and its label art (or text where there's none).
+typedef _Band = ({
+  bool Function(ScoreRecord) holds,
+  Color color,
+  String? icon,
+  String text,
+});
+
+// Best first. A chart without a lamp shows as failed.
+final _lampBands = <_Band>[
+  for (final (lamp, color, icon, text) in const [
+    (ClearLamp.mfc, Color(0xFFB3E5FC), 'assets/icons/cl_marv.png', 'MFC'),
+    (ClearLamp.pfc, Color(0xFFFFC107), 'assets/icons/cl_perf.png', 'PFC'),
+    (ClearLamp.gfc, Color(0xFF66BB6A), 'assets/icons/cl_great.png', 'GFC'),
+    (ClearLamp.fc, Color(0xFF42A5F5), 'assets/icons/cl_good.png', 'FC'),
+    (ClearLamp.life4, Color(0xFFEF5350), null, 'LIFE4'),
+    (
+      ClearLamp.clear,
+      Color(0xFFFF9800),
+      'assets/icons/cl_li4clear.png',
+      'CLEAR'
+    ),
+    (ClearLamp.assisted, Color(0xFFAB47BC), null, 'ASSIST'),
+    (ClearLamp.failed, Color(0xFF757575), 'assets/icons/rank_e.png', 'E'),
+  ])
+    (
+      holds: (r) => (r.clearLamp ?? ClearLamp.failed) == lamp,
+      color: color,
+      icon: icon,
+      text: text,
+    ),
+];
+
+// EX first, then IX down to I, then no flare.
+final _flareBands = <_Band>[
+  (
+    holds: (r) => r.flareRank == 'EX',
+    color: const Color(0xFFFFD54F),
+    icon: flareRankIcon('EX'),
+    text: 'EX',
+  ),
+  for (var i = 8; i >= 0; i--)
+    (
+      holds: (r) => r.flareRank == kFlareRanks[i],
+      // Cool to hot as the rank climbs.
+      color: HSVColor.fromAHSV(1, 200 - 200 * i / 8, 0.65, 0.95).toColor(),
+      icon: flareRankIcon(kFlareRanks[i]),
+      text: kFlareRanks[i],
+    ),
+  (
+    holds: (r) => r.flareRank.isEmpty,
+    color: const Color(0xFF757575),
+    icon: 'assets/icons/icon_0.png',
+    text: 'None',
+  ),
+];
+
+const _bandHeight = 18.0;
+
+class _LevelsCard extends StatefulWidget {
+  const _LevelsCard(this.levels);
+
+  final Map<int, LevelCharts> levels;
+
+  @override
+  State<_LevelsCard> createState() => _LevelsCardState();
+}
+
+class _LevelsCardState extends State<_LevelsCard> {
+  bool _flare = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final muted = scheme.onSurfaceVariant;
+    final bands = _flare ? _flareBands : _lampBands;
+    const figures = [FontFeature.tabularFigures()];
+    return HomeCard(
+      title: 'By level',
+      icon: Icons.emoji_events_outlined,
+      children: [
+        Center(
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            segments: const [
+              ButtonSegment(value: false, label: Text('Lamps')),
+              ButtonSegment(value: true, label: Text('Flare')),
+            ],
+            selected: {_flare},
+            onSelectionChanged: (s) => setState(() => _flare = s.single),
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final MapEntry(key: level, value: row) in widget.levels.entries)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(children: [
+              SizedBox(width: 30, child: Center(child: _Level(level))),
+              const SizedBox(width: 6),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: SizedBox(
+                    height: 14,
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final b in bands)
+                            if (_count(row, b) > 0)
+                              Expanded(
+                                  flex: _count(row, b),
+                                  child: ColoredBox(color: b.color)),
+                          if (_unplayed(row) > 0)
+                            Expanded(
+                                flex: _unplayed(row),
+                                child: ColoredBox(
+                                    color: scheme.surfaceContainerHighest)),
+                        ]),
+                  ),
+                ),
+              ),
+              SizedBox(
+                  width: 72,
+                  child: Text('${row.played.length}/${row.charts}',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                          fontSize: 12, color: muted, fontFeatures: figures))),
+            ]),
+          ),
+        const SizedBox(height: 10),
+        _BandCounts([for (final b in bands) (b, null)]),
+      ],
+    );
+  }
+}
+
+int _count(LevelCharts row, _Band b) => row.played.where(b.holds).length;
+
+// Never negative, though the song list can lag behind a sync.
+int _unplayed(LevelCharts row) => max(0, row.charts - row.played.length);
+
+/// A level in the cabinet's numerals, in a neutral grey unless [selected].
+class _Level extends StatelessWidget {
+  const _Level(this.level, {this.selected = false, this.height = 16});
+
+  final int level;
+  final bool selected;
+  final double height;
+
+  static const _grey = ColorFilter.matrix([
+    0.33, 0.33, 0.33, 0, 0, //
+    0.33, 0.33, 0.33, 0, 0,
+    0.33, 0.33, 0.33, 0, 0,
+    0, 0, 0, 1, 0,
+  ]);
+
+  @override
+  Widget build(BuildContext context) {
+    final number =
+        LevelNumber(level: level, difficulty: 'EXPERT', height: height);
+    return selected ? number : ColorFiltered(colorFilter: _grey, child: number);
+  }
+}
+
+/// One level picked from a row of numerals: its lamp and flare counts and
+/// how its scores spread.
+class _LevelStatsCard extends StatefulWidget {
+  const _LevelStatsCard(this.levels);
+
+  final Map<int, LevelCharts> levels;
+
+  @override
+  State<_LevelStatsCard> createState() => _LevelStatsCardState();
+}
+
+class _LevelStatsCardState extends State<_LevelStatsCard> {
+  int? _picked;
+
+  @override
+  Widget build(BuildContext context) {
+    final played = [
+      for (final e in widget.levels.entries)
+        if (e.value.played.isNotEmpty) e.key
+    ];
+    if (played.isEmpty) return const SizedBox.shrink();
+    // Starts on the hardest level with a decent number of plays.
+    final level = played.contains(_picked)
+        ? _picked!
+        : played.lastWhere((l) => widget.levels[l]!.played.length >= 10,
+            orElse: () => played.last);
+    final row = widget.levels[level]!;
+    return HomeCard(
+      title: 'Level stats',
+      icon: Icons.insights,
+      children: [
+        Center(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              for (final l in played)
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => setState(() => _picked = l),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: _Level(l, selected: l == level, height: 22),
+                  ),
+                ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _BandCounts([
+          for (final b in _lampBands)
+            if (_count(row, b) > 0) (b, _count(row, b)),
+        ], unplayed: _unplayed(row)),
+        const SizedBox(height: 8),
+        _BandCounts([
+          for (final b in _flareBands)
+            if (_count(row, b) > 0) (b, _count(row, b)),
+        ]),
+        _ScoreSpread(row.played),
+      ],
+    );
+  }
+}
+
+/// Band labels in a centred run with dividers between them, each with its
+/// count (or its colour, for the legend) at the label's own height.
+class _BandCounts extends StatelessWidget {
+  const _BandCounts(this.entries, {this.unplayed});
+
+  final List<(_Band, int?)> entries;
+  final int? unplayed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const style = TextStyle(
+        fontSize: _bandHeight * 0.8,
+        height: 1,
+        fontWeight: FontWeight.w700,
+        fontFeatures: [FontFeature.tabularFigures()]);
+    Widget label(_Band b) => b.icon != null
+        // The grade and empty-flare art have more space around them.
+        ? Image.asset(b.icon!,
+            height: b.text == 'E' || b.text == 'None'
+                ? _bandHeight * 1.6
+                : _bandHeight)
+        : Text(b.text, style: style.copyWith(color: b.color));
+    final items = [
+      for (final (b, n) in entries)
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          if (n == null) ...[
+            Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                    color: b.color, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(width: 5),
+          ],
+          label(b),
+          if (n != null) ...[
+            const SizedBox(width: 5),
+            Text('$n', style: style.copyWith(color: b.color)),
+          ],
+        ]),
+      if (unplayed != null && unplayed! > 0)
+        Text('$unplayed unplayed',
+            style: style.copyWith(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: scheme.onSurfaceVariant)),
+    ];
+    return Center(
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        runSpacing: 6,
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0)
+              Container(
+                  width: 1,
+                  height: _bandHeight,
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  color: scheme.outlineVariant),
+            items[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A level's score spread: how many charts land in each band of score, with
+/// the mean marked and one standard deviation either side shaded.
+class _ScoreSpread extends StatelessWidget {
+  const _ScoreSpread(this.played);
+
+  final List<ScoreRecord> played;
+
+  @override
+  Widget build(BuildContext context) {
+    // A failed chart's score isn't comparable, so it's left out.
+    final scores = [
+      for (final r in played)
+        if (r.score != null &&
+            (r.clearLamp ?? ClearLamp.failed) != ClearLamp.failed)
+          r.score!
+    ];
+    final stats = meanAndSd(scores);
+    if (stats == null) return const SizedBox(height: 8);
+    final scheme = Theme.of(context).colorScheme;
+    final muted = scheme.onSurfaceVariant;
+    // From the lowest score (rounded down to 10k) up to a perfect million.
+    final low = min((scores.reduce(min) ~/ 10000) * 10000, 990000);
+    Widget stat(String label, String value) => Expanded(
+          child: Column(children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    color: muted,
+                    fontWeight: FontWeight.w600)),
+            Text(value,
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: [FontFeature.tabularFigures()])),
+          ]),
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+      child: Column(children: [
+        Row(children: [
+          stat('AVERAGE', _thousands(stats.mean.round())),
+          stat('GRADE', gradeForScore(stats.mean.round()).label),
+          stat('STD DEV', _thousands(stats.sd.round())),
+        ]),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 90,
+          width: double.infinity,
+          child: CustomPaint(
+              painter: _SpreadPainter(
+            scores: scores,
+            low: low,
+            mean: stats.mean,
+            sd: stats.sd,
+            bar: scheme.primary,
+            band: scheme.primary.withValues(alpha: 0.12),
+            line: scheme.onSurface,
+          )),
+        ),
+        const SizedBox(height: 4),
+        Row(children: [
+          Text(_thousands(low), style: TextStyle(fontSize: 11, color: muted)),
+          const Spacer(),
+          Text('1,000,000', style: TextStyle(fontSize: 11, color: muted)),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _SpreadPainter extends CustomPainter {
+  _SpreadPainter({
+    required this.scores,
+    required this.low,
+    required this.mean,
+    required this.sd,
+    required this.bar,
+    required this.band,
+    required this.line,
+  });
+
+  final List<int> scores;
+  final int low;
+  final double mean, sd;
+  final Color bar, band, line;
+
+  static const _bins = 24;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final span = (1000000 - low).toDouble();
+    double x(double score) =>
+        ((score - low) / span).clamp(0.0, 1.0) * size.width;
+    final counts = List.filled(_bins, 0);
+    for (final s in scores) {
+      counts[min(((s - low) / span * _bins).floor(), _bins - 1)]++;
+    }
+    final most = counts.reduce(max);
+    canvas.drawRect(Rect.fromLTRB(x(mean - sd), 0, x(mean + sd), size.height),
+        Paint()..color = band);
+    final w = size.width / _bins;
+    final paint = Paint()..color = bar;
+    for (var i = 0; i < _bins; i++) {
+      if (counts[i] == 0) continue;
+      final h = size.height * counts[i] / most;
+      canvas.drawRRect(
+          RRect.fromRectAndCorners(
+              Rect.fromLTWH(i * w + 1, size.height - h, w - 2, h),
+              topLeft: const Radius.circular(2),
+              topRight: const Radius.circular(2)),
+          paint);
+    }
+    canvas.drawLine(
+        Offset(x(mean), 0),
+        Offset(x(mean), size.height),
+        Paint()
+          ..color = line
+          ..strokeWidth = 1.5);
+  }
+
+  @override
+  bool shouldRepaint(_SpreadPainter old) =>
+      old.scores != scores || old.bar != bar;
+}
+
+class _ActivityCard extends StatefulWidget {
+  const _ActivityCard(this.days);
+
+  final Map<DateTime, int> days;
+
+  @override
+  State<_ActivityCard> createState() => _ActivityCardState();
+}
+
+class _ActivityCardState extends State<_ActivityCard> {
+  static const _weeks = 53;
+  static const _cell = 12.0;
+  static const _gap = 3.0;
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  DateTime? _picked;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final muted = scheme.onSurfaceVariant;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // Columns are Sunday-to-Saturday weeks, the last one holding today.
+    final start = DateTime(today.year, today.month,
+        today.day - today.weekday % 7 - 7 * (_weeks - 1));
+    final inRange = widget.days.entries.where((e) => !e.key.isBefore(start));
+    final plays = inRange.fold(0, (a, e) => a + e.value);
+    final busiest = inRange.fold(0, (a, e) => max(a, e.value));
+
+    Color shade(int n) {
+      if (n == 0) return scheme.surfaceContainerHighest;
+      // Quarters of the busiest day, so one huge day doesn't wash out the rest.
+      final step = (4 * n / max(busiest, 1)).ceil().clamp(1, 4);
+      return Color.lerp(scheme.surfaceContainerHighest, scheme.primary,
+          0.25 + 0.75 * step / 4)!;
+    }
+
+    final picked = _picked;
+    return HomeCard(
+      title: 'Play activity',
+      icon: Icons.calendar_view_month,
+      children: [
+        Text(
+            picked == null
+                ? '$plays plays on ${inRange.length} days in the last year'
+                : '${widget.days[picked] ?? 0} plays on '
+                    '${picked.day} ${_months[picked.month - 1]} ${picked.year}',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: muted)),
+        const SizedBox(height: 8),
+        Center(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            reverse: true,
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                for (var w = 0; w < _weeks; w++)
+                  SizedBox(
+                    width: _cell + _gap,
+                    child: Builder(builder: (_) {
+                      final d =
+                          DateTime(start.year, start.month, start.day + 7 * w);
+                      final first = w == 0 || d.day <= 7;
+                      return Text(first ? _months[d.month - 1] : '',
+                          softWrap: false,
+                          overflow: TextOverflow.visible,
+                          style: TextStyle(fontSize: 10, color: muted));
+                    }),
+                  ),
+              ]),
+              const SizedBox(height: 2),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                for (var w = 0; w < _weeks; w++)
+                  Column(children: [
+                    for (var d = 0; d < 7; d++)
+                      Builder(builder: (_) {
+                        final day = DateTime(
+                            start.year, start.month, start.day + 7 * w + d);
+                        if (day.isAfter(today)) {
+                          return const SizedBox(
+                              width: _cell + _gap, height: _cell + _gap);
+                        }
+                        return GestureDetector(
+                          onTap: () => setState(
+                              () => _picked = _picked == day ? null : day),
+                          child: Container(
+                            width: _cell,
+                            height: _cell,
+                            margin: const EdgeInsets.only(
+                                right: _gap, bottom: _gap),
+                            decoration: BoxDecoration(
+                              color: shade(widget.days[day] ?? 0),
+                              borderRadius: BorderRadius.circular(2),
+                              border: day == picked
+                                  ? Border.all(color: scheme.onSurface)
+                                  : null,
+                            ),
+                          ),
+                        );
+                      }),
+                  ]),
+              ]),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text('Fills in as you sync: e-amusement only lists your last 50 plays',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: muted)),
+      ],
+    );
+  }
+}

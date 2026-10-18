@@ -7,6 +7,7 @@ import 'package:ddr_md/components/settings/dancer_type_page.dart';
 import 'package:ddr_md/components/settings/eamuse_profile_card.dart';
 import 'package:ddr_md/components/settings/footing_style_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
+import 'package:ddr_md/components/settings/score_overview_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
@@ -99,6 +100,19 @@ class _SettingsPageState extends State<SettingsPage> {
                       children: [
                         const _SectionHeader('Profile'),
                         const EamuseProfileCard(),
+                        Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.leaderboard_outlined),
+                            title: const Text("Scores",
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: const Text(
+                                "Flare skill, lamps by level and play activity"),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) => const ScoreOverviewPage())),
+                          ),
+                        ),
                         SettingCard<int>(
                           setValue: _setReadSpeed,
                           chosenValue: _chosenReadSpeed,
