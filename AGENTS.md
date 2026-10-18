@@ -69,4 +69,4 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 
 ## Local validation preference
 
-For interactive validation, use `flutter run -d macos`. Run it from the feature worktree and reuse its running session for hot reload when possible.
+For interactive validation, use `flutter run -d macos`. Run it from the feature worktree and reuse its running session for hot reload when possible. Outside the main checkout, add `--dart-define=DB_NAME=$(basename "$PWD").db`: every build shares one app container, and a branch on an older schema winds the shared database's version back.
