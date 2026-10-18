@@ -68,50 +68,69 @@ class DatabaseProvider {
   // of the same name with one unnamed cabinet.
   static Future<void> _upgradeToVenues(Database db) async {
     await db.execute(
-        'CREATE TABLE IF NOT EXISTS venues(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)');
+      'CREATE TABLE IF NOT EXISTS venues(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)',
+    );
     await db.execute(
-        'CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, venueId INT NOT NULL, startedAt TEXT NOT NULL, endedAt TEXT)');
+      'CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, venueId INT NOT NULL, startedAt TEXT NOT NULL, endedAt TEXT)',
+    );
     await db.execute(
-        'CREATE TABLE IF NOT EXISTS credits(id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, number INT NOT NULL, cabinetId INT NOT NULL, side TEXT NOT NULL, startedAt TEXT NOT NULL)');
+      'CREATE TABLE IF NOT EXISTS credits(id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, number INT NOT NULL, cabinetId INT NOT NULL, side TEXT NOT NULL, startedAt TEXT NOT NULL)',
+    );
     await db.execute('ALTER TABLE timing_plays ADD COLUMN creditId TEXT');
     // Rebuilt rather than altered: v10's UNIQUE name can't be dropped, and
     // every venue's lone cabinet is named ''.
     await db.execute(
-        'CREATE TABLE cabinets_v11(id INTEGER PRIMARY KEY AUTOINCREMENT, venueId INT NOT NULL, name TEXT NOT NULL DEFAULT \'\')');
+      'CREATE TABLE cabinets_v11(id INTEGER PRIMARY KEY AUTOINCREMENT, venueId INT NOT NULL, name TEXT NOT NULL DEFAULT \'\')',
+    );
     for (final c in await db.query('cabinets')) {
       final venueId = await db.insert('venues', {'name': c['name']});
-      await db.insert(
-          'cabinets_v11', {'id': c['id'], 'venueId': venueId, 'name': ''});
+      await db.insert('cabinets_v11', {
+        'id': c['id'],
+        'venueId': venueId,
+        'name': '',
+      });
     }
     await db.execute('DROP TABLE cabinets');
     await db.execute('ALTER TABLE cabinets_v11 RENAME TO cabinets');
   }
 
+  // Builds from every worktree share one app container; each worktree passes
+  // its own --dart-define=DB_NAME so an older schema can't touch the main one.
+  static const _dbName = String.fromEnvironment(
+    'DB_NAME',
+    defaultValue: 'ddr_database.db',
+  );
+
   static Future<Database> getDatabaseInstance() async {
-    String path = join(await getDatabasesPath(), "ddr_database.db");
-    return await openDatabase(path, version: 11, onCreate: (db, version) async {
-      await _createSchema(db);
-    }, onUpgrade: (db, oldVersion, newVersion) async {
-      // The app is not yet released and the pre-v6 tables overloaded their
-      // timestamp as the primary key. Rather than migrate that debt forward,
-      // v6 drops and recreates scores/notes/favorites with the clean schema.
-      // Any local dev rows are discarded.
-      if (oldVersion < 6) {
-        await db.execute('DROP TABLE IF EXISTS scores');
-        await db.execute('DROP TABLE IF EXISTS notes');
-        await db.execute('DROP TABLE IF EXISTS favorites');
+    String path = join(await getDatabasesPath(), _dbName);
+    return await openDatabase(
+      path,
+      version: 11,
+      onCreate: (db, version) async {
         await _createSchema(db);
-      }
-      // v7: EX score OCR'd from the results screen. Nullable like the other
-      // count columns; pre-v7 rows simply have no reading.
-      if (oldVersion == 6) {
-        await db.execute('ALTER TABLE scores ADD COLUMN exScore INT');
-      }
-      if (oldVersion < 8) await db.execute(_parityPinsDdl);
-      if (oldVersion < 9) await db.execute(_snippetsDdl);
-      if (oldVersion < 10) await _createSessionSchema(db);
-      if (oldVersion < 11) await _upgradeToVenues(db);
-    });
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        // The app is not yet released and the pre-v6 tables overloaded their
+        // timestamp as the primary key. Rather than migrate that debt forward,
+        // v6 drops and recreates scores/notes/favorites with the clean schema.
+        // Any local dev rows are discarded.
+        if (oldVersion < 6) {
+          await db.execute('DROP TABLE IF EXISTS scores');
+          await db.execute('DROP TABLE IF EXISTS notes');
+          await db.execute('DROP TABLE IF EXISTS favorites');
+          await _createSchema(db);
+        }
+        // v7: EX score OCR'd from the results screen. Nullable like the other
+        // count columns; pre-v7 rows simply have no reading.
+        if (oldVersion == 6) {
+          await db.execute('ALTER TABLE scores ADD COLUMN exScore INT');
+        }
+        if (oldVersion < 8) await db.execute(_parityPinsDdl);
+        if (oldVersion < 9) await db.execute(_snippetsDdl);
+        if (oldVersion < 10) await _createSessionSchema(db);
+        if (oldVersion < 11) await _upgradeToVenues(db);
+      },
+    );
   }
 
   // -- SESSION FUNCTIONS
@@ -119,7 +138,7 @@ class DatabaseProvider {
     final db = await _instance;
     return [
       for (final r in await db.query("venues", orderBy: "name"))
-        Venue.fromMap(r)
+        Venue.fromMap(r),
     ];
   }
 
@@ -134,9 +153,10 @@ class DatabaseProvider {
   static Future<List<Cabinet>> getCabinets(int venueId) async {
     final db = await _instance;
     final rows = await db.rawQuery(
-        'SELECT c.id, c.venueId, c.name, v.name AS venueName FROM cabinets c '
-        'JOIN venues v ON v.id = c.venueId WHERE c.venueId = ? ORDER BY c.id',
-        [venueId]);
+      'SELECT c.id, c.venueId, c.name, v.name AS venueName FROM cabinets c '
+      'JOIN venues v ON v.id = c.venueId WHERE c.venueId = ? ORDER BY c.id',
+      [venueId],
+    );
     return [for (final r in rows) Cabinet.fromMap(r)];
   }
 
@@ -163,8 +183,12 @@ class DatabaseProvider {
 
   static Future<void> endSession(String id) async {
     final db = await _instance;
-    await db.update("sessions", {'endedAt': DateTime.now().toIso8601String()},
-        where: "id = ?", whereArgs: [id]);
+    await db.update(
+      "sessions",
+      {'endedAt': DateTime.now().toIso8601String()},
+      where: "id = ?",
+      whereArgs: [id],
+    );
   }
 
   static Future<PlaySession?> getSession(String id) async {
@@ -176,8 +200,10 @@ class DatabaseProvider {
   // Newest first.
   static Future<List<PlaySession>> getSessions({int limit = 20}) async {
     final db = await _instance;
-    final rows = await db
-        .rawQuery('$_sessionSelect ORDER BY s.startedAt DESC LIMIT ?', [limit]);
+    final rows = await db.rawQuery(
+      '$_sessionSelect ORDER BY s.startedAt DESC LIMIT ?',
+      [limit],
+    );
     return [for (final r in rows) PlaySession.fromMap(r)];
   }
 
@@ -197,11 +223,12 @@ class DatabaseProvider {
   static Future<List<Credit>> getCredits(String sessionId) async {
     final db = await _instance;
     final rows = await db.rawQuery(
-        'SELECT cr.*, c.venueId, c.name AS cabinetName, v.name AS venueName '
-        'FROM credits cr JOIN cabinets c ON c.id = cr.cabinetId '
-        'JOIN venues v ON v.id = c.venueId '
-        'WHERE cr.sessionId = ? ORDER BY cr.number DESC',
-        [sessionId]);
+      'SELECT cr.*, c.venueId, c.name AS cabinetName, v.name AS venueName '
+      'FROM credits cr JOIN cabinets c ON c.id = cr.cabinetId '
+      'JOIN venues v ON v.id = c.venueId '
+      'WHERE cr.sessionId = ? ORDER BY cr.number DESC',
+      [sessionId],
+    );
     return [for (final r in rows) Credit.fromMap(r)];
   }
 
@@ -214,9 +241,11 @@ class DatabaseProvider {
 
   static Future<void> deleteSession(String id) async {
     final db = await _instance;
-    await db.delete("timing_plays",
-        where: "creditId IN (SELECT id FROM credits WHERE sessionId = ?)",
-        whereArgs: [id]);
+    await db.delete(
+      "timing_plays",
+      where: "creditId IN (SELECT id FROM credits WHERE sessionId = ?)",
+      whereArgs: [id],
+    );
     await db.delete("credits", where: "sessionId = ?", whereArgs: [id]);
     await db.delete("sessions", where: "id = ?", whereArgs: [id]);
   }
@@ -231,12 +260,18 @@ class DatabaseProvider {
 
   static Future<void> deleteVenue(int id) async {
     final db = await _instance;
-    for (final c
-        in await db.query("cabinets", where: "venueId = ?", whereArgs: [id])) {
+    for (final c in await db.query(
+      "cabinets",
+      where: "venueId = ?",
+      whereArgs: [id],
+    )) {
       await deleteCabinet(c['id'] as int);
     }
-    for (final s
-        in await db.query("sessions", where: "venueId = ?", whereArgs: [id])) {
+    for (final s in await db.query(
+      "sessions",
+      where: "venueId = ?",
+      whereArgs: [id],
+    )) {
       await deleteSession(s['id'] as String);
     }
     await db.delete("venues", where: "id = ?", whereArgs: [id]);
@@ -246,16 +281,20 @@ class DatabaseProvider {
   static Future<List<TimingPlay>> getSessionPlays(String sessionId) async {
     final db = await _instance;
     final rows = await db.rawQuery(
-        'SELECT p.* FROM timing_plays p JOIN credits cr ON cr.id = p.creditId '
-        'WHERE cr.sessionId = ? ORDER BY p.playedAt DESC',
-        [sessionId]);
+      'SELECT p.* FROM timing_plays p JOIN credits cr ON cr.id = p.creditId '
+      'WHERE cr.sessionId = ? ORDER BY p.playedAt DESC',
+      [sessionId],
+    );
     return [for (final r in rows) TimingPlay.fromMap(r)];
   }
 
   static Future<void> saveTimingPlay(TimingPlay play) async {
     final db = await _instance;
-    await db.insert("timing_plays", play.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+      "timing_plays",
+      play.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   static Future<void> deleteTimingPlay(String id) async {
@@ -265,28 +304,45 @@ class DatabaseProvider {
 
   // Every play on one cabinet + side, newest first.
   static Future<List<TimingPlay>> getTimingPlays(
-      int cabinetId, PadSide side) async {
+    int cabinetId,
+    PadSide side,
+  ) async {
     final db = await _instance;
-    final rows = await db.query("timing_plays",
-        where: "cabinetId = ? AND side = ?",
-        whereArgs: [cabinetId, side.name],
-        orderBy: "playedAt DESC");
+    final rows = await db.query(
+      "timing_plays",
+      where: "cabinetId = ? AND side = ?",
+      whereArgs: [cabinetId, side.name],
+      orderBy: "playedAt DESC",
+    );
     return [for (final r in rows) TimingPlay.fromMap(r)];
   }
 
-  static Future<double?> getSyncOverride(int cabinetId, PadSide side,
-      String song, Modes mode, String difficulty) async {
+  static Future<double?> getSyncOverride(
+    int cabinetId,
+    PadSide side,
+    String song,
+    Modes mode,
+    String difficulty,
+  ) async {
     final db = await _instance;
-    final rows = await db.query("sync_overrides",
-        where:
-            "cabinetId = ? AND side = ? AND song = ? AND mode = ? AND difficulty = ?",
-        whereArgs: [cabinetId, side.name, song, mode.name, difficulty]);
+    final rows = await db.query(
+      "sync_overrides",
+      where:
+          "cabinetId = ? AND side = ? AND song = ? AND mode = ? AND difficulty = ?",
+      whereArgs: [cabinetId, side.name, song, mode.name, difficulty],
+    );
     return rows.isEmpty ? null : (rows.first['ms'] as num).toDouble();
   }
 
   // A null [ms] clears the override.
-  static Future<void> setSyncOverride(int cabinetId, PadSide side, String song,
-      Modes mode, String difficulty, double? ms) async {
+  static Future<void> setSyncOverride(
+    int cabinetId,
+    PadSide side,
+    String song,
+    Modes mode,
+    String difficulty,
+    double? ms,
+  ) async {
     final db = await _instance;
     final key = {
       'cabinetId': cabinetId,
@@ -296,12 +352,16 @@ class DatabaseProvider {
       'difficulty': difficulty,
     };
     if (ms == null) {
-      await db.delete("sync_overrides",
-          where: key.keys.map((k) => "$k = ?").join(" AND "),
-          whereArgs: key.values.toList());
+      await db.delete(
+        "sync_overrides",
+        where: key.keys.map((k) => "$k = ?").join(" AND "),
+        whereArgs: key.values.toList(),
+      );
     } else {
-      await db.insert("sync_overrides", {...key, 'ms': ms},
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert("sync_overrides", {
+        ...key,
+        'ms': ms,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
 
@@ -309,8 +369,11 @@ class DatabaseProvider {
   // Insert or replace, keyed by id, so an edited snippet keeps its place.
   static Future<void> saveSnippet(Snippet snippet) async {
     final db = await _instance;
-    await db.insert("snippets", snippet.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+      "snippets",
+      snippet.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   static Future<void> deleteSnippet(String id) async {
@@ -328,71 +391,81 @@ class DatabaseProvider {
   // -- PARITY PIN FUNCTIONS
   // Pins for one chart, skipping any saved against a different chartHash.
   static Future<List<ParityPin>> getParityPins(
-      ChartRef ref, String chartHash) async {
+    ChartRef ref,
+    String chartHash,
+  ) async {
     final db = await _instance;
-    final rows = await db.query("parity_pins",
-        where: "song = ? AND mode = ? AND difficulty = ? AND chartHash = ?",
-        whereArgs: [ref.song, ref.mode, ref.difficulty, chartHash]);
+    final rows = await db.query(
+      "parity_pins",
+      where: "song = ? AND mode = ? AND difficulty = ? AND chartHash = ?",
+      whereArgs: [ref.song, ref.mode, ref.difficulty, chartHash],
+    );
     return [
       for (final r in rows)
         (
           r["beat"] as double,
           r["col"] as int,
           r["foot"] == "L" ? ParityFoot.left : ParityFoot.right,
-        )
+        ),
     ];
   }
 
   // Every chart's pins, keyed by chart and the note hash they were set against.
   static Future<Map<(ChartRef, String), List<ParityPin>>>
-      getAllParityPins() async {
+  getAllParityPins() async {
     final db = await _instance;
     final out = <(String, String, String, String), List<ParityPin>>{};
     for (final r in await db.query("parity_pins")) {
-      out.putIfAbsent((
-        r["song"] as String,
-        r["mode"] as String,
-        r["difficulty"] as String,
-        r["chartHash"] as String
-      ), () => []).add((
-        r["beat"] as double,
-        r["col"] as int,
-        r["foot"] == "L" ? ParityFoot.left : ParityFoot.right,
-      ));
+      out
+          .putIfAbsent((
+            r["song"] as String,
+            r["mode"] as String,
+            r["difficulty"] as String,
+            r["chartHash"] as String,
+          ), () => [])
+          .add((
+            r["beat"] as double,
+            r["col"] as int,
+            r["foot"] == "L" ? ParityFoot.left : ParityFoot.right,
+          ));
     }
     return {
       for (final MapEntry(key: (song, mode, diff, hash), value: pins)
           in out.entries)
-        (ChartRef(song, mode, diff), hash): pins
+        (ChartRef(song, mode, diff), hash): pins,
     };
   }
 
   static Future<void> setParityPin(
-      ChartRef ref, String chartHash, ParityPin pin) async {
+    ChartRef ref,
+    String chartHash,
+    ParityPin pin,
+  ) async {
     final db = await _instance;
     final (beat, col, foot) = pin;
-    await db.insert(
-      "parity_pins",
-      {
-        "song": ref.song,
-        "mode": ref.mode,
-        "difficulty": ref.difficulty,
-        "chartHash": chartHash,
-        "beat": beat,
-        "col": col,
-        "foot": foot == ParityFoot.left ? "L" : "R",
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert("parity_pins", {
+      "song": ref.song,
+      "mode": ref.mode,
+      "difficulty": ref.difficulty,
+      "chartHash": chartHash,
+      "beat": beat,
+      "col": col,
+      "foot": foot == ParityFoot.left ? "L" : "R",
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   static Future<void> deleteParityPin(
-      ChartRef ref, double beat, int col) async {
+    ChartRef ref,
+    double beat,
+    int col,
+  ) async {
     final db = await _instance;
-    await db.delete("parity_pins",
-        where:
-            "song = ? AND mode = ? AND difficulty = ? AND beat = ? AND col = ?",
-        whereArgs: [ref.song, ref.mode, ref.difficulty, beat, col]);
+    await db.delete(
+      "parity_pins",
+      where:
+          "song = ? AND mode = ? AND difficulty = ? AND beat = ? AND col = ?",
+      whereArgs: [ref.song, ref.mode, ref.difficulty, beat, col],
+    );
   }
 
   // -- FAVS FUNCTIONS
@@ -410,8 +483,11 @@ class DatabaseProvider {
   // Get favorites list for a play mode
   static Future<List<Favorite>> getAllFavorites(Modes mode) async {
     final db = await _instance;
-    var response =
-        await db.query("favorites", where: "mode = ?", whereArgs: [mode.name]);
+    var response = await db.query(
+      "favorites",
+      where: "mode = ?",
+      whereArgs: [mode.name],
+    );
     List<Favorite> list = response.map((c) => Favorite.fromMap(c)).toList();
     return list;
   }
@@ -420,21 +496,31 @@ class DatabaseProvider {
   static deleteFavorite(Favorite fav) async {
     final db = await _instance;
     Favorite deletedFav = Favorite(
-        id: fav.id, isFav: false, songTitle: fav.songTitle, mode: fav.mode);
+      id: fav.id,
+      isFav: false,
+      songTitle: fav.songTitle,
+      mode: fav.mode,
+    );
     // Favourites is one to one with song per mode so this where condition
     // reflects that.
-    await db.delete("favorites",
-        where: "songTitle = ? AND mode = ?",
-        whereArgs: [fav.songTitle, fav.mode.name]);
+    await db.delete(
+      "favorites",
+      where: "songTitle = ? AND mode = ?",
+      whereArgs: [fav.songTitle, fav.mode.name],
+    );
     return deletedFav;
   }
 
   static Future<Favorite?> getFavoriteBySong(
-      String songTitleTranslit, Modes mode) async {
+    String songTitleTranslit,
+    Modes mode,
+  ) async {
     final db = await _instance;
-    var response = await db.query("favorites",
-        where: "songTitle = ? AND mode = ?",
-        whereArgs: [songTitleTranslit, mode.name]);
+    var response = await db.query(
+      "favorites",
+      where: "songTitle = ? AND mode = ?",
+      whereArgs: [songTitleTranslit, mode.name],
+    );
     var list = response.map((c) => Favorite.fromMap(c)).firstOrNull;
     return list;
   }
@@ -454,32 +540,44 @@ class DatabaseProvider {
   // Update an existing score in place, keyed by its id (the primary key).
   static updateScore(Score score) async {
     final db = await _instance;
-    var raw = await db.update("scores", score.toMap(),
-        where: "id = ?", whereArgs: [score.id]);
+    var raw = await db.update(
+      "scores",
+      score.toMap(),
+      where: "id = ?",
+      whereArgs: [score.id],
+    );
     return raw;
   }
 
   // Get all scores from the database for a specific song and play mode
   static Future<List<Score>> getAllScoresBySong(
-      String songTitleTranslit, Modes mode) async {
+    String songTitleTranslit,
+    Modes mode,
+  ) async {
     final db = await _instance;
-    var response = await db.query("scores",
-        where: "songTitle = ? AND mode = ?",
-        whereArgs: [songTitleTranslit, mode.name],
-        orderBy: "playedAt DESC");
+    var response = await db.query(
+      "scores",
+      where: "songTitle = ? AND mode = ?",
+      whereArgs: [songTitleTranslit, mode.name],
+      orderBy: "playedAt DESC",
+    );
     List<Score> list = response.map((c) => Score.fromMap(c)).toList();
     return list;
   }
 
   // Get the most recent score from the database for a specific song and play mode
   static Future<Score?> getLatestScoreBySong(
-      String songTitleTranslit, Modes mode) async {
+    String songTitleTranslit,
+    Modes mode,
+  ) async {
     final db = await _instance;
-    var response = await db.query("scores",
-        where: "songTitle = ? AND mode = ?",
-        whereArgs: [songTitleTranslit, mode.name],
-        orderBy: "playedAt DESC",
-        limit: 1);
+    var response = await db.query(
+      "scores",
+      where: "songTitle = ? AND mode = ?",
+      whereArgs: [songTitleTranslit, mode.name],
+      orderBy: "playedAt DESC",
+      limit: 1,
+    );
     if (response.isEmpty) return null;
     return Score.fromMap(response.first);
   }
@@ -508,8 +606,12 @@ class DatabaseProvider {
   // identity and createdAt are preserved — only the contents change.
   static updateNote(Note note, String newContents) async {
     final db = await _instance;
-    var raw = await db.update("notes", {'contents': newContents},
-        where: "id = ?", whereArgs: [note.id]);
+    var raw = await db.update(
+      "notes",
+      {'contents': newContents},
+      where: "id = ?",
+      whereArgs: [note.id],
+    );
     return raw;
   }
 
@@ -530,22 +632,30 @@ class DatabaseProvider {
 
   // Get all notes from the database for a specific song and play mode
   static Future<List<Note>> getAllNotesBySong(
-      String songTitleTranslit, Modes mode) async {
+    String songTitleTranslit,
+    Modes mode,
+  ) async {
     final db = await _instance;
-    var response = await db.query("notes",
-        where: "songTitle = ? AND mode = ?",
-        whereArgs: [songTitleTranslit, mode.name]);
+    var response = await db.query(
+      "notes",
+      where: "songTitle = ? AND mode = ?",
+      whereArgs: [songTitleTranslit, mode.name],
+    );
     List<Note> list = response.map((c) => Note.fromMap(c)).toList();
     return list;
   }
 
   static Future<Note?> getLatestNoteBySong(
-      String songTitleTranslit, Modes mode) async {
+    String songTitleTranslit,
+    Modes mode,
+  ) async {
     final db = await _instance;
-    var response = await db.query("notes",
-        where: "songTitle = ? AND mode = ?",
-        whereArgs: [songTitleTranslit, mode.name],
-        orderBy: "createdAt ASC");
+    var response = await db.query(
+      "notes",
+      where: "songTitle = ? AND mode = ?",
+      whereArgs: [songTitleTranslit, mode.name],
+      orderBy: "createdAt ASC",
+    );
     if (response.isEmpty) return null;
     Note latestNote = response.map((c) => Note.fromMap(c)).toList().last;
     return latestNote;

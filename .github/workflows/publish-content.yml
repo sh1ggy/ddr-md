@@ -22,6 +22,10 @@ on:
         description: Ref of sh1ggy/ddr-md whose generators and engine to use
         type: string
         default: master
+      pages-branch:
+        description: Pages branch to deploy; main is production, staging is served at staging.<project>.pages.dev
+        type: string
+        default: main
     secrets:
       CLOUDFLARE_API_TOKEN:
         required: true
@@ -143,4 +147,4 @@ jobs:
             exit 0
           fi
           npx --yes wrangler@4 pages deploy build/content \
-            --project-name "${{ inputs.pages-project }}" --branch main --commit-dirty=true
+            --project-name "${{ inputs.pages-project }}" --branch "${{ inputs.pages-branch }}" --commit-dirty=true

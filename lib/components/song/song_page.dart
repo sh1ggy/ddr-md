@@ -1,5 +1,5 @@
 /// Name: SongPage
-/// Parent: SongListItem
+/// Parent: Router (/songs/song/:name)
 /// Description: Page that displays selected song information
 library;
 
@@ -212,18 +212,8 @@ class _SongPageState extends State<SongPage> {
       initNote(songInfo.titletranslit, songState.modes);
       initScore(songInfo.titletranslit, songState.modes);
       // Set variables based on state
-      if (songInfo.perChart) {
-        setState(() {
-          _chart = songInfo
-              .charts[chosenDifficulty.clamp(0, songInfo.charts.length - 1)];
-        });
-      } else {
-        setState(() {
-          // First index because no individual chart information
-          _chart = songInfo.charts.first;
-        });
-      }
       setState(() {
+        _chart = songInfo.chartAt(songState.modes, chosenDifficulty);
         _isBpmChange = _chart.trueMax != _chart.trueMin;
         _nearestModIndex = findNearestReadSpeed(
             _chart.dominantBpm, constants.mods, _chosenReadSpeed);

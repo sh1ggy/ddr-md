@@ -5,11 +5,12 @@ library;
 
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/constants.dart';
-import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 class SongListItem extends StatefulWidget {
@@ -37,11 +38,11 @@ class _SongListItemState extends State<SongListItem> {
   // sync card leads with: the bias with its sign flipped. Null when this song
   // has no sync data, so the row can fall back to the version.
   Widget? _syncAdjust(BuildContext context) {
-    final charts = widget.songInfo.charts;
-    final chart = charts[widget.difficultyIndex != null &&
-            widget.difficultyIndex! < charts.length
-        ? widget.difficultyIndex!
-        : 0];
+    final chart = widget.difficultyIndex == null
+        ? widget.songInfo.charts.first
+        : widget.songInfo.chartAt(
+            Provider.of<SongState>(context, listen: false).modes,
+            widget.difficultyIndex!);
     final sync = widget.songInfo.displaySyncFor(chart);
     if (sync == null) return null;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -112,15 +113,9 @@ class _SongListItemState extends State<SongListItem> {
         ],
       ),
       onTap: () async {
-        songState.setSongInfo(widget.songInfo);
-        songState.setChosenDifficulty(widget.difficultyIndex ?? 0);
-        await Navigator.push(context,
-                MaterialPageRoute(builder: (context) => const SongPage()))
-            .then((_) {
-          if (widget.regenFavsCallback != null) {
-            widget.regenFavsCallback!();
-          }
-        });
+        await context.push(
+            songPath(widget.songInfo, difficulty: widget.difficultyIndex ?? 0));
+        widget.regenFavsCallback?.call();
       },
     );
   }
