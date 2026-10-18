@@ -1,5 +1,5 @@
 /// Name: SongPage
-/// Parent: SongListItem
+/// Parent: Router (/songs/song/:name)
 /// Description: Page that displays selected song information
 library;
 

@@ -13,6 +13,7 @@ import 'package:ddr_md/helpers.dart' show parseOcrNumber;
 import 'package:ddr_md/models/db_models.dart' show ScoreSource;
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -201,7 +202,7 @@ class _OcrPageState extends State<OcrPage>
     } catch (e) {
       print('Error initializing OCR session: $e');
       if (!mounted) return;
-      Navigator.pushNamed(context, "/");
+      context.go('/songs');
     }
   }
 
