@@ -173,15 +173,14 @@ class ArcadeGridTile extends StatelessWidget {
     );
   }
 
-  int get _chartIndex {
-    final int i = item.isChartScoped ? (item.difficultyIndex ?? 0) : 0;
-    return i < item.songInfo.charts.length ? i : 0;
-  }
+  Chart get _chart => item.isChartScoped
+      ? item.songInfo.chartAt(mode, item.difficultyIndex!)
+      : item.songInfo.charts.first;
 
   // Recommended in-game offset adjustment: the bias with its sign flipped.
   (String, Color)? _syncAdjust(bool isDark) {
     final Sync? sync =
-        item.songInfo.displaySyncFor(item.songInfo.charts[_chartIndex]);
+        item.songInfo.displaySyncFor(_chart);
     if (sync == null) return null;
     final double adjustBy = -sync.biasMs;
     final Color color = sync.biasMs < 0
@@ -199,7 +198,7 @@ class ArcadeGridTile extends StatelessWidget {
       textBaseline: TextBaseline.alphabetic,
       children: <Widget>[
         Expanded(
-          child: _statText(item.songInfo.charts[_chartIndex].bpmRange,
+          child: _statText(_chart.bpmRange,
               Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         if (_syncAdjust(isDark) case (final String label, final Color color))

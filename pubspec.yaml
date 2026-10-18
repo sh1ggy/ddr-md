@@ -33,6 +33,7 @@ dependencies:
   crypto: ^3.0.7
   flutter_inappwebview: ^6.1.5
   html: ^0.15.7
+  go_router: ^18.1.0
 
 dev_dependencies:
   flutter_test:

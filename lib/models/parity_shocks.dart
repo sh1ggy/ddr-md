@@ -136,11 +136,37 @@ List<ShockEvasion> planShockEvasions(
       if (e.value.length >= 3) e.key / 1000
   ]..sort();
   final rows = [...stances]..sort((a, b) => a.second.compareTo(b.second));
-  double? stepAfter(ParityFoot foot, double t) {
-    for (final s in rows) {
-      if (s.second > t && s.columnsFor(foot).any(s.stepped.contains)) {
-        return s.second;
+  // Arrows sorted by time, and the holds apart, so each shock only looks at
+  // what's near it: a heavy chart has hundreds of shocks over thousands of rows.
+  final arrows = [
+    for (final n in notes)
+      if (n.type != StepType.mine) n
+  ]..sort((a, b) => a.second.compareTo(b.second));
+  final holds = [
+    for (final n in arrows)
+      if (n.isHold) n
+  ];
+  // The first of [items] whose second is past [t] (at [t] too when [inclusive]).
+  int firstAfter<E>(List<E> items, double Function(E) second, double t,
+      {bool inclusive = false}) {
+    var lo = 0, hi = items.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      final s = second(items[mid]);
+      if (s < t || (!inclusive && s == t)) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
       }
+    }
+    return lo;
+  }
+
+  double rowSecond(ParityStance s) => s.second;
+  double? stepAfter(ParityFoot foot, double t) {
+    for (var j = firstAfter(rows, rowSecond, t); j < rows.length; j++) {
+      final s = rows[j];
+      if (s.columnsFor(foot).any(s.stepped.contains)) return s.second;
     }
     return null;
   }
@@ -152,21 +178,20 @@ List<ShockEvasion> planShockEvasions(
       <(double, double, double, bool, Set<int>, Map<ParityFoot, ShockFoot>)>[];
   for (var i = 0; i < times.length; i++) {
     final t = times[i];
-    ParityStance? previous, next;
-    for (final s in rows) {
-      if (s.second < t) {
-        previous = s;
-      } else if (s.second > t) {
-        next = s;
-        break;
-      }
-    }
+    final at = firstAfter(rows, rowSecond, t, inclusive: true);
+    final past = firstAfter(rows, rowSecond, t);
+    final previous = at > 0 ? rows[at - 1] : null;
+    final next = past < rows.length ? rows[past] : null;
     final columns = mines[(t * 1000).round()]!;
-    final blocked = notes.any((n) =>
+    var blocked = holds.any((n) =>
         columns.contains(n.col) &&
-        n.type != StepType.mine &&
-        ((n.second - t).abs() < 0.001 ||
-            (n.isHold && n.second < t && (n.endSecond ?? n.second) > t)));
+        n.second < t &&
+        (n.endSecond ?? n.second) > t);
+    for (var j = firstAfter(arrows, (StepNote n) => n.second, t - 0.001);
+        !blocked && j < arrows.length && arrows[j].second < t + 0.001;
+        j++) {
+      blocked = columns.contains(arrows[j].col);
+    }
     ParityFoot? nextFoot;
     if (next != null && next.stepped.length == 1) {
       final col = next.stepped.single;
@@ -174,22 +199,26 @@ List<ShockEvasion> planShockEvasions(
           ? ParityFoot.left
           : ParityFoot.right;
     }
-    final affectedRows = rows.where((s) => s.stepped.any(columns.contains));
-    final before = affectedRows.where((s) => s.second < t).toList();
-    final after = affectedRows.where((s) => s.second > t).toList();
-    var start = math.max(
-        t - 0.22, (before.isEmpty ? t - 1 : before.last.second) + 0.001);
-    for (final n in notes) {
+    bool affected(ParityStance s) => s.stepped.any(columns.contains);
+    ParityStance? before, after;
+    for (var j = at - 1; j >= 0 && before == null; j--) {
+      if (affected(rows[j])) before = rows[j];
+    }
+    for (var j = past; j < rows.length && after == null; j++) {
+      if (affected(rows[j])) after = rows[j];
+    }
+    var start =
+        math.max(t - 0.22, (before == null ? t - 1 : before.second) + 0.001);
+    for (final n in holds) {
       if (columns.contains(n.col) &&
-          n.isHold &&
           n.second < t &&
           n.endSecond != null &&
           n.endSecond! <= t) {
         start = math.max(start, n.endSecond!);
       }
     }
-    var end = math.min(
-        t + 0.22, (after.isEmpty ? t + 1 : after.first.second) - 0.001);
+    var end =
+        math.min(t + 0.22, (after == null ? t + 1 : after.second) - 0.001);
     if (i > 0) start = math.max(start, (times[i - 1] + t) / 2);
     if (i + 1 < times.length) end = math.min(end, (times[i + 1] + t) / 2);
     final land = t - math.min(0.09, (t - start) * 0.4);
@@ -217,7 +246,7 @@ List<ShockEvasion> planShockEvasions(
             foot
       ];
       double padOf(ParityFoot foot) {
-        final cols = previous!.columnsFor(foot);
+        final cols = previous.columnsFor(foot);
         return count == 4 || cols.isEmpty ? 0 : (cols.first < 4 ? -1.5 : 1.5);
       }
 
@@ -225,7 +254,7 @@ List<ShockEvasion> planShockEvasions(
       // centre metal (or a heel/toe) from an earlier shock.
       var supported = ParityFoot.values.any((foot) => carried.contains(foot)
           ? drafts[away[foot]!.$1].$6[foot]!.role != ShockRole.hover
-          : !moving.contains(foot) && previous!.columnsFor(foot).isNotEmpty);
+          : !moving.contains(foot) && previous.columnsFor(foot).isNotEmpty);
       final pivots = [
         for (final foot in moving)
           if (previous.columnsFor(foot).length == 1 &&
@@ -240,7 +269,8 @@ List<ShockEvasion> planShockEvasions(
         // Toes go back down once the shock passes, unless another arrives
         // before this foot steps again.
         final stepsNext = own != null &&
-            (own == next?.second || times.any((s) => s > t && s < own));
+            (own == next?.second ||
+                (i + 1 < times.length && times[i + 1] < own));
         final release = stepsNext ? own : (next?.second ?? t + 0.22);
         feet[foot] = ShockFoot(ShockRole.pivot, padOf(foot), release,
             math.max(cleared, release - 0.18),

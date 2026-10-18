@@ -104,8 +104,13 @@ class DatabaseProvider {
     await db.execute('ALTER TABLE cabinets_v11 RENAME TO cabinets');
   }
 
+  // Builds from every worktree share one app container; each worktree passes
+  // its own --dart-define=DB_NAME so an older schema can't touch the main one.
+  static const _dbName =
+      String.fromEnvironment('DB_NAME', defaultValue: 'ddr_database.db');
+
   static Future<Database> getDatabaseInstance() async {
-    String path = join(await getDatabasesPath(), "ddr_database.db");
+    String path = join(await getDatabasesPath(), _dbName);
     return await openDatabase(path, version: 12, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
