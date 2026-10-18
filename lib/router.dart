@@ -6,6 +6,7 @@
 library;
 
 import 'package:ddr_md/components/ocr/ocr_page.dart';
+import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/snippets/snippets_page.dart';
@@ -41,7 +42,13 @@ final router = GoRouter(
           GoRoute(
               path: '/home',
               pageBuilder: (context, state) =>
-                  _page(state, const SessionPage())),
+                  _page(state, const SessionPage()),
+              routes: [
+                GoRoute(
+                    path: 'recent',
+                    pageBuilder: (context, state) =>
+                        _page(state, const RecentPlaysPage())),
+              ]),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(

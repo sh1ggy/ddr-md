@@ -61,8 +61,10 @@ const privacySections = <(String, List<String>)>[
           'uses that cookie to read your DDR WORLD play data from '
           "Konami's e-amusement site: your recent plays first, then only the "
           'charts you played since the last sync (or, the first time, every '
-          'page of your play data), one page every few seconds. It saves your '
-          'best score, rank, clear lamp, flare and max combo on each chart on '
+          'page of your play data), plus your profile page when you\'ve played, '
+          'one page every few seconds. It saves your best score, rank, clear '
+          'lamp, flare and max combo on each chart, each recent play\'s score, '
+          'and your dancer name, rival code, play count and last play date on '
           'your device. Nothing is sent to DDR MD or anyone else. Konami sees '
           "these requests as coming from your account, and Konami's own "
           'privacy policy applies to them.',

@@ -344,6 +344,23 @@ String formatPlayDate(DateTime date) {
   return "${date.year}-$m-$d";
 }
 
+// How long ago [date] was, coarsely: "5 min ago", "yesterday", then the date
+// once it's over a week back.
+String formatAgo(DateTime date, [DateTime? now]) {
+  final local = date.toLocal();
+  final current = now ?? DateTime.now();
+  final elapsed = current.difference(local);
+  if (elapsed.inMinutes < 1) return "just now";
+  if (elapsed.inHours < 1) return "${elapsed.inMinutes} min ago";
+  final days = DateTime(current.year, current.month, current.day)
+      .difference(DateTime(local.year, local.month, local.day))
+      .inDays;
+  if (days == 0) return "${elapsed.inHours} h ago";
+  if (days == 1) return "yesterday";
+  if (days < 7) return "$days days ago";
+  return formatPlayDate(local);
+}
+
 // Helper function to format a score with thousands separators
 String formatScore(int score) {
   return score

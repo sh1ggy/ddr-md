@@ -126,11 +126,11 @@ ${row(a, '2026-10-16 16:55:06', 'EXPERT', 'SINGLE')}
 ${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
 </tbody></table></div>''');
     expect([
-      for (final p in plays) (p.mode, p.difficulty, p.playedAt)
+      for (final p in plays) (p.mode, p.difficulty, p.playedAt, p.score)
     ], [
-      (Modes.singles, 'EXPERT', '2026-10-16 16:57:59'),
-      (Modes.singles, 'EXPERT', '2026-10-16 16:55:06'),
-      (Modes.doubles, 'CHALLENGE', '2026-10-16 16:38:39'),
+      (Modes.singles, 'EXPERT', '2026-10-16 16:57:59', 970860),
+      (Modes.singles, 'EXPERT', '2026-10-16 16:55:06', 970860),
+      (Modes.doubles, 'CHALLENGE', '2026-10-16 16:38:39', 970860),
     ]);
 
     expect(planEamuseSync(plays, null, 3), isA<EamuseFullSync>());
@@ -171,6 +171,21 @@ ${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
       'IV',
       387,
       DateTime.utc(2026, 10, 16, 7, 57, 59)
+    ));
+  });
+
+  test('profile gives the rival code and last play', () {
+    String row(String th, String td) => '<tr><th>$th</th><td>$td</td></tr>';
+    final profile = parseEamuseProfile('''
+<div id="status"><table><tbody>
+${row('ダンサーネーム', 'SHIGGY')}${row('DDR-CODE', '1234-5678')}
+${row('総プレー回数', '1,380回')}${row('最終プレー日時', '2026-10-16 16:57:59')}
+</tbody></table><table><tbody>${row('最終プレー日時', '2020-03-18 18:52:59')}</tbody></table></div>''');
+    expect(profile, (
+      name: 'SHIGGY',
+      code: '12345678',
+      plays: 1380,
+      lastPlay: '2026-10-16 16:57:59',
     ));
   });
 }

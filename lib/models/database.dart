@@ -54,6 +54,10 @@ class DatabaseProvider {
   static const String _scoreRecordsIndex =
       'CREATE INDEX IF NOT EXISTS score_records_chart ON score_records(song, mode, difficulty)';
 
+  // v13: every play the recent plays page has listed, one row per play.
+  static const String _recentPlaysDdl =
+      'CREATE TABLE IF NOT EXISTS recent_plays(konamiId TEXT NOT NULL, title TEXT NOT NULL, song TEXT, mode TEXT NOT NULL, difficulty TEXT NOT NULL, playedAt TEXT NOT NULL, score INT, PRIMARY KEY(konamiId, mode, difficulty, playedAt))';
+
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
     await db.execute(_favoritesDdl);
@@ -63,6 +67,7 @@ class DatabaseProvider {
     await _createSessionSchema(db);
     await _upgradeToVenues(db);
     await _createScoreRecords(db);
+    await db.execute(_recentPlaysDdl);
   }
 
   static Future<void> _createScoreRecords(Database db) async {
@@ -111,7 +116,7 @@ class DatabaseProvider {
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), _dbName);
-    return await openDatabase(path, version: 12, onCreate: (db, version) async {
+    return await openDatabase(path, version: 13, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -134,6 +139,7 @@ class DatabaseProvider {
       if (oldVersion < 10) await _createSessionSchema(db);
       if (oldVersion < 11) await _upgradeToVenues(db);
       if (oldVersion < 12) await _createScoreRecords(db);
+      if (oldVersion < 13) await db.execute(_recentPlaysDdl);
     });
   }
 
@@ -371,6 +377,26 @@ class DatabaseProvider {
     final db = await _instance;
     await db
         .delete("score_records", where: "source = ?", whereArgs: [source.name]);
+  }
+
+  // -- RECENT PLAY FUNCTIONS
+  // Replaces by play, so a later sync can fill in a song match.
+  static Future<void> saveRecentPlays(List<RecentPlay> plays) async {
+    final db = await _instance;
+    final batch = db.batch();
+    for (final p in plays) {
+      batch.insert("recent_plays", p.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  // Newest first.
+  static Future<List<RecentPlay>> getRecentPlays({int? limit}) async {
+    final db = await _instance;
+    final rows =
+        await db.query("recent_plays", orderBy: "playedAt DESC", limit: limit);
+    return [for (final r in rows) RecentPlay.fromMap(r)];
   }
 
   // -- SNIPPET FUNCTIONS

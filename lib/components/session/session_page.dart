@@ -6,6 +6,7 @@
 library;
 
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
+import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
@@ -287,6 +288,7 @@ class SessionPage extends StatelessWidget {
       ),
       body: Column(children: [
         const EamuseSyncCard(),
+        const RecentPlaysCard(),
         Expanded(
           child: session.active
               ? _ActiveSession(session: session)

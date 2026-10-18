@@ -22,7 +22,6 @@ Color kSlowColor(bool isDark) =>
 final mods = [for (var i = 5; i <= 160; i++) i / 20];
 const chosenReadSpeed = 600;
 const songBpm = 200;
-const rivalCode = "";
 const rivalCodeLength = 8;
 const username = "";
 // In-game dancer names are capped at 8 characters.

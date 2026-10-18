@@ -3,7 +3,8 @@
 /// Description: App-wide owner of the e-amusement sync, so a sync started on
 /// Home keeps running while the player moves around the app. Each sync reads
 /// the recent plays page first and fetches only what [planEamuseSync] says it
-/// needs. A tap while a sync runs, or within [EamuseSync.cooldown] of the last
+/// needs, keeps every listed play in [DatabaseProvider.saveRecentPlays], and
+/// refreshes the player's profile when anything was played. A tap while a sync runs, or within [EamuseSync.cooldown] of the last
 /// finished one, does nothing, and only charts whose best changed are
 /// written.
 library;
@@ -27,6 +28,8 @@ class EamuseSyncState extends ChangeNotifier {
   // Charts the last sync added or changed.
   int? changed;
   String error = '';
+  // Bumped when a sync ends, so views of what it saved reload.
+  int revision = 0;
   EamuseSync? _sync;
 
   DateTime? get syncedAt =>
@@ -77,12 +80,30 @@ class EamuseSyncState extends ChangeNotifier {
 
     try {
       final plays = await sync.recent();
-      switch (planEamuseSync(
+      await DatabaseProvider.saveRecentPlays([
+        for (final p in plays)
+          if (p.playedAt.isNotEmpty)
+            RecentPlay(
+              konamiId: p.konamiId,
+              title: p.title,
+              song: sync.titleIndex[eamuseTitleKey(p.title)],
+              mode: p.mode,
+              difficulty: p.difficulty,
+              playedAt: eamuseTime(p.playedAt),
+              score: p.score,
+            )
+      ]);
+      final plan = planEamuseSync(
           plays,
           stored.isEmpty
               ? null
               : Settings.getString(Settings.eamuseLastPlayKey),
-          EamuseSync.recentSize)) {
+          EamuseSync.recentSize);
+      if (plan is! EamuseNothingNew ||
+          Settings.getString(Settings.rivalCodeSpeedKey).isEmpty) {
+        await _syncProfile(sync);
+      }
+      switch (plan) {
         case EamuseFullSync():
           await sync.run(onProgress);
         case EamuseRecentSync(:final charts):
@@ -111,8 +132,34 @@ class EamuseSyncState extends ChangeNotifier {
     }
     _sync = null;
     changed = changedNow;
+    revision++;
     charts = await DatabaseProvider.countScoreRecords(ScoreRecordSource.eamuse);
     notifyListeners();
+  }
+
+  /// Best effort: a profile page that doesn't parse leaves the last one and
+  /// doesn't stop the score sync.
+  Future<void> _syncProfile(EamuseSync sync) async {
+    try {
+      final profile = await sync.profile();
+      if (profile.code.isNotEmpty) {
+        await Settings.setString(Settings.rivalCodeSpeedKey, profile.code);
+      }
+      if (profile.name.isNotEmpty) {
+        await Settings.setString(Settings.eamuseNameKey, profile.name);
+      }
+      if (profile.plays != null) {
+        await Settings.setInt(Settings.eamusePlayCountKey, profile.plays!);
+      }
+      if (profile.lastPlay.isNotEmpty) {
+        await Settings.setString(
+            Settings.eamuseProfileLastPlayKey, profile.lastPlay);
+      }
+    } on EamuseSignedOut {
+      rethrow;
+    } catch (e) {
+      debugPrint('e-amusement profile not read: $e');
+    }
   }
 
   void stop() => _sync?.cancelled = true;

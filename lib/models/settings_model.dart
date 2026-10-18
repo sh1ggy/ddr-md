@@ -156,6 +156,13 @@ class Settings {
   static const String eamuseSyncedAtKey = "eamuseSyncedAt";
   static const String eamuseLastPlayKey = "eamuseLastPlay";
 
+  // The e-amusement player status, from the play data index: dancer name,
+  // total plays and last play (Japan-time text, as above). The rival code is
+  // kept under [rivalCodeSpeedKey].
+  static const String eamuseNameKey = "eamuseName";
+  static const String eamusePlayCountKey = "eamusePlayCount";
+  static const String eamuseProfileLastPlayKey = "eamuseProfileLastPlay";
+
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();
   static SharedPreferences? _prefsInstance;

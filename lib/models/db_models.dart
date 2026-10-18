@@ -449,3 +449,50 @@ class ScoreRecord {
         updatedAt: DateTime.parse(json['updatedAt']),
       );
 }
+
+/// One play from e-amusement's recent plays page, kept so the history reaches
+/// back past the 50 plays the page lists. Its score is the play's own, so a
+/// chart played twice has two rows; [ScoreRecord] holds the chart's best.
+class RecentPlay {
+  final String konamiId;
+  final String title;
+  final String? song;
+  final Modes mode;
+  // Upper-case, as on [Score].
+  final String difficulty;
+  final DateTime playedAt;
+  final int? score;
+
+  RecentPlay({
+    required this.konamiId,
+    required this.title,
+    required this.song,
+    required this.mode,
+    required this.difficulty,
+    required this.playedAt,
+    required this.score,
+  });
+
+  /// Id of the chart's synced best.
+  String get recordId => 'eamuse:$konamiId:${mode.name}:$difficulty';
+
+  Map<String, Object?> toMap() => {
+        'konamiId': konamiId,
+        'title': title,
+        'song': song,
+        'mode': mode.name,
+        'difficulty': difficulty,
+        'playedAt': playedAt.toUtc().toIso8601String(),
+        'score': score,
+      };
+
+  factory RecentPlay.fromMap(Map<String, dynamic> json) => RecentPlay(
+        konamiId: json['konamiId'],
+        title: json['title'],
+        song: json['song'],
+        mode: _modeFromMap(json),
+        difficulty: json['difficulty'],
+        playedAt: DateTime.parse(json['playedAt']),
+        score: json['score'],
+      );
+}

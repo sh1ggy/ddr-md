@@ -33,6 +33,9 @@ Uri eamusePageUrl(Modes mode, int page, [String host = kEamuseHost]) => Uri.pars
 Uri eamuseRecentUrl([String host = kEamuseHost]) =>
     Uri.parse('$host${kEamusePlayDataPath}music_recent.html');
 
+Uri eamuseProfileUrl([String host = kEamuseHost]) =>
+    Uri.parse('$host${kEamusePlayDataPath}index.html');
+
 class EamuseSignedOut implements Exception {}
 
 /// Konami answered with something other than a play data page: an error,
@@ -130,7 +133,9 @@ EamusePage parseEamusePage(String source, Modes mode, DateTime syncedAt) {
 }
 
 /// One play on the recent plays page. [playedAt] is the page's own
-/// "YYYY-MM-DD HH:MM:SS" in Japan time, which sorts as text.
+/// "YYYY-MM-DD HH:MM:SS" in Japan time, which sorts as text. [score] is that
+/// play's own, not the chart's best: the page lists every play, repeats and
+/// plays below the best included.
 typedef EamusePlay = ({
   String konamiId,
   String title,
@@ -138,6 +143,7 @@ typedef EamusePlay = ({
   String difficulty,
   String playedAt,
   String detailPath,
+  int? score,
 });
 
 /// The recent plays page, newest first.
@@ -164,9 +170,49 @@ List<EamusePlay> parseEamuseRecent(String source) {
               difficulty: difficulty,
               playedAt: link.querySelector('.date')?.text.trim() ?? '',
               detailPath: link.attributes['href']!,
+              score: int.tryParse(
+                  row.querySelector('td.score')?.text.trim() ?? ''),
             )
   ];
 }
+
+/// The play data index's player status. [lastPlay] is e-amusement's
+/// Japan-time "YYYY-MM-DD HH:MM:SS"; any field the page leaves out is empty.
+typedef EamuseProfile = ({
+  String name,
+  String code,
+  int? plays,
+  String lastPlay,
+});
+
+/// Reads the first status table's label/value pairs: dancer name, DDR-CODE
+/// (the rival code), total plays and last play. Later tables repeat the play
+/// count and last play per style.
+EamuseProfile parseEamuseProfile(String source) {
+  final doc = html.parse(source);
+  final status = _content(doc, doc.getElementById('status'));
+  final fields = <String, String>{};
+  for (final row in status.querySelectorAll('tr')) {
+    final label = row.querySelector('th')?.text.trim();
+    final value = row.querySelector('td')?.text.trim();
+    if (label != null && value != null) fields.putIfAbsent(label, () => value);
+  }
+  return (
+    name: fields['ダンサーネーム'] ?? '',
+    code: (fields['DDR-CODE'] ?? '').replaceAll(RegExp(r'\D'), ''),
+    plays: int.tryParse(
+        (fields['総プレー回数'] ?? '').replaceAll(RegExp(r'\D'), '')),
+    lastPlay: RegExp(r'\d{4}-\d\d-\d\d \d\d:\d\d:\d\d')
+            .firstMatch(fields['最終プレー日時'] ?? '')
+            ?.group(0) ??
+        '',
+  );
+}
+
+/// An 8-digit rival code as the cabinet shows it, 1234-5678.
+String formatRivalCode(String code) => code.length == 8
+    ? '${code.substring(0, 4)}-${code.substring(4)}'
+    : code;
 
 /// A chart's music_detail page: its best for [play]'s chart, or null when
 /// the page says it has no play data.
@@ -295,6 +341,9 @@ class EamuseSync {
 
   Future<List<EamusePlay>> recent() async =>
       parseEamuseRecent(await _get(eamuseRecentUrl(host)));
+
+  Future<EamuseProfile> profile() async =>
+      parseEamuseProfile(await _get(eamuseProfileUrl(host)));
 
   /// Fetches and saves each of [plays]' charts from its detail page.
   Future<({int charts, int unmatched})> details(

@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/settings/dancer_type_page.dart';
+import 'package:ddr_md/components/settings/eamuse_profile_card.dart';
 import 'package:ddr_md/components/settings/footing_style_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
@@ -27,7 +28,6 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int _chosenReadSpeed = 0;
-  String _rivalCode = constants.rivalCode;
   String _username = constants.username;
 
   @override
@@ -41,7 +41,6 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _loadPrefs() async {
     setState(() {
       _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
-      _rivalCode = Settings.getString(Settings.rivalCodeSpeedKey);
       _username = Settings.getString(Settings.usernameKey);
     });
   }
@@ -52,15 +51,6 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       Settings.setInt(Settings.chosenReadSpeedKey, int.parse(newValue));
       _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
-    });
-  }
-
-  /// After setting BPM preference, asynchronously save it
-  /// to persistent storage.
-  Future<void> _setRivalCode(String newValue) async {
-    setState(() {
-      Settings.setString(Settings.rivalCodeSpeedKey, newValue);
-      _rivalCode = Settings.getString(Settings.rivalCodeSpeedKey);
     });
   }
 
@@ -108,17 +98,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       padding: const EdgeInsets.all(8),
                       children: [
                         const _SectionHeader('Profile'),
+                        const EamuseProfileCard(),
                         SettingCard<int>(
                           setValue: _setReadSpeed,
                           chosenValue: _chosenReadSpeed,
                           field: "Read Speed",
                           maxLength: 3,
-                        ),
-                        SettingCard<String>(
-                          setValue: _setRivalCode,
-                          chosenValue: _rivalCode,
-                          field: "Rival Code",
-                          maxLength: 8,
                         ),
                         SettingCard<String>(
                           setValue: _setUsername,
