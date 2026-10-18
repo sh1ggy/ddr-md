@@ -148,6 +148,9 @@ class Settings {
   static const String parityProfileKey = "parityProfile";
   static const String parityProfileOnKey = "parityProfileOn";
 
+  // Id of the running play session ('' = none).
+  static const String sessionIdKey = "sessionId";
+
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();
   static SharedPreferences? _prefsInstance;

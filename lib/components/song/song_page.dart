@@ -10,6 +10,7 @@ import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_patterns.dart';
+import 'package:ddr_md/components/song/song_player_sync.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
@@ -34,6 +35,7 @@ import 'package:provider/provider.dart';
 enum SongSection {
   speedMod,
   sync,
+  playerSync,
   patterns,
   bpmGraph,
   latestScore,
@@ -326,6 +328,19 @@ class _SongPageState extends State<SongPage> {
         // offset to recommend.
         if (songInfo.displaySyncFor(_chart) == null) return null;
         return SongSyncChart(songInfo: songInfo, chart: _chart);
+      case SongSection.playerSync:
+        final available = (songState.modes == Modes.singles
+                ? songInfo.singles
+                : songInfo.doubles)
+            .availableTypes;
+        if (available.isEmpty) return null;
+        return SongPlayerSync(
+          songInfo: songInfo,
+          chart: _chart,
+          mode: songState.modes,
+          difficulty: available[
+              songState.chosenDifficulty.clamp(0, available.length - 1)],
+        );
       case SongSection.patterns:
         final available = (songState.modes == Modes.singles
                 ? songInfo.singles

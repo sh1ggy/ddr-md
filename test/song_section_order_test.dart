@@ -26,6 +26,7 @@ void main() {
         SongSection.patterns,
         SongSection.speedMod,
         SongSection.sync,
+        SongSection.playerSync,
         SongSection.bpmGraph,
         SongSection.latestScore,
         SongSection.latestNote,
@@ -80,17 +81,17 @@ void main() {
         order: full(),
         visible: full(),
         oldIndex: 0, // speedMod
-        newIndex: 2, // past sync and patterns
+        newIndex: 2, // past sync and playerSync
       );
       expect(next.take(3),
-          [SongSection.sync, SongSection.patterns, SongSection.speedMod]);
+          [SongSection.sync, SongSection.playerSync, SongSection.speedMod]);
     });
 
     test('moving up within a fully-visible list lands where dropped', () {
       final next = reorderSongSections(
         order: full(),
         visible: full(),
-        oldIndex: 2, // patterns
+        oldIndex: 3, // patterns
         newIndex: 0,
       );
       expect(next.take(2), [SongSection.patterns, SongSection.speedMod]);
