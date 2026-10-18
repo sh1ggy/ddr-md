@@ -185,20 +185,22 @@ typedef EamuseProfile = ({
   String lastPlay,
 });
 
-/// Reads the first status table's label/value pairs: dancer name, DDR-CODE
-/// (the rival code), total plays and last play. Later tables repeat the play
-/// count and last play per style.
+/// Reads the status section's label/value pairs: dancer name, DDR-CODE (the
+/// rival code), total plays and last play. Per-style entries further down
+/// repeat some labels; the first of each wins.
 EamuseProfile parseEamuseProfile(String source) {
   final doc = html.parse(source);
-  final status = _content(doc, doc.getElementById('status'));
+  final status = _content(doc, doc.querySelector('.status-section'));
   final fields = <String, String>{};
-  for (final row in status.querySelectorAll('tr')) {
-    final label = row.querySelector('th')?.text.trim();
-    final value = row.querySelector('td')?.text.trim();
-    if (label != null && value != null) fields.putIfAbsent(label, () => value);
+  for (final item in status.querySelectorAll('.status-item')) {
+    final label = item.querySelector('.status-label')?.text.trim();
+    final value = item.querySelector('.status-data')?.text.trim();
+    if (label != null && label.isNotEmpty && value != null) {
+      fields.putIfAbsent(label, () => value);
+    }
   }
   return (
-    name: fields['ダンサーネーム'] ?? '',
+    name: fields['DANCER NAME'] ?? '',
     code: (fields['DDR-CODE'] ?? '').replaceAll(RegExp(r'\D'), ''),
     plays: int.tryParse(
         (fields['総プレー回数'] ?? '').replaceAll(RegExp(r'\D'), '')),

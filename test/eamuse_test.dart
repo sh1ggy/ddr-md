@@ -175,17 +175,22 @@ ${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
   });
 
   test('profile gives the rival code and last play', () {
-    String row(String th, String td) => '<tr><th>$th</th><td>$td</td></tr>';
+    String item(String label, String data) =>
+        '<div class="status-item"><div class="status-label">$label</div>'
+        '<div class="status-data">$data</div></div>';
     final profile = parseEamuseProfile('''
-<div id="status"><table><tbody>
-${row('ダンサーネーム', 'SHIGGY')}${row('DDR-CODE', '1234-5678')}
-${row('総プレー回数', '1,380回')}${row('最終プレー日時', '2026-10-16 16:57:59')}
-</tbody></table><table><tbody>${row('最終プレー日時', '2020-03-18 18:52:59')}</tbody></table></div>''');
+<div class="status-section"><div class="section-data">
+  <div class="status-item wide"><a class="wrapper"><div class="status-label">DANCER NAME</div>
+    <div class="status-data name">SHIGGY</div></a></div>
+  ${item('DDR-CODE', '12345678')}${item('総プレー回数', '1380回')}
+  ${item('最終プレー日時', '2026-10-17 15:59:32')}
+  ${item('<img alt="SINGLE">', '<div class="total-flare-skill-value">54321</div>')}
+</div></div>''');
     expect(profile, (
       name: 'SHIGGY',
       code: '12345678',
       plays: 1380,
-      lastPlay: '2026-10-16 16:57:59',
+      lastPlay: '2026-10-17 15:59:32',
     ));
   });
 }
