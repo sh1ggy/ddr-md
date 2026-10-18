@@ -203,10 +203,11 @@ class DatabaseProvider {
   }
 
   // Newest first.
-  static Future<List<PlaySession>> getSessions({int limit = 20}) async {
+  // Newest first; every session when [limit] is null.
+  static Future<List<PlaySession>> getSessions({int? limit}) async {
     final db = await _instance;
-    final rows = await db
-        .rawQuery('$_sessionSelect ORDER BY s.startedAt DESC LIMIT ?', [limit]);
+    final rows = await db.rawQuery(
+        '$_sessionSelect ORDER BY s.startedAt DESC LIMIT ?', [limit ?? -1]);
     return [for (final r in rows) PlaySession.fromMap(r)];
   }
 

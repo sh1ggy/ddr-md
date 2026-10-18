@@ -344,6 +344,11 @@ String formatPlayDate(DateTime date) {
   return "${date.year}-$m-$d";
 }
 
+// 12-hour clock time: 3:59 PM.
+String formatTime12(DateTime t) =>
+    "${t.hour % 12 == 0 ? 12 : t.hour % 12}:${t.minute.toString().padLeft(2, '0')} "
+    "${t.hour < 12 ? 'AM' : 'PM'}";
+
 // How long ago [date] was, coarsely: "5 min ago", "yesterday", then the date
 // once it's over a week back.
 String formatAgo(DateTime date, [DateTime? now]) {

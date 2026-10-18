@@ -79,12 +79,19 @@ void main() {
         throwsA(isA<EamuseSignedOut>()));
   });
 
-  test('requests are spaced by the gap and a refusal stops the sync', () async {
+  test(
+      'requests are spaced by the gap, keep renewed cookies, and stop at a refusal',
+      () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final times = <DateTime>[];
+    final sent = <String?>[];
     server.listen((request) {
       times.add(DateTime.now());
+      sent.add(request.headers.value(HttpHeaders.cookieHeader));
       final double = request.uri.path.contains('double');
+      if (times.length == 1) {
+        request.response.cookies.add(Cookie('M573SSID', 'renewed'));
+      }
       request.response
         ..statusCode = double ? 503 : 200
         ..write(_page(
@@ -94,8 +101,10 @@ void main() {
         ..close();
     });
     final saved = <ScoreRecord>[];
+    final kept = <String>[];
     final sync = EamuseSync(
-      cookies: '',
+      cookies: 'M573SSID=old; visid=v',
+      onCookies: (cookies) async => kept.addAll(cookies.map((c) => c.value)),
       titleIndex: {'max 300': 'MAX 300'},
       save: (records) async => saved.addAll(records),
       host: 'http://${server.address.host}:${server.port}',
@@ -109,6 +118,11 @@ void main() {
           greaterThanOrEqualTo(EamuseSync.gap));
     }
     expect(saved.map((r) => r.song), everyElement('MAX 300'));
+    expect(sent, [
+      'M573SSID=old; visid=v',
+      ...List.filled(2, 'M573SSID=renewed; visid=v')
+    ]);
+    expect(kept, ['renewed']);
   }, timeout: const Timeout(Duration(seconds: 30)));
 
   test('recent plays decide what a sync fetches', () {

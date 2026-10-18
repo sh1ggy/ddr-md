@@ -48,6 +48,10 @@ final router = GoRouter(
                     path: 'recent',
                     pageBuilder: (context, state) =>
                         _page(state, const RecentPlaysPage())),
+                GoRoute(
+                    path: 'sessions',
+                    pageBuilder: (context, state) =>
+                        _page(state, const SessionsPage())),
               ]),
         ]),
         StatefulShellBranch(routes: [

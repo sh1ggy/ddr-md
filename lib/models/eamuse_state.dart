@@ -9,6 +9,9 @@
 /// written.
 library;
 
+import 'dart:async';
+import 'dart:io' as io;
+
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse.dart';
@@ -28,6 +31,8 @@ class EamuseSyncState extends ChangeNotifier {
   // Charts the last sync added or changed.
   int? changed;
   String error = '';
+  // What the running or last sync checked, and why.
+  String note = '';
   // Plays kept from the recent plays page.
   int recentPlays = 0;
   // Bumped when a sync ends, so views of what it saved reload.
@@ -52,7 +57,9 @@ class EamuseSyncState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> sync() async {
+  /// [renewed]: the session was just renewed by [_signInSilently], so a
+  /// second signed-out answer means it really has to be signed into again.
+  Future<void> sync({bool renewed = false}) async {
     if (status == EamuseStatus.syncing || upToDate) return;
     final stored = {
       for (final r
@@ -66,6 +73,7 @@ class EamuseSyncState extends ChangeNotifier {
             .getCookies(url: WebUri(kEamuseHost)))
           '${c.name}=${c.value}'
       ].join('; '),
+      onCookies: _keepCookies,
       titleIndex: eamuseTitleIndex(Songs.list),
       save: (records) async {
         final fresh = [
@@ -79,6 +87,7 @@ class EamuseSyncState extends ChangeNotifier {
     status = EamuseStatus.syncing;
     progress = 0;
     error = '';
+    note = '';
     notifyListeners();
     void onProgress(int done, int total) {
       progress = total == 0 ? 0 : done / total;
@@ -100,12 +109,34 @@ class EamuseSyncState extends ChangeNotifier {
               score: p.score,
             )
       ]);
-      final plan = planEamuseSync(
-          plays,
-          stored.isEmpty
-              ? null
-              : Settings.getString(Settings.eamuseLastPlayKey),
-          EamuseSync.recentSize);
+      // Charts synced before the newest play was recorded have none, but
+      // every play before that sync is in them.
+      final lastPlay = Settings.getString(Settings.eamuseLastPlayKey);
+      final at = syncedAt;
+      final since = stored.isEmpty
+          ? null
+          : lastPlay.isNotEmpty
+              ? lastPlay
+              : at == null
+                  ? null
+                  : eamuseTimeText(at);
+      final plan = planEamuseSync(plays, since, EamuseSync.recentSize);
+      note = switch (plan) {
+        EamuseFullSync() when stored.isEmpty =>
+          'First sync: reading every chart',
+        EamuseFullSync() when since == null =>
+          'Reading every chart again (signed out since the last sync)',
+        EamuseFullSync() =>
+          'Over ${EamuseSync.recentSize} plays since the last sync: '
+              'rechecking every chart',
+        EamuseRecentSync(:final charts) =>
+          '${stored.length} charts already saved: checking only the '
+              '${charts.length} played since',
+        EamuseNothingNew() =>
+          '${stored.length} charts already saved: nothing played since the '
+              'last sync',
+      };
+      notifyListeners();
       if (plan is! EamuseNothingNew ||
           Settings.getString(Settings.rivalCodeSpeedKey).isEmpty) {
         await _syncProfile(sync);
@@ -143,6 +174,65 @@ class EamuseSyncState extends ChangeNotifier {
     charts = await DatabaseProvider.countScoreRecords(ScoreRecordSource.eamuse);
     recentPlays = await DatabaseProvider.countRecentPlays();
     notifyListeners();
+    if (status == EamuseStatus.signedOut && !renewed) {
+      status = EamuseStatus.syncing;
+      progress = 0;
+      notifyListeners();
+      final signedIn = await _signInSilently();
+      status = signedIn ? EamuseStatus.idle : EamuseStatus.signedOut;
+      notifyListeners();
+      if (signedIn) await this.sync(renewed: true);
+    }
+  }
+
+  /// Keeps cookies Konami renews during a sync in the web view's store, which
+  /// the next sync and sign-in read, with the expiry Konami gave them.
+  static Future<void> _keepCookies(List<io.Cookie> cookies) async {
+    for (final c in cookies) {
+      final expires = c.expires ??
+          (c.maxAge == null
+              ? null
+              : DateTime.now().add(Duration(seconds: c.maxAge!)));
+      await CookieManager.instance().setCookie(
+        url: WebUri(kEamuseHost),
+        name: c.name,
+        value: c.value,
+        path: c.path ?? '/',
+        domain: c.domain,
+        isSecure: c.secure,
+        isHttpOnly: c.httpOnly,
+        expiresDate: expires?.millisecondsSinceEpoch,
+      );
+    }
+  }
+
+  /// e-amusement's login page hands off to KONAMI ID, which sends a browser
+  /// still signed in to it straight back, so a lapsed e-amusement session
+  /// is renewed in a hidden web view without the password while the KONAMI
+  /// ID one lasts.
+  static Future<bool> _signInSilently() async {
+    final landed = Completer<bool>();
+    final view = HeadlessInAppWebView(
+      initialUrlRequest: URLRequest(url: WebUri(kEamuseLoginUrl)),
+      onLoadStop: (controller, url) {
+        if (url != null &&
+            url.host == Uri.parse(kEamuseHost).host &&
+            url.path.startsWith(kEamusePlayDataPath) &&
+            !landed.isCompleted) {
+          landed.complete(true);
+        }
+      },
+    );
+    try {
+      await view.run();
+      return await landed.future
+          .timeout(const Duration(seconds: 20), onTimeout: () => false);
+    } catch (e) {
+      debugPrint('e-amusement silent sign-in failed: $e');
+      return false;
+    } finally {
+      await view.dispose();
+    }
   }
 
   /// Best effort: a profile page that doesn't parse leaves the last one and

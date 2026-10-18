@@ -5,6 +5,7 @@
 /// page first when needed.
 library;
 
+import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/eamuse.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
@@ -49,9 +50,11 @@ class EamuseSyncCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(children: [
-              Expanded(
-                  child:
-                      Text('e-amusement', style: theme.textTheme.titleMedium)),
+              const Expanded(
+                  child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: CardHeading('e-amusement',
+                          icon: Icons.cloud_sync_outlined))),
               PopupMenuButton<void>(
                 itemBuilder: (_) => [
                   PopupMenuItem(
@@ -71,6 +74,11 @@ class EamuseSyncCard extends StatelessWidget {
                           color: state.status == EamuseStatus.failed
                               ? theme.colorScheme.error
                               : null)),
+                  if (state.note.isNotEmpty &&
+                      state.status != EamuseStatus.signedOut)
+                    Text(state.note,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 56,

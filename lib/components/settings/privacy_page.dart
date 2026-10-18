@@ -56,8 +56,11 @@ const privacySections = <(String, List<String>)>[
       '- e-amusement (optional): on Home you can sign '
           "in to your Konami account on Konami's own sign-in page, shown "
           'inside DDR MD. DDR MD never sees or stores your Konami ID or '
-          "password; the page keeps Konami's sign-in cookie on your device "
-          'like a browser would. When you tap Sync, and only then, DDR MD '
+          "password; the page keeps Konami's sign-in cookies on your device "
+          'like a browser would, and DDR MD keeps any Konami renews during a '
+          'sync. If the e-amusement session has lapsed, Sync reopens the '
+          'sign-in page out of sight, which signs straight back in while '
+          'Konami still remembers you. When you tap Sync, and only then, DDR MD '
           'uses that cookie to read your DDR WORLD play data from '
           "Konami's e-amusement site: your recent plays first, then only the "
           'charts you played since the last sync (or, the first time, every '

@@ -252,6 +252,14 @@ ScoreRecord? parseEamuseDetail(
 DateTime eamuseTime(String text) =>
     DateTime.parse('${text.replaceFirst(' ', 'T')}+09:00');
 
+/// [t] as e-amusement writes times: Japan-time "YYYY-MM-DD HH:MM:SS".
+String eamuseTimeText(DateTime t) {
+  final j = t.toUtc().add(const Duration(hours: 9));
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${j.year}-${two(j.month)}-${two(j.day)} '
+      '${two(j.hour)}:${two(j.minute)}:${two(j.second)}';
+}
+
 /// What a sync has to fetch after reading the recent plays page.
 sealed class EamusePlan {}
 
@@ -324,7 +332,10 @@ class EamuseSync {
   /// Plays the recent plays page lists.
   static const recentSize = 50;
 
-  final String cookies;
+  /// Cookie header sent with each request; cookies Konami sets or renews on
+  /// a response replace theirs here and go to [onCookies] to be kept.
+  String cookies;
+  final Future<void> Function(List<Cookie>)? onCookies;
   final Map<String, String> titleIndex;
   final Future<void> Function(List<ScoreRecord>) save;
   final String host;
@@ -334,6 +345,7 @@ class EamuseSync {
 
   EamuseSync({
     required this.cookies,
+    this.onCookies,
     required this.titleIndex,
     required this.save,
     this.host = kEamuseHost,
@@ -380,6 +392,7 @@ class EamuseSync {
       request.headers.set(HttpHeaders.cookieHeader, cookies);
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
+      await _keep(response);
       // A redirect from a play data page goes to the login page.
       if (response.isRedirect) throw EamuseSignedOut();
       if (response.statusCode != 200) {
@@ -390,6 +403,26 @@ class EamuseSync {
       _lastRequest = DateTime.now();
       client.close();
     }
+  }
+
+  Future<void> _keep(HttpClientResponse response) async {
+    final List<Cookie> set;
+    try {
+      set = response.cookies;
+    } on FormatException {
+      return;
+    }
+    if (set.isEmpty) return;
+    final jar = {
+      for (final pair in cookies.split('; '))
+        if (pair.indexOf('=') case final i when i > 0)
+          pair.substring(0, i): pair.substring(i + 1)
+    };
+    for (final c in set) {
+      jar[c.name] = c.value;
+    }
+    cookies = [for (final e in jar.entries) '${e.key}=${e.value}'].join('; ');
+    await onCookies?.call(set);
   }
 
   /// Syncs both styles, saving each page as it arrives. Returns how many
