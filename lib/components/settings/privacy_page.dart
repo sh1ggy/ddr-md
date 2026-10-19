@@ -16,7 +16,7 @@ const privacyUpdated = '18 October 2026';
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
 const privacySections = <(String, List<String>)>[
   (
-    'In short',
+    'In Short',
     [
       "DDR MD keeps everything on your device. There's no DDR MD account, "
           "no ads, no analytics and no tracking, and nothing you save, type "
@@ -26,7 +26,7 @@ const privacySections = <(String, List<String>)>[
     ]
   ),
   (
-    'What stays on your device',
+    'What Stays on Your Device',
     [
       '- Scores you save, with the result-screen photo kept as proof',
       '- Scores synced from e-amusement, if you link your account',
@@ -41,7 +41,7 @@ const privacySections = <(String, List<String>)>[
     ]
   ),
   (
-    'What uses the network',
+    'What Uses the Network',
     [
       '- Song updates: when DDR MD opens, and when you tap sync under '
           'Settings → Song Updates, it checks DDR MD\'s update server (hosted '
@@ -87,7 +87,7 @@ const privacySections = <(String, List<String>)>[
     ]
   ),
   (
-    'Deleting your data',
+    'Deleting Your Data',
     [
       'Notes, favourites and hand-set feet can be removed in the app. Sign '
           'out of e-amusement on Home deletes the Konami sign-in '
@@ -105,7 +105,7 @@ const privacySections = <(String, List<String>)>[
     ]
   ),
   (
-    'Song data',
+    'Song Data',
     [
       'Charts and song details come from community-made simfiles, mostly '
           'from Zenius-I-vanisher, and all credit for them goes to their '

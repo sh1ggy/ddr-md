@@ -205,3 +205,74 @@ class _CabinetText extends StatelessWidget {
     ]);
   }
 }
+
+/// Levels as tappable numerals, grey unless selected, with 1–9 folded behind
+/// a toggle since they're rarely picked. Opens unfolded when one is selected.
+class LevelPicker extends StatefulWidget {
+  const LevelPicker({
+    super.key,
+    required this.levels,
+    required this.isSelected,
+    required this.onTap,
+    this.height = 22,
+  });
+
+  final List<int> levels;
+  final bool Function(int level) isSelected;
+  final ValueChanged<int> onTap;
+  final double height;
+
+  @override
+  State<LevelPicker> createState() => _LevelPickerState();
+}
+
+class _LevelPickerState extends State<LevelPicker> {
+  bool? _low;
+
+  static const _grey = ColorFilter.matrix([
+    0.33, 0.33, 0.33, 0, 0, //
+    0.33, 0.33, 0.33, 0, 0,
+    0.33, 0.33, 0.33, 0, 0,
+    0, 0, 0, 1, 0,
+  ]);
+
+  @override
+  Widget build(BuildContext context) {
+    final low = widget.levels.where((l) => l < 10).toList();
+    final showLow = _low ??
+        low.any(widget.isSelected) || low.length == widget.levels.length;
+    Widget level(int l) {
+      final number =
+          LevelNumber(level: l, difficulty: 'EXPERT', height: widget.height);
+      return InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => widget.onTap(l),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: widget.isSelected(l)
+              ? number
+              : ColorFiltered(colorFilter: _grey, child: number),
+        ),
+      );
+    }
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (low.isNotEmpty && low.length < widget.levels.length)
+          TextButton.icon(
+            style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8)),
+            onPressed: () => setState(() => _low = !showLow),
+            icon: Icon(showLow ? Icons.chevron_left : Icons.chevron_right,
+                size: 18),
+            label: const Text('1–9'),
+          ),
+        if (showLow) ...low.map(level),
+        ...widget.levels.where((l) => l >= 10).map(level),
+      ],
+    );
+  }
+}

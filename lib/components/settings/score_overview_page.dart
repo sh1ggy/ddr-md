@@ -9,7 +9,8 @@ import 'dart:math';
 
 import 'package:ddr_md/components/session/recent_plays.dart'
     show HomeCard, HomeSubpage;
-import 'package:ddr_md/components/song/difficulty_label.dart' show LevelNumber;
+import 'package:ddr_md/components/song/difficulty_label.dart'
+    show LevelNumber, LevelPicker;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart' show flareRankIcon, gradeForScore;
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
@@ -119,7 +120,7 @@ class _FlareCard extends StatelessWidget {
     final total = skill.total;
     final cls = flareClass(total);
     return HomeCard(
-      title: 'Flare skill',
+      title: 'Flare Skill',
       icon: Icons.local_fire_department_outlined,
       children: [
         Row(
@@ -240,7 +241,7 @@ final _lampBands = <_Band>[
     (ClearLamp.pfc, Color(0xFFFFC107), 'assets/icons/cl_perf.png', 'PFC'),
     (ClearLamp.gfc, Color(0xFF66BB6A), 'assets/icons/cl_great.png', 'GFC'),
     (ClearLamp.fc, Color(0xFF42A5F5), 'assets/icons/cl_good.png', 'FC'),
-    (ClearLamp.life4, Color(0xFFEF5350), null, 'LIFE4'),
+    (ClearLamp.life4, Color(0xFFE8344E), 'assets/icons/cl_life4.png', 'LIFE4'),
     (
       ClearLamp.clear,
       Color(0xFFFF9800),
@@ -258,19 +259,24 @@ final _lampBands = <_Band>[
     ),
 ];
 
-// EX first, then IX down to I, then no flare.
+// EX first, then IX down to I, then no flare. Each in its badge's own colour.
+const _flareColors = [
+  Color(0xFF0C9CFC), Color(0xFF0CCCFC), Color(0xFF0CFC0C), // I–III
+  Color(0xFFFCCC0C), Color(0xFFFC0C0C), Color(0xFF6C0CFC), // IV–VI
+  Color(0xFFB4B4B4), Color(0xFFE4E4E4), Color(0xFF303030), // VII–IX
+];
+
 final _flareBands = <_Band>[
   (
     holds: (r) => r.flareRank == 'EX',
-    color: const Color(0xFFFFD54F),
+    color: const Color(0xFFFCB46C),
     icon: flareRankIcon('EX'),
     text: 'EX',
   ),
   for (var i = 8; i >= 0; i--)
     (
       holds: (r) => r.flareRank == kFlareRanks[i],
-      // Cool to hot as the rank climbs.
-      color: HSVColor.fromAHSV(1, 200 - 200 * i / 8, 0.65, 0.95).toColor(),
+      color: _flareColors[i],
       icon: flareRankIcon(kFlareRanks[i]),
       text: kFlareRanks[i],
     ),
@@ -295,15 +301,17 @@ class _LevelsCard extends StatefulWidget {
 
 class _LevelsCardState extends State<_LevelsCard> {
   bool _flare = false;
+  int? _picked;
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.levels.containsKey(_picked)) _picked = null;
     final scheme = Theme.of(context).colorScheme;
     final muted = scheme.onSurfaceVariant;
     final bands = _flare ? _flareBands : _lampBands;
     const figures = [FontFeature.tabularFigures()];
     return HomeCard(
-      title: 'By level',
+      title: 'By Level',
       icon: Icons.emoji_events_outlined,
       children: [
         Center(
@@ -320,43 +328,71 @@ class _LevelsCardState extends State<_LevelsCard> {
         ),
         const SizedBox(height: 8),
         for (final MapEntry(key: level, value: row) in widget.levels.entries)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(children: [
-              SizedBox(width: 30, child: Center(child: _Level(level))),
-              const SizedBox(width: 6),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: SizedBox(
-                    height: 14,
-                    child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (final b in bands)
-                            if (_count(row, b) > 0)
-                              Expanded(
-                                  flex: _count(row, b),
-                                  child: ColoredBox(color: b.color)),
-                          if (_unplayed(row) > 0)
-                            Expanded(
-                                flex: _unplayed(row),
-                                child: ColoredBox(
-                                    color: scheme.surfaceContainerHighest)),
-                        ]),
-                  ),
-                ),
-              ),
-              SizedBox(
-                  width: 72,
-                  child: Text('${row.played.length}/${row.charts}',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                          fontSize: 12, color: muted, fontFeatures: figures))),
-            ]),
-          ),
+          GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () =>
+                  setState(() => _picked = _picked == level ? null : level),
+              child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: _picked == null || _picked == level ? 1 : 0.35,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+                    decoration: BoxDecoration(
+                        color:
+                            _picked == level ? scheme.secondaryContainer : null,
+                        borderRadius: BorderRadius.circular(6)),
+                    child: Row(children: [
+                      SizedBox(width: 30, child: Center(child: _Level(level))),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: SizedBox(
+                            height: 14,
+                            child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (final b in bands)
+                                    if (_count(row, b) > 0)
+                                      Expanded(
+                                          flex: _count(row, b),
+                                          child: ColoredBox(color: b.color)),
+                                  if (_unplayed(row) > 0)
+                                    Expanded(
+                                        flex: _unplayed(row),
+                                        child: ColoredBox(
+                                            color: scheme
+                                                .surfaceContainerHighest)),
+                                ]),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                          width: 72,
+                          child: Text('${row.played.length}/${row.charts}',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: muted,
+                                  fontFeatures: figures))),
+                    ]),
+                  ))),
         const SizedBox(height: 10),
-        _BandCounts([for (final b in bands) (b, null)]),
+        Text(_picked == null ? 'All Levels' : 'Level $_picked',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: muted)),
+        const SizedBox(height: 6),
+        // Every band, even empty ones, so the grid holds still between picks.
+        _BandCounts([
+          for (final b in bands)
+            (
+              b,
+              _picked == null
+                  ? _total(widget.levels, b)
+                  : _count(widget.levels[_picked]!, b)
+            ),
+        ]),
       ],
     );
   }
@@ -364,16 +400,17 @@ class _LevelsCardState extends State<_LevelsCard> {
 
 int _count(LevelCharts row, _Band b) => row.played.where(b.holds).length;
 
+int _total(Map<int, LevelCharts> levels, _Band b) =>
+    levels.values.fold(0, (n, row) => n + _count(row, b));
+
 // Never negative, though the song list can lag behind a sync.
 int _unplayed(LevelCharts row) => max(0, row.charts - row.played.length);
 
-/// A level in the cabinet's numerals, in a neutral grey unless [selected].
+/// A level in the cabinet's numerals, in a neutral grey.
 class _Level extends StatelessWidget {
-  const _Level(this.level, {this.selected = false, this.height = 16});
+  const _Level(this.level);
 
   final int level;
-  final bool selected;
-  final double height;
 
   static const _grey = ColorFilter.matrix([
     0.33, 0.33, 0.33, 0, 0, //
@@ -384,9 +421,9 @@ class _Level extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final number =
-        LevelNumber(level: level, difficulty: 'EXPERT', height: height);
-    return selected ? number : ColorFiltered(colorFilter: _grey, child: number);
+    return ColorFiltered(
+        colorFilter: _grey,
+        child: LevelNumber(level: level, difficulty: 'EXPERT', height: 16));
   }
 }
 
@@ -418,25 +455,13 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
             orElse: () => played.last);
     final row = widget.levels[level]!;
     return HomeCard(
-      title: 'Level stats',
+      title: 'Level Stats',
       icon: Icons.insights,
       children: [
-        Center(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(children: [
-              for (final l in played)
-                InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: () => setState(() => _picked = l),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    child: _Level(l, selected: l == level, height: 22),
-                  ),
-                ),
-            ]),
-          ),
+        LevelPicker(
+          levels: widget.levels.keys.toList(),
+          isSelected: (l) => l == level,
+          onTap: (l) => setState(() => _picked = l),
         ),
         const SizedBox(height: 10),
         _BandCounts([
@@ -454,22 +479,26 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
   }
 }
 
-/// Band labels in a centred run with dividers between them, each with its
-/// count (or its colour, for the legend) at the label's own height.
+/// Band labels with their counts in a grid of fixed cells, so changing
+/// counts never moves anything. Empty bands are dimmed.
 class _BandCounts extends StatelessWidget {
   const _BandCounts(this.entries, {this.unplayed});
 
-  final List<(_Band, int?)> entries;
+  final List<(_Band, int)> entries;
   final int? unplayed;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     const style = TextStyle(
-        fontSize: _bandHeight * 0.8,
+        fontSize: 13,
         height: 1,
         fontWeight: FontWeight.w700,
         fontFeatures: [FontFeature.tabularFigures()]);
+    final surface = scheme.surfaceContainerLow.computeLuminance();
+    // The band's colour, unless it would vanish into the card.
+    Color tint(Color c) =>
+        (c.computeLuminance() - surface).abs() < 0.15 ? scheme.onSurface : c;
     Widget label(_Band b) => b.icon != null
         // The grade and empty-flare art have more space around them.
         ? Image.asset(b.icon!,
@@ -477,47 +506,43 @@ class _BandCounts extends StatelessWidget {
                 ? _bandHeight * 1.6
                 : _bandHeight)
         : Text(b.text, style: style.copyWith(color: b.color));
-    final items = [
-      for (final (b, n) in entries)
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          if (n == null) ...[
-            Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                    color: b.color, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(width: 5),
-          ],
-          label(b),
-          if (n != null) ...[
-            const SizedBox(width: 5),
-            Text('$n', style: style.copyWith(color: b.color)),
-          ],
-        ]),
-      if (unplayed != null && unplayed! > 0)
-        Text('$unplayed unplayed',
-            style: style.copyWith(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: scheme.onSurfaceVariant)),
-    ];
-    return Center(
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        runSpacing: 6,
-        children: [
-          for (var i = 0; i < items.length; i++) ...[
-            if (i > 0)
-              Container(
-                  width: 1,
-                  height: _bandHeight,
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  color: scheme.outlineVariant),
-            items[i],
-          ],
-        ],
-      ),
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 4,
+      runSpacing: 6,
+      children: [
+        for (final (b, n) in entries)
+          Opacity(
+            opacity: n > 0 ? 1 : 0.3,
+            child: SizedBox(
+              width: 92,
+              height: _bandHeight + 6,
+              child: Row(children: [
+                SizedBox(
+                    width: 56,
+                    child: Center(
+                        child:
+                            FittedBox(fit: BoxFit.scaleDown, child: label(b)))),
+                Expanded(
+                    child: Text('$n',
+                        textAlign: TextAlign.right,
+                        style: style.copyWith(color: tint(b.color)))),
+                const SizedBox(width: 4),
+              ]),
+            ),
+          ),
+        if (unplayed != null && unplayed! > 0)
+          SizedBox(
+            height: _bandHeight + 6,
+            child: Center(
+              child: Text('$unplayed unplayed',
+                  style: style.copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: scheme.onSurfaceVariant)),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -690,7 +715,7 @@ class _ActivityCardState extends State<_ActivityCard> {
 
     final picked = _picked;
     return HomeCard(
-      title: 'Play activity',
+      title: 'Play Activity',
       icon: Icons.calendar_view_month,
       children: [
         Text(

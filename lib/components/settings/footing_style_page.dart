@@ -54,13 +54,13 @@ class FootingStyleSwitch extends StatelessWidget {
 }
 
 const Map<String, String> _patternNames = {
-  'jack-vs-footswitch': 'Jack or footswitch',
-  'slow-doublestep-vs-crossover': 'Slow doublestep',
-  'doublestep-vs-crossover': 'Doublestep or crossover',
+  'jack-vs-footswitch': 'Jack or Footswitch',
+  'slow-doublestep-vs-crossover': 'Slow Doublestep',
+  'doublestep-vs-crossover': 'Doublestep or Crossover',
   'candle': 'Candle',
   'spin': 'Spin',
-  'bracket-vs-jump': 'Bracket or jump',
-  'hold-with-taps': 'Hold with taps',
+  'bracket-vs-jump': 'Bracket or Jump',
+  'hold-with-taps': 'Hold with Taps',
 };
 
 /// Arrow scale in the moment charts, small enough to keep a few rows in view.

@@ -5,6 +5,7 @@
 library;
 
 import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart' show LevelPicker;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
@@ -466,21 +467,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
 
       switch (axis) {
         case SongFilterAxis.level:
-          return FilterTray(
-            compact: true,
-            options: <FilterOption>[
-              for (int level = 1; level <= constants.maxDifficulty; level++)
-                FilterOption(
-                  label: '$level',
-                  selected: _filter.levels.contains(level),
-                  onTap: () => _toggleLevel(level, songState),
-                ),
-              FilterOption(
-                label: 'X',
-                selected: false,
-                onTap: () => clearAllFilters(mode, songState.sortType),
-              ),
-            ],
+          return LevelPicker(
+            levels: [for (int l = 1; l <= constants.maxDifficulty; l++) l],
+            isSelected: _filter.levels.contains,
+            onTap: (level) => _toggleLevel(level, songState),
           );
 
         case SongFilterAxis.version:
@@ -572,10 +562,15 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               width: double.infinity,
               margin: const EdgeInsets.only(top: 10),
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                border: Border.all(color: Theme.of(context).dividerColor),
-                borderRadius: BorderRadius.circular(14),
-              ),
+              // The level numerals hold together on their own; chips need
+              // the frame.
+              decoration: _activeFilterPanel == SongFilterAxis.level
+                  ? null
+                  : BoxDecoration(
+                      border:
+                          Border.all(color: Theme.of(context).dividerColor),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
               child: filterTray(),
             ),
         ],

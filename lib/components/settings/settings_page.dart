@@ -29,7 +29,6 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int _chosenReadSpeed = 0;
-  String _username = constants.username;
 
   @override
   void initState() {
@@ -42,7 +41,6 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _loadPrefs() async {
     setState(() {
       _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
-      _username = Settings.getString(Settings.usernameKey);
     });
   }
 
@@ -52,16 +50,6 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       Settings.setInt(Settings.chosenReadSpeedKey, int.parse(newValue));
       _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
-    });
-  }
-
-  /// After setting the username, asynchronously save it to persistent
-  /// storage. Compared against the OCR-detected player name when saving a
-  /// score, to flag screenshots that may belong to someone else.
-  Future<void> _setUsername(String newValue) async {
-    setState(() {
-      Settings.setString(Settings.usernameKey, newValue);
-      _username = Settings.getString(Settings.usernameKey);
     });
   }
 
@@ -91,108 +79,117 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 iconTheme: const IconThemeData(color: Colors.blueGrey),
               ),
-              // Settings scroll; the links stay pinned to the bottom.
-              body: Column(
+              // Settings scroll under the links, which float at the bottom.
+              body: Stack(
                 children: [
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.all(8),
-                      children: [
-                        const _SectionHeader('Profile'),
-                        const EamuseProfileCard(),
-                        Card(
-                          child: ListTile(
-                            leading: const Icon(Icons.leaderboard_outlined),
-                            title: const Text("Scores",
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                            subtitle: const Text(
-                                "Flare skill, lamps by level and play activity"),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                    builder: (_) => const ScoreOverviewPage())),
-                          ),
+                  ListView(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 72),
+                    children: [
+                      const _SectionHeader('Profile', Icons.person),
+                      const EamuseProfileCard(),
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.leaderboard_outlined),
+                          title: const Text("Scores",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: const Text(
+                              "Flare skill, lamps by level and play activity"),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const ScoreOverviewPage())),
                         ),
-                        SettingCard<int>(
-                          setValue: _setReadSpeed,
-                          chosenValue: _chosenReadSpeed,
-                          field: "Read Speed",
-                          maxLength: 3,
+                      ),
+                      SettingCard<int>(
+                        setValue: _setReadSpeed,
+                        chosenValue: _chosenReadSpeed,
+                        field: "Read Speed",
+                        maxLength: 3,
+                      ),
+                      const _SectionHeader('Dancer', Icons.accessibility_new),
+                      Card(
+                        child: ListTile(
+                          title: const Text("Dancer Type",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle:
+                              const Text("Height, shoe size and bar grip"),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const DancerTypePage())),
                         ),
-                        SettingCard<String>(
-                          setValue: _setUsername,
-                          chosenValue: _username,
-                          field: "Username",
-                          maxLength: constants.usernameLength,
-                          digitsOnly: false,
+                      ),
+                      const _SectionHeader('Play', Icons.directions_run),
+                      const _PlayStyleCard(),
+                      Card(
+                        child: ListTile(
+                          title: const Text("Footing Style",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          trailing: FootingStyleSwitch(
+                              onChanged: () => setState(() {})),
+                          onTap: () async {
+                            await Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => const FootingStylePage()));
+                            if (mounted) setState(() {});
+                          },
                         ),
-                        Card(
-                          child: ListTile(
-                            title: const Text("Dancer Type",
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                            subtitle:
-                                const Text("Height, shoe size and bar grip"),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                    builder: (_) => const DancerTypePage())),
-                          ),
+                      ),
+                      const _SectionHeader('Content', Icons.library_music),
+                      const _ContentCard(),
+                      const _SectionHeader('About', Icons.info_outline),
+                      Card(
+                        child: ListTile(
+                          title: const Text("Privacy",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const PrivacyPage())),
                         ),
-                        const _SectionHeader('Play'),
-                        const _PlayStyleCard(),
-                        Card(
-                          child: ListTile(
-                            title: const Text("Footing Style",
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                            trailing: FootingStyleSwitch(
-                                onChanged: () => setState(() {})),
-                            onTap: () async {
-                              await Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                          const FootingStylePage()));
-                              if (mounted) setState(() {});
-                            },
-                          ),
-                        ),
-                        const _SectionHeader('Content'),
-                        const _ContentCard(),
-                        const _SectionHeader('About'),
-                        Card(
-                          child: ListTile(
-                            title: const Text("Privacy",
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                    builder: (_) => const PrivacyPage())),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                            child: Padding(
-                          padding: EdgeInsets.only(left: 8.0),
-                          child: Text(constants.appVer),
-                        )),
-                        IconButton(
-                            onPressed: () => _launchUrl(constants.github),
-                            icon: const FaIcon(FontAwesomeIcons.github,
-                                size: 20)),
-                        IconButton(
-                            onPressed: () => _launchUrl(constants.linkedin),
-                            icon: const FaIcon(FontAwesomeIcons.linkedin,
-                                size: 20)),
-                        IconButton(
-                            onPressed: () => _launchUrl(constants.paypalDono),
-                            icon: const FaIcon(FontAwesomeIcons.paypal,
-                                size: 20)),
-                      ],
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 12,
+                    child: Center(
+                      child: Material(
+                        elevation: 3,
+                        shape: const StadiumBorder(),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHigh
+                            .withValues(alpha: 0.85),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 16, right: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(constants.appVer,
+                                  style: TextStyle(fontSize: 12)),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => _launchUrl(constants.github),
+                                  icon: const FaIcon(FontAwesomeIcons.github,
+                                      size: 18)),
+                              IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () =>
+                                      _launchUrl(constants.linkedin),
+                                  icon: const FaIcon(FontAwesomeIcons.linkedin,
+                                      size: 18)),
+                              IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () =>
+                                      _launchUrl(constants.paypalDono),
+                                  icon: const FaIcon(FontAwesomeIcons.paypal,
+                                      size: 18)),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -306,20 +303,27 @@ class _ContentCardState extends State<_ContentCard> {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.label);
+  const _SectionHeader(this.label, this.icon);
 
   final String label;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 4),
-      child: Text(label.toUpperCase(),
-          style: const TextStyle(
-              fontSize: 12,
-              letterSpacing: 1.2,
-              color: Colors.blueGrey,
-              fontWeight: FontWeight.w700)),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.blueGrey),
+          const SizedBox(width: 6),
+          Text(label.toUpperCase(),
+              style: const TextStyle(
+                  fontSize: 12,
+                  letterSpacing: 1.2,
+                  color: Colors.blueGrey,
+                  fontWeight: FontWeight.w700)),
+        ],
+      ),
     );
   }
 }
