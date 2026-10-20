@@ -10,24 +10,26 @@ import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '12 October 2026';
+const privacyUpdated = '18 October 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
 const privacySections = <(String, List<String>)>[
   (
-    'In short',
+    'In Short',
     [
-      "DDR MD keeps everything on your device. There's no account, no ads, "
-          "no analytics and no tracking, and nothing you save, type or "
-          "photograph is sent anywhere. The only thing it downloads is song "
-          'data, and those requests carry nothing about you.',
+      "DDR MD keeps everything on your device. There's no DDR MD account, "
+          "no ads, no analytics and no tracking, and nothing you save, type "
+          "or photograph is sent anywhere. It downloads song data, with "
+          'nothing about you attached, and, only if you link your '
+          'e-amusement account, your own scores from Konami.',
     ]
   ),
   (
-    'What stays on your device',
+    'What Stays on Your Device',
     [
       '- Scores you save, with the result-screen photo kept as proof',
+      '- Scores synced from e-amusement, if you link your account',
       '- Notes and favourites',
       '- Feet you set by hand in the chart preview, and the footing style '
           'learned from them',
@@ -39,7 +41,7 @@ const privacySections = <(String, List<String>)>[
     ]
   ),
   (
-    'What uses the network',
+    'What Uses the Network',
     [
       '- Song updates: when DDR MD opens, and when you tap sync under '
           'Settings → Song Updates, it checks DDR MD\'s update server (hosted '
@@ -51,6 +53,24 @@ const privacySections = <(String, List<String>)>[
       '- Updates only ever contain song data (the song list, charts, jackets '
           'and pattern counts), never code, and each file is checked against '
           "its fingerprint before it's used.",
+      '- e-amusement (optional): on Home you can sign '
+          "in to your Konami account on Konami's own sign-in page, shown "
+          'inside DDR MD. DDR MD never sees or stores your Konami ID or '
+          "password; the page keeps Konami's sign-in cookies on your device "
+          'like a browser would, and DDR MD keeps any Konami renews during a '
+          'sync. If the e-amusement session has lapsed, Sync reopens the '
+          'sign-in page out of sight, which signs straight back in while '
+          'Konami still remembers you. When you tap Sync, and only then, DDR MD '
+          'uses that cookie to read your DDR WORLD play data from '
+          "Konami's e-amusement site: your recent plays first, then only the "
+          'charts you played since the last sync (or, the first time, every '
+          'page of your play data), plus your profile page when you\'ve played, '
+          'one page every few seconds. It saves your best score, rank, clear '
+          'lamp, flare and max combo on each chart, each recent play\'s score, '
+          'and your dancer name, rival code, play count and last play date on '
+          'your device. Nothing is sent to DDR MD or anyone else. Konami sees '
+          "these requests as coming from your account, and Konami's own "
+          'privacy policy applies to them.',
       "- Links: the GitHub, LinkedIn and PayPal buttons open in your browser, "
           "where those sites' own privacy policies apply.",
     ]
@@ -67,9 +87,11 @@ const privacySections = <(String, List<String>)>[
     ]
   ),
   (
-    'Deleting your data',
+    'Deleting Your Data',
     [
-      'Notes, favourites and hand-set feet can be removed in the app. '
+      'Notes, favourites and hand-set feet can be removed in the app. Sign '
+          'out of e-amusement on Home deletes the Konami sign-in '
+          'cookie. '
           'Uninstalling DDR MD deletes everything it has stored, including '
           "scores and their photos. Nothing is kept anywhere else, so there's "
           'nothing for me to delete on your behalf.',
@@ -83,7 +105,7 @@ const privacySections = <(String, List<String>)>[
     ]
   ),
   (
-    'Song data',
+    'Song Data',
     [
       'Charts and song details come from community-made simfiles, mostly '
           'from Zenius-I-vanisher, and all credit for them goes to their '
@@ -128,7 +150,8 @@ class PrivacyPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
-          Text('Last updated $privacyUpdated', style: theme.textTheme.bodySmall),
+          Text('Last updated $privacyUpdated',
+              style: theme.textTheme.bodySmall),
           for (final (heading, paragraphs) in privacySections) ...[
             Padding(
               padding: const EdgeInsets.only(top: 20, bottom: 6),

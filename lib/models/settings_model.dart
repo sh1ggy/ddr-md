@@ -49,7 +49,6 @@ class Settings {
   // The pad dancer without the cabinet's back bar, hands free. 0/1.
   static const String padDancerNoBarKey = "chartPreviewPadDancerNoBar";
 
-
   // DancerView index: where the pad dancer's camera looks from.
   static const String dancerViewKey = "chartPreviewDancerView";
 
@@ -143,13 +142,25 @@ class Settings {
 
   static const String rivalCodeSpeedKey = "rivalCode";
   static const String detectionSideKey = "detectionSide";
-  static const String usernameKey = "username";
   static const String playModeKey = "playMode";
   static const String parityProfileKey = "parityProfile";
   static const String parityProfileOnKey = "parityProfileOn";
 
   // Id of the running play session ('' = none).
   static const String sessionIdKey = "sessionId";
+
+  // When the last e-amusement sync finished (ISO-8601, '' = never), and the
+  // newest play it saw on the recent plays page (e-amusement's own Japan-time
+  // "YYYY-MM-DD HH:MM:SS", '' = walk every page next time).
+  static const String eamuseSyncedAtKey = "eamuseSyncedAt";
+  static const String eamuseLastPlayKey = "eamuseLastPlay";
+
+  // The e-amusement player status, from the play data index: dancer name,
+  // total plays and last play (Japan-time text, as above). The rival code is
+  // kept under [rivalCodeSpeedKey].
+  static const String eamuseNameKey = "eamuseName";
+  static const String eamusePlayCountKey = "eamusePlayCount";
+  static const String eamuseProfileLastPlayKey = "eamuseProfileLastPlay";
 
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();

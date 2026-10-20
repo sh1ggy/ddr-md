@@ -1,14 +1,18 @@
 /// Name: SessionPage
 /// Parent: Layout
-/// Description: Home tab: start a session at a venue, play it credit by
-/// credit (cabinet + side), and see the timing logged in each.
+/// Description: Home tab: sync e-amusement scores, start a session at a
+/// venue, play it credit by credit (cabinet + side), and see the timing logged
+/// in each.
 library;
 
+import 'package:ddr_md/components/session/eamuse_sync_card.dart';
+import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 String sideLabel(PadSide side) => side == PadSide.p1 ? '1P' : '2P';
@@ -268,14 +272,27 @@ final _deleteBackground = Container(
 class SessionPage extends StatelessWidget {
   const SessionPage({super.key});
 
+  static const _header = [EamuseSyncCard(), RecentPlaysCard()];
+
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionState>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Session')),
+      appBar: AppBar(
+        surfaceTintColor: Colors.black,
+        shadowColor: Colors.black,
+        elevation: 2,
+        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        title: const Text('Home',
+            style: TextStyle(
+                fontSize: 20,
+                color: Colors.blueGrey,
+                fontWeight: FontWeight.w600)),
+      ),
+      // The cards scroll with the session below them.
       body: session.active
-          ? _ActiveSession(session: session)
-          : _NoSession(revision: session.revision),
+          ? _ActiveSession(session: session, header: _header)
+          : _NoSession(revision: session.revision, header: _header),
     );
   }
 }
@@ -292,62 +309,41 @@ Future<void> _deleteSession(BuildContext context, PlaySession s) async {
 }
 
 class _NoSession extends StatelessWidget {
-  const _NoSession({required this.revision});
+  const _NoSession({required this.revision, required this.header});
 
   final int revision;
+  final List<Widget> header;
+
+  static const _shown = 3;
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<PlaySession>>(
       key: ValueKey(revision),
-      future: DatabaseProvider.getSessions(),
+      // One more than shown, to know whether there's more to see.
+      future: DatabaseProvider.getSessions(limit: _shown + 1),
       builder: (context, snapshot) {
         final past = snapshot.data ?? [];
         return ListView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.only(bottom: 24),
           children: [
-            const Text(
-              'Start a session at the venue you\'re playing, then a credit '
-              'for each side you play. Log each play\'s timing average and '
-              'variation from its song page.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Center(
-              child: FilledButton.icon(
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Start session'),
-                onPressed: () => showStartSessionSheet(context),
-              ),
-            ),
-            if (past.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Text('Past sessions',
-                  style: Theme.of(context).textTheme.titleSmall),
-              for (final s in past)
-                Dismissible(
-                  key: ValueKey(s.id),
-                  direction: DismissDirection.endToStart,
-                  background: _deleteBackground,
-                  confirmDismiss: (_) => _confirmSessionDelete(context),
-                  onDismissed: (_) => _deleteSession(context, s),
-                  child: ListTile(
-                    dense: true,
-                    title: Text(s.venue.name),
-                    subtitle: Text(formatDate(s.startedAt)),
-                    trailing: IconButton(
-                      tooltip: 'Delete session',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () async {
-                        if (await _confirmSessionDelete(context) &&
-                            context.mounted) {
-                          await _deleteSession(context, s);
-                        }
-                      },
-                    ),
-                  ),
+            ...header,
+            HomeCard(
+              title: 'Sessions',
+              icon: Icons.place_outlined,
+              onMore: past.length > _shown
+                  ? () => context.push('/home/sessions')
+                  : null,
+              children: [
+                FilledButton.icon(
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start session'),
+                  onPressed: () => showStartSessionSheet(context),
                 ),
-            ],
+                if (past.isNotEmpty) const SizedBox(height: 6),
+                for (final s in past.take(_shown)) _SessionTile(s),
+              ],
+            ),
           ],
         );
       },
@@ -355,10 +351,76 @@ class _NoSession extends StatelessWidget {
   }
 }
 
+/// A past session in a rounded tile; swipe or tap the bin to delete it.
+class _SessionTile extends StatelessWidget {
+  const _SessionTile(this.session);
+
+  final PlaySession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final started = session.startedAt.toLocal();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Dismissible(
+          key: ValueKey(session.id),
+          direction: DismissDirection.endToStart,
+          background: _deleteBackground,
+          confirmDismiss: (_) => _confirmSessionDelete(context),
+          onDismissed: (_) => _deleteSession(context, session),
+          child: Material(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: ListTile(
+              dense: true,
+              title: Text(session.venue.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle:
+                  Text('${formatPlayDate(started)} · ${formatTime12(started)}'),
+              trailing: IconButton(
+                tooltip: 'Delete session',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () async {
+                  if (await _confirmSessionDelete(context) && context.mounted) {
+                    await _deleteSession(context, session);
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Every past session, newest first.
+class SessionsPage extends StatelessWidget {
+  const SessionsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final revision = context.select<SessionState, int>((s) => s.revision);
+    return HomeSubpage(
+      title: 'Sessions',
+      body: FutureBuilder<List<PlaySession>>(
+        key: ValueKey(revision),
+        future: DatabaseProvider.getSessions(),
+        builder: (context, snapshot) => ListView(
+          padding: const EdgeInsets.all(12),
+          children: [for (final s in snapshot.data ?? []) _SessionTile(s)],
+        ),
+      ),
+    );
+  }
+}
+
 class _ActiveSession extends StatelessWidget {
-  const _ActiveSession({required this.session});
+  const _ActiveSession({required this.session, required this.header});
 
   final SessionState session;
+  final List<Widget> header;
 
   @override
   Widget build(BuildContext context) {
@@ -374,111 +436,122 @@ class _ActiveSession extends StatelessWidget {
       builder: (context, snapshot) {
         final (credits, plays) = snapshot.data ?? (<Credit>[], <TimingPlay>[]);
         return ListView(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.only(bottom: 12),
           children: [
-            Card(
-              child: ListTile(
-                title: Text(session.session!.venue.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('since ${formatDate(session.session!.startedAt)}'
-                    ' · ${plays.length} ${plays.length == 1 ? 'play' : 'plays'}'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Discard session',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () async {
-                        if (await confirmDelete(
-                            context,
-                            'Discard this session?',
-                            'Its credits and every play logged in them go '
-                                'too.')) {
-                          await session.discard();
-                        }
-                      },
-                    ),
-                    TextButton(
-                      onPressed: session.end,
-                      child: const Text('End'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            ...header,
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: FilledButton.tonalIcon(
-                icon: const Icon(Icons.add),
-                label: Text('Credit ${session.credit!.number + 1}'),
-                onPressed: () => showNewCreditSheet(context),
-              ),
-            ),
-            for (final credit in credits) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 4, 0, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Credit ${credit.number} · ${sideLabel(credit.side)}'
-                        '${credit.cabinet.name.isEmpty ? '' : ' · ${credit.cabinet.name}'}',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Delete credit',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      onPressed: () async {
-                        if (await confirmDelete(
-                            context,
-                            'Delete credit ${credit.number}?',
-                            'Every play logged in it goes too.')) {
-                          await session.deleteCredit(credit);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              if (!plays.any((p) => p.creditId == credit.id))
-                const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Text('Nothing logged yet.',
-                      style: TextStyle(color: Colors.grey)),
-                ),
-              for (final p in plays.where((p) => p.creditId == credit.id))
-                Dismissible(
-                  key: ValueKey(p.id),
-                  direction: DismissDirection.endToStart,
-                  background: _deleteBackground,
-                  onDismissed: (_) async {
-                    await DatabaseProvider.deleteTimingPlay(p.id);
-                    session.changed();
-                  },
-                  child: ListTile(
-                    dense: true,
-                    title: Text(p.song),
-                    subtitle: Text(
-                        '${kInGameDifficultyNames[p.difficulty] ?? p.difficulty}'
-                        ' · ${p.mode.name} · played on '
-                        '${p.syncUsedMs >= 0 ? '+' : ''}${p.syncUsedMs.round()} ms'),
-                    trailing: Text(
-                      '${p.averageMs.abs().toStringAsFixed(1)} '
-                      '${p.averageMs < 0 ? 'FAST' : 'SLOW'}\n'
-                      '± ${p.variationMs.toStringAsFixed(1)}',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: p.averageMs < 0
-                            ? kFastColor(isDark)
-                            : kSlowColor(isDark),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 12),
+                  Card(
+                    child: ListTile(
+                      title: Text(session.session!.venue.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(
+                          'since ${formatDate(session.session!.startedAt)}'
+                          ' · ${plays.length} ${plays.length == 1 ? 'play' : 'plays'}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Discard session',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              if (await confirmDelete(
+                                  context,
+                                  'Discard this session?',
+                                  'Its credits and every play logged in them go '
+                                      'too.')) {
+                                await session.discard();
+                              }
+                            },
+                          ),
+                          TextButton(
+                            onPressed: session.end,
+                            child: const Text('End'),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
-            ],
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: FilledButton.tonalIcon(
+                      icon: const Icon(Icons.add),
+                      label: Text('Credit ${session.credit!.number + 1}'),
+                      onPressed: () => showNewCreditSheet(context),
+                    ),
+                  ),
+                  for (final credit in credits) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 4, 0, 0),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Credit ${credit.number} · ${sideLabel(credit.side)}'
+                              '${credit.cabinet.name.isEmpty ? '' : ' · ${credit.cabinet.name}'}',
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Delete credit',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            onPressed: () async {
+                              if (await confirmDelete(
+                                  context,
+                                  'Delete credit ${credit.number}?',
+                                  'Every play logged in it goes too.')) {
+                                await session.deleteCredit(credit);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (!plays.any((p) => p.creditId == credit.id))
+                      const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Text('Nothing logged yet.',
+                            style: TextStyle(color: Colors.grey)),
+                      ),
+                    for (final p in plays.where((p) => p.creditId == credit.id))
+                      Dismissible(
+                        key: ValueKey(p.id),
+                        direction: DismissDirection.endToStart,
+                        background: _deleteBackground,
+                        onDismissed: (_) async {
+                          await DatabaseProvider.deleteTimingPlay(p.id);
+                          session.changed();
+                        },
+                        child: ListTile(
+                          dense: true,
+                          title: Text(p.song),
+                          subtitle: Text(
+                              '${kInGameDifficultyNames[p.difficulty] ?? p.difficulty}'
+                              ' · ${p.mode.name} · played on '
+                              '${p.syncUsedMs >= 0 ? '+' : ''}${p.syncUsedMs.round()} ms'),
+                          trailing: Text(
+                            '${p.averageMs.abs().toStringAsFixed(1)} '
+                            '${p.averageMs < 0 ? 'FAST' : 'SLOW'}\n'
+                            '± ${p.variationMs.toStringAsFixed(1)}',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: p.averageMs < 0
+                                  ? kFastColor(isDark)
+                                  : kSlowColor(isDark),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
           ],
         );
       },

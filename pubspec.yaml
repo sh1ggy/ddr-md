@@ -31,6 +31,8 @@ dependencies:
   # lib/components/song/notes/tick_clock.dart.
   flutter_soloud: ^4.0.13
   crypto: ^3.0.7
+  flutter_inappwebview: ^6.1.5
+  html: ^0.15.7
   go_router: ^18.1.0
 
 dev_dependencies:
@@ -53,6 +55,9 @@ flutter:
     # Sprite noteskin (git-ignored, copyrighted Konami art). Absent by
     # default; the app falls back to a vector skin.
     - assets/noteskin/
+    # Difficulty name and level art (git-ignored, copyrighted Konami art).
+    # Absent by default; DifficultyLabel falls back to text.
+    - assets/difficulty/
     # Only the model triple the app loads at runtime (ocr_onnx.cpp defaults).
     # The other variants in assets/models/ exist for the offline
     # native_opencv/tools/model_compare harness and must not ship in the bundle.

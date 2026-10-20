@@ -6,6 +6,7 @@
 library;
 
 import 'package:ddr_md/components/ocr/ocr_page.dart';
+import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/snippets/snippets_page.dart';
@@ -32,17 +33,11 @@ Page<void> _page(GoRouterState state, Widget child) =>
     MaterialPage(key: state.pageKey, child: child);
 
 final router = GoRouter(
-  initialLocation: '/session',
+  initialLocation: '/home',
   routes: [
     StatefulShellRoute.indexedStack(
       builder: (context, state, shell) => Layout(shell: shell),
       branches: [
-        StatefulShellBranch(routes: [
-          GoRoute(
-              path: '/session',
-              pageBuilder: (context, state) =>
-                  _page(state, const SessionPage())),
-        ]),
         StatefulShellBranch(routes: [
           GoRoute(
             path: '/songs',
@@ -81,6 +76,22 @@ final router = GoRouter(
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
+              path: '/home',
+              pageBuilder: (context, state) =>
+                  _page(state, const SessionPage()),
+              routes: [
+                GoRoute(
+                    path: 'recent',
+                    pageBuilder: (context, state) =>
+                        _page(state, const RecentPlaysPage())),
+                GoRoute(
+                    path: 'sessions',
+                    pageBuilder: (context, state) =>
+                        _page(state, const SessionsPage())),
+              ]),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(
               path: '/scan',
               pageBuilder: (context, state) => _page(state, const OcrPage())),
         ]),
@@ -100,11 +111,13 @@ class Layout extends StatelessWidget {
 
   final StatefulNavigationShell shell;
 
+  static const _home = 2;
+
   // Back only reaches here once the current tab is at its root: other tabs
-  // return to Session, Session asks before exiting.
+  // return to Home, Home asks before exiting.
   void _onRootBack(BuildContext context) {
-    if (shell.currentIndex != 0) {
-      shell.goBranch(0);
+    if (shell.currentIndex != _home) {
+      shell.goBranch(_home);
       return;
     }
     showDialog(
@@ -143,37 +156,41 @@ class Layout extends StatelessWidget {
         },
         child: Scaffold(
           bottomNavigationBar: NavigationBar(
+            height: 60,
             elevation: 5,
             surfaceTintColor: Colors.black,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+            // A round indicator sized to the icon, not the wide label pill.
+            indicatorShape: const CircleBorder(),
+            indicatorColor: Colors.primaries.first,
             // Re-tapping the current tab returns it to its root.
             onDestinationSelected: (index) => shell.goBranch(index,
                 initialLocation: index == shell.currentIndex),
-            indicatorColor: Colors.primaries.first,
             selectedIndex: shell.currentIndex,
             destinations: const <Widget>[
               NavigationDestination(
-                selectedIcon: Icon(Icons.timer, color: Colors.white),
-                icon: Icon(Icons.timer_outlined),
-                label: 'Session',
-              ),
-              NavigationDestination(
                 selectedIcon: Icon(Icons.music_note, color: Colors.white),
-                icon: Icon(Icons.music_note),
+                icon: Icon(Icons.music_note_outlined),
                 label: 'Songs',
               ),
               NavigationDestination(
                 selectedIcon: Icon(Icons.content_cut, color: Colors.white),
-                icon: Icon(Icons.content_cut),
+                icon: Icon(Icons.content_cut_outlined),
                 label: 'Snippets',
               ),
               NavigationDestination(
+                selectedIcon: Icon(Icons.home, color: Colors.white),
+                icon: Icon(Icons.home_outlined),
+                label: 'Home',
+              ),
+              NavigationDestination(
                 selectedIcon: Icon(Icons.document_scanner, color: Colors.white),
-                icon: Icon(Icons.document_scanner),
+                icon: Icon(Icons.document_scanner_outlined),
                 label: 'Scan',
               ),
               NavigationDestination(
                 selectedIcon: Icon(Icons.settings, color: Colors.white),
-                icon: Icon(Icons.settings),
+                icon: Icon(Icons.settings_outlined),
                 label: 'Settings',
               ),
             ],

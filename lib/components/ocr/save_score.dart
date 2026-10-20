@@ -70,10 +70,10 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   // can change the day via the date row (camera scores keep the capture time).
   DateTime _playedAt = DateTime.now();
 
-  // Username saved in settings, read once — settings can't change while this
-  // panel is open. Empty when the user never set one (warning disabled).
+  // Dancer name from the linked e-amusement profile, read once. Empty when
+  // no profile is linked (warning disabled).
   final String _savedUsername =
-      Settings.getString(Settings.usernameKey).trim();
+      Settings.getString(Settings.eamuseNameKey).trim();
 
   String _text(String key) => widget.controllers[key]?.text.trim() ?? '';
 
@@ -371,12 +371,12 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
         _playedAt = DateTime(picked.year, picked.month, picked.day, 12));
   }
 
-  // Gentle heads-up when the detected player name isn't the username saved in
-  // settings — the screenshot may be someone else's score (e.g. the other
+  // Gentle heads-up when the detected player name isn't the linked e-amusement
+  // dancer name — the screenshot may be someone else's score (e.g. the other
   // player's side, or a friend's photo). Purely informational: saving is not
   // blocked. Listens to the username controller so edits to the field update
-  // the warning live. Silent when no username is set in settings or none was
-  // detected.
+  // the warning live. Silent when no e-amusement profile is linked or no name
+  // was detected.
   Widget _buildUsernameMismatchWarning() {
     final controller = widget.controllers['username'];
     if (_savedUsername.isEmpty || controller == null) {
@@ -394,7 +394,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
           padding: const EdgeInsets.only(bottom: 8),
           child: Text(
             'Detected player "$detected" doesn\'t match '
-            'your username "$_savedUsername".',
+            'your dancer name "$_savedUsername".',
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 12, color: Colors.orange),
           ),

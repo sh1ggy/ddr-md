@@ -147,6 +147,7 @@ app.*.symbols
 # Copied from the live publish by CI and scripts/fetch_content.sh
 /assets/content_manifest.json
 /assets/noteskin
+/assets/difficulty
 
 # OpenCV downloaded SDK
 /scripts/download

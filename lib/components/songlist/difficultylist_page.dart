@@ -5,6 +5,7 @@
 library;
 
 import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart' show LevelPicker;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
@@ -211,8 +212,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       }
 
       if (sortType == SortType.level) {
-        songItems.addAll(chartItemsFor(song, mode,
-            isFav: isFav, levels: _filter.levels));
+        songItems.addAll(
+            chartItemsFor(song, mode, isFav: isFav, levels: _filter.levels));
       } else {
         songItems.add(_filter.levels.isEmpty
             ? SongItem(songInfo: song, isFav: isFav)
@@ -225,15 +226,14 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       // Level lives here rather than in compareSongInfo because it needs the
       // mode to know which chart set to read.
       songItems.sort((a, b) {
-        final byLevel = sign *
-            levelForItem(a, mode).compareTo(levelForItem(b, mode));
+        final byLevel =
+            sign * levelForItem(a, mode).compareTo(levelForItem(b, mode));
         return byLevel != 0
             ? byLevel
             : compareSongInfo(a.songInfo, b.songInfo, SortType.title);
       });
     } else {
-      songItems.sort((a, b) => compareSongInfo(
-          a.songInfo, b.songInfo, sortType,
+      songItems.sort((a, b) => compareSongInfo(a.songInfo, b.songInfo, sortType,
           descending: descending));
     }
     return songItems;
@@ -281,6 +281,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           songState.modes, songState.sortType, songState.sortDescending);
     }
     final Widget page = SafeArea(
+      top: false,
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
           textDirection: TextDirection.ltr,
@@ -419,7 +420,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         child: OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             shape: const StadiumBorder(),
-            side: BorderSide(color: active ? scheme.primary : Theme.of(context).dividerColor),
+            side: BorderSide(
+                color:
+                    active ? scheme.primary : Theme.of(context).dividerColor),
             backgroundColor:
                 active ? scheme.primary.withValues(alpha: 0.12) : null,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -464,21 +467,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
 
       switch (axis) {
         case SongFilterAxis.level:
-          return FilterTray(
-            compact: true,
-            options: <FilterOption>[
-              for (int level = 1; level <= constants.maxDifficulty; level++)
-                FilterOption(
-                  label: '$level',
-                  selected: _filter.levels.contains(level),
-                  onTap: () => _toggleLevel(level, songState),
-                ),
-              FilterOption(
-                label: 'X',
-                selected: false,
-                onTap: () => clearAllFilters(mode, songState.sortType),
-              ),
-            ],
+          return LevelPicker(
+            levels: [for (int l = 1; l <= constants.maxDifficulty; l++) l],
+            isSelected: _filter.levels.contains,
+            onTap: (level) => _toggleLevel(level, songState),
           );
 
         case SongFilterAxis.version:
@@ -552,11 +544,12 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     shape: const StadiumBorder(),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                   ),
                   onPressed: hasActiveFilters
-                      ? () => clearAllFilters(songState.modes, songState.sortType)
+                      ? () =>
+                          clearAllFilters(songState.modes, songState.sortType)
                       : null,
                   icon: const Icon(Icons.close),
                   label: const Text('Clear'),
@@ -569,10 +562,15 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               width: double.infinity,
               margin: const EdgeInsets.only(top: 10),
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                border: Border.all(color: Theme.of(context).dividerColor),
-                borderRadius: BorderRadius.circular(14),
-              ),
+              // The level numerals hold together on their own; chips need
+              // the frame.
+              decoration: _activeFilterPanel == SongFilterAxis.level
+                  ? null
+                  : BoxDecoration(
+                      border:
+                          Border.all(color: Theme.of(context).dividerColor),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
               child: filterTray(),
             ),
         ],

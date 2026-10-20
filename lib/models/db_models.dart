@@ -301,3 +301,198 @@ class Snippet {
         label: json["label"] as String? ?? '',
       );
 }
+
+/// Where a [ScoreRecord] came from: typed in by the player, or synced from
+/// their e-amusement play data.
+enum ScoreRecordSource { manual, eamuse }
+
+/// Clear lamp, worst to best. [fc] is a Good full combo.
+enum ClearLamp { failed, assisted, clear, life4, fc, gfc, pfc, mfc }
+
+/// The player's best on one chart, from one [source]. Unlike [Score], which
+/// is a single play with its judgements, a record holds what the source keeps
+/// per chart. The chart is (song, mode, difficulty); [song] is null for a
+/// synced chart whose title matched nothing in the song list yet, and
+/// [konamiId] is Konami's own song ID, kept for every synced row so it can be
+/// matched later and shared without relying on titles.
+class ScoreRecord {
+  final String id;
+  final ScoreRecordSource source;
+  final String? song;
+  final String? konamiId;
+  // Title as the source shows it.
+  final String title;
+  final Modes mode;
+  // Upper-case, as on [Score].
+  final String difficulty;
+  final int? score;
+  final int? exScore;
+  // 'AAA' … 'E'.
+  final String rank;
+  final ClearLamp? clearLamp;
+  // 'I' … 'IX', 'EX', or '' for none.
+  final String flareRank;
+  final int? flareSkill;
+  final int? maxCombo;
+  // When the score was set, where the source says; null when it doesn't.
+  final DateTime? playedAt;
+  // When this row was last written.
+  final DateTime updatedAt;
+
+  ScoreRecord({
+    String? id,
+    required this.source,
+    required this.song,
+    this.konamiId,
+    required this.title,
+    required this.mode,
+    required this.difficulty,
+    this.score,
+    this.exScore,
+    this.rank = '',
+    this.clearLamp,
+    this.flareRank = '',
+    this.flareSkill,
+    this.maxCombo,
+    this.playedAt,
+    required this.updatedAt,
+  }) : id = id ?? _uuid.v4();
+
+  /// A synced record's id is derived from its chart, so a resync overwrites
+  /// the same row.
+  factory ScoreRecord.eamuse({
+    required String konamiId,
+    required String title,
+    required Modes mode,
+    required String difficulty,
+    required int score,
+    required String rank,
+    ClearLamp? clearLamp,
+    String flareRank = '',
+    int? flareSkill,
+    int? maxCombo,
+    DateTime? playedAt,
+    required DateTime updatedAt,
+  }) =>
+      ScoreRecord(
+        id: 'eamuse:$konamiId:${mode.name}:$difficulty',
+        source: ScoreRecordSource.eamuse,
+        song: null,
+        konamiId: konamiId,
+        title: title,
+        mode: mode,
+        difficulty: difficulty,
+        score: score,
+        rank: rank,
+        clearLamp: clearLamp,
+        flareRank: flareRank,
+        flareSkill: flareSkill,
+        maxCombo: maxCombo,
+        playedAt: playedAt,
+        updatedAt: updatedAt,
+      );
+
+  ScoreRecord withSong(String? song) => ScoreRecord(
+        id: id,
+        source: source,
+        song: song,
+        konamiId: konamiId,
+        title: title,
+        mode: mode,
+        difficulty: difficulty,
+        score: score,
+        exScore: exScore,
+        rank: rank,
+        clearLamp: clearLamp,
+        flareRank: flareRank,
+        flareSkill: flareSkill,
+        maxCombo: maxCombo,
+        playedAt: playedAt,
+        updatedAt: updatedAt,
+      );
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'source': source.name,
+        'song': song,
+        'konamiId': konamiId,
+        'title': title,
+        'mode': mode.name,
+        'difficulty': difficulty,
+        'score': score,
+        'exScore': exScore,
+        'rank': rank,
+        'clearLamp': clearLamp?.name,
+        'flareRank': flareRank,
+        'flareSkill': flareSkill,
+        'maxCombo': maxCombo,
+        'playedAt': playedAt?.toIso8601String(),
+        'updatedAt': updatedAt.toIso8601String(),
+      };
+
+  factory ScoreRecord.fromMap(Map<String, dynamic> json) => ScoreRecord(
+        id: json['id'],
+        source: ScoreRecordSource.values.byName(json['source']),
+        song: json['song'],
+        konamiId: json['konamiId'],
+        title: json['title'],
+        mode: _modeFromMap(json),
+        difficulty: json['difficulty'],
+        score: json['score'],
+        exScore: json['exScore'],
+        rank: json['rank'] ?? '',
+        clearLamp: ClearLamp.values.asNameMap()[json['clearLamp']],
+        flareRank: json['flareRank'] ?? '',
+        flareSkill: json['flareSkill'],
+        maxCombo: json['maxCombo'],
+        playedAt: DateTime.tryParse(json['playedAt'] ?? ''),
+        updatedAt: DateTime.parse(json['updatedAt']),
+      );
+}
+
+/// One play from e-amusement's recent plays page, kept so the history reaches
+/// back past the 50 plays the page lists. Its score is the play's own, so a
+/// chart played twice has two rows; [ScoreRecord] holds the chart's best.
+class RecentPlay {
+  final String konamiId;
+  final String title;
+  final String? song;
+  final Modes mode;
+  // Upper-case, as on [Score].
+  final String difficulty;
+  final DateTime playedAt;
+  final int? score;
+
+  RecentPlay({
+    required this.konamiId,
+    required this.title,
+    required this.song,
+    required this.mode,
+    required this.difficulty,
+    required this.playedAt,
+    required this.score,
+  });
+
+  /// Id of the chart's synced best.
+  String get recordId => 'eamuse:$konamiId:${mode.name}:$difficulty';
+
+  Map<String, Object?> toMap() => {
+        'konamiId': konamiId,
+        'title': title,
+        'song': song,
+        'mode': mode.name,
+        'difficulty': difficulty,
+        'playedAt': playedAt.toUtc().toIso8601String(),
+        'score': score,
+      };
+
+  factory RecentPlay.fromMap(Map<String, dynamic> json) => RecentPlay(
+        konamiId: json['konamiId'],
+        title: json['title'],
+        song: json['song'],
+        mode: _modeFromMap(json),
+        difficulty: json['difficulty'],
+        playedAt: DateTime.parse(json['playedAt']),
+        score: json['score'],
+      );
+}

@@ -13,6 +13,7 @@ import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/components/song/song_player_sync.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -106,6 +107,7 @@ class _SongPageState extends State<SongPage> {
   Favorite? favorite;
   Note? latestNote;
   Score? latestScore;
+  List<ScoreRecord> records = [];
 
   late List<SongSection> _sectionOrder;
 
@@ -154,8 +156,14 @@ class _SongPageState extends State<SongPage> {
   void initScore(String songTitleTranslit, Modes mode) async {
     Score? initScore =
         await DatabaseProvider.getLatestScoreBySong(songTitleTranslit, mode);
+    final song = Provider.of<SongState>(context, listen: false).songInfo;
+    final initRecords = song == null
+        ? <ScoreRecord>[]
+        : await DatabaseProvider.getScoreRecordsBySong(song.name, mode);
+    if (!mounted) return;
     setState(() {
       latestScore = initScore;
+      records = initRecords;
     });
   }
 
@@ -283,18 +291,21 @@ class _SongPageState extends State<SongPage> {
                   runSpacing: 2,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const CardHeading('Chart Preview',
-                        icon: Icons.play_circle_outline),
-                    Text(
-                      difficultyLevel != null
-                          ? "$diffLabel $difficultyLevel"
-                          : diffLabel,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: diffColor,
+                    const CardHeading('Chart', icon: Icons.play_circle_outline),
+                    if (kInGameDifficultyColors.containsKey(diffLabel))
+                      DifficultyLabel(
+                          difficulty: diffLabel, level: difficultyLevel)
+                    else
+                      Text(
+                        difficultyLevel != null
+                            ? "$diffLabel $difficultyLevel"
+                            : diffLabel,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          color: diffColor,
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 // Not the neighbours' expand_more: this row pushes a route
@@ -309,6 +320,18 @@ class _SongPageState extends State<SongPage> {
         );
       },
     );
+  }
+
+  // The synced best on the selected chart, if any.
+  ScoreRecord? _bestOnChart(SongState songState) {
+    final songInfo = songState.songInfo!;
+    final available =
+        (songState.modes == Modes.singles ? songInfo.singles : songInfo.doubles)
+            .availableTypes;
+    if (available.isEmpty) return null;
+    final difficulty = kInGameDifficultyNames[
+        available[songState.chosenDifficulty.clamp(0, available.length - 1)]];
+    return records.where((r) => r.difficulty == difficulty).firstOrNull;
   }
 
   // The widget for one section, or null when this song has nothing to show
@@ -359,9 +382,8 @@ class _SongPageState extends State<SongPage> {
       case SongSection.latestScore:
         return GestureDetector(
           onTap: () => openHistory(HistoryPage.scoresTab),
-          child: latestScore != null
-              ? ScoreCard(score: latestScore!, header: "Latest Score")
-              : const NoScoreCard(),
+          child: LatestScoreLine(
+              score: latestScore, best: _bestOnChart(songState)),
         );
       case SongSection.latestNote:
         if (latestNote == null) return null;
@@ -458,6 +480,7 @@ class _SongPageState extends State<SongPage> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: SafeArea(
+        top: false,
         child: LayoutBuilder(builder: (context, constraints) {
           return Directionality(
             textDirection: TextDirection.ltr,

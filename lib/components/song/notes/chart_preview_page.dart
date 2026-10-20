@@ -6,6 +6,7 @@
 /// preview, not while scrolling the song details.
 library;
 
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/notes/chart_models.dart';
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
@@ -201,13 +202,11 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   }
 
   // Freeze heads drawn as quantised taps, persisted the same way.
-  bool _quantFreezeHeads =
-      Settings.getInt(Settings.quantFreezeHeadsOnKey) == 1;
+  bool _quantFreezeHeads = Settings.getInt(Settings.quantFreezeHeadsOnKey) == 1;
 
   void _toggleQuantFreezeHeads() {
     setState(() => _quantFreezeHeads = !_quantFreezeHeads);
-    Settings.setInt(
-        Settings.quantFreezeHeadsOnKey, _quantFreezeHeads ? 1 : 0);
+    Settings.setInt(Settings.quantFreezeHeadsOnKey, _quantFreezeHeads ? 1 : 0);
   }
 
   @override
@@ -468,13 +467,23 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                       Text(widget.feedLabel!,
                           style: const TextStyle(
                               color: Colors.white70, fontSize: 12)),
-                    Text(
-                      difficultyLabel,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: diffColor,
-                          fontWeight: FontWeight.w900),
-                    ),
+                    if (kInGameDifficultyColors
+                        .containsKey(_pretty(widget.difficultyKey)))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: DifficultyLabel(
+                            difficulty: _pretty(widget.difficultyKey),
+                            level: widget.difficultyLevel,
+                            height: 16),
+                      )
+                    else
+                      Text(
+                        difficultyLabel,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: diffColor,
+                            fontWeight: FontWeight.w900),
+                      ),
                   ],
                 ),
               ),

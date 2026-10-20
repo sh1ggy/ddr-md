@@ -7,6 +7,7 @@
       "assets/jackets",
       "assets/jackets-160",
       "assets/noteskin",
+      "assets/difficulty",
       "native_opencv/android/src/main/jniLibs",
       "native_opencv/android/src/main/cpp",
       "native_opencv/include",

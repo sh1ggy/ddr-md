@@ -22,11 +22,7 @@ Color kSlowColor(bool isDark) =>
 final mods = [for (var i = 5; i <= 160; i++) i / 20];
 const chosenReadSpeed = 600;
 const songBpm = 200;
-const rivalCode = "";
 const rivalCodeLength = 8;
-const username = "";
-// In-game dancer names are capped at 8 characters.
-const usernameLength = 8;
 const maxDifficulty = 19;
 const note =
     "The crossovers in this song are surprisingly hard, I keep leading with the wrong first foot in after the jumps. Song should be played with those in mind.";

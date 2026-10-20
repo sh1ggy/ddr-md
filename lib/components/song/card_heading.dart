@@ -1,5 +1,5 @@
 /// Name: CardHeading
-/// Parent: SongPage cards
+/// Parent: SongPage cards, Home cards
 /// Description: A song page card's title with its icon, so the cards tell
 /// apart at a glance.
 library;

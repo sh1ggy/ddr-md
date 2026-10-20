@@ -3,6 +3,7 @@
 library;
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
@@ -40,24 +41,12 @@ class SongDifficultyPicker extends StatelessWidget {
     ]);
   }
 
-  // Standard TextSpan component to render
-  Text diffTextSpan({required String text, required Color color}) {
-    return Text(text,
-        textAlign: TextAlign.center,
-        style: TextStyle(color: color, fontWeight: FontWeight.bold));
-  }
-
-  // Build out a list of TextSpan widgets to render as part of the difficulty list
-  List<Text> buildDiffList(Difficulty difficulty) {
-    List<Text> widgets = []; // Widgets list for difficulty TextSpans
-    // Loop through entries in difficulty object and add accordingly
-    for (var diff in difficulty.toJson().entries) {
-      if (diff.value == null) {
-        continue;
-      }
-      widgets.add(diffTextSpan(
-          text: "${diff.value}", color: difficultyColor(diff.key)));
-    }
-    return widgets;
-  }
+  // One level per chart the mode has, in its difficulty's colour.
+  List<Widget> buildDiffList(Difficulty difficulty) => [
+        for (var diff in difficulty.toJson().entries)
+          if (diff.value != null)
+            LevelNumber(
+                level: diff.value as int,
+                difficulty: kInGameDifficultyNames[diff.key]!),
+      ];
 }

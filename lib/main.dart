@@ -3,9 +3,11 @@
 /// navigation to the router.
 library;
 
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -26,14 +28,18 @@ void main() async {
   final support = await getApplicationSupportDirectory();
   await ContentStore.init(support);
   await Songs.load();
+  await LevelProfiles.load();
   final session = SessionState();
   await session.restore();
+  final eamuse = EamuseSyncState();
+  await eamuse.restore();
 
   // Wrapped app with providers
   runApp(MultiProvider(
     providers: [
       ChangeNotifierProvider(create: (context) => SongState()),
       ChangeNotifierProvider.value(value: session),
+      ChangeNotifierProvider.value(value: eamuse),
     ],
     child: const App(),
   ));
