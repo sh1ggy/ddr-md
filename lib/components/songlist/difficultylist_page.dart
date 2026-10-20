@@ -33,7 +33,6 @@ class DifficultyListPage extends StatefulWidget {
 
 class _DifficultyListPageState extends State<DifficultyListPage> {
   Future<List<SongItem>>? _songItemsPromise;
-  final List<SongInfo> _searchResults = [];
   int favCount = 0;
   SongFilter _filter = const SongFilter();
   SongFilterAxis? _activeFilterPanel;
@@ -44,20 +43,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   // Below this similarity a result is considered noise and dropped, same
   // threshold spirit as the OCR title matcher.
   static const double _kMinSearchSimilarity = 0.3;
-
-  // Search result handler; widgets are built lazily in suggestionsBuilder.
-  // Ranks by normalized Levenshtein similarity (same as OCR title matching)
-  // so close-but-not-exact spellings still sort to the top.
-  void getMatch(String value) {
-    value = value.trim();
-    setState(() {
-      _searchResults.clear();
-      if (value == "") return;
-      _searchResults.addAll(Songs.matchTitles(value, limit: Songs.list.length)
-          .where((match) => match.similarity >= _kMinSearchSimilarity)
-          .map((match) => match.song));
-    });
-  }
 
   void regenFavCount() async {
     Modes mode = Provider.of<SongState>(context, listen: false).modes;
@@ -567,8 +552,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               decoration: _activeFilterPanel == SongFilterAxis.level
                   ? null
                   : BoxDecoration(
-                      border:
-                          Border.all(color: Theme.of(context).dividerColor),
+                      border: Border.all(color: Theme.of(context).dividerColor),
                       borderRadius: BorderRadius.circular(14),
                     ),
               child: filterTray(),
@@ -588,7 +572,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           viewOnSubmitted: (value) {
             FocusScope.of(context).unfocus();
           },
-          viewOnChanged: (value) => getMatch(value),
           viewHintText: "Search song...",
           builder: (BuildContext context, SearchController controller) {
             return SearchBar(
@@ -596,10 +579,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               onTap: () {
                 controller.openView();
               },
-              onChanged: (value) {
-                controller.openView();
-                getMatch(value);
-              },
+              onChanged: (value) => controller.openView(),
               hintText: "Search song...",
               constraints: const BoxConstraints(
                   minWidth: 360.0, maxWidth: 800.0, minHeight: 56.0),
@@ -612,17 +592,22 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               leading: const Icon(Icons.search),
             );
           },
+          // Runs on every keystroke, straight off the controller's text. Ranks
+          // by normalized Levenshtein similarity (same as OCR title matching)
+          // so close-but-not-exact spellings still sort to the top. Keyed rows
+          // keep their loaded jackets as the ranking reshuffles.
           suggestionsBuilder:
               (BuildContext context, SearchController controller) {
-            if (_searchResults.isEmpty || controller.text == "") {
-              return List.empty();
-            }
-            return _searchResults.map((song) => SongListItem(
-                  songInfo: song,
-                  isFav: false,
-                  isSearch: true,
-                  regenFavsCallback: regenFavCount,
-                ));
+            return Songs.matchTitles(controller.text,
+                    limit: Songs.list.length,
+                    minSimilarity: _kMinSearchSimilarity)
+                .map((match) => SongListItem(
+                      key: ValueKey(match.song.name),
+                      songInfo: match.song,
+                      isFav: false,
+                      isSearch: true,
+                      regenFavsCallback: regenFavCount,
+                    ));
           }),
     );
   }
