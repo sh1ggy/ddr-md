@@ -5,6 +5,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_shocks.dart';
@@ -41,10 +42,16 @@ void main() {
               }
               continue;
             }
-            expect(p.amount(p.second), 1);
+            expect(
+                ParityFoot.values.map((f) => p.amount(f, p.second)).reduce(max),
+                1);
             for (final n in notes.where(
                 (n) => n.type != StepType.mine && p.columns.contains(n.col))) {
-              expect(p.amount(n.second), 0,
+              expect(
+                  ParityFoot.values
+                      .map((f) => p.amount(f, n.second))
+                      .reduce(max),
+                  0,
                   reason:
                       '${data['name']} $m ${e.key} note ${n.second} shock ${p.second}');
             }

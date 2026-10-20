@@ -87,6 +87,7 @@ class _OcrPageState extends State<OcrPage>
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.side = _detectionSide;
     _ocrProcessor.streamResultController.stream.listen((result) {
+      if (!mounted) return;
       _recordFrameTime();
       // The native session reports the processed-frame dimensions (the pixel
       // space the ROIs live in). Derive the on-screen scale from those.

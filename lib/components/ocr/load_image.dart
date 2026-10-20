@@ -672,7 +672,7 @@ class _CandidateBar extends StatelessWidget {
     final theme = Theme.of(context);
     final barColor = isWinner ? Colors.green : Colors.grey[400]!;
     final labelColor = theme.colorScheme.onSurface;
-    final mutedColor = theme.colorScheme.onSurface.withOpacity(0.6);
+    final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.6);
     return InkWell(
       onTap: onTap,
       child: Padding(

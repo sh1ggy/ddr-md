@@ -73,7 +73,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
   testWidgets('selection band includes the final freeze tail', (tester) async {
-    await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(const MaterialApp(
         home: Scaffold(
             body: ChartScroller(
       steps: ChartSteps(notes: [

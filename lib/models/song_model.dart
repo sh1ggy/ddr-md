@@ -10,7 +10,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class SongState extends ChangeNotifier {
@@ -101,15 +101,9 @@ class Songs {
       response = await ContentStore.loadString("assets/songlist.json");
     } catch (_) {}
     if (response != null) {
-      for (final entry in json.decode(response) as List<dynamic>) {
-        try {
-          loaded.add(SongInfo.fromJson(entry));
-        } catch (e) {
-          // ignore: avoid_print
-          print("Error parsing songlist entry: $e");
-        }
-      }
-      list = loaded;
+      // ~2.7 MB of JSON: parsed off the UI isolate so launch and an applied
+      // update don't drop frames.
+      list = await compute(_parseSonglist, response);
       return;
     }
 
@@ -184,4 +178,17 @@ class Songs {
     ]..sort((a, b) => b.similarity.compareTo(a.similarity));
     return matches.take(limit).toList();
   }
+}
+
+List<SongInfo> _parseSonglist(String response) {
+  final loaded = <SongInfo>[];
+  for (final entry in json.decode(response) as List<dynamic>) {
+    try {
+      loaded.add(SongInfo.fromJson(entry));
+    } catch (e) {
+      // ignore: avoid_print
+      print("Error parsing songlist entry: $e");
+    }
+  }
+  return loaded;
 }

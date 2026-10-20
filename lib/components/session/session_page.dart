@@ -407,10 +407,14 @@ class SessionsPage extends StatelessWidget {
       body: FutureBuilder<List<PlaySession>>(
         key: ValueKey(revision),
         future: DatabaseProvider.getSessions(),
-        builder: (context, snapshot) => ListView(
-          padding: const EdgeInsets.all(12),
-          children: [for (final s in snapshot.data ?? []) _SessionTile(s)],
-        ),
+        builder: (context, snapshot) {
+          final sessions = snapshot.data ?? const <PlaySession>[];
+          return ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: sessions.length,
+            itemBuilder: (context, i) => _SessionTile(sessions[i]),
+          );
+        },
       ),
     );
   }

@@ -74,12 +74,15 @@ class ScoresTabState extends State<ScoresTab> {
           if (snapshot.data!.isEmpty && _records.isEmpty) {
             return const Center(child: Text('No scores...'));
           }
-          return ListView(
-            children: [
-              if (_records.isNotEmpty) _RecordsCard(_records),
-              for (final score in snapshot.data!)
-                ScoreCard(score: score, onTap: () => _openDetails(score)),
-            ],
+          final scores = snapshot.data!;
+          final header = _records.isNotEmpty ? 1 : 0;
+          return ListView.builder(
+            itemCount: header + scores.length,
+            itemBuilder: (context, i) {
+              if (i < header) return _RecordsCard(_records);
+              final score = scores[i - header];
+              return ScoreCard(score: score, onTap: () => _openDetails(score));
+            },
           );
         },
       ),
