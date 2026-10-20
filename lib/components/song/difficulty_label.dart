@@ -261,14 +261,32 @@ class _LevelPickerState extends State<LevelPicker> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         if (low.isNotEmpty && low.length < widget.levels.length)
-          TextButton.icon(
-            style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8)),
-            onPressed: () => setState(() => _low = !showLow),
-            icon: Icon(showLow ? Icons.chevron_left : Icons.chevron_right,
-                size: 18),
-            label: const Text('1–9'),
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => setState(() => _low = !showLow),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: ColorFiltered(
+                colorFilter: _grey,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(showLow ? Icons.chevron_left : Icons.chevron_right,
+                      size: widget.height * 0.8),
+                  LevelNumber(
+                      level: low.first,
+                      difficulty: 'EXPERT',
+                      height: widget.height * 0.8),
+                  _CabinetText('-',
+                      difficulty: 'EXPERT',
+                      height: widget.height * 0.8,
+                      fill: Colors.black,
+                      outline: Colors.white),
+                  LevelNumber(
+                      level: low.last,
+                      difficulty: 'EXPERT',
+                      height: widget.height * 0.8),
+                ]),
+              ),
+            ),
           ),
         if (showLow) ...low.map(level),
         ...widget.levels.where((l) => l >= 10).map(level),

@@ -232,6 +232,7 @@ typedef _Band = ({
   Color color,
   String? icon,
   String text,
+  Gradient? fill,
 });
 
 // Best first. A chart without a lamp shows as failed.
@@ -256,6 +257,7 @@ final _lampBands = <_Band>[
       color: color,
       icon: icon,
       text: text,
+      fill: null,
     ),
 ];
 
@@ -272,6 +274,15 @@ final _flareBands = <_Band>[
     color: const Color(0xFFFCB46C),
     icon: flareRankIcon('EX'),
     text: 'EX',
+    // The EX badge is a rainbow.
+    fill: const LinearGradient(colors: [
+      Color(0xFFFF5A5A),
+      Color(0xFFFFB84D),
+      Color(0xFFFFF15A),
+      Color(0xFF5AFF8C),
+      Color(0xFF5AC8FF),
+      Color(0xFFB45AFF),
+    ]),
   ),
   for (var i = 8; i >= 0; i--)
     (
@@ -279,12 +290,14 @@ final _flareBands = <_Band>[
       color: _flareColors[i],
       icon: flareRankIcon(kFlareRanks[i]),
       text: kFlareRanks[i],
+      fill: null,
     ),
   (
     holds: (r) => r.flareRank.isEmpty,
     color: const Color(0xFF757575),
     icon: 'assets/icons/icon_0.png',
     text: 'None',
+    fill: null,
   ),
 ];
 
@@ -357,7 +370,10 @@ class _LevelsCardState extends State<_LevelsCard> {
                                     if (_count(row, b) > 0)
                                       Expanded(
                                           flex: _count(row, b),
-                                          child: ColoredBox(color: b.color)),
+                                          child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                  color: b.color,
+                                                  gradient: b.fill))),
                                   if (_unplayed(row) > 0)
                                     Expanded(
                                         flex: _unplayed(row),
@@ -524,9 +540,11 @@ class _BandCounts extends StatelessWidget {
                         child:
                             FittedBox(fit: BoxFit.scaleDown, child: label(b)))),
                 Expanded(
-                    child: Text('$n',
-                        textAlign: TextAlign.right,
-                        style: style.copyWith(color: tint(b.color)))),
+                    child: _tinted(
+                        b,
+                        Text('$n',
+                            textAlign: TextAlign.right,
+                            style: style.copyWith(color: tint(b.color))))),
                 const SizedBox(width: 4),
               ]),
             ),
@@ -546,6 +564,17 @@ class _BandCounts extends StatelessWidget {
     );
   }
 }
+
+/// [child] painted with the band's gradient where it has one.
+Widget _tinted(_Band b, Widget child) => b.fill == null
+    ? child
+    // Sized to the text so the whole rainbow lands on the digits.
+    : Align(
+        alignment: Alignment.centerRight,
+        child: ShaderMask(
+            blendMode: BlendMode.srcIn,
+            shaderCallback: b.fill!.createShader,
+            child: child));
 
 /// A level's score spread: how many charts land in each band of score, with
 /// the mean marked and one standard deviation either side shaded.
