@@ -2,7 +2,7 @@
 /// Parent: Layout
 /// Description: Home tab: sync e-amusement scores, start a session at a
 /// venue, play it credit by credit (cabinet + side), and see the timing logged
-/// in each.
+/// in each; the gear opens Settings.
 library;
 
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
@@ -288,6 +288,13 @@ class SessionPage extends StatelessWidget {
                 fontSize: 20,
                 color: Colors.blueGrey,
                 fontWeight: FontWeight.w600)),
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => context.push('/home/settings'),
+          ),
+        ],
       ),
       // The cards scroll with the session below them.
       body: session.active
