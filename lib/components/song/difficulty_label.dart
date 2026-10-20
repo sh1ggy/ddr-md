@@ -229,6 +229,8 @@ class LevelPicker extends StatefulWidget {
 class _LevelPickerState extends State<LevelPicker> {
   bool? _low;
 
+  static const _anim = Duration(milliseconds: 250);
+
   static const _grey = ColorFilter.matrix([
     0.33, 0.33, 0.33, 0, 0, //
     0.33, 0.33, 0.33, 0, 0,
@@ -256,41 +258,83 @@ class _LevelPickerState extends State<LevelPicker> {
       );
     }
 
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        if (low.isNotEmpty && low.length < widget.levels.length)
-          InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: () => setState(() => _low = !showLow),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: ColorFiltered(
-                colorFilter: _grey,
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(showLow ? Icons.chevron_left : Icons.chevron_right,
-                      size: widget.height * 0.8),
-                  LevelNumber(
-                      level: low.first,
-                      difficulty: 'EXPERT',
-                      height: widget.height * 0.8),
-                  _CabinetText('-',
-                      difficulty: 'EXPERT',
-                      height: widget.height * 0.8,
-                      fill: Colors.black,
-                      outline: Colors.white),
-                  LevelNumber(
-                      level: low.last,
-                      difficulty: 'EXPERT',
-                      height: widget.height * 0.8),
-                ]),
-              ),
-            ),
-          ),
-        if (showLow) ...low.map(level),
-        ...widget.levels.where((l) => l >= 10).map(level),
-      ],
-    );
+    // One row at full size; scrolls sideways when it runs off screen.
+    return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (low.isNotEmpty && low.length < widget.levels.length)
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => setState(() => _low = !showLow),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      AnimatedRotation(
+                        turns: showLow ? 0.5 : 0,
+                        duration: _anim,
+                        child: Icon(Icons.chevron_right,
+                            size: widget.height * 0.8),
+                      ),
+                      AnimatedSize(
+                        duration: _anim,
+                        curve: Curves.easeOut,
+                        child: showLow
+                            ? const SizedBox.shrink()
+                            : Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: ShapeDecoration(
+                                    shape: const StadiumBorder(),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest),
+                                child: ColorFiltered(
+                                  colorFilter: _grey,
+                                  child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        LevelNumber(
+                                            level: low.first,
+                                            difficulty: 'EXPERT',
+                                            height: widget.height * 0.8),
+                                        _CabinetText('-',
+                                            difficulty: 'EXPERT',
+                                            height: widget.height * 0.8,
+                                            fill: Colors.black,
+                                            outline: Colors.white),
+                                        LevelNumber(
+                                            level: low.last,
+                                            difficulty: 'EXPERT',
+                                            height: widget.height * 0.8),
+                                      ]),
+                                ),
+                              ),
+                      ),
+                    ]),
+                  ),
+                ),
+                // The low levels slide out from behind the toggle.
+                ClipRect(
+                  child: AnimatedSize(
+                    duration: _anim,
+                    curve: Curves.easeOut,
+                    alignment: Alignment.centerLeft,
+                    child: showLow
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: low.map(level).toList())
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ])
+            else if (showLow)
+              ...low.map(level),
+            ...widget.levels.where((l) => l >= 10).map(level),
+          ],
+        ));
   }
 }
