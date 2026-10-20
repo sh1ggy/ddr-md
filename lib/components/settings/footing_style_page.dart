@@ -132,9 +132,8 @@ class _FootingStylePageState extends State<FootingStylePage>
   Future<void> _load() async {
     // Learn from the latest edits first, so Yours is current.
     final fit = await refitFromEdits();
-    final picks =
-        json.decode(await ContentStore.loadString('assets/parity_patterns.json'))
-            as List;
+    final picks = json.decode(
+        await ContentStore.loadString('assets/parity_patterns.json')) as List;
     final moments = <_Moment>[];
     for (final p in picks) {
       final song = await StepsLoader.load(p['song'] as String);

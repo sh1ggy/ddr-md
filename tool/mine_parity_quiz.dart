@@ -35,7 +35,8 @@ class _Chart {
   static List<List<StepNote>> _rows(List<StepNote> notes) {
     final byTime = <double, List<StepNote>>{};
     for (final n in notes) {
-      if (n.type != StepType.mine) byTime.putIfAbsent(n.second, () => []).add(n);
+      if (n.type != StepType.mine)
+        byTime.putIfAbsent(n.second, () => []).add(n);
     }
     final secs = byTime.keys.toList()..sort();
     return [for (final s in secs) byTime[s]!];
@@ -46,7 +47,8 @@ class _Chart {
   bool single(int i) => rows[i].length == 1;
   StepNote one(int i) => rows[i].first;
   ParityFoot? foot(StepNote n) => free.feet[n];
-  bool held(int i) => holds.any((h) => h.second < sec(i) && sec(i) < h.endSecond!);
+  bool held(int i) =>
+      holds.any((h) => h.second < sec(i) && sec(i) < h.endSecond!);
 
   ParityStance stanceAt(int i) =>
       free.stances.firstWhere((s) => s.second == sec(i));
@@ -71,7 +73,12 @@ final Map<String, Iterable<_Alt> Function(_Chart)> _patterns = {
       final a = c.one(i - 1), b = c.one(i);
       if (a.col != b.col || (b.col != 1 && b.col != 2)) continue;
       if (c.gap(i) < 0.1 || c.gap(i) > 0.26) continue;
-      yield (i, [{b: _flip(c.foot(b))}]);
+      yield (
+        i,
+        [
+          {b: _flip(c.foot(b))}
+        ]
+      );
     }
   },
   // A slow change of arrow: take it with the same foot or cross over.
@@ -85,7 +92,12 @@ final Map<String, Iterable<_Alt> Function(_Chart)> _patterns = {
       if (crossed) {
         yield (i, [_faceForward(c, i, (i + 3).clamp(0, c.rows.length - 1))]);
       } else if (c.foot(a) == c.foot(b)) {
-        yield (i, [{b: _flip(c.foot(b))}]);
+        yield (
+          i,
+          [
+            {b: _flip(c.foot(b))}
+          ]
+        );
       }
     }
   },
@@ -96,7 +108,13 @@ final Map<String, Iterable<_Alt> Function(_Chart)> _patterns = {
       if (!c.single(i) || !c.single(i - 1) || c.held(i)) continue;
       final a = c.one(i - 1), b = c.one(i);
       if (a.col == b.col || c.gap(i) >= 0.28) continue;
-      if (c.foot(a) == c.foot(b)) yield (i, [{b: _flip(c.foot(b))}]);
+      if (c.foot(a) == c.foot(b))
+        yield (
+          i,
+          [
+            {b: _flip(c.foot(b))}
+          ]
+        );
     }
   },
   // One foot travelling Up <-> Down across the middle.
@@ -113,7 +131,13 @@ final Map<String, Iterable<_Alt> Function(_Chart)> _patterns = {
       final prev = last[f];
       if (prev != null && prev == i - 2 && (n.col == 1 || n.col == 2)) {
         final p = c.one(prev).col;
-        if ((p == 1 || p == 2) && p != n.col) yield (i, [{n: _flip(f)}]);
+        if ((p == 1 || p == 2) && p != n.col)
+          yield (
+            i,
+            [
+              {n: _flip(f)}
+            ]
+          );
       }
       last[f] = i;
     }
@@ -166,7 +190,13 @@ final Map<String, Iterable<_Alt> Function(_Chart)> _patterns = {
             n.second < h.endSecond! &&
             n.type != StepType.mine &&
             (n.col == 0 || n.col == 3));
-        if (taps.length >= 2) yield (i, [{h: _flip(c.foot(h))}]);
+        if (taps.length >= 2)
+          yield (
+            i,
+            [
+              {h: _flip(c.foot(h))}
+            ]
+          );
       }
     }
   },
@@ -186,11 +216,17 @@ final Map<String, Iterable<_Alt> Function(_Chart)> _patterns = {
         continue;
       }
       final cols = List.generate(6, (k) => c.one(i - 5 + k).col);
-      if (!shapes.any((s) => List.generate(6, (k) => s[k] == cols[k]).every((x) => x))) {
+      if (!shapes.any(
+          (s) => List.generate(6, (k) => s[k] == cols[k]).every((x) => x))) {
         continue;
       }
       final key = c.one(i - 2);
-      yield (i - 2, [{key: _flip(c.foot(key))}]);
+      yield (
+        i - 2,
+        [
+          {key: _flip(c.foot(key))}
+        ]
+      );
     }
   },
 };
@@ -200,7 +236,10 @@ void main() {
     final found = <String, List<Map<String, dynamic>>>{
       for (final p in _patterns.keys) p: []
     };
-    final files = Directory('assets/steps').listSync().whereType<File>().toList()
+    final files = Directory('assets/steps')
+        .listSync()
+        .whereType<File>()
+        .toList()
       ..sort((a, b) => a.path.compareTo(b.path));
     for (final f in files) {
       final song = SongSteps.fromJson(json.decode(f.readAsStringSync()));
@@ -210,7 +249,8 @@ void main() {
         for (final MapEntry(key: name, value: find) in _patterns.entries) {
           // Footwork choices read best on mid-level charts; only the slow
           // doublestep is really a slow-chart question.
-          if (diff == 'easy' && name != 'slow-doublestep-vs-crossover') continue;
+          if (diff == 'easy' && name != 'slow-doublestep-vs-crossover')
+            continue;
           // A few per chart keeps the run short and the pool varied.
           for (final (row, alternatives) in find(c).take(3)) {
             final from = (row - 4).clamp(0, c.rows.length - 1);
@@ -233,8 +273,9 @@ void main() {
               if (alt.cost > c.free.cost && differs) alts.add(alt);
             }
             if (alts.isEmpty) continue;
-            final delta = alts.map((a) => a.cost - c.free.cost).reduce(
-                (a, b) => a < b ? a : b);
+            final delta = alts
+                .map((a) => a.cost - c.free.cost)
+                .reduce((a, b) => a < b ? a : b);
             // An exact tie is settled by the rest of the chart, not by style,
             // so it illustrates nothing.
             if (delta < 1) continue;
@@ -277,14 +318,15 @@ void main() {
     // Most divisive first, one moment per song.
     final out = <String, List<Map<String, dynamic>>>{};
     for (final MapEntry(key: name, value: list) in found.entries) {
-      list.sort((a, b) => (a['delta'] as double).compareTo(b['delta'] as double));
+      list.sort(
+          (a, b) => (a['delta'] as double).compareTo(b['delta'] as double));
       final songs = <String>{};
       out[name] = [
         for (final m in list)
           if (songs.add(m['song'] as String)) m
       ].take(5).toList();
     }
-    File(Platform.environment['QUIZ_OUT']!).writeAsStringSync(
-        const JsonEncoder.withIndent(' ').convert(out));
+    File(Platform.environment['QUIZ_OUT']!)
+        .writeAsStringSync(const JsonEncoder.withIndent(' ').convert(out));
   }, timeout: Timeout.none);
 }

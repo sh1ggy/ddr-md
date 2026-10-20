@@ -81,8 +81,7 @@ void main() {
         Modes.singles,
       );
 
-      final hiragana =
-          sections.firstWhere((s) => s.label == 'A (HIRAGANA)');
+      final hiragana = sections.firstWhere((s) => s.label == 'A (HIRAGANA)');
       expect(titlesOf(hiragana), <String>['愛', '桜']);
       // Hiragana leads the bucket order, ahead of the letter ranges.
       expect(sections.first.label, 'A (HIRAGANA)');
@@ -113,7 +112,8 @@ void main() {
         <SongItem>[
           item(title: 'Hard', singles: const <int?>[null, null, null, 15, 17]),
           item(title: 'Easy', singles: const <int?>[2, 4, null, null, null]),
-          item(title: 'AlsoEasy', singles: const <int?>[2, 7, null, null, null]),
+          item(
+              title: 'AlsoEasy', singles: const <int?>[2, 7, null, null, null]),
         ],
         SortType.level,
         Modes.singles,

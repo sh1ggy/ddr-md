@@ -116,7 +116,7 @@ class Songs {
     AssetManifest asset = await AssetManifest.loadFromAssetBundle(rootBundle);
     assets = asset.listAssets();
     List<String> songDataPaths = assets
-      .where((string) => string.startsWith("assets/songs/"))
+        .where((string) => string.startsWith("assets/songs/"))
         .where((string) => string.endsWith(".json"))
         .map((e) => e.substring(0, e.length - 5))
         .toList();
@@ -158,9 +158,8 @@ class Songs {
         // title) still ranks as a strong hit, not a weak one.
         similarity = 0.5 + 0.5 * (query.length / normalized.length);
       } else {
-        final maxLen = query.length > normalized.length
-            ? query.length
-            : normalized.length;
+        final maxLen =
+            query.length > normalized.length ? query.length : normalized.length;
         similarity = 1 - levenshtein(query, normalized) / maxLen;
       }
       if (similarity > best) best = similarity;

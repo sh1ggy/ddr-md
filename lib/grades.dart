@@ -44,8 +44,7 @@ enum FullComboTier {
 
 Grade gradeForScore(int score, {bool failed = false}) {
   if (failed) return Grade.e;
-  return Grade.values
-      .firstWhere((g) => g != Grade.e && score >= g.minScore);
+  return Grade.values.firstWhere((g) => g != Grade.e && score >= g.minScore);
 }
 
 /// DDR A (2016+) money score. The step score SC = 1,000,000 / N where N is

@@ -106,8 +106,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                           a, b, songState.sortType,
                           descending: songState.sortDescending));
                     }
-                    children =
-                        favSongs.map<SongListItem>((SongInfo songInfo) {
+                    children = favSongs.map<SongListItem>((SongInfo songInfo) {
                       return SongListItem(
                         songInfo: songInfo,
                         isFav: true,

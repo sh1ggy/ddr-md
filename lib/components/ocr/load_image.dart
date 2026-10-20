@@ -105,7 +105,8 @@ class _LoadImageState extends State<LoadImage> {
     });
 
     final picker = ImagePicker();
-    final pickedImage = await picker.pickImage(source: ImageSource.gallery, imageQuality: 100);
+    final pickedImage =
+        await picker.pickImage(source: ImageSource.gallery, imageQuality: 100);
 
     if (!mounted) return;
     if (pickedImage == null) {
@@ -253,8 +254,7 @@ class _LoadImageState extends State<LoadImage> {
     });
     _ocrProcessor.processPickedImage(
       _pickedImage!,
-      tapPoint:
-          Point<int>((pos.dx / scale).round(), (pos.dy / scale).round()),
+      tapPoint: Point<int>((pos.dx / scale).round(), (pos.dy / scale).round()),
     );
   }
 
@@ -415,7 +415,6 @@ String ocrFieldLabel(String key) {
   }
 }
 
-
 // A single candidate reading for a field, used to render the clickable
 // histogram in the camera flow (ordered by how many frames detected the value).
 class OCRCandidate {
@@ -519,8 +518,8 @@ class OCREditableField extends StatelessWidget {
                       isWinner: c.value == winnerValue,
                       onTap: () {
                         controller.text = c.value;
-                        controller.selection = TextSelection.collapsed(
-                            offset: c.value.length);
+                        controller.selection =
+                            TextSelection.collapsed(offset: c.value.length);
                         onUserEdit?.call(c.value);
                       },
                     ),
@@ -672,7 +671,7 @@ class _CandidateBar extends StatelessWidget {
     final theme = Theme.of(context);
     final barColor = isWinner ? Colors.green : Colors.grey[400]!;
     final labelColor = theme.colorScheme.onSurface;
-    final mutedColor = theme.colorScheme.onSurface.withOpacity(0.6);
+    final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.6);
     return InkWell(
       onTap: onTap,
       child: Padding(

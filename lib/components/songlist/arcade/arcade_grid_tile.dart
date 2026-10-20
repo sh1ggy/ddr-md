@@ -179,8 +179,7 @@ class ArcadeGridTile extends StatelessWidget {
 
   // Recommended in-game offset adjustment: the bias with its sign flipped.
   (String, Color)? _syncAdjust(bool isDark) {
-    final Sync? sync =
-        item.songInfo.displaySyncFor(_chart);
+    final Sync? sync = item.songInfo.displaySyncFor(_chart);
     if (sync == null) return null;
     final double adjustBy = -sync.biasMs;
     final Color color = sync.biasMs < 0
@@ -198,8 +197,8 @@ class ArcadeGridTile extends StatelessWidget {
       textBaseline: TextBaseline.alphabetic,
       children: <Widget>[
         Expanded(
-          child: _statText(_chart.bpmRange,
-              Theme.of(context).colorScheme.onSurfaceVariant),
+          child: _statText(
+              _chart.bpmRange, Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         if (_syncAdjust(isDark) case (final String label, final Color color))
           Padding(

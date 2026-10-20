@@ -111,8 +111,7 @@ class NewNoteFieldState extends State<NewNoteField> {
                           await DatabaseProvider.deleteNote(widget.id!);
                           if (!context.mounted) return;
                           Navigator.pop(context, true);
-                          widget.getNotes!(
-                              songState.songInfo!.titletranslit,
+                          widget.getNotes!(songState.songInfo!.titletranslit,
                               songState.modes);
                           showToast(context, "Note deleted.");
                         },

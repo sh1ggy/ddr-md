@@ -84,9 +84,8 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
 
   void _enterEditMode() {
     for (final key in _kEditableKeys) {
-      _controllers
-          .putIfAbsent(key, () => TextEditingController())
-          .text = _fieldText(key);
+      _controllers.putIfAbsent(key, () => TextEditingController()).text =
+          _fieldText(key);
     }
     _editPlayedAt = DateTime.parse(_score.playedAt);
     setState(() => _editing = true);

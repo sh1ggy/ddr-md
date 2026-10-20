@@ -1522,7 +1522,7 @@ class PadDancerPainter extends CustomPainter {
       _ => (0.0, 1.5),
     };
     final hw = columnCount > 4 ? 3 * _u + _rim : _stageHalfWidth;
-    final target = _V(0, 0.8, (_stageBack + _stageFront) / 2);
+    const target = _V(0, 0.8, (_stageBack + _stageFront) / 2);
     final eye = target +
         _V(-math.sin(turn) * math.cos(pitch), math.sin(pitch),
                 -math.cos(turn) * math.cos(pitch)) *

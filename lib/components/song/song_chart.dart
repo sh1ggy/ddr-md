@@ -396,8 +396,8 @@ class _SongSyncChartState extends State<SongSyncChart> {
               height: MediaQuery.of(context).size.height / 4,
               child: LineChart(
                 LineChartData(
-                  titlesData: FlTitlesData(
-                    bottomTitles: const AxisTitles(
+                  titlesData: const FlTitlesData(
+                    bottomTitles: AxisTitles(
                       axisNameWidget: Text(
                         'offset from beat (ms)',
                         style: TextStyle(fontSize: 10),
@@ -406,13 +406,13 @@ class _SongSyncChartState extends State<SongSyncChart> {
                     ),
                     // The response curve is normalized (0-100, unitless), so
                     // the y-axis carries no readable values.
-                    leftTitles: const AxisTitles(
+                    leftTitles: AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
-                    topTitles: const AxisTitles(
+                    topTitles: AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
-                    rightTitles: const AxisTitles(
+                    rightTitles: AxisTitles(
                       sideTitles: SideTitles(showTitles: false),
                     ),
                   ),

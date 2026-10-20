@@ -567,8 +567,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               decoration: _activeFilterPanel == SongFilterAxis.level
                   ? null
                   : BoxDecoration(
-                      border:
-                          Border.all(color: Theme.of(context).dividerColor),
+                      border: Border.all(color: Theme.of(context).dividerColor),
                       borderRadius: BorderRadius.circular(14),
                     ),
               child: filterTray(),

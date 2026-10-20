@@ -62,8 +62,11 @@ void main() {
       expect(shade.bottom, lessThanOrEqualTo(transport.top));
       expect(scroller.right, lessThan(shade.right));
       expect(find.byType(RawScrollbar), findsOneWidget);
-      expect(tester.widget<RawScrollbar>(find.byType(RawScrollbar))
-          .thumbVisibility, isNot(true));
+      expect(
+          tester
+              .widget<RawScrollbar>(find.byType(RawScrollbar))
+              .thumbVisibility,
+          isNot(true));
 
       final scrollable =
           tester.state<ScrollableState>(find.byType(Scrollable).first);
