@@ -187,11 +187,11 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     // chart: a song sits in every level folder it charts. Off that sort a level
     // filter still scopes the row to the chart it was reaching for, so the row
     // opens there.
+    final Set<String> favTitles = {for (final fav in favList) fav.songTitle};
     List<SongItem> songItems = [];
     for (SongInfo song in Songs.list) {
       // Resolved before the filter runs — the favourites axis needs it.
-      bool isFav =
-          favList.any((Favorite fav) => fav.songTitle == song.titletranslit);
+      bool isFav = favTitles.contains(song.titletranslit);
       if (!_filter.matches(song, mode, isFav: isFav)) {
         continue;
       }
@@ -293,9 +293,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             body: FutureBuilder<List<SongItem>>(
               future: _songItemsPromise,
               builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+                // The first build waits a frame or two on the favourites
+                // query; blank reads better than a spinner flashing up.
+                if (!snapshot.hasData) return const SizedBox.shrink();
 
                 final List<SongItem> songItems = snapshot.data!;
                 // Search, filters, favourites and the count read the same in
@@ -348,20 +348,25 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   slivers: <Widget>[
                     ...headerSlivers,
                     if (songItems.isNotEmpty)
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final SongItem songItem = songItems[index];
-                            return SongListItem(
-                              songInfo: songItem.songInfo,
-                              isFav: songItem.isFav,
-                              isSearch: false,
-                              difficultyIndex: songItem.difficultyIndex,
-                              regenFavsCallback: regenFavCount,
-                            );
-                          },
-                          childCount: songItems.length,
+                      // Every row is the same height, so the list lays out by
+                      // arithmetic instead of measuring rows it scrolls past.
+                      SliverPrototypeExtentList.builder(
+                        prototypeItem: SongListItem(
+                          songInfo: songItems.first.songInfo,
+                          isFav: false,
+                          isSearch: false,
                         ),
+                        itemBuilder: (context, index) {
+                          final SongItem songItem = songItems[index];
+                          return SongListItem(
+                            songInfo: songItem.songInfo,
+                            isFav: songItem.isFav,
+                            isSearch: false,
+                            difficultyIndex: songItem.difficultyIndex,
+                            regenFavsCallback: regenFavCount,
+                          );
+                        },
+                        itemCount: songItems.length,
                       ),
                   ],
                 );

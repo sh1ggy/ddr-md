@@ -97,14 +97,14 @@ class _ArcadeGridViewState extends State<ArcadeGridView> {
             SliverPadding(
               // The banner is full-bleed and carries no margin of its own, so
               // the gap below it belongs to the grid.
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+              padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
               sliver: SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
                   // Square jacket plus the caption below it, so the artwork
-                  // stays uncropped whatever the column width. The 16 is the
+                  // stays uncropped whatever the column width. The 8 is the
                   // grid's horizontal padding.
-                  mainAxisExtent: (MediaQuery.sizeOf(context).width - 16) / 3 -
+                  mainAxisExtent: (MediaQuery.sizeOf(context).width - 8) / 3 -
                       kArcadeTileGap * 2 +
                       kArcadeTitleHeight +
                       kArcadeCaptionHeight,
