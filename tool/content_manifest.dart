@@ -35,6 +35,10 @@ const _dirs = {
   'jackets-160': '.png',
 };
 
+/// SHA-256 of every key that signs a store build (Play Console → App
+/// integrity → App signing), for Android app links.
+const androidSigningFingerprints = <String>[];
+
 void main() {
   test('write assets/content_manifest.json and build/content', () {
     final paths = [
@@ -101,7 +105,36 @@ void main() {
   Cache-Control: no-cache
 /manifest.json
   Cache-Control: no-cache
+/.well-known/apple-app-site-association
+  Content-Type: application/json
 ''');
+    // Song links (/songs/…) open the app: iOS universal links and Android
+    // app links each verify the app against a file on this host.
+    Directory('build/content/.well-known').createSync();
+    File('build/content/.well-known/apple-app-site-association')
+        .writeAsStringSync(jsonEncode({
+      'applinks': {
+        'details': [
+          {
+            'appIDs': ['S2JFTMZRP2.com.shiggy.ddrmd'],
+            'components': [
+              {'/': '/songs/*'}
+            ],
+          }
+        ],
+      },
+    }));
+    File('build/content/.well-known/assetlinks.json').writeAsStringSync(
+        jsonEncode([
+      {
+        'relation': ['delegate_permission/common.handle_all_urls'],
+        'target': {
+          'namespace': 'android_app',
+          'package_name': 'com.shiggy.ddr_md',
+          'sha256_cert_fingerprints': androidSigningFingerprints,
+        },
+      }
+    ]));
     // Without one, Pages answers a missing file with its app fallback page.
     File('build/content/404.html').writeAsStringSync('Not found\n');
     // The in-app privacy notice, as the public page both stores ask for
