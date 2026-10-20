@@ -160,10 +160,7 @@ class SongDetails extends StatelessWidget {
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 Text(
-                                  formattedTime(
-                                          timeInSecond:
-                                              songInfo.songLength.toInt()) +
-                                      " min",
+                                  "${formattedTime(timeInSecond: songInfo.songLength.toInt())} min",
                                   style: const TextStyle(
                                       fontSize: 16.0,
                                       fontWeight: FontWeight.bold),

@@ -232,9 +232,8 @@ class SongChartState extends State<SongChart> {
                           getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
                             bool first = true;
                             return touchedBarSpots.map((barSpot) {
-                              var stopTime = formattedTime(
-                                      timeInSecond: barSpot.x.toInt()) +
-                                  "s";
+                              var stopTime =
+                                  "${formattedTime(timeInSecond: barSpot.x.toInt())}s";
                               var bpmY = barSpot.y;
                               if (first) {
                                 first = false;

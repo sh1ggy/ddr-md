@@ -28,11 +28,11 @@ const List<String> kOcrFieldOrder = [
   'flare',
 ];
 
-enum DifficultyType { None, FFXI }
+enum DifficultyType { none, ffxi }
 
 enum DetectionSide { first, left, right }
 
-enum ReturnImageType { None, DirImage, BytesImage }
+enum ReturnImageType { none, dirImage, bytesImage }
 
 // Whether the native pipeline should capture debug images for on-device
 // inspection. Ordinals must match the C++ DebugImageType enum.
@@ -121,12 +121,12 @@ class ProcessResult {
     final capture = img(r.capture, r.captureLen);
     final overlay = img(r.overlay, r.overlayLen);
     final imageType = (mask != null || crop != null)
-        ? ReturnImageType.BytesImage
-        : ReturnImageType.None;
+        ? ReturnImageType.bytesImage
+        : ReturnImageType.none;
 
     final isDetected = r.isDetected != 0;
     return ProcessResult(
-      isDetected ? DifficultyType.FFXI : DifficultyType.None,
+      isDetected ? DifficultyType.ffxi : DifficultyType.none,
       null,
       detectedRois,
       isDetected,
@@ -249,15 +249,15 @@ final class CCameraResult extends Struct {
   external int overlayLen;
 }
 
-typedef _c_createOcrInstance = Pointer<Void> Function(
+typedef _CreateOcrInstanceNative = Pointer<Void> Function(
     Pointer<Utf8>, Pointer<COCRConfig>);
-typedef _dart_createOcrInstance = Pointer<Void> Function(
+typedef _CreateOcrInstanceDart = Pointer<Void> Function(
     Pointer<Utf8>, Pointer<COCRConfig>);
 
-typedef _c_destroyOcrInstance = Void Function(Pointer<Void>);
-typedef _dart_destroyOcrInstance = void Function(Pointer<Void>);
+typedef _DestroyOcrInstanceNative = Void Function(Pointer<Void>);
+typedef _DestroyOcrInstanceDart = void Function(Pointer<Void>);
 
-typedef _c_processPickedImage = Void Function(
+typedef _ProcessPickedImageNative = Void Function(
   Pointer<Void> handle,
   Pointer<Utf8> inputImagePath,
   Pointer<Int32> outputIsDetected,
@@ -270,7 +270,7 @@ typedef _c_processPickedImage = Void Function(
   Int32 tapY,
 );
 
-typedef _dart_processPickedImage = void Function(
+typedef _ProcessPickedImageDart = void Function(
   Pointer<Void> handle,
   Pointer<Utf8> inputImagePath,
   Pointer<Int32> outputIsDetected,
@@ -286,38 +286,38 @@ typedef _dart_processPickedImage = void Function(
 // Camera session FFI (operates on the opaque session pointer from the channel).
 typedef _ResultCallbackNative = Void Function(Pointer<CCameraResult>);
 
-typedef _c_cameraRegister = Void Function(
+typedef _CameraRegisterNative = Void Function(
     Pointer<Void>, Pointer<NativeFunction<_ResultCallbackNative>>);
-typedef _dart_cameraRegister = void Function(
+typedef _CameraRegisterDart = void Function(
     Pointer<Void>, Pointer<NativeFunction<_ResultCallbackNative>>);
 
-typedef _c_cameraStart = Int32 Function(Pointer<Void>, Int32);
-typedef _dart_cameraStart = int Function(Pointer<Void>, int);
+typedef _CameraStartNative = Int32 Function(Pointer<Void>, Int32);
+typedef _CameraStartDart = int Function(Pointer<Void>, int);
 
-typedef _c_cameraVoid = Void Function(Pointer<Void>);
-typedef _dart_cameraVoid = void Function(Pointer<Void>);
+typedef _CameraVoidNative = Void Function(Pointer<Void>);
+typedef _CameraVoidDart = void Function(Pointer<Void>);
 
-typedef _c_cameraSetDebug = Void Function(Pointer<Void>, Int32);
-typedef _dart_cameraSetDebug = void Function(Pointer<Void>, int);
+typedef _CameraSetDebugNative = Void Function(Pointer<Void>, Int32);
+typedef _CameraSetDebugDart = void Function(Pointer<Void>, int);
 
-typedef _c_cameraSetSide = Void Function(Pointer<Void>, Int32);
-typedef _dart_cameraSetSide = void Function(Pointer<Void>, int);
+typedef _CameraSetSideNative = Void Function(Pointer<Void>, Int32);
+typedef _CameraSetSideDart = void Function(Pointer<Void>, int);
 
 final _cameraRegisterFn =
-    _nativeLib.lookupFunction<_c_cameraRegister, _dart_cameraRegister>(
+    _nativeLib.lookupFunction<_CameraRegisterNative, _CameraRegisterDart>(
         'camera_register_callback');
 final _cameraStartFn =
-    _nativeLib.lookupFunction<_c_cameraStart, _dart_cameraStart>('camera_start');
+    _nativeLib.lookupFunction<_CameraStartNative, _CameraStartDart>('camera_start');
 final _cameraStopFn =
-    _nativeLib.lookupFunction<_c_cameraVoid, _dart_cameraVoid>('camera_stop');
+    _nativeLib.lookupFunction<_CameraVoidNative, _CameraVoidDart>('camera_stop');
 final _cameraSetDebugFn =
-    _nativeLib.lookupFunction<_c_cameraSetDebug, _dart_cameraSetDebug>(
+    _nativeLib.lookupFunction<_CameraSetDebugNative, _CameraSetDebugDart>(
         'camera_set_debug');
 final _cameraSetSideFn =
-    _nativeLib.lookupFunction<_c_cameraSetSide, _dart_cameraSetSide>(
+    _nativeLib.lookupFunction<_CameraSetSideNative, _CameraSetSideDart>(
         'camera_set_side');
 final _cameraFreeResultFn =
-    _nativeLib.lookupFunction<_c_cameraVoid, _dart_cameraVoid>(
+    _nativeLib.lookupFunction<_CameraVoidNative, _CameraVoidDart>(
         'camera_free_result');
 
 // Caller must calloc.free() the returned pointer.
@@ -400,13 +400,13 @@ void _freeOcrStrings(Pointer<COCRStrings> p) {
 ProcessResult _runPickedImage(
     String appPath, String imagePath, int side, int tapX, int tapY) {
   final createFn =
-      _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
+      _nativeLib.lookupFunction<_CreateOcrInstanceNative, _CreateOcrInstanceDart>(
           'create_ocr_instance');
   final destroyFn = _nativeLib
-      .lookupFunction<_c_destroyOcrInstance, _dart_destroyOcrInstance>(
+      .lookupFunction<_DestroyOcrInstanceNative, _DestroyOcrInstanceDart>(
           'destroy_ocr_instance');
   final processFn = _nativeLib
-      .lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
+      .lookupFunction<_ProcessPickedImageNative, _ProcessPickedImageDart>(
           'process_picked_image');
 
   final dataPathPtr = appPath.toNativeUtf8();
@@ -447,11 +447,11 @@ ProcessResult _runPickedImage(
   }
 
   final result = ProcessResult(
-    outputRois == nullptr ? DifficultyType.None : DifficultyType.FFXI,
+    outputRois == nullptr ? DifficultyType.none : DifficultyType.ffxi,
     null,
     detectedRois,
     outputIsDetected.value != 0,
-    ReturnImageType.None,
+    ReturnImageType.none,
     null,
     null,
     null,
@@ -591,7 +591,7 @@ class OCRProcessor {
         _cameraSetSideFn(_session, _side.index);
       }
     } catch (e) {
-      print('Native camera session init failed (picked-image still works): $e');
+      debugPrint('Native camera session init failed (picked-image still works): $e');
     }
   }
 
@@ -617,7 +617,7 @@ class OCRProcessor {
         continue;
       }
       await target.writeAsBytes(bytes, flush: true);
-      print('Copied $assetPath -> ${target.path}');
+      debugPrint('Copied $assetPath -> ${target.path}');
     }
   }
 
@@ -690,7 +690,7 @@ class OCRProcessor {
   // to be the Details badge, bypassing the side heuristics — the load-image
   // page sends it when the user taps a detected ROI box.
   void processPickedImage(XFile image, {Point<int>? tapPoint}) async {
-    print('Processing image from file: ${image.path}');
+    debugPrint('Processing image from file: ${image.path}');
     isProcessing.value = true;
     try {
       final appPath = appDir!.path;
@@ -702,7 +702,7 @@ class OCRProcessor {
           () => _runPickedImage(appPath, imagePath, sideIndex, tapX, tapY));
       streamResultController.add(result);
     } catch (e) {
-      print('Picked image processing failed: $e');
+      debugPrint('Picked image processing failed: $e');
     } finally {
       isProcessing.value = false;
     }

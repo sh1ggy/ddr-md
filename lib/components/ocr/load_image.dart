@@ -165,7 +165,7 @@ class _LoadImageState extends State<LoadImage> {
             }
             for (int i = 0; i < result.detectedRois!.length; i++) {
               final roi = result.detectedRois![i];
-              print(
+              debugPrint(
                   'Detected ROI $i: left=${roi.left}, top=${roi.top}, width=${roi.width}, height=${roi.height}');
 
               Rectangle<int> roiToAdd = Rectangle<int>(
