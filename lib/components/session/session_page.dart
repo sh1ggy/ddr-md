@@ -7,6 +7,7 @@ library;
 
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
+import 'package:ddr_md/components/session/set_summary_card.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
@@ -272,7 +273,11 @@ final _deleteBackground = Container(
 class SessionPage extends StatelessWidget {
   const SessionPage({super.key});
 
-  static const _header = [EamuseSyncCard(), RecentPlaysCard()];
+  static const _header = [
+    EamuseSyncCard(),
+    SetSummaryCard(),
+    RecentPlaysCard(),
+  ];
 
   @override
   Widget build(BuildContext context) {

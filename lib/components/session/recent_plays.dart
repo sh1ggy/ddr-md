@@ -39,6 +39,24 @@ List<List<RecentPlay>> groupPlaySets(List<RecentPlay> plays,
   return sets;
 }
 
+/// The song a chart's [song] name matched, the chart's index among the
+/// mode's difficulties (-1 when not found) and its level.
+({SongInfo? song, int index, int? level}) chartOf(
+    String? song, Modes mode, String difficulty) {
+  final info = Songs.list.where((s) => s.name == song).firstOrNull;
+  final charts = info == null
+      ? null
+      : (mode == Modes.singles ? info.singles : info.doubles);
+  final types = charts?.availableTypes ?? const <String>[];
+  final index =
+      types.indexWhere((t) => kInGameDifficultyNames[t] == difficulty);
+  final level = index < 0 ? null : charts!.toJson()[types[index]] as int?;
+  return (song: info, index: index, level: level);
+}
+
+({SongInfo? song, int index, int? level}) playChart(RecentPlay play) =>
+    chartOf(play.song, play.mode, play.difficulty);
+
 typedef _Loaded = ({List<RecentPlay> plays, Map<String, int?> bests});
 
 Future<_Loaded> _load({int? limit}) async => (
@@ -93,7 +111,7 @@ class RecentPlaysCard extends StatelessWidget {
           icon: Icons.history,
           onMore: () => context.push('/home/recent'),
           children: [
-            _SetHeader(latest),
+            SetHeader(latest),
             _PlayGrid(plays: latest, bests: data.bests, rows: 2),
           ],
         );
@@ -203,7 +221,7 @@ class RecentPlaysPage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _SetHeader(set),
+                        SetHeader(set),
                         _PlayGrid(plays: set, bests: data.bests),
                       ],
                     ),
@@ -223,8 +241,8 @@ String _period(DateTime t) => t.hour < 12 ? 'AM' : 'PM';
 String _time(DateTime t) => formatTime12(t);
 
 /// A set's day, time span and how many plays it holds.
-class _SetHeader extends StatelessWidget {
-  const _SetHeader(this.set);
+class SetHeader extends StatelessWidget {
+  const SetHeader(this.set, {super.key});
 
   final List<RecentPlay> set;
 
@@ -309,14 +327,7 @@ class _PlayCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final song = Songs.list.where((s) => s.name == play.song).firstOrNull;
-    final charts = song == null
-        ? null
-        : (play.mode == Modes.singles ? song.singles : song.doubles);
-    final types = charts?.availableTypes ?? const <String>[];
-    final index =
-        types.indexWhere((t) => kInGameDifficultyNames[t] == play.difficulty);
-    final level = index < 0 ? null : charts!.toJson()[types[index]] as int?;
+    final (:song, :index, :level) = playChart(play);
     final isBest = play.score != null && best != null && play.score! >= best!;
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
@@ -392,7 +403,7 @@ class _PlayCard extends StatelessWidget {
               ],
             ),
           ),
-          if (isBest) const Positioned(top: 6, right: 6, child: _BestBadge()),
+          if (isBest) const Positioned(top: 6, right: 6, child: BestBadge()),
         ]),
       ),
     );
@@ -400,8 +411,8 @@ class _PlayCard extends StatelessWidget {
 }
 
 /// Marks a play that set the chart's best: an up arrow in a primary circle.
-class _BestBadge extends StatelessWidget {
-  const _BestBadge();
+class BestBadge extends StatelessWidget {
+  const BestBadge({super.key});
 
   @override
   Widget build(BuildContext context) {
