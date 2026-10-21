@@ -7,8 +7,8 @@ library;
 
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/session/app_settings_page.dart';
-import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
+import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/snippets/snippets_page.dart';
 import 'package:ddr_md/components/song/song_page.dart';
@@ -82,13 +82,17 @@ final router = GoRouter(
                   _page(state, const SessionPage()),
               routes: [
                 GoRoute(
-                    path: 'recent',
-                    pageBuilder: (context, state) =>
-                        _page(state, const RecentPlaysPage())),
-                GoRoute(
                     path: 'sessions',
                     pageBuilder: (context, state) =>
-                        _page(state, const SessionsPage())),
+                        _page(state, const SessionsPage()),
+                    routes: [
+                      GoRoute(
+                          path: ':key',
+                          pageBuilder: (context, state) => _page(
+                              state,
+                              VisitPage(
+                                  visitKey: state.pathParameters['key']!))),
+                    ]),
                 GoRoute(
                     path: 'settings',
                     pageBuilder: (context, state) =>

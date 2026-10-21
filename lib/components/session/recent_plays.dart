@@ -1,9 +1,8 @@
 /// Name: RecentPlays
-/// Parent: SessionPage
-/// Description: The e-amusement plays a sync has seen, newest first, grouped
-/// into sets: runs of plays with no break longer than [kSetBreak], so one
-/// visit to the arcade reads as one set. Home shows the latest few under
-/// [RecentPlaysCard]; [RecentPlaysPage] has every one kept.
+/// Parent: LastSessionCard, VisitPage
+/// Description: Pieces Home's session cards share: the card and subpage
+/// frames, a session's day and time span, and its synced plays as a grid of
+/// cards, each marked when it set the chart's best.
 library;
 
 import 'dart:math';
@@ -14,30 +13,12 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_store.dart';
-import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
-import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-
-const kSetBreak = Duration(hours: 1);
-
-/// [plays] (newest first) split wherever two plays are more than [gap] apart.
-List<List<RecentPlay>> groupPlaySets(List<RecentPlay> plays,
-    [Duration gap = kSetBreak]) {
-  final sets = <List<RecentPlay>>[];
-  for (final p in plays) {
-    if (sets.isEmpty || sets.last.last.playedAt.difference(p.playedAt) > gap) {
-      sets.add([p]);
-    } else {
-      sets.last.add(p);
-    }
-  }
-  return sets;
-}
 
 /// The song a chart's [song] name matched, the chart's index among the
 /// mode's difficulties (-1 when not found) and its level.
@@ -56,69 +37,6 @@ List<List<RecentPlay>> groupPlaySets(List<RecentPlay> plays,
 
 ({SongInfo? song, int index, int? level}) playChart(RecentPlay play) =>
     chartOf(play.song, play.mode, play.difficulty);
-
-typedef _Loaded = ({List<RecentPlay> plays, Map<String, int?> bests});
-
-Future<_Loaded> _load({int? limit}) async => (
-      plays: await DatabaseProvider.getRecentPlays(limit: limit),
-      bests: {
-        for (final r
-            in await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse))
-          r.id: r.score
-      },
-    );
-
-/// Home's latest set, a few plays of it, and a way to the rest.
-class RecentPlaysCard extends StatelessWidget {
-  const RecentPlaysCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final sync = context.watch<EamuseSyncState>();
-    return FutureBuilder<_Loaded>(
-      key: ValueKey(sync.revision),
-      // Enough to hold the latest set's start for its header.
-      future: _load(limit: 50),
-      builder: (context, snapshot) {
-        final data = snapshot.data;
-        if (data == null) return const SizedBox.shrink();
-        if (data.plays.isEmpty) {
-          // Synced before plays were kept: one more sync fills the history.
-          if (sync.charts == 0) return const SizedBox.shrink();
-          final signedOut = sync.status == EamuseStatus.signedOut;
-          return HomeCard(
-            title: 'Recent plays',
-            icon: Icons.history,
-            children: [
-              Row(children: [
-                Expanded(
-                    child: Text(signedOut
-                        ? 'Sign in above to load them'
-                        : 'Not loaded yet')),
-                if (!signedOut)
-                  FilledButton.tonal(
-                    onPressed:
-                        sync.status == EamuseStatus.syncing ? null : sync.sync,
-                    child: const Text('Load'),
-                  ),
-              ]),
-            ],
-          );
-        }
-        final latest = groupPlaySets(data.plays).first;
-        return HomeCard(
-          title: 'Recent plays',
-          icon: Icons.history,
-          onMore: () => context.push('/home/recent'),
-          children: [
-            SetHeader(latest),
-            _PlayGrid(plays: latest, bests: data.bests, rows: 2),
-          ],
-        );
-      },
-    );
-  }
-}
 
 /// A Home card: a [CardHeading], See more when there's more to see, then
 /// [children].
@@ -168,10 +86,12 @@ class HomeCard extends StatelessWidget {
 
 /// A page pushed from Home, with the app's page header.
 class HomeSubpage extends StatelessWidget {
-  const HomeSubpage({super.key, required this.title, required this.body});
+  const HomeSubpage(
+      {super.key, required this.title, required this.body, this.actions});
 
   final String title;
   final Widget body;
+  final List<Widget>? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -187,50 +107,9 @@ class HomeSubpage extends StatelessWidget {
                 fontSize: 20,
                 color: Colors.blueGrey,
                 fontWeight: FontWeight.w600)),
+        actions: actions,
       ),
       body: body,
-    );
-  }
-}
-
-class RecentPlaysPage extends StatelessWidget {
-  const RecentPlaysPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final revision = context.select<EamuseSyncState, int>((s) => s.revision);
-    return HomeSubpage(
-      title: 'Recent plays',
-      body: FutureBuilder<_Loaded>(
-        key: ValueKey(revision),
-        future: _load(),
-        builder: (context, snapshot) {
-          final data = snapshot.data;
-          if (data == null) return const SizedBox.shrink();
-          if (data.plays.isEmpty) {
-            return const Center(child: Text('No plays synced yet.'));
-          }
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              for (final set in groupPlaySets(data.plays))
-                Card(
-                  margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SetHeader(set),
-                        _PlayGrid(plays: set, bests: data.bests),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
     );
   }
 }
@@ -240,35 +119,41 @@ String _clock(DateTime t) =>
 String _period(DateTime t) => t.hour < 12 ? 'AM' : 'PM';
 String _time(DateTime t) => formatTime12(t);
 
-/// A set's day, time span and how many plays it holds.
-class SetHeader extends StatelessWidget {
-  const SetHeader(this.set, {super.key});
+/// A day and time span: "Today · 3:12–5:03 PM", "2026-10-17 · 11:40 AM–1:05 PM".
+String visitSpan(DateTime start, DateTime end) {
+  start = start.toLocal();
+  end = end.toLocal();
+  final now = DateTime.now();
+  final days = DateTime(now.year, now.month, now.day)
+      .difference(DateTime(start.year, start.month, start.day))
+      .inDays;
+  final day = switch (days) {
+    0 => 'Today',
+    1 => 'Yesterday',
+    _ => formatPlayDate(start),
+  };
+  final span = !end.isAfter(start)
+      ? _time(start)
+      : _period(start) == _period(end)
+          ? '${_clock(start)}–${_time(end)}'
+          : '${_time(start)}–${_time(end)}';
+  return '$day · $span';
+}
 
-  final List<RecentPlay> set;
+String playCount(int n) => '$n ${n == 1 ? 'play' : 'plays'}';
+
+/// A muted line under a card's heading.
+class CardSubtitle extends StatelessWidget {
+  const CardSubtitle(this.text, {super.key});
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    final start = set.last.playedAt.toLocal();
-    final end = set.first.playedAt.toLocal();
-    final now = DateTime.now();
-    final days = DateTime(now.year, now.month, now.day)
-        .difference(DateTime(start.year, start.month, start.day))
-        .inDays;
-    final day = switch (days) {
-      0 => 'Today',
-      1 => 'Yesterday',
-      _ => formatPlayDate(start),
-    };
-    // 3:12–5:03 PM, or 11:40 AM–1:05 PM across noon.
-    final span = set.length == 1
-        ? _time(start)
-        : _period(start) == _period(end)
-            ? '${_clock(start)}–${_time(end)}'
-            : '${_time(start)}–${_time(end)}';
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Text(
-        '$day · $span · ${set.length} ${set.length == 1 ? 'play' : 'plays'}',
+        text,
         style: Theme.of(context)
             .textTheme
             .labelMedium
@@ -279,8 +164,9 @@ class SetHeader extends StatelessWidget {
 }
 
 /// [plays] as cards in as many columns as fit, [rows] rows of them at most.
-class _PlayGrid extends StatelessWidget {
-  const _PlayGrid({required this.plays, required this.bests, this.rows});
+class PlayGrid extends StatelessWidget {
+  const PlayGrid(
+      {super.key, required this.plays, required this.bests, this.rows});
 
   final List<RecentPlay> plays;
   final Map<String, int?> bests;

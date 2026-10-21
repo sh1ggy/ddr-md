@@ -6,8 +6,7 @@
 library;
 
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
-import 'package:ddr_md/components/session/recent_plays.dart';
-import 'package:ddr_md/components/session/set_summary_card.dart';
+import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
@@ -56,7 +55,7 @@ Future<bool> confirmDelete(
     ) ??
     false;
 
-Future<String?> _askName(BuildContext context, String title, String hint) {
+Future<String?> askName(BuildContext context, String title, String hint) {
   final controller = TextEditingController();
   return showDialog<String>(
     context: context,
@@ -121,7 +120,7 @@ class _CreditSheetState extends State<_CreditSheet> {
   }
 
   Future<void> _addVenue() async {
-    final name = await _askName(context, 'New venue', 'e.g. Round1 Ludo');
+    final name = await askName(context, 'New venue', 'e.g. Round1 Ludo');
     if (name == null || name.isEmpty || _venues.any((v) => v.name == name)) {
       return;
     }
@@ -131,7 +130,7 @@ class _CreditSheetState extends State<_CreditSheet> {
   }
 
   Future<void> _addCabinet() async {
-    final name = await _askName(context, 'Another cab here', 'e.g. Cab 2');
+    final name = await askName(context, 'Another cab here', 'e.g. Cab 2');
     if (name == null || name.isEmpty) return;
     final cabinet = await DatabaseProvider.addCabinet(_venue!, name);
     setState(() {
@@ -273,11 +272,7 @@ final _deleteBackground = Container(
 class SessionPage extends StatelessWidget {
   const SessionPage({super.key});
 
-  static const _header = [
-    EamuseSyncCard(),
-    SetSummaryCard(),
-    RecentPlaysCard(),
-  ];
+  static const _header = [EamuseSyncCard(), LastSessionCard()];
 
   @override
   Widget build(BuildContext context) {
@@ -304,126 +299,10 @@ class SessionPage extends StatelessWidget {
       // The cards scroll with the session below them.
       body: session.active
           ? _ActiveSession(session: session, header: _header)
-          : _NoSession(revision: session.revision, header: _header),
-    );
-  }
-}
-
-Future<bool> _confirmSessionDelete(BuildContext context) => confirmDelete(
-    context,
-    'Delete this session?',
-    'Its credits and every play logged in them go too.');
-
-Future<void> _deleteSession(BuildContext context, PlaySession s) async {
-  final session = context.read<SessionState>();
-  await DatabaseProvider.deleteSession(s.id);
-  session.changed();
-}
-
-class _NoSession extends StatelessWidget {
-  const _NoSession({required this.revision, required this.header});
-
-  final int revision;
-  final List<Widget> header;
-
-  static const _shown = 3;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<PlaySession>>(
-      key: ValueKey(revision),
-      // One more than shown, to know whether there's more to see.
-      future: DatabaseProvider.getSessions(limit: _shown + 1),
-      builder: (context, snapshot) {
-        final past = snapshot.data ?? [];
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 24),
-          children: [
-            ...header,
-            HomeCard(
-              title: 'Sessions',
-              icon: Icons.place_outlined,
-              onMore: past.length > _shown
-                  ? () => context.push('/home/sessions')
-                  : null,
-              children: [
-                FilledButton.icon(
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Start session'),
-                  onPressed: () => showStartSessionSheet(context),
-                ),
-                if (past.isNotEmpty) const SizedBox(height: 6),
-                for (final s in past.take(_shown)) _SessionTile(s),
-              ],
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: const [..._header, SessionsCard()],
             ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// A past session in a rounded tile; swipe or tap the bin to delete it.
-class _SessionTile extends StatelessWidget {
-  const _SessionTile(this.session);
-
-  final PlaySession session;
-
-  @override
-  Widget build(BuildContext context) {
-    final started = session.startedAt.toLocal();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Dismissible(
-          key: ValueKey(session.id),
-          direction: DismissDirection.endToStart,
-          background: _deleteBackground,
-          confirmDismiss: (_) => _confirmSessionDelete(context),
-          onDismissed: (_) => _deleteSession(context, session),
-          child: Material(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: ListTile(
-              dense: true,
-              title: Text(session.venue.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle:
-                  Text('${formatPlayDate(started)} · ${formatTime12(started)}'),
-              trailing: IconButton(
-                tooltip: 'Delete session',
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () async {
-                  if (await _confirmSessionDelete(context) && context.mounted) {
-                    await _deleteSession(context, session);
-                  }
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Every past session, newest first.
-class SessionsPage extends StatelessWidget {
-  const SessionsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final revision = context.select<SessionState, int>((s) => s.revision);
-    return HomeSubpage(
-      title: 'Sessions',
-      body: FutureBuilder<List<PlaySession>>(
-        key: ValueKey(revision),
-        future: DatabaseProvider.getSessions(),
-        builder: (context, snapshot) => ListView(
-          padding: const EdgeInsets.all(12),
-          children: [for (final s in snapshot.data ?? []) _SessionTile(s)],
-        ),
-      ),
     );
   }
 }

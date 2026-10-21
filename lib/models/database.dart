@@ -190,6 +190,30 @@ class DatabaseProvider {
     return session;
   }
 
+  /// A session recorded after the fact, over a synced set's span.
+  static Future<PlaySession> addPastSession(
+      Venue venue, DateTime startedAt, DateTime endedAt) async {
+    final db = await _instance;
+    final session = PlaySession(const Uuid().v4(), venue, startedAt, endedAt);
+    await db.insert("sessions", {
+      'id': session.id,
+      'venueId': venue.id,
+      'startedAt': startedAt.toIso8601String(),
+      'endedAt': endedAt.toIso8601String(),
+    });
+    return session;
+  }
+
+  /// When each session's last credit started, by session id.
+  static Future<Map<String, DateTime>> getLastCredits() async {
+    final db = await _instance;
+    return {
+      for (final r in await db.rawQuery(
+          'SELECT sessionId, MAX(startedAt) AS at FROM credits GROUP BY sessionId'))
+        r['sessionId'] as String: DateTime.parse(r['at'] as String),
+    };
+  }
+
   static Future<void> endSession(String id) async {
     final db = await _instance;
     await db.update("sessions", {'endedAt': DateTime.now().toIso8601String()},

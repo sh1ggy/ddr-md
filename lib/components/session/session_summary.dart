@@ -1,9 +1,9 @@
-/// Name: SetSummaryCard
-/// Parent: SessionPage
-/// Description: How the latest set of e-amusement plays went as a whole: its
+/// Name: SessionSummary
+/// Parent: LastSessionCard, VisitPage
+/// Description: How a session's e-amusement plays went as a whole: their
 /// average score against what your history says you'd average on that same
-/// mix of charts, the bests it set, and, when it fell inside a session run in
-/// the app, that session's venue and timing.
+/// mix of charts, as a you-vs-usual bar over each play's gap in play order,
+/// with the average level, bests set and, when timing was logged, its offset.
 library;
 
 import 'dart:math';
@@ -13,12 +13,8 @@ import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
-import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
-import 'package:ddr_md/models/eamuse_state.dart';
-import 'package:ddr_md/models/session_model.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 /// How many plays the level's model counts as when blended into a chart's
 /// own earlier plays, so one lucky or bad play doesn't set the bar.
@@ -27,34 +23,18 @@ const _levelWeight = 2;
 const _minLevelCharts = 3;
 
 class SetSummary {
-  SetSummary({
-    required this.plays,
-    required this.points,
-    required this.level,
-    required this.bests,
-    this.session,
-    this.timingMs,
-  });
+  SetSummary({required this.points, required this.level, required this.bests});
 
-  /// The set, newest first.
-  final List<RecentPlay> plays;
-
-  /// Each play with a score, a level and a usual.
+  /// Each play with a score, a level and a usual, newest first.
   final List<({RecentPlay play, int level, double usual})> points;
 
   /// The charts' average level.
   final double? level;
 
-  /// Charts whose best a play in the set reached.
+  /// Charts whose best a play reached.
   final int bests;
 
-  /// The session run in the app while the set was played.
-  final PlaySession? session;
-
-  /// That session's average timing offset; negative is fast.
-  final double? timingMs;
-
-  /// The set's average score, over [points].
+  /// The average score, over [points].
   double? get average => points.isEmpty
       ? null
       : points.fold<double>(0, (a, p) => a + p.play.score!) / points.length;
@@ -68,148 +48,99 @@ class SetSummary {
       average == null || usual == null ? null : average! - usual!;
 }
 
-/// The latest set in [history] (newest first) against what came before it.
+double _mean(Iterable<num> s) => s.fold<double>(0, (a, b) => a + b) / s.length;
+
+/// What you usually score, from your synced plays and bests.
 ///
 /// A chart's usual is its earlier plays' average, blended with the level's
 /// model: your average best at that mode and level, less how far plays
 /// usually land below their chart's best. The model covers charts you've
 /// never had a play of synced, which is most of them early on.
-SetSummary? summarizeLatestSet(
-  List<RecentPlay> history,
-  List<ScoreRecord> records,
-  int? Function(String? song, Modes mode, String difficulty) levelOf,
-) {
-  if (history.isEmpty) return null;
-  final set = groupPlaySets(history).first;
-  final before = history.skip(set.length).where((p) => p.score != null);
-
-  double mean(Iterable<num> s) => s.fold<double>(0, (a, b) => a + b) / s.length;
-  final bests = {for (final r in records) r.id: r.score};
-  final levels = <String, int?>{};
-  int? level(RecentPlay p) => levels.putIfAbsent(
-      p.recordId, () => levelOf(p.song, p.mode, p.difficulty));
-
-  final levelBests = <String, List<int>>{};
-  for (final r in records) {
-    final l = levelOf(r.song, r.mode, r.difficulty);
-    if (r.score != null && l != null) {
-      levelBests.putIfAbsent('${r.mode.name}:$l', () => []).add(r.score!);
+class ScoreModel {
+  ScoreModel(this.history, List<ScoreRecord> records, this.levelOf)
+      : _bests = {for (final r in records) r.id: r.score} {
+    for (final r in records) {
+      final l = levelOf(r.song, r.mode, r.difficulty);
+      if (r.score != null && l != null) {
+        _levelBests.putIfAbsent('${r.mode.name}:$l', () => []).add(r.score!);
+      }
     }
   }
-  final belowBest = [
-    for (final p in before)
-      if (bests[p.recordId] != null) p.score! - bests[p.recordId]!,
-  ];
-  final offset = belowBest.isEmpty ? 0.0 : mean(belowBest);
 
-  final byChart = <String, List<int>>{};
-  for (final p in before) {
-    byChart.putIfAbsent(p.recordId, () => []).add(p.score!);
-  }
+  /// Every synced play, newest first.
+  final List<RecentPlay> history;
+  final int? Function(String? song, Modes mode, String difficulty) levelOf;
 
-  double? modelOf(Modes mode, int level) {
-    final peers = levelBests['${mode.name}:$level'];
-    return peers != null && peers.length >= _minLevelCharts
-        ? mean(peers) + offset
-        : null;
-  }
+  final Map<String, int?> _bests;
+  final _levelBests = <String, List<int>>{};
+  final _levels = <String, int?>{};
 
-  double? usualOf(RecentPlay p, int level) {
-    final chart = byChart[p.recordId];
-    final model = modelOf(p.mode, level);
-    if (chart == null) return model;
-    if (model == null) return mean(chart);
-    return (chart.length * mean(chart) + _levelWeight * model) /
-        (chart.length + _levelWeight);
-  }
+  /// Each chart's synced best, by [RecentPlay.recordId].
+  Map<String, int?> get bests => _bests;
 
-  final points = [
-    for (final p in set)
-      if ((p.score, level(p)) case (final _?, final l?))
-        if (usualOf(p, l) case final u?) (play: p, level: l, usual: u),
-  ];
-  final known = [
-    for (final p in set)
-      if (level(p) case final l?) l,
-  ];
-  return SetSummary(
-    plays: set,
-    points: points,
-    level: known.isEmpty ? null : mean(known),
-    bests: {
-      for (final p in set)
-        if (p.score != null &&
-            bests[p.recordId] != null &&
-            p.score! >= bests[p.recordId]!)
-          p.recordId,
-    }.length,
-  );
-}
+  int? best(RecentPlay p) => _bests[p.recordId];
 
-/// The session in [sessions] that was running while [set] (newest first)
-/// was played: plays land on e-amusement a little after the credit, so a
-/// session counts until a set break past its end.
-PlaySession? sessionFor(List<RecentPlay> set, List<PlaySession> sessions) {
-  final first = set.last.playedAt;
-  final last = set.first.playedAt;
-  for (final s in sessions) {
-    final end = (s.endedAt ?? DateTime.now()).add(kSetBreak);
-    if (!first.isAfter(end) && !last.isBefore(s.startedAt)) return s;
-  }
-  return null;
-}
+  int? level(RecentPlay p) => _levels.putIfAbsent(
+      p.recordId, () => levelOf(p.song, p.mode, p.difficulty));
 
-class SetSummaryCard extends StatelessWidget {
-  const SetSummaryCard({super.key});
+  /// [plays] (newest first) against every play before the first of them.
+  SetSummary summarize(List<RecentPlay> plays) {
+    final first = plays.last.playedAt;
+    final before =
+        history.where((p) => p.score != null && p.playedAt.isBefore(first));
+    final belowBest = [
+      for (final p in before)
+        if (best(p) != null) p.score! - best(p)!,
+    ];
+    final offset = belowBest.isEmpty ? 0.0 : _mean(belowBest);
+    final byChart = <String, List<int>>{};
+    for (final p in before) {
+      byChart.putIfAbsent(p.recordId, () => []).add(p.score!);
+    }
 
-  static Future<SetSummary?> _load() async {
-    final summary = summarizeLatestSet(
-      await DatabaseProvider.getRecentPlays(),
-      await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse),
-      (song, mode, difficulty) => chartOf(song, mode, difficulty).level,
-    );
-    if (summary == null) return null;
-    final session = sessionFor(
-        summary.plays, await DatabaseProvider.getSessions(limit: 10));
-    if (session == null) return summary;
-    final timing = await DatabaseProvider.getSessionPlays(session.id);
+    double? usualOf(RecentPlay p, int level) {
+      final chart = byChart[p.recordId];
+      final peers = _levelBests['${p.mode.name}:$level'];
+      final model = peers != null && peers.length >= _minLevelCharts
+          ? _mean(peers) + offset
+          : null;
+      if (chart == null) return model;
+      if (model == null) return _mean(chart);
+      return (chart.length * _mean(chart) + _levelWeight * model) /
+          (chart.length + _levelWeight);
+    }
+
+    final known = [
+      for (final p in plays)
+        if (level(p) case final l?) l,
+    ];
     return SetSummary(
-      plays: summary.plays,
-      points: summary.points,
-      level: summary.level,
-      bests: summary.bests,
-      session: session,
-      timingMs: timing.isEmpty
-          ? null
-          : timing.map((t) => t.averageMs).reduce((a, b) => a + b) /
-              timing.length,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final synced = context.select<EamuseSyncState, int>((s) => s.revision);
-    final sessions = context.select<SessionState, int>((s) => s.revision);
-    return FutureBuilder<SetSummary?>(
-      key: ValueKey((synced, sessions)),
-      future: _load(),
-      builder: (context, snapshot) {
-        final summary = snapshot.data;
-        if (summary == null) return const SizedBox.shrink();
-        return HomeCard(
-          title: summary.session?.venue.name ?? 'Session summary',
-          icon: summary.session == null ? Icons.insights : Icons.place,
-          children: [SetHeader(summary.plays), _Body(summary)],
-        );
-      },
+      points: [
+        for (final p in plays)
+          if ((p.score, level(p)) case (final _?, final l?))
+            if (usualOf(p, l) case final u?) (play: p, level: l, usual: u),
+      ],
+      level: known.isEmpty ? null : _mean(known),
+      bests: {
+        for (final p in plays)
+          if (p.score != null && best(p) != null && p.score! >= best(p)!)
+            p.recordId,
+      }.length,
     );
   }
 }
 
-class _Body extends StatelessWidget {
-  const _Body(this.summary);
+/// [summary] of [plays] (newest first), with [timingMs] when timing was
+/// logged in the session: its average offset, negative is fast.
+class SessionSummaryBody extends StatelessWidget {
+  const SessionSummaryBody(this.summary,
+      {super.key, required this.plays, this.timingMs, this.timed = false});
 
   final SetSummary summary;
+  final List<RecentPlay> plays;
+  final double? timingMs;
+  // Whether the session could log timing, to show its stat even when empty.
+  final bool timed;
 
   @override
   Widget build(BuildContext context) {
@@ -218,14 +149,14 @@ class _Body extends StatelessWidget {
     final muted = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
     final gap = summary.gap;
     final up = isDark ? Colors.green.shade300 : Colors.green.shade700;
-    final timing = summary.timingMs;
+    final timing = timingMs;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (gap == null)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 6),
-            child: Text('Not enough history yet to say how this set went.'),
+            child: Text('Not enough history yet to say how this went.'),
           )
         else ...[
           Row(
@@ -248,7 +179,8 @@ class _Body extends StatelessWidget {
           const SizedBox(height: 8),
           _UsualBar(summary, up: up, down: scheme.error),
           const SizedBox(height: 12),
-          _GapTimeline(summary, up: up, down: scheme.error),
+          _GapTimeline(summary,
+              played: plays.length, up: up, down: scheme.error),
         ],
         const SizedBox(height: 10),
         Row(children: [
@@ -260,7 +192,7 @@ class _Body extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 3),
                     child: LevelNumber(
                         level: summary.level!.round(),
-                        difficulty: _mostPlayed(summary.plays),
+                        difficulty: _mostPlayed(plays),
                         height: 20),
                   ),
           ),
@@ -272,7 +204,7 @@ class _Body extends StatelessWidget {
               _StatText('${summary.bests}'),
             ]),
           ),
-          if (summary.session != null)
+          if (timed)
             _Stat(
               label: 'Timing',
               child: _StatText(
@@ -416,7 +348,11 @@ class _UsualBar extends StatelessWidget {
 /// Each play's gap from its usual in the order played, as dots either side
 /// of the usual line, with a running average through them.
 class _GapTimeline extends StatelessWidget {
-  const _GapTimeline(this.summary, {required this.up, required this.down});
+  const _GapTimeline(this.summary,
+      {required this.played, required this.up, required this.down});
+
+  // Plays in the session, compared or not.
+  final int played;
 
   final SetSummary summary;
   final Color up, down;
@@ -444,9 +380,9 @@ class _GapTimeline extends StatelessWidget {
         Row(children: [
           Text(formatTime12(plays.first.play.playedAt.toLocal()), style: muted),
           Expanded(
-            child: summary.points.length < summary.plays.length
+            child: summary.points.length < played
                 ? Text(
-                    '${summary.points.length} of ${summary.plays.length} '
+                    '${summary.points.length} of $played '
                     'plays compared',
                     textAlign: TextAlign.center,
                     style: muted)
