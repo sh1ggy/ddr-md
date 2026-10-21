@@ -243,14 +243,19 @@ final _lampBands = <_Band>[
     (ClearLamp.pfc, Color(0xFFFFC107), 'assets/icons/cl_perf.png', 'PFC'),
     (ClearLamp.gfc, Color(0xFF66BB6A), 'assets/icons/cl_great.png', 'GFC'),
     (ClearLamp.fc, Color(0xFF42A5F5), 'assets/icons/cl_good.png', 'FC'),
-    (ClearLamp.life4, Color(0xFFE8344E), 'assets/icons/cl_life4.png', 'LIFE4'),
     (
-      ClearLamp.clear,
-      Color(0xFFFF9800),
+      ClearLamp.life4,
+      Color(0xFFFF6269),
       'assets/icons/cl_li4clear.png',
-      'CLEAR'
+      'LIFE4'
     ),
-    (ClearLamp.assisted, Color(0xFFAB47BC), null, 'ASSIST'),
+    (ClearLamp.clear, Color(0xFF39EAFF), 'assets/icons/cl_clear.png', 'CLEAR'),
+    (
+      ClearLamp.assisted,
+      Color(0xFFD548E6),
+      'assets/icons/cl_asclear.png',
+      'ASSIST'
+    ),
     (ClearLamp.failed, Color(0xFF757575), 'assets/icons/rank_e.png', 'E'),
   ])
     (
