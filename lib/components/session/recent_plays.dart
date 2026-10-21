@@ -435,12 +435,8 @@ class _Score extends StatelessWidget {
       SizedBox(
         width: 34,
         height: 18,
-        child: art != null
-            ? Image.asset(art,
-                fit: BoxFit.contain, alignment: Alignment.centerLeft)
-            : Text(grade.label,
-                style:
-                    const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+        child: Image.asset(art,
+            fit: BoxFit.contain, alignment: Alignment.centerLeft),
       ),
     ]);
   }

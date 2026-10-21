@@ -100,31 +100,9 @@ FullComboTier fullComboTier({
 // The generic CLEAR lamp, for clears that earned no full-combo tier.
 const clearIcon = 'assets/icons/cl_li4clear.png';
 
-/// Grade art (_p = plus, _m = minus). Grades without art in assets/icons
-/// (A-, the B/C/D tiers below B+) return null; callers should fall back to
-/// Grade.label.
-String? gradeIcon(Grade grade) {
-  switch (grade) {
-    case Grade.aaa:
-      return 'assets/icons/rank_aaa.png';
-    case Grade.aaPlus:
-      return 'assets/icons/rank_aa_p.png';
-    case Grade.aa:
-      return 'assets/icons/rank_aa.png';
-    case Grade.aaMinus:
-      return 'assets/icons/rank_aa_m.png';
-    case Grade.aPlus:
-      return 'assets/icons/rank_a_p.png';
-    case Grade.a:
-      return 'assets/icons/rank_a.png';
-    case Grade.bPlus:
-      return 'assets/icons/rank_b_p.png';
-    case Grade.e:
-      return 'assets/icons/rank_e.png';
-    default:
-      return null;
-  }
-}
+/// Grade art (_p = plus, _m = minus).
+String gradeIcon(Grade grade) => 'assets/icons/rank_'
+    '${grade.label.toLowerCase().replaceAll('+', '_p').replaceAll('-', '_m')}.png';
 
 String? fullComboIcon(FullComboTier tier) {
   switch (tier) {
