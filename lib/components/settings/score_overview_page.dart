@@ -486,8 +486,7 @@ class _Level extends StatelessWidget {
   }
 }
 
-/// One level picked from a row of numerals: its flare counts and
-/// how its scores spread.
+/// One level picked from a row of numerals and how its scores spread.
 class _LevelStatsCard extends StatefulWidget {
   const _LevelStatsCard(this.levels);
 
@@ -522,11 +521,6 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
           isSelected: (l) => l == level,
           onTap: (l) => setState(() => _picked = l),
         ),
-        const SizedBox(height: 10),
-        _BandCounts([
-          for (final b in _flareBands)
-            if (_count(row, b) > 0) (b, _count(row, b)),
-        ], unplayed: _unplayed(row)),
         _ScoreSpread(row.played),
       ],
     );
@@ -536,10 +530,9 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
 /// Band labels with their counts in a grid of fixed cells, so changing
 /// counts never moves anything. Empty bands are dimmed.
 class _BandCounts extends StatelessWidget {
-  const _BandCounts(this.entries, {this.unplayed});
+  const _BandCounts(this.entries);
 
   final List<(_Band, int)> entries;
-  final int? unplayed;
 
   @override
   Widget build(BuildContext context) {
@@ -585,17 +578,6 @@ class _BandCounts extends StatelessWidget {
                             style: style.copyWith(color: tint(b.color))))),
                 const SizedBox(width: 4),
               ]),
-            ),
-          ),
-        if (unplayed != null && unplayed! > 0)
-          SizedBox(
-            height: _bandHeight + 6,
-            child: Center(
-              child: Text('$unplayed unplayed',
-                  style: style.copyWith(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: scheme.onSurfaceVariant)),
             ),
           ),
       ],
