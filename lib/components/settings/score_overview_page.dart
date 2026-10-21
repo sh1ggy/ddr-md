@@ -12,7 +12,8 @@ import 'package:ddr_md/components/session/recent_plays.dart'
 import 'package:ddr_md/components/song/difficulty_label.dart'
     show LevelNumber, LevelPicker;
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/grades.dart' show flareRankIcon, gradeForScore;
+import 'package:ddr_md/grades.dart'
+    show Grade, flareRankIcon, gradeForScore, gradeIcon;
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -301,7 +302,25 @@ final _flareBands = <_Band>[
   ),
 ];
 
+// AAA down to E. A failed chart is an E whatever it scored.
+final _gradeBands = <_Band>[
+  for (final (i, g) in Grade.values.indexed)
+    (
+      holds: (r) => _grade(r) == g,
+      color: Color.lerp(const Color(0xFFFFC107), const Color(0xFF757575),
+          i / (Grade.values.length - 1))!,
+      icon: gradeIcon(g),
+      text: g.label,
+      fill: null,
+    ),
+];
+
+Grade _grade(ScoreRecord r) => gradeForScore(r.score ?? 0,
+    failed: (r.clearLamp ?? ClearLamp.failed) == ClearLamp.failed);
+
 const _bandHeight = 18.0;
+
+enum _Tab { lamps, grades, flare }
 
 class _LevelsCard extends StatefulWidget {
   const _LevelsCard(this.levels);
@@ -313,7 +332,7 @@ class _LevelsCard extends StatefulWidget {
 }
 
 class _LevelsCardState extends State<_LevelsCard> {
-  bool _flare = false;
+  _Tab _tab = _Tab.lamps;
   int? _picked;
 
   @override
@@ -321,22 +340,27 @@ class _LevelsCardState extends State<_LevelsCard> {
     if (!widget.levels.containsKey(_picked)) _picked = null;
     final scheme = Theme.of(context).colorScheme;
     final muted = scheme.onSurfaceVariant;
-    final bands = _flare ? _flareBands : _lampBands;
+    final bands = switch (_tab) {
+      _Tab.lamps => _lampBands,
+      _Tab.grades => _gradeBands,
+      _Tab.flare => _flareBands,
+    };
     const figures = [FontFeature.tabularFigures()];
     return HomeCard(
       title: 'By Level',
       icon: Icons.emoji_events_outlined,
       children: [
         Center(
-          child: SegmentedButton<bool>(
+          child: SegmentedButton<_Tab>(
             showSelectedIcon: false,
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
             segments: const [
-              ButtonSegment(value: false, label: Text('Lamps')),
-              ButtonSegment(value: true, label: Text('Flare')),
+              ButtonSegment(value: _Tab.lamps, label: Text('Lamps')),
+              ButtonSegment(value: _Tab.grades, label: Text('Grades')),
+              ButtonSegment(value: _Tab.flare, label: Text('Flare')),
             ],
-            selected: {_flare},
-            onSelectionChanged: (s) => setState(() => _flare = s.single),
+            selected: {_tab},
+            onSelectionChanged: (s) => setState(() => _tab = s.single),
           ),
         ),
         const SizedBox(height: 8),
@@ -443,7 +467,7 @@ class _Level extends StatelessWidget {
   }
 }
 
-/// One level picked from a row of numerals: its lamp and flare counts and
+/// One level picked from a row of numerals: its flare counts and
 /// how its scores spread.
 class _LevelStatsCard extends StatefulWidget {
   const _LevelStatsCard(this.levels);
@@ -481,14 +505,9 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
         ),
         const SizedBox(height: 10),
         _BandCounts([
-          for (final b in _lampBands)
-            if (_count(row, b) > 0) (b, _count(row, b)),
-        ], unplayed: _unplayed(row)),
-        const SizedBox(height: 8),
-        _BandCounts([
           for (final b in _flareBands)
             if (_count(row, b) > 0) (b, _count(row, b)),
-        ]),
+        ], unplayed: _unplayed(row)),
         _ScoreSpread(row.played),
       ],
     );
@@ -518,7 +537,7 @@ class _BandCounts extends StatelessWidget {
     Widget label(_Band b) => b.icon != null
         // The grade and empty-flare art have more space around them.
         ? Image.asset(b.icon!,
-            height: b.text == 'E' || b.text == 'None'
+            height: b.icon!.contains('/rank_') || b.text == 'None'
                 ? _bandHeight * 1.6
                 : _bandHeight)
         : Text(b.text, style: style.copyWith(color: b.color));
