@@ -304,16 +304,35 @@ final _flareBands = <_Band>[
 
 // AAA down to E. A failed chart is an E whatever it scored.
 final _gradeBands = <_Band>[
-  for (final (i, g) in Grade.values.indexed)
+  for (final g in Grade.values)
     (
       holds: (r) => _grade(r) == g,
-      color: Color.lerp(const Color(0xFFFFC107), const Color(0xFF757575),
-          i / (Grade.values.length - 1))!,
+      color: _gradeColor(g),
       icon: gradeIcon(g),
       text: g.label,
       fill: null,
     ),
 ];
+
+// Each letter in its art's colour, + a shade lighter and - a shade darker.
+Color _gradeColor(Grade g) {
+  final base = switch (g.label[0]) {
+    'A' when g.label.startsWith('AAA') => const Color(0xFFE8C930),
+    'A' when g.label.startsWith('AA') => const Color(0xFFB0BEC5),
+    'A' => const Color(0xFFD63A4F),
+    'B' => const Color(0xFFF2701F),
+    'C' => const Color(0xFFF5B400),
+    'D' => const Color(0xFF2F6FE0),
+    _ => const Color(0xFF616161),
+  };
+  final hsl = HSLColor.fromColor(base);
+  final shift = g.label.endsWith('+')
+      ? 0.12
+      : g.label.endsWith('-')
+          ? -0.12
+          : 0.0;
+  return hsl.withLightness((hsl.lightness + shift).clamp(0.0, 1.0)).toColor();
+}
 
 Grade _grade(ScoreRecord r) => gradeForScore(r.score ?? 0,
     failed: (r.clearLamp ?? ClearLamp.failed) == ClearLamp.failed);
