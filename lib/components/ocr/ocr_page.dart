@@ -20,10 +20,13 @@ import 'package:path_provider/path_provider.dart';
 enum CameraState {
   /// OCR processor or camera controller not yet initialised.
   notReady,
+
   /// Camera is ready but no OCR session has been started yet.
   neverRecorded,
+
   /// A session has been run and stopped; cached results are visible.
   inactive,
+
   /// Live OCR stream is active.
   active,
 }
@@ -287,8 +290,8 @@ class _OcrPageState extends State<OcrPage>
               // an active camera stream.
               if (_isCameraActive) await _toggleCamera();
               if (!mounted) return;
-              navigator.push(
-                  MaterialPageRoute(builder: (_) => const LoadImage()));
+              navigator
+                  .push(MaterialPageRoute(builder: (_) => const LoadImage()));
             },
           ),
         ],
@@ -423,7 +426,8 @@ class _OcrPageState extends State<OcrPage>
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Debug images'),
-          subtitle: const Text('Show the binarized mask and matched Details crop'),
+          subtitle:
+              const Text('Show the binarized mask and matched Details crop'),
           value: _debugImageType == DebugImageType.on,
           onChanged: _setDebugEnabled,
         ),
@@ -685,7 +689,7 @@ class _OcrPageState extends State<OcrPage>
                     ]
                   : const [],
               onUserEdit: (_) => _userEditedFields.add(key),
-          ),
+            ),
     ];
     // Flare renders as a hard-set rank dropdown (I..IX, EX) instead of a
     // free-text field, and shows even when no reading landed so the rank can
@@ -722,8 +726,8 @@ class _OcrPageState extends State<OcrPage>
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              onPressed: () => setState(
-                  () => _histogramsExpanded = !_histogramsExpanded),
+              onPressed: () =>
+                  setState(() => _histogramsExpanded = !_histogramsExpanded),
               icon: Icon(
                 _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
                 size: 18,
@@ -930,7 +934,8 @@ class _FpsCounter extends StatelessWidget {
 }
 
 class _CameraRoiPainter extends CustomPainter {
-  _CameraRoiPainter(this.roiData, Listenable frameTick) : super(repaint: frameTick);
+  _CameraRoiPainter(this.roiData, Listenable frameTick)
+      : super(repaint: frameTick);
 
   final ValueNotifier<(List<Rectangle<int>>, int?)> roiData;
 

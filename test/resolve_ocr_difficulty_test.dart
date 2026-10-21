@@ -5,8 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   // A typical full singles spread: BEGINNER 5, BASIC 8, DIFFICULT 12,
   // EXPERT 16, CHALLENGE 18.
-  final full = Difficulty(
-      beginner: 5, easy: 8, medium: 12, hard: 16, challenge: 18);
+  final full =
+      Difficulty(beginner: 5, easy: 8, medium: 12, hard: 16, challenge: 18);
 
   group('resolveOcrDifficulty', () {
     test('exact in-game names resolve to themselves', () {
@@ -63,7 +63,8 @@ void main() {
           resolveOcrDifficulty('', full, notecounts: counts, totalNotes: 420),
           'EXPERT');
       expect(
-          resolveOcrDifficulty('qzw', full, notecounts: counts, totalNotes: 280),
+          resolveOcrDifficulty('qzw', full,
+              notecounts: counts, totalNotes: 280),
           'DIFFICULT');
     });
 
@@ -82,8 +83,7 @@ void main() {
     test('a total near several charts stays unresolved', () {
       final close = Difficulty(hard: 420, challenge: 424);
       expect(
-          resolveOcrDifficulty('',
-              Difficulty(hard: 16, challenge: 18),
+          resolveOcrDifficulty('', Difficulty(hard: 16, challenge: 18),
               notecounts: close, totalNotes: 422),
           null);
     });

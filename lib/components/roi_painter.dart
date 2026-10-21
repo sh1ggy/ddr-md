@@ -33,8 +33,7 @@ ui.Paragraph _labelFor(int i) => _labelCache.putIfAbsent(i, () {
       final builder = ui.ParagraphBuilder(_paragraphStyle)
         ..pushStyle(_textStyle)
         ..addText(i.toString());
-      return builder.build()
-        ..layout(const ui.ParagraphConstraints(width: 60));
+      return builder.build()..layout(const ui.ParagraphConstraints(width: 60));
     });
 
 // Draws each ROI rectangle (the details ROI in green, others in red) plus its
@@ -50,8 +49,9 @@ void paintRois(Canvas canvas, List<Rectangle<int>> rois, int? detailsRoiIndex) {
       roi.height.toDouble(),
     );
 
-    final paintToUse =
-        (detailsRoiIndex != null && i == detailsRoiIndex) ? _detailsPaint : _roiPaint;
+    final paintToUse = (detailsRoiIndex != null && i == detailsRoiIndex)
+        ? _detailsPaint
+        : _roiPaint;
     canvas.drawRect(rectToDraw, paintToUse);
 
     final label = _labelFor(i);
@@ -72,7 +72,8 @@ class RoiResultPainter extends CustomPainter {
   final int? detailsRoiIndex;
 
   @override
-  void paint(Canvas canvas, Size size) => paintRois(canvas, rois, detailsRoiIndex);
+  void paint(Canvas canvas, Size size) =>
+      paintRois(canvas, rois, detailsRoiIndex);
 
   @override
   bool shouldRepaint(covariant RoiResultPainter oldDelegate) =>

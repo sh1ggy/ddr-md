@@ -18,7 +18,8 @@ TimingPlay play(String song, String diff, double avg, double variation,
     );
 
 void main() {
-  test('player sync: chart plays first, tighter plays weigh more, then song, '
+  test(
+      'player sync: chart plays first, tighter plays weigh more, then song, '
       'then cabinet; override wins', () {
     final plays = [
       play('a', 'hard', -8, 5), // 8 FAST → +8

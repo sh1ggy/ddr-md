@@ -72,4 +72,5 @@ const appVer = "v1.0.1";
 // Links
 const linkedin = 'https://www.linkedin.com/in/tyrone-nolasco/';
 const github = 'https://github.com/sh1ggy';
-const paypalDono = 'https://www.paypal.com/donate/?business=Z2967WX5FNN8J&no_recurring=0&item_name=Thank+you+for+supporting+DDR+MD%21&currency_code=AUD';
+const paypalDono =
+    'https://www.paypal.com/donate/?business=Z2967WX5FNN8J&no_recurring=0&item_name=Thank+you+for+supporting+DDR+MD%21&currency_code=AUD';

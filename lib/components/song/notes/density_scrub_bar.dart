@@ -115,10 +115,10 @@ class _DensityPainter extends CustomPainter {
     final maxBar = size.height * 0.42;
     final barW = size.width / buckets.length;
     final paint = Paint();
-    final holdColor = const Color(0xFF39C46B)
-        .withValues(alpha: played ? 0.36 : 0.18);
-    final shockColor = const Color(0xFF79E7FF)
-        .withValues(alpha: played ? 0.95 : 0.55);
+    final holdColor =
+        const Color(0xFF39C46B).withValues(alpha: played ? 0.36 : 0.18);
+    final shockColor =
+        const Color(0xFF79E7FF).withValues(alpha: played ? 0.95 : 0.55);
     paint.color = Colors.white.withValues(alpha: 0.22);
     for (final (a, b) in highlightFractions) {
       final x = size.width * a;
@@ -212,8 +212,7 @@ class _DensityPainter extends CustomPainter {
     if (buckets.isEmpty) {
       // Fallback: a plain rounded track.
       canvas.drawRRect(
-          RRect.fromRectAndRadius(
-              Rect.fromLTWH(0, midY - 2.5, size.width, 5),
+          RRect.fromRectAndRadius(Rect.fromLTWH(0, midY - 2.5, size.width, 5),
               const Radius.circular(3)),
           Paint()..color = Colors.white24);
     } else {
@@ -227,8 +226,8 @@ class _DensityPainter extends CustomPainter {
       canvas.drawPicture(_playedPic!);
       canvas.restore();
       canvas.save();
-      canvas.clipRect(Rect.fromLTWH(
-          playedX, -4, size.width - playedX, size.height + 8));
+      canvas.clipRect(
+          Rect.fromLTWH(playedX, -4, size.width - playedX, size.height + 8));
       canvas.drawPicture(_unplayedPic!);
       canvas.restore();
     }

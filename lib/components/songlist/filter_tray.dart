@@ -35,8 +35,7 @@ class FilterTray extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: <Widget>[
-        for (final option in options)
-          _chip(context, option),
+        for (final option in options) _chip(context, option),
       ],
     );
   }

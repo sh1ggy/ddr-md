@@ -19,10 +19,12 @@ const int ocrPsmEng = 8; // PSM_SINGLE_WORD
 const int ocrPsmEngJP = 8; // PSM_SINGLE_WORD
 const int ocrGaussianBlurSize = 3; // must be odd
 const double ocrSimplificationEpsilon = 0.07;
-const double ocrResolutionScale = 3.0; // upscale factor applied to each ROI before binarization
-const int ocrTophatKernelSize = 41; // morphological top-hat kernel size (must be odd); sized for original ROI resolution (top-hat now runs before upscale)
-const int ocrMorphWidth = 360;  // HSV blob morphology opening kernel width
-const int ocrMorphHeight = 90;  // HSV blob morphology opening kernel height
+const double ocrResolutionScale =
+    3.0; // upscale factor applied to each ROI before binarization
+const int ocrTophatKernelSize =
+    41; // morphological top-hat kernel size (must be odd); sized for original ROI resolution (top-hat now runs before upscale)
+const int ocrMorphWidth = 360; // HSV blob morphology opening kernel width
+const int ocrMorphHeight = 90; // HSV blob morphology opening kernel height
 
 // Minimum normalised correlation (TM_CCOEFF_NORMED) for a candidate HSV blob
 // to be accepted as the "Details" badge by DetailsDetector. Range 0..1.
@@ -75,4 +77,3 @@ const List<(List<int>, (int, int))> ocrRoi = [
 //   ok                      ([1540, 1157, 1642, 1194], (0, 0))
 //   username_detection_box  ([1616, 160, 2093, 313], (0, 0))
 //   mode                    ([1686, 244, 1794, 292], (0, 0))
-

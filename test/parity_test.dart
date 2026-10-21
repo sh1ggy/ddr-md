@@ -20,15 +20,15 @@ List<StepNote> stream(List<(double, int)> steps, {double bpm = 150}) {
 }
 
 String render(List<StepNote> notes, Map<StepNote, ParityFoot> p) => notes
-    .map((n) => '${n.col}:${p[n] == ParityFoot.left ? "L" : p[n] == ParityFoot.right ? "R" : "?"}')
+    .map((n) =>
+        '${n.col}:${p[n] == ParityFoot.left ? "L" : p[n] == ParityFoot.right ? "R" : "?"}')
     .join(' ');
 
 void main() {
   const L = 0, D = 1, U = 2, R = 3;
 
   test('alternating LRLR stream uses alternating feet', () {
-    final notes =
-        stream([(0, L), (1, R), (2, L), (3, R), (4, L), (5, R)]);
+    final notes = stream([(0, L), (1, R), (2, L), (3, R), (4, L), (5, R)]);
     final p = assignParity(notes, Modes.singles);
     final feet = notes.map((n) => p[n]).toList();
     // Should strictly alternate (no doublesteps on an easy alternating run).
@@ -71,10 +71,30 @@ void main() {
     // SP Hard, beats 45–60. At beat 51 both feet land on Left+Right; the next
     // Left is a straightforward repeat for the foot already on that panel.
     final notes = stream([
-      (45, D), (45, U), (46, R), (47, L), (47, R), (48, D),
-      (49, D), (49, U), (50, L), (51, L), (51, R), (52, L),
-      (52.5, D), (53, R), (54, L), (54.5, D), (55, U), (56, R),
-      (56.5, D), (57, L), (58, D), (58.5, U), (59, L), (60, R),
+      (45, D),
+      (45, U),
+      (46, R),
+      (47, L),
+      (47, R),
+      (48, D),
+      (49, D),
+      (49, U),
+      (50, L),
+      (51, L),
+      (51, R),
+      (52, L),
+      (52.5, D),
+      (53, R),
+      (54, L),
+      (54.5, D),
+      (55, U),
+      (56, R),
+      (56.5, D),
+      (57, L),
+      (58, D),
+      (58.5, U),
+      (59, L),
+      (60, R),
     ], bpm: 178);
     final result = analyseParity(notes, Modes.singles);
     final jumpLeft = notes.firstWhere((n) => n.beat == 51 && n.col == L);
@@ -113,8 +133,17 @@ void main() {
     // a jack is free; switching feet there only dodges a slow doublestep and
     // leaves both feet on one panel.
     final notes = stream([
-      (0, L), (1, D), (3, D), (4, L), (5, D), (7, R),
-      (8, L), (9, R), (11, R), (12, D), (13, L),
+      (0, L),
+      (1, D),
+      (3, D),
+      (4, L),
+      (5, D),
+      (7, R),
+      (8, L),
+      (9, R),
+      (11, R),
+      (12, D),
+      (13, L),
     ], bpm: 199);
     final result = analyseParity(notes, Modes.singles);
     expect(result.feet[notes[2]], equals(result.feet[notes[1]]),
@@ -172,7 +201,8 @@ void main() {
           reason: 'stance $i has ${foot.name} off its own arrow');
       // ...and the other foot has not moved off where the last row left it.
       if (i > 0) {
-        final idle = foot == ParityFoot.left ? ParityFoot.right : ParityFoot.left;
+        final idle =
+            foot == ParityFoot.left ? ParityFoot.right : ParityFoot.left;
         expect(stance.columnsFor(idle),
             equals(result.stances[i - 1].columnsFor(idle)),
             reason: 'stance $i moved the idle ${idle.name} foot');
@@ -266,8 +296,7 @@ void main() {
     }
   });
 
-  test('a note on a freeze tail is stepped, not bracketed with the freeze',
-      () {
+  test('a note on a freeze tail is stepped, not bracketed with the freeze', () {
     // The freeze foot is free at its tail, so it shouldn't stay heel-on-Left,
     // toe-on-Up to take the Up there.
     StepNote hold(double t, int col, double end) => StepNote(
@@ -301,8 +330,8 @@ void main() {
 
     final result = analyseParity(notes, Modes.singles);
     for (final stance in result.stances) {
-      expect(stance.leftHeel == stance.rightHeel && stance.leftHeel != -1,
-          isFalse,
+      expect(
+          stance.leftHeel == stance.rightHeel && stance.leftHeel != -1, isFalse,
           reason: 'both feet on column ${stance.leftHeel} '
               'at s=${stance.second}');
     }
@@ -324,7 +353,11 @@ void main() {
     // PARANOiA Revolution m142: the stream after the break alternates cleanly
     // only if the jump before it lands crossed, which the solver used to take.
     final notes = stream([
-      (0, R), (0.25, L), (0.5, U), (2, L), (2, R),
+      (0, R),
+      (0.25, L),
+      (0.5, U),
+      (2, L),
+      (2, R),
       for (final (i, c) in [R, U, R, U, L, U, L, D, L, D].indexed)
         (8 + i * 0.25, c),
     ], bpm: 180);

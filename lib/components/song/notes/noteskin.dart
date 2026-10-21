@@ -81,13 +81,13 @@ class QuantColors {
 /// per repaint pass (cheap) and asked to draw each element at a canvas point.
 abstract class Noteskin {
   /// A tap/step arrow centred at (x,y), oriented by [dir], coloured by [beat].
-  void paintArrow(Canvas canvas, double x, double y, double size, NoteDir dir,
-      double beat);
+  void paintArrow(
+      Canvas canvas, double x, double y, double size, NoteDir dir, double beat);
 
   /// The head of a freeze/hold (or roll) at (x,y), oriented by [dir]. Skins
   /// without dedicated art draw it as a tap arrow of [beat].
-  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
-      double beat);
+  void paintHoldHead(
+      Canvas canvas, double x, double y, double size, NoteDir dir, double beat);
 
   /// A freeze/hold (or roll) body running from the head at [yHead] down to the
   /// tail at [yTail] in one lane.
@@ -170,8 +170,7 @@ double receptorRecoilCurve(double progress) {
   // Grow to the peak over the first half; hold that size and fade over the
   // second. It never expands while fading — that hold is the DDR look.
   final scale = p < 0.5
-      ? noteFlashStartScale +
-          (noteFlashPeakScale - noteFlashStartScale) * 2 * p
+      ? noteFlashStartScale + (noteFlashPeakScale - noteFlashStartScale) * 2 * p
       : noteFlashPeakScale;
   final alpha = p < 0.5 ? 1.0 : 1.0 - (p - 0.5) * 2;
   return (scale, alpha);
@@ -317,8 +316,8 @@ class VectorNoteskin implements Noteskin {
   }
 
   @override
-  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
-          double beat) =>
+  void paintHoldHead(Canvas canvas, double x, double y, double size,
+          NoteDir dir, double beat) =>
       paintArrow(canvas, x, y, size, dir, beat);
 
   @override
@@ -350,8 +349,8 @@ class VectorNoteskin implements Noteskin {
   }
 
   @override
-  void paintHoldTail(
-      Canvas canvas, double x, double y, double size, NoteDir dir, bool isRoll) {
+  void paintHoldTail(Canvas canvas, double x, double y, double size,
+      NoteDir dir, bool isRoll) {
     final img = _glyphImage(isRoll ? _rollColor : _holdColor, tail: true);
     canvas.save();
     canvas.translate(x, y);
@@ -552,7 +551,8 @@ class VectorNoteskin implements Noteskin {
 
   static Color _lighten(Color c, double amt) =>
       Color.lerp(c, Colors.white, amt)!;
-  static Color _darken(Color c, double amt) => Color.lerp(c, Colors.black, amt)!;
+  static Color _darken(Color c, double amt) =>
+      Color.lerp(c, Colors.black, amt)!;
 }
 
 /// Sprite-backed noteskin using real DDR World arrow art from assets/noteskin/ —
@@ -619,12 +619,12 @@ class SpriteNoteskin implements Noteskin {
       final note = await _load('assets/noteskin/note.png');
       // NoteDir order: left, down, up, right (see enum NoteDir).
       const dirNames = ['left', 'down', 'up', 'right'];
-      Future<List<ui.Image>> perDir(String name) => Future.wait(
-          dirNames.map((d) => _load('assets/noteskin/$name'.replaceAll('*', d))));
+      Future<List<ui.Image>> perDir(String name) => Future.wait(dirNames
+          .map((d) => _load('assets/noteskin/$name'.replaceAll('*', d))));
       ui.Image? shockRow;
       try {
-        shockRow =
-            await _featherShockRow(await _load('assets/noteskin/shock-row.png'));
+        shockRow = await _featherShockRow(
+            await _load('assets/noteskin/shock-row.png'));
       } catch (_) {
         // Older asset bundles keep the fallback shock rendering.
       }
@@ -660,8 +660,7 @@ class SpriteNoteskin implements Noteskin {
 
   static Future<ui.Image> _load(String asset) async {
     final data = await rootBundle.load(asset);
-    final codec =
-        await ui.instantiateImageCodec(data.buffer.asUint8List());
+    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
     final frame = await codec.getNextFrame();
     return frame.image;
   }
@@ -686,8 +685,8 @@ class SpriteNoteskin implements Noteskin {
   }
 
   void _drawImage(Canvas canvas, ui.Image img, Rect dst, {Paint? paint}) {
-    final src = Rect.fromLTWH(
-        0, 0, img.width.toDouble(), img.height.toDouble());
+    final src =
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble());
     canvas.drawImageRect(img, src, dst, paint ?? _plainPaint);
   }
 
@@ -705,8 +704,8 @@ class SpriteNoteskin implements Noteskin {
   }
 
   @override
-  void paintHoldHead(Canvas canvas, double x, double y, double size, NoteDir dir,
-      double beat) {
+  void paintHoldHead(Canvas canvas, double x, double y, double size,
+      NoteDir dir, double beat) {
     final head = _holdHead;
     if (head == null) return paintArrow(canvas, x, y, size, dir, beat);
     canvas.save();
@@ -768,8 +767,8 @@ class SpriteNoteskin implements Noteskin {
   }
 
   @override
-  void paintHoldTail(
-      Canvas canvas, double x, double y, double size, NoteDir dir, bool isRoll) {
+  void paintHoldTail(Canvas canvas, double x, double y, double size,
+      NoteDir dir, bool isRoll) {
     final w = size * _freezeScale;
     _drawImage(canvas, _holdTails[dir.index],
         Rect.fromCenter(center: Offset(x, y), width: w, height: w),
@@ -797,8 +796,7 @@ class SpriteNoteskin implements Noteskin {
     _drawImage(canvas, _note, dst,
         paint: Paint()
           ..blendMode = BlendMode.plus
-          ..colorFilter =
-              const ColorFilter.mode(Colors.white, BlendMode.srcIn)
+          ..colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcIn)
           ..color = Colors.white.withValues(alpha: alpha * 0.45)
           ..filterQuality = FilterQuality.medium);
     canvas.restore();
@@ -835,10 +833,26 @@ class SpriteNoteskin implements Noteskin {
   static final Paint _shockArrowPaint = Paint()
     ..filterQuality = FilterQuality.medium
     ..colorFilter = const ColorFilter.matrix([
-      0.265155, 0.265155, 0.265155, 0.000000, 32.129194,
-      0.263384, 0.263384, 0.263384, 0.000000, 63.284161,
-      0.263384, 0.263384, 0.263384, 0.000000, 67.451100,
-      0.000000, 0.000000, 0.000000, 1.000000, 0.000000,
+      0.265155,
+      0.265155,
+      0.265155,
+      0.000000,
+      32.129194,
+      0.263384,
+      0.263384,
+      0.263384,
+      0.000000,
+      63.284161,
+      0.263384,
+      0.263384,
+      0.263384,
+      0.000000,
+      67.451100,
+      0.000000,
+      0.000000,
+      0.000000,
+      1.000000,
+      0.000000,
     ]);
 
   static final Paint _shockAuraPaint = Paint()
@@ -857,10 +871,13 @@ class SpriteNoteskin implements Noteskin {
     const extent = arrow + padding * 2;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    canvas.saveLayer(const Rect.fromLTWH(0, 0, extent, extent), Paint()
-      ..imageFilter = ui.ImageFilter.blur(
-          sigmaX: arrow * 0.055, sigmaY: arrow * 0.055));
-    canvas.drawImageRect(note,
+    canvas.saveLayer(
+        const Rect.fromLTWH(0, 0, extent, extent),
+        Paint()
+          ..imageFilter = ui.ImageFilter.blur(
+              sigmaX: arrow * 0.055, sigmaY: arrow * 0.055));
+    canvas.drawImageRect(
+        note,
         Rect.fromLTWH(0, 0, note.width.toDouble(), note.height.toDouble()),
         const Rect.fromLTWH(padding, padding, arrow, arrow),
         _shockAuraPaint);
@@ -888,10 +905,18 @@ class SpriteNoteskin implements Noteskin {
           cell,
           Paint()
             ..blendMode = BlendMode.dstIn
-            ..shader = ui.Gradient.linear(cell.topCenter, cell.bottomCenter,
-                const [Color(0x00FFFFFF), Color(0xFFFFFFFF),
-                  Color(0xFFFFFFFF), Color(0x00FFFFFF)],
-                const [0.0, 0.125, 0.875, 1.0]));
+            ..shader = ui.Gradient.linear(
+                cell.topCenter, cell.bottomCenter, const [
+              Color(0x00FFFFFF),
+              Color(0xFFFFFFFF),
+              Color(0xFFFFFFFF),
+              Color(0x00FFFFFF)
+            ], const [
+              0.0,
+              0.125,
+              0.875,
+              1.0
+            ]));
     }
     canvas.restore();
     final picture = recorder.endRecording();
@@ -902,8 +927,9 @@ class SpriteNoteskin implements Noteskin {
   }
 
   @override
-  void paintShock(Canvas canvas, List<(double x, NoteDir dir)> lanes, double y,
-      double size, {double chartSecond = 0}) {
+  void paintShock(
+      Canvas canvas, List<(double x, NoteDir dir)> lanes, double y, double size,
+      {double chartSecond = 0}) {
     final row = _shockRow;
     if (row != null && lanes.isNotEmpty) {
       final sorted = [...lanes]..sort((a, b) => a.$1.compareTo(b.$1));
@@ -913,9 +939,11 @@ class SpriteNoteskin implements Noteskin {
         canvas.save();
         canvas.translate(x, y);
         canvas.rotate(rotationForDir(dir));
-        _drawImage(canvas, _shockAura,
-            Rect.fromCenter(center: Offset.zero,
-                width: size * 1.5, height: size * 1.5),
+        _drawImage(
+            canvas,
+            _shockAura,
+            Rect.fromCenter(
+                center: Offset.zero, width: size * 1.5, height: size * 1.5),
             paint: _shockAuraStampPaint);
         canvas.restore();
       }
@@ -940,8 +968,8 @@ class SpriteNoteskin implements Noteskin {
         final right = sorted[i + count - 1].$1 + size / 2;
         canvas.drawImageRect(
             row,
-            Rect.fromLTWH((frame % 2) * frameW,
-                (frame ~/ 2) * frameH, frameW, frameH),
+            Rect.fromLTWH(
+                (frame % 2) * frameW, (frame ~/ 2) * frameH, frameW, frameH),
             Rect.fromLTRB(left, y - size / 2, right, y + size / 2),
             _shockPaint);
       }

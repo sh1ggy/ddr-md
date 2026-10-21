@@ -215,7 +215,8 @@ class DdrAtlas {
   // [rgba] is premultiplied: that is how the engine reads raw pixels.
   static Future<ui.Image> _image(int w, int h, Uint8List rgba) {
     final done = Completer<ui.Image>();
-    ui.decodeImageFromPixels(rgba, w, h, ui.PixelFormat.rgba8888, done.complete);
+    ui.decodeImageFromPixels(
+        rgba, w, h, ui.PixelFormat.rgba8888, done.complete);
     return done.future;
   }
 

@@ -8,7 +8,9 @@ import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('MINIMAL lands inside the panels and keeps the shoulders calmer than STANDARD', () {
+  test(
+      'MINIMAL lands inside the panels and keeps the shoulders calmer than STANDARD',
+      () {
     const l = 0, d = 1, u = 2, r = 3;
     // Staircases, both crossovers, a jack and a jump, at 16ths of 150 BPM.
     final cols = [l, d, u, r, u, d, l, d, r, d, l, u, r, u, l, l, d, r];

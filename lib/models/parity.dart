@@ -95,7 +95,13 @@ class _Foot {
   static const List<int> heels = [leftHeel, rightHeel];
 
   /// The other part of the same physical foot (heel<->toe), NONE for NONE.
-  static const List<int> otherPart = [none, leftToe, leftHeel, rightToe, rightHeel];
+  static const List<int> otherPart = [
+    none,
+    leftToe,
+    leftHeel,
+    rightToe,
+    rightHeel
+  ];
 
   static bool isLeft(int f) => f == leftHeel || f == leftToe;
 
@@ -180,23 +186,30 @@ class ParityWeights {
   final double sideswitch;
 
   factory ParityWeights.fromJson(Map<String, dynamic> j) => ParityWeights(
-        doublestep: (j['doublestep'] as num?)?.toDouble() ?? defaults.doublestep,
-        bracketJack: (j['bracketJack'] as num?)?.toDouble() ?? defaults.bracketJack,
+        doublestep:
+            (j['doublestep'] as num?)?.toDouble() ?? defaults.doublestep,
+        bracketJack:
+            (j['bracketJack'] as num?)?.toDouble() ?? defaults.bracketJack,
         jack: (j['jack'] as num?)?.toDouble() ?? defaults.jack,
         jump: (j['jump'] as num?)?.toDouble() ?? defaults.jump,
-        slowBracket: (j['slowBracket'] as num?)?.toDouble() ?? defaults.slowBracket,
-        twistedFoot: (j['twistedFoot'] as num?)?.toDouble() ?? defaults.twistedFoot,
+        slowBracket:
+            (j['slowBracket'] as num?)?.toDouble() ?? defaults.slowBracket,
+        twistedFoot:
+            (j['twistedFoot'] as num?)?.toDouble() ?? defaults.twistedFoot,
         xoBr: (j['xoBr'] as num?)?.toDouble() ?? defaults.xoBr,
         mine: (j['mine'] as num?)?.toDouble() ?? defaults.mine,
-        footswitch: (j['footswitch'] as num?)?.toDouble() ?? defaults.footswitch,
-        missedFootswitch: (j['missedFootswitch'] as num?)?.toDouble() ?? defaults.missedFootswitch,
+        footswitch:
+            (j['footswitch'] as num?)?.toDouble() ?? defaults.footswitch,
+        missedFootswitch: (j['missedFootswitch'] as num?)?.toDouble() ??
+            defaults.missedFootswitch,
         facing: (j['facing'] as num?)?.toDouble() ?? defaults.facing,
         distance: (j['distance'] as num?)?.toDouble() ?? defaults.distance,
         spin: (j['spin'] as num?)?.toDouble() ?? defaults.spin,
         startXo: (j['startXo'] as num?)?.toDouble() ?? defaults.startXo,
         samePanel: (j['samePanel'] as num?)?.toDouble() ?? defaults.samePanel,
         bracket: (j['bracket'] as num?)?.toDouble() ?? defaults.bracket,
-        sideswitch: (j['sideswitch'] as num?)?.toDouble() ?? defaults.sideswitch,
+        sideswitch:
+            (j['sideswitch'] as num?)?.toDouble() ?? defaults.sideswitch,
       );
 
   Map<String, double> toJson() => {
@@ -318,7 +331,8 @@ bool _doFeetOverlap(int oldHeel, int oldToe, int newHeel, int newToe) {
   return false;
 }
 
-double _clamp(double v, double lo, double hi) => v < lo ? lo : (v > hi ? hi : v);
+double _clamp(double v, double lo, double hi) =>
+    v < lo ? lo : (v > hi ? hi : v);
 
 // ---------------------------------------------------------------------------
 // Rows & states.
@@ -718,7 +732,8 @@ class _ParityEngine {
     );
   }
 
-  _Placement _placement(_State initial, _State result, _Row? lastRow, _Row row) {
+  _Placement _placement(
+      _State initial, _State result, _Row? lastRow, _Row row) {
     final prevNonHeld = List<bool>.filled(5, false);
     final nonHeld = List<bool>.filled(5, false);
     for (int i = 0; i < layout.columnCount; i++) {
@@ -732,7 +747,8 @@ class _ParityEngine {
       }
     }
 
-    final prevMovedLeft = prevNonHeld[_Foot.leftHeel] || prevNonHeld[_Foot.leftToe];
+    final prevMovedLeft =
+        prevNonHeld[_Foot.leftHeel] || prevNonHeld[_Foot.leftToe];
     final prevMovedRight =
         prevNonHeld[_Foot.rightHeel] || prevNonHeld[_Foot.rightToe];
     final movedLeft = nonHeld[_Foot.leftHeel] || nonHeld[_Foot.leftToe];
@@ -752,8 +768,8 @@ class _ParityEngine {
     final jumped = movedLeft && movedRight;
 
     final leftJack = !jumped &&
-        _doFeetOverlap(
-            initial.leftHeel, initial.leftToe, result.leftHeel, result.leftToe) &&
+        _doFeetOverlap(initial.leftHeel, initial.leftToe, result.leftHeel,
+            result.leftToe) &&
         prevMovedLeft &&
         movedLeft;
     final rightJack = !jumped &&
@@ -764,12 +780,14 @@ class _ParityEngine {
 
     final leftDoubleStep =
         prevMovedLeft && movedLeft && !jumped && !leftJack && !previousJumped;
-    final rightDoubleStep =
-        prevMovedRight && movedRight && !jumped && !rightJack && !previousJumped;
+    final rightDoubleStep = prevMovedRight &&
+        movedRight &&
+        !jumped &&
+        !rightJack &&
+        !previousJumped;
 
     return _Placement(
-      previousLeftPos:
-          layout.averagePoint(initial.leftHeel, initial.leftToe),
+      previousLeftPos: layout.averagePoint(initial.leftHeel, initial.leftToe),
       previousRightPos:
           layout.averagePoint(initial.rightHeel, initial.rightToe),
       leftPos: layout.averagePoint(result.leftHeel, result.leftToe),
@@ -836,9 +854,7 @@ class _ParityEngine {
     if (d.jumped) total += weights.jump / elapsed;
 
     // SLOW_BRACKET
-    if (elapsed > 0.15 &&
-        (d.leftBracket || d.rightBracket) &&
-        !d.jumped) {
+    if (elapsed > 0.15 && (d.leftBracket || d.rightBracket) && !d.jumped) {
       total += math.min(0.5, elapsed - 0.15) * weights.slowBracket;
     }
 
@@ -875,9 +891,7 @@ class _ParityEngine {
     }
 
     // JACK: same foot same arrow, penalised when fast.
-    if (elapsed < 0.125 &&
-        (d.leftJack || d.rightJack) &&
-        !d.previousJumped) {
+    if (elapsed < 0.125 && (d.leftJack || d.rightJack) && !d.previousJumped) {
       total += (1 / elapsed - 1 / 0.125) * weights.jack;
     }
 
@@ -1221,5 +1235,6 @@ ParityResult analyseParity(List<StepNote> notes, Modes mode,
 
 /// Convenience for callers that only want the per-note L/R badges.
 Map<StepNote, ParityFoot> assignParity(List<StepNote> notes, Modes mode,
-        {bool allowBrackets = true, Map<StepNote, ParityFoot> pins = const {}}) =>
+        {bool allowBrackets = true,
+        Map<StepNote, ParityFoot> pins = const {}}) =>
     analyseParity(notes, mode, allowBrackets: allowBrackets, pins: pins).feet;
