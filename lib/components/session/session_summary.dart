@@ -3,7 +3,8 @@
 /// Description: How a session's e-amusement plays went as a whole: their
 /// average score against what your history says you'd average on that same
 /// mix of charts, as a you-vs-usual bar over each play's gap in play order,
-/// with the average level, upscores and, when timing was logged, its offset.
+/// with the average level, level range, upscores and, when timing was
+/// logged, its offset.
 /// Failed plays (an E) count for less.
 library;
 
@@ -31,7 +32,11 @@ double _weight(RecentPlay p) => p.failed ? _failWeight : 1;
 
 class SetSummary {
   SetSummary(
-      {required this.points, required this.level, required this.upscores});
+      {required this.points,
+      required this.level,
+      this.lowest,
+      this.highest,
+      required this.upscores});
 
   /// Each play with a score, a level and a usual, newest first, with what
   /// it counts for in the averages.
@@ -40,6 +45,9 @@ class SetSummary {
 
   /// The charts' average level.
   final double? level;
+
+  /// The easiest and hardest charts' levels.
+  final int? lowest, highest;
 
   /// Charts a play upscored: set the best they have now.
   final int upscores;
@@ -138,6 +146,8 @@ class ScoreModel {
               (play: p, level: l, usual: u, weight: _weight(p)),
       ],
       level: known.isEmpty ? null : _mean(known),
+      lowest: known.isEmpty ? null : known.reduce(min),
+      highest: known.isEmpty ? null : known.reduce(max),
       upscores: {
         for (final p in plays)
           if (p.score != null && best(p) != null && p.score! >= best(p)!)
@@ -205,13 +215,14 @@ class SessionSummaryBody extends StatelessWidget {
             label: 'Avg level',
             child: summary.level == null
                 ? const _StatText('–')
-                : Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: LevelNumber(
-                        level: summary.level!.round(),
-                        difficulty: _mostPlayed(plays),
-                        height: 20),
-                  ),
+                : _Levels([summary.level!.round()]),
+          ),
+          _Stat(
+            label: 'Levels',
+            child: switch ((summary.lowest, summary.highest)) {
+              (final lo?, final hi?) => _Levels([lo, if (hi != lo) hi]),
+              _ => const _StatText('–'),
+            },
           ),
           _Stat(
             label: 'Upscores',
@@ -242,13 +253,32 @@ class SessionSummaryBody extends StatelessWidget {
   }
 }
 
-/// The difficulty most of [plays] were on, to colour their average level.
-String _mostPlayed(List<RecentPlay> plays) {
-  final counts = <String, int>{};
-  for (final p in plays) {
-    counts[p.difficulty] = (counts[p.difficulty] ?? 0) + 1;
-  }
-  return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+/// [levels] in the cabinet's numerals, greyed since they span charts, with
+/// a dash between two.
+class _Levels extends StatelessWidget {
+  const _Levels(this.levels);
+
+  final List<int> levels;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 3),
+        // Four stats share the row on a phone; shrinks rather than
+        // overflows on a wide range like 9 – 19.
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: ColorFiltered(
+            colorFilter: kGreyLevel,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              for (final (i, l) in levels.indexed) ...[
+                if (i > 0) const _StatText(' – '),
+                LevelNumber(level: l, difficulty: 'EXPERT', height: 20),
+              ],
+            ]),
+          ),
+        ),
+      );
 }
 
 class _Stat extends StatelessWidget {

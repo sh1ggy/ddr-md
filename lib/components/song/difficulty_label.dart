@@ -239,15 +239,16 @@ class LevelPicker extends StatefulWidget {
   State<LevelPicker> createState() => _LevelPickerState();
 }
 
+/// Greys a level's numerals, for a level that isn't one chart's.
+const kGreyLevel = ColorFilter.matrix([
+  0.33, 0.33, 0.33, 0, 0, //
+  0.33, 0.33, 0.33, 0, 0,
+  0.33, 0.33, 0.33, 0, 0,
+  0, 0, 0, 1, 0,
+]);
+
 class _LevelPickerState extends State<LevelPicker> {
   bool? _low;
-
-  static const _grey = ColorFilter.matrix([
-    0.33, 0.33, 0.33, 0, 0, //
-    0.33, 0.33, 0.33, 0, 0,
-    0.33, 0.33, 0.33, 0, 0,
-    0, 0, 0, 1, 0,
-  ]);
 
   @override
   Widget build(BuildContext context) {
@@ -264,7 +265,7 @@ class _LevelPickerState extends State<LevelPicker> {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: widget.isSelected(l)
               ? number
-              : ColorFiltered(colorFilter: _grey, child: number),
+              : ColorFiltered(colorFilter: kGreyLevel, child: number),
         ),
       );
     }
@@ -280,7 +281,7 @@ class _LevelPickerState extends State<LevelPicker> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               child: ColorFiltered(
-                colorFilter: _grey,
+                colorFilter: kGreyLevel,
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(showLow ? Icons.chevron_left : Icons.chevron_right,
                       size: widget.height * 0.8),
