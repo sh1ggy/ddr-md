@@ -45,12 +45,15 @@ class HomeCard extends StatelessWidget {
     super.key,
     required this.title,
     required this.icon,
+    this.heading,
     this.onMore,
     required this.children,
   });
 
   final String title;
   final IconData icon;
+  // Stands in for the [CardHeading], e.g. a button asking for the title.
+  final Widget? heading;
   final VoidCallback? onMore;
   final List<Widget> children;
 
@@ -69,7 +72,7 @@ class HomeCard extends StatelessWidget {
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: CardHeading(title, icon: icon),
+                    child: heading ?? CardHeading(title, icon: icon),
                   ),
                 ),
                 if (onMore != null)
@@ -222,15 +225,7 @@ class _PlayCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: song == null
-            ? null
-            : () {
-                final songState = context.read<SongState>();
-                if (songState.modes != play.mode) {
-                  songState.setMode(play.mode);
-                }
-                context.push(songPath(song, difficulty: index < 0 ? 0 : index));
-              },
+        onTap: song == null ? null : () => _openChart(context, play),
         child: Stack(children: [
           Padding(
             padding: const EdgeInsets.all(8),
@@ -238,7 +233,7 @@ class _PlayCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(children: [
-                  _Jacket(song: play.song),
+                  _Jacket(song: play.song, size: 40),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -296,9 +291,111 @@ class _PlayCard extends StatelessWidget {
   }
 }
 
+/// Opens the song page on [play]'s chart.
+void _openChart(BuildContext context, RecentPlay play) {
+  final (:song, :index, level: _) = playChart(play);
+  final songState = context.read<SongState>();
+  if (songState.modes != play.mode) songState.setMode(play.mode);
+  context.push(songPath(song!, difficulty: index < 0 ? 0 : index));
+}
+
+/// The [count] highest scores among [plays], best first, one per chart.
+class TopPlays extends StatelessWidget {
+  const TopPlays(
+      {super.key, required this.plays, required this.bests, this.count = 4});
+
+  final List<RecentPlay> plays;
+  final Map<String, int?> bests;
+  final int count;
+
+  static const _gap = 6.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final best = <String, RecentPlay>{};
+    for (final p in plays) {
+      if (p.score == null) continue;
+      final kept = best[p.recordId];
+      if (kept == null || p.score! > kept.score!) best[p.recordId] = p;
+    }
+    final top = (best.values.toList()
+          ..sort((a, b) => b.score!.compareTo(a.score!)))
+        .take(count)
+        .toList();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < count; i++) ...[
+          if (i > 0) const SizedBox(width: _gap),
+          Expanded(
+            child: i < top.length
+                ? _CompactPlayCard(play: top[i], best: bests[top[i].recordId])
+                : const SizedBox(),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A play small enough for four in a row: the jacket, the score under it and
+/// the chart. A play that set the chart's best carries the up arrow.
+class _CompactPlayCard extends StatelessWidget {
+  const _CompactPlayCard({required this.play, required this.best});
+
+  final RecentPlay play;
+  final int? best;
+
+  @override
+  Widget build(BuildContext context) {
+    final (:song, index: _, :level) = playChart(play);
+    final isBest = best != null && play.score! >= best!;
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: song == null ? null : () => _openChart(context, play),
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Stack(children: [
+                AspectRatio(aspectRatio: 1, child: _Jacket(song: play.song)),
+                if (isBest)
+                  const Positioned(
+                      top: 3, right: 3, child: BestBadge(size: 11)),
+              ]),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(formatScore(play.score!),
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: [FontFeature.tabularFigures()])),
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: DifficultyLabel(
+                    difficulty: play.difficulty, level: level, height: 11),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Marks a play that set the chart's best: an up arrow in a primary circle.
 class BestBadge extends StatelessWidget {
-  const BestBadge({super.key});
+  const BestBadge({super.key, this.size = 14});
+
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -309,8 +406,8 @@ class BestBadge extends StatelessWidget {
         padding: const EdgeInsets.all(2),
         decoration:
             BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
-        child:
-            Icon(Icons.arrow_upward_rounded, size: 14, color: scheme.onPrimary),
+        child: Icon(Icons.arrow_upward_rounded,
+            size: size, color: scheme.onPrimary),
       ),
     );
   }
@@ -350,11 +447,11 @@ class _Score extends StatelessWidget {
 /// A song's jacket, or the song list's music note when it has none or the
 /// play matched no song.
 class _Jacket extends StatelessWidget {
-  const _Jacket({required this.song});
+  const _Jacket({required this.song, this.size});
 
   final String? song;
-
-  static const _size = 40.0;
+  // Fills its parent when null.
+  final double? size;
 
   @override
   Widget build(BuildContext context) {
@@ -365,8 +462,9 @@ class _Jacket extends StatelessWidget {
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: SizedBox.square(
-        dimension: _size,
+      child: SizedBox(
+        width: size ?? double.infinity,
+        height: size ?? double.infinity,
         child: song == null
             ? fallback
             : Image(

@@ -110,12 +110,12 @@ class LastSessionCard extends StatelessWidget {
         }
         return HomeCard(
           title: visit.session?.venue.name ?? 'Last session',
-          icon: visit.session == null ? Icons.insights : Icons.place,
+          icon: Icons.place,
+          heading: visit.session == null ? _WhereHeading(visit) : null,
           onMore: () => context.push(_path(visit)),
           children: [
             CardSubtitle(
                 '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
-            if (visit.session == null) _WhereButton(visit),
             SessionSummaryBody(
               data.model.summarize(visit.plays),
               plays: visit.plays,
@@ -123,7 +123,7 @@ class LastSessionCard extends StatelessWidget {
               timingMs: _meanTiming(data.timing[visit.session?.id]),
             ),
             const SizedBox(height: 8),
-            PlayGrid(plays: visit.plays, bests: data.model.bests, rows: 1),
+            TopPlays(plays: visit.plays, bests: data.model.bests),
           ],
         );
       },
@@ -131,31 +131,37 @@ class LastSessionCard extends StatelessWidget {
   }
 }
 
-/// Picks the venue a set was played at and records a session over it.
-class _WhereButton extends StatelessWidget {
-  const _WhereButton(this.visit, {this.onAdded});
+/// The heading of a set no session covers: tap to pick the venue it was
+/// played at, which records a session over it.
+class _WhereHeading extends StatelessWidget {
+  const _WhereHeading(this.visit, {this.onAdded});
 
   final Visit visit;
   final void Function(PlaySession)? onAdded;
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ActionChip(
-        avatar: const Icon(Icons.add_location_alt_outlined, size: 18),
-        label: const Text('Where was this?'),
-        onPressed: () async {
-          final session = await showModalBottomSheet<PlaySession>(
-            context: context,
-            builder: (_) => _VenueSheet(visit),
-          );
-          if (session != null && context.mounted) {
-            context.read<SessionState>().changed();
-            onAdded?.call(session);
-          }
-        },
+    final scheme = Theme.of(context).colorScheme;
+    return TextButton.icon(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        textStyle: Theme.of(context)
+            .textTheme
+            .titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700),
       ),
+      icon: Icon(Icons.add_location_alt_outlined, color: scheme.primary),
+      label: const Text('Where was this?'),
+      onPressed: () async {
+        final session = await showModalBottomSheet<PlaySession>(
+          context: context,
+          builder: (_) => _VenueSheet(visit),
+        );
+        if (session != null && context.mounted) {
+          context.read<SessionState>().changed();
+          onAdded?.call(session);
+        }
+      },
     );
   }
 }
@@ -404,13 +410,14 @@ class VisitPage extends StatelessWidget {
               HomeCard(
                 title: 'Summary',
                 icon: Icons.insights,
+                heading: visit.session == null
+                    ? _WhereHeading(visit,
+                        onAdded: (s) =>
+                            context.replace('/home/sessions/${s.id}'))
+                    : null,
                 children: [
                   CardSubtitle(
                       '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
-                  if (visit.session == null)
-                    _WhereButton(visit,
-                        onAdded: (s) =>
-                            context.replace('/home/sessions/${s.id}')),
                   if (visit.plays.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 6),
