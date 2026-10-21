@@ -144,6 +144,8 @@ typedef EamusePlay = ({
   String playedAt,
   String detailPath,
   int? score,
+  // Ranked E: the lifebar ran out.
+  bool failed,
 });
 
 /// The recent plays page, newest first.
@@ -172,6 +174,9 @@ List<EamusePlay> parseEamuseRecent(String source) {
               detailPath: link.attributes['href']!,
               score: int.tryParse(
                   row.querySelector('td.score')?.text.trim() ?? ''),
+              failed: _ranks[_imageName(row, 'td.rank')
+                      .replaceFirst(RegExp(r'^rank_(s_)?'), '')] ==
+                  'E',
             )
   ];
 }

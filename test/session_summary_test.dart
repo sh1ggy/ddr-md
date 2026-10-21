@@ -50,7 +50,28 @@ void main() {
     expect(s.points.length, 2);
     expect(s.average, 930000);
     expect(s.usual, closeTo((930000 + 933333) / 2, 1));
-    expect(s.bests, 1);
+    expect(s.upscores, 1);
+  });
+
+  test('a failed play counts for a quarter of a cleared one', () {
+    final history = [
+      play('a', 0, 900000),
+      RecentPlay(
+          konamiId: 'b',
+          title: 'b',
+          song: 'b',
+          mode: Modes.singles,
+          difficulty: 'EXPERT',
+          playedAt: t,
+          score: 400000,
+          failed: true),
+      play('a', 48, 900000),
+      play('b', 48, 900000),
+    ];
+    final s = ScoreModel(history, [], (_, __, ___) => 15)
+        .summarize(history.take(2).toList());
+    expect(s.average, (900000 + 0.25 * 400000) / 1.25);
+    expect(s.usual, 900000);
   });
 
   test('plays join the session running when they were played', () {

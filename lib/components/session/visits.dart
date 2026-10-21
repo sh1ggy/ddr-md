@@ -10,6 +10,7 @@ library;
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
+import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
@@ -26,6 +27,8 @@ typedef VisitData = ({
   ScoreModel model,
   // Each session's logged timing plays, by session id.
   Map<String, List<TimingPlay>> timing,
+  // The last credit played, which the next session starts like.
+  Credit? lastCredit,
 });
 
 (int, int)? _loadedFor;
@@ -62,6 +65,7 @@ Future<VisitData> _load(String? activeId) async {
       for (final s in sessions)
         s.id: await DatabaseProvider.getSessionPlays(s.id),
     },
+    lastCredit: await DatabaseProvider.getLatestCredit(),
   );
 }
 
@@ -72,7 +76,7 @@ double? _meanTiming(List<TimingPlay>? plays) => plays == null || plays.isEmpty
     : plays.map((t) => t.averageMs).reduce((a, b) => a + b) / plays.length;
 
 /// Home's latest session with plays (or the latest at all before any sync):
-/// its summary and first plays.
+/// its summary and first plays, then the sessions before it.
 class LastSessionCard extends StatelessWidget {
   const LastSessionCard({super.key});
 
@@ -85,9 +89,26 @@ class LastSessionCard extends StatelessWidget {
         final data = snapshot.data;
         if (data == null) return const SizedBox.shrink();
         final visit = data.visits.where((v) => v.plays.isNotEmpty).firstOrNull;
+        final others = [
+          for (final v in data.visits)
+            if (v != visit) v
+        ];
+        if (visit == null && sync.charts == 0) {
+          return others.isEmpty
+              ? const SizedBox.shrink()
+              : HomeCard(
+                  title: 'Past sessions',
+                  icon: Icons.place_outlined,
+                  onMore: others.length > _SessionsSection.shown
+                      ? () => context.push('/home/sessions')
+                      : null,
+                  children: [
+                    _SessionsSection(others, model: data.model, header: false)
+                  ],
+                );
+        }
         if (visit == null) {
           // Synced before plays were kept: one more sync fills the history.
-          if (sync.charts == 0) return const SizedBox.shrink();
           final signedOut = sync.status == EamuseStatus.signedOut;
           return HomeCard(
             title: 'Last session',
@@ -105,6 +126,7 @@ class LastSessionCard extends StatelessWidget {
                     child: const Text('Load'),
                   ),
               ]),
+              _SessionsSection(others, model: data.model),
             ],
           );
         }
@@ -124,9 +146,58 @@ class LastSessionCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             TopPlays(plays: visit.plays, bests: data.model.bests),
+            _SessionsSection(others, model: data.model),
           ],
         );
       },
+    );
+  }
+}
+
+/// The latest few of [visits] as tiles, under a divider and the Past
+/// sessions heading unless [header] is off (the card then carries both).
+class _SessionsSection extends StatelessWidget {
+  const _SessionsSection(this.visits,
+      {required this.model, this.header = true});
+
+  final List<Visit> visits;
+  final ScoreModel model;
+  final bool header;
+
+  static const shown = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    if (visits.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (header) ...[
+          // Spaced like the card's own edges: its bottom padding above the
+          // line, its top padding over the heading below.
+          const Padding(
+            padding: EdgeInsets.only(top: 12, bottom: 4),
+            child: Divider(height: 1),
+          ),
+          SizedBox(
+            height: 44,
+            child: Row(children: [
+              const Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child:
+                      CardHeading('Past sessions', icon: Icons.place_outlined),
+                ),
+              ),
+              if (visits.length > shown)
+                TextButton(
+                    onPressed: () => context.push('/home/sessions'),
+                    child: const Text('See more')),
+            ]),
+          ),
+        ],
+        for (final v in visits.take(shown)) VisitTile(v, model: model),
+      ],
     );
   }
 }
@@ -229,35 +300,27 @@ class _VenueSheetState extends State<_VenueSheet> {
   }
 }
 
-/// Home's Sessions card: start one, and the latest few.
-class SessionsCard extends StatelessWidget {
-  const SessionsCard({super.key});
-
-  static const _shown = 3;
+/// Home's start button, floating over it: opens the start sheet on the cab
+/// and side last played.
+class StartSessionFab extends StatelessWidget {
+  const StartSessionFab({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return FutureBuilder<VisitData>(
       future: visitsFor(context),
       builder: (context, snapshot) {
-        final data = snapshot.data;
-        final visits = data?.visits ?? [];
-        return HomeCard(
-          title: 'Sessions',
-          icon: Icons.place_outlined,
-          onMore: visits.length > _shown
-              ? () => context.push('/home/sessions')
-              : null,
-          children: [
-            FilledButton.icon(
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Start session'),
-              onPressed: () => showStartSessionSheet(context),
-            ),
-            if (visits.isNotEmpty) const SizedBox(height: 6),
-            for (final v in visits.take(_shown))
-              VisitTile(v, model: data!.model),
-          ],
+        final last = snapshot.data?.lastCredit;
+        return FloatingActionButton.large(
+          tooltip: last == null
+              ? 'Start session'
+              : 'Start at ${last.cabinet.label} · ${sideLabel(last.side)}',
+          shape: const CircleBorder(),
+          backgroundColor: scheme.secondary,
+          foregroundColor: scheme.onSecondary,
+          onPressed: () => showStartSessionSheet(context, last: last),
+          child: const Icon(Icons.play_arrow, size: 48),
         );
       },
     );

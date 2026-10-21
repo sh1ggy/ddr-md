@@ -21,11 +21,12 @@ String signedMs(double ms) =>
     '${ms >= 0 ? '+' : ''}${ms.toStringAsFixed(1)} ms';
 
 /// Pick a venue and side, then start the session on its first credit.
-Future<void> showStartSessionSheet(BuildContext context) =>
+/// [last] preselects the cab and side it was played on.
+Future<void> showStartSessionSheet(BuildContext context, {Credit? last}) =>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const _CreditSheet(newSession: true),
+      builder: (_) => _CreditSheet(newSession: true, last: last),
     );
 
 /// Start the running session's next credit, on the same cabinet and side
@@ -80,9 +81,10 @@ Future<String?> askName(BuildContext context, String title, String hint) {
 }
 
 class _CreditSheet extends StatefulWidget {
-  const _CreditSheet({required this.newSession});
+  const _CreditSheet({required this.newSession, this.last});
 
   final bool newSession;
+  final Credit? last;
 
   @override
   State<_CreditSheet> createState() => _CreditSheetState();
@@ -93,7 +95,7 @@ class _CreditSheetState extends State<_CreditSheet> {
   Venue? _venue;
   List<Cabinet> _cabinets = [];
   Cabinet? _cabinet;
-  late PadSide _side = context.read<SessionState>().side;
+  late PadSide _side = widget.last?.side ?? context.read<SessionState>().side;
 
   @override
   void initState() {
@@ -102,7 +104,13 @@ class _CreditSheetState extends State<_CreditSheet> {
     if (widget.newSession) {
       DatabaseProvider.getVenues().then((v) {
         setState(() => _venues = v);
-        if (v.length == 1) _pickVenue(v.first);
+        final cabinet = widget.last?.cabinet;
+        final last = v.where((v) => v.id == cabinet?.venueId).firstOrNull;
+        if (last != null) {
+          _pickVenue(last, keep: cabinet);
+        } else if (v.length == 1) {
+          _pickVenue(v.first);
+        }
       });
     } else {
       _pickVenue(session.session!.venue, keep: session.cabinet);
@@ -296,12 +304,14 @@ class SessionPage extends StatelessWidget {
           ),
         ],
       ),
+      floatingActionButton: session.active ? null : const StartSessionFab(),
       // The cards scroll with the session below them.
       body: session.active
           ? _ActiveSession(session: session, header: _header)
           : ListView(
-              padding: const EdgeInsets.only(bottom: 24),
-              children: const [..._header, SessionsCard()],
+              // Clear of the start button.
+              padding: const EdgeInsets.only(bottom: 128),
+              children: _header,
             ),
     );
   }

@@ -3,7 +3,8 @@
 /// Description: How a session's e-amusement plays went as a whole: their
 /// average score against what your history says you'd average on that same
 /// mix of charts, as a you-vs-usual bar over each play's gap in play order,
-/// with the average level, bests set and, when timing was logged, its offset.
+/// with the average level, upscores and, when timing was logged, its offset.
+/// Failed plays (an E) count for less.
 library;
 
 import 'dart:math';
@@ -22,27 +23,36 @@ const _levelWeight = 2;
 // Bests a level needs before its average stands in for a chart.
 const _minLevelCharts = 3;
 
-class SetSummary {
-  SetSummary({required this.points, required this.level, required this.bests});
+/// What a failed play (an E) counts for against a cleared one: its score
+/// stops where the lifebar ran out, so it says little about your scoring.
+const _failWeight = 0.25;
 
-  /// Each play with a score, a level and a usual, newest first.
-  final List<({RecentPlay play, int level, double usual})> points;
+double _weight(RecentPlay p) => p.failed ? _failWeight : 1;
+
+class SetSummary {
+  SetSummary(
+      {required this.points, required this.level, required this.upscores});
+
+  /// Each play with a score, a level and a usual, newest first, with what
+  /// it counts for in the averages.
+  final List<({RecentPlay play, int level, double usual, double weight})>
+      points;
 
   /// The charts' average level.
   final double? level;
 
-  /// Charts whose best a play reached.
-  final int bests;
+  /// Charts a play upscored: set the best they have now.
+  final int upscores;
 
   /// The average score, over [points].
   double? get average => points.isEmpty
       ? null
-      : points.fold<double>(0, (a, p) => a + p.play.score!) / points.length;
+      : _weightedMean([for (final p in points) (p.play.score!, p.weight)]);
 
   /// What history says you'd average on the same charts.
   double? get usual => points.isEmpty
       ? null
-      : points.fold<double>(0, (a, p) => a + p.usual) / points.length;
+      : _weightedMean([for (final p in points) (p.usual, p.weight)]);
 
   double? get gap =>
       average == null || usual == null ? null : average! - usual!;
@@ -50,12 +60,17 @@ class SetSummary {
 
 double _mean(Iterable<num> s) => s.fold<double>(0, (a, b) => a + b) / s.length;
 
+double _weightedMean(Iterable<(num, double)> s) =>
+    s.fold<double>(0, (a, e) => a + e.$1 * e.$2) /
+    s.fold<double>(0, (a, e) => a + e.$2);
+
 /// What you usually score, from your synced plays and bests.
 ///
 /// A chart's usual is its earlier plays' average, blended with the level's
 /// model: your average best at that mode and level, less how far plays
 /// usually land below their chart's best. The model covers charts you've
-/// never had a play of synced, which is most of them early on.
+/// never had a play of synced, which is most of them early on. Failed plays
+/// count for [_failWeight] of a play throughout.
 class ScoreModel {
   ScoreModel(this.history, List<ScoreRecord> records, this.levelOf)
       : _bests = {for (final r in records) r.id: r.score} {
@@ -90,12 +105,12 @@ class ScoreModel {
         history.where((p) => p.score != null && p.playedAt.isBefore(first));
     final belowBest = [
       for (final p in before)
-        if (best(p) != null) p.score! - best(p)!,
+        if (best(p) != null) (p.score! - best(p)!, _weight(p)),
     ];
-    final offset = belowBest.isEmpty ? 0.0 : _mean(belowBest);
-    final byChart = <String, List<int>>{};
+    final offset = belowBest.isEmpty ? 0.0 : _weightedMean(belowBest);
+    final byChart = <String, List<(int, double)>>{};
     for (final p in before) {
-      byChart.putIfAbsent(p.recordId, () => []).add(p.score!);
+      byChart.putIfAbsent(p.recordId, () => []).add((p.score!, _weight(p)));
     }
 
     double? usualOf(RecentPlay p, int level) {
@@ -105,9 +120,10 @@ class ScoreModel {
           ? _mean(peers) + offset
           : null;
       if (chart == null) return model;
-      if (model == null) return _mean(chart);
-      return (chart.length * _mean(chart) + _levelWeight * model) /
-          (chart.length + _levelWeight);
+      if (model == null) return _weightedMean(chart);
+      final plays = chart.fold<double>(0, (a, e) => a + e.$2);
+      return (plays * _weightedMean(chart) + _levelWeight * model) /
+          (plays + _levelWeight);
     }
 
     final known = [
@@ -118,10 +134,11 @@ class ScoreModel {
       points: [
         for (final p in plays)
           if ((p.score, level(p)) case (final _?, final l?))
-            if (usualOf(p, l) case final u?) (play: p, level: l, usual: u),
+            if (usualOf(p, l) case final u?)
+              (play: p, level: l, usual: u, weight: _weight(p)),
       ],
       level: known.isEmpty ? null : _mean(known),
-      bests: {
+      upscores: {
         for (final p in plays)
           if (p.score != null && best(p) != null && p.score! >= best(p)!)
             p.recordId,
@@ -197,11 +214,11 @@ class SessionSummaryBody extends StatelessWidget {
                   ),
           ),
           _Stat(
-            label: 'Bests',
+            label: 'Upscores',
             child: Row(children: [
-              const BestBadge(),
+              const UpscoreBadge(),
               const SizedBox(width: 6),
-              _StatText('${summary.bests}'),
+              _StatText('${summary.upscores}'),
             ]),
           ),
           if (timed)
@@ -346,7 +363,8 @@ class _UsualBar extends StatelessWidget {
 }
 
 /// Each play's gap from its usual in the order played, as dots either side
-/// of the usual line, with a running average through them.
+/// of the usual line (rings for failed plays), with a running average
+/// through them.
 class _GapTimeline extends StatelessWidget {
   const _GapTimeline(this.summary,
       {required this.played, required this.up, required this.down});
@@ -369,7 +387,7 @@ class _GapTimeline extends StatelessWidget {
           height: 64,
           child: CustomPaint(
             painter: _GapPainter(
-              [for (final p in plays) p.play.score! - p.usual],
+              [for (final p in plays) (p.play.score! - p.usual, p.weight)],
               up: up,
               down: down,
               line: scheme.onSurfaceVariant,
@@ -396,10 +414,11 @@ class _GapTimeline extends StatelessWidget {
 }
 
 class _GapPainter extends CustomPainter {
-  _GapPainter(this.gaps,
+  _GapPainter(this.points,
       {required this.up, required this.down, required this.line});
 
-  final List<double> gaps;
+  // Each play's gap and what it counts for: under 1 is a failed play.
+  final List<(double, double)> points;
   final Color up, down, line;
 
   // Plays either side of each point the running average spans.
@@ -407,14 +426,22 @@ class _GapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // The gaps' own range, always taking in the usual line.
-    final top = gaps.fold<double>(1, max), bottom = gaps.fold<double>(-1, min);
+    // The cleared plays' range, always taking in the usual line; a failed
+    // play past it sits on the edge rather than squashing the rest.
+    final cleared = [
+      for (final (g, w) in points)
+        if (w == 1) g
+    ];
+    final ranged = cleared.isEmpty ? [for (final (g, _) in points) g] : cleared;
+    final top = ranged.fold<double>(1, max),
+        bottom = ranged.fold<double>(-1, min);
     const r = 3.5;
-    double x(int i) => gaps.length == 1
+    double x(int i) => points.length == 1
         ? size.width / 2
-        : r + i / (gaps.length - 1) * (size.width - 2 * r);
+        : r + i / (points.length - 1) * (size.width - 2 * r);
     double y(double g) =>
-        r + (top - g) / (top - bottom) * (size.height - 2 * r);
+        (r + (top - g) / (top - bottom) * (size.height - 2 * r))
+            .clamp(r, size.height - r);
     final mid = y(0);
 
     final dash = Paint()
@@ -424,15 +451,23 @@ class _GapPainter extends CustomPainter {
       canvas.drawLine(Offset(dx, mid), Offset(dx + 3, mid), dash);
     }
 
-    for (var i = 0; i < gaps.length; i++) {
-      canvas.drawCircle(Offset(x(i), y(gaps[i])), r,
-          Paint()..color = (gaps[i] >= 0 ? up : down).withValues(alpha: 0.55));
+    for (var i = 0; i < points.length; i++) {
+      final (g, w) = points[i];
+      final failed = w < 1;
+      canvas.drawCircle(
+          Offset(x(i), y(g)),
+          failed ? r - 0.75 : r,
+          Paint()
+            ..color = (g >= 0 ? up : down).withValues(alpha: 0.55)
+            ..style = failed ? PaintingStyle.stroke : PaintingStyle.fill
+            ..strokeWidth = 1.5);
     }
 
     final trend = Path();
-    for (var i = 0; i < gaps.length; i++) {
-      final from = max(0, i - _window), to = min(gaps.length, i + _window + 1);
-      final avg = gaps.sublist(from, to).reduce((a, b) => a + b) / (to - from);
+    for (var i = 0; i < points.length; i++) {
+      final from = max(0, i - _window),
+          to = min(points.length, i + _window + 1);
+      final avg = _weightedMean(points.sublist(from, to));
       i == 0 ? trend.moveTo(x(i), y(avg)) : trend.lineTo(x(i), y(avg));
     }
     canvas.drawPath(
@@ -445,5 +480,5 @@ class _GapPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_GapPainter old) => old.gaps != gaps;
+  bool shouldRepaint(_GapPainter old) => old.points != points;
 }

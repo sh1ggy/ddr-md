@@ -275,7 +275,7 @@ class _PlayCard extends StatelessWidget {
                         : FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
-                            child: _Score(play.score!),
+                            child: _Score(play.score!, failed: play.failed),
                           ),
                   ),
                   const SizedBox(width: 6),
@@ -284,7 +284,7 @@ class _PlayCard extends StatelessWidget {
               ],
             ),
           ),
-          if (isBest) const Positioned(top: 6, right: 6, child: BestBadge()),
+          if (isBest) const Positioned(top: 6, right: 6, child: UpscoreBadge()),
         ]),
       ),
     );
@@ -339,7 +339,7 @@ class TopPlays extends StatelessWidget {
 }
 
 /// A play small enough for four in a row: the jacket, the score under it and
-/// the chart. A play that set the chart's best carries the up arrow.
+/// the chart. An upscore carries the up arrow.
 class _CompactPlayCard extends StatelessWidget {
   const _CompactPlayCard({required this.play, required this.best});
 
@@ -366,7 +366,7 @@ class _CompactPlayCard extends StatelessWidget {
                 AspectRatio(aspectRatio: 1, child: _Jacket(song: play.song)),
                 if (isBest)
                   const Positioned(
-                      top: 3, right: 3, child: BestBadge(size: 11)),
+                      top: 3, right: 3, child: UpscoreBadge(size: 11)),
               ]),
               const SizedBox(height: 4),
               FittedBox(
@@ -391,9 +391,10 @@ class _CompactPlayCard extends StatelessWidget {
   }
 }
 
-/// Marks a play that set the chart's best: an up arrow in a primary circle.
-class BestBadge extends StatelessWidget {
-  const BestBadge({super.key, this.size = 14});
+/// Marks an upscore, a play that set the chart's best: an up arrow in a
+/// primary circle.
+class UpscoreBadge extends StatelessWidget {
+  const UpscoreBadge({super.key, this.size = 14});
 
   final double size;
 
@@ -401,7 +402,7 @@ class BestBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Tooltip(
-      message: 'Best score',
+      message: 'Upscore',
       child: Container(
         padding: const EdgeInsets.all(2),
         decoration:
@@ -415,13 +416,14 @@ class BestBadge extends StatelessWidget {
 
 /// A play's score and grade on one line, centred beside the row.
 class _Score extends StatelessWidget {
-  const _Score(this.score);
+  const _Score(this.score, {required this.failed});
 
   final int score;
+  final bool failed;
 
   @override
   Widget build(BuildContext context) {
-    final grade = gradeForScore(score);
+    final grade = gradeForScore(score, failed: failed);
     final art = gradeIcon(grade);
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Text(formatScore(score),

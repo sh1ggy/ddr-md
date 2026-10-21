@@ -68,7 +68,11 @@ class DatabaseProvider {
     await _upgradeToVenues(db);
     await _createScoreRecords(db);
     await db.execute(_recentPlaysDdl);
+    await _addRecentPlayFailed(db);
   }
+
+  static Future<void> _addRecentPlayFailed(Database db) => db.execute(
+      'ALTER TABLE recent_plays ADD COLUMN failed INT NOT NULL DEFAULT 0');
 
   static Future<void> _createScoreRecords(Database db) async {
     await db.execute(_scoreRecordsDdl);
@@ -116,7 +120,7 @@ class DatabaseProvider {
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), _dbName);
-    return await openDatabase(path, version: 13, onCreate: (db, version) async {
+    return await openDatabase(path, version: 14, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -140,6 +144,8 @@ class DatabaseProvider {
       if (oldVersion < 11) await _upgradeToVenues(db);
       if (oldVersion < 12) await _createScoreRecords(db);
       if (oldVersion < 13) await db.execute(_recentPlaysDdl);
+      // Before v6 the schema was just made whole, column included.
+      if (oldVersion >= 6 && oldVersion < 14) await _addRecentPlayFailed(db);
     });
   }
 
@@ -257,6 +263,17 @@ class DatabaseProvider {
         'WHERE cr.sessionId = ? ORDER BY cr.number DESC',
         [sessionId]);
     return [for (final r in rows) Credit.fromMap(r)];
+  }
+
+  /// The credit started last in any session, for picking up where it left off.
+  static Future<Credit?> getLatestCredit() async {
+    final db = await _instance;
+    final rows = await db.rawQuery(
+        'SELECT cr.*, c.venueId, c.name AS cabinetName, v.name AS venueName '
+        'FROM credits cr JOIN cabinets c ON c.id = cr.cabinetId '
+        'JOIN venues v ON v.id = c.venueId '
+        'ORDER BY cr.startedAt DESC LIMIT 1');
+    return rows.isEmpty ? null : Credit.fromMap(rows.first);
   }
 
   // Deletes cascade to the plays logged under them.
