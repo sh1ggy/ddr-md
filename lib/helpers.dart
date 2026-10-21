@@ -280,14 +280,20 @@ String? resolveOcrFlare(String raw) {
 }
 
 // Position of a version in the DDR release order; unknown versions sort last.
-int versionIndex(String version) {
-  final index =
-      constants.versionOrder.indexOf(constants.canonicalVersion(version));
-  return index == -1 ? constants.versionOrder.length : index;
-}
+// Sort keys are cached: a sort compares each song ~2 log n times, and
+// recomputing them allocated fresh strings on every comparison.
+final Map<String, int> _versionIndexes = {};
+
+int versionIndex(String version) => _versionIndexes[version] ??= () {
+      final index =
+          constants.versionOrder.indexOf(constants.canonicalVersion(version));
+      return index == -1 ? constants.versionOrder.length : index;
+    }();
+
+final Expando<String> _titleKeys = Expando();
 
 // Sort on the translit title so Japanese titles order alphabetically too.
-String _titleKey(SongInfo song) =>
+String _titleKey(SongInfo song) => _titleKeys[song] ??=
     (song.titletranslit.isNotEmpty ? song.titletranslit : song.title)
         .toLowerCase();
 

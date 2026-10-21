@@ -115,8 +115,9 @@ class ProcessResult {
       'exScore': rd(r.exScore),
     };
 
-    Uint8List? img(Pointer<Uint8> buf, int len) =>
-        (buf != nullptr && len > 0) ? Uint8List.fromList(buf.asTypedList(len)) : null;
+    Uint8List? img(Pointer<Uint8> buf, int len) => (buf != nullptr && len > 0)
+        ? Uint8List.fromList(buf.asTypedList(len))
+        : null;
     final mask = img(r.mask, r.maskLen);
     final crop = img(r.crop, r.cropLen);
     final capture = img(r.capture, r.captureLen);
@@ -307,19 +308,17 @@ typedef _dart_cameraSetSide = void Function(Pointer<Void>, int);
 final _cameraRegisterFn =
     _nativeLib.lookupFunction<_c_cameraRegister, _dart_cameraRegister>(
         'camera_register_callback');
-final _cameraStartFn =
-    _nativeLib.lookupFunction<_c_cameraStart, _dart_cameraStart>('camera_start');
+final _cameraStartFn = _nativeLib
+    .lookupFunction<_c_cameraStart, _dart_cameraStart>('camera_start');
 final _cameraStopFn =
     _nativeLib.lookupFunction<_c_cameraVoid, _dart_cameraVoid>('camera_stop');
 final _cameraSetDebugFn =
     _nativeLib.lookupFunction<_c_cameraSetDebug, _dart_cameraSetDebug>(
         'camera_set_debug');
-final _cameraSetSideFn =
-    _nativeLib.lookupFunction<_c_cameraSetSide, _dart_cameraSetSide>(
-        'camera_set_side');
-final _cameraFreeResultFn =
-    _nativeLib.lookupFunction<_c_cameraVoid, _dart_cameraVoid>(
-        'camera_free_result');
+final _cameraSetSideFn = _nativeLib
+    .lookupFunction<_c_cameraSetSide, _dart_cameraSetSide>('camera_set_side');
+final _cameraFreeResultFn = _nativeLib
+    .lookupFunction<_c_cameraVoid, _dart_cameraVoid>('camera_free_result');
 
 // Caller must calloc.free() the returned pointer.
 Pointer<COCRConfig> _buildOCRConfig() {
@@ -403,12 +402,10 @@ ProcessResult _runPickedImage(
   final createFn =
       _nativeLib.lookupFunction<_c_createOcrInstance, _dart_createOcrInstance>(
           'create_ocr_instance');
-  final destroyFn = _nativeLib
-      .lookupFunction<_c_destroyOcrInstance, _dart_destroyOcrInstance>(
-          'destroy_ocr_instance');
-  final processFn = _nativeLib
-      .lookupFunction<_c_processPickedImage, _dart_processPickedImage>(
-          'process_picked_image');
+  final destroyFn = _nativeLib.lookupFunction<_c_destroyOcrInstance,
+      _dart_destroyOcrInstance>('destroy_ocr_instance');
+  final processFn = _nativeLib.lookupFunction<_c_processPickedImage,
+      _dart_processPickedImage>('process_picked_image');
 
   final dataPathPtr = appPath.toNativeUtf8();
   final cfg = _buildOCRConfig();
@@ -666,7 +663,8 @@ class OCRProcessor {
   Future<void> start() async {
     if (_session == nullptr) return;
     isDraining.value = false;
-    final ok = _cameraStartFn(_session, _debugImageType == DebugImageType.on ? 1 : 0);
+    final ok =
+        _cameraStartFn(_session, _debugImageType == DebugImageType.on ? 1 : 0);
     if (ok == 0) {
       throw PlatformException(
           code: 'camera_start_failed', message: 'Could not start camera');

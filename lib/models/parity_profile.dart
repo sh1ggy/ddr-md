@@ -60,8 +60,7 @@ const List<double> _steps = [0.25, 0.5, 0.75, 1.5, 2, 4];
 /// change only if the engine gets more hand-set feet right, or as many closer
 /// to the defaults.
 FitResult fitProfile(List<FitCase> cases) {
-  int score(ParityWeights w) =>
-      cases.fold(0, (sum, c) => sum + c.matched(w));
+  int score(ParityWeights w) => cases.fold(0, (sum, c) => sum + c.matched(w));
   final total = cases.fold(0, (sum, c) => sum + c.chosen.length);
   final defaults = ParityWeights.defaults.toJson();
   double drift(Map<String, double> w) => tunableWeights.keys
@@ -133,8 +132,9 @@ Future<FootingFit?> refitFromEdits() async {
   for (final MapEntry(key: (ref, hash), value: pins)
       in (await DatabaseProvider.getAllParityPins()).entries) {
     final mode = ref.mode == 'dp' ? Modes.doubles : Modes.singles;
-    final notes =
-        (await StepsLoader.load(ref.song))?.chartFor(mode, ref.difficulty)?.notes;
+    final notes = (await StepsLoader.load(ref.song))
+        ?.chartFor(mode, ref.difficulty)
+        ?.notes;
     // Pins from an older version of the chart can't be placed on this one.
     if (notes == null || chartHash(notes) != hash) continue;
     charts.add(ref);

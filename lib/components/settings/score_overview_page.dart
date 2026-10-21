@@ -43,7 +43,7 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
   Widget build(BuildContext context) {
     final revision = context.select<EamuseSyncState, int>((s) => s.revision);
     return HomeSubpage(
-      title: 'Scores',
+      title: 'Statistics',
       body: FutureBuilder<_Loaded>(
         key: ValueKey(revision),
         future: _load(),

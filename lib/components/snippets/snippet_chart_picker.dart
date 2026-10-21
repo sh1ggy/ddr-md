@@ -33,8 +33,9 @@ class _SnippetChartPickerState extends State<SnippetChartPicker> {
     setState(() => _results = value.isEmpty
         ? Songs.list
         : [
-            for (final m in Songs.matchTitles(value, limit: Songs.list.length))
-              if (m.similarity >= _minSimilarity) m.song
+            for (final m in Songs.matchTitles(value,
+                limit: Songs.list.length, minSimilarity: _minSimilarity))
+              m.song
           ]);
   }
 

@@ -66,8 +66,10 @@ void main() {
     });
 
     test('several levels on one axis union', () {
-      final low = song(title: 'Low', singles: const <int?>[null, 3, null, null, null]);
-      final high = song(title: 'High', singles: const <int?>[null, null, null, 17, null]);
+      final low =
+          song(title: 'Low', singles: const <int?>[null, 3, null, null, null]);
+      final high = song(
+          title: 'High', singles: const <int?>[null, null, null, 17, null]);
       const filter = SongFilter(levels: <int>{3, 17});
       expect(filter.matches(low, Modes.singles), isTrue);
       expect(filter.matches(high, Modes.singles), isTrue);

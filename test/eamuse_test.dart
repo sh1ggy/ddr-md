@@ -126,17 +126,19 @@ void main() {
   }, timeout: const Timeout(Duration(seconds: 30)));
 
   test('recent plays decide what a sync fetches', () {
-    String row(String id, String date, String diff, String style) => '''
+    String row(String id, String date, String diff, String style,
+            [String rank = '']) =>
+        '''
 <tr class="data"><td class="chart">
   <a href="/game/ddr/ddrworld/playdata/music_detail.html?index=$id&style=0&difficulty=3" class="music_info cboxelement">
   <div><div class="date">$date</div><div class="music-name">MAX 300</div>
   <div class="diff-style-container"><div class="diff $diff">$diff<div class="level">$style</div></div></div></div></a></td>
-  <td class="score">970860</td><td class="rank"></td></tr>''';
+  <td class="score">970860</td><td class="rank">$rank</td></tr>''';
     const a = 'dD6DOI1lDI8o90iO006Dl96D1doDdQ69';
     final plays = parseEamuseRecent('''
 <div id="search_result"><table><tbody>
 ${row(a, '2026-10-16 16:57:59', 'EXPERT', 'SINGLE')}
-${row(a, '2026-10-16 16:55:06', 'EXPERT', 'SINGLE')}
+${row(a, '2026-10-16 16:55:06', 'EXPERT', 'SINGLE', '<img src="/img/rank_s_e.png">')}
 ${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
 </tbody></table></div>''');
     expect([
@@ -146,6 +148,7 @@ ${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
       (Modes.singles, 'EXPERT', '2026-10-16 16:55:06', 970860),
       (Modes.doubles, 'CHALLENGE', '2026-10-16 16:38:39', 970860),
     ]);
+    expect([for (final p in plays) p.failed], [false, true, false]);
 
     expect(planEamuseSync(plays, null, 3), isA<EamuseFullSync>());
     expect(planEamuseSync(plays, '2026-10-16 16:57:59', 3),

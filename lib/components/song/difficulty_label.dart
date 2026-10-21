@@ -78,12 +78,15 @@ class LevelNumber extends StatelessWidget {
   final bool dimmed;
 
   @override
-  Widget build(BuildContext context) => Opacity(
-        opacity: dimmed ? 0.35 : 1,
-        child: Image.asset(
-          'assets/difficulty/level_${difficulty.toLowerCase()}_$level.png',
-          height: height,
-          errorBuilder: (_, __, ___) => _CabinetText('$level',
+  // Dimmed through the image's own paint alpha rather than an Opacity
+  // layer, which a list full of rows would pay for per numeral.
+  Widget build(BuildContext context) => Image.asset(
+        'assets/difficulty/level_${difficulty.toLowerCase()}_$level.png',
+        height: height,
+        opacity: dimmed ? const AlwaysStoppedAnimation(0.35) : null,
+        errorBuilder: (_, __, ___) => Opacity(
+          opacity: dimmed ? 0.35 : 1,
+          child: _CabinetText('$level',
               difficulty: difficulty,
               height: height,
               fill: Colors.black,
@@ -99,11 +102,15 @@ class LevelRow extends StatelessWidget {
       {super.key,
       required this.levels,
       this.highlightIndex,
-      this.height = kLevelHeight});
+      this.height = kLevelHeight,
+      this.packed = false});
 
   final Difficulty levels;
   final int? highlightIndex;
   final double height;
+  // Charted levels sit side by side with an even gap instead of in fixed
+  // columns, for spaces too narrow for all five slots.
+  final bool packed;
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +131,12 @@ class LevelRow extends StatelessWidget {
             difficulty: kInGameDifficultyNames[key]!,
             height: height,
             dimmed: highlightIndex != null && i != highlightIndex);
+      }
+      if (packed) {
+        if (level == null) continue;
+        if (cells.isNotEmpty) cells.add(SizedBox(width: height * 0.25));
+        cells.add(child);
+        continue;
       }
       cells.add(SizedBox(
           width: slot,
@@ -226,15 +239,16 @@ class LevelPicker extends StatefulWidget {
   State<LevelPicker> createState() => _LevelPickerState();
 }
 
+/// Greys a level's numerals, for a level that isn't one chart's.
+const kGreyLevel = ColorFilter.matrix([
+  0.33, 0.33, 0.33, 0, 0, //
+  0.33, 0.33, 0.33, 0, 0,
+  0.33, 0.33, 0.33, 0, 0,
+  0, 0, 0, 1, 0,
+]);
+
 class _LevelPickerState extends State<LevelPicker> {
   bool? _low;
-
-  static const _grey = ColorFilter.matrix([
-    0.33, 0.33, 0.33, 0, 0, //
-    0.33, 0.33, 0.33, 0, 0,
-    0.33, 0.33, 0.33, 0, 0,
-    0, 0, 0, 1, 0,
-  ]);
 
   @override
   Widget build(BuildContext context) {
@@ -251,7 +265,7 @@ class _LevelPickerState extends State<LevelPicker> {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: widget.isSelected(l)
               ? number
-              : ColorFiltered(colorFilter: _grey, child: number),
+              : ColorFiltered(colorFilter: kGreyLevel, child: number),
         ),
       );
     }
@@ -267,7 +281,7 @@ class _LevelPickerState extends State<LevelPicker> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               child: ColorFiltered(
-                colorFilter: _grey,
+                colorFilter: kGreyLevel,
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(showLow ? Icons.chevron_left : Icons.chevron_right,
                       size: widget.height * 0.8),

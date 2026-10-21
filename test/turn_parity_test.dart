@@ -20,10 +20,7 @@ void main() {
   List<StepNote> turned(List<StepNote> notes) => [
         for (final n in notes)
           StepNote(
-              beat: n.beat,
-              second: n.second,
-              col: mirror[n.col],
-              type: n.type),
+              beat: n.beat, second: n.second, col: mirror[n.col], type: n.type),
       ];
 
   test('mirroring a one-sided crossover run changes the footing', () {
@@ -36,7 +33,8 @@ void main() {
     final mirrored = FootAssigner.analyse(mirroredNotes, Modes.singles);
 
     final plainFeet = [for (final n in source) plain.feet[n]];
-    expect(plainFeet.contains(null), isFalse, reason: 'every note takes a foot');
+    expect(plainFeet.contains(null), isFalse,
+        reason: 'every note takes a foot');
 
     // Same chart geometry reflected: the solve should not return the identical
     // foot sequence, because the crossovers now sit on the other side.

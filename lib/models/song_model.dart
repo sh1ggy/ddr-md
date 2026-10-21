@@ -4,9 +4,10 @@
 library;
 
 import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -110,13 +111,14 @@ class Songs {
         }
       }
       list = loaded;
+      _searchKeys; // built now so the first keystroke doesn't pay for it
       return;
     }
 
     AssetManifest asset = await AssetManifest.loadFromAssetBundle(rootBundle);
     assets = asset.listAssets();
     List<String> songDataPaths = assets
-      .where((string) => string.startsWith("assets/songs/"))
+        .where((string) => string.startsWith("assets/songs/"))
         .where((string) => string.endsWith(".json"))
         .map((e) => e.substring(0, e.length - 5))
         .toList();
@@ -135,6 +137,28 @@ class Songs {
       }
     }
     list = loaded;
+    _searchKeys;
+  }
+
+  // Each song's normalized title, translit title and name (deduped, empties
+  // dropped), parallel to [list]. Rebuilt whenever [list] is swapped, so a
+  // keystroke never re-runs the normalizing regex over the whole catalogue.
+  static List<SongInfo>? _keyedList;
+  static List<List<String>> _keys = const [];
+
+  static List<List<String>> get _searchKeys {
+    if (!identical(_keyedList, list)) {
+      _keyedList = list;
+      _keys = [
+        for (final song in list)
+          {
+            _normalize(song.title),
+            _normalize(song.titletranslit),
+            _normalize(song.name),
+          }.where((k) => k.isNotEmpty).toList(growable: false),
+      ];
+    }
+    return _keys;
   }
 
   // Lowercase and strip everything but letters/digits (any script) so OCR
@@ -142,30 +166,64 @@ class Songs {
   static String _normalize(String s) =>
       s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), '');
 
-  // Similarity of [query] (already normalized) to a song: the best score
-  // across its title, translit title, and name. An exact substring hit (e.g.
-  // typing a prefix of a long title) always wins, so short partial queries
-  // aren't drowned out by whole-string edit distance; otherwise falls back to
-  // normalized Levenshtein so typos still rank sensibly.
-  static double _similarity(String query, SongInfo song) {
+  // Similarity of [query] (already normalized) to a song's [keys]: the best
+  // score across them. An exact substring hit (e.g. typing a prefix of a long
+  // title) always wins, so short partial queries aren't drowned out by
+  // whole-string edit distance; otherwise falls back to normalized Levenshtein
+  // so typos still rank sensibly. Keys that can't reach [floor] (or beat the
+  // best so far) are skipped, cut off by length gap or mid-way through the
+  // distance; a song with no key reaching [floor] may score anywhere below it.
+  static double _similarity(String query, List<String> keys, double floor) {
     double best = 0;
-    for (final candidate in [song.title, song.titletranslit, song.name]) {
-      final normalized = _normalize(candidate);
-      if (normalized.isEmpty) continue;
+    for (final key in keys) {
       double similarity;
-      if (normalized.contains(query)) {
+      if (key.contains(query)) {
         // Floor of 0.5 so a short substring match (e.g. a prefix of a long
         // title) still ranks as a strong hit, not a weak one.
-        similarity = 0.5 + 0.5 * (query.length / normalized.length);
+        similarity = 0.5 + 0.5 * (query.length / key.length);
       } else {
-        final maxLen = query.length > normalized.length
-            ? query.length
-            : normalized.length;
-        similarity = 1 - levenshtein(query, normalized) / maxLen;
+        final maxLen = max(query.length, key.length);
+        final maxDist = ((1 - max(best, floor)) * maxLen + 1e-9).floor();
+        if ((query.length - key.length).abs() > maxDist) continue;
+        final distance = _levenshteinWithin(query, key, maxDist);
+        if (distance > maxDist) continue;
+        similarity = 1 - distance / maxLen;
       }
       if (similarity > best) best = similarity;
     }
     return best;
+  }
+
+  static Int32List _prevRow = Int32List(128), _currRow = Int32List(128);
+
+  // Levenshtein distance of [a] to [b], or anything above [maxDist] once no
+  // alignment can come back under it. Rows are reused across calls.
+  static int _levenshteinWithin(String a, String b, int maxDist) {
+    final n = b.length;
+    if (_prevRow.length <= n) {
+      _prevRow = Int32List(n + 1);
+      _currRow = Int32List(n + 1);
+    }
+    var prev = _prevRow, curr = _currRow;
+    for (var j = 0; j <= n; j++) {
+      prev[j] = j;
+    }
+    for (var i = 0; i < a.length; i++) {
+      final ca = a.codeUnitAt(i);
+      var rowMin = curr[0] = i + 1;
+      for (var j = 0; j < n; j++) {
+        var v = prev[j] + (ca == b.codeUnitAt(j) ? 0 : 1);
+        if (curr[j] + 1 < v) v = curr[j] + 1;
+        if (prev[j + 1] + 1 < v) v = prev[j + 1] + 1;
+        curr[j + 1] = v;
+        if (v < rowMin) rowMin = v;
+      }
+      if (rowMin > maxDist) return maxDist + 1;
+      final tmp = prev;
+      prev = curr;
+      curr = tmp;
+    }
+    return prev[n];
   }
 
   // Finds the song whose title (or translit title) is closest to [ocrTitle]
@@ -174,14 +232,22 @@ class Songs {
   static SongMatch? matchTitle(String ocrTitle) =>
       matchTitles(ocrTitle, limit: 1).firstOrNull;
 
-  // The [limit] closest songs to [ocrTitle], best first. Empty when the list
-  // is empty or the query normalizes to nothing.
-  static List<SongMatch> matchTitles(String ocrTitle, {int limit = 10}) {
+  // The [limit] closest songs to [ocrTitle] scoring at least [minSimilarity],
+  // best first. Empty when the list is empty or the query normalizes to
+  // nothing.
+  static List<SongMatch> matchTitles(String ocrTitle,
+      {int limit = 10, double minSimilarity = 0}) {
     final query = _normalize(ocrTitle);
     if (query.isEmpty || list.isEmpty) return const [];
-    final matches = [
-      for (final song in list) SongMatch(song, _similarity(query, song)),
-    ]..sort((a, b) => b.similarity.compareTo(a.similarity));
+    final keys = _searchKeys;
+    final matches = <SongMatch>[];
+    for (var i = 0; i < list.length; i++) {
+      final similarity = _similarity(query, keys[i], minSimilarity);
+      if (similarity >= minSimilarity) {
+        matches.add(SongMatch(list[i], similarity));
+      }
+    }
+    matches.sort((a, b) => b.similarity.compareTo(a.similarity));
     return matches.take(limit).toList();
   }
 }

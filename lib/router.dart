@@ -6,8 +6,9 @@
 library;
 
 import 'package:ddr_md/components/ocr/ocr_page.dart';
-import 'package:ddr_md/components/session/recent_plays.dart';
+import 'package:ddr_md/components/session/app_settings_page.dart';
 import 'package:ddr_md/components/session/session_page.dart';
+import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/snippets/snippets_page.dart';
 import 'package:ddr_md/components/song/song_page.dart';
@@ -81,13 +82,21 @@ final router = GoRouter(
                   _page(state, const SessionPage()),
               routes: [
                 GoRoute(
-                    path: 'recent',
-                    pageBuilder: (context, state) =>
-                        _page(state, const RecentPlaysPage())),
-                GoRoute(
                     path: 'sessions',
                     pageBuilder: (context, state) =>
-                        _page(state, const SessionsPage())),
+                        _page(state, const SessionsPage()),
+                    routes: [
+                      GoRoute(
+                          path: ':key',
+                          pageBuilder: (context, state) => _page(
+                              state,
+                              VisitPage(
+                                  visitKey: state.pathParameters['key']!))),
+                    ]),
+                GoRoute(
+                    path: 'settings',
+                    pageBuilder: (context, state) =>
+                        _page(state, const AppSettingsPage())),
               ]),
         ]),
         StatefulShellBranch(routes: [
@@ -97,7 +106,7 @@ final router = GoRouter(
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
-              path: '/settings',
+              path: '/profile',
               pageBuilder: (context, state) =>
                   _page(state, const SettingsPage())),
         ]),
@@ -189,9 +198,9 @@ class Layout extends StatelessWidget {
                 label: 'Scan',
               ),
               NavigationDestination(
-                selectedIcon: Icon(Icons.settings, color: Colors.white),
-                icon: Icon(Icons.settings_outlined),
-                label: 'Settings',
+                selectedIcon: Icon(Icons.person, color: Colors.white),
+                icon: Icon(Icons.person_outline),
+                label: 'Profile',
               ),
             ],
           ),
