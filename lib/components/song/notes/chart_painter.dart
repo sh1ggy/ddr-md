@@ -62,7 +62,17 @@ class ChartPainter extends CustomPainter {
     this.highlightIcon,
     this.section,
     this.sectionTail,
+    this.cabinetEdge = true,
+    this.markSection = true,
   }) : super(repaint: playhead);
+
+  /// Band the section and outline its first and last rows. Off, the section
+  /// only dims what's outside it.
+  final bool markSection;
+
+  /// End the field where the cabinet's screen ends. Off, it runs the whole
+  /// canvas, for an image of a stretch longer than one screen.
+  final bool cabinetEdge;
 
   /// The snippet's (first, last) row seconds, banded in [kSectionColor].
   final (double, double)? section;
@@ -256,9 +266,11 @@ class ChartPainter extends CustomPainter {
     if (paintBackground) _paintBackground(canvas, size);
     // The cabinet's screen ends where its bottom edge falls; arrows emerge from
     // there rather than from the bottom of a taller phone.
-    final edge = _receptorTop +
-        arcadeArrowSize(size, columnCount, topInset) * cabinetTravelArrows;
-    canvas.clipRect(Rect.fromLTRB(0, 0, size.width, edge));
+    if (cabinetEdge) {
+      final edge = _receptorTop +
+          arcadeArrowSize(size, columnCount, topInset) * cabinetTravelArrows;
+      canvas.clipRect(Rect.fromLTRB(0, 0, size.width, edge));
+    }
 
     final (
       :fieldLeft,
@@ -364,8 +376,9 @@ class ChartPainter extends CustomPainter {
       canvas.drawRRect(band, _highlightFillPaint);
       canvas.drawRRect(band, _highlightEdgePaint);
     }
-    final bandSection =
-        section == null ? null : (section!.$1, sectionTail ?? section!.$2);
+    final bandSection = section == null || !markSection
+        ? null
+        : (section!.$1, sectionTail ?? section!.$2);
     if (bandSection case (final from, final to)
         when from <= maxT && to >= second) {
       final band = RRect.fromLTRBR(
@@ -519,6 +532,7 @@ class ChartPainter extends CustomPainter {
         return; // drawn in the shock pass
       }
       if (!playing &&
+          markSection &&
           n.type != StepType.mine &&
           section != null &&
           (n.second == section!.$1 || n.second == section!.$2)) {
