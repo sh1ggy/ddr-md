@@ -27,6 +27,8 @@ typedef VisitData = ({
   ScoreModel model,
   // Each session's logged timing plays, by session id.
   Map<String, List<TimingPlay>> timing,
+  // Each session's credits, newest first, by session id.
+  Map<String, List<Credit>> credits,
   // The last credit played, which the next session starts like.
   Credit? lastCredit,
 });
@@ -64,6 +66,10 @@ Future<VisitData> _load(String? activeId) async {
     timing: {
       for (final s in sessions)
         s.id: await DatabaseProvider.getSessionPlays(s.id),
+    },
+    credits: {
+      for (final s in sessions)
+        s.id: await DatabaseProvider.getCredits(s.id),
     },
     lastCredit: await DatabaseProvider.getLatestCredit(),
   );
@@ -451,6 +457,7 @@ class VisitPage extends StatelessWidget {
           );
         }
         final timing = data.timing[visit.session?.id] ?? [];
+        final credits = data.credits[visit.session?.id] ?? [];
         final isDark = Theme.of(context).brightness == Brightness.dark;
         return HomeSubpage(
           title: visit.session?.venue.name ?? 'Session',
@@ -501,7 +508,26 @@ class VisitPage extends StatelessWidget {
                   title: 'Plays',
                   icon: Icons.history,
                   children: [
-                    PlayGrid(plays: visit.plays, bests: data.model.bests),
+                    if (credits.isEmpty)
+                      PlayGrid(plays: visit.plays, bests: data.model.bests)
+                    else
+                      for (final (credit, plays)
+                          in groupByCredit(visit.plays, credits)) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            credit == null
+                                ? 'Not in a credit · ${playCount(plays.length)}'
+                                : 'Credit ${credit.number} · '
+                                    '${credit.cabinet.label} · '
+                                    '${credit.side == PadSide.p1 ? 'P1' : 'P2'}'
+                                    ' · ${playCount(plays.length)}',
+                            style: Theme.of(context).textTheme.labelLarge,
+                          ),
+                        ),
+                        if (plays.isNotEmpty)
+                          PlayGrid(plays: plays, bests: data.model.bests),
+                      ],
                   ],
                 ),
               if (timing.isNotEmpty)

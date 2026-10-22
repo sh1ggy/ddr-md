@@ -90,6 +90,15 @@ void main() {
         play('b', 2, 1),
         play('c', 20, 1), // long after 'open' stopped: a set of its own
         play('d', 29, 1),
+        // a minute before 'open' started: still its visit
+        RecentPlay(
+            konamiId: 'e',
+            title: 'e',
+            song: 'e',
+            mode: Modes.singles,
+            difficulty: 'EXPERT',
+            playedAt: t.subtract(const Duration(hours: 30, minutes: 1)),
+            score: 1),
       ],
       [ended, open],
       {'open': t.subtract(const Duration(hours: 29))},
@@ -99,7 +108,23 @@ void main() {
     ], [
       ('ended', 2),
       (null, 1),
-      ('open', 1),
+      ('open', 2),
     ]);
+  });
+
+  test('plays split into the credit they were played in', () {
+    const cab = Cabinet(1, 1, 'Round1', '');
+    Credit credit(int n, int hoursAgo) => Credit(
+        id: '$n',
+        sessionId: 's',
+        number: n,
+        cabinet: cab,
+        side: PadSide.p1,
+        startedAt: t.subtract(Duration(hours: hoursAgo)));
+    final groups = groupByCredit(
+        [play('a', 1, 1), play('b', 3, 1), play('c', 6, 1)],
+        [credit(1, 5), credit(2, 2)]);
+    expect([for (final (c, p) in groups) (c?.number, p.length)],
+        [(2, 1), (1, 1), (null, 1)]);
   });
 }
