@@ -31,6 +31,7 @@ import 'chart_timing.dart';
 import 'dancing_feet.dart';
 import 'density_scrub_bar.dart';
 import 'pad_dancer.dart';
+import 'chart_share.dart';
 import 'section_bar.dart';
 import 'tick_clock.dart';
 import 'package:ddr_md/components/song/notes/ddr_atlas.dart';
@@ -131,9 +132,20 @@ class ChartScroller extends StatefulWidget {
     this.feedActive,
     this.playbackRate = 1.0,
     this.onPlaybackRateChanged,
+    this.title = '',
+    this.chartLabel = '',
+    this.onShareReady,
   });
 
   final ChartSteps steps;
+
+  /// The song and chart ("SP EXPERT 14"), captioning a shared section.
+  final String title;
+  final String chartLabel;
+
+  /// Handed, once the field can be drawn, the function that shares the
+  /// section as an image.
+  final ValueChanged<Future<void> Function(Rect? origin)>? onShareReady;
 
   /// A snippet's section: playback loops it, with a two-beat run-up, and the
   /// rest of the chart dims. Scrubbing keeps to the loop.
@@ -163,8 +175,8 @@ class ChartScroller extends StatefulWidget {
   final Widget Function(BuildContext context, Widget patternsButton)?
       headerBuilder;
 
-  /// Which chart this is, for hand-setting feet (the footing editor). Null
-  /// hides the editor.
+  /// Which chart this is: the player's hand-set feet load by it, and the
+  /// footing editor saves to it.
   final ChartRef? footingRef;
 
   /// Footing edit mode, toggled from the preview's header: paused taps on notes
@@ -530,6 +542,7 @@ class _ChartScrollerState extends State<ChartScroller>
   // Footing editor: hand-set feet pin the solve, and the flagged moments are
   // stepped through with the playhead. Only live with [ChartScroller.footingRef].
   Map<StepNote, ParityFoot> _pins = {};
+  late bool _pinsLoaded = widget.footingRef == null;
   Set<StepNote> _focus = const {};
   List<double> _rowSeconds = const [];
   List<(double, ParityFlag)> _moments = const [];
@@ -538,6 +551,7 @@ class _ChartScrollerState extends State<ChartScroller>
   String _chartHash = '';
   ChartPainter? _painter;
   Size _fieldSize = Size.zero;
+  bool _shareOffered = false;
   Timer? _selectionScroll;
 
   // [ChartScroller.section] in seconds: its first and last rows, the loop it
@@ -1492,6 +1506,50 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
+  // The section, from a beat before it, footed as the player foots it (their
+  // style and hand-set feet), as an image for the share sheet. [origin]
+  // places the sheet's popover on iPad and macOS.
+  Future<void> _shareSection(Rect? origin) async {
+    final rows = _sectionRows;
+    final section = widget.section;
+    if (rows == null || section == null) return;
+    final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
+    final arrow = ChartPainter.arcadeArrowSize(
+            _fieldSize, dirs.length, MediaQuery.paddingOf(context).top) *
+        _zoom;
+    final start = _timing.isEmpty
+        ? rows.$1 - 60 / math.max(1, widget.chartBpm)
+        : _timing.secondAt(_timing.beatAt(rows.$1) - 1);
+    await shareChartImage(
+      painterAt: (playhead, spacing, zoom) => _chartPainter(
+        dirs: dirs,
+        playhead: playhead,
+        playing: false,
+        paintBackground: true,
+        topInset: 0,
+        pxPerBeat: _pxPerBeat * spacing,
+        pxPerSecond: _pxPerSecond * spacing,
+        zoom: zoom,
+        allFeet: true,
+        cabinetEdge: false,
+      ),
+      fieldWidth: arrow * dirs.length,
+      columns: dirs.length,
+      start: start,
+      last: _sectionNotes
+          .map((n) => n.endSecond ?? n.second)
+          .fold(rows.$2, math.max),
+      runOut: arrow * 0.75,
+      title: widget.title,
+      subtitle: [
+        if (widget.chartLabel.isNotEmpty) widget.chartLabel,
+        sectionLabel(section, widget.timeSignatures),
+      ].join(' · '),
+      pixelRatio: MediaQuery.devicePixelRatioOf(context),
+      origin: origin,
+    );
+  }
+
   // The moments where the engine is torn, found once per edit session (off the
   // UI isolate) so the list holds still while the player edits.
   Future<void> _rankMoments() async {
@@ -1521,6 +1579,7 @@ class _ChartScrollerState extends State<ChartScroller>
     final pins =
         await DatabaseProvider.getParityPins(widget.footingRef!, _chartHash);
     if (!mounted) return;
+    _pinsLoaded = true;
     _applyPins(pinsByNote(pins, notes));
     if (widget.editFooting) _rankMoments();
   }
@@ -2497,24 +2556,83 @@ class _ChartScrollerState extends State<ChartScroller>
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  // The field as drawn now, on [playhead]. The share image draws through this
+  // too, with its own spacing and no cabinet edge, so it matches the screen.
+  ChartPainter _chartPainter({
+    required List<NoteDir> dirs,
+    required ValueListenable<double> playhead,
+    required bool playing,
+    required bool paintBackground,
+    required double topInset,
+    double? constantMs,
+    double visualOffset = 0,
+    double? pxPerBeat,
+    double? pxPerSecond,
+    double? zoom,
+    bool allFeet = false,
+    bool cabinetEdge = true,
+  }) {
     final snippet = widget.section != null;
-    final feed = widget.feedActive != null;
-    final visibleFeet = {
-      for (final entry
-          in (widget.showFootGuide || widget.editFooting ? _feet : _hitFeet)
-              .entries)
+    final feet = {
+      for (final entry in (allFeet || widget.showFootGuide || widget.editFooting
+              ? _feet
+              : _hitFeet)
+          .entries)
         if (!snippet || _sectionNotes.contains(entry.key))
           entry.key: entry.value,
     };
-    final visibleLinks = {
+    final links = {
       for (final entry in _footPrev.entries)
         if (!snippet ||
             (_sectionNotes.contains(entry.key) &&
                 _sectionNotes.contains(entry.value)))
           entry.key: entry.value,
     };
+    return ChartPainter(
+      notes: _notes,
+      holds: _holds,
+      shockNotes: _shockNotes,
+      shocks: _shocks,
+      bpmMarkers: _bpmMarkers,
+      stopMarkers: _stopMarkers,
+      showMeasureLines: widget.showMeasureLines,
+      paintBackground: paintBackground,
+      guideline: _guideline,
+      timeSignatures: widget.timeSignatures,
+      feet: feet,
+      highlights: _hits,
+      highlightIcon: _pattern == null ? null : kPatternIcons[_pattern],
+      focus: widget.editFooting ? _focus : _sectionNotes,
+      section: _sectionRows,
+      sectionTail: _sectionNotes.isEmpty
+          ? null
+          : _sectionNotes.map((n) => n.endSecond ?? n.second).reduce(math.max),
+      footPrev: widget.showFootTrails ? links : const {},
+      dirs: dirs,
+      colMap: _colMap,
+      playhead: playhead,
+      pxPerSecond: pxPerSecond ?? _pxPerSecond,
+      pxPerBeat: pxPerBeat ?? _pxPerBeat,
+      timing: _timing,
+      columnCount: dirs.length,
+      skin: _skin!,
+      playing: playing,
+      zoom: zoom ?? _zoom,
+      constantMs: constantMs,
+      topInset: topInset,
+      visualOffset: visualOffset,
+      arcadeQuant: !widget.quantColorsOn,
+      arrowBlink: widget.arrowBlinkOn,
+      quantFreezeHeads: widget.quantFreezeHeadsOn,
+      ddr: _ddr,
+      cabinetEdge: cabinetEdge,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final snippet = widget.section != null;
+    final feed = widget.feedActive != null;
     final stanceSeconds = _sectionNotes.map((n) => n.second).toSet();
     final sectionStances =
         _stances.where((s) => stanceSeconds.contains(s.second)).toList();
@@ -2546,6 +2664,15 @@ class _ChartScrollerState extends State<ChartScroller>
       // At the cabinet the field is the cabinet's own lane panel, on its
       // monitor.
       _fieldSize = constraints.biggest;
+      if (!_shareOffered &&
+          widget.onShareReady != null &&
+          _skin != null &&
+          DdrAtlas.resolved &&
+          _pinsLoaded) {
+        _shareOffered = true;
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => widget.onShareReady!(_shareSection));
+      }
       final cabinet = _cabinetOn;
       final topInset = cabinet
           ? kCabinetReceptorY - ChartPainter.receptorBase
@@ -2561,45 +2688,14 @@ class _ChartScrollerState extends State<ChartScroller>
           : 1;
       final chart = _skin == null
           ? null
-          : ChartPainter(
-              notes: _notes,
-              holds: _holds,
-              shockNotes: _shockNotes,
-              shocks: _shocks,
-              bpmMarkers: _bpmMarkers,
-              stopMarkers: _stopMarkers,
-              showMeasureLines: widget.showMeasureLines,
-              paintBackground: !_dancerOn,
-              guideline: _guideline,
-              timeSignatures: widget.timeSignatures,
-              feet: visibleFeet,
-              highlights: _hits,
-              highlightIcon: _pattern == null ? null : kPatternIcons[_pattern],
-              focus: widget.editFooting ? _focus : _sectionNotes,
-              section: _sectionRows,
-              sectionTail: _sectionNotes.isEmpty
-                  ? null
-                  : _sectionNotes
-                      .map((n) => n.endSecond ?? n.second)
-                      .reduce(math.max),
-              footPrev: widget.showFootTrails ? visibleLinks : const {},
+          : _chartPainter(
               dirs: dirs,
-              colMap: _colMap,
               playhead: _playhead,
-              pxPerSecond: _pxPerSecond,
-              pxPerBeat: _pxPerBeat,
-              timing: _timing,
-              columnCount: dirs.length,
-              skin: _skin!,
               playing: _playing,
-              zoom: _zoom,
-              constantMs: _effectiveConstantMs,
+              paintBackground: !_dancerOn,
               topInset: topInset,
+              constantMs: _effectiveConstantMs,
               visualOffset: _visualOffsetSeconds,
-              arcadeQuant: !widget.quantColorsOn,
-              arrowBlink: widget.arrowBlinkOn,
-              quantFreezeHeads: widget.quantFreezeHeadsOn,
-              ddr: _ddr,
             );
       // Taps find notes on the full-field chart only.
       _painter = cabinet ? null : chart;

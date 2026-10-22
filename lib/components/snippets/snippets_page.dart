@@ -4,6 +4,8 @@
 /// chart looping the section; Add starts a new one from a song search.
 library;
 
+import 'dart:async';
+
 import 'package:ddr_md/components/snippets/snippet_chart_picker.dart';
 import 'package:ddr_md/components/snippets/snippet_feed_page.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
@@ -112,12 +114,41 @@ class _SnippetsPageState extends State<SnippetsPage> {
     _load();
   }
 
-  Future<void> _menu(Snippet s) async {
+  // Draws the snippet through its own preview, mounted out of sight just long
+  // enough to render, and shares the image. [origin] places the share sheet's
+  // popover on iPad and macOS.
+  Future<void> _share(Snippet s, SongInfo song, Rect? origin) async {
+    final ready = Completer<Future<void> Function(Rect? origin)>();
+    final entry = OverlayEntry(
+        builder: (_) => Offstage(
+            child: ChartPreviewPage.forChart(song, s.mode, s.difficulty,
+                snippet: s, onShareReady: ready.complete)));
+    Overlay.of(context).insert(entry);
+    try {
+      final share = await ready.future.timeout(const Duration(seconds: 10));
+      await share(origin);
+    } on TimeoutException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Couldn't draw this snippet")));
+      }
+    } finally {
+      entry.remove();
+    }
+  }
+
+  Future<void> _menu(Snippet s, Rect? origin) async {
+    final song = _songOf(s);
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+        if (song != null)
+          ListTile(
+              leading: const Icon(Icons.ios_share),
+              title: const Text('Share image'),
+              onTap: () => Navigator.pop(context, 'share')),
         ListTile(
             leading: const Icon(Icons.edit_outlined),
             title: const Text('Rename'),
@@ -129,6 +160,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
       ])),
     );
     if (!mounted) return;
+    if (action == 'share') await _share(s, song!, origin);
     if (action == 'rename') await _rename(s);
     if (action == 'delete') {
       setState(() =>
@@ -237,59 +269,66 @@ class _SnippetsPageState extends State<SnippetsPage> {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       onDismissed: (_) => _delete(s),
-      child: ListTile(
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image(
-            width: 48,
-            height: 48,
-            image: ContentStore.image('assets/jackets-160/${s.song}.png'),
-            errorBuilder: (_, __, ___) =>
-                const Icon(Icons.music_note, size: 40),
-          ),
-        ),
-        title: Text(song?.title ?? s.song, overflow: TextOverflow.ellipsis),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-                '${s.mode == Modes.singles ? 'SP' : 'DP'} '
-                '${kInGameDifficultyNames[s.difficulty] ?? s.difficulty}'
-                '${difficulty == null ? '' : ' $difficulty'}',
-                style: TextStyle(
-                    color: difficultyColor(s.difficulty),
-                    fontWeight: FontWeight.w700)),
-            if (s.label.isNotEmpty)
-              Text(s.label, maxLines: 1, overflow: TextOverflow.ellipsis),
-            FutureBuilder<Map<Pattern, int>>(
-              future: _counts.putIfAbsent(
-                  '${s.id}:${s.startBeat}:${s.endBeat}', () => _patterns(s)),
-              builder: (_, snapshot) => Wrap(
-                spacing: 10,
-                children: [
-                  for (final entry
-                      in (snapshot.data ?? <Pattern, int>{}).entries)
-                    Tooltip(
-                      message: '${kPatternLabels[entry.key]}: ${entry.value}',
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(kPatternIcons[entry.key], size: 16),
-                        const SizedBox(width: 3),
-                        Text('${entry.value}'),
-                      ]),
-                    ),
-                ],
-              ),
+      child: Builder(
+        builder: (context) => ListTile(
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image(
+              width: 48,
+              height: 48,
+              image: ContentStore.image('assets/jackets-160/${s.song}.png'),
+              errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.music_note, size: 40),
             ),
-          ],
+          ),
+          title: Text(song?.title ?? s.song, overflow: TextOverflow.ellipsis),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                  '${s.mode == Modes.singles ? 'SP' : 'DP'} '
+                  '${kInGameDifficultyNames[s.difficulty] ?? s.difficulty}'
+                  '${difficulty == null ? '' : ' $difficulty'}',
+                  style: TextStyle(
+                      color: difficultyColor(s.difficulty),
+                      fontWeight: FontWeight.w700)),
+              if (s.label.isNotEmpty)
+                Text(s.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              FutureBuilder<Map<Pattern, int>>(
+                future: _counts.putIfAbsent(
+                    '${s.id}:${s.startBeat}:${s.endBeat}', () => _patterns(s)),
+                builder: (_, snapshot) => Wrap(
+                  spacing: 10,
+                  children: [
+                    for (final entry
+                        in (snapshot.data ?? <Pattern, int>{}).entries)
+                      Tooltip(
+                        message: '${kPatternLabels[entry.key]}: ${entry.value}',
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(kPatternIcons[entry.key], size: 16),
+                          const SizedBox(width: 3),
+                          Text('${entry.value}'),
+                        ]),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          enabled: song != null,
+          onTap: song == null ? null : () => _open(s, song),
+          onLongPress: () => _menu(s, _rectOf(context)),
+          trailing: IconButton(
+              icon: const Icon(Icons.more_vert),
+              tooltip: 'Snippet actions',
+              onPressed: () => _menu(s, _rectOf(context))),
         ),
-        enabled: song != null,
-        onTap: song == null ? null : () => _open(s, song),
-        onLongPress: () => _menu(s),
-        trailing: IconButton(
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'Snippet actions',
-            onPressed: () => _menu(s)),
       ),
     );
+  }
+
+  Rect? _rectOf(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    return box == null ? null : box.localToGlobal(Offset.zero) & box.size;
   }
 }

@@ -62,7 +62,12 @@ class ChartPainter extends CustomPainter {
     this.highlightIcon,
     this.section,
     this.sectionTail,
+    this.cabinetEdge = true,
   }) : super(repaint: playhead);
+
+  /// End the field where the cabinet's screen ends. Off, it runs the whole
+  /// canvas, for an image of a stretch longer than one screen.
+  final bool cabinetEdge;
 
   /// The snippet's (first, last) row seconds, banded in [kSectionColor].
   final (double, double)? section;
@@ -256,9 +261,11 @@ class ChartPainter extends CustomPainter {
     if (paintBackground) _paintBackground(canvas, size);
     // The cabinet's screen ends where its bottom edge falls; arrows emerge from
     // there rather than from the bottom of a taller phone.
-    final edge = _receptorTop +
-        arcadeArrowSize(size, columnCount, topInset) * cabinetTravelArrows;
-    canvas.clipRect(Rect.fromLTRB(0, 0, size.width, edge));
+    if (cabinetEdge) {
+      final edge = _receptorTop +
+          arcadeArrowSize(size, columnCount, topInset) * cabinetTravelArrows;
+      canvas.clipRect(Rect.fromLTRB(0, 0, size.width, edge));
+    }
 
     final (
       :fieldLeft,

@@ -45,6 +45,7 @@ class ChartPreviewPage extends StatefulWidget {
     this.playbackRate = 1.0,
     this.onPlaybackRateChanged,
     this.feedLabel,
+    this.onShareReady,
   });
 
   /// The preview of [info]'s [mode] [difficultyKey], its timing taken from the
@@ -62,6 +63,7 @@ class ChartPreviewPage extends StatefulWidget {
     double playbackRate = 1.0,
     ValueChanged<double>? onPlaybackRateChanged,
     String? feedLabel,
+    ValueChanged<Future<void> Function(Rect? origin)>? onShareReady,
   }) {
     final difficulty = mode == Modes.singles ? info.singles : info.doubles;
     final chart = info.chartFor(difficultyKey);
@@ -89,6 +91,7 @@ class ChartPreviewPage extends StatefulWidget {
       playbackRate: playbackRate,
       onPlaybackRateChanged: onPlaybackRateChanged,
       feedLabel: feedLabel,
+      onShareReady: onShareReady,
     );
   }
 
@@ -103,6 +106,9 @@ class ChartPreviewPage extends StatefulWidget {
   final double playbackRate;
   final ValueChanged<double>? onPlaybackRateChanged;
   final String? feedLabel;
+
+  /// See [ChartScroller.onShareReady].
+  final ValueChanged<Future<void> Function(Rect? origin)>? onShareReady;
 
   /// The (already in-flight) lazy load of the song's step file, shared with the
   /// song page so opening the preview doesn't re-read the asset.
@@ -342,6 +348,16 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               feedActive: widget.feedActive,
               playbackRate: widget.playbackRate,
               onPlaybackRateChanged: widget.onPlaybackRateChanged,
+              title: widget.title,
+              chartLabel: [
+                widget.mode == Modes.doubles ? 'DP' : 'SP',
+                _pretty(widget.difficultyKey),
+                if (widget.difficultyLevel != null) '${widget.difficultyLevel}',
+                if (widget.snippet?.label case final label?
+                    when label.isNotEmpty)
+                  '· $label',
+              ].join(' '),
+              onShareReady: widget.onShareReady,
               mode: widget.mode,
               songLength: widget.songLength,
               chartBpm: widget.chartBpm,
@@ -373,14 +389,10 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                   diffColor,
                   patternsButton,
                   () => _saveSnippet(snapshot.data!, steps)),
-              // The footing editor stays a debug tool until it ships to users,
-              // and keeps out of snippets, where taps pick the section.
-              footingRef: kDebugMode && !_isSnippet
-                  ? ChartRef(
-                      snapshot.data!.name,
-                      widget.mode == Modes.doubles ? 'dp' : 'sp',
-                      widget.difficultyKey)
-                  : null,
+              footingRef: ChartRef(
+                  snapshot.data!.name,
+                  widget.mode == Modes.doubles ? 'dp' : 'sp',
+                  widget.difficultyKey),
               editFooting: _editFooting,
               initialSecond: widget.initialSecond,
               section: _section,
