@@ -5,7 +5,7 @@
 /// mix of charts, as a you-vs-usual bar over each play's gap in play order,
 /// with the average level, level range, upscores and, when timing was
 /// logged, its offset.
-/// Failed plays (an E) count for less.
+/// Failed plays (an E) and far-off ones count for less.
 library;
 
 import 'dart:math';
@@ -16,6 +16,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/session_model.dart';
 import 'package:flutter/material.dart';
 
 /// How many plays the level's model counts as when blended into a chart's
@@ -30,6 +31,12 @@ const _failWeight = 0.25;
 
 double _weight(RecentPlay p) => p.failed ? _failWeight : 1;
 
+/// How far a play's gap can sit from the set's median gap before it counts
+/// for less: three of the set's usual spread, and never under this. Past
+/// it a play's weight falls off so it can pull the average no further, and
+/// one fumbled chart doesn't sink the set.
+const _minOutlierGap = 50000.0;
+
 class SetSummary {
   SetSummary(
       {required this.points,
@@ -39,7 +46,7 @@ class SetSummary {
       required this.upscores});
 
   /// Each play with a score, a level and a usual, newest first, with what
-  /// it counts for in the averages.
+  /// it counts for in the averages: less when failed or far off the rest.
   final List<({RecentPlay play, int level, double usual, double weight})>
       points;
 
@@ -67,6 +74,12 @@ class SetSummary {
 }
 
 double _mean(Iterable<num> s) => s.fold<double>(0, (a, b) => a + b) / s.length;
+
+double _median(Iterable<double> s) {
+  final o = s.toList()..sort();
+  final m = o.length ~/ 2;
+  return o.length.isOdd ? o[m] : (o[m - 1] + o[m]) / 2;
+}
 
 double _weightedMean(Iterable<(num, double)> s) =>
     s.fold<double>(0, (a, e) => a + e.$1 * e.$2) /
@@ -138,12 +151,33 @@ class ScoreModel {
       for (final p in plays)
         if (level(p) case final l?) l,
     ];
+    final scored = [
+      for (final p in plays)
+        if ((p.score, level(p)) case (final s?, final l?))
+          if (usualOf(p, l) case final u?)
+            (play: p, level: l, usual: u, gap: s - u),
+    ];
+    // The spread is the cleared plays' median distance from their median
+    // gap, scaled to a standard deviation.
+    final cleared = [
+      for (final p in scored)
+        if (!p.play.failed) p.gap
+    ];
+    final gaps = cleared.isEmpty ? [for (final p in scored) p.gap] : cleared;
+    final mid = gaps.isEmpty ? 0.0 : _median(gaps);
+    final limit = gaps.isEmpty
+        ? 0.0
+        : max<double>(_minOutlierGap,
+            3 * 1.4826 * _median([for (final g in gaps) (g - mid).abs()]));
     return SetSummary(
       points: [
-        for (final p in plays)
-          if ((p.score, level(p)) case (final _?, final l?))
-            if (usualOf(p, l) case final u?)
-              (play: p, level: l, usual: u, weight: _weight(p)),
+        for (final p in scored)
+          (
+            play: p.play,
+            level: p.level,
+            usual: p.usual,
+            weight: _weight(p.play) * min(1.0, limit / (p.gap - mid).abs()),
+          ),
       ],
       level: known.isEmpty ? null : _mean(known),
       lowest: known.isEmpty ? null : known.reduce(min),
@@ -157,30 +191,61 @@ class ScoreModel {
   }
 }
 
-/// [summary] of [plays] (newest first), with [timingMs] when timing was
-/// logged in the session: its average offset, negative is fast.
-class SessionSummaryBody extends StatelessWidget {
+/// [summary] of [plays] (newest first), with the [timing] logged in the
+/// session. With timing, a toggle swaps the score chart for the timing one.
+class SessionSummaryBody extends StatefulWidget {
   const SessionSummaryBody(this.summary,
-      {super.key, required this.plays, this.timingMs, this.timed = false});
+      {super.key, required this.plays, this.timing, this.timed = false});
 
   final SetSummary summary;
   final List<RecentPlay> plays;
-  final double? timingMs;
+  final List<TimingPlay>? timing;
   // Whether the session could log timing, to show its stat even when empty.
   final bool timed;
 
   @override
+  State<SessionSummaryBody> createState() => _SessionSummaryBodyState();
+}
+
+class _SessionSummaryBodyState extends State<SessionSummaryBody> {
+  bool _showTiming = false;
+
+  @override
   Widget build(BuildContext context) {
+    final summary = widget.summary;
+    final plays = widget.plays;
+    final timed = widget.timed;
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final muted = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
     final gap = summary.gap;
     final up = isDark ? Colors.green.shade300 : Colors.green.shade700;
-    final timing = timingMs;
+    final logged = widget.timing ?? const <TimingPlay>[];
+    final timing = logged.isEmpty
+        ? null
+        : logged.map((t) => t.averageMs).reduce((a, b) => a + b) /
+            logged.length;
+    final showTiming = _showTiming && timing != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (gap == null)
+        if (timing != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('Score')),
+                ButtonSegment(value: true, label: Text('Timing')),
+              ],
+              selected: {showTiming},
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              onSelectionChanged: (v) => setState(() => _showTiming = v.first),
+            ),
+          ),
+        if (showTiming)
+          _TimingChart(logged, mean: timing, isDark: isDark)
+        else if (gap == null)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 6),
             child: Text('Not enough history yet to say how this went.'),
@@ -392,6 +457,72 @@ class _UsualBar extends StatelessWidget {
   }
 }
 
+/// The session's timing: its mean offset, then each logged play's offset in
+/// the order played around the on-time line, SLOW above and FAST below.
+class _TimingChart extends StatelessWidget {
+  const _TimingChart(this.timing, {required this.mean, required this.isDark});
+
+  final List<TimingPlay> timing;
+  final double mean;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final muted = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
+    final ordered = [...timing]
+      ..sort((a, b) => a.playedAt.compareTo(b.playedAt));
+    final fast = kFastColor(isDark), slow = kSlowColor(isDark);
+    String at(TimingPlay t) =>
+        formatTime12(DateTime.parse(t.playedAt).toLocal());
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              '${mean.abs().toStringAsFixed(1)} ms',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: mean < 0 ? fast : slow,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(
+                    '${mean < 0 ? 'FAST' : 'SLOW'} on average · '
+                    '${ordered.length} logged',
+                    style: TextStyle(
+                        fontSize: 12, color: scheme.onSurfaceVariant))),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 64,
+          child: CustomPaint(
+            painter: _GapPainter(
+              [for (final t in ordered) (t.averageMs, 1.0, false)],
+              up: slow,
+              down: fast,
+              line: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Row(children: [
+          Text(at(ordered.first), style: muted),
+          const Spacer(),
+          Text(at(ordered.last), style: muted),
+        ]),
+      ],
+    );
+  }
+}
+
 /// Each play's gap from its usual in the order played, as dots either side
 /// of the usual line (rings for failed plays), with a running average
 /// through them.
@@ -417,7 +548,10 @@ class _GapTimeline extends StatelessWidget {
           height: 64,
           child: CustomPaint(
             painter: _GapPainter(
-              [for (final p in plays) (p.play.score! - p.usual, p.weight)],
+              [
+                for (final p in plays)
+                  (p.play.score! - p.usual, p.weight, p.play.failed)
+              ],
               up: up,
               down: down,
               line: scheme.onSurfaceVariant,
@@ -447,8 +581,8 @@ class _GapPainter extends CustomPainter {
   _GapPainter(this.points,
       {required this.up, required this.down, required this.line});
 
-  // Each play's gap and what it counts for: under 1 is a failed play.
-  final List<(double, double)> points;
+  // Each play's gap, what it counts for and whether it failed.
+  final List<(double, double, bool)> points;
   final Color up, down, line;
 
   // Plays either side of each point the running average spans.
@@ -456,13 +590,15 @@ class _GapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // The cleared plays' range, always taking in the usual line; a failed
-    // play past it sits on the edge rather than squashing the rest.
+    // The full-weight plays' range, always taking in the usual line; a
+    // failed or far-off play past it sits on the edge rather than squashing
+    // the rest.
     final cleared = [
-      for (final (g, w) in points)
+      for (final (g, w, _) in points)
         if (w == 1) g
     ];
-    final ranged = cleared.isEmpty ? [for (final (g, _) in points) g] : cleared;
+    final ranged =
+        cleared.isEmpty ? [for (final (g, _, _) in points) g] : cleared;
     final top = ranged.fold<double>(1, max),
         bottom = ranged.fold<double>(-1, min);
     const r = 3.5;
@@ -482,8 +618,7 @@ class _GapPainter extends CustomPainter {
     }
 
     for (var i = 0; i < points.length; i++) {
-      final (g, w) = points[i];
-      final failed = w < 1;
+      final (g, _, failed) = points[i];
       canvas.drawCircle(
           Offset(x(i), y(g)),
           failed ? r - 0.75 : r,
@@ -497,7 +632,8 @@ class _GapPainter extends CustomPainter {
     for (var i = 0; i < points.length; i++) {
       final from = max(0, i - _window),
           to = min(points.length, i + _window + 1);
-      final avg = _weightedMean(points.sublist(from, to));
+      final avg = _weightedMean(
+          [for (final (g, w, _) in points.sublist(from, to)) (g, w)]);
       i == 0 ? trend.moveTo(x(i), y(avg)) : trend.lineTo(x(i), y(avg));
     }
     canvas.drawPath(

@@ -7,6 +7,17 @@ import 'package:flutter_test/flutter_test.dart';
 
 final t = DateTime.utc(2026, 10, 1, 18);
 
+extension on RecentPlay {
+  RecentPlay copyWithTime(int minutesAgo) => RecentPlay(
+      konamiId: konamiId,
+      title: title,
+      song: song,
+      mode: mode,
+      difficulty: difficulty,
+      playedAt: t.subtract(Duration(minutes: minutesAgo)),
+      score: score);
+}
+
 RecentPlay play(String id, int hoursAgo, int score) => RecentPlay(
     konamiId: id,
     title: id,
@@ -63,15 +74,28 @@ void main() {
           mode: Modes.singles,
           difficulty: 'EXPERT',
           playedAt: t,
-          score: 400000,
+          score: 860000,
           failed: true),
       play('a', 48, 900000),
       play('b', 48, 900000),
     ];
     final s = ScoreModel(history, [], (_, __, ___) => 15)
         .summarize(history.take(2).toList());
-    expect(s.average, (900000 + 0.25 * 400000) / 1.25);
+    expect(s.average, (900000 + 0.25 * 860000) / 1.25);
     expect(s.usual, 900000);
+  });
+
+  test('a far-off play pulls the average no further than the outlier limit',
+      () {
+    final history = [
+      for (final id in ['a', 'b', 'c']) play(id, 0, 900000),
+      play('d', 0, 300000),
+      for (final id in ['a', 'b', 'c', 'd']) play(id, 48, 900000),
+    ];
+    final s = ScoreModel(history, [], (_, __, ___) => 15)
+        .summarize(history.take(4).toList());
+    // 600,000 under counts for 50,000 / 600,000 of a play.
+    expect(s.gap, closeTo(-50000 / (3 + 1 / 12), 1));
   });
 
   test('plays join the session running when they were played', () {
@@ -121,10 +145,41 @@ void main() {
         cabinet: cab,
         side: PadSide.p1,
         startedAt: t.subtract(Duration(hours: hoursAgo)));
-    final groups = groupByCredit(
-        [play('a', 1, 1), play('b', 3, 1), play('c', 6, 1)],
-        [credit(1, 5), credit(2, 2)]);
+    RecentPlay at(int minutesAgo) =>
+        play('$minutesAgo', 0, 1).copyWithTime(minutesAgo);
+    // Credit 1 at -60 min takes 4 songs; the rest split at the breaks.
+    final groups = groupByCredit([
+      for (final m in [5, 20, 23, 50, 52, 54, 56, 59]) at(m)
+    ], [
+      credit(1, 1)
+    ]);
     expect([for (final (c, p) in groups) (c?.number, p.length)],
-        [(2, 1), (1, 1), (null, 1)]);
+        [(null, 1), (null, 2), (null, 1), (1, 4)]);
+  });
+
+  test('timing matches the synced play of its song', () {
+    TimingPlay timing(String song, int minutesAgo, String difficulty) =>
+        TimingPlay(
+            playedAt:
+                t.subtract(Duration(minutes: minutesAgo)).toIso8601String(),
+            cabinetId: 1,
+            side: PadSide.p1,
+            song: song,
+            mode: Modes.singles,
+            difficulty: difficulty,
+            songOffsetMs: 0,
+            syncUsedMs: 0,
+            averageMs: -3,
+            variationMs: 10);
+    final synced = play('a', 0, 1);
+    final (plays, matched) = reconcileTiming(
+        [synced], [timing('a', 2, 'beginner'), timing('b', 5, 'hard')]);
+    // Logged on the wrong difficulty: the synced chart takes it, and the
+    // timing is fixed to that chart.
+    expect(matched[synced]?.song, 'a');
+    expect([for (final (t, d) in timingFixes(matched)) (t.song, d)],
+        [('a', 'hard')]);
+    // 'b' was never synced: it stands in without a score.
+    expect([for (final p in plays) (p.song, p.score)], [('a', 1), ('b', null)]);
   });
 }

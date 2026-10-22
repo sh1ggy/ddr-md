@@ -10,10 +10,12 @@ import 'dart:math';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
@@ -169,10 +171,16 @@ class CardSubtitle extends StatelessWidget {
 /// [plays] as cards in as many columns as fit, [rows] rows of them at most.
 class PlayGrid extends StatelessWidget {
   const PlayGrid(
-      {super.key, required this.plays, required this.bests, this.rows});
+      {super.key,
+      required this.plays,
+      required this.bests,
+      this.timing = const {},
+      this.rows});
 
   final List<RecentPlay> plays;
   final Map<String, int?> bests;
+  // The timing logged for each play that has one.
+  final Map<RecentPlay, TimingPlay> timing;
   final int? rows;
 
   static const _minWidth = 160.0;
@@ -195,22 +203,25 @@ class PlayGrid extends StatelessWidget {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.only(top: 4),
-        itemBuilder: (context, i) =>
-            _PlayCard(play: shown[i], best: bests[shown[i].recordId]),
+        itemBuilder: (context, i) => _PlayCard(
+            play: shown[i],
+            best: bests[shown[i].recordId],
+            timing: timing[shown[i]]),
       );
     });
   }
 }
 
 /// One play: jacket with the title and chart beside it, then the score,
-/// grade and time. A play that set the chart's best carries an up arrow in
+/// grade, its logged timing and time. A play that set the chart's best carries an up arrow in
 /// its top-right corner.
 class _PlayCard extends StatelessWidget {
-  const _PlayCard({required this.play, required this.best});
+  const _PlayCard({required this.play, required this.best, this.timing});
 
   final RecentPlay play;
   // The chart's synced best, to mark the play that set it.
   final int? best;
+  final TimingPlay? timing;
 
   static const height = 92.0;
 
@@ -220,6 +231,7 @@ class _PlayCard extends StatelessWidget {
     final isBest = play.score != null && best != null && play.score! >= best!;
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
       color: scheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(12),
@@ -278,6 +290,19 @@ class _PlayCard extends StatelessWidget {
                             child: _Score(play.score!, failed: play.failed),
                           ),
                   ),
+                  if (timing case final t?) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '${t.averageMs.abs().toStringAsFixed(1)}'
+                      '${t.averageMs < 0 ? 'F' : 'S'}',
+                      style: muted.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: t.averageMs < 0
+                            ? kFastColor(isDark)
+                            : kSlowColor(isDark),
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 6),
                   Text(_time(play.playedAt.toLocal()), style: muted),
                 ]),

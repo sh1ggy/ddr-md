@@ -12,6 +12,7 @@ import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/session_model.dart';
+import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -317,6 +318,19 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
             ],
           ),
           children: [
+            // Timing is kept per chart: pick the one played before logging.
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: [
+                const Text('Logging for',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                const SizedBox(width: 8),
+                SongDifficultyPicker(
+                    difficulty: widget.mode == Modes.singles
+                        ? widget.songInfo.singles
+                        : widget.songInfo.doubles),
+              ]),
+            ),
             // What the result screen showed.
             Row(
               children: [

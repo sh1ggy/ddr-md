@@ -7,6 +7,7 @@
 /// their own, waiting for a venue.
 library;
 
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 
@@ -122,23 +123,125 @@ List<Visit> buildVisits(
 /// app and e-amusement disagree by a moment).
 const kCreditGrace = Duration(minutes: 2);
 
+/// The most songs one credit plays.
+const kSongsPerCredit = 4;
+
+/// The longest wait between two songs of one credit.
+const kCreditBreak = Duration(minutes: 10);
+
+/// How far apart a logged timing and its synced play can be.
+const kTimingMatch = Duration(minutes: 10);
+
+/// [plays] (newest first) with the [timing] logged for them: each timing
+/// play goes to the same song's play nearest in time within [kTimingMatch],
+/// each used once, the same chart first. Timing is logged against the
+/// difficulty picked on the song page, which may not be the chart played,
+/// so the synced play's chart wins. One with no synced play joins the plays
+/// as a stand-in without a score, so it still shows where it was played.
+(List<RecentPlay>, Map<RecentPlay, TimingPlay>) reconcileTiming(
+    List<RecentPlay> plays, List<TimingPlay> timing) {
+  // Timing names charts as the step files do ('hard'), e-amusement as the
+  // cabinet does ('EXPERT').
+  String chart(String difficulty) =>
+      (kInGameDifficultyNames[difficulty] ?? difficulty).toUpperCase();
+  final pairs = [
+    for (final t in timing)
+      for (final p in plays)
+        if (p.song == t.song && p.mode == t.mode)
+          (
+            p,
+            t,
+            DateTime.parse(t.playedAt).difference(p.playedAt).abs(),
+            chart(p.difficulty) == chart(t.difficulty) ? 0 : 1,
+          )
+  ]
+    ..removeWhere((e) => e.$3 > kTimingMatch)
+    ..sort((a, b) => a.$4 != b.$4 ? a.$4 - b.$4 : a.$3.compareTo(b.$3));
+  final matched = <RecentPlay, TimingPlay>{};
+  final used = <String>{};
+  for (final (p, t, _, _) in pairs) {
+    if (matched.containsKey(p) || used.contains(t.id)) continue;
+    matched[p] = t;
+    used.add(t.id);
+  }
+  for (final t in timing) {
+    if (used.contains(t.id)) continue;
+    matched[RecentPlay(
+      konamiId: 'timing:${t.id}',
+      title: t.song,
+      song: t.song,
+      mode: t.mode,
+      difficulty: chart(t.difficulty),
+      playedAt: DateTime.parse(t.playedAt),
+      score: null,
+    )] = t;
+  }
+  return (
+    matched.keys.toSet().union(plays.toSet()).toList()
+      ..sort((a, b) => b.playedAt.compareTo(a.playedAt)),
+    matched
+  );
+}
+
+/// The timing plays [matched] to a synced play on another chart, each with
+/// that chart's difficulty as timing names it ('hard'), to store instead.
+List<(TimingPlay, String)> timingFixes(Map<RecentPlay, TimingPlay> matched) => [
+      for (final MapEntry(key: p, value: t) in matched.entries)
+        for (final MapEntry(key: key, value: name)
+            in kInGameDifficultyNames.entries)
+          if (name == p.difficulty && key != t.difficulty) (t, key)
+    ];
+
 /// [plays] (newest first) split into the [credits] they were played in,
-/// newest credit first: each play goes to the last credit started before it.
-/// Plays before every credit come last, under a null credit.
+/// newest first. A play whose [timing] was logged in a credit goes to it;
+/// any other goes to the last credit started before it, up to
+/// [kSongsPerCredit] songs; the rest are split into credits that weren't
+/// logged (a null credit), at most [kSongsPerCredit] songs each and broken
+/// wherever songs are more than [kCreditBreak] apart.
 List<(Credit?, List<RecentPlay>)> groupByCredit(
-    List<RecentPlay> plays, List<Credit> credits) {
+    List<RecentPlay> plays, List<Credit> credits,
+    [Map<RecentPlay, TimingPlay> timing = const {}]) {
   final ordered = [...credits]
     ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
   final byCredit = {for (final c in ordered) c.id: <RecentPlay>[]};
-  final unmatched = <RecentPlay>[];
-  for (final p in plays) {
+  final rest = <RecentPlay>[];
+  final pinned = {
+    for (final MapEntry(key: p, value: t) in timing.entries)
+      if (byCredit.containsKey(t.creditId)) p: t.creditId!,
+  };
+  for (final p in plays.reversed) {
+    if (pinned[p] case final id?) byCredit[id]!.add(p);
+  }
+  for (final p in plays.reversed) {
+    if (pinned.containsKey(p)) continue;
     final c = ordered
         .where((c) => !c.startedAt.subtract(kCreditGrace).isAfter(p.playedAt))
         .firstOrNull;
-    c == null ? unmatched.add(p) : byCredit[c.id]!.add(p);
+    if (c != null && byCredit[c.id]!.length < kSongsPerCredit) {
+      byCredit[c.id]!.add(p);
+    } else {
+      rest.add(p);
+    }
   }
+  // Oldest first so far; unlogged credits fill from their first song.
+  final unlogged = <List<RecentPlay>>[];
+  for (final p in rest) {
+    final last = unlogged.lastOrNull;
+    if (last == null ||
+        last.length == kSongsPerCredit ||
+        p.playedAt.difference(last.last.playedAt) > kCreditBreak) {
+      unlogged.add([p]);
+    } else {
+      last.add(p);
+    }
+  }
+  for (final list in byCredit.values) {
+    list.sort((a, b) => a.playedAt.compareTo(b.playedAt));
+  }
+  DateTime at((Credit?, List<RecentPlay>) g) =>
+      g.$2.lastOrNull?.playedAt ?? g.$1!.startedAt;
   return [
-    for (final c in ordered) (c, byCredit[c.id]!),
-    if (unmatched.isNotEmpty) (null, unmatched),
-  ];
+    for (final c in ordered) (c, byCredit[c.id]!.reversed.toList()),
+    for (final g in unlogged) (null, g.reversed.toList()),
+  ]..sort((a, b) => at(b).compareTo(at(a)));
 }

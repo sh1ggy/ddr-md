@@ -329,6 +329,12 @@ class DatabaseProvider {
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  static Future<void> setTimingDifficulty(String id, String difficulty) async {
+    final db = await _instance;
+    await db.update("timing_plays", {'difficulty': difficulty},
+        where: "id = ?", whereArgs: [id]);
+  }
+
   static Future<void> deleteTimingPlay(String id) async {
     final db = await _instance;
     await db.delete("timing_plays", where: "id = ?", whereArgs: [id]);
