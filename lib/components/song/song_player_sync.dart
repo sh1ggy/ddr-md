@@ -205,7 +205,7 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
                 const SizedBox(width: 12),
                 Text(
                   'on ${whole(p.syncUsedMs)} → '
-                  '${whole(p.syncUsedMs - p.averageMs)} ms',
+                  '${whole(p.syncUsedMs - p.trueAverageMs)} ms',
                   style: const TextStyle(
                       fontSize: 12, fontWeight: FontWeight.bold),
                 ),

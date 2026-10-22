@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,5 +43,26 @@ void main() {
     expect(resolve('a', 'easy').source, SyncSource.song);
     expect(resolve('c', 'hard').source, SyncSource.cabinet);
     expect(resolve('c', 'hard', override: -1).ms, -1);
+  });
+
+  test('far off the beat, the steps that missed every note are put back', () {
+    final rng = Random(1);
+    for (final (mu, sigma) in [(4.0, 12.0), (-90.0, 40.0), (130.0, 35.0)]) {
+      // Box-Muller draws, kept only where they land on a note.
+      final hits = [
+        for (var i = 0; i < 400000; i++)
+          mu +
+              sigma *
+                  sqrt(-2 * log(1 - rng.nextDouble())) *
+                  cos(2 * pi * rng.nextDouble())
+      ].where((x) => x.abs() <= kJudgeWindowMs).toList();
+      final mean = hits.reduce((a, b) => a + b) / hits.length;
+      final sd = sqrt(
+          hits.map((x) => (x - mean) * (x - mean)).reduce((a, b) => a + b) /
+              hits.length);
+      final (m, s) = untruncate(mean, sd);
+      expect(m, closeTo(mu, 0.5), reason: '$mu ± $sigma shown as $mean ± $sd');
+      expect(s, closeTo(sigma, 0.5));
+    }
   });
 }
