@@ -28,7 +28,7 @@ RecentPlay play(String id, int hoursAgo, int score) => RecentPlay(
     score: score);
 
 void main() {
-  test('a set is averaged against its charts, blended with the level model',
+  test('a set is averaged against its charts, blended with their models',
       () {
     ScoreRecord best(String id, int score) => ScoreRecord(
         id: 'eamuse:$id:singles:EXPERT',
@@ -46,6 +46,7 @@ void main() {
       // Today's set, newest first.
       play('a', 0, 960000),
       play('new', 0, 900000),
+      play('c', 0, 930000),
       // An earlier visit, 20,000 under its chart's best.
       play('a', 48, 940000),
     ];
@@ -53,14 +54,15 @@ void main() {
       history,
       [best('a', 960000), best('b', 950000), best('c', 940000)],
       (_, __, ___) => 15,
-    ).summarize(history.take(2).toList());
+    ).summarize(history.take(3).toList());
 
-    // Level 15 bests average 950,000, less 20,000: a model of 930,000.
-    // 'new' takes it outright; 'a' blends its one play of 940,000 with the
-    // model counted twice, 933,333.
-    expect(s.points.length, 2);
+    // Plays land 20,000 under their best. 'c' is modelled from its own best,
+    // 920,000. 'a' set its best today, so like 'new' it falls back to the
+    // level: bests averaging 950,000, a model of 930,000, which 'a' blends
+    // with its one play of 940,000 counted against the model's two, 933,333.
+    expect(s.points.length, 3);
     expect(s.average, 930000);
-    expect(s.usual, closeTo((930000 + 933333) / 2, 1));
+    expect(s.usual, closeTo((933333 + 930000 + 920000) / 3, 1));
     expect(s.upscores, 1);
   });
 

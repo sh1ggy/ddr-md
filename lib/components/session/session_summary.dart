@@ -45,9 +45,10 @@ class SetSummary {
       this.highest,
       required this.upscores});
 
-  /// Each play with a score, a level and a usual, newest first, with what
-  /// it counts for in the averages: less when failed or far off the rest.
-  final List<({RecentPlay play, int level, double usual, double weight})>
+  /// Each play with a score and a usual, newest first, with its level when
+  /// known and what it counts for in the averages: less when failed or far
+  /// off the rest.
+  final List<({RecentPlay play, int? level, double usual, double weight})>
       points;
 
   /// The charts' average level.
@@ -87,11 +88,12 @@ double _weightedMean(Iterable<(num, double)> s) =>
 
 /// What you usually score, from your synced plays and bests.
 ///
-/// A chart's usual is its earlier plays' average, blended with the level's
-/// model: your average best at that mode and level, less how far plays
-/// usually land below their chart's best. The model covers charts you've
-/// never had a play of synced, which is most of them early on. Failed plays
-/// count for [_failWeight] of a play throughout.
+/// A chart's usual is its earlier plays' average, blended with a model of
+/// it: its best from before the set, or failing that your average best at
+/// that mode and level, less how far plays usually land below their chart's
+/// best. The model covers charts you've never had a play of synced, which
+/// is most of them. Failed plays count for [_failWeight] of a play
+/// throughout.
 class ScoreModel {
   ScoreModel(this.history, List<ScoreRecord> records, this.levelOf)
       : _bests = {for (final r in records) r.id: r.score} {
@@ -134,12 +136,25 @@ class ScoreModel {
       byChart.putIfAbsent(p.recordId, () => []).add((p.score!, _weight(p)));
     }
 
-    double? usualOf(RecentPlay p, int level) {
+    // Charts whose best may have been set in or after the set, so isn't the
+    // best it was played against.
+    final reached = {
+      for (final p in history)
+        if (!p.playedAt.isBefore(first) &&
+            p.score != null &&
+            best(p) != null &&
+            p.score! >= best(p)!)
+          p.recordId,
+    };
+
+    double? usualOf(RecentPlay p) {
       final chart = byChart[p.recordId];
-      final peers = _levelBests['${p.mode.name}:$level'];
-      final model = peers != null && peers.length >= _minLevelCharts
-          ? _mean(peers) + offset
-          : null;
+      final peers = _levelBests['${p.mode.name}:${level(p)}'];
+      final model = best(p) != null && !reached.contains(p.recordId)
+          ? best(p)! + offset
+          : peers != null && peers.length >= _minLevelCharts
+              ? _mean(peers) + offset
+              : null;
       if (chart == null) return model;
       if (model == null) return _weightedMean(chart);
       final plays = chart.fold<double>(0, (a, e) => a + e.$2);
@@ -153,9 +168,9 @@ class ScoreModel {
     ];
     final scored = [
       for (final p in plays)
-        if ((p.score, level(p)) case (final s?, final l?))
-          if (usualOf(p, l) case final u?)
-            (play: p, level: l, usual: u, gap: s - u),
+        if (p.score case final s?)
+          if (usualOf(p) case final u?)
+            (play: p, level: level(p), usual: u, gap: s - u),
     ];
     // The spread is the cleared plays' median distance from their median
     // gap, scaled to a standard deviation.
