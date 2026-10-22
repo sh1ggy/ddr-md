@@ -119,10 +119,14 @@ class _SnippetsPageState extends State<SnippetsPage> {
   // popover on iPad and macOS.
   Future<void> _share(Snippet s, SongInfo song, Rect? origin) async {
     final ready = Completer<Future<void> Function(Rect? origin)>();
-    final entry = OverlayEntry(
-        builder: (_) => Offstage(
-            child: ChartPreviewPage.forChart(song, s.mode, s.difficulty,
-                snippet: s, onShareReady: ready.complete)));
+    // Built once: a fresh page per overlay rebuild would reload the steps and
+    // mount a second preview.
+    final page = Offstage(
+        child: ChartPreviewPage.forChart(song, s.mode, s.difficulty, snippet: s,
+            onShareReady: (share) {
+      if (!ready.isCompleted) ready.complete(share);
+    }));
+    final entry = OverlayEntry(builder: (_) => page);
     Overlay.of(context).insert(entry);
     try {
       final share = await ready.future.timeout(const Duration(seconds: 10));
