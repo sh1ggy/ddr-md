@@ -13,6 +13,7 @@ import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song/notes/section_bar.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/parity_labels.dart';
@@ -348,15 +349,15 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               feedActive: widget.feedActive,
               playbackRate: widget.playbackRate,
               onPlaybackRateChanged: widget.onPlaybackRateChanged,
-              title: widget.title,
-              chartLabel: [
-                widget.mode == Modes.doubles ? 'DP' : 'SP',
-                _pretty(widget.difficultyKey),
-                if (widget.difficultyLevel != null) '${widget.difficultyLevel}',
-                if (widget.snippet?.label case final label?
-                    when label.isNotEmpty)
-                  '· $label',
-              ].join(' '),
+              caption: (
+                title: widget.title,
+                jacket: ContentStore.image(
+                    'assets/jackets/${snapshot.data!.name}.png'),
+                mode: widget.mode,
+                difficulty: _pretty(widget.difficultyKey),
+                level: widget.difficultyLevel,
+                note: widget.snippet?.label ?? '',
+              ),
               onShareReady: widget.onShareReady,
               mode: widget.mode,
               songLength: widget.songLength,

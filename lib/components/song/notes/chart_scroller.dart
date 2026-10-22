@@ -132,16 +132,14 @@ class ChartScroller extends StatefulWidget {
     this.feedActive,
     this.playbackRate = 1.0,
     this.onPlaybackRateChanged,
-    this.title = '',
-    this.chartLabel = '',
+    this.caption,
     this.onShareReady,
   });
 
   final ChartSteps steps;
 
-  /// The song and chart ("SP EXPERT 14"), captioning a shared section.
-  final String title;
-  final String chartLabel;
+  /// Heads a shared section; the bars it spans join its note.
+  final ShareCaption? caption;
 
   /// Handed, once the field can be drawn, the function that shares the
   /// section as an image.
@@ -1512,7 +1510,8 @@ class _ChartScrollerState extends State<ChartScroller>
   Future<void> _shareSection(Rect? origin) async {
     final rows = _sectionRows;
     final section = widget.section;
-    if (rows == null || section == null) return;
+    final caption = widget.caption;
+    if (rows == null || section == null || caption == null) return;
     final dirs = widget.mode == Modes.singles ? kSingleDirs : kDoubleDirs;
     final arrow = ChartPainter.arcadeArrowSize(
             _fieldSize, dirs.length, MediaQuery.paddingOf(context).top) *
@@ -1532,6 +1531,7 @@ class _ChartScrollerState extends State<ChartScroller>
         zoom: zoom,
         allFeet: true,
         cabinetEdge: false,
+        markSection: false,
       ),
       fieldWidth: arrow * dirs.length,
       columns: dirs.length,
@@ -1540,11 +1540,17 @@ class _ChartScrollerState extends State<ChartScroller>
           .map((n) => n.endSecond ?? n.second)
           .fold(rows.$2, math.max),
       runOut: arrow * 0.75,
-      title: widget.title,
-      subtitle: [
-        if (widget.chartLabel.isNotEmpty) widget.chartLabel,
-        sectionLabel(section, widget.timeSignatures),
-      ].join(' · '),
+      caption: (
+        title: caption.title,
+        jacket: caption.jacket,
+        mode: caption.mode,
+        difficulty: caption.difficulty,
+        level: caption.level,
+        note: [
+          if (caption.note.isNotEmpty) caption.note,
+          sectionLabel(section, widget.timeSignatures),
+        ].join(' · '),
+      ),
       pixelRatio: MediaQuery.devicePixelRatioOf(context),
       origin: origin,
     );
@@ -2571,6 +2577,7 @@ class _ChartScrollerState extends State<ChartScroller>
     double? zoom,
     bool allFeet = false,
     bool cabinetEdge = true,
+    bool markSection = true,
   }) {
     final snippet = widget.section != null;
     final feet = {
@@ -2626,6 +2633,7 @@ class _ChartScrollerState extends State<ChartScroller>
       quantFreezeHeads: widget.quantFreezeHeadsOn,
       ddr: _ddr,
       cabinetEdge: cabinetEdge,
+      markSection: markSection,
     );
   }
 

@@ -1,22 +1,39 @@
 /// Name: ChartShare
 /// Parent: ChartScroller
 /// Description: A stretch of chart (a snippet's section) drawn as an image
-/// through the preview's own painter, captioned with the song, chart and bars,
-/// and handed to the system share sheet.
+/// through the preview's own painter, headed by the song's jacket, title, play
+/// style and chart in the cabinet's lettering, and handed to the system share
+/// sheet.
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:ddr_md/components/song/notes/chart_painter.dart';
+import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+/// What heads a shared image. [difficulty] is the in-game name (EXPERT);
+/// [note] reads under the chart, e.g. the snippet's name.
+typedef ShareCaption = ({
+  String title,
+  ImageProvider? jacket,
+  Modes mode,
+  String difficulty,
+  int? level,
+  String note,
+});
+
 const double _pad = 16;
-const double _headerHeight = 60;
+const double _jacket = 72;
+const double _headerHeight = _jacket + 2 * 14;
 const double _footerHeight = 28;
 const double _minWidth = 320;
 
@@ -25,9 +42,9 @@ const double _maxFieldHeight = 4000;
 const double _maxPixels = 8000;
 
 /// Draws the field from [start] down to the row at [last] plus [runOut] px,
-/// [fieldWidth] wide over [columns] lanes, and shares it as a PNG.
-/// [painterAt] builds the preview's painter on a playhead, with its spacing
-/// scaled by `spacing` and its arrows by `zoom`.
+/// [fieldWidth] wide over [columns] lanes, under [caption], and shares it as a
+/// PNG. [painterAt] builds the preview's painter on a playhead, with its
+/// spacing scaled by `spacing` and its arrows by `zoom`.
 Future<void> shareChartImage({
   required ChartPainter Function(
           ValueListenable<double> playhead, double spacing, double zoom)
@@ -37,8 +54,7 @@ Future<void> shareChartImage({
   required double start,
   required double last,
   required double runOut,
-  required String title,
-  required String subtitle,
+  required ShareCaption caption,
   required double pixelRatio,
   Rect? origin,
 }) async {
@@ -65,21 +81,85 @@ Future<void> shareChartImage({
   }
   height = math.max(height, minHeight);
 
+  final name = caption.difficulty.toLowerCase();
+  final (jacket, style, nameArt, levelArt) = await (
+    caption.jacket == null ? Future.value(null) : _resolve(caption.jacket!),
+    _asset(caption.mode == Modes.doubles
+        ? 'assets/icons/style_double.png'
+        : 'assets/icons/style_single.png'),
+    _asset('assets/difficulty/name_$name.png'),
+    caption.level == null
+        ? Future.value(null)
+        : _asset('assets/difficulty/level_${name}_${caption.level}.png'),
+  ).wait;
+
   final total = _headerHeight + height + _footerHeight;
   final ratio = math.min(pixelRatio, _maxPixels / total);
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder)..scale(ratio);
   canvas.drawRect(Rect.fromLTWH(0, 0, width, total),
       Paint()..color = const Color(0xFF080A0E));
+
+  var x = _pad;
+  if (jacket != null) {
+    const box = Rect.fromLTWH(_pad, 14, _jacket, _jacket);
+    canvas.save();
+    canvas.clipRRect(RRect.fromRectAndRadius(box, const Radius.circular(8)));
+    canvas.drawImageRect(
+        jacket,
+        Offset.zero & Size(jacket.width.toDouble(), jacket.height.toDouble()),
+        box,
+        Paint()..filterQuality = FilterQuality.medium);
+    canvas.restore();
+    x += _jacket + 12;
+  }
+  final textWidth = width - x - _pad;
   _text(
       canvas,
-      title,
-      const Offset(_pad, 12),
-      width - 2 * _pad,
+      caption.title,
+      Offset(x, 14),
+      textWidth,
       const TextStyle(
-          color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600));
-  _text(canvas, subtitle, const Offset(_pad, 36), width - 2 * _pad,
+          color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600));
+  // Play style, then the chart, in the cabinet's lettering where it's bundled.
+  var rowX = x;
+  const rowY = 42.0, rowHeight = 18.0;
+  if (style != null) {
+    rowX += _image(canvas, style, Offset(rowX, rowY + 1), rowHeight - 2) + 8;
+  }
+  if (nameArt != null) {
+    rowX += _image(canvas, nameArt, Offset(rowX, rowY), rowHeight) + 5;
+  } else {
+    rowX += _text(
+            canvas,
+            caption.difficulty,
+            Offset(rowX, rowY),
+            width - rowX - _pad,
+            TextStyle(
+                color:
+                    kInGameDifficultyColors[caption.difficulty] ?? Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                fontStyle: FontStyle.italic)) +
+        5;
+  }
+  if (levelArt != null) {
+    _image(canvas, levelArt, Offset(rowX, rowY), rowHeight);
+  } else if (caption.level != null) {
+    _text(
+        canvas,
+        '${caption.level}',
+        Offset(rowX, rowY),
+        width - rowX - _pad,
+        const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            fontStyle: FontStyle.italic));
+  }
+  _text(canvas, caption.note, Offset(x, 68), textWidth,
       const TextStyle(color: Colors.white70, fontSize: 13));
+
   canvas.save();
   canvas.translate(0, _headerHeight);
   canvas.clipRect(Rect.fromLTWH(0, 0, width, height));
@@ -104,7 +184,46 @@ Future<void> shareChartImage({
   ));
 }
 
-void _text(Canvas canvas, String text, Offset at, double width, TextStyle style,
+// A bundled image, or null when it isn't (the difficulty art is optional).
+Future<ui.Image?> _asset(String path) async {
+  try {
+    final data = await rootBundle.load(path);
+    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+    return (await codec.getNextFrame()).image;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<ui.Image?> _resolve(ImageProvider provider) {
+  final done = Completer<ui.Image?>();
+  final stream = provider.resolve(ImageConfiguration.empty);
+  late final ImageStreamListener listener;
+  listener = ImageStreamListener((info, _) {
+    stream.removeListener(listener);
+    done.complete(info.image);
+  }, onError: (_, __) {
+    stream.removeListener(listener);
+    done.complete(null);
+  });
+  stream.addListener(listener);
+  return done.future;
+}
+
+// Draws [image] [height] tall at [at] and returns its width.
+double _image(Canvas canvas, ui.Image image, Offset at, double height) {
+  final width = image.width * height / image.height;
+  canvas.drawImageRect(
+      image,
+      Offset.zero & Size(image.width.toDouble(), image.height.toDouble()),
+      at & Size(width, height),
+      Paint()..filterQuality = FilterQuality.medium);
+  return width;
+}
+
+// Draws one line of [text], cut to [width], and returns how wide it ran.
+double _text(
+    Canvas canvas, String text, Offset at, double width, TextStyle style,
     {TextAlign align = TextAlign.left}) {
   final tp = TextPainter(
     text: TextSpan(text: text, style: style),
@@ -112,7 +231,9 @@ void _text(Canvas canvas, String text, Offset at, double width, TextStyle style,
     textDirection: TextDirection.ltr,
     maxLines: 1,
     ellipsis: '…',
-  )..layout(minWidth: width, maxWidth: width);
+  )..layout(minWidth: align == TextAlign.left ? 0 : width, maxWidth: width);
   tp.paint(canvas, at);
+  final ran = tp.width;
   tp.dispose();
+  return ran;
 }
