@@ -362,6 +362,17 @@ class SessionState extends ChangeNotifier {
     changed();
   }
 
+  /// Saves [credit], new or changed, into its session, numbering the
+  /// session's credits in the order they started.
+  Future<void> saveCredit(Credit credit) async {
+    await DatabaseProvider.saveCredit(credit);
+    await DatabaseProvider.renumberCredits(credit.sessionId);
+    if (credit.sessionId == _session?.id) {
+      _credit = (await DatabaseProvider.getCredits(_session!.id)).firstOrNull;
+    }
+    changed();
+  }
+
   /// Deletes [credit] and its plays. The current credit falls back to the
   /// one before it; a session left with none is discarded.
   Future<void> deleteCredit(Credit credit) async {

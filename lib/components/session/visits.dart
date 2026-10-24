@@ -159,6 +159,7 @@ class LastSessionCard extends StatelessWidget {
               plays: visit.plays,
               timed: visit.session != null,
               timing: data.timing[visit.session?.id],
+              credits: data.credits[visit.session?.id] ?? [],
             ),
             const SizedBox(height: 8),
             TopPlays(plays: visit.plays, bests: data.model.bests),
@@ -511,6 +512,7 @@ class VisitPage extends StatelessWidget {
                       timed: visit.session != null,
                       timing: timing,
                       detailed: true,
+                      credits: credits,
                     ),
                 ],
               ),
@@ -519,19 +521,22 @@ class VisitPage extends StatelessWidget {
                   title: 'Plays',
                   icon: Icons.history,
                   children: [
-                    if (credits.isEmpty)
-                      PlayGrid(
-                          plays: played,
+                    for (final (credit, plays)
+                        in groupByCredit(played, credits, matched))
+                      _CreditGroup(
+                          credit: credit,
+                          plays: plays,
                           bests: data.model.bests,
-                          timing: matched)
-                    else
-                      for (final (credit, plays)
-                          in groupByCredit(played, credits, matched))
-                        _CreditGroup(
-                            credit: credit,
-                            plays: plays,
-                            bests: data.model.bests,
-                            timing: matched),
+                          timing: matched,
+                          onEdit: switch (visit.session) {
+                            final session? => () => showEditCreditSheet(context,
+                                session: session,
+                                credit: credit,
+                                last: credits.firstOrNull,
+                                startedAt: plays.lastOrNull?.playedAt ??
+                                    credit!.startedAt),
+                            null => null,
+                          }),
                   ],
                 ),
             ],
@@ -545,18 +550,21 @@ class VisitPage extends StatelessWidget {
 /// One credit's plays beside a narrow rail: its number, side and songs
 /// played, on a bar in the primary colour (outlined and numbered "?" for a
 /// credit that wasn't logged). The cabinet, when the venue has more than
-/// one, is the number's tooltip.
+/// one, is the number's tooltip. Tapping the rail runs [onEdit], to log the
+/// credit or fix its cabinet and side.
 class _CreditGroup extends StatelessWidget {
   const _CreditGroup(
       {required this.credit,
       required this.plays,
       required this.bests,
-      required this.timing});
+      required this.timing,
+      this.onEdit});
 
   final Credit? credit;
   final List<RecentPlay> plays;
   final Map<String, int?> bests;
   final Map<RecentPlay, TimingPlay> timing;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -571,23 +579,26 @@ class _CreditGroup extends StatelessWidget {
         border: Border(left: BorderSide(color: bar, width: 3)),
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(
-          width: 25,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Column(children: [
-              Tooltip(
-                message:
-                    c == null || c.cabinet.name.isEmpty ? '' : c.cabinet.name,
-                child: Text(c == null ? '?' : '${c.number}',
-                    style: text.titleSmall?.copyWith(
-                        color: c == null ? scheme.onSurfaceVariant : bar,
-                        fontWeight: FontWeight.w800)),
-              ),
-              if (c != null)
-                Text(c.side == PadSide.p1 ? 'P1' : 'P2', style: small),
-              Text('${plays.length}/$kSongsPerCredit', style: small),
-            ]),
+        InkWell(
+          onTap: onEdit,
+          child: SizedBox(
+            width: 25,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Column(children: [
+                Tooltip(
+                  message:
+                      c == null || c.cabinet.name.isEmpty ? '' : c.cabinet.name,
+                  child: Text(c == null ? '?' : '${c.number}',
+                      style: text.titleSmall?.copyWith(
+                          color: c == null ? scheme.onSurfaceVariant : bar,
+                          fontWeight: FontWeight.w800)),
+                ),
+                if (c != null)
+                  Text(c.side == PadSide.p1 ? 'P1' : 'P2', style: small),
+                Text('${plays.length}/$kSongsPerCredit', style: small),
+              ]),
+            ),
           ),
         ),
         Expanded(

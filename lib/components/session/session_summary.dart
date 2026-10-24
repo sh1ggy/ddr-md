@@ -2,7 +2,7 @@
 /// Parent: LastSessionCard, VisitPage
 /// Description: How a session's e-amusement plays went as a whole: their
 /// average score against what your history says you'd average on that same
-/// mix of charts, broken down by level, over each play's gap in play order,
+/// mix of charts, broken down by level, over each play in order by credit,
 /// with the average level, level range, upscores and, when timing was
 /// logged, its offset.
 /// Failed plays (an E) and far-off ones count for less.
@@ -17,6 +17,7 @@ import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
+import 'package:ddr_md/models/visit_model.dart';
 import 'package:flutter/material.dart';
 
 /// How many plays the level's model counts as when blended into a chart's
@@ -243,7 +244,8 @@ class SessionSummaryBody extends StatefulWidget {
       required this.plays,
       this.timing,
       this.timed = false,
-      this.detailed = false});
+      this.detailed = false,
+      this.credits = const []});
 
   final SetSummary summary;
   final List<RecentPlay> plays;
@@ -252,6 +254,8 @@ class SessionSummaryBody extends StatefulWidget {
   final bool timed;
   // Each level as its own you-vs-usual bar rather than a tile.
   final bool detailed;
+  // The credits logged in the session, to split the play strip by.
+  final List<Credit> credits;
 
   @override
   State<SessionSummaryBody> createState() => _SessionSummaryBodyState();
@@ -276,6 +280,7 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
         : logged.map((t) => t.averageMs).reduce((a, b) => a + b) /
             logged.length;
     final showTiming = _showTiming && timing != null;
+    final (played, matched) = reconcileTiming(plays, logged);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -325,11 +330,13 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
                 : _LevelChips(levels, up: up, down: scheme.error),
             const SizedBox(height: 12),
           ],
-          _GapTimeline(summary,
-              played: plays.length, up: up, down: scheme.error),
+          _PlayStrip(summary,
+              credits: groupByCredit(played, widget.credits, matched),
+              up: up,
+              down: scheme.error),
         ],
         const SizedBox(height: 10),
-        Row(children: [
+        Row(spacing: 6, children: [
           _Stat(
             label: 'Avg level',
             child: summary.level == null
@@ -345,7 +352,7 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
           ),
           _Stat(
             label: 'Upscores',
-            child: Row(children: [
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
               const UpscoreBadge(),
               const SizedBox(width: 6),
               _StatText('${summary.upscores}'),
@@ -354,6 +361,11 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
           if (timed)
             _Stat(
               label: 'Timing',
+              tint: timing == null
+                  ? null
+                  : timing < 0
+                      ? kFastColor(isDark)
+                      : kSlowColor(isDark),
               child: _StatText(
                 timing == null
                     ? '–'
@@ -380,45 +392,44 @@ class _Levels extends StatelessWidget {
   final List<int> levels;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 3),
-        // Four stats share the row on a phone; shrinks rather than
-        // overflows on a wide range like 9 – 19.
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: ColorFiltered(
-            colorFilter: kGreyLevel,
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              for (final (i, l) in levels.indexed) ...[
-                if (i > 0) const _StatText(' – '),
-                LevelNumber(level: l, difficulty: 'EXPERT', height: 20),
-              ],
-            ]),
-          ),
-        ),
+  Widget build(BuildContext context) => ColorFiltered(
+        colorFilter: kGreyLevel,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final (i, l) in levels.indexed) ...[
+            if (i > 0) const _StatText(' – '),
+            LevelNumber(level: l, difficulty: 'EXPERT', height: 20),
+          ],
+        ]),
       );
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.child});
+  const _Stat({required this.label, required this.child, this.tint});
 
   final String label;
   final Widget child;
+  final Color? tint;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        decoration: BoxDecoration(
+          color: tint?.withValues(alpha: 0.15) ??
+              scheme.onSurface.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(children: [
           Text(label,
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 2),
-          child,
-        ],
+          SizedBox(
+            height: 22,
+            child: FittedBox(fit: BoxFit.scaleDown, child: child),
+          ),
+        ]),
       ),
     );
   }
@@ -687,58 +698,114 @@ class _TimingChart extends StatelessWidget {
   }
 }
 
-/// Each play's gap from its usual in the order played, as dots either side
-/// of the usual line (rings for failed plays), with a running average
-/// through them.
-class _GapTimeline extends StatelessWidget {
-  const _GapTimeline(this.summary,
-      {required this.played, required this.up, required this.down});
-
-  // Plays in the session, compared or not.
-  final int played;
+/// Every play in the order played as a cell, split into its credits: green
+/// over its usual and red under, deeper the further off, outlined when
+/// failed and grey when it couldn't be compared.
+class _PlayStrip extends StatelessWidget {
+  const _PlayStrip(this.summary,
+      {required this.credits, required this.up, required this.down});
 
   final SetSummary summary;
+  // Each credit's plays, newest first, as [groupByCredit] gives them.
+  final List<(Credit?, List<RecentPlay>)> credits;
   final Color up, down;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
-    final plays = summary.points.reversed.toList();
+    final groups = [
+      for (final (_, plays) in credits.reversed) plays.reversed.toList()
+    ];
+    final played = groups.expand((g) => g).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          height: 64,
+          height: 28,
           child: CustomPaint(
-            painter: _GapPainter(
+            painter: _StripPainter(
               [
-                for (final p in plays)
-                  (p.play.score! - p.usual, p.weight, p.play.failed)
+                for (final g in groups)
+                  [
+                    for (final p in g)
+                      if (summary.points.where((e) => e.play == p).firstOrNull
+                          case final e?)
+                        (e.play.score! - e.usual, e.play.failed)
+                      else
+                        null
+                  ]
               ],
               up: up,
               down: down,
-              line: scheme.onSurfaceVariant,
+              none: scheme.surfaceContainerHighest,
             ),
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 4),
         Row(children: [
-          Text(formatTime12(plays.first.play.playedAt.toLocal()), style: muted),
+          Text(formatTime12(played.first.playedAt.toLocal()), style: muted),
           Expanded(
-            child: summary.points.length < played
+            child: summary.points.length < played.length
                 ? Text(
-                    '${summary.points.length} of $played '
+                    '${summary.points.length} of ${played.length} '
                     'plays compared',
                     textAlign: TextAlign.center,
                     style: muted)
                 : const SizedBox(),
           ),
-          Text(formatTime12(plays.last.play.playedAt.toLocal()), style: muted),
+          Text(formatTime12(played.last.playedAt.toLocal()), style: muted),
         ]),
       ],
     );
   }
+}
+
+class _StripPainter extends CustomPainter {
+  _StripPainter(this.credits,
+      {required this.up, required this.down, required this.none});
+
+  // Each credit's plays in order: a play's gap and whether it failed, or
+  // null when it wasn't compared.
+  final List<List<(double, bool)?>> credits;
+  final Color up, down, none;
+
+  // How far off a play is when its cell takes the full colour.
+  static const _fullGap = 50000.0;
+  static const _cellGap = 2.0, _creditGap = 8.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cells = credits.fold<int>(0, (a, c) => a + c.length);
+    final gaps =
+        (cells - credits.length) * _cellGap + (credits.length - 1) * _creditGap;
+    final w = (size.width - gaps) / cells;
+    var x = 0.0;
+    for (final credit in credits) {
+      for (final play in credit) {
+        final rect = RRect.fromRectAndRadius(
+            Rect.fromLTWH(x, 0, w, size.height), const Radius.circular(3));
+        switch (play) {
+          case null:
+            canvas.drawRRect(rect, Paint()..color = none);
+          case (final gap, final failed):
+            final colour = (gap >= 0 ? up : down)
+                .withValues(alpha: 0.25 + 0.75 * min(1, gap.abs() / _fullGap));
+            canvas.drawRRect(
+                failed ? rect.deflate(0.75) : rect,
+                Paint()
+                  ..color = colour
+                  ..style = failed ? PaintingStyle.stroke : PaintingStyle.fill
+                  ..strokeWidth = 1.5);
+        }
+        x += w + _cellGap;
+      }
+      x += _creditGap - _cellGap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_StripPainter old) => old.credits != credits;
 }
 
 class _GapPainter extends CustomPainter {

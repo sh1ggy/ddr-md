@@ -172,6 +172,22 @@ void main() {
     ]);
     expect([for (final (c, p) in groups) (c?.number, p.length)],
         [(null, 1), (null, 2), (null, 1), (1, 4)]);
+
+    // Logging the pair at -23 min as a credit keeps the song after the
+    // break out of it.
+    final logged = groupByCredit([
+      for (final m in [5, 20, 23, 50, 52, 54, 56, 59]) at(m)
+    ], [
+      credit(1, 1),
+      Credit(
+          sessionId: 's',
+          number: 2,
+          cabinet: cab,
+          side: PadSide.p1,
+          startedAt: t.subtract(const Duration(minutes: 23))),
+    ]);
+    expect([for (final (c, p) in logged) (c?.number, p.length)],
+        [(null, 1), (2, 2), (null, 1), (1, 4)]);
   });
 
   test('timing matches the synced play of its song', () {

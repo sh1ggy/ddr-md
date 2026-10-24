@@ -243,14 +243,32 @@ class DatabaseProvider {
 
   static Future<void> saveCredit(Credit credit) async {
     final db = await _instance;
-    await db.insert("credits", {
-      'id': credit.id,
-      'sessionId': credit.sessionId,
-      'number': credit.number,
-      'cabinetId': credit.cabinet.id,
-      'side': credit.side.name,
-      'startedAt': credit.startedAt.toIso8601String(),
-    });
+    await db.insert(
+        "credits",
+        {
+          'id': credit.id,
+          'sessionId': credit.sessionId,
+          'number': credit.number,
+          'cabinetId': credit.cabinet.id,
+          'side': credit.side.name,
+          'startedAt': credit.startedAt.toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Numbers a session's credits in the order they started, for one logged
+  /// after the fact among them.
+  static Future<void> renumberCredits(String sessionId) async {
+    final db = await _instance;
+    final rows = await db.query("credits",
+        columns: ['id'],
+        where: "sessionId = ?",
+        whereArgs: [sessionId],
+        orderBy: "startedAt");
+    for (final (i, r) in rows.indexed) {
+      await db.update("credits", {'number': i + 1},
+          where: "id = ?", whereArgs: [r['id']]);
+    }
   }
 
   // A session's credits, newest first.
