@@ -8,6 +8,7 @@ import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -310,8 +311,6 @@ class SongSyncChart extends StatefulWidget {
 }
 
 class _SongSyncChartState extends State<SongSyncChart> {
-  bool isExpanded = false;
-
   @override
   Widget build(BuildContext context) {
     final songInfo = widget.songInfo;
@@ -329,11 +328,8 @@ class _SongSyncChartState extends State<SongSyncChart> {
           sync.curve[i].toDouble(),
         ),
     ];
+    final pop = FloorPop.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final curveColor = Color.alphaBlend(
-      Colors.black.withValues(alpha: isDark ? 0.18 : 0.14),
-      Theme.of(context).cardColor,
-    );
     // Shared app-wide FAST/SLOW palette (see constants.dart) — the chart
     // preview's ARCADE SYNC dials tint from the same pair.
     final fastColor = kFastColor(isDark);
@@ -342,79 +338,41 @@ class _SongSyncChartState extends State<SongSyncChart> {
         ? slowColor
         : sync.biasMs > 0
             ? fastColor
-            : Colors.grey.shade600;
+            : pop.haze;
     // Positive bias: chart plays fast (steps land ahead of the beat), which
     // in-game is corrected by nudging the audio offset negative — so the
     // suggested adjustment is the bias with its sign flipped.
     final adjustBy = -sync.biasMs;
     final adjustLabel =
         '${adjustBy >= 0 ? '+' : ''}${adjustBy.toStringAsFixed(1)} ms';
-    final biasLabel =
-        '${sync.biasMs >= 0 ? '+' : ''}${sync.biasMs.toStringAsFixed(1)} ms';
+    final caption = TextStyle(fontSize: 11, color: pop.haze);
 
+    // Always open: the curve is short enough to read at a glance, so it sits
+    // under the number rather than behind a tap.
     return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        // Remove the default ExpansionTile top/bottom divider lines so the
-        // expanded state doesn't show a stray line against the card.
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          onExpansionChanged: (expanded) =>
-              setState(() => isExpanded = expanded),
-          title: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              const CardHeading('Sync', icon: Icons.av_timer),
-              const SizedBox(width: 10),
-              Text(
-                adjustLabel,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: biasColor,
-                ),
-              ),
-            ],
-          ),
-          // Collapsed, the caption says what the title's number IS — a bare
-          // signed figure could as easily be the measured bias as the fix for
-          // it. Expanded, the graph's axis labels carry that, so the caption
-          // gives the space up to the provenance.
-          subtitle: Text(
-            isExpanded
-                ? (isCabinet ? 'cabinet' : 'simfile')
-                : 'recommended offset (${isCabinet ? 'cabinet' : 'simfile'})',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-          childrenPadding: const EdgeInsets.fromLTRB(10, 8, 25, 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                const CardHeading('Sync', icon: Icons.av_timer),
+                const SizedBox(width: 10),
+                Text(adjustLabel,
+                    style: FloorPop.readout(20, color: biasColor)),
+              ],
+            ),
+            Text('recommended offset (${isCabinet ? 'cabinet' : 'simfile'})',
+                style: caption),
+            const SizedBox(height: 10),
             SizedBox(
-              height: MediaQuery.of(context).size.height / 4,
+              height: 64,
               child: LineChart(
                 LineChartData(
-                  titlesData: const FlTitlesData(
-                    bottomTitles: AxisTitles(
-                      axisNameWidget: Text(
-                        'offset from beat (ms)',
-                        style: TextStyle(fontSize: 10),
-                      ),
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    // The response curve is normalized (0-100, unitless), so
-                    // the y-axis carries no readable values.
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    topTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                  ),
+                  titlesData: const FlTitlesData(show: false),
                   lineTouchData: LineTouchData(
                       touchTooltipData: LineTouchTooltipData(
                           fitInsideHorizontally: true,
@@ -427,55 +385,23 @@ class _SongSyncChartState extends State<SongSyncChart> {
                                       fontWeight: FontWeight.bold));
                             }).toList();
                           },
-                          tooltipBgColor: Colors.grey.shade900,
-                          tooltipPadding: const EdgeInsets.all(2),
-                          tooltipBorder:
-                              const BorderSide(color: Colors.black))),
+                          tooltipBgColor: pop.riser,
+                          tooltipPadding: const EdgeInsets.all(4),
+                          tooltipBorder: BorderSide(color: pop.line))),
                   extraLinesData: ExtraLinesData(
                     verticalLines: [
                       // On-beat reference (0 ms)
                       VerticalLine(
                         x: 0,
-                        color: Colors.grey.shade600,
-                        strokeWidth: 1,
-                        dashArray: [4, 4],
-                      ),
-                      // Detected attack (sync bias)
-                      VerticalLine(
-                        x: sync.biasMs,
-                        color: biasColor,
+                        color: pop.line,
                         strokeWidth: 1.5,
-                        label: VerticalLineLabel(
-                          show: true,
-                          alignment: sync.biasMs >= 0
-                              ? Alignment.topRight
-                              : Alignment.topLeft,
-                          padding: const EdgeInsets.symmetric(horizontal: 2),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: biasColor,
-                          ),
-                          labelResolver: (_) => biasLabel,
-                        ),
+                        dashArray: [3, 4],
                       ),
                     ],
                   ),
                   clipData: const FlClipData.all(),
-                  borderData: FlBorderData(
-                      border:
-                          Border.all(color: Colors.grey.shade600, width: 1)),
-                  gridData: FlGridData(
-                    show: true,
-                    drawHorizontalLine: false,
-                    drawVerticalLine: false,
-                    getDrawingVerticalLine: (value) {
-                      return FlLine(
-                        color: Colors.grey.shade400,
-                        strokeWidth: 1,
-                      );
-                    },
-                  ),
+                  borderData: FlBorderData(show: false),
+                  gridData: const FlGridData(show: false),
                   minX: sync.curveStartMs,
                   maxX: sync.curveStartMs +
                       (sync.curve.length - 1) * sync.curveStepMs,
@@ -484,42 +410,31 @@ class _SongSyncChartState extends State<SongSyncChart> {
                   lineBarsData: [
                     LineChartBarData(
                       spots: spots,
-                      barWidth: 0.6,
-                      color: curveColor,
+                      barWidth: 2,
+                      color: biasColor,
                       isCurved: false,
                       dotData: const FlDotData(show: false),
                       belowBarData: BarAreaData(
                         show: true,
-                        color: curveColor,
+                        color: biasColor.withValues(alpha: 0.15),
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'chart is slow',
-                    style: TextStyle(
-                      color: slowColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    'chart is fast',
-                    style: TextStyle(
-                      color: fastColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('chart is slow',
+                    style: caption.copyWith(
+                        color: slowColor, fontWeight: FontWeight.w600)),
+                Text('offset from beat (ms)', style: caption),
+                Text('chart is fast',
+                    style: caption.copyWith(
+                        color: fastColor, fontWeight: FontWeight.w600)),
+              ],
             ),
           ],
         ),
@@ -529,10 +444,13 @@ class _SongSyncChartState extends State<SongSyncChart> {
 }
 
 class SongRadarChart extends StatelessWidget {
-  const SongRadarChart({super.key, required this.radar, this.expanded = false});
+  const SongRadarChart(
+      {super.key, required this.radar, this.expanded = false, this.color});
 
   final Radar? radar;
   final bool expanded;
+  // The chosen chart's difficulty colour.
+  final Color? color;
 
   static const _axisIcons = [
     Icons.waves,
@@ -581,6 +499,8 @@ class SongRadarChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final radar = this.radar;
     if (radar == null) return const SizedBox.shrink();
+    final pop = FloorPop.of(context);
+    final tint = color ?? FloorPop.volt;
     final labels = <String>['Stream', 'Voltage', 'Air', 'Freeze', 'Chaos'];
     final values = <double>[
       radar.stream,
@@ -594,8 +514,8 @@ class SongRadarChart extends StatelessWidget {
       label: 'Groove Radar: Stream ${radar.stream}, Voltage ${radar.voltage}, '
           'Air ${radar.air}, Freeze ${radar.freeze}, Chaos ${radar.chaos}',
       child: SizedBox(
-        width: expanded ? null : 76,
-        height: expanded ? null : 76,
+        width: expanded ? null : 84,
+        height: expanded ? null : 84,
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -652,8 +572,8 @@ class SongRadarChart extends StatelessWidget {
                     // stretches to that value while this frame stays at 100,
                     // so the data polygon renders outside it.
                     RadarDataSet(
-                      fillColor: Colors.transparent,
-                      borderColor: Colors.grey.shade400,
+                      fillColor: pop.riser.withValues(alpha: 0.6),
+                      borderColor: pop.line,
                       borderWidth: 1.5,
                       entryRadius: 0,
                       dataEntries: const [
@@ -664,9 +584,23 @@ class SongRadarChart extends StatelessWidget {
                         RadarEntry(value: 100),
                       ],
                     ),
+                    // A halfway ring, so a value reads against the frame.
                     RadarDataSet(
-                      fillColor: Colors.redAccent.withValues(alpha: 0.25),
-                      borderColor: Colors.redAccent,
+                      fillColor: Colors.transparent,
+                      borderColor: pop.line,
+                      borderWidth: 1,
+                      entryRadius: 0,
+                      dataEntries: const [
+                        RadarEntry(value: 50),
+                        RadarEntry(value: 50),
+                        RadarEntry(value: 50),
+                        RadarEntry(value: 50),
+                        RadarEntry(value: 50),
+                      ],
+                    ),
+                    RadarDataSet(
+                      fillColor: tint.withValues(alpha: 0.35),
+                      borderColor: tint,
                       borderWidth: 2,
                       entryRadius: 1.5,
                       dataEntries: values
@@ -692,7 +626,7 @@ class SongRadarChart extends StatelessWidget {
                   alignment: alignment,
                   child: Tooltip(
                     message: '${labels[index]}: ${values[index].round()}',
-                    child: Icon(_axisIcons[index], size: 11),
+                    child: Icon(_axisIcons[index], size: 11, color: pop.haze),
                   ),
                 ),
             ],

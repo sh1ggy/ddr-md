@@ -2,8 +2,8 @@
 /// Parent: Layout
 /// Description: The tab bar: Songs, Snippets, Home, Scan, Profile on a
 /// floating pill, Home raised in the middle and ringed while a session runs.
-/// Above it on every other tab, the live dock carries the running credit
-/// and starts the next one.
+/// Above it on every tab while a session runs, the live dock carries the
+/// running credit and starts the next one.
 library;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -36,8 +36,9 @@ class FloorPopNavBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final live = context.watch<SessionState>().active;
     return Column(mainAxisSize: MainAxisSize.min, children: [
-      if (live && index != kHomeTab)
-        LiveSessionDock(onOpen: () => onSelected(kHomeTab)),
+      // On every tab, Home included: once the live card scrolls away the
+      // session should still read at a glance.
+      if (live) LiveSessionDock(onOpen: () => onSelected(kHomeTab)),
       SafeArea(
         top: false,
         minimum: const EdgeInsets.only(bottom: 8),

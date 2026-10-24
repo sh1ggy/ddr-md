@@ -13,7 +13,6 @@ import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/components/song/song_player_sync.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -249,16 +248,6 @@ class _SongPageState extends State<SongPage> {
     final diffKey =
         available[songState.chosenDifficulty.clamp(0, available.length - 1)];
 
-    final difficultyLevel =
-        (mode == Modes.singles ? songInfo.singles : songInfo.doubles)
-            .toJson()[diffKey] as int?;
-    // The in-game name (BASIC/DIFFICULT/EXPERT…), not the StepMania-style data
-    // key — "medium" is a field name, never something a player sees.
-    final diffLabel = kInGameDifficultyNames[diffKey] ??
-        (diffKey.isEmpty
-            ? ""
-            : diffKey[0].toUpperCase() + diffKey.substring(1));
-
     return FutureBuilder<SongSteps?>(
       future: _stepsFuture,
       builder: (context, snapshot) {
@@ -267,12 +256,8 @@ class _SongPageState extends State<SongPage> {
         final pop = FloorPop.of(context);
         // The page's two actions, pinned under it: open the chart, or scan a
         // result straight after playing it.
-        return Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border(top: BorderSide(color: pop.line)),
-          ),
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
           child: SafeArea(
             top: false,
             child: Row(children: [
@@ -291,17 +276,10 @@ class _SongPageState extends State<SongPage> {
                             ),
                           );
                         },
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.play_arrow_rounded, size: 26),
-                    const SizedBox(width: 8),
-                    const Text('Preview chart'),
-                    if (kInGameDifficultyColors.containsKey(diffLabel)) ...[
-                      const SizedBox(width: 10),
-                      DifficultyLabel(
-                          difficulty: diffLabel,
-                          level: difficultyLevel,
-                          height: 15),
-                    ],
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.play_arrow_rounded, size: 26),
+                    SizedBox(width: 8),
+                    Text('Preview chart'),
                   ]),
                 ),
               ),
@@ -312,6 +290,8 @@ class _SongPageState extends State<SongPage> {
                   tooltip: 'Scan a score',
                   style: IconButton.styleFrom(
                     backgroundColor: pop.riser,
+                    elevation: 6,
+                    shadowColor: Colors.black,
                     foregroundColor: Theme.of(context).colorScheme.onSurface,
                     fixedSize: const Size(56, 56),
                     shape: RoundedRectangleBorder(
@@ -530,18 +510,27 @@ class _SongPageState extends State<SongPage> {
                   onPressed: () => openHistory(HistoryPage.notesTab),
                 )
               ]),
-              bottomNavigationBar: _buildChartPreviewButton(songState),
-              body: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    SongDetails(songInfo: songState.songInfo!, chart: _chart),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
-                      child: _buildReorderableSections(songState),
-                    ),
-                  ],
+              // The actions float over the page rather than cutting it off:
+              // the scroll runs under them and ends clear of them.
+              body: Stack(children: [
+                SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      SongDetails(songInfo: songState.songInfo!, chart: _chart),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+                        child: _buildReorderableSections(songState),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildChartPreviewButton(songState),
+                ),
+              ]),
             ),
           );
         }),

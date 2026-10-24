@@ -13,6 +13,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -223,8 +224,15 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
     final songOffset = songOffsetMs(widget.songInfo, widget.chart);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final outline = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(24),
+      side: BorderSide(
+          color: FloorPop.of(context).voltText.withValues(alpha: 0.55),
+          width: 2),
+    );
     if (!session.active) {
       return Card(
+        shape: outline,
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
           title: const CardHeading('Your Sync', icon: Icons.person_pin_circle),
@@ -260,8 +268,11 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
     final timingColor = _fast ? kFastColor(isDark) : kSlowColor(isDark);
     const dense = InputDecoration(isDense: true, suffixText: 'ms');
 
+    // Outlined in Volt, the colour of the number it carries: the one card
+    // that's about you on this cab right now.
     return Card(
       clipBehavior: Clip.antiAlias,
+      shape: outline,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -276,11 +287,8 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
               const SizedBox(width: 10),
               Text(
                 '${shownMs >= 0 ? '+' : ''}$shownMs ms',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+                style:
+                    FloorPop.readout(20, color: FloorPop.of(context).voltText),
               ),
               if (pending != null && _override == null)
                 const Padding(

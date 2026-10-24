@@ -3,10 +3,12 @@
 /// Description: Widgets relating to the song's BPM & mods
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/notes/chart_chrome.dart';
 import 'package:ddr_md/components/song/notes/constant_speed.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/services.dart';
@@ -88,18 +90,13 @@ class _SongBpmState extends State<SongBpm> {
     final constant = widget.isBpmChange
         ? constantForReadSpeed(Settings.getInt(Settings.chosenReadSpeedKey))
         : null;
-    // The cabinet's num_min/num_core/num_max trio.
-    final reads = widget.isBpmChange
-        ? [
-            ((mod * chart.trueMin).round(), "min"),
-            (readSpeed, "core"),
-            ((mod * chart.trueMax).round(), "max"),
-          ]
-        : [(readSpeed, null)];
+    final pop = FloorPop.of(context);
+    String n(int v) => v.toString();
 
     // Framed like the chart preview's speed dial ([SpeedPane]), so both places
-    // you pick a mod handle the same way. The Card supplies the rounding and
-    // fill the section cards use, so the pane draws neither.
+    // you pick a mod handle the same way: tap resets, drag turns. One read
+    // speed headlines it; a BPM-changing chart adds its slowest and fastest
+    // reads, and the CONSTANT equivalent, on one quiet line under it.
     return Card(
       clipBehavior: Clip.antiAlias,
       child: ControlPane(
@@ -111,138 +108,86 @@ class _SongBpmState extends State<SongBpm> {
         // rather than overflow at large text scales.
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 84),
-          child: Stack(
-            children: [
-              IntrinsicHeight(
-                child: Row(
-                  children: [
-                    EdgeButton(
-                      label: "−10",
-                      enabled: _modIndex > 0,
-                      onTap: () => _step(-1),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.speed,
-                                      size: 18,
-                                      color: scheme.onSurfaceVariant,
-                                      semanticLabel: 'Speed mod'),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    "×${_formatMod(mod)}",
-                                    style: TextStyle(
-                                      fontSize: 19,
-                                      height: 1.1,
-                                      fontWeight: FontWeight.bold,
-                                      color: scheme.primary,
-                                      fontFeatures: const [
-                                        FontFeature.tabularFigures()
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // Keep the read speeds on their own row so core stays
-                            // easy to scan as its digit count changes.
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  for (final (i, (value, caption))
-                                      in reads.indexed) ...[
-                                    if (i > 0)
-                                      const Padding(
-                                        padding:
-                                            EdgeInsets.symmetric(horizontal: 3),
-                                        child: Text(
-                                          "–",
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            height: 1.1,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          "$value",
-                                          style: const TextStyle(
-                                            fontSize: 20,
-                                            height: 1.1,
-                                            fontWeight: FontWeight.bold,
-                                            fontFeatures: [
-                                              FontFeature.tabularFigures()
-                                            ],
-                                          ),
-                                        ),
-                                        if (caption != null)
-                                          Text(
-                                            caption,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              height: 1.0,
-                                              fontWeight: FontWeight.w600,
-                                              color: scheme.onSurface
-                                                  .withValues(alpha: 0.55),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    EdgeButton(
-                      label: "+10",
-                      enabled: _modIndex < constants.mods.length - 1,
-                      onTap: () => _step(1),
-                    ),
-                  ],
+          child: IntrinsicHeight(
+            child: Row(
+              children: [
+                EdgeButton(
+                  label: "−10",
+                  enabled: _modIndex > 0,
+                  onTap: () => _step(-1),
                 ),
-              ),
-              if (constant != null)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: IgnorePointer(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 110),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '${constant.ms}ms ≈ C${constant.c}',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
-                            color: scheme.onSurfaceVariant,
-                            fontFeatures: const [FontFeature.tabularFigures()],
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Lean(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 3),
+                                  decoration: BoxDecoration(
+                                      color: FloorPop.volt,
+                                      borderRadius: BorderRadius.circular(8)),
+                                  child: Upright(
+                                    child: Text("×${_formatMod(mod)}",
+                                        semanticsLabel:
+                                            'Speed mod ${_formatMod(mod)}',
+                                        style: FloorPop.readout(22,
+                                            color: FloorPop.onVolt)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text('reads ',
+                                  style:
+                                      TextStyle(fontSize: 13, color: pop.haze)),
+                              Text(n(readSpeed),
+                                  style: FloorPop.readout(24,
+                                      color: scheme.onSurface)),
+                            ],
                           ),
                         ),
-                      ),
+                        if (widget.isBpmChange || constant != null) ...[
+                          const SizedBox(height: 6),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              [
+                                if (widget.isBpmChange)
+                                  '${n((mod * chart.trueMin).round())} slowest'
+                                      ' · ${n((mod * chart.trueMax).round())} fastest',
+                                if (constant != null)
+                                  '${constant.ms} ms ≈ C${constant.c}',
+                              ].join('  ·  '),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: pop.haze,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
-            ],
+                EdgeButton(
+                  label: "+10",
+                  enabled: _modIndex < constants.mods.length - 1,
+                  onTap: () => _step(1),
+                ),
+              ],
+            ),
           ),
         ),
       ),

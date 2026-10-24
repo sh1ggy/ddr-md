@@ -3,10 +3,11 @@
 /// Description: Widgets that display base song information.
 library;
 
-import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/helpers.dart'
+    show kInGameDifficultyColors, kInGameDifficultyNames;
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/theme.dart';
@@ -28,12 +29,9 @@ String _bpmRangeSuffix(Chart chart) {
   return buffer.toString();
 }
 
-const _difficultyColors = <String, Color>{
-  "beginner": Colors.cyan,
-  "easy": Colors.orange,
-  "medium": Colors.red,
-  "hard": Colors.green,
-  "challenge": Colors.purple,
+final _difficultyColors = <String, Color>{
+  for (final MapEntry(:key, :value) in kInGameDifficultyNames.entries)
+    key: kInGameDifficultyColors[value]!,
 };
 
 /// The difficulty key ("beginner".."challenge") the picker's chosen index
@@ -87,21 +85,6 @@ class SongDetails extends StatelessWidget {
     final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 14, height: 1.3, color: pop.haze);
-    Widget tag(String text, {Color? color}) => Lean(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-                color: pop.riser, borderRadius: BorderRadius.circular(6)),
-            child: Upright(
-              child: Text(text,
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: color ?? pop.haze)),
-            ),
-          ),
-        );
     return Container(
       decoration: pop.stripes(),
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
@@ -165,24 +148,58 @@ class SongDetails extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Wrap(spacing: 6, runSpacing: 6, children: [
-                              tag(songInfo.version),
-                              tag(formattedTime(
-                                  timeInSecond: songInfo.songLength.toInt())),
-                              if (chosenNotecount != null)
-                                tag('$chosenNotecount steps',
-                                    color: _difficultyColors[chosenKey]),
-                            ]),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (chart != null)
+                                Text.rich(TextSpan(
+                                  style: FloorPop.readout(18,
+                                      color: scheme.onSurface),
+                                  children: [
+                                    TextSpan(text: '${chart.dominantBpm}'),
+                                    TextSpan(
+                                        text: _bpmRangeSuffix(chart),
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            color: pop.haze,
+                                            fontWeight: FontWeight.w600)),
+                                  ],
+                                )),
+                              const SizedBox(height: 4),
+                              // Where and how long, then the chosen chart's
+                              // steps in its difficulty's colour.
+                              Text.rich(TextSpan(
+                                style: muted.copyWith(
+                                    fontSize: 13, fontWeight: FontWeight.w600),
+                                children: [
+                                  TextSpan(
+                                      text: '${songInfo.version} · '
+                                          '${formattedTime(timeInSecond: songInfo.songLength.toInt())}'),
+                                  if (chosenNotecount != null) ...[
+                                    const TextSpan(text: ' · '),
+                                    TextSpan(
+                                        text: '$chosenNotecount steps',
+                                        style: TextStyle(
+                                            color:
+                                                _difficultyColors[chosenKey])),
+                                  ],
+                                ],
+                              )),
+                            ],
                           ),
-                          if (songInfo.radarFor(
-                                  songState.modes, songState.chosenDifficulty)
-                              case final radar?)
-                            SongRadarChart(radar: radar),
-                        ]),
-                    const SizedBox(height: 4),
+                        ),
+                        if (songInfo.radarFor(
+                                songState.modes, songState.chosenDifficulty)
+                            case final radar?)
+                          SongRadarChart(
+                              radar: radar,
+                              color: _difficultyColors[chosenKey]),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
                     Text(songInfo.title,
                         style: FloorPop.display(22, color: scheme.onSurface)),
                     if (songInfo.titletranslit.isNotEmpty &&
@@ -190,20 +207,6 @@ class SongDetails extends StatelessWidget {
                       Text(songInfo.titletranslit, style: muted),
                     if (songInfo.artist.isNotEmpty)
                       Text(songInfo.artist, style: muted),
-                    if (chart != null) ...[
-                      const SizedBox(height: 4),
-                      Text.rich(TextSpan(
-                        style: FloorPop.readout(16, color: scheme.onSurface),
-                        children: [
-                          TextSpan(text: '${chart.dominantBpm}'),
-                          TextSpan(
-                              text: _bpmRangeSuffix(chart),
-                              style: TextStyle(
-                                  color: pop.haze,
-                                  fontWeight: FontWeight.w600)),
-                        ],
-                      )),
-                    ],
                   ],
                 ),
               ),
