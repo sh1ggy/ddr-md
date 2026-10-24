@@ -141,8 +141,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
         run: |
           curl -sS -o live_privacy.html "${{ inputs.content-url }}/privacy" || true
+          curl -sS -o live_aasa.json "${{ inputs.content-url }}/.well-known/apple-app-site-association" || true
+          curl -sS -o live_assetlinks.json "${{ inputs.content-url }}/.well-known/assetlinks.json" || true
           if [ "$(jq -r .id build/content/manifest.json)" = "$(jq -r '.id // empty' live_manifest.json)" ] \
-              && cmp -s build/content/privacy.html live_privacy.html; then
+              && cmp -s build/content/privacy.html live_privacy.html \
+              && cmp -s build/content/.well-known/apple-app-site-association live_aasa.json \
+              && cmp -s build/content/.well-known/assetlinks.json live_assetlinks.json; then
             echo "Unchanged since the live publish, nothing to deploy"
             exit 0
           fi

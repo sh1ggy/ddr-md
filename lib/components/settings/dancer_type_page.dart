@@ -88,7 +88,7 @@ class _DancerTypePageState extends State<DancerTypePage> {
 /// How the player holds the bar, for the pad dancer: overhand or underhand,
 /// in the middle or out on the bends.
 class BarGripCard extends StatefulWidget {
-  const BarGripCard();
+  const BarGripCard({super.key});
 
   @override
   State<BarGripCard> createState() => BarGripCardState();

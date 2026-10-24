@@ -148,6 +148,7 @@ class _SongPageState extends State<SongPage> {
   void initNote(String songTitleTranslit, Modes mode) async {
     Note? initNote =
         await DatabaseProvider.getLatestNoteBySong(songTitleTranslit, mode);
+    if (!mounted) return;
     setState(() {
       latestNote = initNote;
     });
@@ -156,6 +157,7 @@ class _SongPageState extends State<SongPage> {
   void initScore(String songTitleTranslit, Modes mode) async {
     Score? initScore =
         await DatabaseProvider.getLatestScoreBySong(songTitleTranslit, mode);
+    if (!mounted) return;
     final song = Provider.of<SongState>(context, listen: false).songInfo;
     final initRecords = song == null
         ? <ScoreRecord>[]

@@ -49,7 +49,7 @@ String? _chosenDifficultyKey(Difficulty difficulty, int chosenIndex) {
 }
 
 // Method for formatting time from a given time (s)
-formattedTime({required int timeInSecond}) {
+String formattedTime({required int timeInSecond}) {
   int sec = timeInSecond % 60;
   int min = (timeInSecond / 60).floor();
   String minute = min.toString().length <= 1 ? "$min" : "$min";
@@ -160,10 +160,7 @@ class SongDetails extends StatelessWidget {
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 Text(
-                                  formattedTime(
-                                          timeInSecond:
-                                              songInfo.songLength.toInt()) +
-                                      " min",
+                                  "${formattedTime(timeInSecond: songInfo.songLength.toInt())} min",
                                   style: const TextStyle(
                                       fontSize: 16.0,
                                       fontWeight: FontWeight.bold),

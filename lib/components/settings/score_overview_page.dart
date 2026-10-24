@@ -443,10 +443,6 @@ class _LevelsCardState extends State<_LevelsCard> {
                     ]),
                   ))),
         const SizedBox(height: 10),
-        Text(_picked == null ? 'All Levels' : 'Level $_picked',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: muted)),
-        const SizedBox(height: 6),
         // Every band, even empty ones, so the grid holds still between picks.
         _BandCounts([
           for (final b in bands)

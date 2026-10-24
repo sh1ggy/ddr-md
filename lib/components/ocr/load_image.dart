@@ -166,7 +166,7 @@ class _LoadImageState extends State<LoadImage> {
             }
             for (int i = 0; i < result.detectedRois!.length; i++) {
               final roi = result.detectedRois![i];
-              print(
+              debugPrint(
                   'Detected ROI $i: left=${roi.left}, top=${roi.top}, width=${roi.width}, height=${roi.height}');
 
               Rectangle<int> roiToAdd = Rectangle<int>(
@@ -671,7 +671,7 @@ class _CandidateBar extends StatelessWidget {
     final theme = Theme.of(context);
     final barColor = isWinner ? Colors.green : Colors.grey[400]!;
     final labelColor = theme.colorScheme.onSurface;
-    final mutedColor = theme.colorScheme.onSurface.withOpacity(0.6);
+    final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.6);
     return InkWell(
       onTap: onTap,
       child: Padding(

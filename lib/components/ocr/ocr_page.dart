@@ -90,6 +90,7 @@ class _OcrPageState extends State<OcrPage>
     _ocrProcessor = OCRProcessor();
     _ocrProcessor.side = _detectionSide;
     _ocrProcessor.streamResultController.stream.listen((result) {
+      if (!mounted) return;
       _recordFrameTime();
       // The native session reports the processed-frame dimensions (the pixel
       // space the ROIs live in). Derive the on-screen scale from those.
@@ -203,7 +204,7 @@ class _OcrPageState extends State<OcrPage>
       await _ocrProcessor.init();
       if (mounted) setState(() {});
     } catch (e) {
-      print('Error initializing OCR session: $e');
+      debugPrint('Error initializing OCR session: $e');
       if (!mounted) return;
       context.go('/songs');
     }
@@ -212,18 +213,18 @@ class _OcrPageState extends State<OcrPage>
   Future<void> _toggleCamera() async {
     if (_isTogglingCamera) return;
     _isTogglingCamera = true;
-    print('Toggle camera called. Current state: $_isCameraActive');
+    debugPrint('Toggle camera called. Current state: $_isCameraActive');
     try {
       if (_isCameraActive) {
-        print('Stopping camera stream...');
+        debugPrint('Stopping camera stream...');
         await _ocrProcessor.stop();
         setState(() {
           _isCameraActive = false;
           _hasRecorded = true;
         });
-        print('Camera stopped. New state: $_isCameraActive');
+        debugPrint('Camera stopped. New state: $_isCameraActive');
       } else {
-        print('Starting camera stream...');
+        debugPrint('Starting camera stream...');
         setState(() {
           _isCameraActive = true;
           _aggregator.clear();
@@ -240,10 +241,10 @@ class _OcrPageState extends State<OcrPage>
           _fps.value = 0;
         });
         await _ocrProcessor.start();
-        print('Camera started. New state: $_isCameraActive');
+        debugPrint('Camera started. New state: $_isCameraActive');
       }
     } catch (e) {
-      print('Error toggling camera: $e');
+      debugPrint('Error toggling camera: $e');
       // Roll the UI back if start/stop threw (e.g. permission denied).
       if (mounted) setState(() => _isCameraActive = !_isCameraActive);
     } finally {
