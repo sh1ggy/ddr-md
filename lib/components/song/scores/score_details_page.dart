@@ -185,14 +185,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
         shadowColor: Colors.black,
         elevation: 2,
         centerTitle: true,
-        title: const Text(
-          'Score Details',
-          style: TextStyle(
-              fontSize: 20,
-              color: Colors.blueGrey,
-              fontWeight: FontWeight.w600),
-        ),
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        title: const Text('Score Details'),
         actions: _editing
             ? [
                 IconButton(

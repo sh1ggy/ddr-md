@@ -31,14 +31,7 @@ class HistoryPage extends StatelessWidget {
             shadowColor: Colors.black,
             elevation: 2,
             centerTitle: true,
-            title: const Text(
-              'History',
-              style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.w600),
-            ),
-            iconTheme: const IconThemeData(color: Colors.blueGrey),
+            title: const Text('History'),
             bottom: const TabBar(
               labelColor: Colors.blueGrey,
               indicatorColor: Colors.blueGrey,

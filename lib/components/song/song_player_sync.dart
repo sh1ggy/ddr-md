@@ -325,10 +325,12 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
                 const Text('Logging for',
                     style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(width: 8),
-                SongDifficultyPicker(
-                    difficulty: widget.mode == Modes.singles
-                        ? widget.songInfo.singles
-                        : widget.songInfo.doubles),
+                Expanded(
+                  child: SongDifficultyPicker(
+                      difficulty: widget.mode == Modes.singles
+                          ? widget.songInfo.singles
+                          : widget.songInfo.doubles),
+                ),
               ]),
             ),
             // What the result screen showed.

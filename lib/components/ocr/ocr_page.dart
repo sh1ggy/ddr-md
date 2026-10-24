@@ -273,14 +273,7 @@ class _OcrPageState extends State<OcrPage>
         surfaceTintColor: Colors.black,
         shadowColor: Colors.black,
         elevation: 2,
-        title: const Text(
-          'Camera',
-          style: TextStyle(
-              fontSize: 20,
-              color: Colors.blueGrey,
-              fontWeight: FontWeight.w600),
-        ),
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        title: const Text('Camera'),
         actions: <Widget>[
           IconButton(
             tooltip: 'Load image',

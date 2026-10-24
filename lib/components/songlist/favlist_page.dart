@@ -67,15 +67,8 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
               shadowColor: Colors.black,
               elevation: 2,
               centerTitle: true,
-              title: const Text(
-                "Favourites",
-                style: TextStyle(
-                    fontSize: 20,
-                    color: Colors.blueGrey,
-                    fontWeight: FontWeight.w600),
-              ),
+              title: const Text("Favourites"),
               actions: const <Widget>[SortMenuButton()],
-              iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
             body: SingleChildScrollView(
               child: FutureBuilder(

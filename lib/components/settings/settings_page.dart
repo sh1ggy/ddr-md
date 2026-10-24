@@ -64,15 +64,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 surfaceTintColor: Colors.black,
                 shadowColor: Colors.black,
                 elevation: 2,
-                title: const Text(
-                  'Profile',
-                  style: TextStyle(
-                    fontSize: 20,
-                    color: Colors.blueGrey,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                iconTheme: const IconThemeData(color: Colors.blueGrey),
+                title: const Text('Profile'),
               ),
               body: Stack(
                 children: [

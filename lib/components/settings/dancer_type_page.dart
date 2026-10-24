@@ -47,15 +47,7 @@ class _DancerTypePageState extends State<DancerTypePage> {
           surfaceTintColor: Colors.black,
           shadowColor: Colors.black,
           elevation: 2,
-          title: const Text(
-            'Dancer Type',
-            style: TextStyle(
-              fontSize: 20,
-              color: Colors.blueGrey,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          iconTheme: const IconThemeData(color: Colors.blueGrey),
+          title: const Text('Dancer Type'),
         ),
         body: ListView(
           padding: const EdgeInsets.all(8),

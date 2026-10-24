@@ -63,7 +63,6 @@ class _SnippetChartPickerState extends State<SnippetChartPicker> {
     return Scaffold(
       appBar: AppBar(
         elevation: 2,
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
         title: TextField(
           autofocus: true,
           style: const TextStyle(

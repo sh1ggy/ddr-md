@@ -140,12 +140,7 @@ class PrivacyPage extends StatelessWidget {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Privacy',
-            style: TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600)),
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        title: const Text('Privacy'),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),

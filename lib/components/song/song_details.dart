@@ -3,11 +3,13 @@
 /// Description: Widgets that display base song information.
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -82,21 +84,55 @@ class SongDetails extends StatelessWidget {
     final chosenNotecount =
         chosenKey == null ? null : notecounts.toJson()[chosenKey];
 
-    return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.max,
+    final pop = FloorPop.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final muted = TextStyle(fontSize: 14, height: 1.3, color: pop.haze);
+    Widget tag(String text, {Color? color}) => Lean(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+                color: pop.riser, borderRadius: BorderRadius.circular(6)),
+            child: Upright(
+              child: Text(text,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: color ?? pop.haze)),
+            ),
+          ),
+        );
+    return Container(
+      decoration: pop.stripes(),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Column(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               GestureDetector(
                 child: Hero(
                   tag: "imgZoom",
-                  child: _ResolvedJacketImage(
-                    songName: songInfo.name,
-                    assetPrefix: 'assets/jackets-160/',
-                    height: 100,
-                    fallbackSize: 100,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            blurRadius: 30,
+                            offset: const Offset(0, 12)),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(22),
+                      child: _ResolvedJacketImage(
+                        songName: songInfo.name,
+                        assetPrefix: 'assets/jackets-160/',
+                        height: 112,
+                        fallbackSize: 100,
+                      ),
+                    ),
                   ),
                 ),
                 // Zooming image onTap
@@ -123,88 +159,63 @@ class SongDetails extends StatelessWidget {
                       }));
                 },
               ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                Row(
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
+                    Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (chart != null)
-                            RichText(
-                              text: TextSpan(
-                                style: TextStyle(
-                                    fontSize: 15.5,
-                                    color: DefaultTextStyle.of(context)
-                                        .style
-                                        .color),
-                                children: <TextSpan>[
-                                  TextSpan(
-                                    text: "${chart.dominantBpm} BPM",
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  TextSpan(text: _bpmRangeSuffix(chart)),
-                                ],
-                              ),
-                            ),
-                          Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  "${formattedTime(timeInSecond: songInfo.songLength.toInt())} min",
-                                  style: const TextStyle(
-                                      fontSize: 16.0,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                if (chosenNotecount != null) ...[
-                                  const SizedBox(width: 8),
-                                  const Icon(Icons.music_note,
-                                      size: 14, color: Colors.grey),
-                                  Text(
-                                    "$chosenNotecount",
-                                    style: TextStyle(
-                                        fontSize: 16.0,
-                                        color: _difficultyColors[chosenKey],
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              ]),
-                          Text(
-                            songInfo.version,
-                            style: const TextStyle(
-                                fontSize: 15.5,
-                                color: Colors.grey,
-                                fontStyle: FontStyle.italic),
+                          Expanded(
+                            child: Wrap(spacing: 6, runSpacing: 6, children: [
+                              tag(songInfo.version),
+                              tag(formattedTime(
+                                  timeInSecond: songInfo.songLength.toInt())),
+                              if (chosenNotecount != null)
+                                tag('$chosenNotecount steps',
+                                    color: _difficultyColors[chosenKey]),
+                            ]),
                           ),
+                          if (songInfo.radarFor(
+                                  songState.modes, songState.chosenDifficulty)
+                              case final radar?)
+                            SongRadarChart(radar: radar),
+                        ]),
+                    const SizedBox(height: 4),
+                    Text(songInfo.title,
+                        style: FloorPop.display(22, color: scheme.onSurface)),
+                    if (songInfo.titletranslit.isNotEmpty &&
+                        songInfo.titletranslit != songInfo.title)
+                      Text(songInfo.titletranslit, style: muted),
+                    if (songInfo.artist.isNotEmpty)
+                      Text(songInfo.artist, style: muted),
+                    if (chart != null) ...[
+                      const SizedBox(height: 4),
+                      Text.rich(TextSpan(
+                        style: FloorPop.readout(16, color: scheme.onSurface),
+                        children: [
+                          TextSpan(text: '${chart.dominantBpm}'),
+                          TextSpan(
+                              text: _bpmRangeSuffix(chart),
+                              style: TextStyle(
+                                  color: pop.haze,
+                                  fontWeight: FontWeight.w600)),
                         ],
-                      ),
-                    ),
-                    if (songInfo.radarFor(
-                            songState.modes, songState.chosenDifficulty)
-                        case final radar?)
-                      SongRadarChart(radar: radar),
+                      )),
+                    ],
                   ],
                 ),
-                // Every song has per-difficulty radar data, so the
-                // difficulty is always selectable.
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: SongDifficultyPicker(difficulty: difficulty),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ]);
+          const SizedBox(height: 16),
+          // Every song has per-difficulty radar data, so the difficulty is
+          // always selectable.
+          SongDifficultyPicker(difficulty: difficulty),
+        ],
+      ),
+    );
   }
 }
 

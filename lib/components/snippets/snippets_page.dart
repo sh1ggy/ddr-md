@@ -201,12 +201,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
         surfaceTintColor: Colors.black,
         shadowColor: Colors.black,
         elevation: 2,
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
-        title: const Text('Snippets',
-            style: TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600)),
+        title: const Text('Snippets'),
         actions: [
           IconButton(
               onPressed: _add,

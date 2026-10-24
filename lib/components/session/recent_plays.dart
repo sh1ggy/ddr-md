@@ -106,12 +106,7 @@ class HomeSubpage extends StatelessWidget {
         shadowColor: Colors.black,
         elevation: 2,
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
-        title: Text(title,
-            style: const TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600)),
+        title: Text(title),
         actions: actions,
       ),
       body: body,

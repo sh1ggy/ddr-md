@@ -3,8 +3,8 @@
 /// Description: Page that displays selected song information
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/history_page.dart';
-import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
@@ -21,9 +21,11 @@ import 'package:ddr_md/models/pattern_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 /// The song page's reorderable sections, in their default top-to-bottom order.
@@ -250,7 +252,6 @@ class _SongPageState extends State<SongPage> {
     final difficultyLevel =
         (mode == Modes.singles ? songInfo.singles : songInfo.doubles)
             .toJson()[diffKey] as int?;
-    final diffColor = difficultyColor(diffKey);
     // The in-game name (BASIC/DIFFICULT/EXPERT…), not the StepMania-style data
     // key — "medium" is a field name, never something a player sees.
     final diffLabel = kInGameDifficultyNames[diffKey] ??
@@ -262,62 +263,65 @@ class _SongPageState extends State<SongPage> {
       future: _stepsFuture,
       builder: (context, snapshot) {
         final steps = snapshot.data?.chartFor(mode, diffKey);
-        if (steps == null || steps.notes.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        // Padded here rather than around the FutureBuilder so a song with no
-        // generated steps leaves no gap above the sections below.
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Card(
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChartPreviewPage.forChart(
-                        songInfo, mode, diffKey,
-                        stepsFuture: _stepsFuture),
-                  ),
-                );
-              },
-              child: ListTile(
-                // Matches the ExpansionTile cards' tilePadding, so every section
-                // header starts and ends on the same x.
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                // Same header shape as the Sync card.
-                title: Wrap(
-                  spacing: 10,
-                  runSpacing: 2,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    const CardHeading('Chart', icon: Icons.play_circle_outline),
-                    if (kInGameDifficultyColors.containsKey(diffLabel))
+        final ready = steps != null && steps.notes.isNotEmpty;
+        final pop = FloorPop.of(context);
+        // The page's two actions, pinned under it: open the chart, or scan a
+        // result straight after playing it.
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(top: BorderSide(color: pop.line)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Row(children: [
+              Expanded(
+                child: VoltButton(
+                  onPressed: !ready
+                      ? null
+                      : () {
+                          HapticFeedback.selectionClick();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChartPreviewPage.forChart(
+                                  songInfo, mode, diffKey,
+                                  stepsFuture: _stepsFuture),
+                            ),
+                          );
+                        },
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.play_arrow_rounded, size: 26),
+                    const SizedBox(width: 8),
+                    const Text('Preview chart'),
+                    if (kInGameDifficultyColors.containsKey(diffLabel)) ...[
+                      const SizedBox(width: 10),
                       DifficultyLabel(
-                          difficulty: diffLabel, level: difficultyLevel)
-                    else
-                      Text(
-                        difficultyLevel != null
-                            ? "$diffLabel $difficultyLevel"
-                            : diffLabel,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          color: diffColor,
-                        ),
-                      ),
-                  ],
-                ),
-                // Not the neighbours' expand_more: this row pushes a route
-                // instead of expanding in place.
-                trailing: Icon(
-                  Icons.chevron_right,
-                  color: Theme.of(context).hintColor,
+                          difficulty: diffLabel,
+                          level: difficultyLevel,
+                          height: 15),
+                    ],
+                  ]),
                 ),
               ),
-            ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: IconButton.filled(
+                  tooltip: 'Scan a score',
+                  style: IconButton.styleFrom(
+                    backgroundColor: pop.riser,
+                    foregroundColor: Theme.of(context).colorScheme.onSurface,
+                    fixedSize: const Size(56, 56),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18)),
+                  ),
+                  onPressed: () => context.go('/scan'),
+                  icon: const Icon(Icons.document_scanner_outlined),
+                ),
+              ),
+            ]),
           ),
         );
       },
@@ -487,102 +491,55 @@ class _SongPageState extends State<SongPage> {
           return Directionality(
             textDirection: TextDirection.ltr,
             child: Scaffold(
-              appBar: AppBar(
-                  surfaceTintColor: Colors.black,
-                  shadowColor: Colors.black,
-                  elevation: 2,
-                  centerTitle: true,
-                  title: const Text(
-                    "Song",
-                    style: TextStyle(
-                        fontSize: 20,
-                        color: Colors.blueGrey,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  iconTheme: const IconThemeData(color: Colors.blueGrey),
-                  actions: <Widget>[
-                    IconButton(
-                        icon: Icon(
-                          favorite == null ? Icons.star_border : Icons.star,
-                        ),
-                        tooltip: favorite == null ? "Favourite" : "Unfavourite",
-                        onPressed: () async {
-                          HapticFeedback.lightImpact();
-                          SongInfo? songStateInfo = songState.songInfo;
-                          if (songStateInfo == null) {
-                            return;
-                          }
-                          if (favorite == null) {
-                            Favorite fav = Favorite(
-                                id: 0,
-                                isFav: true,
-                                songTitle: songStateInfo.titletranslit,
-                                mode: songState.modes);
-                            await DatabaseProvider.addFavorite(fav);
-                            setState(() {
-                              favorite = fav;
-                            });
-                          } else {
-                            await DatabaseProvider.deleteFavorite(favorite!);
-                            setState(() {
-                              favorite = null;
-                            });
-                          }
-                          if (context.mounted) {
-                            showToast(context, "Favourite updated");
-                          }
-                        }),
-                    IconButton(
-                      icon: const Icon(Icons.history),
-                      tooltip: "History",
-                      onPressed: () => openHistory(HistoryPage.notesTab),
-                    )
-                  ]),
+              appBar: AppBar(actions: <Widget>[
+                IconButton(
+                    icon: Icon(
+                      favorite == null ? Icons.star_border : Icons.star,
+                      color: favorite == null ? null : FloorPop.sun,
+                    ),
+                    tooltip: favorite == null ? "Favourite" : "Unfavourite",
+                    onPressed: () async {
+                      HapticFeedback.lightImpact();
+                      SongInfo? songStateInfo = songState.songInfo;
+                      if (songStateInfo == null) {
+                        return;
+                      }
+                      if (favorite == null) {
+                        Favorite fav = Favorite(
+                            id: 0,
+                            isFav: true,
+                            songTitle: songStateInfo.titletranslit,
+                            mode: songState.modes);
+                        await DatabaseProvider.addFavorite(fav);
+                        setState(() {
+                          favorite = fav;
+                        });
+                      } else {
+                        await DatabaseProvider.deleteFavorite(favorite!);
+                        setState(() {
+                          favorite = null;
+                        });
+                      }
+                      if (context.mounted) {
+                        showToast(context, "Favourite updated");
+                      }
+                    }),
+                IconButton(
+                  icon: const Icon(Icons.history),
+                  tooltip: "History",
+                  onPressed: () => openHistory(HistoryPage.notesTab),
+                )
+              ]),
+              bottomNavigationBar: _buildChartPreviewButton(songState),
               body: SingleChildScrollView(
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                  child: Column(
-                    children: [
-                      Text(
-                        songState.songInfo!.title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          height: 1.1,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      if (songState.songInfo!.titletranslit.isNotEmpty &&
-                          songState.songInfo!.titletranslit !=
-                              songState.songInfo!.title)
-                        Text(
-                          songState.songInfo!.titletranslit,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            height: 1.0,
-                            color: Colors.grey,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      if (songState.songInfo!.artist.isNotEmpty)
-                        Text(
-                          songState.songInfo!.artist,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            height: 1.0,
-                            color: Colors.grey,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      const SizedBox(height: 10),
-                      SongDetails(songInfo: songState.songInfo!, chart: _chart),
-                      const SizedBox(height: 10),
-                      // Pinned above the draggable sections so the page's
-                      // primary action always opens from the same place.
-                      _buildChartPreviewButton(songState),
-                      _buildReorderableSections(songState),
-                    ],
-                  ),
+                child: Column(
+                  children: [
+                    SongDetails(songInfo: songState.songInfo!, chart: _chart),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+                      child: _buildReorderableSections(songState),
+                    ),
+                  ],
                 ),
               ),
             ),

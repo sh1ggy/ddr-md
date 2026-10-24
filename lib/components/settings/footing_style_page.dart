@@ -186,12 +186,7 @@ class _FootingStylePageState extends State<FootingStylePage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Footing Style',
-            style: TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600)),
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        title: const Text('Footing Style'),
       ),
       body: _moments.isEmpty || _moments.first.stances.isEmpty
           ? const Center(child: CircularProgressIndicator())

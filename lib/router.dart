@@ -5,6 +5,7 @@
 /// and every page reachable by link has a path for deep links to target.
 library;
 
+import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/session/app_settings_page.dart';
 import 'package:ddr_md/components/session/session_page.dart';
@@ -123,13 +124,11 @@ class Layout extends StatelessWidget {
 
   final StatefulNavigationShell shell;
 
-  static const _home = 2;
-
   // Back only reaches here once the current tab is at its root: other tabs
   // return to Home, Home asks before exiting.
   void _onRootBack(BuildContext context) {
-    if (shell.currentIndex != _home) {
-      shell.goBranch(_home);
+    if (shell.currentIndex != kHomeTab) {
+      shell.goBranch(kHomeTab);
       return;
     }
     showDialog(
@@ -167,45 +166,11 @@ class Layout extends StatelessWidget {
           return true;
         },
         child: Scaffold(
-          bottomNavigationBar: NavigationBar(
-            height: 60,
-            elevation: 5,
-            surfaceTintColor: Colors.black,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-            // A round indicator sized to the icon, not the wide label pill.
-            indicatorShape: const CircleBorder(),
-            indicatorColor: Colors.primaries.first,
+          bottomNavigationBar: FloorPopNavBar(
+            index: shell.currentIndex,
             // Re-tapping the current tab returns it to its root.
-            onDestinationSelected: (index) => shell.goBranch(index,
+            onSelected: (index) => shell.goBranch(index,
                 initialLocation: index == shell.currentIndex),
-            selectedIndex: shell.currentIndex,
-            destinations: const <Widget>[
-              NavigationDestination(
-                selectedIcon: Icon(Icons.music_note, color: Colors.white),
-                icon: Icon(Icons.music_note_outlined),
-                label: 'Songs',
-              ),
-              NavigationDestination(
-                selectedIcon: Icon(Icons.content_cut, color: Colors.white),
-                icon: Icon(Icons.content_cut_outlined),
-                label: 'Snippets',
-              ),
-              NavigationDestination(
-                selectedIcon: Icon(Icons.home, color: Colors.white),
-                icon: Icon(Icons.home_outlined),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                selectedIcon: Icon(Icons.document_scanner, color: Colors.white),
-                icon: Icon(Icons.document_scanner_outlined),
-                label: 'Scan',
-              ),
-              NavigationDestination(
-                selectedIcon: Icon(Icons.person, color: Colors.white),
-                icon: Icon(Icons.person_outline),
-                label: 'Profile',
-              ),
-            ],
           ),
           body: shell,
         ),

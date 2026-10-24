@@ -18,6 +18,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 
 /// How many plays the level's model counts as when blended into a chart's
@@ -287,7 +288,8 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final muted = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
     final gap = summary.gap;
-    final up = isDark ? Colors.green.shade300 : Colors.green.shade700;
+    final pop = FloorPop.of(context);
+    final up = pop.up, down = pop.down;
     final logged = widget.timing ?? const <TimingPlay>[];
     final timing = logged.isEmpty
         ? null
@@ -336,12 +338,7 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
             children: [
               Text(
                 '${gap >= 0 ? '+' : '−'}${formatScore(gap.abs().round())}',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: gap >= 0 ? up : scheme.error,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+                style: FloorPop.readout(34, color: gap >= 0 ? up : down),
               ),
               const SizedBox(width: 8),
               Expanded(child: Text('vs your usual', style: muted)),
@@ -350,8 +347,8 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
           const SizedBox(height: 8),
           if (summary.byLevel case final levels when levels.isNotEmpty) ...[
             widget.detailed
-                ? _LevelBars(levels, up: up, down: scheme.error)
-                : _LevelChips(_scoreChips(levels, up: up, down: scheme.error)),
+                ? _LevelBars(levels, up: up, down: down)
+                : _LevelChips(_scoreChips(levels, up: up, down: down)),
             const SizedBox(height: 12),
           ],
           _PlayStrip(
@@ -363,7 +360,7 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
             },
             full: 50000,
             up: up,
-            down: scheme.error,
+            down: down,
             counted: 'compared',
             onPlay: widget.onPlay,
           ),
@@ -475,12 +472,8 @@ class _StatText extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => Text(text,
-      style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-          color: color,
-          fontFeatures: const [FontFeature.tabularFigures()]));
+  Widget build(BuildContext context) =>
+      Text(text, style: FloorPop.readout(17, color: color));
 }
 
 /// Each level's average on one score axis beside its usual, easiest first:
@@ -639,12 +632,7 @@ class _LevelChips extends StatelessWidget {
                   fit: BoxFit.scaleDown,
                   child: Text(
                     c.text,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: c.colour,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                    style: FloorPop.readout(17, color: c.colour),
                   ),
                 ),
               ]),
@@ -751,12 +739,7 @@ class _TimingChart extends StatelessWidget {
           children: [
             Text(
               '${mean.abs().toStringAsFixed(1)} ms',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: mean < 0 ? fast : slow,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+              style: FloorPop.readout(34, color: mean < 0 ? fast : slow),
             ),
             const SizedBox(width: 8),
             Expanded(

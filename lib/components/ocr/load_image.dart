@@ -288,14 +288,7 @@ class _LoadImageState extends State<LoadImage> {
         shadowColor: Colors.black,
         elevation: 2,
         centerTitle: true,
-        title: const Text(
-          'Load Image',
-          style: TextStyle(
-              fontSize: 20,
-              color: Colors.blueGrey,
-              fontWeight: FontWeight.w600),
-        ),
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        title: const Text('Load Image'),
       ),
       floatingActionButton: FloatingActionButton.extended(
         // Disabled (null onPressed + grey) until OCR init completes,

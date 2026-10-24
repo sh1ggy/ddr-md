@@ -7,6 +7,7 @@
 /// it.
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
@@ -16,6 +17,7 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -319,27 +321,96 @@ class _VenueSheetState extends State<_VenueSheet> {
   }
 }
 
-/// Home's start button, floating over it: opens the start sheet on the cab
-/// and side last played.
-class StartSessionFab extends StatelessWidget {
-  const StartSessionFab({super.key});
+/// Home's way into a session: one tap starts on the cab and side last
+/// played; "Somewhere else" opens the full start sheet.
+class StartSessionCard extends StatelessWidget {
+  const StartSessionCard({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
     return FutureBuilder<VisitData>(
       future: visitsFor(context),
       builder: (context, snapshot) {
         final last = snapshot.data?.lastCredit;
-        return FloatingActionButton.large(
-          tooltip: last == null
-              ? 'Start session'
-              : 'Start at ${last.cabinet.label} · ${sideLabel(last.side)}',
-          shape: const CircleBorder(),
-          backgroundColor: scheme.secondary,
-          foregroundColor: scheme.onSecondary,
-          onPressed: () => showStartSessionSheet(context, last: last),
-          child: const Icon(Icons.play_arrow, size: 48),
+        return Container(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+          decoration:
+              pop.stripes(color: pop.stage, radius: BorderRadius.circular(26)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                Transform.rotate(
+                    angle: -0.07, child: const PadGlyph(size: 46, lit: true)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('AT THE ARCADE?', style: pop.label),
+                      const SizedBox(height: 2),
+                      Text('Start a session',
+                          style: FloorPop.display(21, color: scheme.onSurface)),
+                    ],
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              VoltButton(
+                height: 62,
+                radius: 20,
+                tooltip: last == null ? 'Start session' : null,
+                onPressed: () async {
+                  if (last == null) {
+                    await showStartSessionSheet(context);
+                    return;
+                  }
+                  await context.read<SessionState>().start(
+                      Venue(last.cabinet.venueId, last.cabinet.venueName),
+                      last.cabinet,
+                      last.side);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Row(children: [
+                    const Icon(Icons.play_arrow_rounded, size: 30),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(last == null ? 'Start' : 'Start here'),
+                          if (last != null)
+                            Text(
+                              '${last.cabinet.label} · ${sideLabel(last.side)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontFamily: kTextFont,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+              if (last != null)
+                TextButton(
+                  style: TextButton.styleFrom(
+                      foregroundColor: scheme.onSurface,
+                      minimumSize: const Size(44, 44)),
+                  onPressed: () => showStartSessionSheet(context, last: last),
+                  child: const Text('Somewhere else'),
+                ),
+              if (last == null) const SizedBox(height: 10),
+            ],
+          ),
         );
       },
     );
@@ -370,7 +441,6 @@ class VisitTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final gap = visit.plays.isEmpty ? null : model.summarize(visit.plays).gap;
     final tile = Material(
       color: scheme.surfaceContainerHighest,
@@ -391,10 +461,8 @@ class VisitTile extends StatelessWidget {
                 style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: gap >= 0
-                        ? (isDark
-                            ? Colors.green.shade300
-                            : Colors.green.shade700)
-                        : scheme.error,
+                        ? FloorPop.of(context).up
+                        : FloorPop.of(context).down,
                     fontFeatures: const [FontFeature.tabularFigures()])),
       ),
     );

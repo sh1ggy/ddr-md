@@ -19,6 +19,7 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:provider/provider.dart';
@@ -272,15 +273,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           textDirection: TextDirection.ltr,
           child: Scaffold(
             appBar: AppBar(
-              elevation: 2,
-              title: const Text(
-                'Songlist',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              title: const PageTitle('Songs'),
               actions: <Widget>[
                 IconButton(
                   icon: Icon(_gridMode ? Icons.view_list : Icons.grid_view),
@@ -288,7 +281,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   onPressed: _toggleViewMode,
                 ),
               ],
-              iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
             body: FutureBuilder<List<SongItem>>(
               future: _songItemsPromise,
@@ -571,49 +563,51 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     return SliverAppBar(
       floating: true,
       pinned: true,
-      backgroundColor: Colors.transparent,
-      flexibleSpace: SearchAnchor(
-          isFullScreen: true,
-          viewOnSubmitted: (value) {
-            FocusScope.of(context).unfocus();
-          },
-          viewHintText: "Search song...",
-          builder: (BuildContext context, SearchController controller) {
-            return SearchBar(
-              controller: controller,
-              onTap: () {
-                controller.openView();
-              },
-              onChanged: (value) => controller.openView(),
-              hintText: "Search song...",
-              constraints: const BoxConstraints(
-                  minWidth: 360.0, maxWidth: 800.0, minHeight: 56.0),
-              shape: WidgetStateProperty.all(const RoundedRectangleBorder(
-                borderRadius: BorderRadius.zero,
-              )),
-              padding: WidgetStateProperty.all(
-                const EdgeInsets.symmetric(vertical: 5.0, horizontal: 20.0),
-              ),
-              leading: const Icon(Icons.search),
-            );
-          },
-          // Runs on every keystroke, straight off the controller's text. Ranks
-          // by normalized Levenshtein similarity (same as OCR title matching)
-          // so close-but-not-exact spellings still sort to the top. Keyed rows
-          // keep their loaded jackets as the ranking reshuffles.
-          suggestionsBuilder:
-              (BuildContext context, SearchController controller) {
-            return Songs.matchTitles(controller.text,
-                    limit: Songs.list.length,
-                    minSimilarity: _kMinSearchSimilarity)
-                .map((match) => SongListItem(
-                      key: ValueKey(match.song.name),
-                      songInfo: match.song,
-                      isFav: false,
-                      isSearch: true,
-                      regenFavsCallback: regenFavCount,
-                    ));
-          }),
+      // Opaque so pinned, the rows don't show through around the field.
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      surfaceTintColor: Colors.transparent,
+      flexibleSpace: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        child: SearchAnchor(
+            isFullScreen: true,
+            viewOnSubmitted: (value) {
+              FocusScope.of(context).unfocus();
+            },
+            viewHintText: "Search song...",
+            builder: (BuildContext context, SearchController controller) {
+              return SearchBar(
+                controller: controller,
+                onTap: () {
+                  controller.openView();
+                },
+                onChanged: (value) => controller.openView(),
+                hintText: "Search song...",
+                constraints:
+                    const BoxConstraints(maxWidth: 800.0, minHeight: 48.0),
+                padding: WidgetStateProperty.all(
+                  const EdgeInsets.symmetric(horizontal: 16.0),
+                ),
+                leading: const Icon(Icons.search),
+              );
+            },
+            // Runs on every keystroke, straight off the controller's text. Ranks
+            // by normalized Levenshtein similarity (same as OCR title matching)
+            // so close-but-not-exact spellings still sort to the top. Keyed rows
+            // keep their loaded jackets as the ranking reshuffles.
+            suggestionsBuilder:
+                (BuildContext context, SearchController controller) {
+              return Songs.matchTitles(controller.text,
+                      limit: Songs.list.length,
+                      minSimilarity: _kMinSearchSimilarity)
+                  .map((match) => SongListItem(
+                        key: ValueKey(match.song.name),
+                        songInfo: match.song,
+                        isFav: false,
+                        isSearch: true,
+                        regenFavsCallback: regenFavCount,
+                      ));
+            }),
+      ),
     );
   }
 }
