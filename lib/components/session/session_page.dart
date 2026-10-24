@@ -28,6 +28,8 @@ String signedMs(double ms) =>
 Future<void> showStartSessionSheet(BuildContext context, {Credit? last}) =>
     showModalBottomSheet(
       context: context,
+      // Over the floating tab bar, wherever it's opened from.
+      useRootNavigator: true,
       isScrollControlled: true,
       builder: (_) => _CreditSheet(newSession: true, last: last),
     );
@@ -36,6 +38,8 @@ Future<void> showStartSessionSheet(BuildContext context, {Credit? last}) =>
 /// unless changed.
 Future<void> showNewCreditSheet(BuildContext context) => showModalBottomSheet(
       context: context,
+      // Over the floating tab bar, wherever it's opened from.
+      useRootNavigator: true,
       isScrollControlled: true,
       builder: (_) => const _CreditSheet(newSession: false),
     );
@@ -50,6 +54,8 @@ Future<void> showEditCreditSheet(BuildContext context,
         required DateTime startedAt}) =>
     showModalBottomSheet(
       context: context,
+      // Over the floating tab bar, wherever it's opened from.
+      useRootNavigator: true,
       isScrollControlled: true,
       builder: (_) => _CreditSheet(
           newSession: false,
@@ -547,31 +553,21 @@ class _LiveSessionCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   // Tapping the credit starts the next one, for a side or cab
                   // swap.
-                  Material(
-                    color: pop.riser,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () => showNewCreditSheet(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 7),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Flexible(
-                            child: Text(
-                              '${credit.cabinet.name.isEmpty ? 'Main cab' : credit.cabinet.name}'
-                              ' · ${sideLabel(credit.side)}'
-                              ' · ${plays == 1 ? '1 play' : '$plays plays'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          const Icon(Icons.swap_horiz, size: 16),
-                        ]),
-                      ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => showNewCreditSheet(context),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _CreditPill(credit.cabinet.name.isEmpty
+                            ? 'Main cab'
+                            : credit.cabinet.name),
+                        _CreditPill(sideLabel(credit.side)),
+                        _CreditPill(plays == 1 ? '1 play' : '$plays plays'),
+                        Icon(Icons.swap_horiz, size: 18, color: pop.haze),
+                      ],
                     ),
                   ),
                 ],
@@ -599,4 +595,23 @@ class _LiveSessionCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One fact about the running credit as a small pill.
+class _CreditPill extends StatelessWidget {
+  const _CreditPill(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+            color: FloorPop.of(context).riser,
+            borderRadius: BorderRadius.circular(8)),
+        child: Text(text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      );
 }

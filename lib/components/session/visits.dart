@@ -247,6 +247,7 @@ class _WhereHeading extends StatelessWidget {
       onPressed: () async {
         final session = await showModalBottomSheet<PlaySession>(
           context: context,
+          useRootNavigator: true,
           builder: (_) => _VenueSheet(visit),
         );
         if (session != null && context.mounted) {
