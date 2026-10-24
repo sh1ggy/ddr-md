@@ -49,29 +49,32 @@ class _DancerTypePageState extends State<DancerTypePage> {
           flexibleSpace: const GlassHeader(),
           title: const Text('Dancer Type'),
         ),
-        body: ListView(
-          padding: clearOfBars(context, const EdgeInsets.all(8)),
-          children: [
-            SettingCard<int>(
-              setValue: _setHeight,
-              chosenValue:
-                  _heightCm == 0 ? (kDancerHeight * 100).round() : _heightCm,
-              field: "Height (cm)",
-              maxLength: 3,
-            ),
-            SettingCard<String>(
-              setValue: _setShoeSize,
-              chosenValue:
-                  ((_shoeTenths == 0 ? kShoeSize * 10 : _shoeTenths) / 10)
-                      .toString()
-                      .replaceFirst(RegExp(r'\.0$'), ''),
-              field: "Shoe Size (US)",
-              maxLength: 4,
-              digitsOnly: false,
-            ),
-            const BarGripCard(),
-          ],
-        ),
+        body: Builder(
+            builder: (context) => ListView(
+                  padding: clearOfBars(context, const EdgeInsets.all(8)),
+                  children: [
+                    SettingCard<int>(
+                      setValue: _setHeight,
+                      chosenValue: _heightCm == 0
+                          ? (kDancerHeight * 100).round()
+                          : _heightCm,
+                      field: "Height (cm)",
+                      maxLength: 3,
+                    ),
+                    SettingCard<String>(
+                      setValue: _setShoeSize,
+                      chosenValue:
+                          ((_shoeTenths == 0 ? kShoeSize * 10 : _shoeTenths) /
+                                  10)
+                              .toString()
+                              .replaceFirst(RegExp(r'\.0$'), ''),
+                      field: "Shoe Size (US)",
+                      maxLength: 4,
+                      digitsOnly: false,
+                    ),
+                    const BarGripCard(),
+                  ],
+                )),
       ),
     );
   }

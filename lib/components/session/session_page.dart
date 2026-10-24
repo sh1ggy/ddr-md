@@ -360,14 +360,16 @@ class SessionPage extends StatelessWidget {
       // The cards scroll with the session below them.
       body: session.active
           ? _ActiveSession(session: session, header: _header)
-          : ListView(
-              padding: clearOfBars(context, const EdgeInsets.only(bottom: 24)),
-              children: const [
-                BeatIn(child: EamuseSyncCard()),
-                BeatIn(index: 1, child: StartSessionCard()),
-                BeatIn(index: 2, child: LastSessionCard()),
-              ],
-            ),
+          : Builder(
+              builder: (context) => ListView(
+                    padding:
+                        clearOfBars(context, const EdgeInsets.only(bottom: 24)),
+                    children: const [
+                      BeatIn(child: StartSessionCard()),
+                      BeatIn(index: 1, child: EamuseSyncCard()),
+                      BeatIn(index: 2, child: LastSessionCard()),
+                    ],
+                  )),
     );
   }
 }

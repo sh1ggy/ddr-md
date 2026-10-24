@@ -618,65 +618,70 @@ class _VisitPageState extends State<VisitPage> {
                 },
               ),
           ],
-          body: ListView(
-            padding: clearOfBars(context, const EdgeInsets.only(bottom: 24)),
-            children: [
-              HomeCard(
-                title: 'Summary',
-                icon: Icons.insights,
-                heading: visit.session == null
-                    ? _WhereHeading(visit,
-                        onAdded: (s) =>
-                            context.replace('/home/sessions/${s.id}'))
-                    : null,
-                children: [
-                  CardSubtitle(
-                      '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
-                  if (visit.plays.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Text('No synced plays: sync after your set to '
-                          'add them.'),
-                    )
-                  else
-                    SessionSummaryBody(
-                      data.model.summarize(visit.plays),
-                      plays: visit.plays,
-                      timed: visit.session != null,
-                      timing: timing,
-                      detailed: true,
-                      credits: credits,
-                      onPlay: (p) =>
-                          _jump(groups, p.playedAt.millisecondsSinceEpoch),
-                    ),
-                ],
-              ),
-              if (visit.plays.isNotEmpty || timing.isNotEmpty)
-                HomeCard(
-                  title: 'Plays',
-                  icon: Icons.history,
-                  children: [
-                    for (final (i, (credit, plays)) in groups.indexed)
-                      _CreditGroup(
-                          key: _creditKeys.putIfAbsent(i, GlobalKey.new),
-                          lit: _lit == i,
-                          credit: credit,
-                          plays: plays,
-                          bests: data.model.bests,
-                          timing: matched,
-                          onEdit: switch (visit.session) {
-                            final session? => () => showEditCreditSheet(context,
-                                session: session,
-                                credit: credit,
-                                last: credits.firstOrNull,
-                                startedAt: plays.lastOrNull?.playedAt ??
-                                    credit!.startedAt),
-                            null => null,
-                          }),
-                  ],
-                ),
-            ],
-          ),
+          body: Builder(
+              builder: (context) => ListView(
+                    padding:
+                        clearOfBars(context, const EdgeInsets.only(bottom: 24)),
+                    children: [
+                      HomeCard(
+                        title: 'Summary',
+                        icon: Icons.insights,
+                        heading: visit.session == null
+                            ? _WhereHeading(visit,
+                                onAdded: (s) =>
+                                    context.replace('/home/sessions/${s.id}'))
+                            : null,
+                        children: [
+                          CardSubtitle(
+                              '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
+                          if (visit.plays.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 6),
+                              child: Text(
+                                  'No synced plays: sync after your set to '
+                                  'add them.'),
+                            )
+                          else
+                            SessionSummaryBody(
+                              data.model.summarize(visit.plays),
+                              plays: visit.plays,
+                              timed: visit.session != null,
+                              timing: timing,
+                              detailed: true,
+                              credits: credits,
+                              onPlay: (p) => _jump(
+                                  groups, p.playedAt.millisecondsSinceEpoch),
+                            ),
+                        ],
+                      ),
+                      if (visit.plays.isNotEmpty || timing.isNotEmpty)
+                        HomeCard(
+                          title: 'Plays',
+                          icon: Icons.history,
+                          children: [
+                            for (final (i, (credit, plays)) in groups.indexed)
+                              _CreditGroup(
+                                  key:
+                                      _creditKeys.putIfAbsent(i, GlobalKey.new),
+                                  lit: _lit == i,
+                                  credit: credit,
+                                  plays: plays,
+                                  bests: data.model.bests,
+                                  timing: matched,
+                                  onEdit: switch (visit.session) {
+                                    final session? => () => showEditCreditSheet(
+                                        context,
+                                        session: session,
+                                        credit: credit,
+                                        last: credits.firstOrNull,
+                                        startedAt: plays.lastOrNull?.playedAt ??
+                                            credit!.startedAt),
+                                    null => null,
+                                  }),
+                          ],
+                        ),
+                    ],
+                  )),
         );
       },
     );

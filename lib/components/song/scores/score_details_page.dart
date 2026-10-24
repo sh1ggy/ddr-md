@@ -207,73 +207,77 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
                 ),
               ],
       ),
-      body: ListView(
-        padding: clearOfBars(context, const EdgeInsets.all(10)),
-        children: [
-          Text(
-            _score.songTitle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // In view mode the ScoreCard below already carries the source
-              // badge; only show the icon here while editing (card hidden).
-              if (_editing) ...[
-                Icon(
-                  _score.source == ScoreSource.loadImage
-                      ? Icons.photo_library_outlined
-                      : Icons.videocam_outlined,
-                  size: 15,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-              ],
-              if (_editing)
-                Flexible(
-                  child: Text(
-                    // In view mode the ScoreCard below already shows the date.
-                    // While editing (card hidden) it's shown here instead,
-                    // reflecting the working (possibly changed) play date.
-                    formatDate(_dateEditable
-                        ? _editPlayedAt
-                        : DateTime.parse(_score.playedAt)),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (_editing)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Builder(
+          builder: (context) => ListView(
+                padding: clearOfBars(context, const EdgeInsets.all(10)),
                 children: [
-                  for (final key in _kEditableKeys)
-                    if (key == 'flare')
-                      FlareDropdownField(controller: _controllers[key]!)
-                    else
-                      OCREditableField(
-                        keyName: key,
-                        controller: _controllers[key]!,
+                  Text(
+                    _score.songTitle,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // In view mode the ScoreCard below already carries the source
+                      // badge; only show the icon here while editing (card hidden).
+                      if (_editing) ...[
+                        Icon(
+                          _score.source == ScoreSource.loadImage
+                              ? Icons.photo_library_outlined
+                              : Icons.videocam_outlined,
+                          size: 15,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      if (_editing)
+                        Flexible(
+                          child: Text(
+                            // In view mode the ScoreCard below already shows the date.
+                            // While editing (card hidden) it's shown here instead,
+                            // reflecting the working (possibly changed) play date.
+                            formatDate(_dateEditable
+                                ? _editPlayedAt
+                                : DateTime.parse(_score.playedAt)),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_editing)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final key in _kEditableKeys)
+                            if (key == 'flare')
+                              FlareDropdownField(controller: _controllers[key]!)
+                            else
+                              OCREditableField(
+                                keyName: key,
+                                controller: _controllers[key]!,
+                              ),
+                          if (_dateEditable) _buildEditDateRow(),
+                        ],
                       ),
-                  if (_dateEditable) _buildEditDateRow(),
+                    )
+                  else
+                    ScoreCard(score: _score),
+                  const SizedBox(height: 8),
+                  _ScoreImageSection(imageFile: _imageFile),
                 ],
-              ),
-            )
-          else
-            ScoreCard(score: _score),
-          const SizedBox(height: 8),
-          _ScoreImageSection(imageFile: _imageFile),
-        ],
-      ),
+              )),
     );
   }
 }

@@ -234,15 +234,16 @@ class _SnippetsPageState extends State<SnippetsPage> {
             ),
           )
         else
-          ListView.builder(
-            padding:
-                clearOfBars(context, const EdgeInsets.fromLTRB(12, 4, 12, 88)),
-            itemCount: snippets.length,
-            itemBuilder: (context, i) => BeatIn(
-                index: i,
-                animate: _shown.add(snippets[i].id),
-                child: _tile(snippets[i])),
-          ),
+          Builder(
+              builder: (context) => ListView.builder(
+                    padding: clearOfBars(
+                        context, const EdgeInsets.fromLTRB(12, 4, 12, 88)),
+                    itemCount: snippets.length,
+                    itemBuilder: (context, i) => BeatIn(
+                        index: i,
+                        animate: _shown.add(snippets[i].id),
+                        child: _tile(snippets[i])),
+                  )),
         // Shuffle and Add float at the foot of the page, like the song
         // page's Preview chart and scan.
         Positioned(

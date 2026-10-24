@@ -145,45 +145,47 @@ class PrivacyPage extends StatelessWidget {
         flexibleSpace: const GlassHeader(),
         title: const Text('Privacy'),
       ),
-      body: ListView(
-        padding: clearOfBars(context, const EdgeInsets.fromLTRB(20, 8, 20, 32)),
-        children: [
-          Text('Last updated $privacyUpdated',
-              style: theme.textTheme.bodySmall),
-          for (final (heading, paragraphs) in privacySections) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 20, bottom: 6),
-              child: Text(heading, style: theme.textTheme.titleMedium),
-            ),
-            for (final p in paragraphs)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: p.startsWith('- ')
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('•  '),
-                          Expanded(child: Text(p.substring(2))),
-                        ],
-                      )
-                    : Text(p),
-              ),
-          ],
-          Padding(
-            padding: const EdgeInsets.only(top: 20, bottom: 6),
-            child: Text('Contact', style: theme.textTheme.titleMedium),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              style: TextButton.styleFrom(padding: EdgeInsets.zero),
-              onPressed: () => launchUrl(Uri.parse(constants.github),
-                  mode: LaunchMode.externalApplication),
-              child: const Text('github.com/sh1ggy'),
-            ),
-          ),
-        ],
-      ),
+      body: Builder(
+          builder: (context) => ListView(
+                padding: clearOfBars(
+                    context, const EdgeInsets.fromLTRB(20, 8, 20, 32)),
+                children: [
+                  Text('Last updated $privacyUpdated',
+                      style: theme.textTheme.bodySmall),
+                  for (final (heading, paragraphs) in privacySections) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 20, bottom: 6),
+                      child: Text(heading, style: theme.textTheme.titleMedium),
+                    ),
+                    for (final p in paragraphs)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: p.startsWith('- ')
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('•  '),
+                                  Expanded(child: Text(p.substring(2))),
+                                ],
+                              )
+                            : Text(p),
+                      ),
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.only(top: 20, bottom: 6),
+                    child: Text('Contact', style: theme.textTheme.titleMedium),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                      onPressed: () => launchUrl(Uri.parse(constants.github),
+                          mode: LaunchMode.externalApplication),
+                      child: const Text('github.com/sh1ggy'),
+                    ),
+                  ),
+                ],
+              )),
     );
   }
 }

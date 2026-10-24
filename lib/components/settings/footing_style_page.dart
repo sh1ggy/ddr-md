@@ -193,21 +193,22 @@ class _FootingStylePageState extends State<FootingStylePage>
       ),
       body: _moments.isEmpty || _moments.first.stances.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: clearOfBars(context, const EdgeInsets.all(8)),
-              children: [
-                Center(
-                  child: FootingStyleSwitch(onChanged: () {
-                    setState(() {});
-                    _solve();
-                  }),
-                ),
-                const SizedBox(height: 8),
-                for (final m in _moments)
-                  _MomentCard(m, onTap: () => _openChart(m)),
-                if (_fit case final fit?) _editsLine(fit),
-              ],
-            ),
+          : Builder(
+              builder: (context) => ListView(
+                    padding: clearOfBars(context, const EdgeInsets.all(8)),
+                    children: [
+                      Center(
+                        child: FootingStyleSwitch(onChanged: () {
+                          setState(() {});
+                          _solve();
+                        }),
+                      ),
+                      const SizedBox(height: 8),
+                      for (final m in _moments)
+                        _MomentCard(m, onTap: () => _openChart(m)),
+                      if (_fit case final fit?) _editsLine(fit),
+                    ],
+                  )),
     );
   }
 

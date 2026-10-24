@@ -69,62 +69,73 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               body: Stack(
                 children: [
-                  ListView(
-                    padding: clearOfBars(context, const EdgeInsets.all(8)),
-                    children: [
-                      const _SectionHeader('Profile', Icons.person),
-                      const EamuseProfileCard(),
-                      Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.leaderboard_outlined),
-                          title: const Text("Statistics",
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) => const ScoreOverviewPage())),
-                        ),
-                      ),
-                      _ReadSpeedCard(
-                        value: _chosenReadSpeed,
-                        onChanged: _setReadSpeed,
-                      ),
-                      const _SectionHeader('Dancer', Icons.accessibility_new),
-                      Card(
-                        child: ListTile(
-                          title: const Text("Dancer Type",
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle:
-                              const Text("Height, shoe size and bar grip"),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) => const DancerTypePage())),
-                        ),
-                      ),
-                      const _SectionHeader('Play', Icons.directions_run),
-                      const _PlayStyleCard(),
-                      Card(
-                        child: ListTile(
-                          title: const Text("Footing Style",
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                  Builder(
+                      builder: (context) => ListView(
+                            padding:
+                                clearOfBars(context, const EdgeInsets.all(8)),
                             children: [
-                              FootingStyleSwitch(
-                                  onChanged: () => setState(() {})),
-                              const Icon(Icons.chevron_right),
+                              const EamuseProfileCard(),
+                              Card(
+                                child: ListTile(
+                                  leading:
+                                      const Icon(Icons.leaderboard_outlined),
+                                  title: const Text("Statistics",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ScoreOverviewPage())),
+                                ),
+                              ),
+                              _ReadSpeedCard(
+                                value: _chosenReadSpeed,
+                                onChanged: _setReadSpeed,
+                              ),
+                              const _SectionHeader(
+                                  'Dancer', Icons.accessibility_new),
+                              Card(
+                                child: ListTile(
+                                  title: const Text("Dancer Type",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  subtitle: const Text(
+                                      "Height, shoe size and bar grip"),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const DancerTypePage())),
+                                ),
+                              ),
+                              const _SectionHeader(
+                                  'Play', Icons.directions_run),
+                              const _PlayStyleCard(),
+                              Card(
+                                child: ListTile(
+                                  title: const Text("Footing Style",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      FootingStyleSwitch(
+                                          onChanged: () => setState(() {})),
+                                      const Icon(Icons.chevron_right),
+                                    ],
+                                  ),
+                                  onTap: () async {
+                                    await Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const FootingStylePage()));
+                                    if (mounted) setState(() {});
+                                  },
+                                ),
+                              ),
                             ],
-                          ),
-                          onTap: () async {
-                            await Navigator.of(context).push(MaterialPageRoute(
-                                builder: (_) => const FootingStylePage()));
-                            if (mounted) setState(() {});
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
+                          )),
                 ],
               ),
             ),

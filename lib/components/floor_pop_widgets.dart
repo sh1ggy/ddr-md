@@ -231,7 +231,8 @@ class HeaderButton extends StatelessWidget {
 
 /// [padding] plus the space the glass header takes at the top and the
 /// floating tab bar at the bottom, so a page scrolls under both and its first
-/// and last rows still sit clear of them.
+/// and last rows still sit clear of them. [context] must be inside the page's
+/// Scaffold, the only place the header's height is known.
 EdgeInsets clearOfBars(BuildContext context, EdgeInsets padding) {
   final bars = MediaQuery.paddingOf(context);
   return padding.copyWith(

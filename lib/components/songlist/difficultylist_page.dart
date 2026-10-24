@@ -501,12 +501,14 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      padding: const EdgeInsets.only(top: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          // Scrolls edge to edge but rests on the title's and rows' edge.
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: <Widget>[
                 favouritesButton(songState),
@@ -551,7 +553,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           if (_activeFilterPanel != null)
             Container(
               width: double.infinity,
-              margin: const EdgeInsets.only(top: 10),
+              margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               padding: const EdgeInsets.all(10),
               // The level numerals hold together on their own; chips need
               // the frame.
@@ -571,9 +573,11 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   // Part of the page header, so the rows scroll on under it, frosted.
   PreferredSizeWidget songSearchBar() {
     return PreferredSize(
-      preferredSize: const Size.fromHeight(kToolbarHeight),
+      preferredSize: const Size.fromHeight(52),
+      // A compact pill under the title, on the same 16 edge as the title and
+      // the rows, with a little more room below than above.
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
         child: SearchAnchor(
             isFullScreen: true,
             viewOnSubmitted: (value) {
@@ -588,12 +592,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 },
                 onChanged: (value) => controller.openView(),
                 hintText: "Search song...",
-                constraints:
-                    const BoxConstraints(maxWidth: 800.0, minHeight: 48.0),
+                constraints: const BoxConstraints(
+                    maxWidth: 800.0, minHeight: 40.0, maxHeight: 40.0),
+                shape: const WidgetStatePropertyAll(StadiumBorder()),
                 padding: WidgetStateProperty.all(
-                  const EdgeInsets.symmetric(horizontal: 16.0),
+                  const EdgeInsets.symmetric(horizontal: 14.0),
                 ),
-                leading: const Icon(Icons.search),
+                leading: const Icon(Icons.search, size: 20),
               );
             },
             // Runs on every keystroke, straight off the controller's text. Ranks

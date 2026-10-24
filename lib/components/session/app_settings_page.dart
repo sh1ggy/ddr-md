@@ -32,22 +32,24 @@ class AppSettingsPage extends StatelessWidget {
       // The links float at the bottom, over anything scrolled under them.
       body: Stack(
         children: [
-          ListView(
-            padding:
-                clearOfBars(context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
-            children: [
-              const Card(child: _ContentTile()),
-              Card(
-                child: ListTile(
-                  title: const Text("Privacy",
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PrivacyPage())),
-                ),
-              ),
-            ],
-          ),
+          Builder(
+              builder: (context) => ListView(
+                    padding: clearOfBars(
+                        context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
+                    children: [
+                      const Card(child: _ContentTile()),
+                      Card(
+                        child: ListTile(
+                          title: const Text("Privacy",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const PrivacyPage())),
+                        ),
+                      ),
+                    ],
+                  )),
           Positioned(
             left: 0,
             right: 0,
