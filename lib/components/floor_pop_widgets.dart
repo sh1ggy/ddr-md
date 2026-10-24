@@ -5,6 +5,8 @@
 /// tab's leaning page title.
 library;
 
+import 'dart:async';
+
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -191,5 +193,120 @@ class PageTitle extends StatelessWidget {
           ),
           if (trailing != null) ...[const SizedBox(width: 10), trailing!],
         ],
+      );
+}
+
+/// A header action on a riser, beside the leaning page titles.
+class HeaderButton extends StatelessWidget {
+  const HeaderButton(
+      {super.key,
+      required this.icon,
+      required this.tooltip,
+      required this.onPressed,
+      this.color});
+
+  final Widget icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: icon,
+          style: IconButton.styleFrom(
+            backgroundColor: FloorPop.of(context).riser,
+            foregroundColor: color ?? Theme.of(context).colorScheme.onSurface,
+            fixedSize: const Size(44, 44),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        ),
+      );
+}
+
+/// [padding] plus the space the floating tab bar takes at the bottom, so a
+/// page scrolls under the bar and its last row still ends clear of it.
+EdgeInsets clearOfTabBar(BuildContext context, EdgeInsets padding) => padding
+    .copyWith(bottom: padding.bottom + MediaQuery.paddingOf(context).bottom);
+
+/// [child] rising into place on the beat when it first appears: a quarter
+/// note long, each [index] a 1/32 later than the one before. Only the first
+/// eight stagger, and nothing moves when the system asks for reduced motion.
+/// Fade and slide only, so it costs the compositor and not a relayout.
+class BeatIn extends StatefulWidget {
+  const BeatIn(
+      {super.key, required this.child, this.index = 0, this.animate = true});
+
+  final Widget child;
+  final int index;
+  final bool animate;
+
+  @override
+  State<BeatIn> createState() => _BeatInState();
+}
+
+class _BeatInState extends State<BeatIn> with SingleTickerProviderStateMixin {
+  late final _controller =
+      AnimationController(vsync: this, duration: FloorPop.beat);
+  late final _curve =
+      CurvedAnimation(parent: _controller, curve: FloorPop.step);
+  late final _slide =
+      Tween(begin: const Offset(0, 0.06), end: Offset.zero).animate(_curve);
+  Timer? _delay;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_controller.isAnimating || _controller.isCompleted || _delay != null) {
+      return;
+    }
+    if (!widget.animate ||
+        widget.index > 7 ||
+        MediaQuery.of(context).disableAnimations) {
+      _controller.value = 1;
+      return;
+    }
+    _delay = Timer(
+        FloorPop.sixteenth * widget.index ~/ 2, () => _controller.forward());
+  }
+
+  @override
+  void dispose() {
+    _delay?.cancel();
+    _curve.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: _controller,
+        child: SlideTransition(position: _slide, child: widget.child),
+      );
+}
+
+/// A number that cross-fades when it changes, so a readout ticks over rather
+/// than jumps.
+class BeatSwap extends StatelessWidget {
+  const BeatSwap({super.key, required this.child});
+
+  /// Keyed by its value so a change swaps rather than restyles.
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+        duration: FloorPop.sixteenth,
+        switchInCurve: FloorPop.settle,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+              scale: Tween(begin: 0.92, end: 1.0).animate(animation),
+              child: child),
+        ),
+        child: child,
       );
 }

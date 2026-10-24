@@ -20,6 +20,7 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/score_overview.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -63,7 +64,7 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
           }
           final levels = chartsByLevel(data.records, Songs.list, _mode);
           return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
+            padding: clearOfTabBar(context, const EdgeInsets.only(bottom: 24)),
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),

@@ -12,6 +12,7 @@ import 'package:ddr_md/components/roi_painter.dart';
 import 'package:ddr_md/helpers.dart' show parseOcrNumber;
 import 'package:ddr_md/models/db_models.dart' show ScoreSource;
 import 'package:ddr_md/ocr_processor.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/scheduler.dart';
@@ -342,7 +343,7 @@ class _OcrPageState extends State<OcrPage>
 
   Widget _buildActiveView() {
     return ListView(
-      padding: const EdgeInsets.only(bottom: 96),
+      padding: clearOfTabBar(context, const EdgeInsets.only(bottom: 96)),
       children: [
         Stack(
           children: [
@@ -606,7 +607,8 @@ class _OcrPageState extends State<OcrPage>
       children: [
         ListView(
           // Top padding clears the floating side picker.
-          padding: const EdgeInsets.fromLTRB(16, 64, 16, 96),
+          padding:
+              clearOfTabBar(context, const EdgeInsets.fromLTRB(16, 64, 16, 96)),
           children: [
             _buildCapturePanel(),
             SaveScorePanel(

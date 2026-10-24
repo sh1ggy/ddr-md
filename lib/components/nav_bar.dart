@@ -76,7 +76,7 @@ class FloorPopNavBar extends StatelessWidget {
                               onTap: () => onSelected(i),
                               child: AnimatedContainer(
                                 duration: FloorPop.eighth,
-                                curve: FloorPop.step,
+                                curve: FloorPop.settle,
                                 width: 52,
                                 height: 48,
                                 decoration: BoxDecoration(
@@ -126,7 +126,7 @@ class _HomeTab extends StatelessWidget {
             onTap: onTap,
             child: AnimatedContainer(
               duration: FloorPop.eighth,
-              curve: FloorPop.step,
+              curve: FloorPop.settle,
               width: 58,
               height: 58,
               decoration: BoxDecoration(

@@ -55,7 +55,7 @@ class SongDifficultyPicker extends StatelessWidget {
                 child: Lean(
                   child: AnimatedContainer(
                     duration: FloorPop.eighth,
-                    curve: FloorPop.step,
+                    curve: FloorPop.settle,
                     height: 56,
                     clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(

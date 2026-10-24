@@ -432,14 +432,34 @@ Future<void> _delete(BuildContext context, Visit v) async {
 
 /// A session in a rounded tile: venue, when, plays and how they went against
 /// usual. Tap for its page; swipe one with a venue to delete it.
-class VisitTile extends StatelessWidget {
+class VisitTile extends StatefulWidget {
   const VisitTile(this.visit, {super.key, required this.model});
 
   final Visit visit;
   final ScoreModel model;
 
   @override
+  State<VisitTile> createState() => _VisitTileState();
+}
+
+class _VisitTileState extends State<VisitTile> {
+  // Swiped away: gone at once, since the list only drops it once the
+  // sessions reload, and a dismissed Dismissible can't stay in the tree.
+  bool _dismissed = false;
+
+  @override
+  void didUpdateWidget(VisitTile old) {
+    super.didUpdateWidget(old);
+    // The list's tiles aren't keyed, so this state can be handed another
+    // session once the deleted one is gone.
+    if (old.visit.key != widget.visit.key) _dismissed = false;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_dismissed) return const SizedBox.shrink();
+    final visit = widget.visit;
+    final model = widget.model;
     final scheme = Theme.of(context).colorScheme;
     final gap = visit.plays.isEmpty ? null : model.summarize(visit.plays).gap;
     final tile = Material(
@@ -482,7 +502,10 @@ class VisitTile extends StatelessWidget {
                   child: const Icon(Icons.delete, color: Colors.white),
                 ),
                 confirmDismiss: (_) => _confirmDelete(context, visit),
-                onDismissed: (_) => _delete(context, visit),
+                onDismissed: (_) {
+                  setState(() => _dismissed = true);
+                  _delete(context, visit);
+                },
                 child: tile,
               ),
       ),
@@ -503,7 +526,7 @@ class SessionsPage extends StatelessWidget {
         builder: (context, snapshot) {
           final data = snapshot.data;
           return ListView(
-            padding: const EdgeInsets.all(12),
+            padding: clearOfTabBar(context, const EdgeInsets.all(12)),
             children: [
               for (final v in data?.visits ?? <Visit>[])
                 VisitTile(v, model: data!.model),
@@ -595,7 +618,7 @@ class _VisitPageState extends State<VisitPage> {
               ),
           ],
           body: ListView(
-            padding: const EdgeInsets.only(bottom: 24),
+            padding: clearOfTabBar(context, const EdgeInsets.only(bottom: 24)),
             children: [
               HomeCard(
                 title: 'Summary',

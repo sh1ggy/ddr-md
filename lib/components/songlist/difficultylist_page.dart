@@ -275,7 +275,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             appBar: AppBar(
               title: const PageTitle('Songs'),
               actions: <Widget>[
-                IconButton(
+                HeaderButton(
                   icon: Icon(_gridMode ? Icons.view_list : Icons.grid_view),
                   tooltip: _gridMode ? 'List view' : 'Grid view',
                   onPressed: _toggleViewMode,
@@ -360,6 +360,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                         },
                         itemCount: songItems.length,
                       ),
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                          height: MediaQuery.paddingOf(context).bottom + 8),
+                    ),
                   ],
                 );
               },

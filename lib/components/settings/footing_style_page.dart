@@ -21,6 +21,7 @@ import 'package:ddr_md/models/parity_profile.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/foundation.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -192,7 +193,7 @@ class _FootingStylePageState extends State<FootingStylePage>
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
               child: ListView(
-                padding: const EdgeInsets.all(8),
+                padding: clearOfTabBar(context, const EdgeInsets.all(8)),
                 children: [
                   Center(
                     child: FootingStyleSwitch(onChanged: () {

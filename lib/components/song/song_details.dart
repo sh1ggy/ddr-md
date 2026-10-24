@@ -14,21 +14,6 @@ import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Builds the BPM range shown after the dominant BPM, e.g. " (75~) 100~200 (~400)".
-/// True min/max only appear when they fall outside the displayed range.
-String _bpmRangeSuffix(Chart chart) {
-  if (chart.trueMax == chart.trueMin) return '';
-  final buffer = StringBuffer();
-  if (!chart.bpmRange.contains('${chart.trueMin}')) {
-    buffer.write(' (${chart.trueMin}~)');
-  }
-  buffer.write(' ${chart.bpmRange}');
-  if (!chart.bpmRange.contains('${chart.trueMax}')) {
-    buffer.write(' (~${chart.trueMax})');
-  }
-  return buffer.toString();
-}
-
 final _difficultyColors = <String, Color>{
   for (final MapEntry(:key, :value) in kInGameDifficultyNames.entries)
     key: kInGameDifficultyColors[value]!,
@@ -87,12 +72,14 @@ class SongDetails extends StatelessWidget {
     final muted = TextStyle(fontSize: 14, height: 1.3, color: pop.haze);
     return Container(
       decoration: pop.stripes(),
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+      // The page's header buttons float over this, so it starts under them.
+      padding: EdgeInsets.fromLTRB(
+          20, MediaQuery.paddingOf(context).top + 4, 20, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               GestureDetector(
                 child: Hero(
@@ -112,7 +99,7 @@ class SongDetails extends StatelessWidget {
                       child: _ResolvedJacketImage(
                         songName: songInfo.name,
                         assetPrefix: 'assets/jackets-160/',
-                        height: 112,
+                        height: 96,
                         fallbackSize: 100,
                       ),
                     ),
@@ -147,69 +134,43 @@ class SongDetails extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (chart != null)
-                                Text.rich(TextSpan(
-                                  style: FloorPop.readout(18,
-                                      color: scheme.onSurface),
-                                  children: [
-                                    TextSpan(text: '${chart.dominantBpm}'),
-                                    TextSpan(
-                                        text: _bpmRangeSuffix(chart),
-                                        style: TextStyle(
-                                            fontSize: 14,
-                                            color: pop.haze,
-                                            fontWeight: FontWeight.w600)),
-                                  ],
-                                )),
-                              const SizedBox(height: 4),
-                              // Where and how long, then the chosen chart's
-                              // steps in its difficulty's colour.
-                              Text.rich(TextSpan(
-                                style: muted.copyWith(
-                                    fontSize: 13, fontWeight: FontWeight.w600),
-                                children: [
-                                  TextSpan(
-                                      text: '${songInfo.version} · '
-                                          '${formattedTime(timeInSecond: songInfo.songLength.toInt())}'),
-                                  if (chosenNotecount != null) ...[
-                                    const TextSpan(text: ' · '),
-                                    TextSpan(
-                                        text: '$chosenNotecount steps',
-                                        style: TextStyle(
-                                            color:
-                                                _difficultyColors[chosenKey])),
-                                  ],
-                                ],
-                              )),
-                            ],
-                          ),
-                        ),
-                        if (songInfo.radarFor(
-                                songState.modes, songState.chosenDifficulty)
-                            case final radar?)
-                          SongRadarChart(
-                              radar: radar,
-                              color: _difficultyColors[chosenKey]),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
                     Text(songInfo.title,
-                        style: FloorPop.display(22, color: scheme.onSurface)),
+                        style: FloorPop.display(20, color: scheme.onSurface)),
                     if (songInfo.titletranslit.isNotEmpty &&
                         songInfo.titletranslit != songInfo.title)
                       Text(songInfo.titletranslit, style: muted),
                     if (songInfo.artist.isNotEmpty)
                       Text(songInfo.artist, style: muted),
+                    const SizedBox(height: 8),
+                    // The song at a glance, as small pills in the text's flow.
+                    Wrap(spacing: 6, runSpacing: 6, children: [
+                      if (chart != null)
+                        _Badge(
+                          value: '${chart.dominantBpm}',
+                          detail: chart.trueMin == chart.trueMax
+                              ? 'BPM'
+                              : '${chart.trueMin}~${chart.trueMax}',
+                        ),
+                      _Badge(value: songInfo.version),
+                      _Badge(
+                          value: formattedTime(
+                              timeInSecond: songInfo.songLength.toInt())),
+                      if (chosenNotecount != null)
+                        _Badge(
+                            value: '$chosenNotecount',
+                            detail: 'steps',
+                            color: _difficultyColors[chosenKey]),
+                    ]),
                   ],
                 ),
               ),
+              if (songInfo.radarFor(songState.modes, songState.chosenDifficulty)
+                  case final radar?)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: SongRadarChart(
+                      radar: radar, color: _difficultyColors[chosenKey]),
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -243,4 +204,42 @@ class _ResolvedJacketImage extends StatelessWidget {
         errorBuilder: (context, error, stackTrace) =>
             Icon(Icons.music_note, size: fallbackSize),
       );
+}
+
+/// One fact about the song as a small pill: its value, with an optional
+/// quieter word or range beside it.
+class _Badge extends StatelessWidget {
+  const _Badge({required this.value, this.detail, this.color});
+
+  final String value;
+  final String? detail;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+          color: pop.riser, borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(value,
+              style: FloorPop.readout(14,
+                  color: color ?? Theme.of(context).colorScheme.onSurface)),
+          if (detail != null) ...[
+            const SizedBox(width: 4),
+            Text(detail!,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: pop.haze)),
+          ],
+        ],
+      ),
+    );
+  }
 }

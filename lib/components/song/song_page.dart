@@ -454,7 +454,7 @@ class _SongPageState extends State<SongPage> {
           ReorderableDelayedDragStartListener(
             key: card.key,
             index: i,
-            child: card,
+            child: BeatIn(index: i, child: card),
           ),
       ],
     );
@@ -471,8 +471,12 @@ class _SongPageState extends State<SongPage> {
           return Directionality(
             textDirection: TextDirection.ltr,
             child: Scaffold(
-              appBar: AppBar(actions: <Widget>[
-                IconButton(
+              // The header is floating buttons over the page, not a bar that
+              // cuts it off: the hero and cards scroll on under them.
+              extendBodyBehindAppBar: true,
+              appBar:
+                  AppBar(backgroundColor: Colors.transparent, actions: <Widget>[
+                HeaderButton(
                     icon: Icon(
                       favorite == null ? Icons.star_border : Icons.star,
                       color: favorite == null ? null : FloorPop.sun,
@@ -504,7 +508,7 @@ class _SongPageState extends State<SongPage> {
                         showToast(context, "Favourite updated");
                       }
                     }),
-                IconButton(
+                HeaderButton(
                   icon: const Icon(Icons.history),
                   tooltip: "History",
                   onPressed: () => openHistory(HistoryPage.notesTab),
@@ -518,7 +522,8 @@ class _SongPageState extends State<SongPage> {
                     children: [
                       SongDetails(songInfo: songState.songInfo!, chart: _chart),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+                        padding: clearOfTabBar(
+                            context, const EdgeInsets.fromLTRB(12, 4, 12, 96)),
                         child: _buildReorderableSections(songState),
                       ),
                     ],

@@ -7,6 +7,7 @@
 library;
 
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -143,7 +144,8 @@ class PrivacyPage extends StatelessWidget {
         title: const Text('Privacy'),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        padding:
+            clearOfTabBar(context, const EdgeInsets.fromLTRB(20, 8, 20, 32)),
         children: [
           Text('Last updated $privacyUpdated',
               style: theme.textTheme.bodySmall),

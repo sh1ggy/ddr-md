@@ -16,6 +16,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/score_images.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 
 // Editable columns of the scores table, matching the save-panel field order
@@ -208,7 +209,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
               ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(10),
+        padding: clearOfTabBar(context, const EdgeInsets.all(10)),
         children: [
           Text(
             _score.songTitle,

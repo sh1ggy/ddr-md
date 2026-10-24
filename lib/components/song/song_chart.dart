@@ -3,6 +3,8 @@
 /// Description: Page that displays selected song chart information
 library;
 
+import 'dart:math' as math;
+
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -28,276 +30,224 @@ class SongChart extends StatefulWidget {
 }
 
 class SongChartState extends State<SongChart> {
-  // fl_chart spot arrays
-  final List<FlSpot> _songBpmSpots = [];
-  final List<FlSpot> _songStopSpots = [];
+  bool isShowingStops = true;
+  // The BPM section picked by touch, read out in the header.
+  int? _picked;
 
-  // Late initialisations
-  late bool hasStops; // if chart has stops at all
-  late bool isShowingStops; // handler for toggling stops
-
-  /// Finds nearest BPM to the stop's [st]arting point
-  /// provided compared against the [array]
-  int findNearestStop(double st, List array) {
-    var nearest = 0;
-    array.asMap().entries.forEach((entry) {
-      var i = entry.key;
-      Bpm a = array[i];
-      if (a.st <= st) {
-        nearest = a.val;
-        return;
-      }
-    });
-    return nearest;
-  }
-
-  // Generate BPM points from song chart
-  void genBpmPoints(Chart chart) {
-    List<Bpm> bpms = chart.bpms;
-
-    if (_songBpmSpots.isNotEmpty || _songStopSpots.isNotEmpty) {
-      _songBpmSpots.clear();
-      _songStopSpots.clear();
-    }
-    // Adding a spot for each BPM change in the song
-    for (int i = 0; i < bpms.length; i++) {
-      _songBpmSpots.add(FlSpot(bpms[i].st, bpms[i].val.toDouble()));
-      _songBpmSpots.add(FlSpot(bpms[i].ed, bpms[i].val.toDouble()));
-    }
-    // Adding a spot for each stop in the song
-    for (int i = 0; i < chart.stops.length; i++) {
-      // Finding nearest BPM to the stop
-      double nearestBpm = findNearestStop(chart.stops[i].st, bpms).toDouble();
-      _songStopSpots.add(FlSpot(chart.stops[i].st, nearestBpm));
-    }
-  }
-
-  // Initialise variables
-  @override
-  void initState() {
-    super.initState();
-    hasStops = widget.chart.stops.isNotEmpty;
-    isShowingStops = true;
-    genBpmPoints(widget.chart);
-  }
-
-  // Regenerate the graph whenever the parent hands us a different chart,
-  // e.g. when the user picks a different difficulty.
   @override
   void didUpdateWidget(SongChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.chart != widget.chart) {
-      hasStops = widget.chart.stops.isNotEmpty;
-      genBpmPoints(widget.chart);
+    if (oldWidget.chart != widget.chart) _picked = null;
+  }
+
+  void _pick(double dx, double width) {
+    final bpms = widget.chart.bpms;
+    if (bpms.isEmpty || width <= 0) return;
+    final t = dx / width * widget.songInfo!.songLength;
+    final i = bpms.indexWhere((b) => t >= b.st && t < b.ed);
+    final picked = i < 0 ? (t < bpms.first.st ? 0 : bpms.length - 1) : i;
+    if (picked != _picked) {
+      HapticFeedback.selectionClick();
+      setState(() => _picked = picked);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    Color bpmLineColor = Colors.redAccent.shade100;
-    MaterialAccentColor stopLineColor = Colors.lightBlueAccent;
-    List<LineChartBarData> lineChartBarData = [
-      LineChartBarData(
-          spots: _songBpmSpots,
-          barWidth: 1.25,
-          color: bpmLineColor,
-          isCurved: false,
-          dotData: const FlDotData(
-            show: false,
-          )),
-      LineChartBarData(
-          show: isShowingStops && hasStops,
-          barWidth: 0,
-          spots: _songStopSpots,
-          color: stopLineColor.withValues(alpha: 0.85),
-          dotData: FlDotData(
-            getDotPainter: (spot, percent, barData, index) =>
-                FlDotCirclePainter(
-                    radius: 2.5,
-                    color: stopLineColor,
-                    strokeWidth: 1,
-                    strokeColor: stopLineColor.shade700),
-          ))
-    ];
+    final chart = widget.chart;
+    final pop = FloorPop.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final length = widget.songInfo!.songLength;
+    final hasStops = chart.stops.isNotEmpty;
+    final picked = _picked == null ? null : chart.bpms[_picked!];
+    String time(double s) => formattedTime(timeInSecond: s.round());
+    final muted = TextStyle(fontSize: 11, color: pop.haze);
+
     return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        // Remove the default ExpansionTile top/bottom divider lines so the
-        // expanded state doesn't show a stray line against the card.
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: true,
-          title: const CardHeading('BPM Graph', icon: Icons.show_chart),
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-          childrenPadding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.fromLTRB(10, 0, 25, 0),
-              height: MediaQuery.of(context).size.height / 3,
-              child: LineChart(
-                curve: Easing.standard,
-                LineChartData(
-                  titlesData: FlTitlesData(
-                      bottomTitles: AxisTitles(
-                        axisNameWidget: const Text(
-                          'Time (s)',
-                          style: TextStyle(fontSize: 10),
-                        ),
-                        sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 26,
-                            interval: 15,
-                            getTitlesWidget: (value, meta) {
-                              Widget axisTitle = Text(value.floor().toString());
-                              // A workaround to hide the max value title as FLChart is overlapping it on top of previous
-                              if (value == meta.max) {
-                                final remainder = value % meta.appliedInterval;
-                                if (remainder != 0.0 &&
-                                    remainder / meta.appliedInterval < 0.5) {
-                                  axisTitle = const SizedBox.shrink();
-                                }
-                              }
-                              return SideTitleWidget(
-                                  axisSide: meta.axisSide, child: axisTitle);
-                            }),
-                      ),
-                      leftTitles: AxisTitles(
-                        axisNameWidget: const Text(
-                          'BPM',
-                          style: TextStyle(fontSize: 10),
-                        ),
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 43,
-                          interval: 100,
-                          getTitlesWidget: (value, meta) {
-                            Widget axisTitle = Text(value.floor().toString());
-                            // A workaround to hide the max value title as FLChart is overlapping it on top of previous
-                            if (value == meta.max) {
-                              final remainder = value % meta.appliedInterval;
-                              if (remainder != 0.0 &&
-                                  remainder / meta.appliedInterval < 0.5) {
-                                axisTitle = const SizedBox.shrink();
-                              }
-                            }
-                            return SideTitleWidget(
-                                axisSide: meta.axisSide, child: axisTitle);
-                          },
-                        ),
-                      ),
-                      topTitles: AxisTitles(
-                        axisNameWidget: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          mainAxisSize: MainAxisSize.max,
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                  shape: BoxShape.circle, color: bpmLineColor),
-                            ),
-                            const SizedBox(width: 5),
-                            const Text(
-                              "BPM",
-                              style: TextStyle(fontSize: 10),
-                            ),
-                            const SizedBox(width: 10),
-                            if (isShowingStops && hasStops) ...<Widget>[
-                              Container(
-                                width: 10,
-                                decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: stopLineColor.shade200),
-                              ),
-                              const SizedBox(width: 5),
-                              const Text(
-                                "Stops",
-                                style: TextStyle(fontSize: 10),
-                              ),
-                            ],
-                          ],
-                        ),
-                        sideTitles: const SideTitles(
-                          showTitles: false,
-                        ),
-                      ),
-                      rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: false,
-                        ),
-                      )),
-                  lineTouchData: LineTouchData(
-                      touchTooltipData: LineTouchTooltipData(
-                          fitInsideHorizontally: true,
-                          getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-                            bool first = true;
-                            return touchedBarSpots.map((barSpot) {
-                              var stopTime =
-                                  "${formattedTime(timeInSecond: barSpot.x.toInt())}s";
-                              var bpmY = barSpot.y;
-                              if (first) {
-                                first = false;
-                                return LineTooltipItem(
-                                    ('BPM: $bpmY\nTIME: $stopTime'),
-                                    const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold));
-                              }
-                            }).toList();
-                          },
-                          tooltipBgColor: Colors.grey.shade900,
-                          tooltipPadding: const EdgeInsets.all(2),
-                          tooltipBorder:
-                              const BorderSide(color: Colors.black))),
-                  clipData: const FlClipData.all(),
-                  borderData: FlBorderData(
-                      border:
-                          Border.all(color: Colors.grey.shade600, width: 1)),
-                  gridData: FlGridData(
-                    show: true,
-                    getDrawingHorizontalLine: (value) {
-                      return FlLine(
-                        color: Colors.grey.shade400,
-                        strokeWidth: 1,
-                      );
-                    },
-                    drawVerticalLine: true,
-                    getDrawingVerticalLine: (value) {
-                      return FlLine(
-                        color: Colors.grey.shade400,
-                        strokeWidth: 1,
-                      );
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const CardHeading('BPM Graph', icon: Icons.show_chart),
+                const Spacer(),
+                if (hasStops)
+                  FilterChip(
+                    label: Text('${chart.stops.length} stops'),
+                    selected: isShowingStops,
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (v) {
+                      HapticFeedback.lightImpact();
+                      setState(() => isShowingStops = v);
                     },
                   ),
-                  minX: 0,
-                  minY: 0,
-                  maxX: widget.songInfo!.songLength,
-                  maxY: widget.chart.trueMax.toDouble() + 10,
-                  lineBarsData: lineChartBarData,
+              ],
+            ),
+            const SizedBox(height: 6),
+            // What's under the finger, else the chart's headline and range.
+            AnimatedSwitcher(
+              duration: FloorPop.eighth,
+              child: Row(
+                key: ValueKey(_picked),
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text('${picked?.val ?? chart.dominantBpm}',
+                      style: FloorPop.readout(28,
+                          color: picked == null
+                              ? scheme.onSurface
+                              : _bpmColor(picked.val, chart.dominantBpm))),
+                  const SizedBox(width: 8),
+                  Text(
+                    picked == null
+                        ? '${chart.trueMin} ~ ${chart.trueMax}'
+                        : '${time(picked.st)} – ${time(picked.ed)}',
+                    style: FloorPop.readout(15, color: pop.haze)
+                        .copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, box) => GestureDetector(
+                onTapDown: (d) => _pick(d.localPosition.dx, box.maxWidth),
+                onHorizontalDragUpdate: (d) =>
+                    _pick(d.localPosition.dx, box.maxWidth),
+                child: RepaintBoundary(
+                  child: SizedBox(
+                    height: 88,
+                    child: TweenAnimationBuilder<double>(
+                      // Bars rise into place when the chart changes.
+                      key: ValueKey(chart),
+                      tween: Tween(begin: 0, end: 1),
+                      duration: MediaQuery.of(context).disableAnimations
+                          ? Duration.zero
+                          : FloorPop.beat,
+                      curve: FloorPop.step,
+                      builder: (context, grow, _) => CustomPaint(
+                        size: Size.infinite,
+                        painter: _BpmBarsPainter(
+                          bpms: chart.bpms,
+                          stops: isShowingStops ? chart.stops : const [],
+                          length: length,
+                          dominant: chart.dominantBpm,
+                          lowest: chart.trueMin,
+                          highest: chart.trueMax,
+                          picked: _picked,
+                          grow: grow,
+                          stopColor: pop.haze,
+                          baseline: pop.line,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-            if (hasStops) ...[
-              CheckboxListTile(
-                title: const Text("Toggle Stops",
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                value: isShowingStops,
-                onChanged: (_) {
-                  HapticFeedback.lightImpact();
-                  setState(() {
-                    isShowingStops = !isShowingStops;
-                  });
-                },
-                controlAffinity: ListTileControlAffinity.trailing,
-              ),
-            ],
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                for (final f in const [0.0, 0.25, 0.5, 0.75, 1.0])
+                  Text(time(length * f), style: muted),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
+}
+
+/// A section's colour against the chart's headline BPM: slower in Pad Blue,
+/// the headline in Volt, faster in Coral.
+Color _bpmColor(int bpm, int dominant) => bpm < dominant
+    ? FloorPop.padBlue
+    : bpm == dominant
+        ? FloorPop.volt
+        : FloorPop.coral;
+
+/// The chart's tempo over the song as bars, each as wide as its section and
+/// as tall as its BPM on a log scale (so 110 and 880 both read), with a tick
+/// along the top for every stop.
+class _BpmBarsPainter extends CustomPainter {
+  _BpmBarsPainter({
+    required this.bpms,
+    required this.stops,
+    required this.length,
+    required this.dominant,
+    required this.lowest,
+    required this.highest,
+    required this.picked,
+    required this.grow,
+    required this.stopColor,
+    required this.baseline,
+  });
+
+  final List<Bpm> bpms;
+  final List<Stop> stops;
+  final double length, grow;
+  final int dominant, lowest, highest;
+  final int? picked;
+  final Color stopColor, baseline;
+
+  static const _stopBand = 10.0, _gap = 1.5;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (length <= 0) return;
+    final top = stops.isEmpty ? 0.0 : _stopBand;
+    final h = size.height - top;
+    // The floor sits an octave under the slowest section, so it still shows.
+    final lo = math.log(math.max(1, lowest) / 2);
+    final hi = math.log(math.max(lowest + 1, highest));
+    double heightOf(int bpm) =>
+        h * ((math.log(math.max(1, bpm)) - lo) / (hi - lo)).clamp(0.08, 1.0);
+    double x(double t) => (t / length).clamp(0, 1) * size.width;
+
+    canvas.drawLine(Offset(0, size.height - 0.5),
+        Offset(size.width, size.height - 0.5), Paint()..color = baseline);
+    for (final (i, b) in bpms.indexed) {
+      final left = x(b.st), right = x(b.ed);
+      if (right - left < 0.5) continue;
+      final barH = heightOf(b.val) * grow;
+      final colour = _bpmColor(b.val, dominant);
+      final dim = picked != null && picked != i;
+      canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          Rect.fromLTRB(left + _gap / 2, size.height - barH,
+              math.max(left + _gap / 2 + 1.5, right - _gap / 2), size.height),
+          topLeft: const Radius.circular(3),
+          topRight: const Radius.circular(3),
+        ),
+        Paint()..color = colour.withValues(alpha: dim ? 0.35 : 1),
+      );
+    }
+    final stopPaint = Paint()..color = stopColor;
+    for (final s in stops) {
+      final cx = x(s.st);
+      canvas.drawPath(
+          Path()
+            ..moveTo(cx - 3.5, 0)
+            ..lineTo(cx + 3.5, 0)
+            ..lineTo(cx, 6)
+            ..close(),
+          stopPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BpmBarsPainter old) =>
+      old.bpms != bpms ||
+      old.stops != stops ||
+      old.picked != picked ||
+      old.grow != grow ||
+      old.stopColor != stopColor;
 }
 
 class SongSyncChart extends StatefulWidget {

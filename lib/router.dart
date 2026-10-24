@@ -166,6 +166,9 @@ class Layout extends StatelessWidget {
           return true;
         },
         child: Scaffold(
+          // The bar floats: pages scroll on under it rather than stopping at
+          // a strip above it.
+          extendBody: true,
           bottomNavigationBar: FloorPopNavBar(
             index: shell.currentIndex,
             // Re-tapping the current tab returns it to its root.

@@ -53,7 +53,11 @@ class FloorPop extends ThemeExtension<FloorPop> {
   static const sixteenth = Duration(milliseconds: 100);
   static const eighth = Duration(milliseconds: 200);
   static const beat = Duration(milliseconds: 400);
+  // Movement overshoots a touch and settles, like landing on a panel.
   static const step = Cubic(0.2, 0.9, 0.25, 1.1);
+  // Colours, shadows and opacity can't go past their end (a shadow's blur
+  // would turn negative), so they ease without the overshoot.
+  static const settle = Curves.easeOutCubic;
 
   static const night = FloorPop(
     ink: Color(0xFF0E0B1F),
@@ -186,6 +190,17 @@ ThemeData floorPopTheme(Brightness brightness) {
       foregroundColor: text,
       iconTheme: IconThemeData(color: text),
       titleTextStyle: FloorPop.display(22, color: text),
+      actionsPadding: const EdgeInsets.only(right: 12),
+    ),
+    // Back sits on a riser like the other header buttons.
+    actionIconTheme: ActionIconThemeData(
+      backButtonIconBuilder: (context) => Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+            color: pop.riser, borderRadius: BorderRadius.circular(14)),
+        child: Icon(Icons.chevron_left_rounded, size: 28, color: text),
+      ),
     ),
     cardTheme: CardThemeData(
       color: pop.stage,

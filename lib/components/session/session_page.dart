@@ -342,7 +342,7 @@ class SessionPage extends StatelessWidget {
       appBar: AppBar(
         title: const PageTitle('Home'),
         actions: [
-          IconButton(
+          HeaderButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => context.push('/home/settings'),
@@ -353,11 +353,12 @@ class SessionPage extends StatelessWidget {
       body: session.active
           ? _ActiveSession(session: session, header: _header)
           : ListView(
-              padding: const EdgeInsets.only(bottom: 24),
+              padding:
+                  clearOfTabBar(context, const EdgeInsets.only(bottom: 24)),
               children: const [
-                EamuseSyncCard(),
-                StartSessionCard(),
-                LastSessionCard(),
+                BeatIn(child: EamuseSyncCard()),
+                BeatIn(index: 1, child: StartSessionCard()),
+                BeatIn(index: 2, child: LastSessionCard()),
               ],
             ),
     );
@@ -384,9 +385,10 @@ class _ActiveSession extends StatelessWidget {
       builder: (context, snapshot) {
         final (credits, plays) = snapshot.data ?? (<Credit>[], <TimingPlay>[]);
         return ListView(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: clearOfTabBar(context, const EdgeInsets.only(bottom: 12)),
           children: [
-            _LiveSessionCard(session: session, plays: plays.length),
+            BeatIn(
+                child: _LiveSessionCard(session: session, plays: plays.length)),
             ...header,
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -537,8 +539,11 @@ class _LiveSessionCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('CREDIT ${credit.number}',
-                      style: FloorPop.readout(38, color: scheme.onSurface)),
+                  BeatSwap(
+                    child: Text('CREDIT ${credit.number}',
+                        key: ValueKey(credit.number),
+                        style: FloorPop.readout(38, color: scheme.onSurface)),
+                  ),
                   const SizedBox(height: 6),
                   // Tapping the credit starts the next one, for a side or cab
                   // swap.

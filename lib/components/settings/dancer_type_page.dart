@@ -8,6 +8,7 @@ import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song/notes/dancing_feet.dart';
 import 'package:ddr_md/components/song/notes/pad_dancer.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 
 class DancerTypePage extends StatefulWidget {
@@ -50,7 +51,7 @@ class _DancerTypePageState extends State<DancerTypePage> {
           title: const Text('Dancer Type'),
         ),
         body: ListView(
-          padding: const EdgeInsets.all(8),
+          padding: clearOfTabBar(context, const EdgeInsets.all(8)),
           children: [
             SettingCard<int>(
               setValue: _setHeight,

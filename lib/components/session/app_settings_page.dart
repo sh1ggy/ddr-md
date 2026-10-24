@@ -9,6 +9,7 @@ import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_updater.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:path_provider/path_provider.dart';
@@ -32,7 +33,8 @@ class AppSettingsPage extends StatelessWidget {
       body: Stack(
         children: [
           ListView(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 72),
+            padding:
+                clearOfTabBar(context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
             children: [
               const Card(child: _ContentTile()),
               Card(

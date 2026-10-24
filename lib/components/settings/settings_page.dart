@@ -13,6 +13,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -69,7 +70,7 @@ class _SettingsPageState extends State<SettingsPage> {
               body: Stack(
                 children: [
                   ListView(
-                    padding: const EdgeInsets.all(8),
+                    padding: clearOfTabBar(context, const EdgeInsets.all(8)),
                     children: [
                       const _SectionHeader('Profile', Icons.person),
                       const EamuseProfileCard(),
