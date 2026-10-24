@@ -1,7 +1,7 @@
 /// Name: NavBar
 /// Parent: Layout
 /// Description: The tab bar: Songs, Snippets, Home, Scan, Profile on a
-/// floating pill, Home raised in the middle and ringed while a session runs.
+/// floating pill, Home in Volt in the middle, ringed while a session runs.
 /// Above it on every tab while a session runs, the live dock carries the
 /// running credit and starts the next one.
 library;
@@ -101,8 +101,9 @@ class FloorPopNavBar extends StatelessWidget {
   }
 }
 
-/// Home, raised above the bar: Volt when it's the open tab, ringed in Volt
-/// while a session runs so it reads from any tab.
+/// Home, always in Volt and sitting in the bar like the other tabs. Open, it
+/// stands on its riser; while a session runs it's ringed in Volt so it reads
+/// from any tab.
 class _HomeTab extends StatelessWidget {
   const _HomeTab(
       {required this.selected, required this.live, required this.onTap});
@@ -113,48 +114,37 @@ class _HomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    return Transform.translate(
-      offset: const Offset(0, -16),
-      child: Tooltip(
-        message: live ? 'Home · session live' : 'Home',
-        child: Semantics(
-          label: live ? 'Home, session live' : 'Home',
-          selected: selected,
-          button: true,
-          child: GestureDetector(
-            onTap: onTap,
-            child: AnimatedContainer(
-              duration: FloorPop.eighth,
-              curve: FloorPop.settle,
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                color: selected ? FloorPop.volt : pop.riser,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  if (selected)
-                    const BoxShadow(
-                        color: FloorPop.voltRiser, offset: Offset(0, 5)),
-                  if (live) ...[
-                    BoxShadow(color: scheme.surface, spreadRadius: 4),
-                    BoxShadow(
-                        color: FloorPop.volt.withValues(alpha: 0.6),
-                        spreadRadius: 6),
-                  ],
+    return Tooltip(
+      message: live ? 'Home · session live' : 'Home',
+      child: Semantics(
+        label: live ? 'Home, session live' : 'Home',
+        selected: selected,
+        button: true,
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: FloorPop.eighth,
+            curve: FloorPop.settle,
+            width: 60,
+            height: 44,
+            margin: EdgeInsets.only(bottom: selected ? 4 : 0),
+            decoration: BoxDecoration(
+              color: FloorPop.volt,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                    color: selected ? FloorPop.voltRiser : Colors.transparent,
+                    offset: const Offset(0, 4)),
+                if (live) ...[
+                  BoxShadow(color: pop.stage, spreadRadius: 3),
+                  BoxShadow(
+                      color: FloorPop.volt.withValues(alpha: 0.6),
+                      spreadRadius: 5),
                 ],
-              ),
-              child: Center(
-                child: PadGlyph(
-                  size: 26,
-                  color: selected
-                      ? FloorPop.onVolt
-                      : live
-                          ? FloorPop.volt
-                          : scheme.onSurface,
-                ),
-              ),
+              ],
             ),
+            child:
+                const Center(child: PadGlyph(size: 24, color: FloorPop.onVolt)),
           ),
         ),
       ),

@@ -75,25 +75,29 @@ class NotesTabState extends State<NotesTab> {
     var songState = context.watch<SongState>();
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      floatingActionButton: FloatingActionButton(
-          backgroundColor: Colors.red,
-          child: const Icon(Icons.edit, color: Colors.white),
-          onPressed: () async {
-            // Wait for return from modalBottomSheet
-            final result = await showModalBottomSheet<bool>(
-              isScrollControlled: true,
-              context: context,
-              builder: (BuildContext context) {
-                return const NewNoteField();
-              },
-            );
-            // If return is the expected value, execute getNotes and re-render
-            if (result == true) {
-              setState(() {
-                getNotes(songState.songInfo!.titletranslit, songState.modes);
-              });
-            }
-          }),
+      // Lifted clear of the floating tab bar, which the page runs under.
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+        child: FloatingActionButton(
+            backgroundColor: Colors.red,
+            child: const Icon(Icons.edit, color: Colors.white),
+            onPressed: () async {
+              // Wait for return from modalBottomSheet
+              final result = await showModalBottomSheet<bool>(
+                isScrollControlled: true,
+                context: context,
+                builder: (BuildContext context) {
+                  return const NewNoteField();
+                },
+              );
+              // If return is the expected value, execute getNotes and re-render
+              if (result == true) {
+                setState(() {
+                  getNotes(songState.songInfo!.titletranslit, songState.modes);
+                });
+              }
+            }),
+      ),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
         child: Column(

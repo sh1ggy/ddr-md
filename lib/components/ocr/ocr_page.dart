@@ -13,6 +13,7 @@ import 'package:ddr_md/helpers.dart' show parseOcrNumber;
 import 'package:ddr_md/models/db_models.dart' show ScoreSource;
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/scheduler.dart';
@@ -307,16 +308,20 @@ class _OcrPageState extends State<OcrPage>
         CameraState.inactive => _buildStoppedView(),
         CameraState.active => _buildActiveView(),
       },
-      floatingActionButton: FloatingActionButton(
-        // Disabled (null onPressed + grey) until both camera and OCR are
-        // ready. Stop is always enabled once a session is active.
-        onPressed: canStart ? _toggleCamera : null,
-        backgroundColor: _isCameraActive
-            ? Colors.red
-            : canStart
-                ? null // theme default
-                : Colors.grey.shade400,
-        child: Icon(_isCameraActive ? Icons.stop : Icons.play_arrow),
+      // Lifted clear of the floating tab bar, which the page runs under.
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+        child: FloatingActionButton(
+          // Disabled (null onPressed + grey) until both camera and OCR are
+          // ready. Stop is always enabled once a session is active.
+          onPressed: canStart ? _toggleCamera : null,
+          backgroundColor: _isCameraActive
+              ? FloorPop.coral
+              : canStart
+                  ? null // theme default
+                  : FloorPop.of(context).riser,
+          child: Icon(_isCameraActive ? Icons.stop : Icons.play_arrow),
+        ),
       ),
     );
   }

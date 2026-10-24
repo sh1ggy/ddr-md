@@ -107,11 +107,18 @@ class SongDetails extends StatelessWidget {
                 ),
                 // Zooming image onTap
                 onTap: () {
+                  // The jacket flies up to full size over a darkening page,
+                  // a beat long (instant under reduced motion).
+                  final still = MediaQuery.of(context).disableAnimations;
                   Navigator.of(context).push(PageRouteBuilder(
-                      transitionDuration: Duration.zero,
-                      reverseTransitionDuration: Duration.zero,
-                      opaque: true,
+                      transitionDuration: still ? Duration.zero : FloorPop.beat,
+                      reverseTransitionDuration:
+                          still ? Duration.zero : FloorPop.eighth,
+                      opaque: false,
+                      barrierColor: Colors.black87,
                       barrierDismissible: true,
+                      transitionsBuilder: (_, animation, __, child) =>
+                          FadeTransition(opacity: animation, child: child),
                       pageBuilder: (BuildContext context, _, __) {
                         return GestureDetector(
                           onTap: () => Navigator.pop(context),
@@ -141,26 +148,6 @@ class SongDetails extends StatelessWidget {
                       Text(songInfo.titletranslit, style: muted),
                     if (songInfo.artist.isNotEmpty)
                       Text(songInfo.artist, style: muted),
-                    const SizedBox(height: 8),
-                    // The song at a glance, as small pills in the text's flow.
-                    Wrap(spacing: 6, runSpacing: 6, children: [
-                      if (chart != null)
-                        _Badge(
-                          value: '${chart.dominantBpm}',
-                          detail: chart.trueMin == chart.trueMax
-                              ? 'BPM'
-                              : '${chart.trueMin}~${chart.trueMax}',
-                        ),
-                      _Badge(value: songInfo.version),
-                      _Badge(
-                          value: formattedTime(
-                              timeInSecond: songInfo.songLength.toInt())),
-                      if (chosenNotecount != null)
-                        _Badge(
-                            value: '$chosenNotecount',
-                            detail: 'steps',
-                            color: _difficultyColors[chosenKey]),
-                    ]),
                   ],
                 ),
               ),
@@ -173,7 +160,27 @@ class SongDetails extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          // The song at a glance, one row of pills under its title.
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            if (chart != null)
+              _Badge(
+                value: '${chart.dominantBpm}',
+                detail: chart.trueMin == chart.trueMax
+                    ? 'BPM'
+                    : '${chart.trueMin}~${chart.trueMax}',
+              ),
+            _Badge(value: songInfo.version),
+            _Badge(
+                value:
+                    formattedTime(timeInSecond: songInfo.songLength.toInt())),
+            if (chosenNotecount != null)
+              _Badge(
+                  value: '$chosenNotecount',
+                  detail: 'steps',
+                  color: _difficultyColors[chosenKey]),
+          ]),
+          const SizedBox(height: 14),
           // Every song has per-difficulty radar data, so the difficulty is
           // always selectable.
           SongDifficultyPicker(difficulty: difficulty),

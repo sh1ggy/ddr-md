@@ -157,6 +157,31 @@ class SongChartState extends State<SongChart> {
                   Text(time(length * f), style: muted),
               ],
             ),
+            const SizedBox(height: 8),
+            // What the colours mean: each section against the headline BPM
+            // that hi-speed is picked for.
+            Wrap(spacing: 14, runSpacing: 4, children: [
+              for (final (colour, label) in [
+                (FloorPop.padBlue, 'slower'),
+                (FloorPop.volt, '${chart.dominantBpm} BPM'),
+                (FloorPop.coral, 'faster'),
+              ])
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                        color: colour, borderRadius: BorderRadius.circular(3)),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(label, style: muted),
+                ]),
+              if (hasStops && isShowingStops)
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.arrow_drop_down, size: 16, color: pop.haze),
+                  Text('stop', style: muted),
+                ]),
+            ]),
           ],
         ),
       ),
@@ -410,12 +435,26 @@ class SongRadarChart extends StatelessWidget {
     Icons.shuffle,
   ];
 
+  // The radar grows out of its spot to fill the screen, keeping its colour,
+  // a beat long (instant under reduced motion).
   void _openRadar(BuildContext context) {
+    final still = MediaQuery.of(context).disableAnimations;
     Navigator.of(context).push(PageRouteBuilder<void>(
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero,
-      pageBuilder: (context, animation, secondaryAnimation) => Scaffold(
-        body: GestureDetector(
+      opaque: false,
+      barrierColor: Colors.black87,
+      transitionDuration: still ? Duration.zero : FloorPop.beat,
+      reverseTransitionDuration: still ? Duration.zero : FloorPop.eighth,
+      transitionsBuilder: (_, animation, __, child) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          scale: Tween(begin: 0.6, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: FloorPop.step)),
+          child: child,
+        ),
+      ),
+      pageBuilder: (context, animation, secondaryAnimation) => Material(
+        type: MaterialType.transparency,
+        child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => Navigator.pop(context),
           child: SafeArea(
@@ -425,7 +464,8 @@ class SongRadarChart extends StatelessWidget {
                   child: SizedBox(
                     width: MediaQuery.sizeOf(context).width * 0.85,
                     height: MediaQuery.sizeOf(context).height * 0.65,
-                    child: SongRadarChart(radar: radar, expanded: true),
+                    child: SongRadarChart(
+                        radar: radar, expanded: true, color: color),
                   ),
                 ),
                 Positioned(
@@ -433,7 +473,7 @@ class SongRadarChart extends StatelessWidget {
                   right: 8,
                   child: IconButton(
                     tooltip: 'Close Groove Radar',
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
@@ -490,8 +530,11 @@ class SongRadarChart extends StatelessWidget {
                   tickBorderData: const BorderSide(color: Colors.transparent),
                   gridBorderData: const BorderSide(color: Colors.transparent),
                   radarBorderData: const BorderSide(color: Colors.transparent),
-                  titleTextStyle: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600),
+                  // Expanded, it sits on a dark scrim in either theme.
+                  titleTextStyle: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: expanded ? Colors.white : null),
                   getTitle: (index, angle) {
                     return RadarChartTitle(
                       text: expanded

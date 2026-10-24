@@ -290,13 +290,17 @@ class _LoadImageState extends State<LoadImage> {
         centerTitle: true,
         title: const Text('Load Image'),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        // Disabled (null onPressed + grey) until OCR init completes,
-        // matching the camera page's Start OCR FAB.
-        onPressed: _isReady ? _processImage : null,
-        backgroundColor: _isReady ? null : Colors.grey.shade400,
-        icon: const Icon(Icons.add_photo_alternate),
-        label: Text(_isReady ? 'Process photo' : 'Initialising…'),
+      // Lifted clear of the floating tab bar, which the page runs under.
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+        child: FloatingActionButton.extended(
+          // Disabled (null onPressed + grey) until OCR init completes,
+          // matching the camera page's Start OCR FAB.
+          onPressed: _isReady ? _processImage : null,
+          backgroundColor: _isReady ? null : Colors.grey.shade400,
+          icon: const Icon(Icons.add_photo_alternate),
+          label: Text(_isReady ? 'Process photo' : 'Initialising…'),
+        ),
       ),
       body: _isPicking || _isProcessing
           ? const Center(child: CircularProgressIndicator())
