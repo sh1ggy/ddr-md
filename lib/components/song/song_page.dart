@@ -3,8 +3,6 @@
 /// Description: Page that displays selected song information
 library;
 
-import 'dart:ui' show ImageFilter;
-
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/history_page.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
@@ -525,19 +523,7 @@ class _SongPageState extends State<SongPage> {
               right: 0,
               top: 0,
               height: top + kToolbarHeight,
-              // Frosted rather than solid, so the page still shows through
-              // as it passes under.
-              child: IgnorePointer(
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 16 * t, sigmaY: 16 * t),
-                    child: ColoredBox(
-                        color: FloorPop.of(context)
-                            .ink
-                            .withValues(alpha: 0.55 * t)),
-                  ),
-                ),
-              ),
+              child: IgnorePointer(child: GlassHeader(amount: t)),
             ),
             Positioned(
               left: at.dx,
@@ -642,8 +628,9 @@ class _SongPageState extends State<SongPage> {
                           titleKey: _titleKey,
                           hideTitle: _titleRest != null),
                       Padding(
-                        padding: clearOfTabBar(
-                            context, const EdgeInsets.fromLTRB(12, 4, 12, 96)),
+                        // Below the hero, so clear of the tab bar only.
+                        padding: EdgeInsets.fromLTRB(12, 4, 12,
+                            96 + MediaQuery.paddingOf(context).bottom),
                         child: _buildReorderableSections(songState),
                       ),
                     ],

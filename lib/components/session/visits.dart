@@ -527,7 +527,7 @@ class SessionsPage extends StatelessWidget {
         builder: (context, snapshot) {
           final data = snapshot.data;
           return ListView(
-            padding: clearOfTabBar(context, const EdgeInsets.all(12)),
+            padding: clearOfBars(context, const EdgeInsets.all(12)),
             children: [
               for (final v in data?.visits ?? <Visit>[])
                 VisitTile(v, model: data!.model),
@@ -619,7 +619,7 @@ class _VisitPageState extends State<VisitPage> {
               ),
           ],
           body: ListView(
-            padding: clearOfTabBar(context, const EdgeInsets.only(bottom: 24)),
+            padding: clearOfBars(context, const EdgeInsets.only(bottom: 24)),
             children: [
               HomeCard(
                 title: 'Summary',

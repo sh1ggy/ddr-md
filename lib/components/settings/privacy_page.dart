@@ -140,12 +140,13 @@ class PrivacyPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        flexibleSpace: const GlassHeader(),
         title: const Text('Privacy'),
       ),
       body: ListView(
-        padding:
-            clearOfTabBar(context, const EdgeInsets.fromLTRB(20, 8, 20, 32)),
+        padding: clearOfBars(context, const EdgeInsets.fromLTRB(20, 8, 20, 32)),
         children: [
           Text('Last updated $privacyUpdated',
               style: theme.textTheme.bodySmall),

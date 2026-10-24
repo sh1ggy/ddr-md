@@ -11,6 +11,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -61,7 +62,9 @@ class _SnippetChartPickerState extends State<SnippetChartPicker> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        flexibleSpace: const GlassHeader(),
         title: TextField(
           autofocus: true,
           style: const TextStyle(

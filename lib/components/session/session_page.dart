@@ -345,7 +345,9 @@ class SessionPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<SessionState>();
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        flexibleSpace: const GlassHeader(),
         title: const PageTitle('Home'),
         actions: [
           HeaderButton(
@@ -359,8 +361,7 @@ class SessionPage extends StatelessWidget {
       body: session.active
           ? _ActiveSession(session: session, header: _header)
           : ListView(
-              padding:
-                  clearOfTabBar(context, const EdgeInsets.only(bottom: 24)),
+              padding: clearOfBars(context, const EdgeInsets.only(bottom: 24)),
               children: const [
                 BeatIn(child: EamuseSyncCard()),
                 BeatIn(index: 1, child: StartSessionCard()),
@@ -391,7 +392,7 @@ class _ActiveSession extends StatelessWidget {
       builder: (context, snapshot) {
         final (credits, plays) = snapshot.data ?? (<Credit>[], <TimingPlay>[]);
         return ListView(
-          padding: clearOfTabBar(context, const EdgeInsets.only(bottom: 12)),
+          padding: clearOfBars(context, const EdgeInsets.only(bottom: 12)),
           children: [
             BeatIn(
                 child: _LiveSessionCard(session: session, plays: plays.length)),

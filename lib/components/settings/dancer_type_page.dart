@@ -44,11 +44,13 @@ class _DancerTypePageState extends State<DancerTypePage> {
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
+          flexibleSpace: const GlassHeader(),
           title: const Text('Dancer Type'),
         ),
         body: ListView(
-          padding: clearOfTabBar(context, const EdgeInsets.all(8)),
+          padding: clearOfBars(context, const EdgeInsets.all(8)),
           children: [
             SettingCard<int>(
               setValue: _setHeight,

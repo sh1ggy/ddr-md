@@ -62,13 +62,15 @@ class _SettingsPageState extends State<SettingsPage> {
             },
             child: Scaffold(
               resizeToAvoidBottomInset: false,
+              extendBodyBehindAppBar: true,
               appBar: AppBar(
+                flexibleSpace: const GlassHeader(),
                 title: const Text('Profile'),
               ),
               body: Stack(
                 children: [
                   ListView(
-                    padding: clearOfTabBar(context, const EdgeInsets.all(8)),
+                    padding: clearOfBars(context, const EdgeInsets.all(8)),
                     children: [
                       const _SectionHeader('Profile', Icons.person),
                       const EamuseProfileCard(),

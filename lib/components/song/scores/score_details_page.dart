@@ -181,7 +181,9 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        flexibleSpace: const GlassHeader(),
         centerTitle: true,
         title: const Text('Score Details'),
         actions: _editing
@@ -206,7 +208,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
               ],
       ),
       body: ListView(
-        padding: clearOfTabBar(context, const EdgeInsets.all(10)),
+        padding: clearOfBars(context, const EdgeInsets.all(10)),
         children: [
           Text(
             _score.songTitle,

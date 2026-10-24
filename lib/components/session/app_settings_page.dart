@@ -34,7 +34,7 @@ class AppSettingsPage extends StatelessWidget {
         children: [
           ListView(
             padding:
-                clearOfTabBar(context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
+                clearOfBars(context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
             children: [
               const Card(child: _ContentTile()),
               Card(

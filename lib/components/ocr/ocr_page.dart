@@ -345,7 +345,7 @@ class _OcrPageState extends State<OcrPage>
 
   Widget _buildActiveView() {
     return ListView(
-      padding: clearOfTabBar(context, const EdgeInsets.only(bottom: 96)),
+      padding: clearOfBars(context, const EdgeInsets.only(bottom: 96)),
       children: [
         Stack(
           children: [
@@ -610,7 +610,7 @@ class _OcrPageState extends State<OcrPage>
         ListView(
           // Top padding clears the floating side picker.
           padding:
-              clearOfTabBar(context, const EdgeInsets.fromLTRB(16, 64, 16, 96)),
+              clearOfBars(context, const EdgeInsets.fromLTRB(16, 64, 16, 96)),
           children: [
             _buildCapturePanel(),
             SaveScorePanel(

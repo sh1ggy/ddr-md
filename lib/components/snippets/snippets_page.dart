@@ -209,7 +209,9 @@ class _SnippetsPageState extends State<SnippetsPage> {
     final snippets = _snippets;
     final canShuffle = snippets?.any((s) => _songOf(s) != null) ?? false;
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        flexibleSpace: const GlassHeader(),
         title: PageTitle('Snippets',
             trailing: snippets == null || snippets.isEmpty
                 ? null
@@ -233,8 +235,8 @@ class _SnippetsPageState extends State<SnippetsPage> {
           )
         else
           ListView.builder(
-            padding: clearOfTabBar(
-                context, const EdgeInsets.fromLTRB(12, 4, 12, 88)),
+            padding:
+                clearOfBars(context, const EdgeInsets.fromLTRB(12, 4, 12, 88)),
             itemCount: snippets.length,
             itemBuilder: (context, i) => BeatIn(
                 index: i,

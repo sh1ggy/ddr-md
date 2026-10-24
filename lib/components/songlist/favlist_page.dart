@@ -11,6 +11,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -62,63 +63,74 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
     var songState = context.watch<SongState>();
     return SafeArea(
         child: Scaffold(
+            extendBodyBehindAppBar: true,
             appBar: AppBar(
+              flexibleSpace: const GlassHeader(),
               centerTitle: true,
               title: const Text("Favourites"),
               actions: const <Widget>[SortMenuButton()],
             ),
-            body: SingleChildScrollView(
-              child: FutureBuilder(
-                future: songInfoLoadingPromise,
-                builder: (context, snapshot) {
-                  List<Widget> children;
-                  if (snapshot.hasData) {
-                    if (snapshot.data!.isEmpty) {
-                      return SizedBox(
-                          height: MediaQuery.of(context).size.height / 1.5,
-                          child: const Center(child: Text('No favourites...')));
-                    }
-                    List<SongInfo> favSongs = List.of(snapshot.data!);
-                    if (songState.sortType == SortType.level) {
-                      // No level filter here, so a song sorts under its lowest
-                      // charted level in the mode.
-                      final int sign = songState.sortDescending ? -1 : 1;
-                      favSongs.sort((a, b) {
-                        final int byLevel = sign *
-                            primaryLevelFor(a, songState.modes)
-                                .compareTo(primaryLevelFor(b, songState.modes));
-                        return byLevel != 0
-                            ? byLevel
-                            : compareSongInfo(a, b, SortType.title);
-                      });
-                    } else {
-                      favSongs.sort((a, b) => compareSongInfo(
-                          a, b, songState.sortType,
-                          descending: songState.sortDescending));
-                    }
-                    children = favSongs.map<SongListItem>((SongInfo songInfo) {
-                      return SongListItem(
-                        songInfo: songInfo,
-                        isFav: true,
-                        isSearch: false,
-                        regenFavsCallback: genSongInfoList,
-                      );
-                    }).toList();
-                  } else {
-                    children = [
-                      SizedBox(
-                          height: MediaQuery.of(context).size.height / 1.5,
-                          child: const Center(child: Text('Loading...'))),
-                    ];
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.max,
-                    children: children,
-                  );
-                },
-              ),
-            )));
+            body: Builder(
+                builder: (context) => SingleChildScrollView(
+                      padding: clearOfBars(context, EdgeInsets.zero),
+                      child: FutureBuilder(
+                        future: songInfoLoadingPromise,
+                        builder: (context, snapshot) {
+                          List<Widget> children;
+                          if (snapshot.hasData) {
+                            if (snapshot.data!.isEmpty) {
+                              return SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height / 1.5,
+                                  child: const Center(
+                                      child: Text('No favourites...')));
+                            }
+                            List<SongInfo> favSongs = List.of(snapshot.data!);
+                            if (songState.sortType == SortType.level) {
+                              // No level filter here, so a song sorts under its lowest
+                              // charted level in the mode.
+                              final int sign =
+                                  songState.sortDescending ? -1 : 1;
+                              favSongs.sort((a, b) {
+                                final int byLevel = sign *
+                                    primaryLevelFor(a, songState.modes)
+                                        .compareTo(primaryLevelFor(
+                                            b, songState.modes));
+                                return byLevel != 0
+                                    ? byLevel
+                                    : compareSongInfo(a, b, SortType.title);
+                              });
+                            } else {
+                              favSongs.sort((a, b) => compareSongInfo(
+                                  a, b, songState.sortType,
+                                  descending: songState.sortDescending));
+                            }
+                            children =
+                                favSongs.map<SongListItem>((SongInfo songInfo) {
+                              return SongListItem(
+                                songInfo: songInfo,
+                                isFav: true,
+                                isSearch: false,
+                                regenFavsCallback: genSongInfoList,
+                              );
+                            }).toList();
+                          } else {
+                            children = [
+                              SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height / 1.5,
+                                  child:
+                                      const Center(child: Text('Loading...'))),
+                            ];
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.max,
+                            children: children,
+                          );
+                        },
+                      ),
+                    ))));
   }
 }

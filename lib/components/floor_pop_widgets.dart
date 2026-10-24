@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
@@ -228,10 +229,34 @@ class HeaderButton extends StatelessWidget {
       );
 }
 
-/// [padding] plus the space the floating tab bar takes at the bottom, so a
-/// page scrolls under the bar and its last row still ends clear of it.
-EdgeInsets clearOfTabBar(BuildContext context, EdgeInsets padding) => padding
-    .copyWith(bottom: padding.bottom + MediaQuery.paddingOf(context).bottom);
+/// [padding] plus the space the glass header takes at the top and the
+/// floating tab bar at the bottom, so a page scrolls under both and its first
+/// and last rows still sit clear of them.
+EdgeInsets clearOfBars(BuildContext context, EdgeInsets padding) {
+  final bars = MediaQuery.paddingOf(context);
+  return padding.copyWith(
+      top: padding.top + bars.top, bottom: padding.bottom + bars.bottom);
+}
+
+/// A page header's frosted fill, so the page still shows through, blurred, as
+/// it scrolls under. [amount] fades it in from clear (0) to full frost (1).
+/// Pages using it set `extendBodyBehindAppBar` and pad with [clearOfBars].
+class GlassHeader extends StatelessWidget {
+  const GlassHeader({super.key, this.amount = 1});
+
+  final double amount;
+
+  @override
+  Widget build(BuildContext context) => ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16 * amount, sigmaY: 16 * amount),
+          child: ColoredBox(
+              color: FloorPop.of(context).ink.withValues(alpha: 0.55 * amount),
+              // Fills the header, whose height comes in loose.
+              child: const SizedBox.expand()),
+        ),
+      );
+}
 
 /// [child] rising into place on the beat when it first appears: a quarter
 /// note long, each [index] a 1/32 later than the one before. Only the first

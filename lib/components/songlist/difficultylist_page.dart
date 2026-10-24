@@ -272,7 +272,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         return Directionality(
           textDirection: TextDirection.ltr,
           child: Scaffold(
+            extendBodyBehindAppBar: true,
             appBar: AppBar(
+              flexibleSpace: const GlassHeader(),
+              bottom: songSearchBar(),
               title: const PageTitle('Songs'),
               actions: <Widget>[
                 HeaderButton(
@@ -294,7 +297,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 // both views, so they are built once and handed to whichever
                 // body is showing.
                 final List<Widget> headerSlivers = <Widget>[
-                  songSearchBar(),
+                  SliverToBoxAdapter(
+                      child:
+                          SizedBox(height: MediaQuery.paddingOf(context).top)),
                   SliverToBoxAdapter(
                     child: filterPanel(songState),
                   ),
@@ -563,14 +568,11 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
-  SliverAppBar songSearchBar() {
-    return SliverAppBar(
-      floating: true,
-      pinned: true,
-      // Opaque so pinned, the rows don't show through around the field.
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      surfaceTintColor: Colors.transparent,
-      flexibleSpace: Padding(
+  // Part of the page header, so the rows scroll on under it, frosted.
+  PreferredSizeWidget songSearchBar() {
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(kToolbarHeight),
+      child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
         child: SearchAnchor(
             isFullScreen: true,

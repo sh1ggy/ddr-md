@@ -64,7 +64,7 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
           }
           final levels = chartsByLevel(data.records, Songs.list, _mode);
           return ListView(
-            padding: clearOfTabBar(context, const EdgeInsets.only(bottom: 24)),
+            padding: clearOfBars(context, const EdgeInsets.only(bottom: 24)),
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),

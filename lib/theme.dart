@@ -183,7 +183,8 @@ ThemeData floorPopTheme(Brightness brightness) {
           TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: text),
     ),
     appBarTheme: AppBarTheme(
-      backgroundColor: pop.ink,
+      // Clear, so a page's GlassHeader frosts the page behind it.
+      backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
