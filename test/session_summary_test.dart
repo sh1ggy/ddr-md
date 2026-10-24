@@ -28,8 +28,7 @@ RecentPlay play(String id, int hoursAgo, int score) => RecentPlay(
     score: score);
 
 void main() {
-  test('a set is averaged against its charts, blended with their models',
-      () {
+  test('a set is averaged against its charts, blended with their models', () {
     ScoreRecord best(String id, int score) => ScoreRecord(
         id: 'eamuse:$id:singles:EXPERT',
         source: ScoreRecordSource.eamuse,
@@ -98,6 +97,22 @@ void main() {
         .summarize(history.take(4).toList());
     // 600,000 under counts for 50,000 / 600,000 of a play.
     expect(s.gap, closeTo(-50000 / (3 + 1 / 12), 1));
+  });
+
+  test('a set splits by level, easiest first', () {
+    final history = [
+      play('hard', 0, 880000),
+      play('easy', 0, 990000),
+      play('easy2', 0, 970000),
+      for (final id in ['hard', 'easy', 'easy2']) play(id, 48, 900000),
+    ];
+    final s = ScoreModel(history, [], (song, _, __) => song == 'hard' ? 17 : 14)
+        .summarize(history.take(3).toList());
+    final levels = s.byLevel;
+    expect(levels.map((l) => (l.level, l.plays)), [(14, 2), (17, 1)]);
+    expect(levels.first.average, 980000);
+    expect(levels.first.usual, 900000);
+    expect(levels.last.average - levels.last.usual, -20000);
   });
 
   test('plays join the session running when they were played', () {

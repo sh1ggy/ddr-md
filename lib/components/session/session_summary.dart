@@ -2,7 +2,7 @@
 /// Parent: LastSessionCard, VisitPage
 /// Description: How a session's e-amusement plays went as a whole: their
 /// average score against what your history says you'd average on that same
-/// mix of charts, as a you-vs-usual bar over each play's gap in play order,
+/// mix of charts, broken down by level, over each play's gap in play order,
 /// with the average level, level range, upscores and, when timing was
 /// logged, its offset.
 /// Failed plays (an E) and far-off ones count for less.
@@ -72,7 +72,36 @@ class SetSummary {
 
   double? get gap =>
       average == null || usual == null ? null : average! - usual!;
+
+  /// [points] with a level, grouped by it, easiest first: the level's
+  /// average and usual, its plays and what they count for together.
+  List<LevelSummary> get byLevel {
+    final groups = <int, List<(int score, double usual, double weight)>>{};
+    for (final p in points) {
+      if (p.level case final l?) {
+        groups.putIfAbsent(l, () => []).add((p.play.score!, p.usual, p.weight));
+      }
+    }
+    return [
+      for (final l in groups.keys.toList()..sort())
+        (
+          level: l,
+          average: _weightedMean([for (final (s, _, w) in groups[l]!) (s, w)]),
+          usual: _weightedMean([for (final (_, u, w) in groups[l]!) (u, w)]),
+          plays: groups[l]!.length,
+          weight: groups[l]!.fold(0, (a, p) => a + p.$3),
+        ),
+    ];
+  }
 }
+
+typedef LevelSummary = ({
+  int level,
+  double average,
+  double usual,
+  int plays,
+  double weight
+});
 
 double _mean(Iterable<num> s) => s.fold<double>(0, (a, b) => a + b) / s.length;
 
@@ -210,13 +239,19 @@ class ScoreModel {
 /// session. With timing, a toggle swaps the score chart for the timing one.
 class SessionSummaryBody extends StatefulWidget {
   const SessionSummaryBody(this.summary,
-      {super.key, required this.plays, this.timing, this.timed = false});
+      {super.key,
+      required this.plays,
+      this.timing,
+      this.timed = false,
+      this.detailed = false});
 
   final SetSummary summary;
   final List<RecentPlay> plays;
   final List<TimingPlay>? timing;
   // Whether the session could log timing, to show its stat even when empty.
   final bool timed;
+  // Each level as its own you-vs-usual bar rather than a tile.
+  final bool detailed;
 
   @override
   State<SessionSummaryBody> createState() => _SessionSummaryBodyState();
@@ -284,8 +319,12 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
             ],
           ),
           const SizedBox(height: 8),
-          _UsualBar(summary, up: up, down: scheme.error),
-          const SizedBox(height: 12),
+          if (summary.byLevel case final levels when levels.isNotEmpty) ...[
+            widget.detailed
+                ? _LevelBars(levels, up: up, down: scheme.error)
+                : _LevelChips(levels, up: up, down: scheme.error),
+            const SizedBox(height: 12),
+          ],
           _GapTimeline(summary,
               played: plays.length, up: up, down: scheme.error),
         ],
@@ -400,73 +439,183 @@ class _StatText extends StatelessWidget {
           fontFeatures: const [FontFeature.tabularFigures()]));
 }
 
-/// The set's average on a score axis beside its usual: a tick at the usual,
-/// a dot at the average and the gap filled between them.
-class _UsualBar extends StatelessWidget {
-  const _UsualBar(this.summary, {required this.up, required this.down});
+/// Each level's average on one score axis beside its usual, easiest first:
+/// a tick at the usual, a dot at the average and the gap filled between
+/// them, with the gap and the level's plays at the end.
+class _LevelBars extends StatelessWidget {
+  const _LevelBars(this.levels, {required this.up, required this.down});
 
-  final SetSummary summary;
+  final List<LevelSummary> levels;
   final Color up, down;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
-    final usual = summary.usual!, average = summary.average!;
-    // From a round 10k under the lower of the two up to the 1,000,000 ceiling.
-    final lo = ((min(usual, average) - 20000) / 10000).floor() * 10000.0;
+    // From a round 10k under the lowest score shown up to the 1,000,000
+    // ceiling, shared so the levels line up.
+    final lowest = levels.map((l) => min(l.usual, l.average)).reduce(min);
+    final lo = ((lowest - 20000) / 10000).floor() * 10000.0;
     const hi = 1000000.0;
     double at(double score) => ((score - lo) / (hi - lo)).clamp(0, 1);
-    final colour = average >= usual ? up : down;
-    String k(double score) => '${(score / 1000).round()}k';
+    String gap(double g) =>
+        '${g >= 0 ? '+' : '−'}${formatScore(g.abs().round())}';
+    return Column(children: [
+      for (final l in levels)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(children: [
+            SizedBox(
+              width: 28,
+              child: ColorFiltered(
+                colorFilter: kGreyLevel,
+                child: LevelNumber(
+                    level: l.level, difficulty: 'EXPERT', height: 16),
+              ),
+            ),
+            Expanded(
+              child: LayoutBuilder(builder: (context, box) {
+                final w = box.maxWidth;
+                final colour = l.average >= l.usual ? up : down;
+                return SizedBox(
+                  height: 18,
+                  child: Stack(clipBehavior: Clip.none, children: [
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 6,
+                      height: 6,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(3)),
+                      ),
+                    ),
+                    Positioned(
+                      left: min(at(l.usual), at(l.average)) * w,
+                      width: (at(l.average) - at(l.usual)).abs() * w,
+                      top: 6,
+                      height: 6,
+                      child: ColoredBox(color: colour.withValues(alpha: 0.6)),
+                    ),
+                    Positioned(
+                      left: at(l.usual) * w - 1,
+                      top: 0,
+                      width: 2,
+                      height: 18,
+                      child: ColoredBox(color: scheme.onSurfaceVariant),
+                    ),
+                    Positioned(
+                      left: at(l.average) * w - 6,
+                      top: 3,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                            color: colour, shape: BoxShape.circle),
+                      ),
+                    ),
+                  ]),
+                );
+              }),
+            ),
+            SizedBox(
+              width: 92,
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                    text: gap(l.average - l.usual),
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: l.average >= l.usual ? up : down),
+                  ),
+                  TextSpan(text: ' ×${l.plays}', style: muted),
+                ]),
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()]),
+              ),
+            ),
+          ]),
+        ),
+      Row(children: [
+        const SizedBox(width: 28),
+        Text('${(lo / 1000).round()}k', style: muted),
+        const Spacer(),
+        Text('1M', style: muted),
+        const SizedBox(width: 92),
+      ]),
+    ]);
+  }
+}
+
+/// Each level's gap from its usual as a tile, easiest first, tinted by
+/// whether it came in over or under and fainter the less its plays count
+/// for.
+class _LevelChips extends StatelessWidget {
+  const _LevelChips(this.levels, {required this.up, required this.down});
+
+  final List<LevelSummary> levels;
+  final Color up, down;
+
+  // What a level's plays need to count for to get the full tint.
+  static const _fullWeight = 3.0;
+  static const _columns = 5, _spacing = 6.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = TextStyle(
+        fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant);
+    String k(double gap) {
+      final a = gap.abs() / 1000;
+      return '${gap >= 0 ? '+' : '−'}'
+          '${a < 10 ? a.toStringAsFixed(1) : a.round()}k';
+    }
+
     return LayoutBuilder(builder: (context, box) {
-      final w = box.maxWidth;
-      Widget label(String text, double x) => Positioned(
-            left: (x * w - 40).clamp(0, w - 80),
-            width: 80,
-            top: 22,
-            child: Text(text, textAlign: TextAlign.center, style: muted),
-          );
-      return SizedBox(
-        height: 38,
-        child: Stack(clipBehavior: Clip.none, children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 6,
-            height: 6,
-            child: DecoratedBox(
+      final across = min(levels.length, _columns);
+      final w = (box.maxWidth - _spacing * (across - 1)) / across;
+      return Wrap(
+        spacing: _spacing,
+        runSpacing: _spacing,
+        children: [
+          for (final (l, gap) in [
+            for (final l in levels) (l, l.average - l.usual)
+          ])
+            Container(
+              width: w,
+              padding: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(3)),
+                color: (gap >= 0 ? up : down).withValues(
+                    alpha: 0.06 + 0.12 * min(1, l.weight / _fullWeight)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(children: [
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  ColorFiltered(
+                    colorFilter: kGreyLevel,
+                    child: LevelNumber(
+                        level: l.level, difficulty: 'EXPERT', height: 14),
+                  ),
+                  Text(' ×${l.plays}', style: muted),
+                ]),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    k(gap),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: gap >= 0 ? up : down,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ]),
             ),
-          ),
-          Positioned(
-            left: min(at(usual), at(average)) * w,
-            width: (at(average) - at(usual)).abs() * w,
-            top: 6,
-            height: 6,
-            child: ColoredBox(color: colour.withValues(alpha: 0.6)),
-          ),
-          Positioned(
-            left: at(usual) * w - 1,
-            top: 0,
-            width: 2,
-            height: 18,
-            child: ColoredBox(color: scheme.onSurfaceVariant),
-          ),
-          Positioned(
-            left: at(average) * w - 7,
-            top: 2,
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
-            ),
-          ),
-          label('usual ${k(usual)}', at(usual)),
-          label('you ${k(average)}', at(average)),
-        ]),
+        ],
       );
     });
   }

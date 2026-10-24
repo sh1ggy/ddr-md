@@ -510,6 +510,7 @@ class VisitPage extends StatelessWidget {
                       plays: visit.plays,
                       timed: visit.session != null,
                       timing: timing,
+                      detailed: true,
                     ),
                 ],
               ),
