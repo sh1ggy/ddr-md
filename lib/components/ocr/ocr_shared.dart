@@ -36,10 +36,8 @@ class DetectionSideSelector extends StatelessWidget {
     final button = SegmentedButton<DetectionSide>(
       style: overlay
           ? SegmentedButton.styleFrom(
-              backgroundColor: Theme.of(context)
-                  .colorScheme
-                  .surface
-                  .withValues(alpha: 0.8),
+              backgroundColor:
+                  Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
             )
           : null,
       segments: const [

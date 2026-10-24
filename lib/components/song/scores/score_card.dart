@@ -350,14 +350,10 @@ class ScoreBadges extends StatelessWidget {
         gap,
         SizedBox(
           width: 40 * unit,
-          child: gradeArt != null
-              ? Image.asset(gradeArt,
-                  height: 22 * unit,
-                  fit: BoxFit.contain,
-                  alignment: Alignment.centerLeft)
-              : Text(grade.label,
-                  style: TextStyle(
-                      fontSize: 16 * unit, fontWeight: FontWeight.bold)),
+          child: Image.asset(gradeArt,
+              height: 22 * unit,
+              fit: BoxFit.contain,
+              alignment: Alignment.centerLeft),
         ),
         gap,
         SizedBox(

@@ -98,7 +98,8 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   // name of a chart that exists on [song] in [mode], using the chart's
   // difficulty names and levels as evidence, with the judged step count vs
   // the charts' note counts as a fallback. Null when nothing matches.
-  String? _resolvedDifficulty(SongInfo song, Modes mode) => resolveOcrDifficulty(
+  String? _resolvedDifficulty(SongInfo song, Modes mode) =>
+      resolveOcrDifficulty(
         _text('difficulty'),
         _levels(song, mode),
         notecounts: mode == Modes.singles
@@ -201,8 +202,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       // Keep the sheet out of the top notch when the keyboard pushes it up
       // on small screens.
       useSafeArea: true,
-      builder: (context) =>
-          _SongSearchSheet(initialQuery: widget.initialTitle),
+      builder: (context) => _SongSearchSheet(initialQuery: widget.initialTitle),
     );
     if (picked != null) {
       setState(() => _selectedSong = picked);
@@ -214,9 +214,8 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
     if (Songs.list.isEmpty) {
       return (song: null, match: null, isPicked: false, isWeak: true);
     }
-    final match = _selectedSong == null
-        ? Songs.matchTitle(widget.initialTitle)
-        : null;
+    final match =
+        _selectedSong == null ? Songs.matchTitle(widget.initialTitle) : null;
     final isPicked = _selectedSong != null;
     final song = _selectedSong ?? match?.song;
     final isWeak =
@@ -245,7 +244,8 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
           if (widget.source == ScoreSource.loadImage) _buildDateRow(),
           _buildUsernameMismatchWarning(),
           buildSaveButton(
-            padding: EdgeInsets.only(top: widget.middleChildren.isEmpty ? 0 : 12),
+            padding:
+                EdgeInsets.only(top: widget.middleChildren.isEmpty ? 0 : 12),
           ),
         ],
       ),
@@ -367,8 +367,8 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
     );
     if (picked == null) return;
     // Keep day granularity, pin the time to noon (see _buildDateRow).
-    setState(() =>
-        _playedAt = DateTime(picked.year, picked.month, picked.day, 12));
+    setState(
+        () => _playedAt = DateTime(picked.year, picked.month, picked.day, 12));
   }
 
   // Gentle heads-up when the detected player name isn't the linked e-amusement

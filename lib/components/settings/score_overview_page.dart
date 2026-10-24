@@ -12,7 +12,8 @@ import 'package:ddr_md/components/session/recent_plays.dart'
 import 'package:ddr_md/components/song/difficulty_label.dart'
     show LevelNumber, LevelPicker;
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/grades.dart' show flareRankIcon, gradeForScore;
+import 'package:ddr_md/grades.dart'
+    show Grade, flareRankIcon, gradeForScore, gradeIcon;
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -43,7 +44,7 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
   Widget build(BuildContext context) {
     final revision = context.select<EamuseSyncState, int>((s) => s.revision);
     return HomeSubpage(
-      title: 'Scores',
+      title: 'Statistics',
       body: FutureBuilder<_Loaded>(
         key: ValueKey(revision),
         future: _load(),
@@ -249,7 +250,12 @@ final _lampBands = <_Band>[
       'assets/icons/cl_li4clear.png',
       'CLEAR'
     ),
-    (ClearLamp.assisted, Color(0xFFAB47BC), null, 'ASSIST'),
+    (
+      ClearLamp.assisted,
+      Color(0xFFD548E6),
+      'assets/icons/cl_asclear.png',
+      'ASSIST'
+    ),
     (ClearLamp.failed, Color(0xFF757575), 'assets/icons/rank_e.png', 'E'),
   ])
     (
@@ -301,7 +307,44 @@ final _flareBands = <_Band>[
   ),
 ];
 
+// AAA down to E. A failed chart is an E whatever it scored.
+final _gradeBands = <_Band>[
+  for (final g in Grade.values)
+    (
+      holds: (r) => _grade(r) == g,
+      color: _gradeColor(g),
+      icon: gradeIcon(g),
+      text: g.label,
+      fill: null,
+    ),
+];
+
+// Each letter in its art's colour, + a shade lighter and - a shade darker.
+Color _gradeColor(Grade g) {
+  final base = switch (g.label[0]) {
+    'A' when g.label.startsWith('AAA') => const Color(0xFFE8C930),
+    'A' when g.label.startsWith('AA') => const Color(0xFFB0BEC5),
+    'A' => const Color(0xFFD63A4F),
+    'B' => const Color(0xFFF2701F),
+    'C' => const Color(0xFFF5B400),
+    'D' => const Color(0xFF2F6FE0),
+    _ => const Color(0xFF616161),
+  };
+  final hsl = HSLColor.fromColor(base);
+  final shift = g.label.endsWith('+')
+      ? 0.12
+      : g.label.endsWith('-')
+          ? -0.12
+          : 0.0;
+  return hsl.withLightness((hsl.lightness + shift).clamp(0.0, 1.0)).toColor();
+}
+
+Grade _grade(ScoreRecord r) => gradeForScore(r.score ?? 0,
+    failed: (r.clearLamp ?? ClearLamp.failed) == ClearLamp.failed);
+
 const _bandHeight = 18.0;
+
+enum _Tab { lamps, grades, flare }
 
 class _LevelsCard extends StatefulWidget {
   const _LevelsCard(this.levels);
@@ -313,7 +356,7 @@ class _LevelsCard extends StatefulWidget {
 }
 
 class _LevelsCardState extends State<_LevelsCard> {
-  bool _flare = false;
+  _Tab _tab = _Tab.lamps;
   int? _picked;
 
   @override
@@ -321,22 +364,27 @@ class _LevelsCardState extends State<_LevelsCard> {
     if (!widget.levels.containsKey(_picked)) _picked = null;
     final scheme = Theme.of(context).colorScheme;
     final muted = scheme.onSurfaceVariant;
-    final bands = _flare ? _flareBands : _lampBands;
+    final bands = switch (_tab) {
+      _Tab.lamps => _lampBands,
+      _Tab.grades => _gradeBands,
+      _Tab.flare => _flareBands,
+    };
     const figures = [FontFeature.tabularFigures()];
     return HomeCard(
       title: 'By Level',
       icon: Icons.emoji_events_outlined,
       children: [
         Center(
-          child: SegmentedButton<bool>(
+          child: SegmentedButton<_Tab>(
             showSelectedIcon: false,
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
             segments: const [
-              ButtonSegment(value: false, label: Text('Lamps')),
-              ButtonSegment(value: true, label: Text('Flare')),
+              ButtonSegment(value: _Tab.lamps, label: Text('Lamps')),
+              ButtonSegment(value: _Tab.grades, label: Text('Grades')),
+              ButtonSegment(value: _Tab.flare, label: Text('Flare')),
             ],
-            selected: {_flare},
-            onSelectionChanged: (s) => setState(() => _flare = s.single),
+            selected: {_tab},
+            onSelectionChanged: (s) => setState(() => _tab = s.single),
           ),
         ),
         const SizedBox(height: 8),
@@ -502,7 +550,7 @@ class _BandCounts extends StatelessWidget {
     Widget label(_Band b) => b.icon != null
         // The grade and empty-flare art have more space around them.
         ? Image.asset(b.icon!,
-            height: b.text == 'E' || b.text == 'None'
+            height: b.icon!.contains('/rank_') || b.text == 'None'
                 ? _bandHeight * 1.6
                 : _bandHeight)
         : Text(b.text, style: style.copyWith(color: b.color));

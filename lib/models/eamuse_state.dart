@@ -107,6 +107,7 @@ class EamuseSyncState extends ChangeNotifier {
               difficulty: p.difficulty,
               playedAt: eamuseTime(p.playedAt),
               score: p.score,
+              failed: p.failed,
             )
       ]);
       // Charts synced before the newest play was recorded have none, but

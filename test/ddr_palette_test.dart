@@ -21,7 +21,15 @@ void main() {
     expect(ddrColour(DdrPalette.receptor, 5, 0), 0xff808080);
     expect(ddrColour(DdrPalette.receptor, 5, 256), 0xff202020);
     expect(ddrBand(0x77), 0);
-    expect([for (final t in [-0.1, 0.0, 1 / 60, 2 / 60, 3 / 60, 1.0]) ddrFreezeRow(t)],
-        [1, 1, 2, 3, 4, 4]);
+    expect([
+      for (final t in [-0.1, 0.0, 1 / 60, 2 / 60, 3 / 60, 1.0]) ddrFreezeRow(t)
+    ], [
+      1,
+      1,
+      2,
+      3,
+      4,
+      4
+    ]);
   });
 }

@@ -6,7 +6,7 @@ library;
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
@@ -63,16 +63,17 @@ class _SongListItemState extends State<SongListItem> {
 
   @override
   Widget build(BuildContext context) {
-    var songState = context.watch<SongState>();
+    // Only the mode is shown, so other SongState changes don't rebuild rows.
+    final Modes mode = context.select<SongState, Modes>((s) => s.modes);
     return ListTile(
       visualDensity: VisualDensity.adaptivePlatformDensity,
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image(
-          image: ContentStore.image(
-              'assets/jackets-160/${widget.songInfo.name}.png'),
-          errorBuilder: (context, error, stackTrace) =>
-              const Icon(Icons.music_note, size: 40),
+      // A fixed square (ListTile caps it at its icon height), so the title
+      // doesn't shift when the jacket arrives.
+      leading: SizedBox.square(
+        dimension: 56,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: JacketImage(widget.songInfo),
         ),
       ),
       // Fixed height so every row is the same size; a song without a
@@ -106,7 +107,7 @@ class _SongListItemState extends State<SongListItem> {
             // Same fixed gap under every line so the rows read evenly.
             const SizedBox(height: 4),
             SongDifficulty(
-                difficulty: songState.modes == Modes.singles
+                difficulty: mode == Modes.singles
                     ? widget.songInfo.singles
                     : widget.songInfo.doubles,
                 highlightIndex: widget.difficultyIndex),

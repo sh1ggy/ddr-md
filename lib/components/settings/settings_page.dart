@@ -1,25 +1,20 @@
 /// Name: SettingsPage
 /// Parent: Main
-/// Description: Settings page for use with shared_preferences
+/// Description: Profile tab: e-amusement profile, statistics and play
+/// preferences, persisted with shared_preferences
 library;
 
 import 'package:ddr_md/components/settings/dancer_type_page.dart';
 import 'package:ddr_md/components/settings/eamuse_profile_card.dart';
 import 'package:ddr_md/components/settings/footing_style_page.dart';
-import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/components/settings/score_overview_page.dart';
 import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
-import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
-import 'package:ddr_md/constants.dart' as constants;
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -70,7 +65,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 shadowColor: Colors.black,
                 elevation: 2,
                 title: const Text(
-                  'Settings',
+                  'Profile',
                   style: TextStyle(
                     fontSize: 20,
                     color: Colors.blueGrey,
@@ -79,21 +74,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 iconTheme: const IconThemeData(color: Colors.blueGrey),
               ),
-              // Settings scroll under the links, which float at the bottom.
               body: Stack(
                 children: [
                   ListView(
-                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 72),
+                    padding: const EdgeInsets.all(8),
                     children: [
                       const _SectionHeader('Profile', Icons.person),
                       const EamuseProfileCard(),
                       Card(
                         child: ListTile(
                           leading: const Icon(Icons.leaderboard_outlined),
-                          title: const Text("Scores",
+                          title: const Text("Statistics",
                               style: TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: const Text(
-                              "Flare skill, lamps by level and play activity"),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
@@ -125,8 +117,14 @@ class _SettingsPageState extends State<SettingsPage> {
                         child: ListTile(
                           title: const Text("Footing Style",
                               style: TextStyle(fontWeight: FontWeight.w600)),
-                          trailing: FootingStyleSwitch(
-                              onChanged: () => setState(() {})),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FootingStyleSwitch(
+                                  onChanged: () => setState(() {})),
+                              const Icon(Icons.chevron_right),
+                            ],
+                          ),
                           onTap: () async {
                             await Navigator.of(context).push(MaterialPageRoute(
                                 builder: (_) => const FootingStylePage()));
@@ -134,76 +132,13 @@ class _SettingsPageState extends State<SettingsPage> {
                           },
                         ),
                       ),
-                      const _SectionHeader('Content', Icons.library_music),
-                      const _ContentCard(),
-                      const _SectionHeader('About', Icons.info_outline),
-                      Card(
-                        child: ListTile(
-                          title: const Text("Privacy",
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) => const PrivacyPage())),
-                        ),
-                      ),
                     ],
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 12,
-                    child: Center(
-                      child: Material(
-                        elevation: 3,
-                        shape: const StadiumBorder(),
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHigh
-                            .withValues(alpha: 0.85),
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 16, right: 4),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text(constants.appVer,
-                                  style: TextStyle(fontSize: 12)),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () => _launchUrl(constants.github),
-                                  icon: const FaIcon(FontAwesomeIcons.github,
-                                      size: 18)),
-                              IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () =>
-                                      _launchUrl(constants.linkedin),
-                                  icon: const FaIcon(FontAwesomeIcons.linkedin,
-                                      size: 18)),
-                              IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () =>
-                                      _launchUrl(constants.paypalDono),
-                                  icon: const FaIcon(FontAwesomeIcons.paypal,
-                                      size: 18)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
                   ),
                 ],
               ),
             ),
           ),
         ));
-  }
-
-  Future<void> _launchUrl(String urlString) async {
-    if (!await launchUrl(Uri.parse(urlString),
-        mode: LaunchMode.externalApplication)) {
-      throw Exception('Could not launch ${Uri.parse(urlString)}');
-    }
   }
 }
 
@@ -238,65 +173,6 @@ class _PlayStyleCard extends StatelessWidget {
                 "Set play style to ${s.first == Modes.singles ? "singles" : "doubles"}");
           },
         ),
-      ),
-    );
-  }
-}
-
-/// Manual check for new songs and chart fixes, applied straight away like the
-/// one at startup.
-class _ContentCard extends StatefulWidget {
-  const _ContentCard();
-
-  @override
-  State<_ContentCard> createState() => _ContentCardState();
-}
-
-class _ContentCardState extends State<_ContentCard> {
-  bool _syncing = false;
-  bool _checked = false;
-
-  Future<void> _sync() async {
-    setState(() => _syncing = true);
-    String message;
-    try {
-      final support = await getApplicationSupportDirectory();
-      final applied = await ContentUpdater.update(support);
-      _checked = true;
-      message = applied
-          ? "Added new songs and chart fixes"
-          : "Songs and charts are up to date";
-    } catch (_) {
-      message = "Couldn't check for updates";
-    }
-    if (!mounted) return;
-    setState(() => _syncing = false);
-    showToast(context, message);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final String subtitle;
-    if (kContentUrl.isEmpty) {
-      subtitle = "Updates are off in this build";
-    } else if (_checked) {
-      subtitle = "Up to date";
-    } else {
-      subtitle = "New songs and chart fixes";
-    }
-    return Card(
-      child: ListTile(
-        title: const Text("Song Updates",
-            style: TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(subtitle),
-        trailing: _syncing
-            ? const SizedBox.square(
-                dimension: 24, child: CircularProgressIndicator(strokeWidth: 2))
-            : IconButton(
-                tooltip: "Check for updates",
-                icon: const Icon(Icons.sync),
-                onPressed: kContentUrl.isEmpty ? null : _sync,
-              ),
       ),
     );
   }

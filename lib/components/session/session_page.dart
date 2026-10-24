@@ -2,11 +2,11 @@
 /// Parent: Layout
 /// Description: Home tab: sync e-amusement scores, start a session at a
 /// venue, play it credit by credit (cabinet + side), and see the timing logged
-/// in each.
+/// in each; the gear opens Settings.
 library;
 
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
-import 'package:ddr_md/components/session/recent_plays.dart';
+import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
@@ -21,11 +21,12 @@ String signedMs(double ms) =>
     '${ms >= 0 ? '+' : ''}${ms.toStringAsFixed(1)} ms';
 
 /// Pick a venue and side, then start the session on its first credit.
-Future<void> showStartSessionSheet(BuildContext context) =>
+/// [last] preselects the cab and side it was played on.
+Future<void> showStartSessionSheet(BuildContext context, {Credit? last}) =>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const _CreditSheet(newSession: true),
+      builder: (_) => _CreditSheet(newSession: true, last: last),
     );
 
 /// Start the running session's next credit, on the same cabinet and side
@@ -55,7 +56,7 @@ Future<bool> confirmDelete(
     ) ??
     false;
 
-Future<String?> _askName(BuildContext context, String title, String hint) {
+Future<String?> askName(BuildContext context, String title, String hint) {
   final controller = TextEditingController();
   return showDialog<String>(
     context: context,
@@ -80,9 +81,10 @@ Future<String?> _askName(BuildContext context, String title, String hint) {
 }
 
 class _CreditSheet extends StatefulWidget {
-  const _CreditSheet({required this.newSession});
+  const _CreditSheet({required this.newSession, this.last});
 
   final bool newSession;
+  final Credit? last;
 
   @override
   State<_CreditSheet> createState() => _CreditSheetState();
@@ -93,7 +95,7 @@ class _CreditSheetState extends State<_CreditSheet> {
   Venue? _venue;
   List<Cabinet> _cabinets = [];
   Cabinet? _cabinet;
-  late PadSide _side = context.read<SessionState>().side;
+  late PadSide _side = widget.last?.side ?? context.read<SessionState>().side;
 
   @override
   void initState() {
@@ -102,7 +104,13 @@ class _CreditSheetState extends State<_CreditSheet> {
     if (widget.newSession) {
       DatabaseProvider.getVenues().then((v) {
         setState(() => _venues = v);
-        if (v.length == 1) _pickVenue(v.first);
+        final cabinet = widget.last?.cabinet;
+        final last = v.where((v) => v.id == cabinet?.venueId).firstOrNull;
+        if (last != null) {
+          _pickVenue(last, keep: cabinet);
+        } else if (v.length == 1) {
+          _pickVenue(v.first);
+        }
       });
     } else {
       _pickVenue(session.session!.venue, keep: session.cabinet);
@@ -120,7 +128,7 @@ class _CreditSheetState extends State<_CreditSheet> {
   }
 
   Future<void> _addVenue() async {
-    final name = await _askName(context, 'New venue', 'e.g. Round1 Ludo');
+    final name = await askName(context, 'New venue', 'e.g. Round1 Ludo');
     if (name == null || name.isEmpty || _venues.any((v) => v.name == name)) {
       return;
     }
@@ -130,7 +138,7 @@ class _CreditSheetState extends State<_CreditSheet> {
   }
 
   Future<void> _addCabinet() async {
-    final name = await _askName(context, 'Another cab here', 'e.g. Cab 2');
+    final name = await askName(context, 'Another cab here', 'e.g. Cab 2');
     if (name == null || name.isEmpty) return;
     final cabinet = await DatabaseProvider.addCabinet(_venue!, name);
     setState(() {
@@ -272,7 +280,7 @@ final _deleteBackground = Container(
 class SessionPage extends StatelessWidget {
   const SessionPage({super.key});
 
-  static const _header = [EamuseSyncCard(), RecentPlaysCard()];
+  static const _header = [EamuseSyncCard(), LastSessionCard()];
 
   @override
   Widget build(BuildContext context) {
@@ -288,134 +296,23 @@ class SessionPage extends StatelessWidget {
                 fontSize: 20,
                 color: Colors.blueGrey,
                 fontWeight: FontWeight.w600)),
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => context.push('/home/settings'),
+          ),
+        ],
       ),
+      floatingActionButton: session.active ? null : const StartSessionFab(),
       // The cards scroll with the session below them.
       body: session.active
           ? _ActiveSession(session: session, header: _header)
-          : _NoSession(revision: session.revision, header: _header),
-    );
-  }
-}
-
-Future<bool> _confirmSessionDelete(BuildContext context) => confirmDelete(
-    context,
-    'Delete this session?',
-    'Its credits and every play logged in them go too.');
-
-Future<void> _deleteSession(BuildContext context, PlaySession s) async {
-  final session = context.read<SessionState>();
-  await DatabaseProvider.deleteSession(s.id);
-  session.changed();
-}
-
-class _NoSession extends StatelessWidget {
-  const _NoSession({required this.revision, required this.header});
-
-  final int revision;
-  final List<Widget> header;
-
-  static const _shown = 3;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<PlaySession>>(
-      key: ValueKey(revision),
-      // One more than shown, to know whether there's more to see.
-      future: DatabaseProvider.getSessions(limit: _shown + 1),
-      builder: (context, snapshot) {
-        final past = snapshot.data ?? [];
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 24),
-          children: [
-            ...header,
-            HomeCard(
-              title: 'Sessions',
-              icon: Icons.place_outlined,
-              onMore: past.length > _shown
-                  ? () => context.push('/home/sessions')
-                  : null,
-              children: [
-                FilledButton.icon(
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Start session'),
-                  onPressed: () => showStartSessionSheet(context),
-                ),
-                if (past.isNotEmpty) const SizedBox(height: 6),
-                for (final s in past.take(_shown)) _SessionTile(s),
-              ],
+          : ListView(
+              // Clear of the start button.
+              padding: const EdgeInsets.only(bottom: 128),
+              children: _header,
             ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// A past session in a rounded tile; swipe or tap the bin to delete it.
-class _SessionTile extends StatelessWidget {
-  const _SessionTile(this.session);
-
-  final PlaySession session;
-
-  @override
-  Widget build(BuildContext context) {
-    final started = session.startedAt.toLocal();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Dismissible(
-          key: ValueKey(session.id),
-          direction: DismissDirection.endToStart,
-          background: _deleteBackground,
-          confirmDismiss: (_) => _confirmSessionDelete(context),
-          onDismissed: (_) => _deleteSession(context, session),
-          child: Material(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: ListTile(
-              dense: true,
-              title: Text(session.venue.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              subtitle:
-                  Text('${formatPlayDate(started)} · ${formatTime12(started)}'),
-              trailing: IconButton(
-                tooltip: 'Delete session',
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () async {
-                  if (await _confirmSessionDelete(context) && context.mounted) {
-                    await _deleteSession(context, session);
-                  }
-                },
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Every past session, newest first.
-class SessionsPage extends StatelessWidget {
-  const SessionsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final revision = context.select<SessionState, int>((s) => s.revision);
-    return HomeSubpage(
-      title: 'Sessions',
-      body: FutureBuilder<List<PlaySession>>(
-        key: ValueKey(revision),
-        future: DatabaseProvider.getSessions(),
-        builder: (context, snapshot) {
-          final sessions = snapshot.data ?? const <PlaySession>[];
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: sessions.length,
-            itemBuilder: (context, i) => _SessionTile(sessions[i]),
-          );
-        },
-      ),
     );
   }
 }

@@ -44,7 +44,7 @@ const privacySections = <(String, List<String>)>[
     'What Uses the Network',
     [
       '- Song updates: when DDR MD opens, and when you tap sync under '
-          'Settings → Song Updates, it checks DDR MD\'s update server (hosted '
+          'Home → Settings → Song Updates, it checks DDR MD\'s update server (hosted '
           'on Cloudflare) for new songs and chart fixes and downloads only '
           'what changed. These are plain file downloads with no account, '
           'device ID or anything you\'ve saved attached. As with any '

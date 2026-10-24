@@ -10,11 +10,11 @@ import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
-import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:flutter/material.dart';
 
 // Gap each tile leaves around its jacket, so neighbouring artwork doesn't abut.
-const double kArcadeTileGap = 4;
+const double kArcadeTileGap = 3;
 
 // Height of the title/levels band above each jacket and the BPM/sync caption
 // below it. Fixed so every tile in a row lines up; the grid adds both to the
@@ -79,7 +79,7 @@ class ArcadeGridTile extends StatelessWidget {
     return SizedBox(
       height: kArcadeCaptionHeight,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 2, 4, 3),
+        padding: const EdgeInsets.fromLTRB(3, 2, 3, 3),
         child: _statStrip(context),
       ),
     );
@@ -92,7 +92,7 @@ class ArcadeGridTile extends StatelessWidget {
     return SizedBox(
       height: kArcadeTitleHeight,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 3, 4, 2),
+        padding: const EdgeInsets.fromLTRB(3, 3, 3, 2),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,20 +124,7 @@ class ArcadeGridTile extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          Image(
-            image: ContentStore.image(
-                'assets/jackets-160/${item.songInfo.name}.png'),
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.low,
-            errorBuilder: (context, error, stackTrace) => ColoredBox(
-              color: scheme.surfaceContainerHighest,
-              child: Icon(
-                Icons.music_note,
-                size: 30,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
+          JacketImage(item.songInfo),
           if (item.isFav)
             const Positioned(
               top: 2,
@@ -169,6 +156,8 @@ class ArcadeGridTile extends StatelessWidget {
       child: LevelRow(
           levels: difficulty,
           height: kSongListLevelHeight,
+          // Fixed columns don't fit all five on a narrow tile.
+          packed: true,
           highlightIndex: item.isChartScoped ? item.difficultyIndex : null),
     );
   }
@@ -179,8 +168,7 @@ class ArcadeGridTile extends StatelessWidget {
 
   // Recommended in-game offset adjustment: the bias with its sign flipped.
   (String, Color)? _syncAdjust(bool isDark) {
-    final Sync? sync =
-        item.songInfo.displaySyncFor(_chart);
+    final Sync? sync = item.songInfo.displaySyncFor(_chart);
     if (sync == null) return null;
     final double adjustBy = -sync.biasMs;
     final Color color = sync.biasMs < 0
@@ -198,8 +186,8 @@ class ArcadeGridTile extends StatelessWidget {
       textBaseline: TextBaseline.alphabetic,
       children: <Widget>[
         Expanded(
-          child: _statText(_chart.bpmRange,
-              Theme.of(context).colorScheme.onSurfaceVariant),
+          child: _statText(
+              _chart.bpmRange, Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         if (_syncAdjust(isDark) case (final String label, final Color color))
           Padding(

@@ -462,6 +462,9 @@ class RecentPlay {
   final String difficulty;
   final DateTime playedAt;
   final int? score;
+  // Ranked E: the lifebar ran out. False for plays synced before this was
+  // read, until a later sync lists them again.
+  final bool failed;
 
   RecentPlay({
     required this.konamiId,
@@ -471,6 +474,7 @@ class RecentPlay {
     required this.difficulty,
     required this.playedAt,
     required this.score,
+    this.failed = false,
   });
 
   /// Id of the chart's synced best.
@@ -484,6 +488,7 @@ class RecentPlay {
         'difficulty': difficulty,
         'playedAt': playedAt.toUtc().toIso8601String(),
         'score': score,
+        'failed': failed ? 1 : 0,
       };
 
   factory RecentPlay.fromMap(Map<String, dynamic> json) => RecentPlay(
@@ -494,5 +499,6 @@ class RecentPlay {
         difficulty: json['difficulty'],
         playedAt: DateTime.parse(json['playedAt']),
         score: json['score'],
+        failed: json['failed'] == 1,
       );
 }

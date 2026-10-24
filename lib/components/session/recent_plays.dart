@@ -1,9 +1,8 @@
 /// Name: RecentPlays
-/// Parent: SessionPage
-/// Description: The e-amusement plays a sync has seen, newest first, grouped
-/// into sets: runs of plays with no break longer than [kSetBreak], so one
-/// visit to the arcade reads as one set. Home shows the latest few under
-/// [RecentPlaysCard]; [RecentPlaysPage] has every one kept.
+/// Parent: LastSessionCard, VisitPage
+/// Description: Pieces Home's session cards share: the card and subpage
+/// frames, a session's day and time span, and its synced plays as a grid of
+/// cards, each marked when it set the chart's best.
 library;
 
 import 'dart:math';
@@ -11,96 +10,35 @@ import 'dart:math';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_store.dart';
-import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
-import 'package:ddr_md/models/eamuse_state.dart';
+import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
-const kSetBreak = Duration(hours: 1);
-
-/// [plays] (newest first) split wherever two plays are more than [gap] apart.
-List<List<RecentPlay>> groupPlaySets(List<RecentPlay> plays,
-    [Duration gap = kSetBreak]) {
-  final sets = <List<RecentPlay>>[];
-  for (final p in plays) {
-    if (sets.isEmpty || sets.last.last.playedAt.difference(p.playedAt) > gap) {
-      sets.add([p]);
-    } else {
-      sets.last.add(p);
-    }
-  }
-  return sets;
+/// The song a chart's [song] name matched, the chart's index among the
+/// mode's difficulties (-1 when not found) and its level.
+({SongInfo? song, int index, int? level}) chartOf(
+    String? song, Modes mode, String difficulty) {
+  final info = Songs.list.where((s) => s.name == song).firstOrNull;
+  final charts = info == null
+      ? null
+      : (mode == Modes.singles ? info.singles : info.doubles);
+  final types = charts?.availableTypes ?? const <String>[];
+  final index =
+      types.indexWhere((t) => kInGameDifficultyNames[t] == difficulty);
+  final level = index < 0 ? null : charts!.toJson()[types[index]] as int?;
+  return (song: info, index: index, level: level);
 }
 
-typedef _Loaded = ({List<RecentPlay> plays, Map<String, int?> bests});
-
-Future<_Loaded> _load({int? limit}) async => (
-      plays: await DatabaseProvider.getRecentPlays(limit: limit),
-      bests: {
-        for (final r
-            in await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse))
-          r.id: r.score
-      },
-    );
-
-/// Home's latest set, a few plays of it, and a way to the rest.
-class RecentPlaysCard extends StatelessWidget {
-  const RecentPlaysCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final sync = context.watch<EamuseSyncState>();
-    return FutureBuilder<_Loaded>(
-      key: ValueKey(sync.revision),
-      // Enough to hold the latest set's start for its header.
-      future: _load(limit: 50),
-      builder: (context, snapshot) {
-        final data = snapshot.data;
-        if (data == null) return const SizedBox.shrink();
-        if (data.plays.isEmpty) {
-          // Synced before plays were kept: one more sync fills the history.
-          if (sync.charts == 0) return const SizedBox.shrink();
-          final signedOut = sync.status == EamuseStatus.signedOut;
-          return HomeCard(
-            title: 'Recent plays',
-            icon: Icons.history,
-            children: [
-              Row(children: [
-                Expanded(
-                    child: Text(signedOut
-                        ? 'Sign in above to load them'
-                        : 'Not loaded yet')),
-                if (!signedOut)
-                  FilledButton.tonal(
-                    onPressed:
-                        sync.status == EamuseStatus.syncing ? null : sync.sync,
-                    child: const Text('Load'),
-                  ),
-              ]),
-            ],
-          );
-        }
-        final latest = groupPlaySets(data.plays).first;
-        return HomeCard(
-          title: 'Recent plays',
-          icon: Icons.history,
-          onMore: () => context.push('/home/recent'),
-          children: [
-            _SetHeader(latest),
-            _PlayGrid(plays: latest, bests: data.bests, rows: 2),
-          ],
-        );
-      },
-    );
-  }
-}
+({SongInfo? song, int index, int? level}) playChart(RecentPlay play) =>
+    chartOf(play.song, play.mode, play.difficulty);
 
 /// A Home card: a [CardHeading], See more when there's more to see, then
 /// [children].
@@ -109,12 +47,15 @@ class HomeCard extends StatelessWidget {
     super.key,
     required this.title,
     required this.icon,
+    this.heading,
     this.onMore,
     required this.children,
   });
 
   final String title;
   final IconData icon;
+  // Stands in for the [CardHeading], e.g. a button asking for the title.
+  final Widget? heading;
   final VoidCallback? onMore;
   final List<Widget> children;
 
@@ -133,7 +74,7 @@ class HomeCard extends StatelessWidget {
                 Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: CardHeading(title, icon: icon),
+                    child: heading ?? CardHeading(title, icon: icon),
                   ),
                 ),
                 if (onMore != null)
@@ -150,10 +91,12 @@ class HomeCard extends StatelessWidget {
 
 /// A page pushed from Home, with the app's page header.
 class HomeSubpage extends StatelessWidget {
-  const HomeSubpage({super.key, required this.title, required this.body});
+  const HomeSubpage(
+      {super.key, required this.title, required this.body, this.actions});
 
   final String title;
   final Widget body;
+  final List<Widget>? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -169,50 +112,9 @@ class HomeSubpage extends StatelessWidget {
                 fontSize: 20,
                 color: Colors.blueGrey,
                 fontWeight: FontWeight.w600)),
+        actions: actions,
       ),
       body: body,
-    );
-  }
-}
-
-class RecentPlaysPage extends StatelessWidget {
-  const RecentPlaysPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final revision = context.select<EamuseSyncState, int>((s) => s.revision);
-    return HomeSubpage(
-      title: 'Recent plays',
-      body: FutureBuilder<_Loaded>(
-        key: ValueKey(revision),
-        future: _load(),
-        builder: (context, snapshot) {
-          final data = snapshot.data;
-          if (data == null) return const SizedBox.shrink();
-          if (data.plays.isEmpty) {
-            return const Center(child: Text('No plays synced yet.'));
-          }
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              for (final set in groupPlaySets(data.plays))
-                Card(
-                  margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _SetHeader(set),
-                        _PlayGrid(plays: set, bests: data.bests),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
     );
   }
 }
@@ -222,35 +124,41 @@ String _clock(DateTime t) =>
 String _period(DateTime t) => t.hour < 12 ? 'AM' : 'PM';
 String _time(DateTime t) => formatTime12(t);
 
-/// A set's day, time span and how many plays it holds.
-class _SetHeader extends StatelessWidget {
-  const _SetHeader(this.set);
+/// A day and time span: "Today · 3:12–5:03 PM", "2026-10-17 · 11:40 AM–1:05 PM".
+String visitSpan(DateTime start, DateTime end) {
+  start = start.toLocal();
+  end = end.toLocal();
+  final now = DateTime.now();
+  final days = DateTime(now.year, now.month, now.day)
+      .difference(DateTime(start.year, start.month, start.day))
+      .inDays;
+  final day = switch (days) {
+    0 => 'Today',
+    1 => 'Yesterday',
+    _ => formatPlayDate(start),
+  };
+  final span = !end.isAfter(start)
+      ? _time(start)
+      : _period(start) == _period(end)
+          ? '${_clock(start)}–${_time(end)}'
+          : '${_time(start)}–${_time(end)}';
+  return '$day · $span';
+}
 
-  final List<RecentPlay> set;
+String playCount(int n) => '$n ${n == 1 ? 'play' : 'plays'}';
+
+/// A muted line under a card's heading.
+class CardSubtitle extends StatelessWidget {
+  const CardSubtitle(this.text, {super.key});
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    final start = set.last.playedAt.toLocal();
-    final end = set.first.playedAt.toLocal();
-    final now = DateTime.now();
-    final days = DateTime(now.year, now.month, now.day)
-        .difference(DateTime(start.year, start.month, start.day))
-        .inDays;
-    final day = switch (days) {
-      0 => 'Today',
-      1 => 'Yesterday',
-      _ => formatPlayDate(start),
-    };
-    // 3:12–5:03 PM, or 11:40 AM–1:05 PM across noon.
-    final span = set.length == 1
-        ? _time(start)
-        : _period(start) == _period(end)
-            ? '${_clock(start)}–${_time(end)}'
-            : '${_time(start)}–${_time(end)}';
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Text(
-        '$day · $span · ${set.length} ${set.length == 1 ? 'play' : 'plays'}',
+        text,
         style: Theme.of(context)
             .textTheme
             .labelMedium
@@ -261,11 +169,18 @@ class _SetHeader extends StatelessWidget {
 }
 
 /// [plays] as cards in as many columns as fit, [rows] rows of them at most.
-class _PlayGrid extends StatelessWidget {
-  const _PlayGrid({required this.plays, required this.bests, this.rows});
+class PlayGrid extends StatelessWidget {
+  const PlayGrid(
+      {super.key,
+      required this.plays,
+      required this.bests,
+      this.timing = const {},
+      this.rows});
 
   final List<RecentPlay> plays;
   final Map<String, int?> bests;
+  // The timing logged for each play that has one.
+  final Map<RecentPlay, TimingPlay> timing;
   final int? rows;
 
   static const _minWidth = 160.0;
@@ -288,52 +203,41 @@ class _PlayGrid extends StatelessWidget {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.only(top: 4),
-        itemBuilder: (context, i) =>
-            _PlayCard(play: shown[i], best: bests[shown[i].recordId]),
+        itemBuilder: (context, i) => _PlayCard(
+            play: shown[i],
+            best: bests[shown[i].recordId],
+            timing: timing[shown[i]]),
       );
     });
   }
 }
 
 /// One play: jacket with the title and chart beside it, then the score,
-/// grade and time. A play that set the chart's best carries an up arrow in
+/// grade, its logged timing and time. A play that set the chart's best carries an up arrow in
 /// its top-right corner.
 class _PlayCard extends StatelessWidget {
-  const _PlayCard({required this.play, required this.best});
+  const _PlayCard({required this.play, required this.best, this.timing});
 
   final RecentPlay play;
   // The chart's synced best, to mark the play that set it.
   final int? best;
+  final TimingPlay? timing;
 
   static const height = 92.0;
 
   @override
   Widget build(BuildContext context) {
-    final song = Songs.list.where((s) => s.name == play.song).firstOrNull;
-    final charts = song == null
-        ? null
-        : (play.mode == Modes.singles ? song.singles : song.doubles);
-    final types = charts?.availableTypes ?? const <String>[];
-    final index =
-        types.indexWhere((t) => kInGameDifficultyNames[t] == play.difficulty);
-    final level = index < 0 ? null : charts!.toJson()[types[index]] as int?;
+    final (:song, :index, :level) = playChart(play);
     final isBest = play.score != null && best != null && play.score! >= best!;
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Material(
       color: scheme.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: song == null
-            ? null
-            : () {
-                final songState = context.read<SongState>();
-                if (songState.modes != play.mode) {
-                  songState.setMode(play.mode);
-                }
-                context.push(songPath(song, difficulty: index < 0 ? 0 : index));
-              },
+        onTap: song == null ? null : () => _openChart(context, play),
         child: Stack(children: [
           Padding(
             padding: const EdgeInsets.all(8),
@@ -341,7 +245,7 @@ class _PlayCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(children: [
-                  _Jacket(song: play.song),
+                  _Jacket(song: play.song, size: 40),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -383,37 +287,153 @@ class _PlayCard extends StatelessWidget {
                         : FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
-                            child: _Score(play.score!),
+                            child: _Score(play.score!, failed: play.failed),
                           ),
                   ),
+                  if (timing case final t?) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      '${t.averageMs.abs().toStringAsFixed(1)}'
+                      '${t.averageMs < 0 ? 'F' : 'S'}',
+                      style: muted.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: t.averageMs < 0
+                            ? kFastColor(isDark)
+                            : kSlowColor(isDark),
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 6),
                   Text(_time(play.playedAt.toLocal()), style: muted),
                 ]),
               ],
             ),
           ),
-          if (isBest) const Positioned(top: 6, right: 6, child: _BestBadge()),
+          if (isBest) const Positioned(top: 6, right: 6, child: UpscoreBadge()),
         ]),
       ),
     );
   }
 }
 
-/// Marks a play that set the chart's best: an up arrow in a primary circle.
-class _BestBadge extends StatelessWidget {
-  const _BestBadge();
+/// Opens the song page on [play]'s chart.
+void _openChart(BuildContext context, RecentPlay play) {
+  final (:song, :index, level: _) = playChart(play);
+  final songState = context.read<SongState>();
+  if (songState.modes != play.mode) songState.setMode(play.mode);
+  context.push(songPath(song!, difficulty: index < 0 ? 0 : index));
+}
+
+/// The [count] highest scores among [plays], best first, one per chart.
+class TopPlays extends StatelessWidget {
+  const TopPlays(
+      {super.key, required this.plays, required this.bests, this.count = 4});
+
+  final List<RecentPlay> plays;
+  final Map<String, int?> bests;
+  final int count;
+
+  static const _gap = 6.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final best = <String, RecentPlay>{};
+    for (final p in plays) {
+      if (p.score == null) continue;
+      final kept = best[p.recordId];
+      if (kept == null || p.score! > kept.score!) best[p.recordId] = p;
+    }
+    final top = (best.values.toList()
+          ..sort((a, b) => b.score!.compareTo(a.score!)))
+        .take(count)
+        .toList();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < count; i++) ...[
+          if (i > 0) const SizedBox(width: _gap),
+          Expanded(
+            child: i < top.length
+                ? _CompactPlayCard(play: top[i], best: bests[top[i].recordId])
+                : const SizedBox(),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A play small enough for four in a row: the jacket, the score under it and
+/// the chart. An upscore carries the up arrow.
+class _CompactPlayCard extends StatelessWidget {
+  const _CompactPlayCard({required this.play, required this.best});
+
+  final RecentPlay play;
+  final int? best;
+
+  @override
+  Widget build(BuildContext context) {
+    final (:song, index: _, :level) = playChart(play);
+    final isBest = best != null && play.score! >= best!;
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: song == null ? null : () => _openChart(context, play),
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Stack(children: [
+                AspectRatio(aspectRatio: 1, child: _Jacket(song: play.song)),
+                if (isBest)
+                  const Positioned(
+                      top: 3, right: 3, child: UpscoreBadge(size: 11)),
+              ]),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(formatScore(play.score!),
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: [FontFeature.tabularFigures()])),
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: DifficultyLabel(
+                    difficulty: play.difficulty, level: level, height: 11),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Marks an upscore, a play that set the chart's best: an up arrow in a
+/// primary circle.
+class UpscoreBadge extends StatelessWidget {
+  const UpscoreBadge({super.key, this.size = 14});
+
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Tooltip(
-      message: 'Best score',
+      message: 'Upscore',
       child: Container(
         padding: const EdgeInsets.all(2),
         decoration:
             BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
-        child:
-            Icon(Icons.arrow_upward_rounded, size: 14, color: scheme.onPrimary),
+        child: Icon(Icons.arrow_upward_rounded,
+            size: size, color: scheme.onPrimary),
       ),
     );
   }
@@ -421,13 +441,14 @@ class _BestBadge extends StatelessWidget {
 
 /// A play's score and grade on one line, centred beside the row.
 class _Score extends StatelessWidget {
-  const _Score(this.score);
+  const _Score(this.score, {required this.failed});
 
   final int score;
+  final bool failed;
 
   @override
   Widget build(BuildContext context) {
-    final grade = gradeForScore(score);
+    final grade = gradeForScore(score, failed: failed);
     final art = gradeIcon(grade);
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Text(formatScore(score),
@@ -439,12 +460,8 @@ class _Score extends StatelessWidget {
       SizedBox(
         width: 34,
         height: 18,
-        child: art != null
-            ? Image.asset(art,
-                fit: BoxFit.contain, alignment: Alignment.centerLeft)
-            : Text(grade.label,
-                style:
-                    const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+        child: Image.asset(art,
+            fit: BoxFit.contain, alignment: Alignment.centerLeft),
       ),
     ]);
   }
@@ -453,11 +470,11 @@ class _Score extends StatelessWidget {
 /// A song's jacket, or the song list's music note when it has none or the
 /// play matched no song.
 class _Jacket extends StatelessWidget {
-  const _Jacket({required this.song});
+  const _Jacket({required this.song, this.size});
 
   final String? song;
-
-  static const _size = 40.0;
+  // Fills its parent when null.
+  final double? size;
 
   @override
   Widget build(BuildContext context) {
@@ -468,8 +485,9 @@ class _Jacket extends StatelessWidget {
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: SizedBox.square(
-        dimension: _size,
+      child: SizedBox(
+        width: size ?? double.infinity,
+        height: size ?? double.infinity,
         child: song == null
             ? fallback
             : Image(

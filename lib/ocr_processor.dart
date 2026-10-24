@@ -114,8 +114,9 @@ class ProcessResult {
       'exScore': rd(r.exScore),
     };
 
-    Uint8List? img(Pointer<Uint8> buf, int len) =>
-        (buf != nullptr && len > 0) ? Uint8List.fromList(buf.asTypedList(len)) : null;
+    Uint8List? img(Pointer<Uint8> buf, int len) => (buf != nullptr && len > 0)
+        ? Uint8List.fromList(buf.asTypedList(len))
+        : null;
     final mask = img(r.mask, r.maskLen);
     final crop = img(r.crop, r.cropLen);
     final capture = img(r.capture, r.captureLen);
@@ -665,7 +666,8 @@ class OCRProcessor {
   Future<void> start() async {
     if (_session == nullptr) return;
     isDraining.value = false;
-    final ok = _cameraStartFn(_session, _debugImageType == DebugImageType.on ? 1 : 0);
+    final ok =
+        _cameraStartFn(_session, _debugImageType == DebugImageType.on ? 1 : 0);
     if (ok == 0) {
       throw PlatformException(
           code: 'camera_start_failed', message: 'Could not start camera');
