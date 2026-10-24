@@ -159,6 +159,9 @@ class LastSessionCard extends StatelessWidget {
               plays: visit.plays,
               timed: visit.session != null,
               timing: data.timing[visit.session?.id],
+              credits: data.credits[visit.session?.id] ?? [],
+              onPlay: (p) => context.push(
+                  '${_path(visit)}?play=${p.playedAt.millisecondsSinceEpoch}'),
             ),
             const SizedBox(height: 8),
             TopPlays(plays: visit.plays, bests: data.model.bests),
@@ -445,14 +448,47 @@ class SessionsPage extends StatelessWidget {
 }
 
 /// One session: how it went, every synced play, and the timing logged in
-/// its credits.
-class VisitPage extends StatelessWidget {
-  const VisitPage({super.key, required this.visitKey});
+/// its credits. Opens scrolled to the credit of [play] when given.
+class VisitPage extends StatefulWidget {
+  const VisitPage({super.key, required this.visitKey, this.play});
 
   final String visitKey;
+  // When the play to show was played, in ms since the epoch.
+  final int? play;
+
+  @override
+  State<VisitPage> createState() => _VisitPageState();
+}
+
+class _VisitPageState extends State<VisitPage> {
+  final _creditKeys = <int, GlobalKey>{};
+  late int? _pending = widget.play;
+  // The credit just jumped to, lit for a moment.
+  int? _lit;
+
+  /// Scrolls to the credit in [groups] holding the play from [at] and
+  /// lights it.
+  void _jump(List<(Credit?, List<RecentPlay>)> groups, int at) {
+    final i = groups.indexWhere(
+        (g) => g.$2.any((p) => p.playedAt.millisecondsSinceEpoch == at));
+    if (i < 0) return;
+    setState(() => _lit = i);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_creditKeys[i]?.currentContext case final c?) {
+        Scrollable.ensureVisible(c,
+            alignment: 0.1,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut);
+      }
+    });
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted && _lit == i) setState(() => _lit = null);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final visitKey = widget.visitKey;
     return FutureBuilder<VisitData>(
       future: visitsFor(context),
       builder: (context, snapshot) {
@@ -469,6 +505,12 @@ class VisitPage extends StatelessWidget {
         final timing = data.timing[visit.session?.id] ?? [];
         final credits = data.credits[visit.session?.id] ?? [];
         final (played, matched) = reconcileTiming(visit.plays, timing);
+        final groups = groupByCredit(played, credits, matched);
+        if (_pending case final at?) {
+          _pending = null;
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _jump(groups, at));
+        }
         return HomeSubpage(
           title: visit.session?.venue.name ?? 'Session',
           actions: [
@@ -510,6 +552,10 @@ class VisitPage extends StatelessWidget {
                       plays: visit.plays,
                       timed: visit.session != null,
                       timing: timing,
+                      detailed: true,
+                      credits: credits,
+                      onPlay: (p) =>
+                          _jump(groups, p.playedAt.millisecondsSinceEpoch),
                     ),
                 ],
               ),
@@ -518,19 +564,23 @@ class VisitPage extends StatelessWidget {
                   title: 'Plays',
                   icon: Icons.history,
                   children: [
-                    if (credits.isEmpty)
-                      PlayGrid(
-                          plays: played,
+                    for (final (i, (credit, plays)) in groups.indexed)
+                      _CreditGroup(
+                          key: _creditKeys.putIfAbsent(i, GlobalKey.new),
+                          lit: _lit == i,
+                          credit: credit,
+                          plays: plays,
                           bests: data.model.bests,
-                          timing: matched)
-                    else
-                      for (final (credit, plays)
-                          in groupByCredit(played, credits, matched))
-                        _CreditGroup(
-                            credit: credit,
-                            plays: plays,
-                            bests: data.model.bests,
-                            timing: matched),
+                          timing: matched,
+                          onEdit: switch (visit.session) {
+                            final session? => () => showEditCreditSheet(context,
+                                session: session,
+                                credit: credit,
+                                last: credits.firstOrNull,
+                                startedAt: plays.lastOrNull?.playedAt ??
+                                    credit!.startedAt),
+                            null => null,
+                          }),
                   ],
                 ),
             ],
@@ -544,18 +594,25 @@ class VisitPage extends StatelessWidget {
 /// One credit's plays beside a narrow rail: its number, side and songs
 /// played, on a bar in the primary colour (outlined and numbered "?" for a
 /// credit that wasn't logged). The cabinet, when the venue has more than
-/// one, is the number's tooltip.
+/// one, is the number's tooltip. Tapping the rail runs [onEdit], to log the
+/// credit or fix its cabinet and side.
 class _CreditGroup extends StatelessWidget {
   const _CreditGroup(
-      {required this.credit,
+      {super.key,
+      this.lit = false,
+      required this.credit,
       required this.plays,
       required this.bests,
-      required this.timing});
+      required this.timing,
+      this.onEdit});
 
   final Credit? credit;
   final List<RecentPlay> plays;
   final Map<String, int?> bests;
   final Map<RecentPlay, TimingPlay> timing;
+  final VoidCallback? onEdit;
+  // Just jumped to from the strip.
+  final bool lit;
 
   @override
   Widget build(BuildContext context) {
@@ -564,29 +621,34 @@ class _CreditGroup extends StatelessWidget {
     final c = credit;
     final bar = c == null ? scheme.outlineVariant : scheme.primary;
     final small = text.labelSmall?.copyWith(color: scheme.onSurfaceVariant);
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.only(top: 6),
       decoration: BoxDecoration(
+        color: lit ? scheme.primary.withValues(alpha: 0.15) : null,
         border: Border(left: BorderSide(color: bar, width: 3)),
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(
-          width: 25,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Column(children: [
-              Tooltip(
-                message:
-                    c == null || c.cabinet.name.isEmpty ? '' : c.cabinet.name,
-                child: Text(c == null ? '?' : '${c.number}',
-                    style: text.titleSmall?.copyWith(
-                        color: c == null ? scheme.onSurfaceVariant : bar,
-                        fontWeight: FontWeight.w800)),
-              ),
-              if (c != null)
-                Text(c.side == PadSide.p1 ? 'P1' : 'P2', style: small),
-              Text('${plays.length}/$kSongsPerCredit', style: small),
-            ]),
+        InkWell(
+          onTap: onEdit,
+          child: SizedBox(
+            width: 25,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Column(children: [
+                Tooltip(
+                  message:
+                      c == null || c.cabinet.name.isEmpty ? '' : c.cabinet.name,
+                  child: Text(c == null ? '?' : '${c.number}',
+                      style: text.titleSmall?.copyWith(
+                          color: c == null ? scheme.onSurfaceVariant : bar,
+                          fontWeight: FontWeight.w800)),
+                ),
+                if (c != null)
+                  Text(c.side == PadSide.p1 ? 'P1' : 'P2', style: small),
+                Text('${plays.length}/$kSongsPerCredit', style: small),
+              ]),
+            ),
           ),
         ),
         Expanded(

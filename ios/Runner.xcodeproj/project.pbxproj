@@ -495,7 +495,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiggy.ddrmd;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -686,7 +685,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiggy.ddrmd;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -713,7 +711,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shiggy.ddrmd;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

@@ -37,6 +37,25 @@ Future<void> showNewCreditSheet(BuildContext context) => showModalBottomSheet(
       builder: (_) => const _CreditSheet(newSession: false),
     );
 
+/// Log a credit of a past [session] after the fact, or fix [credit]'s
+/// cabinet and side. A new one starts at [startedAt], and takes the cab and
+/// side of [last] to begin with.
+Future<void> showEditCreditSheet(BuildContext context,
+        {required PlaySession session,
+        Credit? credit,
+        Credit? last,
+        required DateTime startedAt}) =>
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _CreditSheet(
+          newSession: false,
+          past: session,
+          editing: credit,
+          last: credit ?? last,
+          startedAt: startedAt),
+    );
+
 Future<bool> confirmDelete(
         BuildContext context, String title, String body) async =>
     await showDialog<bool>(
@@ -81,10 +100,19 @@ Future<String?> askName(BuildContext context, String title, String hint) {
 }
 
 class _CreditSheet extends StatefulWidget {
-  const _CreditSheet({required this.newSession, this.last});
+  const _CreditSheet(
+      {required this.newSession,
+      this.last,
+      this.past,
+      this.editing,
+      this.startedAt});
 
   final bool newSession;
   final Credit? last;
+  // A session's credit logged or fixed after the fact, not a new one now.
+  final PlaySession? past;
+  final Credit? editing;
+  final DateTime? startedAt;
 
   @override
   State<_CreditSheet> createState() => _CreditSheetState();
@@ -112,6 +140,8 @@ class _CreditSheetState extends State<_CreditSheet> {
           _pickVenue(v.first);
         }
       });
+    } else if (widget.past case final past?) {
+      _pickVenue(past.venue, keep: widget.last?.cabinet);
     } else {
       _pickVenue(session.session!.venue, keep: session.cabinet);
     }
@@ -179,6 +209,16 @@ class _CreditSheetState extends State<_CreditSheet> {
     final session = context.read<SessionState>();
     if (widget.newSession) {
       await session.start(_venue!, _cabinet!, _side);
+    } else if (widget.past case final past?) {
+      final e = widget.editing;
+      await session.saveCredit(Credit(
+        id: e?.id,
+        sessionId: past.id,
+        number: e?.number ?? 0,
+        cabinet: _cabinet!,
+        side: _side,
+        startedAt: e?.startedAt ?? widget.startedAt!,
+      ));
     } else {
       await session.newCredit(_cabinet!, _side);
     }
@@ -190,7 +230,11 @@ class _CreditSheetState extends State<_CreditSheet> {
     final session = context.read<SessionState>();
     final title = widget.newSession
         ? 'Start session'
-        : 'Credit ${(session.credit?.number ?? 0) + 1}';
+        : widget.past != null
+            ? widget.editing == null
+                ? 'Log credit'
+                : 'Credit ${widget.editing!.number}'
+            : 'Credit ${(session.credit?.number ?? 0) + 1}';
     return Padding(
       padding: EdgeInsets.fromLTRB(
           16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
@@ -262,7 +306,13 @@ class _CreditSheetState extends State<_CreditSheet> {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _cabinet == null ? null : _go,
-            child: Text(widget.newSession ? 'Start' : 'Start $title'),
+            child: Text(widget.newSession
+                ? 'Start'
+                : widget.past != null
+                    ? widget.editing == null
+                        ? 'Log credit'
+                        : 'Save'
+                    : 'Start $title'),
           ),
         ],
       ),

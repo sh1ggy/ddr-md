@@ -91,7 +91,10 @@ final router = GoRouter(
                           pageBuilder: (context, state) => _page(
                               state,
                               VisitPage(
-                                  visitKey: state.pathParameters['key']!))),
+                                  visitKey: state.pathParameters['key']!,
+                                  play: int.tryParse(
+                                      state.uri.queryParameters['play'] ??
+                                          '')))),
                     ]),
                 GoRoute(
                     path: 'settings',

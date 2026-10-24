@@ -28,8 +28,7 @@ RecentPlay play(String id, int hoursAgo, int score) => RecentPlay(
     score: score);
 
 void main() {
-  test('a set is averaged against its charts, blended with their models',
-      () {
+  test('a set is averaged against its charts, blended with their models', () {
     ScoreRecord best(String id, int score) => ScoreRecord(
         id: 'eamuse:$id:singles:EXPERT',
         source: ScoreRecordSource.eamuse,
@@ -100,6 +99,22 @@ void main() {
     expect(s.gap, closeTo(-50000 / (3 + 1 / 12), 1));
   });
 
+  test('a set splits by level, easiest first', () {
+    final history = [
+      play('hard', 0, 880000),
+      play('easy', 0, 990000),
+      play('easy2', 0, 970000),
+      for (final id in ['hard', 'easy', 'easy2']) play(id, 48, 900000),
+    ];
+    final s = ScoreModel(history, [], (song, _, __) => song == 'hard' ? 17 : 14)
+        .summarize(history.take(3).toList());
+    final levels = s.byLevel;
+    expect(levels.map((l) => (l.level, l.plays)), [(14, 2), (17, 1)]);
+    expect(levels.first.average, 980000);
+    expect(levels.first.usual, 900000);
+    expect(levels.last.average - levels.last.usual, -20000);
+  });
+
   test('plays join the session running when they were played', () {
     const venue = Venue(1, 'Round1');
     final ended = PlaySession(
@@ -157,6 +172,22 @@ void main() {
     ]);
     expect([for (final (c, p) in groups) (c?.number, p.length)],
         [(null, 1), (null, 2), (null, 1), (1, 4)]);
+
+    // Logging the pair at -23 min as a credit keeps the song after the
+    // break out of it.
+    final logged = groupByCredit([
+      for (final m in [5, 20, 23, 50, 52, 54, 56, 59]) at(m)
+    ], [
+      credit(1, 1),
+      Credit(
+          sessionId: 's',
+          number: 2,
+          cabinet: cab,
+          side: PadSide.p1,
+          startedAt: t.subtract(const Duration(minutes: 23))),
+    ]);
+    expect([for (final (c, p) in logged) (c?.number, p.length)],
+        [(null, 1), (2, 2), (null, 1), (1, 4)]);
   });
 
   test('timing matches the synced play of its song', () {

@@ -195,7 +195,8 @@ List<(TimingPlay, String)> timingFixes(Map<RecentPlay, TimingPlay> matched) => [
 /// [plays] (newest first) split into the [credits] they were played in,
 /// newest first. A play whose [timing] was logged in a credit goes to it;
 /// any other goes to the last credit started before it, up to
-/// [kSongsPerCredit] songs; the rest are split into credits that weren't
+/// [kSongsPerCredit] songs and no more than [kCreditBreak] after its last;
+/// the rest are split into credits that weren't
 /// logged (a null credit), at most [kSongsPerCredit] songs each and broken
 /// wherever songs are more than [kCreditBreak] apart.
 List<(Credit?, List<RecentPlay>)> groupByCredit(
@@ -217,7 +218,15 @@ List<(Credit?, List<RecentPlay>)> groupByCredit(
     final c = ordered
         .where((c) => !c.startedAt.subtract(kCreditGrace).isAfter(p.playedAt))
         .firstOrNull;
-    if (c != null && byCredit[c.id]!.length < kSongsPerCredit) {
+    final before = c == null
+        ? null
+        : byCredit[c.id]!
+            .where((e) => !e.playedAt.isAfter(p.playedAt))
+            .map((e) => e.playedAt)
+            .fold<DateTime?>(null, (a, t) => a == null || t.isAfter(a) ? t : a);
+    if (c != null &&
+        byCredit[c.id]!.length < kSongsPerCredit &&
+        (before == null || p.playedAt.difference(before) <= kCreditBreak)) {
       byCredit[c.id]!.add(p);
     } else {
       rest.add(p);

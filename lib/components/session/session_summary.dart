@@ -2,7 +2,7 @@
 /// Parent: LastSessionCard, VisitPage
 /// Description: How a session's e-amusement plays went as a whole: their
 /// average score against what your history says you'd average on that same
-/// mix of charts, as a you-vs-usual bar over each play's gap in play order,
+/// mix of charts, broken down by level, over each play in order by credit,
 /// with the average level, level range, upscores and, when timing was
 /// logged, its offset.
 /// Failed plays (an E) and far-off ones count for less.
@@ -17,6 +17,7 @@ import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
+import 'package:ddr_md/models/visit_model.dart';
 import 'package:flutter/material.dart';
 
 /// How many plays the level's model counts as when blended into a chart's
@@ -28,6 +29,9 @@ const _minLevelCharts = 3;
 /// What a failed play (an E) counts for against a cleared one: its score
 /// stops where the lifebar ran out, so it says little about your scoring.
 const _failWeight = 0.25;
+
+/// How far FAST or SLOW a timing is when it takes the full colour.
+const _fullTimingMs = 10.0;
 
 double _weight(RecentPlay p) => p.failed ? _failWeight : 1;
 
@@ -43,7 +47,8 @@ class SetSummary {
       required this.level,
       this.lowest,
       this.highest,
-      required this.upscores});
+      required this.upscores,
+      this.levels = const {}});
 
   /// Each play with a score and a usual, newest first, with its level when
   /// known and what it counts for in the averages: less when failed or far
@@ -60,6 +65,9 @@ class SetSummary {
   /// Charts a play upscored: set the best they have now.
   final int upscores;
 
+  /// Each play's level, where known.
+  final Map<RecentPlay, int> levels;
+
   /// The average score, over [points].
   double? get average => points.isEmpty
       ? null
@@ -72,7 +80,36 @@ class SetSummary {
 
   double? get gap =>
       average == null || usual == null ? null : average! - usual!;
+
+  /// [points] with a level, grouped by it, easiest first: the level's
+  /// average and usual, its plays and what they count for together.
+  List<LevelSummary> get byLevel {
+    final groups = <int, List<(int score, double usual, double weight)>>{};
+    for (final p in points) {
+      if (p.level case final l?) {
+        groups.putIfAbsent(l, () => []).add((p.play.score!, p.usual, p.weight));
+      }
+    }
+    return [
+      for (final l in groups.keys.toList()..sort())
+        (
+          level: l,
+          average: _weightedMean([for (final (s, _, w) in groups[l]!) (s, w)]),
+          usual: _weightedMean([for (final (_, u, w) in groups[l]!) (u, w)]),
+          plays: groups[l]!.length,
+          weight: groups[l]!.fold(0, (a, p) => a + p.$3),
+        ),
+    ];
+  }
 }
+
+typedef LevelSummary = ({
+  int level,
+  double average,
+  double usual,
+  int plays,
+  double weight
+});
 
 double _mean(Iterable<num> s) => s.fold<double>(0, (a, b) => a + b) / s.length;
 
@@ -197,6 +234,10 @@ class ScoreModel {
       level: known.isEmpty ? null : _mean(known),
       lowest: known.isEmpty ? null : known.reduce(min),
       highest: known.isEmpty ? null : known.reduce(max),
+      levels: {
+        for (final p in plays)
+          if (level(p) case final l?) p: l,
+      },
       upscores: {
         for (final p in plays)
           if (p.score != null && best(p) != null && p.score! >= best(p)!)
@@ -210,13 +251,25 @@ class ScoreModel {
 /// session. With timing, a toggle swaps the score chart for the timing one.
 class SessionSummaryBody extends StatefulWidget {
   const SessionSummaryBody(this.summary,
-      {super.key, required this.plays, this.timing, this.timed = false});
+      {super.key,
+      required this.plays,
+      this.timing,
+      this.timed = false,
+      this.detailed = false,
+      this.credits = const [],
+      this.onPlay});
 
   final SetSummary summary;
   final List<RecentPlay> plays;
   final List<TimingPlay>? timing;
   // Whether the session could log timing, to show its stat even when empty.
   final bool timed;
+  // Each level as its own you-vs-usual bar rather than a tile.
+  final bool detailed;
+  // The credits logged in the session, to split the play strip by.
+  final List<Credit> credits;
+  // A play tapped on the strip.
+  final ValueChanged<RecentPlay>? onPlay;
 
   @override
   State<SessionSummaryBody> createState() => _SessionSummaryBodyState();
@@ -241,6 +294,13 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
         : logged.map((t) => t.averageMs).reduce((a, b) => a + b) /
             logged.length;
     final showTiming = _showTiming && timing != null;
+    final (played, matched) = reconcileTiming(plays, logged);
+    // Each credit's plays, oldest credit and play first.
+    final groups = [
+      for (final (_, g)
+          in groupByCredit(played, widget.credits, matched).reversed)
+        g.reversed.toList()
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -259,7 +319,11 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
             ),
           ),
         if (showTiming)
-          _TimingChart(logged, mean: timing, isDark: isDark)
+          _TimingChart(groups, matched,
+              levels: summary.levels,
+              mean: timing,
+              isDark: isDark,
+              onPlay: widget.onPlay)
         else if (gap == null)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 6),
@@ -284,13 +348,28 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
             ],
           ),
           const SizedBox(height: 8),
-          _UsualBar(summary, up: up, down: scheme.error),
-          const SizedBox(height: 12),
-          _GapTimeline(summary,
-              played: plays.length, up: up, down: scheme.error),
+          if (summary.byLevel case final levels when levels.isNotEmpty) ...[
+            widget.detailed
+                ? _LevelBars(levels, up: up, down: scheme.error)
+                : _LevelChips(_scoreChips(levels, up: up, down: scheme.error)),
+            const SizedBox(height: 12),
+          ],
+          _PlayStrip(
+            groups,
+            value: (p) =>
+                switch (summary.points.where((e) => e.play == p).firstOrNull) {
+              final e? => (e.play.score! - e.usual, e.play.failed),
+              null => null,
+            },
+            full: 50000,
+            up: up,
+            down: scheme.error,
+            counted: 'compared',
+            onPlay: widget.onPlay,
+          ),
         ],
         const SizedBox(height: 10),
-        Row(children: [
+        Row(spacing: 6, children: [
           _Stat(
             label: 'Avg level',
             child: summary.level == null
@@ -306,7 +385,7 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
           ),
           _Stat(
             label: 'Upscores',
-            child: Row(children: [
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
               const UpscoreBadge(),
               const SizedBox(width: 6),
               _StatText('${summary.upscores}'),
@@ -315,6 +394,12 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
           if (timed)
             _Stat(
               label: 'Timing',
+              tint: timing == null
+                  ? null
+                  : (timing < 0 ? kFastColor(isDark) : kSlowColor(isDark))
+                      .withValues(
+                          alpha: 0.06 +
+                              0.24 * min(1, timing.abs() / _fullTimingMs)),
               child: _StatText(
                 timing == null
                     ? '–'
@@ -341,45 +426,43 @@ class _Levels extends StatelessWidget {
   final List<int> levels;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 3),
-        // Four stats share the row on a phone; shrinks rather than
-        // overflows on a wide range like 9 – 19.
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: ColorFiltered(
-            colorFilter: kGreyLevel,
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              for (final (i, l) in levels.indexed) ...[
-                if (i > 0) const _StatText(' – '),
-                LevelNumber(level: l, difficulty: 'EXPERT', height: 20),
-              ],
-            ]),
-          ),
-        ),
+  Widget build(BuildContext context) => ColorFiltered(
+        colorFilter: kGreyLevel,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final (i, l) in levels.indexed) ...[
+            if (i > 0) const _StatText(' – '),
+            LevelNumber(level: l, difficulty: 'EXPERT', height: 20),
+          ],
+        ]),
       );
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.child});
+  const _Stat({required this.label, required this.child, this.tint});
 
   final String label;
   final Widget child;
+  final Color? tint;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        decoration: BoxDecoration(
+          color: tint ?? scheme.onSurface.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(children: [
           Text(label,
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 2),
-          child,
-        ],
+          SizedBox(
+            height: 22,
+            child: FittedBox(fit: BoxFit.scaleDown, child: child),
+          ),
+        ]),
       ),
     );
   }
@@ -400,96 +483,265 @@ class _StatText extends StatelessWidget {
           fontFeatures: const [FontFeature.tabularFigures()]));
 }
 
-/// The set's average on a score axis beside its usual: a tick at the usual,
-/// a dot at the average and the gap filled between them.
-class _UsualBar extends StatelessWidget {
-  const _UsualBar(this.summary, {required this.up, required this.down});
+/// Each level's average on one score axis beside its usual, easiest first:
+/// a tick at the usual, a dot at the average and the gap filled between
+/// them, with the gap and the level's plays at the end.
+class _LevelBars extends StatelessWidget {
+  const _LevelBars(this.levels, {required this.up, required this.down});
 
-  final SetSummary summary;
+  final List<LevelSummary> levels;
   final Color up, down;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
-    final usual = summary.usual!, average = summary.average!;
-    // From a round 10k under the lower of the two up to the 1,000,000 ceiling.
-    final lo = ((min(usual, average) - 20000) / 10000).floor() * 10000.0;
+    // From a round 10k under the lowest score shown up to the 1,000,000
+    // ceiling, shared so the levels line up.
+    final lowest = levels.map((l) => min(l.usual, l.average)).reduce(min);
+    final lo = ((lowest - 20000) / 10000).floor() * 10000.0;
     const hi = 1000000.0;
     double at(double score) => ((score - lo) / (hi - lo)).clamp(0, 1);
-    final colour = average >= usual ? up : down;
-    String k(double score) => '${(score / 1000).round()}k';
+    String gap(double g) =>
+        '${g >= 0 ? '+' : '−'}${formatScore(g.abs().round())}';
+    return Column(children: [
+      for (final l in levels)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(children: [
+            SizedBox(
+              width: 28,
+              child: ColorFiltered(
+                colorFilter: kGreyLevel,
+                child: LevelNumber(
+                    level: l.level, difficulty: 'EXPERT', height: 16),
+              ),
+            ),
+            Expanded(
+              child: LayoutBuilder(builder: (context, box) {
+                final w = box.maxWidth;
+                final colour = l.average >= l.usual ? up : down;
+                return SizedBox(
+                  height: 18,
+                  child: Stack(clipBehavior: Clip.none, children: [
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 6,
+                      height: 6,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(3)),
+                      ),
+                    ),
+                    Positioned(
+                      left: min(at(l.usual), at(l.average)) * w,
+                      width: (at(l.average) - at(l.usual)).abs() * w,
+                      top: 6,
+                      height: 6,
+                      child: ColoredBox(color: colour.withValues(alpha: 0.6)),
+                    ),
+                    Positioned(
+                      left: at(l.usual) * w - 1,
+                      top: 0,
+                      width: 2,
+                      height: 18,
+                      child: ColoredBox(color: scheme.onSurfaceVariant),
+                    ),
+                    Positioned(
+                      left: at(l.average) * w - 6,
+                      top: 3,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                            color: colour, shape: BoxShape.circle),
+                      ),
+                    ),
+                  ]),
+                );
+              }),
+            ),
+            SizedBox(
+              width: 92,
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                    text: gap(l.average - l.usual),
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: l.average >= l.usual ? up : down),
+                  ),
+                  TextSpan(text: ' ×${l.plays}', style: muted),
+                ]),
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()]),
+              ),
+            ),
+          ]),
+        ),
+      Row(children: [
+        const SizedBox(width: 28),
+        Text('${(lo / 1000).round()}k', style: muted),
+        const Spacer(),
+        Text('1M', style: muted),
+        const SizedBox(width: 92),
+      ]),
+    ]);
+  }
+}
+
+/// A level's tile: its numeral and plays over [text] in [colour], on
+/// [tint].
+typedef _Chip = ({int level, int plays, String text, Color colour, Color tint});
+
+/// Each level as a tile, easiest first, five to a row.
+class _LevelChips extends StatelessWidget {
+  const _LevelChips(this.chips);
+
+  final List<_Chip> chips;
+
+  static const _columns = 5, _spacing = 6.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = TextStyle(
+        fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant);
     return LayoutBuilder(builder: (context, box) {
-      final w = box.maxWidth;
-      Widget label(String text, double x) => Positioned(
-            left: (x * w - 40).clamp(0, w - 80),
-            width: 80,
-            top: 22,
-            child: Text(text, textAlign: TextAlign.center, style: muted),
-          );
-      return SizedBox(
-        height: 38,
-        child: Stack(clipBehavior: Clip.none, children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 6,
-            height: 6,
-            child: DecoratedBox(
+      final across = min(chips.length, _columns);
+      final w = (box.maxWidth - _spacing * (across - 1)) / across;
+      return Wrap(
+        spacing: _spacing,
+        runSpacing: _spacing,
+        children: [
+          for (final c in chips)
+            Container(
+              width: w,
+              padding: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(3)),
+                color: c.tint,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(children: [
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  ColorFiltered(
+                    colorFilter: kGreyLevel,
+                    child: LevelNumber(
+                        level: c.level, difficulty: 'EXPERT', height: 14),
+                  ),
+                  Text(' ×${c.plays}', style: muted),
+                ]),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    c.text,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: c.colour,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ]),
             ),
-          ),
-          Positioned(
-            left: min(at(usual), at(average)) * w,
-            width: (at(average) - at(usual)).abs() * w,
-            top: 6,
-            height: 6,
-            child: ColoredBox(color: colour.withValues(alpha: 0.6)),
-          ),
-          Positioned(
-            left: at(usual) * w - 1,
-            top: 0,
-            width: 2,
-            height: 18,
-            child: ColoredBox(color: scheme.onSurfaceVariant),
-          ),
-          Positioned(
-            left: at(average) * w - 7,
-            top: 2,
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
-            ),
-          ),
-          label('usual ${k(usual)}', at(usual)),
-          label('you ${k(average)}', at(average)),
-        ]),
+        ],
       );
     });
   }
 }
 
-/// The session's timing: its mean offset, then each logged play's offset in
-/// the order played around the on-time line, SLOW above and FAST below.
-class _TimingChart extends StatelessWidget {
-  const _TimingChart(this.timing, {required this.mean, required this.isDark});
+/// [levels] as chips of their gap from usual, fainter the less a level's
+/// plays count for.
+List<_Chip> _scoreChips(List<LevelSummary> levels,
+    {required Color up, required Color down}) {
+  // What a level's plays need to count for to get the full tint.
+  const fullWeight = 3.0;
+  final chips = <_Chip>[];
+  for (final l in levels) {
+    final gap = l.average - l.usual;
+    final k = gap.abs() / 1000;
+    final colour = gap >= 0 ? up : down;
+    chips.add((
+      level: l.level,
+      plays: l.plays,
+      text: '${gap >= 0 ? '+' : '−'}'
+          '${k < 10 ? k.toStringAsFixed(1) : k.round()}k',
+      colour: colour,
+      tint:
+          colour.withValues(alpha: 0.06 + 0.12 * min(1, l.weight / fullWeight)),
+    ));
+  }
+  return chips;
+}
 
-  final List<TimingPlay> timing;
+/// Each level of [plays] as a chip of its mean timing, FAST or SLOW, deeper
+/// the further off; grey when none of its plays had timing logged.
+List<_Chip> _timingChips(Iterable<RecentPlay> plays,
+    Map<RecentPlay, TimingPlay> matched, Map<RecentPlay, int> levels,
+    {required Color fast, required Color slow, required Color none}) {
+  final byLevel = <int, List<double>>{};
+  for (final p in plays) {
+    if (levels[p] case final l?) {
+      final ms = byLevel.putIfAbsent(l, () => []);
+      if (matched[p] case final t?) ms.add(t.averageMs);
+    }
+  }
+  final chips = <_Chip>[];
+  for (final l in byLevel.keys.toList()..sort()) {
+    final ms = byLevel[l]!;
+    if (ms.isEmpty) {
+      chips.add((
+        level: l,
+        plays: 0,
+        text: '–',
+        colour: none.withValues(alpha: 0.5),
+        tint: none.withValues(alpha: 0.06),
+      ));
+      continue;
+    }
+    final m = ms.reduce((a, b) => a + b) / ms.length;
+    final colour = m < 0 ? fast : slow;
+    chips.add((
+      level: l,
+      plays: ms.length,
+      text: '${m.abs().toStringAsFixed(1)}${m < 0 ? 'F' : 'S'}',
+      colour: colour,
+      tint: colour.withValues(
+          alpha: 0.06 + 0.24 * min(1, m.abs() / _fullTimingMs)),
+    ));
+  }
+  return chips;
+}
+
+/// The session's timing: its mean offset, by level, then every play in
+/// order as a
+/// cell split by credit, pink for SLOW and cyan for FAST, deeper the
+/// further off, and grey where no timing was logged.
+class _TimingChart extends StatelessWidget {
+  const _TimingChart(this.groups, this.matched,
+      {required this.levels,
+      required this.mean,
+      required this.isDark,
+      this.onPlay});
+
+  // Each credit's plays, oldest credit and play first.
+  final List<List<RecentPlay>> groups;
+  final Map<RecentPlay, TimingPlay> matched;
+  // Each play's level, where known.
+  final Map<RecentPlay, int> levels;
   final double mean;
   final bool isDark;
+  final ValueChanged<RecentPlay>? onPlay;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final muted = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
-    final ordered = [...timing]
-      ..sort((a, b) => a.playedAt.compareTo(b.playedAt));
     final fast = kFastColor(isDark), slow = kSlowColor(isDark);
-    String at(TimingPlay t) =>
-        formatTime12(DateTime.parse(t.playedAt).toLocal());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -508,158 +760,174 @@ class _TimingChart extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
-                child: Text(
-                    '${mean < 0 ? 'FAST' : 'SLOW'} on average · '
-                    '${ordered.length} logged',
+                child: Text('${mean < 0 ? 'FAST' : 'SLOW'} on average',
                     style: TextStyle(
                         fontSize: 12, color: scheme.onSurfaceVariant))),
           ],
         ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 64,
-          child: CustomPaint(
-            painter: _GapPainter(
-              [for (final t in ordered) (t.averageMs, 1.0, false)],
-              up: slow,
-              down: fast,
-              line: scheme.onSurfaceVariant,
-            ),
-          ),
+        const SizedBox(height: 8),
+        if (_timingChips(groups.expand((g) => g), matched, levels,
+                fast: fast, slow: slow, none: scheme.onSurface)
+            case final chips when chips.isNotEmpty) ...[
+          _LevelChips(chips),
+          const SizedBox(height: 12),
+        ],
+        _PlayStrip(
+          groups,
+          value: (p) => switch (matched[p]) {
+            final t? => (t.averageMs, false),
+            null => null,
+          },
+          full: _fullTimingMs,
+          up: slow,
+          down: fast,
+          counted: 'timed',
+          onPlay: onPlay,
         ),
-        const SizedBox(height: 2),
-        Row(children: [
-          Text(at(ordered.first), style: muted),
-          const Spacer(),
-          Text(at(ordered.last), style: muted),
-        ]),
       ],
     );
   }
 }
 
-/// Each play's gap from its usual in the order played, as dots either side
-/// of the usual line (rings for failed plays), with a running average
-/// through them.
-class _GapTimeline extends StatelessWidget {
-  const _GapTimeline(this.summary,
-      {required this.played, required this.up, required this.down});
+/// Every play in the order played as a cell, split into its credits:
+/// [up] or [down] by the sign of its [value], deeper the further off up to
+/// [full], outlined when failed and grey when it has no value. Tapping a
+/// cell runs [onPlay] with its play.
+class _PlayStrip extends StatelessWidget {
+  const _PlayStrip(this.groups,
+      {required this.value,
+      required this.full,
+      required this.up,
+      required this.down,
+      required this.counted,
+      this.onPlay});
 
-  // Plays in the session, compared or not.
-  final int played;
-
-  final SetSummary summary;
+  // Each credit's plays, oldest credit and play first.
+  final List<List<RecentPlay>> groups;
+  final (double, bool)? Function(RecentPlay) value;
+  final double full;
   final Color up, down;
+  // What a play with a value is, for the count under the strip.
+  final String counted;
+  final ValueChanged<RecentPlay>? onPlay;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
-    final plays = summary.points.reversed.toList();
+    final played = groups.expand((g) => g).toList();
+    final cells = [
+      for (final g in groups) [for (final p in g) value(p)]
+    ];
+    final valued = cells.expand((c) => c).nonNulls.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          height: 64,
-          child: CustomPaint(
-            painter: _GapPainter(
-              [
-                for (final p in plays)
-                  (p.play.score! - p.usual, p.weight, p.play.failed)
-              ],
-              up: up,
-              down: down,
-              line: scheme.onSurfaceVariant,
+        LayoutBuilder(
+          builder: (context, box) => GestureDetector(
+            onTapUp: onPlay == null
+                ? null
+                : (d) {
+                    final rects = _StripPainter.layout(
+                        [for (final g in groups) g.length],
+                        Size(box.maxWidth, 28));
+                    final at = d.localPosition.dx;
+                    var best = 0;
+                    for (final (i, r) in rects.indexed) {
+                      if ((r.center.dx - at).abs() <
+                          (rects[best].center.dx - at).abs()) {
+                        best = i;
+                      }
+                    }
+                    onPlay!(played[best]);
+                  },
+            child: SizedBox(
+              height: 28,
+              child: CustomPaint(
+                size: Size.infinite,
+                painter: _StripPainter(cells,
+                    full: full,
+                    up: up,
+                    down: down,
+                    none: scheme.surfaceContainerHighest),
+              ),
             ),
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 4),
         Row(children: [
-          Text(formatTime12(plays.first.play.playedAt.toLocal()), style: muted),
+          Text(formatTime12(played.first.playedAt.toLocal()), style: muted),
           Expanded(
-            child: summary.points.length < played
-                ? Text(
-                    '${summary.points.length} of $played '
-                    'plays compared',
-                    textAlign: TextAlign.center,
-                    style: muted)
+            child: valued < played.length
+                ? Text('$valued of ${played.length} plays $counted',
+                    textAlign: TextAlign.center, style: muted)
                 : const SizedBox(),
           ),
-          Text(formatTime12(plays.last.play.playedAt.toLocal()), style: muted),
+          Text(formatTime12(played.last.playedAt.toLocal()), style: muted),
         ]),
       ],
     );
   }
 }
 
-class _GapPainter extends CustomPainter {
-  _GapPainter(this.points,
-      {required this.up, required this.down, required this.line});
+class _StripPainter extends CustomPainter {
+  _StripPainter(this.credits,
+      {required this.full,
+      required this.up,
+      required this.down,
+      required this.none});
 
-  // Each play's gap, what it counts for and whether it failed.
-  final List<(double, double, bool)> points;
-  final Color up, down, line;
+  // Each credit's plays in order: a play's gap and whether it failed, or
+  // null when it wasn't compared.
+  final List<List<(double, bool)?>> credits;
+  // How far off a play is when its cell takes the full colour.
+  final double full;
+  final Color up, down, none;
+  static const _cellGap = 2.0, _creditGap = 8.0;
 
-  // Plays either side of each point the running average spans.
-  static const _window = 2;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // The full-weight plays' range, always taking in the usual line; a
-    // failed or far-off play past it sits on the edge rather than squashing
-    // the rest.
-    final cleared = [
-      for (final (g, w, _) in points)
-        if (w == 1) g
-    ];
-    final ranged =
-        cleared.isEmpty ? [for (final (g, _, _) in points) g] : cleared;
-    final top = ranged.fold<double>(1, max),
-        bottom = ranged.fold<double>(-1, min);
-    const r = 3.5;
-    double x(int i) => points.length == 1
-        ? size.width / 2
-        : r + i / (points.length - 1) * (size.width - 2 * r);
-    double y(double g) =>
-        (r + (top - g) / (top - bottom) * (size.height - 2 * r))
-            .clamp(r, size.height - r);
-    final mid = y(0);
-
-    final dash = Paint()
-      ..color = line.withValues(alpha: 0.5)
-      ..strokeWidth = 1;
-    for (var dx = 0.0; dx < size.width; dx += 6) {
-      canvas.drawLine(Offset(dx, mid), Offset(dx + 3, mid), dash);
+  /// Each cell's rect, in order, for credits of [counts] plays.
+  static List<Rect> layout(List<int> counts, Size size) {
+    final cells = counts.fold<int>(0, (a, c) => a + c);
+    final gaps =
+        (cells - counts.length) * _cellGap + (counts.length - 1) * _creditGap;
+    final w = (size.width - gaps) / cells;
+    final rects = <Rect>[];
+    var x = 0.0;
+    for (final count in counts) {
+      for (var i = 0; i < count; i++) {
+        rects.add(Rect.fromLTWH(x, 0, w, size.height));
+        x += w + _cellGap;
+      }
+      x += _creditGap - _cellGap;
     }
-
-    for (var i = 0; i < points.length; i++) {
-      final (g, _, failed) = points[i];
-      canvas.drawCircle(
-          Offset(x(i), y(g)),
-          failed ? r - 0.75 : r,
-          Paint()
-            ..color = (g >= 0 ? up : down).withValues(alpha: 0.55)
-            ..style = failed ? PaintingStyle.stroke : PaintingStyle.fill
-            ..strokeWidth = 1.5);
-    }
-
-    final trend = Path();
-    for (var i = 0; i < points.length; i++) {
-      final from = max(0, i - _window),
-          to = min(points.length, i + _window + 1);
-      final avg = _weightedMean(
-          [for (final (g, w, _) in points.sublist(from, to)) (g, w)]);
-      i == 0 ? trend.moveTo(x(i), y(avg)) : trend.lineTo(x(i), y(avg));
-    }
-    canvas.drawPath(
-        trend,
-        Paint()
-          ..color = line
-          ..strokeWidth = 2
-          ..style = PaintingStyle.stroke
-          ..strokeJoin = StrokeJoin.round);
+    return rects;
   }
 
   @override
-  bool shouldRepaint(_GapPainter old) => old.points != points;
+  void paint(Canvas canvas, Size size) {
+    final rects = layout([for (final c in credits) c.length], size).iterator;
+    for (final credit in credits) {
+      for (final play in credit) {
+        rects.moveNext();
+        final rect =
+            RRect.fromRectAndRadius(rects.current, const Radius.circular(3));
+        switch (play) {
+          case null:
+            canvas.drawRRect(rect, Paint()..color = none);
+          case (final gap, final failed):
+            final colour = (gap >= 0 ? up : down)
+                .withValues(alpha: 0.25 + 0.75 * min(1, gap.abs() / full));
+            canvas.drawRRect(
+                failed ? rect.deflate(0.75) : rect,
+                Paint()
+                  ..color = colour
+                  ..style = failed ? PaintingStyle.stroke : PaintingStyle.fill
+                  ..strokeWidth = 1.5);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_StripPainter old) => old.credits != credits;
 }
