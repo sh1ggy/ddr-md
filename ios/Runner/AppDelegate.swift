@@ -12,9 +12,10 @@ import UIKit
     // default session category is PlayAndRecord — that routes to the quiet
     // earpiece and is silenced by the ring/silent switch, so on a real device
     // the tick was inaudible. Force a Playback session (ignores the mute switch,
-    // routes to the speaker) and activate it before any audio engine inits.
+    // routes to the speaker) and activate it before any audio engine inits. Mix
+    // with others so opening the app doesn't stop the user's music.
     let session = AVAudioSession.sharedInstance()
-    try? session.setCategory(.playback, mode: .default)
+    try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
     try? session.setActive(true)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

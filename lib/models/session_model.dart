@@ -120,10 +120,17 @@ class TimingPlay {
     required this.variationMs,
   }) : id = id ?? _uuid.v4();
 
+  late final (double, double) _untruncated = untruncate(averageMs, variationMs);
+
+  /// Where the player's steps were centred and how widely they spread,
+  /// counting the ones too far off to land on a note: see [untruncate].
+  double get trueAverageMs => _untruncated.$1;
+  double get trueVariationMs => _untruncated.$2;
+
   /// The player's own correction on top of the song's offset. Same convention
   /// as the Sync card: timing that lands late (SLOW) is fixed by going
   /// negative, so the average comes off the sync that was used.
-  double get personalMs => syncUsedMs - averageMs - songOffsetMs;
+  double get personalMs => syncUsedMs - trueAverageMs - songOffsetMs;
 
   Map<String, Object?> toMap() => {
         'id': id,
@@ -173,12 +180,98 @@ class PlayerSync {
 double songOffsetMs(SongInfo songInfo, Chart chart) =>
     -(songInfo.displaySyncFor(chart)?.biasMs ?? 0);
 
+/// A step further than this from every note doesn't touch one.
+const kJudgeWindowMs = 160.0;
+
+// Complementary error function, fractional error under 1.2e-7 everywhere,
+// so tail probabilities stay accurate far out.
+double _erfc(double x) {
+  final z = x.abs();
+  final t = 1 / (1 + 0.5 * z);
+  var poly = 0.0;
+  for (final c in const [
+    0.17087277, -0.82215223, 1.48851587, -1.13520398, 0.27886807, //
+    -0.18628806, 0.09678418, 0.37409196, 1.00002368, -1.26551223,
+  ]) {
+    poly = poly * t + c;
+  }
+  final r = t * exp(-z * z + poly);
+  return x >= 0 ? r : 2 - r;
+}
+
+// Mean and standard deviation of a normal(mu, sigma) seen only inside the
+// judgement window; null once almost none of it lands there.
+(double, double)? _windowed(double mu, double sigma) {
+  final a = (-kJudgeWindowMs - mu) / sigma;
+  final b = (kJudgeWindowMs - mu) / sigma;
+  // Φ(b) − Φ(a), from whichever tail keeps its precision.
+  final mass = a > 0
+      ? 0.5 * (_erfc(a / sqrt2) - _erfc(b / sqrt2))
+      : 0.5 * (_erfc(-b / sqrt2) - _erfc(-a / sqrt2));
+  if (mass < 1e-12) return null;
+  final pa = exp(-a * a / 2) / sqrt(2 * pi);
+  final pb = exp(-b * b / 2) / sqrt(2 * pi);
+  final r = (pa - pb) / mass;
+  final variance = sigma * sigma * (1 + (a * pa - b * pb) / mass - r * r);
+  return (mu + sigma * r, sqrt(max(variance, 0)));
+}
+
+/// The result screen's timing average and variation only count steps that
+/// landed on a note, cutting off the tail beyond [kJudgeWindowMs]. Far off
+/// the beat that pulls both towards zero (a true 128 ms SLOW ± 45 reads
+/// 110 ± 33), so this finds the normal spread whose in-window part shows
+/// [averageMs] ± [variationMs]. Near the beat the cut-off tail is negligible
+/// and they come back as is. Right at the window's edge a reading fits
+/// spreads centred anywhere past it, so the centre stops at the edge; the
+/// wide spread that comes with it leaves such a play little weight.
+(double, double) untruncate(double averageMs, double variationMs) {
+  final m = averageMs, s = max(variationMs, 1.0);
+  if ((kJudgeWindowMs - m.abs()) / s > 6) return (averageMs, variationMs);
+  if (m.abs() >= kJudgeWindowMs) return (averageMs, variationMs);
+  // Newton on (mu, log sigma), starting from what was shown.
+  var mu = m, ls = log(s);
+  double? miss(double mu, double ls) {
+    final w = _windowed(mu, exp(ls));
+    if (w == null) return null;
+    return (w.$1 - m) * (w.$1 - m) + (w.$2 - s) * (w.$2 - s);
+  }
+
+  var err = miss(mu, ls)!;
+  for (var i = 0; i < 100 && err > 1e-12; i++) {
+    final w = _windowed(mu, exp(ls))!;
+    final f1 = w.$1 - m, f2 = w.$2 - s;
+    const h = 1e-5;
+    final wm = _windowed(mu + h, exp(ls)), wl = _windowed(mu, exp(ls + h));
+    if (wm == null || wl == null) break;
+    final j11 = (wm.$1 - w.$1) / h, j21 = (wm.$2 - w.$2) / h;
+    final j12 = (wl.$1 - w.$1) / h, j22 = (wl.$2 - w.$2) / h;
+    final det = j11 * j22 - j12 * j21;
+    if (det.abs() < 1e-15) break;
+    var dmu = (j22 * f1 - j12 * f2) / det;
+    var dls = (j11 * f2 - j21 * f1) / det;
+    // Halve the step until it improves; a shown spread wider than any
+    // in-window normal can show has no exact match, so stop at the closest.
+    var step = 1.0;
+    double? next;
+    while (step > 1e-6) {
+      next = miss(mu - step * dmu, ls - step * dls);
+      if (next != null && next < err) break;
+      step /= 2;
+    }
+    if (next == null || next >= err) break;
+    mu -= step * dmu;
+    ls -= step * dls;
+    err = next;
+  }
+  return (mu.clamp(-kJudgeWindowMs, kJudgeWindowMs), exp(ls));
+}
+
 /// Inverse-variance mean of the plays' corrections: a tight play counts for
 /// more than a scattered one. Returns (mean, ± of the mean).
 (double, double) weightedPersonal(List<TimingPlay> plays) {
   var sumW = 0.0, sum = 0.0;
   for (final p in plays) {
-    final v = p.variationMs < 1 ? 1.0 : p.variationMs;
+    final v = p.trueVariationMs < 1 ? 1.0 : p.trueVariationMs;
     final w = 1 / (v * v);
     sumW += w;
     sum += w * p.personalMs;

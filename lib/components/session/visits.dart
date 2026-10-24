@@ -11,8 +11,6 @@ import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
-import 'package:ddr_md/constants.dart';
-import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
@@ -27,6 +25,8 @@ typedef VisitData = ({
   ScoreModel model,
   // Each session's logged timing plays, by session id.
   Map<String, List<TimingPlay>> timing,
+  // Each session's credits, newest first, by session id.
+  Map<String, List<Credit>> credits,
   // The last credit played, which the next session starts like.
   Credit? lastCredit,
 });
@@ -61,19 +61,35 @@ Future<VisitData> _load(String? activeId) async {
       await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse),
       (song, mode, difficulty) => chartOf(song, mode, difficulty).level,
     ),
-    timing: {
-      for (final s in sessions)
-        s.id: await DatabaseProvider.getSessionPlays(s.id),
+    timing: await _timingFixed(visits, sessions),
+    credits: {
+      for (final s in sessions) s.id: await DatabaseProvider.getCredits(s.id),
     },
     lastCredit: await DatabaseProvider.getLatestCredit(),
   );
 }
 
-String _path(Visit v) => '/home/sessions/${v.key}';
+/// Each session's timing plays, after storing the chart they were really
+/// played on for those whose synced play was on another.
+Future<Map<String, List<TimingPlay>>> _timingFixed(
+    List<Visit> visits, List<PlaySession> sessions) async {
+  Future<Map<String, List<TimingPlay>>> load() async => {
+        for (final s in sessions)
+          s.id: await DatabaseProvider.getSessionPlays(s.id),
+      };
+  final timing = await load();
+  final fixes = [
+    for (final v in visits)
+      if (v.session case final s?)
+        ...timingFixes(reconcileTiming(v.plays, timing[s.id] ?? []).$2),
+  ];
+  for (final (t, difficulty) in fixes) {
+    await DatabaseProvider.setTimingDifficulty(t.id, difficulty);
+  }
+  return fixes.isEmpty ? timing : await load();
+}
 
-double? _meanTiming(List<TimingPlay>? plays) => plays == null || plays.isEmpty
-    ? null
-    : plays.map((t) => t.averageMs).reduce((a, b) => a + b) / plays.length;
+String _path(Visit v) => '/home/sessions/${v.key}';
 
 /// Home's latest session with plays (or the latest at all before any sync):
 /// its summary and first plays, then the sessions before it.
@@ -142,7 +158,7 @@ class LastSessionCard extends StatelessWidget {
               data.model.summarize(visit.plays),
               plays: visit.plays,
               timed: visit.session != null,
-              timingMs: _meanTiming(data.timing[visit.session?.id]),
+              timing: data.timing[visit.session?.id],
             ),
             const SizedBox(height: 8),
             TopPlays(plays: visit.plays, bests: data.model.bests),
@@ -451,7 +467,8 @@ class VisitPage extends StatelessWidget {
           );
         }
         final timing = data.timing[visit.session?.id] ?? [];
-        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final credits = data.credits[visit.session?.id] ?? [];
+        final (played, matched) = reconcileTiming(visit.plays, timing);
         return HomeSubpage(
           title: visit.session?.venue.name ?? 'Session',
           actions: [
@@ -492,48 +509,94 @@ class VisitPage extends StatelessWidget {
                       data.model.summarize(visit.plays),
                       plays: visit.plays,
                       timed: visit.session != null,
-                      timingMs: _meanTiming(timing),
+                      timing: timing,
                     ),
                 ],
               ),
-              if (visit.plays.isNotEmpty)
+              if (visit.plays.isNotEmpty || timing.isNotEmpty)
                 HomeCard(
                   title: 'Plays',
                   icon: Icons.history,
                   children: [
-                    PlayGrid(plays: visit.plays, bests: data.model.bests),
-                  ],
-                ),
-              if (timing.isNotEmpty)
-                HomeCard(
-                  title: 'Timing',
-                  icon: Icons.timer_outlined,
-                  children: [
-                    for (final p in timing)
-                      ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(p.song),
-                        subtitle: Text(
-                            '${kInGameDifficultyNames[p.difficulty] ?? p.difficulty}'
-                            ' · ${p.mode.name}'),
-                        trailing: Text(
-                          '${p.averageMs.abs().toStringAsFixed(1)} '
-                          '${p.averageMs < 0 ? 'FAST' : 'SLOW'}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: p.averageMs < 0
-                                ? kFastColor(isDark)
-                                : kSlowColor(isDark),
-                          ),
-                        ),
-                      ),
+                    if (credits.isEmpty)
+                      PlayGrid(
+                          plays: played,
+                          bests: data.model.bests,
+                          timing: matched)
+                    else
+                      for (final (credit, plays)
+                          in groupByCredit(played, credits, matched))
+                        _CreditGroup(
+                            credit: credit,
+                            plays: plays,
+                            bests: data.model.bests,
+                            timing: matched),
                   ],
                 ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+/// One credit's plays beside a narrow rail: its number, side and songs
+/// played, on a bar in the primary colour (outlined and numbered "?" for a
+/// credit that wasn't logged). The cabinet, when the venue has more than
+/// one, is the number's tooltip.
+class _CreditGroup extends StatelessWidget {
+  const _CreditGroup(
+      {required this.credit,
+      required this.plays,
+      required this.bests,
+      required this.timing});
+
+  final Credit? credit;
+  final List<RecentPlay> plays;
+  final Map<String, int?> bests;
+  final Map<RecentPlay, TimingPlay> timing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final c = credit;
+    final bar = c == null ? scheme.outlineVariant : scheme.primary;
+    final small = text.labelSmall?.copyWith(color: scheme.onSurfaceVariant);
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: bar, width: 3)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 25,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Column(children: [
+              Tooltip(
+                message:
+                    c == null || c.cabinet.name.isEmpty ? '' : c.cabinet.name,
+                child: Text(c == null ? '?' : '${c.number}',
+                    style: text.titleSmall?.copyWith(
+                        color: c == null ? scheme.onSurfaceVariant : bar,
+                        fontWeight: FontWeight.w800)),
+              ),
+              if (c != null)
+                Text(c.side == PadSide.p1 ? 'P1' : 'P2', style: small),
+              Text('${plays.length}/$kSongsPerCredit', style: small),
+            ]),
+          ),
+        ),
+        Expanded(
+          child: plays.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('No synced plays', style: small))
+              : PlayGrid(plays: plays, bests: bests, timing: timing),
+        ),
+      ]),
     );
   }
 }
