@@ -48,11 +48,14 @@ class SongDetails extends StatelessWidget {
     required this.songInfo,
     required this.chart,
     this.titleKey,
+    this.hideTitle = false,
   });
 
   final SongInfo songInfo;
   final Chart? chart;
   final Key? titleKey;
+  // The page draws its own moving copy of the title over this one.
+  final bool hideTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -143,9 +146,12 @@ class SongDetails extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(songInfo.title,
-                        key: titleKey,
-                        style: FloorPop.display(20, color: scheme.onSurface)),
+                    Opacity(
+                      opacity: hideTitle ? 0 : 1,
+                      child: Text(songInfo.title,
+                          key: titleKey,
+                          style: FloorPop.display(20, color: scheme.onSurface)),
+                    ),
                     if (songInfo.titletranslit.isNotEmpty &&
                         songInfo.titletranslit != songInfo.title)
                       Text(songInfo.titletranslit, style: muted),

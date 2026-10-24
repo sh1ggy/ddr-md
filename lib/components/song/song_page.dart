@@ -3,6 +3,8 @@
 /// Description: Page that displays selected song information
 library;
 
+import 'dart:ui' show ImageFilter;
+
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/history_page.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
@@ -112,18 +114,30 @@ class _SongPageState extends State<SongPage> {
 
   late List<SongSection> _sectionOrder;
 
-  // The title in the page's hero, watched so it can move up into the header
-  // once it scrolls out from under it.
+  // The hero's title flies up into the header as the page scrolls. The hero
+  // keeps an invisible copy for layout; the one drawn over the page moves
+  // between the two spots with the scroll.
+  final _scroll = ScrollController();
+  final _stackKey = GlobalKey();
   final _titleKey = GlobalKey();
-  bool _titleInHeader = false;
+  // Where the hero's title sits in the page stack at scroll 0.
+  Rect? _titleRest;
 
-  bool _onScroll(ScrollNotification notification) {
-    final box = _titleKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.attached) return false;
-    final bottom = box.localToGlobal(Offset(0, box.size.height)).dy;
-    final inHeader = bottom < MediaQuery.paddingOf(context).top;
-    if (inHeader != _titleInHeader) setState(() => _titleInHeader = inHeader);
-    return false;
+  void _measureTitle() {
+    final title = _titleKey.currentContext?.findRenderObject() as RenderBox?;
+    final stack = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (title == null || stack == null || !title.attached) return;
+    final scrolled = _scroll.hasClients ? _scroll.offset : 0.0;
+    final rest = (title.localToGlobal(Offset.zero, ancestor: stack) +
+            Offset(0, scrolled)) &
+        title.size;
+    if (rest != _titleRest) setState(() => _titleRest = rest);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
   }
 
   // Lazily-loaded per-song note streams for the scrolling chart preview. Keyed
@@ -475,10 +489,95 @@ class _SongPageState extends State<SongPage> {
     );
   }
 
+  // The header's fill and the title over it, both following the scroll: the
+  // title leaves its hero spot as the page moves and lands beside the back
+  // button, shrinking to header size, by the time the jacket has scrolled
+  // away. A title that wraps in the hero hands over to one ellipsised line on
+  // the way.
+  List<Widget> _buildFlyingTitle(String title) {
+    final rest = _titleRest;
+    if (rest == null) return const [];
+    const travel = 96.0;
+    const scale = 16 / 20;
+    final style =
+        FloorPop.display(20, color: Theme.of(context).colorScheme.onSurface);
+    final top = MediaQuery.paddingOf(context).top;
+    final width = MediaQuery.sizeOf(context).width;
+    // Clear of the back button on the left and the two actions on the right.
+    final header = Rect.fromLTWH(
+        kToolbarHeight,
+        top + (kToolbarHeight - style.fontSize! * style.height! * scale) / 2,
+        width - kToolbarHeight - 2 * (44 + 8) - 16,
+        kToolbarHeight);
+    return [
+      AnimatedBuilder(
+        animation: _scroll,
+        builder: (context, _) {
+          final scrolled = _scroll.hasClients ? _scroll.offset : 0.0;
+          final t =
+              FloorPop.settle.transform((scrolled / travel).clamp(0.0, 1.0));
+          final at = Offset.lerp(
+              rest.topLeft - Offset(0, scrolled), header.topLeft, t)!;
+          final oneLine = ((t - 0.6) / 0.4).clamp(0.0, 1.0);
+          return Stack(children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: top + kToolbarHeight,
+              // Frosted rather than solid, so the page still shows through
+              // as it passes under.
+              child: IgnorePointer(
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 16 * t, sigmaY: 16 * t),
+                    child: ColoredBox(
+                        color: FloorPop.of(context)
+                            .ink
+                            .withValues(alpha: 0.55 * t)),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: at.dx,
+              top: at.dy,
+              child: IgnorePointer(
+                child: Transform.scale(
+                  scale: 1 + (scale - 1) * t,
+                  alignment: Alignment.topLeft,
+                  child: Stack(children: [
+                    Opacity(
+                      opacity: 1 - oneLine,
+                      child: SizedBox(
+                          width: rest.width, child: Text(title, style: style)),
+                    ),
+                    Opacity(
+                      opacity: oneLine,
+                      child: SizedBox(
+                        width: header.width / scale,
+                        child: Text(title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: style),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ]);
+        },
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
-    final still = MediaQuery.of(context).disableAnimations;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _measureTitle();
+    });
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: SafeArea(
@@ -490,92 +589,67 @@ class _SongPageState extends State<SongPage> {
               // The header is floating buttons over the page, not a bar that
               // cuts it off: the hero and cards scroll on under them.
               extendBodyBehindAppBar: true,
-              appBar: AppBar(
-                  backgroundColor: Colors.transparent,
-                  // Fills in behind the title as it arrives, so the cards
-                  // scrolling under don't show through it.
-                  flexibleSpace: AnimatedOpacity(
-                    opacity: _titleInHeader ? 1 : 0,
-                    duration: still ? Duration.zero : FloorPop.eighth,
-                    curve: FloorPop.settle,
-                    child: ColoredBox(color: FloorPop.of(context).ink),
-                  ),
-                  titleSpacing: 0,
-                  title: AnimatedSlide(
-                    offset: _titleInHeader ? Offset.zero : const Offset(0, 1),
-                    duration: still ? Duration.zero : FloorPop.beat,
-                    curve: FloorPop.step,
-                    child: AnimatedOpacity(
-                      opacity: _titleInHeader ? 1 : 0,
-                      duration: still ? Duration.zero : FloorPop.eighth,
-                      curve: FloorPop.settle,
-                      child: Text(songState.songInfo!.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: FloorPop.display(16,
-                              color: Theme.of(context).colorScheme.onSurface)),
+              appBar:
+                  AppBar(backgroundColor: Colors.transparent, actions: <Widget>[
+                HeaderButton(
+                    icon: Icon(
+                      favorite == null ? Icons.star_border : Icons.star,
+                      color: favorite == null ? null : FloorPop.sun,
                     ),
-                  ),
-                  actions: <Widget>[
-                    HeaderButton(
-                        icon: Icon(
-                          favorite == null ? Icons.star_border : Icons.star,
-                          color: favorite == null ? null : FloorPop.sun,
-                        ),
-                        tooltip: favorite == null ? "Favourite" : "Unfavourite",
-                        onPressed: () async {
-                          HapticFeedback.lightImpact();
-                          SongInfo? songStateInfo = songState.songInfo;
-                          if (songStateInfo == null) {
-                            return;
-                          }
-                          if (favorite == null) {
-                            Favorite fav = Favorite(
-                                id: 0,
-                                isFav: true,
-                                songTitle: songStateInfo.titletranslit,
-                                mode: songState.modes);
-                            await DatabaseProvider.addFavorite(fav);
-                            setState(() {
-                              favorite = fav;
-                            });
-                          } else {
-                            await DatabaseProvider.deleteFavorite(favorite!);
-                            setState(() {
-                              favorite = null;
-                            });
-                          }
-                          if (context.mounted) {
-                            showToast(context, "Favourite updated");
-                          }
-                        }),
-                    HeaderButton(
-                      icon: const Icon(Icons.history),
-                      tooltip: "History",
-                      onPressed: () => openHistory(HistoryPage.notesTab),
-                    )
-                  ]),
+                    tooltip: favorite == null ? "Favourite" : "Unfavourite",
+                    onPressed: () async {
+                      HapticFeedback.lightImpact();
+                      SongInfo? songStateInfo = songState.songInfo;
+                      if (songStateInfo == null) {
+                        return;
+                      }
+                      if (favorite == null) {
+                        Favorite fav = Favorite(
+                            id: 0,
+                            isFav: true,
+                            songTitle: songStateInfo.titletranslit,
+                            mode: songState.modes);
+                        await DatabaseProvider.addFavorite(fav);
+                        setState(() {
+                          favorite = fav;
+                        });
+                      } else {
+                        await DatabaseProvider.deleteFavorite(favorite!);
+                        setState(() {
+                          favorite = null;
+                        });
+                      }
+                      if (context.mounted) {
+                        showToast(context, "Favourite updated");
+                      }
+                    }),
+                HeaderButton(
+                  icon: const Icon(Icons.history),
+                  tooltip: "History",
+                  onPressed: () => openHistory(HistoryPage.notesTab),
+                )
+              ]),
               // The actions float over the page rather than cutting it off:
               // the scroll runs under them and ends clear of them.
-              body: Stack(children: [
-                NotificationListener<ScrollNotification>(
-                  onNotification: _onScroll,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        SongDetails(
-                            songInfo: songState.songInfo!,
-                            chart: _chart,
-                            titleKey: _titleKey),
-                        Padding(
-                          padding: clearOfTabBar(context,
-                              const EdgeInsets.fromLTRB(12, 4, 12, 96)),
-                          child: _buildReorderableSections(songState),
-                        ),
-                      ],
-                    ),
+              body: Stack(key: _stackKey, children: [
+                SingleChildScrollView(
+                  controller: _scroll,
+                  child: Column(
+                    children: [
+                      SongDetails(
+                          songInfo: songState.songInfo!,
+                          chart: _chart,
+                          titleKey: _titleKey,
+                          hideTitle: _titleRest != null),
+                      Padding(
+                        padding: clearOfTabBar(
+                            context, const EdgeInsets.fromLTRB(12, 4, 12, 96)),
+                        child: _buildReorderableSections(songState),
+                      ),
+                    ],
                   ),
                 ),
+                ..._buildFlyingTitle(songState.songInfo!.title),
                 Positioned(
                   left: 0,
                   right: 0,
