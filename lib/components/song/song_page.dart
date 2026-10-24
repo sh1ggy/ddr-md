@@ -568,6 +568,8 @@ class _SongPageState extends State<SongPage> {
       value: SystemUiOverlayStyle.dark,
       child: SafeArea(
         top: false,
+        // The page runs under the floating tab bar and clears it itself.
+        bottom: false,
         child: LayoutBuilder(builder: (context, constraints) {
           return Directionality(
             textDirection: TextDirection.ltr,

@@ -43,7 +43,7 @@ class FloorPopNavBar extends StatelessWidget {
         top: false,
         minimum: const EdgeInsets.only(bottom: 8),
         child: Container(
-          margin: const EdgeInsets.fromLTRB(12, 18, 12, 4),
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
           height: 64,
           decoration: BoxDecoration(
             color: pop.stage,
@@ -164,7 +164,7 @@ class LiveSessionDock extends StatelessWidget {
     final session = context.watch<SessionState>();
     final credit = session.credit!;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Material(
         color: FloorPop.volt,
         borderRadius: BorderRadius.circular(20),

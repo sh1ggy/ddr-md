@@ -62,6 +62,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
     return SafeArea(
+        bottom: false,
         child: Scaffold(
             extendBodyBehindAppBar: true,
             appBar: AppBar(

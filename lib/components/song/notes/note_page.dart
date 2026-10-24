@@ -75,9 +75,11 @@ class NotesTabState extends State<NotesTab> {
     var songState = context.watch<SongState>();
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      // Lifted clear of the floating tab bar, which the page runs under.
+      // Lifted clear of the floating tab bar, which the page runs under,
+      // 10 above it like the other floating buttons (the FAB adds 16).
       floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom - 6),
         child: FloatingActionButton(
             backgroundColor: Colors.red,
             child: const Icon(Icons.edit, color: Colors.white),

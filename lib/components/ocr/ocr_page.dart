@@ -305,9 +305,11 @@ class _OcrPageState extends State<OcrPage>
         CameraState.inactive => _buildStoppedView(),
         CameraState.active => _buildActiveView(),
       },
-      // Lifted clear of the floating tab bar, which the page runs under.
+      // Lifted clear of the floating tab bar, which the page runs under,
+      // 10 above it like the other floating buttons (the FAB adds 16).
       floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom - 6),
         child: FloatingActionButton(
           // Disabled (null onPressed + grey) until both camera and OCR are
           // ready. Stop is always enabled once a session is active.

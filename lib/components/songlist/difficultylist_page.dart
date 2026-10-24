@@ -4,7 +4,10 @@
 /// song list and favourites list to pass to children widgets.
 library;
 
+import 'dart:ui' show ImageFilter;
+
 import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart' show LevelPicker;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
@@ -268,6 +271,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     }
     final Widget page = SafeArea(
       top: false,
+      // The list runs under the floating tab bar and clears it itself.
+      bottom: false,
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
           textDirection: TextDirection.ltr,
@@ -275,7 +280,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             extendBodyBehindAppBar: true,
             appBar: AppBar(
               flexibleSpace: const GlassHeader(),
-              bottom: songSearchBar(),
               title: const PageTitle('Songs'),
               actions: <Widget>[
                 HeaderButton(
@@ -285,94 +289,113 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
               ],
             ),
-            body: FutureBuilder<List<SongItem>>(
-              future: _songItemsPromise,
-              builder: (context, snapshot) {
-                // The first build waits a frame or two on the favourites
-                // query; blank reads better than a spinner flashing up.
-                if (!snapshot.hasData) return const SizedBox.shrink();
+            // The list and grid read the padding to end clear of the bars;
+            // the floating search adds its height to it.
+            body: Builder(builder: (context) {
+              final mq = MediaQuery.of(context);
+              return Stack(children: [
+                MediaQuery(
+                    data: mq.copyWith(
+                        padding: mq.padding
+                            .copyWith(bottom: mq.padding.bottom + 58)),
+                    child: FutureBuilder<List<SongItem>>(
+                      future: _songItemsPromise,
+                      builder: (context, snapshot) {
+                        // The first build waits a frame or two on the favourites
+                        // query; blank reads better than a spinner flashing up.
+                        if (!snapshot.hasData) return const SizedBox.shrink();
 
-                final List<SongItem> songItems = snapshot.data!;
-                // Search, filters, favourites and the count read the same in
-                // both views, so they are built once and handed to whichever
-                // body is showing.
-                final List<Widget> headerSlivers = <Widget>[
-                  SliverToBoxAdapter(
-                      child:
-                          SizedBox(height: MediaQuery.paddingOf(context).top)),
-                  SliverToBoxAdapter(
-                    child: filterPanel(songState),
-                  ),
-                  SliverToBoxAdapter(
-                    child: ListTile(
-                      title: Text(
-                        // Rows are charts under the level sort and songs
-                        // everywhere else, so the noun follows the rows.
-                        _countLabel(songItems.length, songState.sortType),
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyLarge!.color,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                      trailing: SortMenuButton(
-                          onSorted: () => regenSongItems(
-                              songState.modes, songState.sortType)),
-                    ),
-                  ),
-                  if (songItems.isEmpty)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('No songs match the selected filters.'),
-                      ),
-                    ),
-                ];
+                        final List<SongItem> songItems = snapshot.data!;
+                        // Search, filters, favourites and the count read the same in
+                        // both views, so they are built once and handed to whichever
+                        // body is showing.
+                        final List<Widget> headerSlivers = <Widget>[
+                          SliverToBoxAdapter(
+                              child: SizedBox(
+                                  height: MediaQuery.paddingOf(context).top)),
+                          SliverToBoxAdapter(
+                            child: filterPanel(songState),
+                          ),
+                          SliverToBoxAdapter(
+                            child: ListTile(
+                              title: Text(
+                                // Rows are charts under the level sort and songs
+                                // everywhere else, so the noun follows the rows.
+                                _countLabel(
+                                    songItems.length, songState.sortType),
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyLarge!
+                                      .color,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              trailing: SortMenuButton(
+                                  onSorted: () => regenSongItems(
+                                      songState.modes, songState.sortType)),
+                            ),
+                          ),
+                          if (songItems.isEmpty)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text(
+                                    'No songs match the selected filters.'),
+                              ),
+                            ),
+                        ];
 
-                if (_gridMode) {
-                  return ArcadeGridView(
-                    songItems: songItems,
-                    sortType: songState.sortType,
-                    mode: songState.modes,
-                    descending: songState.sortDescending,
-                    leadingSlivers: headerSlivers,
-                    regenFavsCallback: () =>
-                        regenSongItems(songState.modes, songState.sortType),
-                  );
-                }
-
-                return CustomScrollView(
-                  slivers: <Widget>[
-                    ...headerSlivers,
-                    if (songItems.isNotEmpty)
-                      // Every row is the same height, so the list lays out by
-                      // arithmetic instead of measuring rows it scrolls past.
-                      SliverPrototypeExtentList.builder(
-                        prototypeItem: SongListItem(
-                          songInfo: songItems.first.songInfo,
-                          isFav: false,
-                          isSearch: false,
-                        ),
-                        itemBuilder: (context, index) {
-                          final SongItem songItem = songItems[index];
-                          return SongListItem(
-                            songInfo: songItem.songInfo,
-                            isFav: songItem.isFav,
-                            isSearch: false,
-                            difficultyIndex: songItem.difficultyIndex,
-                            regenFavsCallback: regenFavCount,
+                        if (_gridMode) {
+                          return ArcadeGridView(
+                            songItems: songItems,
+                            sortType: songState.sortType,
+                            mode: songState.modes,
+                            descending: songState.sortDescending,
+                            leadingSlivers: headerSlivers,
+                            regenFavsCallback: () => regenSongItems(
+                                songState.modes, songState.sortType),
                           );
-                        },
-                        itemCount: songItems.length,
-                      ),
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                          height: MediaQuery.paddingOf(context).bottom + 8),
-                    ),
-                  ],
-                );
-              },
-            ),
+                        }
+
+                        return CustomScrollView(
+                          slivers: <Widget>[
+                            ...headerSlivers,
+                            if (songItems.isNotEmpty)
+                              // Every row is the same height, so the list lays out by
+                              // arithmetic instead of measuring rows it scrolls past.
+                              SliverPrototypeExtentList.builder(
+                                prototypeItem: SongListItem(
+                                  songInfo: songItems.first.songInfo,
+                                  isFav: false,
+                                  isSearch: false,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final SongItem songItem = songItems[index];
+                                  return SongListItem(
+                                    songInfo: songItem.songInfo,
+                                    isFav: songItem.isFav,
+                                    isSearch: false,
+                                    difficultyIndex: songItem.difficultyIndex,
+                                    regenFavsCallback: regenFavCount,
+                                  );
+                                },
+                                itemCount: songItems.length,
+                              ),
+                            SliverToBoxAdapter(
+                              child: SizedBox(
+                                  height:
+                                      MediaQuery.paddingOf(context).bottom + 8),
+                            ),
+                          ],
+                        );
+                      },
+                    )),
+                Positioned(
+                    left: 0, right: 0, bottom: 0, child: songSearchBar()),
+              ]);
+            }),
           ),
         );
       }),
@@ -570,14 +593,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
-  // Part of the page header, so the rows scroll on under it, frosted.
-  PreferredSizeWidget songSearchBar() {
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(52),
-      // A compact pill under the title, on the same 16 edge as the title and
-      // the rows, with a little more room below than above.
+  // Floats above the tab bar within thumb reach, frosted like the header,
+  // with the rows scrolling on under it.
+  Widget songSearchBar() {
+    return SafeArea(
+      top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
         child: SearchAnchor(
             isFullScreen: true,
             viewOnSubmitted: (value) {
@@ -585,21 +607,27 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             },
             viewHintText: "Search song...",
             builder: (BuildContext context, SearchController controller) {
-              return SearchBar(
-                controller: controller,
-                onTap: () {
-                  controller.openView();
-                },
-                onChanged: (value) => controller.openView(),
-                hintText: "Search song...",
-                constraints: const BoxConstraints(
-                    maxWidth: 800.0, minHeight: 40.0, maxHeight: 40.0),
-                shape: const WidgetStatePropertyAll(StadiumBorder()),
-                padding: WidgetStateProperty.all(
-                  const EdgeInsets.symmetric(horizontal: 14.0),
-                ),
-                leading: const Icon(Icons.search, size: 20),
-              );
+              return ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                      child: SearchBar(
+                        controller: controller,
+                        onTap: () {
+                          controller.openView();
+                        },
+                        onChanged: (value) => controller.openView(),
+                        hintText: "Search song...",
+                        constraints: const BoxConstraints(
+                            maxWidth: 800.0, minHeight: 48.0, maxHeight: 48.0),
+                        shape: const WidgetStatePropertyAll(StadiumBorder()),
+                        backgroundColor: WidgetStatePropertyAll(
+                            FloorPop.of(context).riser.withValues(alpha: 0.7)),
+                        padding: WidgetStateProperty.all(
+                          const EdgeInsets.symmetric(horizontal: 14.0),
+                        ),
+                        leading: const Icon(Icons.search, size: 20),
+                      )));
             },
             // Runs on every keystroke, straight off the controller's text. Ranks
             // by normalized Levenshtein similarity (same as OCR title matching)

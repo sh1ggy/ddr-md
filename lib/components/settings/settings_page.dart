@@ -54,6 +54,8 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return SafeArea(
         top: false,
+        // The page runs under the floating tab bar; the list clears it.
+        bottom: false,
         child: Directionality(
           textDirection: TextDirection.ltr,
           child: GestureDetector(
