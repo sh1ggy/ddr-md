@@ -284,9 +284,6 @@ class _LoadImageState extends State<LoadImage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        surfaceTintColor: Colors.black,
-        shadowColor: Colors.black,
-        elevation: 2,
         centerTitle: true,
         title: const Text('Load Image'),
       ),

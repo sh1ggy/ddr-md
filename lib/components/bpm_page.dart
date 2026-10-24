@@ -65,9 +65,6 @@ class _BpmPageState extends State<BpmPage> {
             },
             child: Scaffold(
               appBar: AppBar(
-                surfaceTintColor: Colors.black,
-                shadowColor: Colors.black,
-                elevation: 2,
                 title: const Text('BPM'),
               ),
               body: Padding(

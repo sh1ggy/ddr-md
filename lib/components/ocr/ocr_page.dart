@@ -272,9 +272,6 @@ class _OcrPageState extends State<OcrPage>
 
     return Scaffold(
       appBar: AppBar(
-        surfaceTintColor: Colors.black,
-        shadowColor: Colors.black,
-        elevation: 2,
         title: const Text('Camera'),
         actions: <Widget>[
           IconButton(

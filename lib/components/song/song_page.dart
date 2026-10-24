@@ -112,6 +112,20 @@ class _SongPageState extends State<SongPage> {
 
   late List<SongSection> _sectionOrder;
 
+  // The title in the page's hero, watched so it can move up into the header
+  // once it scrolls out from under it.
+  final _titleKey = GlobalKey();
+  bool _titleInHeader = false;
+
+  bool _onScroll(ScrollNotification notification) {
+    final box = _titleKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return false;
+    final bottom = box.localToGlobal(Offset(0, box.size.height)).dy;
+    final inHeader = bottom < MediaQuery.paddingOf(context).top;
+    if (inHeader != _titleInHeader) setState(() => _titleInHeader = inHeader);
+    return false;
+  }
+
   // Lazily-loaded per-song note streams for the scrolling chart preview. Keyed
   // by song name so it reloads only when the song changes, not on every
   // difficulty/mode toggle (one file holds all difficulties).
@@ -363,7 +377,8 @@ class _SongPageState extends State<SongPage> {
         if (chart == null) return null;
         return SongPatternsCard(patterns: chart);
       case SongSection.bpmGraph:
-        if (!_isBpmChange && _chart.stops.isEmpty) return null;
+        // Always shown, a steady chart too, so the timeline reads the same on
+        // every song.
         return SongChart(context: context, songInfo: songInfo, chart: _chart);
       case SongSection.latestScore:
         return GestureDetector(
@@ -463,6 +478,7 @@ class _SongPageState extends State<SongPage> {
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
+    final still = MediaQuery.of(context).disableAnimations;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: SafeArea(
@@ -474,59 +490,90 @@ class _SongPageState extends State<SongPage> {
               // The header is floating buttons over the page, not a bar that
               // cuts it off: the hero and cards scroll on under them.
               extendBodyBehindAppBar: true,
-              appBar:
-                  AppBar(backgroundColor: Colors.transparent, actions: <Widget>[
-                HeaderButton(
-                    icon: Icon(
-                      favorite == null ? Icons.star_border : Icons.star,
-                      color: favorite == null ? null : FloorPop.sun,
+              appBar: AppBar(
+                  backgroundColor: Colors.transparent,
+                  // Fills in behind the title as it arrives, so the cards
+                  // scrolling under don't show through it.
+                  flexibleSpace: AnimatedOpacity(
+                    opacity: _titleInHeader ? 1 : 0,
+                    duration: still ? Duration.zero : FloorPop.eighth,
+                    curve: FloorPop.settle,
+                    child: ColoredBox(color: FloorPop.of(context).ink),
+                  ),
+                  titleSpacing: 0,
+                  title: AnimatedSlide(
+                    offset: _titleInHeader ? Offset.zero : const Offset(0, 1),
+                    duration: still ? Duration.zero : FloorPop.beat,
+                    curve: FloorPop.step,
+                    child: AnimatedOpacity(
+                      opacity: _titleInHeader ? 1 : 0,
+                      duration: still ? Duration.zero : FloorPop.eighth,
+                      curve: FloorPop.settle,
+                      child: Text(songState.songInfo!.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: FloorPop.display(16,
+                              color: Theme.of(context).colorScheme.onSurface)),
                     ),
-                    tooltip: favorite == null ? "Favourite" : "Unfavourite",
-                    onPressed: () async {
-                      HapticFeedback.lightImpact();
-                      SongInfo? songStateInfo = songState.songInfo;
-                      if (songStateInfo == null) {
-                        return;
-                      }
-                      if (favorite == null) {
-                        Favorite fav = Favorite(
-                            id: 0,
-                            isFav: true,
-                            songTitle: songStateInfo.titletranslit,
-                            mode: songState.modes);
-                        await DatabaseProvider.addFavorite(fav);
-                        setState(() {
-                          favorite = fav;
-                        });
-                      } else {
-                        await DatabaseProvider.deleteFavorite(favorite!);
-                        setState(() {
-                          favorite = null;
-                        });
-                      }
-                      if (context.mounted) {
-                        showToast(context, "Favourite updated");
-                      }
-                    }),
-                HeaderButton(
-                  icon: const Icon(Icons.history),
-                  tooltip: "History",
-                  onPressed: () => openHistory(HistoryPage.notesTab),
-                )
-              ]),
+                  ),
+                  actions: <Widget>[
+                    HeaderButton(
+                        icon: Icon(
+                          favorite == null ? Icons.star_border : Icons.star,
+                          color: favorite == null ? null : FloorPop.sun,
+                        ),
+                        tooltip: favorite == null ? "Favourite" : "Unfavourite",
+                        onPressed: () async {
+                          HapticFeedback.lightImpact();
+                          SongInfo? songStateInfo = songState.songInfo;
+                          if (songStateInfo == null) {
+                            return;
+                          }
+                          if (favorite == null) {
+                            Favorite fav = Favorite(
+                                id: 0,
+                                isFav: true,
+                                songTitle: songStateInfo.titletranslit,
+                                mode: songState.modes);
+                            await DatabaseProvider.addFavorite(fav);
+                            setState(() {
+                              favorite = fav;
+                            });
+                          } else {
+                            await DatabaseProvider.deleteFavorite(favorite!);
+                            setState(() {
+                              favorite = null;
+                            });
+                          }
+                          if (context.mounted) {
+                            showToast(context, "Favourite updated");
+                          }
+                        }),
+                    HeaderButton(
+                      icon: const Icon(Icons.history),
+                      tooltip: "History",
+                      onPressed: () => openHistory(HistoryPage.notesTab),
+                    )
+                  ]),
               // The actions float over the page rather than cutting it off:
               // the scroll runs under them and ends clear of them.
               body: Stack(children: [
-                SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      SongDetails(songInfo: songState.songInfo!, chart: _chart),
-                      Padding(
-                        padding: clearOfTabBar(
-                            context, const EdgeInsets.fromLTRB(12, 4, 12, 96)),
-                        child: _buildReorderableSections(songState),
-                      ),
-                    ],
+                NotificationListener<ScrollNotification>(
+                  onNotification: _onScroll,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        SongDetails(
+                            songInfo: songState.songInfo!,
+                            chart: _chart,
+                            titleKey: _titleKey),
+                        Padding(
+                          padding: clearOfTabBar(context,
+                              const EdgeInsets.fromLTRB(12, 4, 12, 96)),
+                          child: _buildReorderableSections(songState),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 Positioned(

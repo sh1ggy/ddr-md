@@ -45,9 +45,6 @@ class _DancerTypePageState extends State<DancerTypePage> {
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         appBar: AppBar(
-          surfaceTintColor: Colors.black,
-          shadowColor: Colors.black,
-          elevation: 2,
           title: const Text('Dancer Type'),
         ),
         body: ListView(

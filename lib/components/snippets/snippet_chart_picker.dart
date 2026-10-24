@@ -62,7 +62,6 @@ class _SnippetChartPickerState extends State<SnippetChartPicker> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        elevation: 2,
         title: TextField(
           autofocus: true,
           style: const TextStyle(

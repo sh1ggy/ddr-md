@@ -182,9 +182,6 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        surfaceTintColor: Colors.black,
-        shadowColor: Colors.black,
-        elevation: 2,
         centerTitle: true,
         title: const Text('Score Details'),
         actions: _editing

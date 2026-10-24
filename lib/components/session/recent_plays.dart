@@ -102,9 +102,6 @@ class HomeSubpage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        surfaceTintColor: Colors.black,
-        shadowColor: Colors.black,
-        elevation: 2,
         centerTitle: true,
         title: Text(title),
         actions: actions,

@@ -11,6 +11,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:ddr_md/theme.dart';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -29,27 +30,76 @@ class SongChart extends StatefulWidget {
   State<StatefulWidget> createState() => SongChartState();
 }
 
+/// A part of the BPM graph its legend can switch off.
+enum _Band { slower, core, faster, stops }
+
 class SongChartState extends State<SongChart> {
-  bool isShowingStops = true;
-  // The BPM section picked by touch, read out in the header.
+  // Bands switched off from the legend.
+  final _hidden = <_Band>{};
+  // The BPM section, or the stop, picked by touch or hover.
   int? _picked;
+  int? _pickedStop;
+
+  static const _height = 100.0;
 
   @override
   void didUpdateWidget(SongChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.chart != widget.chart) _picked = null;
+    if (oldWidget.chart != widget.chart) {
+      _picked = null;
+      _pickedStop = null;
+    }
   }
 
-  void _pick(double dx, double width) {
-    final bpms = widget.chart.bpms;
-    if (bpms.isEmpty || width <= 0) return;
-    final t = dx / width * widget.songInfo!.songLength;
+  bool get _showStops =>
+      widget.chart.stops.isNotEmpty && !_hidden.contains(_Band.stops);
+
+  // A touch in the stops lane picks the nearest stop dot; above it, the
+  // section under the finger.
+  void _pick(Offset at, double width, {bool hover = false}) {
+    final chart = widget.chart;
+    final length = widget.songInfo!.songLength;
+    if (width <= 0 || length <= 0) return;
+    if (_showStops && at.dy >= _height - _BpmBarsPainter.stopLane) {
+      int? nearest;
+      var best = 12.0;
+      for (final (i, stop) in chart.stops.indexed) {
+        final d = (stop.st / length * width - at.dx).abs();
+        if (d < best) {
+          best = d;
+          nearest = i;
+        }
+      }
+      if (nearest != _pickedStop || _picked != null) {
+        if (nearest != null && !hover) HapticFeedback.selectionClick();
+        setState(() {
+          _pickedStop = nearest;
+          _picked = null;
+        });
+      }
+      return;
+    }
+    if (hover) return;
+    final bpms = chart.bpms;
+    if (bpms.isEmpty) return;
+    final t = at.dx / width * length;
     final i = bpms.indexWhere((b) => t >= b.st && t < b.ed);
     final picked = i < 0 ? (t < bpms.first.st ? 0 : bpms.length - 1) : i;
-    if (picked != _picked) {
+    if (picked != _picked || _pickedStop != null) {
       HapticFeedback.selectionClick();
-      setState(() => _picked = picked);
+      setState(() {
+        _picked = picked;
+        _pickedStop = null;
+      });
     }
+  }
+
+  void _toggle(_Band band) {
+    HapticFeedback.lightImpact();
+    setState(() {
+      if (!_hidden.remove(band)) _hidden.add(band);
+      _pickedStop = null;
+    });
   }
 
   @override
@@ -60,8 +110,22 @@ class SongChartState extends State<SongChart> {
     final length = widget.songInfo!.songLength;
     final hasStops = chart.stops.isNotEmpty;
     final picked = _picked == null ? null : chart.bpms[_picked!];
+    final pickedStop = _pickedStop == null ? null : chart.stops[_pickedStop!];
     String time(double s) => formattedTime(timeInSecond: s.round());
+    // A stop to the tenth: "0:44.6".
+    String stopTime(double s) =>
+        '${s ~/ 60}:${(s % 60).toStringAsFixed(1).padLeft(4, '0')}';
     final muted = TextStyle(fontSize: 11, color: pop.haze);
+    final values = {for (final b in chart.bpms) b.val};
+    final slower = [
+      for (final v in values)
+        if (v < chart.dominantBpm) v
+    ]..sort();
+    final faster = [
+      for (final v in values)
+        if (v > chart.dominantBpm) v
+    ]..sort();
+    final stopSeconds = chart.stops.fold<double>(0, (a, s) => a + s.dur);
 
     return Card(
       child: Padding(
@@ -69,79 +133,118 @@ class SongChartState extends State<SongChart> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const CardHeading('BPM Graph', icon: Icons.show_chart),
-                const Spacer(),
-                if (hasStops)
-                  FilterChip(
-                    label: Text('${chart.stops.length} stops'),
-                    selected: isShowingStops,
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    onSelected: (v) {
-                      HapticFeedback.lightImpact();
-                      setState(() => isShowingStops = v);
-                    },
-                  ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            // What's under the finger, else the chart's headline and range.
-            AnimatedSwitcher(
-              duration: FloorPop.eighth,
+            const CardHeading('BPM Graph', icon: Icons.show_chart),
+            const SizedBox(height: 10),
+            // The legend up front, as the glance: what each colour holds and
+            // the stops. Each tile switches its part of the graph off and on.
+            IntrinsicHeight(
               child: Row(
-                key: ValueKey(_picked),
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('${picked?.val ?? chart.dominantBpm}',
-                      style: FloorPop.readout(28,
-                          color: picked == null
-                              ? scheme.onSurface
-                              : _bpmColor(picked.val, chart.dominantBpm))),
-                  const SizedBox(width: 8),
-                  Text(
-                    picked == null
-                        ? '${chart.trueMin} ~ ${chart.trueMax}'
-                        : '${time(picked.st)} – ${time(picked.ed)}',
-                    style: FloorPop.readout(15, color: pop.haze)
-                        .copyWith(fontWeight: FontWeight.w600),
-                  ),
+                  for (final (i, (band, colour, label, value)) in [
+                    (_Band.slower, FloorPop.padBlue, 'SLOWER', _span(slower)),
+                    (_Band.core, FloorPop.volt, 'CORE', '${chart.dominantBpm}'),
+                    (_Band.faster, FloorPop.coral, 'FASTER', _span(faster)),
+                    if (hasStops)
+                      (
+                        _Band.stops,
+                        scheme.onSurface,
+                        'STOPS',
+                        '${chart.stops.length} · ${stopSeconds.toStringAsFixed(1)}s'
+                      ),
+                  ].indexed) ...[
+                    if (i > 0) const SizedBox(width: 6),
+                    Expanded(
+                      child: _LegendTile(
+                        colour: colour,
+                        label: label,
+                        value: value,
+                        on: !_hidden.contains(band),
+                        onTap: () => _toggle(band),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
+            // The section or stop under the finger (or pointer), once picked.
+            AnimatedSize(
+              duration: FloorPop.eighth,
+              curve: FloorPop.settle,
+              child: picked == null && pickedStop == null
+                  ? const SizedBox(width: double.infinity)
+                  : Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: pickedStop != null
+                            ? [
+                                Text('STOP',
+                                    style: pop.label
+                                        .copyWith(color: scheme.onSurface)),
+                                const SizedBox(width: 8),
+                                Text(stopTime(pickedStop.st),
+                                    style: FloorPop.readout(22,
+                                        color: scheme.onSurface)),
+                                const SizedBox(width: 8),
+                                Text(
+                                    'for ${pickedStop.dur.toStringAsFixed(2)}s',
+                                    style: FloorPop.readout(14, color: pop.haze)
+                                        .copyWith(fontWeight: FontWeight.w600)),
+                              ]
+                            : [
+                                Text('${picked!.val}',
+                                    style: FloorPop.readout(22,
+                                        color: _bpmColor(
+                                            picked.val, chart.dominantBpm))),
+                                const SizedBox(width: 8),
+                                Text('${time(picked.st)} – ${time(picked.ed)}',
+                                    style: FloorPop.readout(14, color: pop.haze)
+                                        .copyWith(fontWeight: FontWeight.w600)),
+                              ],
+                      ),
+                    ),
+            ),
             const SizedBox(height: 10),
             LayoutBuilder(
-              builder: (context, box) => GestureDetector(
-                onTapDown: (d) => _pick(d.localPosition.dx, box.maxWidth),
-                onHorizontalDragUpdate: (d) =>
-                    _pick(d.localPosition.dx, box.maxWidth),
-                child: RepaintBoundary(
-                  child: SizedBox(
-                    height: 88,
-                    child: TweenAnimationBuilder<double>(
-                      // Bars rise into place when the chart changes.
-                      key: ValueKey(chart),
-                      tween: Tween(begin: 0, end: 1),
-                      duration: MediaQuery.of(context).disableAnimations
-                          ? Duration.zero
-                          : FloorPop.beat,
-                      curve: FloorPop.step,
-                      builder: (context, grow, _) => CustomPaint(
-                        size: Size.infinite,
-                        painter: _BpmBarsPainter(
-                          bpms: chart.bpms,
-                          stops: isShowingStops ? chart.stops : const [],
-                          length: length,
-                          dominant: chart.dominantBpm,
-                          lowest: chart.trueMin,
-                          highest: chart.trueMax,
-                          picked: _picked,
-                          grow: grow,
-                          stopColor: pop.haze,
-                          baseline: pop.line,
+              builder: (context, box) => MouseRegion(
+                onHover: (e) =>
+                    _pick(e.localPosition, box.maxWidth, hover: true),
+                onExit: (_) {
+                  if (_pickedStop != null) setState(() => _pickedStop = null);
+                },
+                child: GestureDetector(
+                  onTapDown: (d) => _pick(d.localPosition, box.maxWidth),
+                  onHorizontalDragUpdate: (d) =>
+                      _pick(d.localPosition, box.maxWidth),
+                  child: RepaintBoundary(
+                    child: SizedBox(
+                      height: _height,
+                      child: TweenAnimationBuilder<double>(
+                        // Bars rise into place when the chart changes.
+                        key: ValueKey(chart),
+                        tween: Tween(begin: 0, end: 1),
+                        duration: MediaQuery.of(context).disableAnimations
+                            ? Duration.zero
+                            : FloorPop.beat,
+                        curve: FloorPop.step,
+                        builder: (context, grow, _) => CustomPaint(
+                          size: Size.infinite,
+                          painter: _BpmBarsPainter(
+                            bpms: chart.bpms,
+                            stops: _showStops ? chart.stops : const [],
+                            length: length,
+                            dominant: chart.dominantBpm,
+                            lowest: chart.trueMin,
+                            highest: chart.trueMax,
+                            hidden: {..._hidden},
+                            picked: _picked,
+                            pickedStop: _pickedStop,
+                            grow: grow,
+                            stopColor: scheme.onSurface,
+                            baseline: pop.line,
+                          ),
                         ),
                       ),
                     ),
@@ -157,37 +260,90 @@ class SongChartState extends State<SongChart> {
                   Text(time(length * f), style: muted),
               ],
             ),
-            const SizedBox(height: 8),
-            // What the colours mean: each section against the headline BPM
-            // that hi-speed is picked for.
-            Wrap(spacing: 14, runSpacing: 4, children: [
-              for (final (colour, label) in [
-                (FloorPop.padBlue, 'slower'),
-                (FloorPop.volt, '${chart.dominantBpm} BPM'),
-                (FloorPop.coral, 'faster'),
-              ])
-                Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                        color: colour, borderRadius: BorderRadius.circular(3)),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(label, style: muted),
-                ]),
-              if (hasStops && isShowingStops)
-                Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.arrow_drop_down, size: 16, color: pop.haze),
-                  Text('stop', style: muted),
-                ]),
-            ]),
           ],
         ),
       ),
     );
   }
 }
+
+/// A legend entry: its colour, name and values, switching its part of the
+/// graph off and on. Off, it fades and its swatch empties.
+class _LegendTile extends StatelessWidget {
+  const _LegendTile({
+    required this.colour,
+    required this.label,
+    required this.value,
+    required this.on,
+    required this.onTap,
+  });
+
+  final Color colour;
+  final String label, value;
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      toggled: on,
+      button: true,
+      label: '$label $value',
+      child: Material(
+        color: pop.riser,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: AnimatedOpacity(
+            duration: FloorPop.eighth,
+            opacity: on ? 1 : 0.45,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: on ? colour : Colors.transparent,
+                        border: Border.all(color: colour, width: 1.5),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(label,
+                        style: pop.label
+                            .copyWith(fontSize: 9.5, letterSpacing: 0.8)),
+                  ]),
+                  const SizedBox(height: 3),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(value,
+                        style: FloorPop.readout(16,
+                            color: value == '—' ? pop.haze : scheme.onSurface)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The BPMs in one colour band as a span, or a dash when there are none.
+String _span(List<int> bpms) => bpms.isEmpty
+    ? '—'
+    : bpms.first == bpms.last
+        ? '${bpms.first}'
+        : '${bpms.first}–${bpms.last}';
 
 /// A section's colour against the chart's headline BPM: slower in Pad Blue,
 /// the headline in Volt, faster in Coral.
@@ -198,8 +354,9 @@ Color _bpmColor(int bpm, int dominant) => bpm < dominant
         : FloorPop.coral;
 
 /// The chart's tempo over the song as bars, each as wide as its section and
-/// as tall as its BPM on a log scale (so 110 and 880 both read), with a tick
-/// along the top for every stop.
+/// as tall as its BPM on a log scale (so 110 and 880 both read), with each
+/// stop a dot in a lane beneath. A band switched off leaves a faint ghost so
+/// the timeline keeps its shape.
 class _BpmBarsPainter extends CustomPainter {
   _BpmBarsPainter({
     required this.bpms,
@@ -208,7 +365,9 @@ class _BpmBarsPainter extends CustomPainter {
     required this.dominant,
     required this.lowest,
     required this.highest,
+    required this.hidden,
     required this.picked,
+    required this.pickedStop,
     required this.grow,
     required this.stopColor,
     required this.baseline,
@@ -218,51 +377,67 @@ class _BpmBarsPainter extends CustomPainter {
   final List<Stop> stops;
   final double length, grow;
   final int dominant, lowest, highest;
-  final int? picked;
+  final Set<_Band> hidden;
+  final int? picked, pickedStop;
   final Color stopColor, baseline;
 
-  static const _stopBand = 10.0, _gap = 1.5;
+  static const stopLane = 16.0, _gap = 1.5;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (length <= 0) return;
-    final top = stops.isEmpty ? 0.0 : _stopBand;
-    final h = size.height - top;
+    final barsBottom = size.height - (stops.isEmpty ? 0 : stopLane);
     // The floor sits an octave under the slowest section, so it still shows.
     final lo = math.log(math.max(1, lowest) / 2);
     final hi = math.log(math.max(lowest + 1, highest));
-    double heightOf(int bpm) =>
-        h * ((math.log(math.max(1, bpm)) - lo) / (hi - lo)).clamp(0.08, 1.0);
+    double heightOf(int bpm) => hi <= lo
+        ? barsBottom * 0.6
+        : barsBottom *
+            ((math.log(math.max(1, bpm)) - lo) / (hi - lo)).clamp(0.08, 1.0);
     double x(double t) => (t / length).clamp(0, 1) * size.width;
 
-    canvas.drawLine(Offset(0, size.height - 0.5),
-        Offset(size.width, size.height - 0.5), Paint()..color = baseline);
+    canvas.drawLine(Offset(0, barsBottom - 0.5),
+        Offset(size.width, barsBottom - 0.5), Paint()..color = baseline);
     for (final (i, b) in bpms.indexed) {
       final left = x(b.st), right = x(b.ed);
       if (right - left < 0.5) continue;
-      final barH = heightOf(b.val) * grow;
-      final colour = _bpmColor(b.val, dominant);
-      final dim = picked != null && picked != i;
+      final band = b.val < dominant
+          ? _Band.slower
+          : b.val == dominant
+              ? _Band.core
+              : _Band.faster;
+      final barH = math.min(barsBottom, heightOf(b.val) * grow);
+      final alpha = hidden.contains(band)
+          ? 0.1
+          : picked != null && picked != i
+              ? 0.35
+              : 1.0;
       canvas.drawRRect(
         RRect.fromRectAndCorners(
-          Rect.fromLTRB(left + _gap / 2, size.height - barH,
-              math.max(left + _gap / 2 + 1.5, right - _gap / 2), size.height),
+          Rect.fromLTRB(left + _gap / 2, barsBottom - barH,
+              math.max(left + _gap / 2 + 1.5, right - _gap / 2), barsBottom),
           topLeft: const Radius.circular(3),
           topRight: const Radius.circular(3),
         ),
-        Paint()..color = colour.withValues(alpha: dim ? 0.35 : 1),
+        Paint()..color = _bpmColor(b.val, dominant).withValues(alpha: alpha),
       );
     }
-    final stopPaint = Paint()..color = stopColor;
-    for (final s in stops) {
+    if (stops.isEmpty) return;
+    final y = barsBottom + stopLane / 2 + 1;
+    canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        Paint()
+          ..color = baseline
+          ..strokeWidth = 2);
+    final dot = Paint()..color = stopColor;
+    for (final (i, s) in stops.indexed) {
       final cx = x(s.st);
-      canvas.drawPath(
-          Path()
-            ..moveTo(cx - 3.5, 0)
-            ..lineTo(cx + 3.5, 0)
-            ..lineTo(cx, 6)
-            ..close(),
-          stopPaint);
+      if (i == pickedStop) {
+        canvas.drawCircle(Offset(cx, y), 7,
+            Paint()..color = stopColor.withValues(alpha: 0.25));
+      }
+      canvas.drawCircle(Offset(cx, y), i == pickedStop ? 4.5 : 3.5, dot);
     }
   }
 
@@ -270,7 +445,9 @@ class _BpmBarsPainter extends CustomPainter {
   bool shouldRepaint(_BpmBarsPainter old) =>
       old.bpms != bpms ||
       old.stops != stops ||
+      !setEquals(old.hidden, hidden) ||
       old.picked != picked ||
+      old.pickedStop != pickedStop ||
       old.grow != grow ||
       old.stopColor != stopColor;
 }

@@ -63,9 +63,6 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
     return SafeArea(
         child: Scaffold(
             appBar: AppBar(
-              surfaceTintColor: Colors.black,
-              shadowColor: Colors.black,
-              elevation: 2,
               centerTitle: true,
               title: const Text("Favourites"),
               actions: const <Widget>[SortMenuButton()],

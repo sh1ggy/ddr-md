@@ -51,7 +51,8 @@ class AppSettingsPage extends StatelessWidget {
           Positioned(
             left: 0,
             right: 0,
-            bottom: 12,
+            // Clear of the floating tab bar the page runs under.
+            bottom: 12 + MediaQuery.paddingOf(context).bottom,
             child: Center(
               child: Material(
                 elevation: 3,

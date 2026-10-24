@@ -8,13 +8,14 @@ import 'package:ddr_md/components/settings/dancer_type_page.dart';
 import 'package:ddr_md/components/settings/eamuse_profile_card.dart';
 import 'package:ddr_md/components/settings/footing_style_page.dart';
 import 'package:ddr_md/components/settings/score_overview_page.dart';
-import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -42,9 +43,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// After setting BPM preference, asynchronously save it
   /// to persistent storage.
-  Future<void> _setReadSpeed(String newValue) async {
+  void _setReadSpeed(int newValue) {
     setState(() {
-      Settings.setInt(Settings.chosenReadSpeedKey, int.parse(newValue));
+      Settings.setInt(Settings.chosenReadSpeedKey, newValue);
       _chosenReadSpeed = Settings.getInt(Settings.chosenReadSpeedKey);
     });
   }
@@ -62,9 +63,6 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Scaffold(
               resizeToAvoidBottomInset: false,
               appBar: AppBar(
-                surfaceTintColor: Colors.black,
-                shadowColor: Colors.black,
-                elevation: 2,
                 title: const Text('Profile'),
               ),
               body: Stack(
@@ -85,11 +83,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                   builder: (_) => const ScoreOverviewPage())),
                         ),
                       ),
-                      SettingCard<int>(
-                        setValue: _setReadSpeed,
-                        chosenValue: _chosenReadSpeed,
-                        field: "Read Speed",
-                        maxLength: 3,
+                      _ReadSpeedCard(
+                        value: _chosenReadSpeed,
+                        onChanged: _setReadSpeed,
                       ),
                       const _SectionHeader('Dancer', Icons.accessibility_new),
                       Card(
@@ -192,6 +188,132 @@ class _SectionHeader extends StatelessWidget {
                   color: Colors.blueGrey,
                   fontWeight: FontWeight.w700)),
         ],
+      ),
+    );
+  }
+}
+
+/// The read speed hi-speed suggestions aim for: −10 and +10 either side of
+/// it, and the number itself takes a typed value.
+class _ReadSpeedCard extends StatefulWidget {
+  const _ReadSpeedCard({required this.value, required this.onChanged});
+
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_ReadSpeedCard> createState() => _ReadSpeedCardState();
+}
+
+class _ReadSpeedCardState extends State<_ReadSpeedCard> {
+  static const _min = 100, _max = 999, _step = 10;
+  late final _controller = TextEditingController(text: '${widget.value}');
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (!_focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(_ReadSpeedCard old) {
+    super.didUpdateWidget(old);
+    if (!_focus.hasFocus && old.value != widget.value) {
+      _controller.text = '${widget.value}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _set(int value) {
+    final clamped = value.clamp(_min, _max);
+    _controller.text = '$clamped';
+    if (clamped != widget.value) widget.onChanged(clamped);
+  }
+
+  // A typed value lands when the field lets go; out of range it snaps in.
+  void _commit() {
+    final typed = int.tryParse(_controller.text);
+    _set(typed ?? widget.value);
+  }
+
+  void _nudge(int by) {
+    HapticFeedback.selectionClick();
+    _set(widget.value + by);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    Widget nudge(String label, int by, String tooltip) => IconButton(
+          tooltip: tooltip,
+          onPressed: (widget.value + by).clamp(_min, _max) == widget.value
+              ? null
+              : () => _nudge(by),
+          style: IconButton.styleFrom(
+            backgroundColor: pop.riser,
+            foregroundColor: scheme.onSurface,
+            fixedSize: const Size(44, 48),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          icon: Text(label,
+              style:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+        );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(children: [
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Read speed',
+                    style:
+                        TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                SizedBox(height: 2),
+                Text('Hi-speed suggestions aim for this',
+                    style: TextStyle(fontSize: 13)),
+              ],
+            ),
+          ),
+          nudge('−', -_step, 'Read speed down $_step'),
+          SizedBox(
+            width: 70,
+            child: Semantics(
+              label: 'Read speed',
+              child: TextField(
+                controller: _controller,
+                focusNode: _focus,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(3),
+                ],
+                onSubmitted: (_) => _commit(),
+                style: FloorPop.readout(26, color: pop.voltText),
+                decoration: const InputDecoration(
+                  filled: false,
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ),
+          nudge('+', _step, 'Read speed up $_step'),
+        ]),
       ),
     );
   }

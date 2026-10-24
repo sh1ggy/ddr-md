@@ -240,6 +240,9 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
               style: TextStyle(fontSize: 12, color: Colors.grey)),
           trailing: TextButton(
             onPressed: () => showStartSessionSheet(context),
+            // In the card's Volt, not the scheme's primary.
+            style: TextButton.styleFrom(
+                foregroundColor: FloorPop.of(context).voltText),
             child: const Text('Start'),
           ),
         ),

@@ -47,10 +47,12 @@ class SongDetails extends StatelessWidget {
     super.key,
     required this.songInfo,
     required this.chart,
+    this.titleKey,
   });
 
   final SongInfo songInfo;
   final Chart? chart;
+  final Key? titleKey;
 
   @override
   Widget build(BuildContext context) {
@@ -142,6 +144,7 @@ class SongDetails extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(songInfo.title,
+                        key: titleKey,
                         style: FloorPop.display(20, color: scheme.onSurface)),
                     if (songInfo.titletranslit.isNotEmpty &&
                         songInfo.titletranslit != songInfo.title)
