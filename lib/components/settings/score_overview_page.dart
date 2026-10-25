@@ -15,6 +15,8 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart'
     show
         Grade,
+        flareClassColor,
+        flareClassIcon,
         flareRankIcon,
         gradeForScore,
         gradeIcon,
@@ -74,25 +76,21 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                child: SegmentedButton<Modes>(
-                  showSelectedIcon: false,
-                  expandedInsets: EdgeInsets.zero,
-                  style:
-                      const ButtonStyle(visualDensity: VisualDensity.compact),
-                  segments: [
+                child: PillTabs<Modes>(
+                  values: const [Modes.singles, Modes.doubles],
+                  tabs: [
                     for (final (mode, asset) in [
                       (Modes.singles, 'assets/icons/style_single.png'),
                       (Modes.doubles, 'assets/icons/style_double.png'),
                     ])
-                      ButtonSegment(
-                          value: mode,
-                          label: Opacity(
-                            opacity: _mode == mode ? 1 : 0.4,
-                            child: Image.asset(asset, height: 15),
-                          )),
+                      Tab(
+                          child: Opacity(
+                        opacity: _mode == mode ? 1 : 0.4,
+                        child: Image.asset(asset, height: 15),
+                      )),
                   ],
-                  selected: {_mode},
-                  onSelectionChanged: (s) => setState(() => _mode = s.single),
+                  selected: _mode,
+                  onChanged: (m) => setState(() => _mode = m),
                 ),
               ),
               _FlareCard(flareSkill(data.records, Songs.list, _mode)),
@@ -131,6 +129,9 @@ class _FlareCard extends StatelessWidget {
       title: 'Flare Skill',
       icon: Icons.local_fire_department_outlined,
       children: [
+        Center(
+            child: Image.asset(flareClassIcon(cls.name),
+                width: 96, filterQuality: FilterQuality.medium)),
         Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -144,7 +145,7 @@ class _FlareCard extends StatelessWidget {
                   style: TextStyle(
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1,
-                      color: theme.colorScheme.primary)),
+                      color: flareClassColor(cls.name))),
             ]),
         if (cls.next != null)
           Text('${_thousands(cls.next! - total)} to the next class',
@@ -368,18 +369,15 @@ class _LevelsCardState extends State<_LevelsCard> {
       title: 'By Level',
       icon: Icons.emoji_events_outlined,
       children: [
-        Center(
-          child: SegmentedButton<_Tab>(
-            showSelectedIcon: false,
-            style: const ButtonStyle(visualDensity: VisualDensity.compact),
-            segments: const [
-              ButtonSegment(value: _Tab.lamps, label: Text('Lamps')),
-              ButtonSegment(value: _Tab.grades, label: Text('Grades')),
-              ButtonSegment(value: _Tab.flare, label: Text('Flare')),
-            ],
-            selected: {_tab},
-            onSelectionChanged: (s) => setState(() => _tab = s.single),
-          ),
+        PillTabs<_Tab>(
+          values: _Tab.values,
+          tabs: const [
+            Tab(text: 'Lamps'),
+            Tab(text: 'Grades'),
+            Tab(text: 'Flare')
+          ],
+          selected: _tab,
+          onChanged: (t) => setState(() => _tab = t),
         ),
         const SizedBox(height: 8),
         for (final MapEntry(key: level, value: row) in widget.levels.entries)

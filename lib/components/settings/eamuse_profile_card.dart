@@ -5,7 +5,15 @@
 /// here is typed in; it fills in from a sync on Home.
 library;
 
+import 'dart:math';
+
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/grades.dart' show flareClassColor, flareClassIcon;
+import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/score_overview.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/eamuse.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
@@ -14,6 +22,18 @@ import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+/// The player's flare skill class, from whichever style is higher, or null
+/// before any scores are synced.
+Future<String?> _flareClass() async {
+  final records =
+      await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse);
+  if (records.isEmpty) return null;
+  final total = [Modes.singles, Modes.doubles]
+      .map((m) => flareSkill(records, Songs.list, m).total)
+      .reduce(max);
+  return flareClass(total).name;
+}
 
 class EamuseProfileCard extends StatelessWidget {
   const EamuseProfileCard({super.key});
@@ -72,39 +92,56 @@ class EamuseProfileCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Transform.rotate(
-                  angle: -0.07, child: const PadGlyph(size: 48, lit: true)),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name.isEmpty ? 'DANCER' : name.toUpperCase(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: FloorPop.display(24,
-                            color: theme.colorScheme.onSurface)),
-                    if (code.isNotEmpty)
-                      Text(formatRivalCode(code),
-                          style: FloorPop.readout(18, color: muted)
-                              .copyWith(letterSpacing: 1.5)),
-                  ],
-                ),
-              ),
-              if (code.isNotEmpty)
-                HeaderButton(
-                  tooltip: "Copy rival code",
-                  icon: const Icon(Icons.copy_rounded, size: 20),
-                  onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: code));
-                    if (context.mounted) {
-                      showToast(context, "Copied rival code");
-                    }
-                  },
-                ),
-            ],
+          FutureBuilder<String?>(
+            future: _flareClass(),
+            builder: (context, snapshot) {
+              final cls = snapshot.data;
+              return Row(
+                children: [
+                  cls == null
+                      ? Transform.rotate(
+                          angle: -0.07,
+                          child: const PadGlyph(size: 48, lit: true))
+                      : Tooltip(
+                          message: 'Flare rank',
+                          child: Image.asset(flareClassIcon(cls),
+                              width: 64, filterQuality: FilterQuality.medium),
+                        ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name.isEmpty ? 'DANCER' : name.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: FloorPop.display(24,
+                                color: theme.colorScheme.onSurface)),
+                        if (code.isNotEmpty)
+                          Text(formatRivalCode(code),
+                              style: FloorPop.readout(18, color: muted)
+                                  .copyWith(letterSpacing: 1.5)),
+                        if (cls != null)
+                          Text(cls,
+                              style: pop.label
+                                  .copyWith(color: flareClassColor(cls))),
+                      ],
+                    ),
+                  ),
+                  if (code.isNotEmpty)
+                    HeaderButton(
+                      tooltip: "Copy rival code",
+                      icon: const Icon(Icons.copy_rounded, size: 20),
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: code));
+                        if (context.mounted) {
+                          showToast(context, "Copied rival code");
+                        }
+                      },
+                    ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 14),
           Row(children: [

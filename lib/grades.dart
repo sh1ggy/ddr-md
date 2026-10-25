@@ -156,6 +156,38 @@ String flareRankIcon(String rank) => rank == 'EX'
     ? 'assets/icons/flare_ex.png'
     : 'assets/icons/flare_${kFlareRanks.indexOf(rank) + 1}.png';
 
+const _kFlarePlanets = [
+  'NONE', 'MERCURY', 'VENUS', 'EARTH', 'MARS', 'JUPITER', 'SATURN', //
+  'URANUS', 'NEPTUNE', 'SUN', 'WORLD',
+];
+
+/// Each flare skill planet's main colour, NONE to WORLD, toned to read as
+/// text on light and dark cards.
+const kFlareClassColors = [
+  Color(0xFF8C8C8C),
+  Color(0xFF0C9CE4),
+  Color(0xFFF0A00C),
+  Color(0xFF10B478),
+  Color(0xFFF03C14),
+  Color(0xFFC8965A),
+  Color(0xFFB4306C),
+  Color(0xFF30C0C8),
+  Color(0xFF4058C0),
+  Color(0xFFFC5A0C),
+  Color(0xFF9C48E0),
+];
+
+int _flarePlanet(String name) =>
+    _kFlarePlanets.indexOf(name.replaceAll('+', ''));
+
+/// Icon asset for a flare skill class name from `flareClass` ("EARTH++" →
+/// the EARTH planet).
+String flareClassIcon(String name) =>
+    'assets/icons/flare_skill_${(_flarePlanet(name) + 1).toString().padLeft(2, '0')}.png';
+
+/// Text colour for a flare skill class name, its planet's main colour.
+Color flareClassColor(String name) => kFlareClassColors[_flarePlanet(name)];
+
 /// Icon for the flare rank as detected by OCR ([Score.flare]). Accepts the
 /// raw reading: an optional FLARE prefix, then a roman numeral I-IX, a digit,
 /// "EX", or "NONE" (see [resolveOcrFlare], which normalises 1/l misreads of I
