@@ -11,6 +11,7 @@ import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/router.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -108,7 +109,7 @@ class _ArcadeGridViewState extends State<ArcadeGridView> {
                       kArcadeTileGap * 2 +
                       kArcadeTitleHeight +
                       kArcadeCaptionHeight +
-                      (section.items.first.isChartScoped
+                      (section.items.first.isChartScoped && ChartBests.shown
                           ? kArcadeScoreHeight
                           : 0),
                 ),

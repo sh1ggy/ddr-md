@@ -45,7 +45,8 @@ class ArcadeGridTile extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     // A tile standing for one chart is a card in its flare colours, with the
     // player's grade and lamp on it.
-    final best = item.isChartScoped
+    final carded = item.isChartScoped && ChartBests.shown;
+    final best = carded
         ? ChartBests.at(item.songInfo, mode, item.difficultyIndex!)
         : null;
     final flare = best?.flare;
@@ -62,7 +63,7 @@ class ArcadeGridTile extends StatelessWidget {
             fit: StackFit.expand,
             children: <Widget>[
               DecoratedBox(
-                decoration: item.isChartScoped
+                decoration: carded
                     ? flareCardBack(context, flare, radius: 8)
                     : BoxDecoration(color: scheme.surfaceContainerHigh),
                 child: Column(
@@ -71,7 +72,7 @@ class ArcadeGridTile extends StatelessWidget {
                     _titleBand(context),
                     Expanded(child: _jacket(context)),
                     _caption(context),
-                    if (item.isChartScoped)
+                    if (carded)
                       SizedBox(
                         height: kArcadeScoreHeight,
                         child: CardFooter(

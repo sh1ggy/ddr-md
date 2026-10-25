@@ -49,8 +49,7 @@ class _SongSearchPageState extends State<SongSearchPage> {
   final Map<SongInfo, Widget> _rows = Map.identity();
   late final Widget? _prototype = Songs.list.isEmpty
       ? null
-      : SongListItem(
-          songInfo: Songs.list.first, isFav: false, isSearch: true);
+      : SongListItem(songInfo: Songs.list.first, isFav: false, isSearch: true);
 
   @override
   void initState() {

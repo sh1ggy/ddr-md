@@ -68,7 +68,7 @@ class _SongListItemState extends State<SongListItem> {
     // Only the mode is shown, so other SongState changes don't rebuild rows.
     final Modes mode = context.select<SongState, Modes>((s) => s.modes);
     // Only a row standing for one chart shows the player's best on it.
-    final bool scoped = widget.difficultyIndex != null;
+    final bool scoped = widget.difficultyIndex != null && ChartBests.shown;
     final best = scoped
         ? ChartBests.at(widget.songInfo, mode, widget.difficultyIndex!)
         : null;

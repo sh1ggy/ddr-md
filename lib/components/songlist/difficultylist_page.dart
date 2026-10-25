@@ -182,7 +182,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       Modes mode, SortType sortType, bool descending) async {
     final (favList, _) = await (
       DatabaseProvider.getAllFavorites(mode),
-      ChartBests.load(mode)
+      ChartBests.ensure(mode)
     ).wait;
     setState(() {
       favCount = favList.length;
@@ -301,6 +301,17 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
               ),
               actions: <Widget>[
+                HeaderButton(
+                  icon: Icon(ChartBests.shown
+                      ? Icons.military_tech
+                      : Icons.military_tech_outlined),
+                  tooltip: ChartBests.shown ? 'Hide bests' : 'Show bests',
+                  onPressed: () async {
+                    await Settings.setInt(Settings.songlistHideStatsKey,
+                        ChartBests.shown ? 1 : 0);
+                    setState(() {});
+                  },
+                ),
                 HeaderButton(
                   icon: Icon(_gridMode ? Icons.view_list : Icons.grid_view),
                   tooltip: _gridMode ? 'List view' : 'Grid view',
