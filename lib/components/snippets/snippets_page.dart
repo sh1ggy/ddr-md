@@ -313,137 +313,113 @@ class _SnippetsPageState extends State<SnippetsPage> {
     final tint = difficultyColor(s.difficulty);
     final facts = _facts.putIfAbsent(
         '${s.id}:${s.startBeat}:${s.endBeat}', () => _patterns(s));
-    return Dismissible(
-      key: ValueKey(s.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        decoration: BoxDecoration(
-            color: pop.down, borderRadius: BorderRadius.circular(20)),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      // Out of the list at once: a dismissed Dismissible can't wait for the
-      // reload to remove it.
-      onDismissed: (_) {
-        setState(() =>
-            _snippets = _snippets?.where((item) => item.id != s.id).toList());
-        _delete(s);
-      },
-      child: Builder(
-        builder: (context) => Card(
-          child: InkWell(
-            onTap: song == null ? null : () => _open(s, song),
-            onLongPress: () => _menu(s, _rectOf(context)),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image(
-                        width: 52,
-                        height: 52,
-                        image: ContentStore.image(
-                            'assets/jackets-160/${s.song}.png'),
-                        errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.music_note, size: 40),
-                      ),
+    return Builder(
+      builder: (context) => Card(
+        child: InkWell(
+          onTap: song == null ? null : () => _open(s, song),
+          onLongPress: () => _menu(s, _rectOf(context)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image(
+                      width: 52,
+                      height: 52,
+                      image: ContentStore.image(
+                          'assets/jackets-160/${s.song}.png'),
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.music_note, size: 40),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(song?.title ?? s.song,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(song?.title ?? s.song,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w700, fontSize: 15)),
+                        const SizedBox(height: 3),
+                        Row(children: [
+                          Text(s.mode == Modes.singles ? 'SP' : 'DP',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: pop.haze)),
+                          const SizedBox(width: 6),
+                          if (name != null &&
+                              kInGameDifficultyColors.containsKey(name))
+                            DifficultyLabel(
+                                difficulty: name, level: difficulty, height: 14)
+                          else
+                            Text(name ?? s.difficulty,
+                                style: TextStyle(
+                                    color: tint, fontWeight: FontWeight.w700)),
+                        ]),
+                        if (s.label.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(s.label,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 15)),
-                          const SizedBox(height: 3),
-                          Row(children: [
-                            Text(s.mode == Modes.singles ? 'SP' : 'DP',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: pop.haze)),
-                            const SizedBox(width: 6),
-                            if (name != null &&
-                                kInGameDifficultyColors.containsKey(name))
-                              DifficultyLabel(
-                                  difficulty: name,
-                                  level: difficulty,
-                                  height: 14)
-                            else
-                              Text(name ?? s.difficulty,
-                                  style: TextStyle(
-                                      color: tint,
-                                      fontWeight: FontWeight.w700)),
-                          ]),
-                          if (s.label.isNotEmpty) ...[
-                            const SizedBox(height: 3),
-                            Text(s.label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style:
-                                    TextStyle(fontSize: 13, color: pop.haze)),
+                              style: TextStyle(fontSize: 13, color: pop.haze)),
+                        ],
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                      icon: const Icon(Icons.more_vert),
+                      tooltip: 'Snippet actions',
+                      onPressed: () => _menu(s, _rectOf(context))),
+                ]),
+                FutureBuilder<_SnippetFacts>(
+                  future: facts,
+                  builder: (_, snapshot) {
+                    final data = snapshot.data ?? const _SnippetFacts();
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 10),
+                          _SnippetTimeline(span: data.span, color: tint),
+                          if (data.counts.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Wrap(spacing: 6, runSpacing: 6, children: [
+                              for (final entry in data.counts.entries)
+                                Tooltip(
+                                  message:
+                                      '${kPatternLabels[entry.key]}: ${entry.value}',
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                        color: pop.riser,
+                                        borderRadius: BorderRadius.circular(8)),
+                                    child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(kPatternIcons[entry.key],
+                                              size: 14, color: pop.haze),
+                                          const SizedBox(width: 4),
+                                          Text('${entry.value}',
+                                              style: FloorPop.readout(14)),
+                                        ]),
+                                  ),
+                                ),
+                            ]),
                           ],
                         ],
                       ),
-                    ),
-                    IconButton(
-                        icon: const Icon(Icons.more_vert),
-                        tooltip: 'Snippet actions',
-                        onPressed: () => _menu(s, _rectOf(context))),
-                  ]),
-                  FutureBuilder<_SnippetFacts>(
-                    future: facts,
-                    builder: (_, snapshot) {
-                      final data = snapshot.data ?? const _SnippetFacts();
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SizedBox(height: 10),
-                            _SnippetTimeline(span: data.span, color: tint),
-                            if (data.counts.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Wrap(spacing: 6, runSpacing: 6, children: [
-                                for (final entry in data.counts.entries)
-                                  Tooltip(
-                                    message:
-                                        '${kPatternLabels[entry.key]}: ${entry.value}',
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                          color: pop.riser,
-                                          borderRadius:
-                                              BorderRadius.circular(8)),
-                                      child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(kPatternIcons[entry.key],
-                                                size: 14, color: pop.haze),
-                                            const SizedBox(width: 4),
-                                            Text('${entry.value}',
-                                                style: FloorPop.readout(14)),
-                                          ]),
-                                    ),
-                                  ),
-                              ]),
-                            ],
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
         ),
