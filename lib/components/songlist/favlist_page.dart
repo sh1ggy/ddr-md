@@ -11,6 +11,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
@@ -28,6 +29,7 @@ class FavoriteListPage extends StatefulWidget {
 class _FavoriteListPageState extends State<FavoriteListPage> {
   List<Favorite>? favorites;
   Future<List<SongInfo>>? songInfoLoadingPromise;
+  int? _syncRevision;
 
   // Getting favourite items & returning future for list of SongInfo
   Future<List<SongInfo>> getFavSongInfoList() async {
@@ -59,12 +61,20 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
   @override
   void initState() {
     super.initState();
+    _syncRevision = context.read<EamuseSyncState>().revision;
     genSongInfoList(); // initialise favourite items
   }
 
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
+    // A sync while this page stayed open changed the bests.
+    final syncRevision =
+        context.select<EamuseSyncState, int>((s) => s.revision);
+    if (_syncRevision != syncRevision) {
+      _syncRevision = syncRevision;
+      songInfoLoadingPromise = getFavSongInfoList();
+    }
     return SafeArea(
         bottom: false,
         child: Scaffold(

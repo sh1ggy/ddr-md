@@ -25,6 +25,7 @@ import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -254,6 +255,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   }
 
   Modes? _lastGenMode;
+  int? _lastSyncRevision;
 
   /// New songs or chart fixes were applied while this page was open.
   void _onContentUpdated() {
@@ -266,6 +268,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     super.initState();
     SongState songState = Provider.of<SongState>(context, listen: false);
     _lastGenMode = songState.modes;
+    _lastSyncRevision = context.read<EamuseSyncState>().revision;
     _songItemsPromise = Future<List<SongItem>>(() => generateSongItems(
         songState.modes, songState.sortType, songState.sortDescending));
     ContentStore.revision.addListener(_onContentUpdated);
@@ -288,6 +291,14 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       _lastGenMode = songState.modes;
       _songItemsPromise = generateSongItems(
           songState.modes, songState.sortType, songState.sortDescending);
+    }
+    // A sync on Home, or a relink after a content update, changed the bests
+    // while this tab stayed alive behind it.
+    final syncRevision =
+        context.select<EamuseSyncState, int>((s) => s.revision);
+    if (_lastSyncRevision != syncRevision) {
+      _lastSyncRevision = syncRevision;
+      refreshRows();
     }
     final Widget page = SafeArea(
       top: false,
