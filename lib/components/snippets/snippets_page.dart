@@ -156,6 +156,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
     final song = _songOf(s);
     final action = await showModalBottomSheet<String>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (context) => SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [

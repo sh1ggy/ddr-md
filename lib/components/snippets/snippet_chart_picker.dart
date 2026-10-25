@@ -44,6 +44,7 @@ class _SnippetChartPickerState extends State<SnippetChartPicker> {
     HapticFeedback.selectionClick();
     final chart = await showModalBottomSheet<(Modes, String)>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (_) => _DifficultySheet(
           song: song, initialMode: context.read<SongState>().modes),
