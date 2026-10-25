@@ -4,7 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
-import 'package:ddr_md/components/song/song_chart.dart';
+import 'package:ddr_md/components/song/song_radar.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames;
