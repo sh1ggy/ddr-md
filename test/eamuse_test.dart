@@ -105,7 +105,9 @@ void main() {
     final sync = EamuseSync(
       cookies: 'M573SSID=old; visid=v',
       onCookies: (cookies) async => kept.addAll(cookies.map((c) => c.value)),
-      titleIndex: {'max 300': 'MAX 300'},
+      songs: EamuseSongIndex([
+        SongInfo.fromJson({'name': 'MAX 300', 'title': 'MAX 300'})
+      ]),
       save: (records) async => saved.addAll(records),
       host: 'http://${server.address.host}:${server.port}',
     );
@@ -209,5 +211,20 @@ ${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
       plays: 1380,
       lastPlay: '2026-10-17 15:59:32',
     ));
+  });
+
+  test('songs match by Konami ID, by title only without one', () {
+    SongInfo song(String name, String title, [String id = '']) =>
+        SongInfo.fromJson({'name': name, 'title': title, 'konami_id': id});
+    final index = EamuseSongIndex([
+      song('TAKE ME HIGHER', 'TAKE ME HIGHER', 'shimamura'),
+      song('take me higher A20P', 'take me higher', 'kotonohouse'),
+      song('La Bamba', 'La Bamba', 'lh'),
+      song('MAX 300', 'MAX 300'),
+    ]);
+    expect(index.of('kotonohouse', 'take me higher'), 'take me higher A20P');
+    expect(index.of('shimamura', 'TAKE ME HIGHER'), 'TAKE ME HIGHER');
+    expect(index.of('traditional', 'LA BAMBA'), isNull);
+    expect(index.of('max', 'ＭＡＸ　300'), 'MAX 300');
   });
 }

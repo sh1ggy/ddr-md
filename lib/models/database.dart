@@ -453,6 +453,38 @@ class DatabaseProvider {
         .delete("score_records", where: "source = ?", whereArgs: [source.name]);
   }
 
+  // Points every e-amusement score and recent play at [songFor]'s song for
+  // its Konami ID and title, in one transaction. Returns how many changed.
+  static Future<int> relinkEamuse(
+      String? Function(String konamiId, String title) songFor) async {
+    final db = await _instance;
+    var changed = 0;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final (table, where, args) in [
+        ('score_records', 'source = ?', [ScoreRecordSource.eamuse.name]),
+        ('recent_plays', '1', <Object>[]),
+      ]) {
+        final rows = await txn.rawQuery(
+            'SELECT DISTINCT konamiId, title, song FROM $table WHERE $where',
+            args);
+        for (final r in rows) {
+          final konamiId = r['konamiId'] as String?,
+              title = r['title'] as String;
+          if (konamiId == null) continue;
+          final song = songFor(konamiId, title);
+          if (song == r['song']) continue;
+          changed++;
+          batch.update(table, {'song': song},
+              where: '$where AND konamiId = ? AND title = ?',
+              whereArgs: [...args, konamiId, title]);
+        }
+      }
+      await batch.commit(noResult: true);
+    });
+    return changed;
+  }
+
   // -- RECENT PLAY FUNCTIONS
   // Replaces by play, so a later sync can fill in a song match.
   static Future<void> saveRecentPlays(List<RecentPlay> plays) async {
