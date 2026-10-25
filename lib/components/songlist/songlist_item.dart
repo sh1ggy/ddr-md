@@ -73,7 +73,11 @@ class _SongListItemState extends State<SongListItem> {
         dimension: 56,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: JacketImage(widget.songInfo),
+          // Search results reshuffle every keystroke, so their jackets snap in.
+          child: widget.isSearch
+              ? JacketImage(widget.songInfo,
+                  fade: const Duration(milliseconds: 80))
+              : JacketImage(widget.songInfo),
         ),
       ),
       // Fixed height so every row is the same size; a song without a

@@ -10,10 +10,14 @@ import 'package:ddr_md/models/content_store.dart';
 import 'package:flutter/material.dart';
 
 class JacketImage extends StatelessWidget {
-  const JacketImage(this.song, {super.key, this.iconSize = 30});
+  const JacketImage(this.song,
+      {super.key,
+      this.iconSize = 30,
+      this.fade = const Duration(milliseconds: 150)});
 
   final SongInfo song;
   final double iconSize;
+  final Duration fade;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +34,7 @@ class JacketImage extends StatelessWidget {
                 ? child
                 : AnimatedOpacity(
                     opacity: frame == null ? 0 : 1,
-                    duration: const Duration(milliseconds: 150),
+                    duration: fade,
                     curve: Curves.easeOut,
                     child: child,
                   ),

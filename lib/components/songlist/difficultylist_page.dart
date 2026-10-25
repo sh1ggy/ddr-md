@@ -15,6 +15,7 @@ import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
 import 'package:ddr_md/components/songlist/filter_tray.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
+import 'package:ddr_md/components/songlist/song_search_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
@@ -44,9 +45,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   // Renders the songlist as the arcade jacket grid instead of the plain list.
   bool _gridMode = Settings.getInt(Settings.songlistViewModeKey) == 1;
 
-  // Below this similarity a result is considered noise and dropped, same
-  // threshold spirit as the OCR title matcher.
-  static const double _kMinSearchSimilarity = 0.3;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchBarFocus = FocusNode(canRequestFocus: false);
 
   void regenFavCount() async {
     Modes mode = Provider.of<SongState>(context, listen: false).modes;
@@ -256,6 +256,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   @override
   void dispose() {
     ContentStore.revision.removeListener(_onContentUpdated);
+    _searchController.dispose();
+    _searchBarFocus.dispose();
     super.dispose();
   }
 
@@ -594,58 +596,35 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   }
 
   // Floats above the tab bar within thumb reach, frosted like the header,
-  // with the rows scrolling on under it.
+  // with the rows scrolling on under it. Read-only: a tap opens the search
+  // page, whose field takes the keyboard.
   Widget songSearchBar() {
     return SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-        child: SearchAnchor(
-            isFullScreen: true,
-            viewOnSubmitted: (value) {
-              FocusScope.of(context).unfocus();
-            },
-            viewHintText: "Search song...",
-            builder: (BuildContext context, SearchController controller) {
-              return ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                      child: SearchBar(
-                        controller: controller,
-                        onTap: () {
-                          controller.openView();
-                        },
-                        onChanged: (value) => controller.openView(),
-                        hintText: "Search song...",
-                        constraints: const BoxConstraints(
-                            maxWidth: 800.0, minHeight: 48.0, maxHeight: 48.0),
-                        shape: const WidgetStatePropertyAll(StadiumBorder()),
-                        backgroundColor: WidgetStatePropertyAll(
-                            FloorPop.of(context).riser.withValues(alpha: 0.7)),
-                        padding: WidgetStateProperty.all(
-                          const EdgeInsets.symmetric(horizontal: 14.0),
-                        ),
-                        leading: const Icon(Icons.search, size: 20),
-                      )));
-            },
-            // Runs on every keystroke, straight off the controller's text. Ranks
-            // by normalized Levenshtein similarity (same as OCR title matching)
-            // so close-but-not-exact spellings still sort to the top. Keyed rows
-            // keep their loaded jackets as the ranking reshuffles.
-            suggestionsBuilder:
-                (BuildContext context, SearchController controller) {
-              return Songs.matchTitles(controller.text,
-                      limit: Songs.list.length,
-                      minSimilarity: _kMinSearchSimilarity)
-                  .map((match) => SongListItem(
-                        key: ValueKey(match.song.name),
-                        songInfo: match.song,
-                        isFav: false,
-                        isSearch: true,
-                        regenFavsCallback: regenFavCount,
-                      ));
-            }),
+        child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: SearchBar(
+                  controller: _searchController,
+                  focusNode: _searchBarFocus,
+                  readOnly: true,
+                  onTap: () => Navigator.of(context).push(
+                      SongSearchPage.route(_searchController,
+                          regenFavsCallback: regenFavCount)),
+                  hintText: "Search song...",
+                  constraints: const BoxConstraints(
+                      maxWidth: 800.0, minHeight: 48.0, maxHeight: 48.0),
+                  shape: const WidgetStatePropertyAll(StadiumBorder()),
+                  backgroundColor: WidgetStatePropertyAll(
+                      FloorPop.of(context).riser.withValues(alpha: 0.7)),
+                  padding: WidgetStateProperty.all(
+                    const EdgeInsets.symmetric(horizontal: 14.0),
+                  ),
+                  leading: const Icon(Icons.search, size: 20),
+                ))),
       ),
     );
   }
