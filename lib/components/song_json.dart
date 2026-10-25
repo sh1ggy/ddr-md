@@ -12,6 +12,10 @@ class SongInfo {
   bool ssc;
   String version;
   String name;
+
+  /// Konami's own song ID, which synced e-amusement scores are matched on;
+  /// empty for a song not linked to one.
+  String konamiId;
   String title;
   String titletranslit;
   String artist;
@@ -35,6 +39,7 @@ class SongInfo {
     required this.ssc,
     required this.version,
     required this.name,
+    this.konamiId = '',
     required this.title,
     required this.titletranslit,
     required this.artist,
@@ -109,6 +114,7 @@ class SongInfo {
       ssc: json["ssc"] ?? false,
       version: json["version"] ?? "",
       name: json["name"] ?? "",
+      konamiId: json["konami_id"] ?? "",
       title: json["title"] ?? "",
       titletranslit: json["titletranslit"] ?? "",
       artist: json["artist"] ?? "",
@@ -150,6 +156,7 @@ class SongInfo {
         "ssc": ssc,
         "version": version,
         "name": name,
+        if (konamiId.isNotEmpty) "konami_id": konamiId,
         "title": title,
         "titletranslit": titletranslit,
         "artist": artist,

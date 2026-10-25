@@ -12,6 +12,7 @@ library;
 import 'dart:async';
 import 'dart:io' as io;
 
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse.dart';
@@ -51,7 +52,30 @@ class EamuseSyncState extends ChangeNotifier {
         DateTime.now().difference(at) < EamuseSync.cooldown;
   }
 
+  EamuseSyncState() {
+    ContentStore.revision.addListener(relink);
+  }
+
+  @override
+  void dispose() {
+    ContentStore.revision.removeListener(relink);
+    super.dispose();
+  }
+
+  /// Points saved scores and plays at the songs the current song list gives
+  /// them, so charts synced before their song arrived, or matched by an older
+  /// list, link up without another sync. At launch and after a content update.
+  Future<void> relink() async {
+    if (Songs.list.isEmpty) return;
+    if (await DatabaseProvider.relinkEamuse(EamuseSongIndex(Songs.list).of) >
+        0) {
+      revision++;
+      notifyListeners();
+    }
+  }
+
   Future<void> restore() async {
+    await relink();
     charts = await DatabaseProvider.countScoreRecords(ScoreRecordSource.eamuse);
     recentPlays = await DatabaseProvider.countRecentPlays();
     notifyListeners();
@@ -74,7 +98,7 @@ class EamuseSyncState extends ChangeNotifier {
           '${c.name}=${c.value}'
       ].join('; '),
       onCookies: _keepCookies,
-      titleIndex: eamuseTitleIndex(Songs.list),
+      songs: EamuseSongIndex(Songs.list),
       save: (records) async {
         final fresh = [
           for (final r in records)
@@ -102,7 +126,7 @@ class EamuseSyncState extends ChangeNotifier {
             RecentPlay(
               konamiId: p.konamiId,
               title: p.title,
-              song: sync.titleIndex[eamuseTitleKey(p.title)],
+              song: sync.songs.of(p.konamiId, p.title),
               mode: p.mode,
               difficulty: p.difficulty,
               playedAt: eamuseTime(p.playedAt),
