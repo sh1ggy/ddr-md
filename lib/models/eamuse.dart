@@ -8,7 +8,7 @@
 /// have dropped plays ([planEamuseSync]). Signing in happens on Konami's own
 /// page in a web view, so the app reuses that session's cookies and never
 /// sees the password. Requests are sequential and throttled by
-/// [EamuseSync.gap], and a sync stops at the first error.
+/// [EamuseSync.gap] across every sync, and a sync stops at the first error.
 library;
 
 import 'dart:convert';
@@ -339,12 +339,17 @@ class EamuseSongIndex {
 typedef EamuseProgress = void Function(int done, int total);
 
 class EamuseSync {
-  /// Least time between two requests to Konami; each wait adds up to a second
-  /// of jitter on top.
+  /// Least time between two requests to Konami, from any sync; each wait adds
+  /// up to a second of jitter on top.
   static const gap = Duration(seconds: 3);
 
-  /// Least time between two syncs. Most only read the recent plays page.
+  /// Least time between the starts of two syncs. Most only read the recent
+  /// plays page.
   static const cooldown = Duration(minutes: 1);
+
+  /// How long no sync starts after Konami answered with an error, maintenance
+  /// or a block.
+  static const backoff = Duration(minutes: 10);
 
   /// Upper bound on pages per style, in case the pager is misread.
   static const maxPages = 60;
@@ -360,7 +365,8 @@ class EamuseSync {
   final Future<void> Function(List<ScoreRecord>) save;
   final String host;
   bool cancelled = false;
-  DateTime? _lastRequest;
+  // Shared, so stopping and restarting a sync doesn't skip the gap.
+  static DateTime? _lastRequest;
   final _random = Random();
 
   EamuseSync({

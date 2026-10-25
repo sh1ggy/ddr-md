@@ -21,7 +21,7 @@ class EamuseSyncCard extends StatelessWidget {
     final signedIn = await Navigator.of(context, rootNavigator: true)
         .push<bool>(MaterialPageRoute(
             fullscreenDialog: true, builder: (_) => const _EamuseSignInPage()));
-    if (signedIn == true) state.sync();
+    if (signedIn == true) state.sync(renewed: true);
   }
 
   @override
@@ -194,9 +194,14 @@ class _SyncButton extends StatelessWidget {
                 onPressed: state.stop,
               )
             : IconButton.filled(
-                tooltip: state.upToDate ? 'Up to date' : 'Sync scores',
+                tooltip: state.upToDate
+                    ? 'Up to date'
+                    : state.waiting
+                        ? 'Sync again shortly'
+                        : 'Sync scores',
                 icon: Icon(state.upToDate ? Icons.check : Icons.sync),
-                onPressed: state.upToDate ? null : state.sync,
+                onPressed:
+                    state.upToDate || state.waiting ? null : state.sync,
               ),
       ]),
     );
