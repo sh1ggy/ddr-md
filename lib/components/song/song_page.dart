@@ -389,8 +389,7 @@ class _SongPageState extends State<SongPage> {
         if (chart == null) return null;
         return SongPatternsCard(patterns: chart);
       case SongSection.bpmGraph:
-        // Always shown, a steady chart too, so the timeline reads the same on
-        // every song.
+        if (!_isBpmChange && _chart.stops.isEmpty) return null;
         return SongChart(context: context, songInfo: songInfo, chart: _chart);
       case SongSection.latestScore:
         return GestureDetector(
