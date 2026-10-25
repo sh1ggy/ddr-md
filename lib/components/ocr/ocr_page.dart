@@ -1,3 +1,8 @@
+/// Name: OcrPage
+/// Parent: Router
+/// Description: The Camera tab: a live viewfinder that reads a cabinet's
+/// results screen frame by frame, then the stopped view where the readings
+/// are checked and saved as a score.
 library;
 
 import 'dart:async';
@@ -9,7 +14,7 @@ import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/ocr/ocr_shared.dart';
 import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_painter.dart';
-import 'package:ddr_md/helpers.dart' show parseOcrNumber;
+import 'package:ddr_md/helpers.dart' show judgmentColor, parseOcrNumber;
 import 'package:ddr_md/models/db_models.dart' show ScoreSource;
 import 'package:ddr_md/ocr_processor.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -271,10 +276,12 @@ class _OcrPageState extends State<OcrPage>
     final bool canStart = _isCameraActive || fullyReady;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        flexibleSpace: const GlassHeader(),
         title: const Text('Camera'),
         actions: <Widget>[
-          IconButton(
+          HeaderButton(
             tooltip: 'Load image',
             icon: const Icon(Icons.photo_library_outlined),
             onPressed: () async {
@@ -287,6 +294,7 @@ class _OcrPageState extends State<OcrPage>
                   .push(MaterialPageRoute(builder: (_) => const LoadImage()));
             },
           ),
+          const SizedBox(width: 16),
         ],
       ),
       body: switch (cameraState) {
@@ -294,32 +302,38 @@ class _OcrPageState extends State<OcrPage>
           const Center(child: CircularProgressIndicator()),
         CameraState.neverRecorded => Stack(
             children: [
-              const OcrEmptyState(
-                icon: Icons.videocam_outlined,
-                title: 'Camera is off',
-                subtitle: 'Start OCR to begin detecting scores',
-              ),
-              _floatingSideSelector,
+              const _Viewfinder(),
+              _floatingSideSelector(MediaQuery.paddingOf(context).top + 12),
             ],
           ),
         CameraState.inactive => _buildStoppedView(),
         CameraState.active => _buildActiveView(),
       },
       // Lifted clear of the floating tab bar, which the page runs under,
-      // 10 above it like the other floating buttons (the FAB adds 16).
+      // 10 above it like the other floating buttons (the FAB slot adds 16).
       floatingActionButton: Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom - 6),
-        child: FloatingActionButton(
-          // Disabled (null onPressed + grey) until both camera and OCR are
-          // ready. Stop is always enabled once a session is active.
-          onPressed: canStart ? _toggleCamera : null,
-          backgroundColor: _isCameraActive
-              ? FloorPop.coral
-              : canStart
-                  ? null // theme default
-                  : FloorPop.of(context).riser,
-          child: Icon(_isCameraActive ? Icons.stop : Icons.play_arrow),
+        padding: EdgeInsets.only(
+            bottom: (MediaQuery.paddingOf(context).bottom - 6)
+                .clamp(0.0, double.infinity)),
+        child: SizedBox(
+          width: 132,
+          // Disabled until both camera and OCR are ready. Stop is always
+          // enabled once a session is active.
+          child: VoltButton(
+            onPressed: canStart ? _toggleCamera : null,
+            color: _isCameraActive ? FloorPop.coral : FloorPop.volt,
+            riser: _isCameraActive ? _coralRiser : FloorPop.voltRiser,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(_isCameraActive
+                    ? Icons.stop_rounded
+                    : Icons.play_arrow_rounded),
+                const SizedBox(width: 6),
+                Text(_isCameraActive ? 'Stop' : 'Start'),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -357,17 +371,30 @@ class _OcrPageState extends State<OcrPage>
                 child: _buildPreview(),
               ),
             ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: _ProcessingDot(isProcessing: _ocrProcessor.isProcessing),
+            Positioned.fill(
+              child: ValueListenableBuilder(
+                valueListenable: _roiData,
+                builder: (context, roi, _) =>
+                    _Brackets(locked: (roi.$2 ?? -1) >= 0),
+              ),
             ),
+            _floatingSideSelector(12),
             Positioned(
-              top: 12,
               left: 12,
-              child: _FpsCounter(fps: _fps),
+              right: 12,
+              bottom: 12,
+              child: Row(
+                children: [
+                  _LockPill(
+                    roiData: _roiData,
+                    isProcessing: _ocrProcessor.isProcessing,
+                    side: _detectionSide,
+                  ),
+                  const Spacer(),
+                  _FpsCounter(fps: _fps),
+                ],
+              ),
             ),
-            _floatingSideSelector,
           ],
         ),
         Padding(
@@ -389,9 +416,10 @@ class _OcrPageState extends State<OcrPage>
   }
 
   // Floats top-centre over every camera state (off, live, stopped) so the
-  // side can always be changed before the next session starts.
-  Widget get _floatingSideSelector => Positioned(
-        top: 12,
+  // side can always be changed before the next session starts. [top] is from
+  // the top of whatever it floats over: the preview, or the whole page.
+  Widget _floatingSideSelector(double top) => Positioned(
+        top: top,
         left: 0,
         right: 0,
         child: DetectionSideSelector(
@@ -462,12 +490,8 @@ class _OcrPageState extends State<OcrPage>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                )),
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(label.toUpperCase(), style: FloorPop.of(context).label),
           ),
           ValueListenableBuilder<Uint8List?>(
             valueListenable: notifier,
@@ -491,11 +515,10 @@ class _OcrPageState extends State<OcrPage>
                 onTap: _isCameraActive
                     ? null
                     : () => _openDebugViewer(label, notifier),
-                child: DecoratedBox(
+                child: Container(
+                  clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
+                    borderRadius: BorderRadius.circular(14),
                     color: Colors.black,
                   ),
                   child: Stack(
@@ -550,20 +573,15 @@ class _OcrPageState extends State<OcrPage>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  "Last capture",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text('LAST CAPTURE', style: FloorPop.of(context).label),
               ),
               // Quick access to the zoomable ROI overlay without scrolling
               // down to the debug panels; hidden unless debug produced one.
               Stack(
                 children: [
-                  framed,
+                  ClipRRect(
+                      borderRadius: BorderRadius.circular(18), child: framed),
                   Positioned(
                     bottom: 8,
                     right: 8,
@@ -603,7 +621,7 @@ class _OcrPageState extends State<OcrPage>
               );
             },
           ),
-          _floatingSideSelector,
+          _floatingSideSelector(MediaQuery.paddingOf(context).top + 12),
         ],
       );
     }
@@ -632,39 +650,72 @@ class _OcrPageState extends State<OcrPage>
             _buildDebugControls(),
           ],
         ),
-        _floatingSideSelector,
+        _floatingSideSelector(MediaQuery.paddingOf(context).top + 12),
       ],
     );
   }
 
-  // Live (recording) view: read-only rolling-average readout. Editing only
-  // happens once OCR is stopped (see _buildEditableScorePanel).
+  // Live (recording) view: read-only rolling-average readout, the score on
+  // its own card over a grid of the rest. Editing only happens once OCR is
+  // stopped (see _buildEditableScorePanel).
   Widget _buildLiveScorePanel() {
-    final rows = <Widget>[
+    final pop = FloorPop.of(context);
+    final score = _aggregator.best('score');
+    final tiles = [
       for (final key in kOcrFieldOrder)
-        if (key != 'title')
+        if (key != 'title' && key != 'score')
           if (_aggregator.best(key) case final best?)
-            OCRKeyValue(
-              keyName: ocrFieldLabel(key),
+            _ReadoutTile(
+              label: _tileLabel(key),
               value: best.value,
               confidence: best.confidence,
-              sampleCount: best.count,
+              color: judgmentColor(key, context: context),
             ),
     ];
-    return _scorePanelShell(
-      rows: rows,
-      empty: Padding(
+    if (score == null && tiles.isEmpty) {
+      return Padding(
         padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Text(
-          "Reading score…",
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+        child: Text('Reading score…',
+            textAlign: TextAlign.center, style: TextStyle(color: pop.haze)),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (score != null)
+          _ReadoutTile(
+            label: 'SCORE',
+            value: score.value,
+            confidence: score.confidence,
+            large: true,
           ),
+        const SizedBox(height: 6),
+        GridView.count(
+          crossAxisCount: 3,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
+          childAspectRatio: 2.1,
+          children: tiles,
         ),
-      ),
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Text('${_aggregator.detailsCount} READS', style: pop.label),
+        ),
+      ],
     );
   }
+
+  static String _tileLabel(String key) => switch (key) {
+        'marvelous' => 'MARV',
+        'perfect' => 'PERF',
+        'exScore' => 'EX',
+        'maxCombo' => 'COMBO',
+        'username' => 'PLAYER',
+        _ => ocrFieldLabel(key),
+      };
 
   // Stopped view: editable, prefilled fields. "Show values" reveals a clickable
   // candidate histogram per field — the way the user picks between detected
@@ -738,13 +789,8 @@ class _OcrPageState extends State<OcrPage>
         if (rows.isEmpty) empty else ...rows,
         Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            "Successful detections: ${_aggregator.detailsCount}",
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
+          child: Text('${_aggregator.detailsCount} READS',
+              style: FloorPop.of(context).label),
         ),
       ],
     );
@@ -842,31 +888,120 @@ class _OcrAggregator {
   }
 }
 
-class _ProcessingDot extends StatefulWidget {
-  const _ProcessingDot({required this.isProcessing});
+// The hard edge under the coral Stop button.
+const _coralRiser = Color(0xFFB02E47);
 
-  final ValueNotifier<bool> isProcessing;
-
-  @override
-  State<_ProcessingDot> createState() => _ProcessingDotState();
-}
-
-class _ProcessingDotState extends State<_ProcessingDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
-  late final Animation<double> _opacity;
+/// The camera off: an empty viewfinder on the speed stripes.
+class _Viewfinder extends StatelessWidget {
+  const _Viewfinder();
 
   @override
-  void initState() {
-    super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    )..repeat(reverse: true);
-    _opacity = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return DecoratedBox(
+      decoration: pop.stripes(color: pop.ink),
+      child: Padding(
+        padding:
+            clearOfBars(context, const EdgeInsets.fromLTRB(40, 72, 40, 96)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AspectRatio(
+              aspectRatio: 4 / 3,
+              child: Stack(children: [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: pop.riser.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                ),
+                const Positioned.fill(child: _Brackets(locked: false)),
+                Center(
+                  child:
+                      Icon(Icons.videocam_outlined, size: 40, color: pop.haze),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 24),
+            Text('CAMERA IS OFF',
+                style: FloorPop.display(18,
+                    color: Theme.of(context).colorScheme.onSurface)),
+            const SizedBox(height: 8),
+            Text('Start, then hold the results screen in the frame',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, color: pop.haze)),
+          ],
+        ),
+      ),
     );
   }
+}
+
+/// Viewfinder corners: Volt once the results panel is found, faint until.
+class _Brackets extends StatelessWidget {
+  const _Brackets({required this.locked});
+
+  final bool locked;
+
+  @override
+  Widget build(BuildContext context) {
+    final side = BorderSide(
+        color: locked ? FloorPop.volt : Colors.white.withValues(alpha: 0.5),
+        width: 4);
+    const r = Radius.circular(18);
+    Widget corner(Alignment at) => Align(
+          alignment: at,
+          child: AnimatedContainer(
+            duration: FloorPop.sixteenth,
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              border: Border(
+                top: at.y < 0 ? side : BorderSide.none,
+                bottom: at.y > 0 ? side : BorderSide.none,
+                left: at.x < 0 ? side : BorderSide.none,
+                right: at.x > 0 ? side : BorderSide.none,
+              ),
+              borderRadius: BorderRadius.only(
+                topLeft: at == Alignment.topLeft ? r : Radius.zero,
+                topRight: at == Alignment.topRight ? r : Radius.zero,
+                bottomLeft: at == Alignment.bottomLeft ? r : Radius.zero,
+                bottomRight: at == Alignment.bottomRight ? r : Radius.zero,
+              ),
+            ),
+          ),
+        );
+    return IgnorePointer(
+      child: Stack(children: [
+        corner(Alignment.topLeft),
+        corner(Alignment.topRight),
+        corner(Alignment.bottomLeft),
+        corner(Alignment.bottomRight),
+      ]),
+    );
+  }
+}
+
+/// Whether the latest frame found the results panel, for which side, with a
+/// dot that pulses while a frame is being read.
+class _LockPill extends StatefulWidget {
+  const _LockPill(
+      {required this.roiData, required this.isProcessing, required this.side});
+
+  final ValueNotifier<(List<Rectangle<int>>, int?)> roiData;
+  final ValueNotifier<bool> isProcessing;
+  final DetectionSide side;
+
+  @override
+  State<_LockPill> createState() => _LockPillState();
+}
+
+class _LockPillState extends State<_LockPill>
+    with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(vsync: this, duration: FloorPop.beat)
+    ..repeat(reverse: true);
 
   @override
   void dispose() {
@@ -876,25 +1011,38 @@ class _ProcessingDotState extends State<_ProcessingDot>
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: widget.isProcessing,
-      builder: (context, active, _) {
-        return AnimatedOpacity(
-          opacity: active ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 200),
-          child: FadeTransition(
-            opacity: _opacity,
-            child: const SizedBox(
-              width: 10,
-              height: 10,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                ),
+    final player = widget.side == DetectionSide.right ? '2P' : '1P';
+    return ListenableBuilder(
+      listenable: Listenable.merge([widget.roiData, widget.isProcessing]),
+      builder: (context, _) {
+        final locked = (widget.roiData.value.$2 ?? -1) >= 0;
+        final color = locked ? FloorPop.volt : Colors.white;
+        return AnimatedContainer(
+          duration: FloorPop.sixteenth,
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: locked
+                ? const Color(0xE616122C)
+                : Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(17),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            FadeTransition(
+              opacity: widget.isProcessing.value
+                  ? Tween(begin: 0.3, end: 1.0).animate(_pulse)
+                  : const AlwaysStoppedAnimation(1),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Text(locked ? 'Locked on · $player' : 'Searching · $player',
+                style: TextStyle(
+                    color: color, fontSize: 13, fontWeight: FontWeight.w700)),
+          ]),
         );
       },
     );
@@ -911,24 +1059,87 @@ class _FpsCounter extends StatelessWidget {
     return ValueListenableBuilder<double>(
       valueListenable: fps,
       builder: (context, value, _) {
-        return DecoratedBox(
+        return Container(
+          height: 34,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(4),
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(17),
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: Text(
-              '${value.toStringAsFixed(1)} fps',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
+          child: Text('${value.toStringAsFixed(1)} FPS',
+              style: FloorPop.readout(13, color: Colors.white)),
         );
       },
+    );
+  }
+}
+
+/// One live reading on a riser: label, value in the readout face, and a bar
+/// for how many frames agree on it.
+class _ReadoutTile extends StatelessWidget {
+  const _ReadoutTile({
+    required this.label,
+    required this.value,
+    required this.confidence,
+    this.color,
+    this.large = false,
+  });
+
+  final String label, value;
+  final double confidence;
+  final Color? color;
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+          color: pop.riser,
+          borderRadius: BorderRadius.circular(large ? 18 : 12)),
+      child: Stack(children: [
+        Padding(
+          padding: EdgeInsets.symmetric(
+              horizontal: large ? 14 : 10, vertical: large ? 12 : 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(label,
+                  style: pop.label
+                      .copyWith(letterSpacing: 0.7, color: color ?? pop.haze)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: BeatSwap(
+                    child: Text(value,
+                        key: ValueKey(value),
+                        style: FloorPop.readout(large ? 34 : 16)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          left: 0,
+          bottom: 0,
+          right: 0,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: AnimatedFractionallySizedBox(
+              duration: FloorPop.eighth,
+              curve: FloorPop.settle,
+              widthFactor: confidence.clamp(0.0, 1.0),
+              child: Container(
+                  height: 3, color: FloorPop.volt.withValues(alpha: 0.7)),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }

@@ -290,8 +290,9 @@ class _LoadImageState extends State<LoadImage> {
       // Lifted clear of the floating tab bar, which the page runs under,
       // 10 above it like the other floating buttons (the FAB adds 16).
       floatingActionButton: Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom - 6),
+        padding: EdgeInsets.only(
+            bottom: (MediaQuery.paddingOf(context).bottom - 6)
+                .clamp(0.0, double.infinity)),
         child: FloatingActionButton.extended(
           // Disabled (null onPressed + grey) until OCR init completes,
           // matching the camera page's Start OCR FAB.

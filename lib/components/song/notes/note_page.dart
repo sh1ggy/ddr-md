@@ -78,8 +78,9 @@ class NotesTabState extends State<NotesTab> {
       // Lifted clear of the floating tab bar, which the page runs under,
       // 10 above it like the other floating buttons (the FAB adds 16).
       floatingActionButton: Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom - 6),
+        padding: EdgeInsets.only(
+            bottom: (MediaQuery.paddingOf(context).bottom - 6)
+                .clamp(0.0, double.infinity)),
         child: FloatingActionButton(
             tooltip: 'New note',
             child: const Icon(Icons.edit),
