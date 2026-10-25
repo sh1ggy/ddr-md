@@ -1,6 +1,6 @@
 /// Name: ChartBests
 /// Parent: DifficultyListPage
-/// Description: The player's best grade, clear lamp and flare on every chart
+/// Description: The player's best score, grade, clear lamp and flare on every chart
 /// of one mode, from synced records and saved scores, so song list rows can
 /// show them without a query each. Each is bested separately, as the cabinet
 /// keeps them. Only synced records carry a lamp.
@@ -15,7 +15,12 @@ import 'package:ddr_md/models/db_models.dart' show ClearLamp;
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 
-typedef ChartBest = ({Grade? grade, ClearLamp? lamp, String? flare});
+typedef ChartBest = ({
+  int? score,
+  Grade? grade,
+  ClearLamp? lamp,
+  String? flare
+});
 
 class ChartBests {
   /// Whether the song list shows bests at all; off, chart rows are plain rows.
@@ -49,13 +54,19 @@ class ChartBests {
     // Scores key on the transliterated title, records on the song name.
     final names = {for (final s in Songs.list) s.titletranslit: s.name};
     final bests = <String, Map<String, ChartBest>>{};
-    void add(String? song, String difficulty, Grade? grade, ClearLamp? lamp,
-        String? flare) {
+    void add(String? song, String difficulty, int? score, Grade? grade,
+        ClearLamp? lamp, String? flare) {
       if (song == null) return;
       final charts = bests.putIfAbsent(song, () => {});
       final old = charts[difficulty];
-      final oldGrade = old?.grade, oldLamp = old?.lamp, oldFlare = old?.flare;
+      final oldScore = old?.score,
+          oldGrade = old?.grade,
+          oldLamp = old?.lamp,
+          oldFlare = old?.flare;
       charts[difficulty] = (
+        score: oldScore == null || (score != null && score > oldScore)
+            ? score ?? oldScore
+            : oldScore,
         // Grades run best first; lamps and flare ranks worst first.
         grade:
             oldGrade == null || (grade != null && grade.index < oldGrade.index)
@@ -76,6 +87,7 @@ class ChartBests {
       add(
           r.song,
           r.difficulty,
+          r.score,
           Grade.values.where((g) => g.label == r.rank).firstOrNull,
           r.clearLamp,
           r.flareRank.isEmpty ? null : r.flareRank);
@@ -85,6 +97,7 @@ class ChartBests {
       add(
           names[s.songTitle],
           s.difficulty,
+          s.score,
           s.score == null ? null : gradeForScore(s.score!),
           null,
           resolveOcrFlare(s.flare));

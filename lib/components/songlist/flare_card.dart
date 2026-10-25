@@ -9,7 +9,7 @@ library;
 import 'package:ddr_md/components/song/scores/score_card.dart'
     show clearLampIcon;
 import 'package:ddr_md/grades.dart';
-import 'package:ddr_md/helpers.dart' show kFlareRanks;
+import 'package:ddr_md/helpers.dart' show formatScore, kFlareRanks;
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/theme.dart' show FloorPop;
 import 'package:flutter/material.dart';
@@ -109,17 +109,23 @@ class CardBadge extends StatelessWidget {
   }
 }
 
-/// A chart's grade, flare and clear lamp as a row of badges, each art drawn
-/// [ink] tall (its visible part, not the image's margin), so the three read at
-/// one size.
+/// A chart's grade, clear lamp and flare as a row of badges in the cabinet's
+/// order, each art drawn [ink] tall (its visible part, not the image's
+/// margin), so the three read at one size. With [score], the best score leads
+/// the row, as on the cabinet.
 class ChartBestBadges extends StatelessWidget {
   const ChartBestBadges(this.best,
-      {super.key, required this.ink, required this.height, this.gap = 6});
+      {super.key,
+      required this.ink,
+      required this.height,
+      this.gap = 6,
+      this.score = false});
 
   final ChartBest? best;
   final double ink;
   final double height;
   final double gap;
+  final bool score;
 
   @override
   Widget build(BuildContext context) {
@@ -137,12 +143,34 @@ class ChartBestBadges extends StatelessWidget {
                   maxHeight: double.infinity,
                   child: Image.asset(art, height: ink / _drawnHeight(art))),
         );
+    final top = best?.score;
+    // Even-width digits, so every six-digit score is one width.
+    final style = FloorPop.readout(ink + 2)
+        .copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
     return Row(mainAxisSize: MainAxisSize.min, children: [
+      if (score) ...[
+        // A six-digit score, hidden, sets the slot so the badges line up down
+        // the list; a 1,000,000 narrows to fit it rather than widening every
+        // row's slot.
+        Stack(children: [
+          Visibility.maintain(
+              visible: false, child: Text(formatScore(999999), style: style)),
+          if (top != null)
+            Positioned.fill(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(formatScore(top), style: style),
+              ),
+            ),
+        ]),
+        SizedBox(width: gap + 2),
+      ],
       badge(grade == null ? null : gradeIcon(grade), 1.65),
       SizedBox(width: gap),
-      badge(flare == null ? null : flareRankIcon(flare), 1.3),
-      SizedBox(width: gap),
       badge(clearLampIcon(best?.lamp), 4.05),
+      SizedBox(width: gap),
+      badge(flare == null ? null : flareRankIcon(flare), 1.3),
     ]);
   }
 
