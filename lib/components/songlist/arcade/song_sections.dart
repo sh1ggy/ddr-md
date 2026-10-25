@@ -171,7 +171,7 @@ class SongFilter {
   }
 }
 
-enum SongFilterAxis { name, level, version }
+enum SongFilterAxis { name, version }
 
 /// One folder of the arcade grid: a banner label plus the songs under it.
 class ArcadeSection {

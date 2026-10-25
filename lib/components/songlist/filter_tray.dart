@@ -6,6 +6,7 @@
 /// handing it different options.
 library;
 
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 
 /// One selectable filter option: its label and whether it is currently on.
@@ -47,11 +48,8 @@ class FilterTray extends StatelessWidget {
       showCheckmark: false,
       visualDensity:
           compact ? const VisualDensity(horizontal: -2, vertical: -2) : null,
-      side: BorderSide(
-        color: option.selected
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).dividerColor,
-      ),
+      // The tray sits on a riser, so chips step down to the stage.
+      backgroundColor: FloorPop.of(context).stage,
       onSelected: (_) => option.onTap(),
     );
   }

@@ -18,6 +18,10 @@ const List<SortType> _kSortCycle = <SortType>[
   SortType.bpm,
 ];
 
+/// The key after [sortType] in the cycle.
+SortType nextSortType(SortType sortType) =>
+    _kSortCycle[(_kSortCycle.indexOf(sortType) + 1) % _kSortCycle.length];
+
 String sortLabel(SortType sortType) {
   switch (sortType) {
     case SortType.version:
@@ -48,9 +52,7 @@ class SortMenuButton extends StatelessWidget {
       children: <Widget>[
         TextButton(
           onPressed: () {
-            final int next = (_kSortCycle.indexOf(songState.sortType) + 1) %
-                _kSortCycle.length;
-            songState.setSortType(_kSortCycle[next]);
+            songState.setSortType(nextSortType(songState.sortType));
             onSorted?.call();
           },
           child: Text(label),
