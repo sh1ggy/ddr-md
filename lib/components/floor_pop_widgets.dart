@@ -1,8 +1,9 @@
 /// Name: FloorPopWidgets
-/// Parent: Layout, SessionPage, SongPage, DifficultyListPage
+/// Parent: Layout, SessionPage, SongPage, DifficultyListPage, HistoryPage,
+/// ScoreOverviewPage
 /// Description: The small pieces Floor Pop is built from: the pad glyph,
 /// a leaning wrapper, the Volt button whose riser collapses on press, and a
-/// tab's leaning page title.
+/// tab's leaning page title, and the pill tab strip.
 library;
 
 import 'dart:async';
@@ -334,5 +335,87 @@ class BeatSwap extends StatelessWidget {
               child: child),
         ),
         child: child,
+      );
+}
+
+/// A tab strip on a riser track, the selected tab on a primary pill. Uses
+/// the surrounding [DefaultTabController] unless [controller] is given.
+class PillTabBar extends StatelessWidget {
+  const PillTabBar(
+      {super.key, required this.tabs, this.controller, this.onTap});
+
+  final List<Widget> tabs;
+  final TabController? controller;
+  final ValueChanged<int>? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+          color: pop.riser, borderRadius: BorderRadius.circular(16)),
+      child: TabBar(
+        controller: controller,
+        onTap: onTap,
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerHeight: 0,
+        indicator: BoxDecoration(
+            color: scheme.primary, borderRadius: BorderRadius.circular(12)),
+        labelColor: scheme.onPrimary,
+        unselectedLabelColor: pop.haze,
+        splashBorderRadius: BorderRadius.circular(12),
+        tabs: tabs,
+      ),
+    );
+  }
+}
+
+/// [PillTabBar] as a picker: one tab per value in [values], for a choice
+/// that switches content in place rather than paging.
+class PillTabs<T> extends StatefulWidget {
+  const PillTabs(
+      {super.key,
+      required this.values,
+      required this.tabs,
+      required this.selected,
+      required this.onChanged});
+
+  final List<T> values;
+  final List<Widget> tabs;
+  final T selected;
+  final ValueChanged<T> onChanged;
+
+  @override
+  State<PillTabs<T>> createState() => _PillTabsState<T>();
+}
+
+class _PillTabsState<T> extends State<PillTabs<T>>
+    with SingleTickerProviderStateMixin {
+  late final _controller = TabController(
+      length: widget.values.length,
+      initialIndex: widget.values.indexOf(widget.selected),
+      vsync: this);
+
+  @override
+  void didUpdateWidget(PillTabs<T> old) {
+    super.didUpdateWidget(old);
+    final i = widget.values.indexOf(widget.selected);
+    if (i != _controller.index) _controller.animateTo(i);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => PillTabBar(
+        controller: _controller,
+        tabs: widget.tabs,
+        onTap: (i) => widget.onChanged(widget.values[i]),
       );
 }

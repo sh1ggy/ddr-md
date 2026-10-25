@@ -3,19 +3,21 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/ocr_processor.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
-// Side-selector SegmentedButton shared by the camera and load-image pages.
+// Side picker on the pill tabs, shared by the camera and load-image pages.
 // Reads the saved preference from Settings on first build, calls [onChanged]
 // when the user switches, and persists the new value automatically.
 class DetectionSideSelector extends StatelessWidget {
   final DetectionSide value;
   final ValueChanged<DetectionSide> onChanged;
-  // Floating variant: no reserved band around the button and a translucent
-  // background, for overlaying on the camera preview / loaded image.
+  // Floating variant: no reserved band around the picker, for overlaying on
+  // the camera preview / loaded image.
   final bool overlay;
 
   const DetectionSideSelector({
@@ -33,24 +35,19 @@ class DetectionSideSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final button = SegmentedButton<DetectionSide>(
-      style: overlay
-          ? SegmentedButton.styleFrom(
-              backgroundColor:
-                  Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-            )
-          : null,
-      segments: const [
-        ButtonSegment(value: DetectionSide.left, label: Text('Left (1P)')),
-        ButtonSegment(value: DetectionSide.right, label: Text('Right (2P)')),
-      ],
-      selected: {value},
-      onSelectionChanged: _onSelectionChanged,
+    final picker = SizedBox(
+      width: 260,
+      child: PillTabs<DetectionSide>(
+        values: const [DetectionSide.left, DetectionSide.right],
+        tabs: const [Tab(text: 'Left · 1P'), Tab(text: 'Right · 2P')],
+        selected: value,
+        onChanged: (side) => _onSelectionChanged({side}),
+      ),
     );
-    if (overlay) return Center(child: button);
+    if (overlay) return Center(child: picker);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Center(child: button),
+      child: Center(child: picker),
     );
   }
 }
@@ -72,31 +69,33 @@ class OcrEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mutedColor =
-        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45);
+    final pop = FloorPop.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 72, color: mutedColor),
-            const SizedBox(height: 16),
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                  color: pop.riser, borderRadius: BorderRadius.circular(24)),
+              child: Icon(icon, size: 40, color: pop.haze),
+            ),
+            const SizedBox(height: 20),
             Text(
-              title,
+              title.toUpperCase(),
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: mutedColor,
-              ),
+              style: FloorPop.display(18,
+                  color: Theme.of(context).colorScheme.onSurface),
             ),
             if (subtitle != null) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: mutedColor),
+                style: TextStyle(fontSize: 14, color: pop.haze),
               ),
             ],
           ],

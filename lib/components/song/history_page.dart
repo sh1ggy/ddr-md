@@ -5,9 +5,9 @@
 /// and a timeline of saved scores ([ScoresTab]).
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/notes/note_page.dart';
 import 'package:ddr_md/components/song/scores/score_page.dart';
-import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 
 class HistoryPage extends StatelessWidget {
@@ -20,8 +20,6 @@ class HistoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       top: false,
       child: DefaultTabController(
@@ -32,28 +30,14 @@ class HistoryPage extends StatelessWidget {
           appBar: AppBar(
             centerTitle: true,
             title: const Text('History'),
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(60),
-              child: Container(
-                height: 44,
-                margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                    color: pop.riser, borderRadius: BorderRadius.circular(16)),
-                child: TabBar(
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerHeight: 0,
-                  indicator: BoxDecoration(
-                      color: scheme.primary,
-                      borderRadius: BorderRadius.circular(12)),
-                  labelColor: scheme.onPrimary,
-                  unselectedLabelColor: pop.haze,
-                  splashBorderRadius: BorderRadius.circular(12),
-                  tabs: const [
-                    _HistoryTab(Icons.edit_note, 'Notes'),
-                    _HistoryTab(Icons.scoreboard_outlined, 'Scores'),
-                  ],
-                ),
+            bottom: const PreferredSize(
+              preferredSize: Size.fromHeight(60),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: PillTabBar(tabs: [
+                  _HistoryTab(Icons.edit_note, 'Notes'),
+                  _HistoryTab(Icons.scoreboard_outlined, 'Scores'),
+                ]),
               ),
             ),
           ),
