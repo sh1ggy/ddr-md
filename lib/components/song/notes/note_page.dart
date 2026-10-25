@@ -81,11 +81,13 @@ class NotesTabState extends State<NotesTab> {
         padding:
             EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom - 6),
         child: FloatingActionButton(
-            backgroundColor: Colors.red,
-            child: const Icon(Icons.edit, color: Colors.white),
+            tooltip: 'New note',
+            child: const Icon(Icons.edit),
             onPressed: () async {
               // Wait for return from modalBottomSheet
               final result = await showModalBottomSheet<bool>(
+                // Over the floating tab bar, like the other sheets.
+                useRootNavigator: true,
                 isScrollControlled: true,
                 context: context,
                 builder: (BuildContext context) {

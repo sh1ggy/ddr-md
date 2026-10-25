@@ -34,6 +34,8 @@ class NoteCard extends StatelessWidget {
       onTap: () async {
         // Wait for return from modalBottomSheet
         final result = await showModalBottomSheet<bool>(
+          // Over the floating tab bar, like the other sheets.
+          useRootNavigator: true,
           isScrollControlled: true, // for keyboard movement
           context: context,
           builder: (BuildContext context) {
