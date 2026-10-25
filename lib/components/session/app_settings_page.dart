@@ -1,10 +1,11 @@
 /// Name: AppSettingsPage
 /// Parent: SessionPage
 /// Description: Settings, opened from Home's gear: check for song updates,
-/// read the privacy notes, and the app version with links.
+/// read the privacy notes and credits, and the app version with links.
 library;
 
 import 'package:ddr_md/components/session/recent_plays.dart';
+import 'package:ddr_md/components/settings/credits_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
@@ -46,6 +47,18 @@ class AppSettingsPage extends StatelessWidget {
                           onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
                                   builder: (_) => const PrivacyPage())),
+                        ),
+                      ),
+                      Card(
+                        child: ListTile(
+                          title: const Text("Credits",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle:
+                              const Text("Inspiration, thanks and arcades"),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const CreditsPage())),
                         ),
                       ),
                     ],

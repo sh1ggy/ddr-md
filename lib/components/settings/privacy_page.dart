@@ -11,7 +11,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '18 October 2026';
+const privacyUpdated = '25 October 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
@@ -72,8 +72,9 @@ const privacySections = <(String, List<String>)>[
           'your device. Nothing is sent to DDR MD or anyone else. Konami sees '
           "these requests as coming from your account, and Konami's own "
           'privacy policy applies to them.',
-      "- Links: the GitHub, LinkedIn and PayPal buttons open in your browser, "
-          "where those sites' own privacy policies apply.",
+      "- Links: the GitHub, LinkedIn and PayPal buttons, and the links under "
+          "Credits, open in your browser, where those sites' own privacy "
+          'policies apply.',
     ]
   ),
   (
