@@ -18,10 +18,12 @@ import 'package:ddr_md/grades.dart'
         flareClassColor,
         flareClassIcon,
         flareRankIcon,
+        gradeColor,
         gradeForScore,
+        flareColor,
         gradeIcon,
-        kFlareColors,
-        kFlareExColors;
+        kFlareExColors,
+        kLampColors;
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -29,6 +31,7 @@ import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/score_overview.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -40,14 +43,20 @@ Future<_Loaded> _load() async => (
     );
 
 class ScoreOverviewPage extends StatefulWidget {
-  const ScoreOverviewPage({super.key});
+  const ScoreOverviewPage({super.key, this.mode = Modes.singles, this.level});
+
+  /// Opens on [mode], scrolled to the level cards with [level] picked.
+  final Modes mode;
+  final int? level;
 
   @override
   State<ScoreOverviewPage> createState() => _ScoreOverviewPageState();
 }
 
 class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
-  Modes _mode = Modes.singles;
+  late Modes _mode = widget.mode;
+  final _levelsKey = GlobalKey();
+  late bool _scrollToLevels = widget.level != null;
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +80,16 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
             ));
           }
           final levels = chartsByLevel(data.records, Songs.list, _mode);
+          if (_scrollToLevels) {
+            _scrollToLevels = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final cards = _levelsKey.currentContext;
+              if (cards != null && cards.mounted) {
+                Scrollable.ensureVisible(cards,
+                    duration: FloorPop.beat, curve: FloorPop.settle);
+              }
+            });
+          }
           return ListView(
             padding: clearOfBars(context, const EdgeInsets.only(bottom: 24)),
             children: [
@@ -94,8 +113,8 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
                 ),
               ),
               _FlareCard(flareSkill(data.records, Songs.list, _mode)),
-              _LevelsCard(levels),
-              _LevelStatsCard(levels),
+              _LevelsCard(levels, key: _levelsKey, initial: widget.level),
+              _LevelStatsCard(levels, initial: widget.level),
               _ActivityCard(playsPerDay(data.plays, data.records)),
             ],
           );
@@ -246,41 +265,31 @@ typedef _Band = ({
 
 // Best first. A chart without a lamp shows as failed.
 final _lampBands = <_Band>[
-  for (final (lamp, color, icon, text) in const [
-    (ClearLamp.mfc, Color(0xFFB3E5FC), 'assets/icons/cl_marv.png', 'MFC'),
-    (ClearLamp.pfc, Color(0xFFFFC107), 'assets/icons/cl_perf.png', 'PFC'),
-    (ClearLamp.gfc, Color(0xFF66BB6A), 'assets/icons/cl_great.png', 'GFC'),
-    (ClearLamp.fc, Color(0xFF42A5F5), 'assets/icons/cl_good.png', 'FC'),
-    (ClearLamp.life4, Color(0xFFE8344E), 'assets/icons/cl_life4.png', 'LIFE4'),
-    (
-      ClearLamp.clear,
-      Color(0xFFFF9800),
-      'assets/icons/cl_li4clear.png',
-      'CLEAR'
-    ),
-    (
-      ClearLamp.assisted,
-      Color(0xFFD548E6),
-      'assets/icons/cl_asclear.png',
-      'ASSIST'
-    ),
-    (ClearLamp.failed, Color(0xFF757575), 'assets/icons/rank_e.png', 'E'),
+  for (final (lamp, icon, text) in const [
+    (ClearLamp.mfc, 'assets/icons/cl_marv.png', 'MFC'),
+    (ClearLamp.pfc, 'assets/icons/cl_perf.png', 'PFC'),
+    (ClearLamp.gfc, 'assets/icons/cl_great.png', 'GFC'),
+    (ClearLamp.fc, 'assets/icons/cl_good.png', 'FC'),
+    (ClearLamp.life4, 'assets/icons/cl_life4.png', 'LIFE4'),
+    (ClearLamp.clear, 'assets/icons/cl_li4clear.png', 'CLEAR'),
+    (ClearLamp.assisted, 'assets/icons/cl_asclear.png', 'ASSIST'),
+    (ClearLamp.failed, 'assets/icons/rank_e.png', 'E'),
   ])
     (
       holds: (r) => (r.clearLamp ?? ClearLamp.failed) == lamp,
-      color: color,
+      color: kLampColors[lamp]!,
       icon: icon,
       text: text,
       fill: null,
     ),
 ];
 
-// EX first, then IX down to I, then no flare. Each in its badge's own colour.
+// EX first, then IX down to I, then no flare.
 
 final _flareBands = <_Band>[
   (
     holds: (r) => r.flareRank == 'EX',
-    color: const Color(0xFFFCB46C),
+    color: flareColor('EX'),
     icon: flareRankIcon('EX'),
     text: 'EX',
     fill: const LinearGradient(colors: kFlareExColors),
@@ -288,7 +297,7 @@ final _flareBands = <_Band>[
   for (var i = 8; i >= 0; i--)
     (
       holds: (r) => r.flareRank == kFlareRanks[i],
-      color: kFlareColors[i],
+      color: flareColor(kFlareRanks[i]),
       icon: flareRankIcon(kFlareRanks[i]),
       text: kFlareRanks[i],
       fill: null,
@@ -307,32 +316,12 @@ final _gradeBands = <_Band>[
   for (final g in Grade.values)
     (
       holds: (r) => _grade(r) == g,
-      color: _gradeColor(g),
+      color: gradeColor(g),
       icon: gradeIcon(g),
       text: g.label,
       fill: null,
     ),
 ];
-
-// Each letter in its art's colour, + a shade lighter and - a shade darker.
-Color _gradeColor(Grade g) {
-  final base = switch (g.label[0]) {
-    'A' when g.label.startsWith('AAA') => const Color(0xFFE8C930),
-    'A' when g.label.startsWith('AA') => const Color(0xFFB0BEC5),
-    'A' => const Color(0xFFD63A4F),
-    'B' => const Color(0xFFF2701F),
-    'C' => const Color(0xFFF5B400),
-    'D' => const Color(0xFF2F6FE0),
-    _ => const Color(0xFF616161),
-  };
-  final hsl = HSLColor.fromColor(base);
-  final shift = g.label.endsWith('+')
-      ? 0.12
-      : g.label.endsWith('-')
-          ? -0.12
-          : 0.0;
-  return hsl.withLightness((hsl.lightness + shift).clamp(0.0, 1.0)).toColor();
-}
 
 Grade _grade(ScoreRecord r) => gradeForScore(r.score ?? 0,
     failed: (r.clearLamp ?? ClearLamp.failed) == ClearLamp.failed);
@@ -342,9 +331,10 @@ const _bandHeight = 18.0;
 enum _Tab { lamps, grades, flare }
 
 class _LevelsCard extends StatefulWidget {
-  const _LevelsCard(this.levels);
+  const _LevelsCard(this.levels, {super.key, this.initial});
 
   final Map<int, LevelCharts> levels;
+  final int? initial;
 
   @override
   State<_LevelsCard> createState() => _LevelsCardState();
@@ -352,7 +342,7 @@ class _LevelsCard extends StatefulWidget {
 
 class _LevelsCardState extends State<_LevelsCard> {
   _Tab _tab = _Tab.lamps;
-  int? _picked;
+  late int? _picked = widget.initial;
 
   @override
   Widget build(BuildContext context) {
@@ -481,16 +471,17 @@ class _Level extends StatelessWidget {
 
 /// One level picked from a row of numerals and how its scores spread.
 class _LevelStatsCard extends StatefulWidget {
-  const _LevelStatsCard(this.levels);
+  const _LevelStatsCard(this.levels, {this.initial});
 
   final Map<int, LevelCharts> levels;
+  final int? initial;
 
   @override
   State<_LevelStatsCard> createState() => _LevelStatsCardState();
 }
 
 class _LevelStatsCardState extends State<_LevelStatsCard> {
-  int? _picked;
+  late int? _picked = widget.initial;
 
   @override
   Widget build(BuildContext context) {

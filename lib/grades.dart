@@ -6,6 +6,8 @@ library;
 import 'dart:ui' show Color;
 
 import 'package:ddr_md/helpers.dart' show kFlareRanks, resolveOcrFlare;
+import 'package:ddr_md/models/db_models.dart' show ClearLamp;
+import 'package:flutter/painting.dart' show HSLColor;
 
 /// Grades in descending order with their inclusive score floors.
 /// E is a fail (gauge depleted) and is never reached by score alone.
@@ -121,13 +123,44 @@ String? fullComboIcon(FullComboTier tier) {
   }
 }
 
-/// Each flare rank's badge colour, I to IX. EX's badge is a rainbow,
-/// [kFlareExColors].
-const kFlareColors = [
-  Color(0xFF0C9CFC), Color(0xFF0CCCFC), Color(0xFF0CFC0C), // I–III
-  Color(0xFFFCCC0C), Color(0xFFFC0C0C), Color(0xFF6C0CFC), // IV–VI
-  Color(0xFFB4B4B4), Color(0xFFE4E4E4), Color(0xFF303030), // VII–IX
-];
+// Each letter in its art's colour, + a shade lighter and - a shade darker.
+Color gradeColor(Grade g) {
+  final base = switch (g.label[0]) {
+    'A' when g.label.startsWith('AAA') => const Color(0xFFE8C930),
+    'A' when g.label.startsWith('AA') => const Color(0xFFB0BEC5),
+    'A' => const Color(0xFFD63A4F),
+    'B' => const Color(0xFFF2701F),
+    'C' => const Color(0xFFF5B400),
+    'D' => const Color(0xFF2F6FE0),
+    _ => const Color(0xFF616161),
+  };
+  final hsl = HSLColor.fromColor(base);
+  final shift = g.label.endsWith('+')
+      ? 0.12
+      : g.label.endsWith('-')
+          ? -0.12
+          : 0.0;
+  return hsl.withLightness((hsl.lightness + shift).clamp(0.0, 1.0)).toColor();
+}
+
+/// Each clear lamp's colour, after its lamp art.
+const kLampColors = {
+  ClearLamp.mfc: Color(0xFFB3E5FC),
+  ClearLamp.pfc: Color(0xFFFFC107),
+  ClearLamp.gfc: Color(0xFF66BB6A),
+  ClearLamp.fc: Color(0xFF42A5F5),
+  ClearLamp.life4: Color(0xFFE8344E),
+  ClearLamp.clear: Color(0xFFFF9800),
+  ClearLamp.assisted: Color(0xFFD548E6),
+  ClearLamp.failed: Color(0xFF757575),
+};
+
+/// A flare rank's colour wherever one stands for it: its card's frame
+/// ([kFlareCardColors]), or for EX the first of its rainbow.
+Color flareColor(String rank) => rank == 'EX'
+    ? kFlareExColors.first
+    : kFlareCardColors[kFlareRanks.indexOf(rank)].frame;
+
 const kFlareExColors = [
   Color(0xFFFF5A5A),
   Color(0xFFFFB84D),

@@ -4,6 +4,7 @@
 /// song list and favourites list to pass to children widgets.
 library;
 
+import 'dart:math' show max;
 import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/models/content_store.dart';
@@ -13,6 +14,8 @@ import 'package:ddr_md/components/song/difficulty_label.dart'
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
+import 'package:ddr_md/components/settings/score_overview_page.dart';
+import 'package:ddr_md/components/songlist/best_rings.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
 import 'package:ddr_md/components/songlist/filter_tray.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
@@ -172,6 +175,20 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       level: chart.level,
     );
   }
+
+  /// The best on every chart the list shows: a row's own chart, or every
+  /// chart of a song row.
+  static List<ChartBest?> _listedBests(List<SongItem> items, Modes mode) => [
+        for (final item in items)
+          for (final index in item.difficultyIndex != null
+              ? [item.difficultyIndex!]
+              : (mode == Modes.singles
+                      ? item.songInfo.singles
+                      : item.songInfo.doubles)
+                  .chartsByIndex
+                  .map((c) => c.index))
+            ChartBests.at(item.songInfo, mode, index),
+      ];
 
   static String _countLabel(int count, SortType sortType) {
     final String noun = sortType == SortType.level ? 'chart' : 'song';
@@ -344,7 +361,11 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                               child: SizedBox(
                                   height: MediaQuery.paddingOf(context).top)),
                           SliverToBoxAdapter(
-                            child: filterPanel(songState),
+                            child: filterPanel(
+                                songState,
+                                hasActiveFilters && ChartBests.shown
+                                    ? _listedBests(songItems, songState.modes)
+                                    : null),
                           ),
                           if (songItems.isEmpty)
                             const SliverToBoxAdapter(
@@ -457,7 +478,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
-  Widget filterPanel(SongState songState) {
+  Widget filterPanel(SongState songState, List<ChartBest?>? bests) {
     Widget topButton({
       required String label,
       required String value,
@@ -539,6 +560,18 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             child: _LevelGrid(
               isSelected: _filter.levels.contains,
               onTap: (level) => _toggleLevel(level, songState),
+              spare: bests == null
+                  ? null
+                  // Opens the stats on the hardest level picked.
+                  : GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => ScoreOverviewPage(
+                              mode: songState.modes,
+                              level: _filter.levels.isEmpty
+                                  ? null
+                                  : _filter.levels.reduce(max)))),
+                      child: BestRings(bests)),
             ),
           ),
           const SizedBox(height: 12),
@@ -702,11 +735,13 @@ class _FilterPill extends StatelessWidget {
 
 /// Every level at once in two rows of ten, 1–10 over 11–19, so none is ever
 /// scrolled out of reach. Picked levels light up on a tile; the rest grey out.
+/// [spare] takes the slot after the last level.
 class _LevelGrid extends StatelessWidget {
-  const _LevelGrid({required this.isSelected, required this.onTap});
+  const _LevelGrid({required this.isSelected, required this.onTap, this.spare});
 
   final bool Function(int level) isSelected;
   final ValueChanged<int> onTap;
+  final Widget? spare;
 
   @override
   Widget build(BuildContext context) {
@@ -717,7 +752,9 @@ class _LevelGrid extends StatelessWidget {
 
     Widget cell(int level) {
       if (level > constants.maxDifficulty) {
-        return const Expanded(child: SizedBox());
+        return Expanded(
+            child: Center(
+                child: level == constants.maxDifficulty + 1 ? spare : null));
       }
       final bool on = isSelected(level);
       final number =
