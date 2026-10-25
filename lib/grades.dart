@@ -3,6 +3,8 @@
 /// full-combo tier from judgement counts, plus their assets/icons art.
 library;
 
+import 'dart:ui' show Color;
+
 import 'package:ddr_md/helpers.dart' show kFlareRanks, resolveOcrFlare;
 
 /// Grades in descending order with their inclusive score floors.
@@ -118,6 +120,36 @@ String? fullComboIcon(FullComboTier tier) {
       return null;
   }
 }
+
+/// Each flare rank's badge colour, I to IX. EX's badge is a rainbow,
+/// [kFlareExColors].
+const kFlareColors = [
+  Color(0xFF0C9CFC), Color(0xFF0CCCFC), Color(0xFF0CFC0C), // I–III
+  Color(0xFFFCCC0C), Color(0xFFFC0C0C), Color(0xFF6C0CFC), // IV–VI
+  Color(0xFFB4B4B4), Color(0xFFE4E4E4), Color(0xFF303030), // VII–IX
+];
+const kFlareExColors = [
+  Color(0xFFFF5A5A),
+  Color(0xFFFFB84D),
+  Color(0xFFFFF15A),
+  Color(0xFF5AFF8C),
+  Color(0xFF5AC8FF),
+  Color(0xFFB45AFF),
+];
+
+/// The frame and back of the flare-tinted card the cabinet's song select
+/// gives a chart, I to IX. EX's frame is a rainbow of [kFlareExColors].
+const kFlareCardColors = [
+  (frame: Color(0xFF0065BD), back: Color(0xFF232E4C)),
+  (frame: Color(0xFF10AADE), back: Color(0xFF233846)),
+  (frame: Color(0xFF18B210), back: Color(0xFF124223)),
+  (frame: Color(0xFFF6B200), back: Color(0xFF493610)),
+  (frame: Color(0xFFA40400), back: Color(0xFF361010)),
+  (frame: Color(0xFF41188B), back: Color(0xFF181039)),
+  (frame: Color(0xFFBDBABD), back: Color(0xFF413A36)),
+  (frame: Color(0xFFEEEEEE), back: Color(0xFF7D7D7D)),
+  (frame: Color(0xFFFFDE20), back: Color(0xFF3E2A0D)),
+];
 
 /// Icon asset for a canonical flare rank from [kFlareRanks].
 String flareRankIcon(String rank) => rank == 'EX'

@@ -101,13 +101,16 @@ class _ArcadeGridViewState extends State<ArcadeGridView> {
               sliver: SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
-                  // Square jacket plus the caption below it, so the artwork
-                  // stays uncropped whatever the column width. The 8 is the
-                  // grid's horizontal padding.
+                  // Square jacket plus the caption below it (and a chart's
+                  // score band), so the artwork stays uncropped whatever the
+                  // column width. The 8 is the grid's horizontal padding.
                   mainAxisExtent: (MediaQuery.sizeOf(context).width - 8) / 3 -
                       kArcadeTileGap * 2 +
                       kArcadeTitleHeight +
-                      kArcadeCaptionHeight,
+                      kArcadeCaptionHeight +
+                      (section.items.first.isChartScoped
+                          ? kArcadeScoreHeight
+                          : 0),
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {

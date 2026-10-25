@@ -10,7 +10,9 @@ import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
+import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:flutter/material.dart';
 
 // Gap each tile leaves around its jacket, so neighbouring artwork doesn't abut.
@@ -21,6 +23,9 @@ const double kArcadeTileGap = 3;
 // square jacket to size the cell.
 const double kArcadeTitleHeight = 33;
 const double kArcadeCaptionHeight = 19;
+// Height of the grade/lamp band a tile standing for one chart adds under its
+// caption.
+const double kArcadeScoreHeight = 20;
 
 class ArcadeGridTile extends StatelessWidget {
   const ArcadeGridTile({
@@ -38,36 +43,61 @@ class ArcadeGridTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    // A tile standing for one chart is a card in its flare colours, with the
+    // player's grade and lamp on it.
+    final best = item.isChartScoped
+        ? ChartBests.at(item.songInfo, mode, item.difficultyIndex!)
+        : null;
+    final flare = best?.flare;
     // InkWell rather than a bare GestureDetector: with the tap now committing
     // straight to the song page, the ripple is the only feedback that the
     // press registered.
     return Padding(
       padding: const EdgeInsets.all(kArcadeTileGap),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ColoredBox(
-              color: scheme.surfaceContainerHigh,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  _titleBand(context),
-                  Expanded(child: _jacket(context)),
-                  _caption(context),
-                ],
+      child: CustomPaint(
+        foregroundPainter: flare == null ? null : FlareFrame(flare, radius: 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              DecoratedBox(
+                decoration: item.isChartScoped
+                    ? flareCardBack(context, flare, radius: 8)
+                    : BoxDecoration(color: scheme.surfaceContainerHigh),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _titleBand(context),
+                    Expanded(child: _jacket(context)),
+                    _caption(context),
+                    if (item.isChartScoped)
+                      SizedBox(
+                        height: kArcadeScoreHeight,
+                        child: CardFooter(
+                          padding: const EdgeInsets.fromLTRB(3, 2, 3, 2),
+                          // Shrinks rather than overflows on a narrow tile.
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: ChartBestBadges(best,
+                                ink: 9, height: 16, gap: 3),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onTap,
-                splashColor: scheme.primary.withValues(alpha: 0.24),
-                highlightColor: scheme.primary.withValues(alpha: 0.10),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: onTap,
+                  splashColor: scheme.primary.withValues(alpha: 0.24),
+                  highlightColor: scheme.primary.withValues(alpha: 0.10),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

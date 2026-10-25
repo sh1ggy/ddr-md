@@ -19,8 +19,8 @@ import 'package:ddr_md/components/songlist/song_search_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
-import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -48,9 +48,12 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchBarFocus = FocusNode(canRequestFocus: false);
 
-  void regenFavCount() async {
+  // Back from a song, where a favourite or score may have changed.
+  void refreshRows() async {
     Modes mode = Provider.of<SongState>(context, listen: false).modes;
-    List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
+    final (favList, _) =
+        await (DatabaseProvider.getAllFavorites(mode), ChartBests.load(mode))
+            .wait;
     setState(() {
       favCount = favList.length;
     });
@@ -182,7 +185,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
 
   Future<List<SongItem>> generateSongItems(
       Modes mode, SortType sortType, bool descending) async {
-    List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
+    final (favList, _) =
+        await (DatabaseProvider.getAllFavorites(mode), ChartBests.load(mode))
+            .wait;
     setState(() {
       favCount = favList.length;
     });
@@ -372,6 +377,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                                   songInfo: songItems.first.songInfo,
                                   isFav: false,
                                   isSearch: false,
+                                  // Rows standing for a chart are cards, a
+                                  // little taller.
+                                  difficultyIndex:
+                                      songItems.first.difficultyIndex,
                                 ),
                                 itemBuilder: (context, index) {
                                   final SongItem songItem = songItems[index];
@@ -380,7 +389,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                                     isFav: songItem.isFav,
                                     isSearch: false,
                                     difficultyIndex: songItem.difficultyIndex,
-                                    regenFavsCallback: regenFavCount,
+                                    regenFavsCallback: refreshRows,
                                   );
                                 },
                                 itemCount: songItems.length,
@@ -613,7 +622,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   readOnly: true,
                   onTap: () => Navigator.of(context).push(
                       SongSearchPage.route(_searchController,
-                          regenFavsCallback: regenFavCount)),
+                          regenFavsCallback: refreshRows)),
                   hintText: "Search song...",
                   constraints: const BoxConstraints(
                       maxWidth: 800.0, minHeight: 48.0, maxHeight: 48.0),

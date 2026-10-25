@@ -423,6 +423,14 @@ class DatabaseProvider {
     return [for (final r in rows) ScoreRecord.fromMap(r)];
   }
 
+  // Every source's records for one mode.
+  static Future<List<ScoreRecord>> getScoreRecordsByMode(Modes mode) async {
+    final db = await _instance;
+    final rows = await db
+        .query("score_records", where: "mode = ?", whereArgs: [mode.name]);
+    return [for (final r in rows) ScoreRecord.fromMap(r)];
+  }
+
   static Future<List<ScoreRecord>> getScoreRecords(
       ScoreRecordSource source) async {
     final db = await _instance;

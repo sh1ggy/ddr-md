@@ -13,7 +13,13 @@ import 'package:ddr_md/components/song/difficulty_label.dart'
     show LevelNumber, LevelPicker;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart'
-    show Grade, flareRankIcon, gradeForScore, gradeIcon;
+    show
+        Grade,
+        flareRankIcon,
+        gradeForScore,
+        gradeIcon,
+        kFlareColors,
+        kFlareExColors;
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -269,11 +275,6 @@ final _lampBands = <_Band>[
 ];
 
 // EX first, then IX down to I, then no flare. Each in its badge's own colour.
-const _flareColors = [
-  Color(0xFF0C9CFC), Color(0xFF0CCCFC), Color(0xFF0CFC0C), // I–III
-  Color(0xFFFCCC0C), Color(0xFFFC0C0C), Color(0xFF6C0CFC), // IV–VI
-  Color(0xFFB4B4B4), Color(0xFFE4E4E4), Color(0xFF303030), // VII–IX
-];
 
 final _flareBands = <_Band>[
   (
@@ -281,20 +282,12 @@ final _flareBands = <_Band>[
     color: const Color(0xFFFCB46C),
     icon: flareRankIcon('EX'),
     text: 'EX',
-    // The EX badge is a rainbow.
-    fill: const LinearGradient(colors: [
-      Color(0xFFFF5A5A),
-      Color(0xFFFFB84D),
-      Color(0xFFFFF15A),
-      Color(0xFF5AFF8C),
-      Color(0xFF5AC8FF),
-      Color(0xFFB45AFF),
-    ]),
+    fill: const LinearGradient(colors: kFlareExColors),
   ),
   for (var i = 8; i >= 0; i--)
     (
       holds: (r) => r.flareRank == kFlareRanks[i],
-      color: _flareColors[i],
+      color: kFlareColors[i],
       icon: flareRankIcon(kFlareRanks[i]),
       text: kFlareRanks[i],
       fill: null,

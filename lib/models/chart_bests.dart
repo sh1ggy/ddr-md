@@ -1,0 +1,82 @@
+/// Name: ChartBests
+/// Parent: DifficultyListPage
+/// Description: The player's best grade, clear lamp and flare on every chart
+/// of one mode, from synced records and saved scores, so song list rows can
+/// show them without a query each. Each is bested separately, as the cabinet
+/// keeps them. Only synced records carry a lamp.
+library;
+
+import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/grades.dart';
+import 'package:ddr_md/helpers.dart'
+    show kFlareRanks, kInGameDifficultyNames, resolveOcrFlare;
+import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/db_models.dart' show ClearLamp;
+import 'package:ddr_md/models/song_model.dart';
+
+typedef ChartBest = ({Grade? grade, ClearLamp? lamp, String? flare});
+
+class ChartBests {
+  static Modes? _mode;
+  // Song name → in-game difficulty → best.
+  static Map<String, Map<String, ChartBest>> _bests = {};
+
+  /// The best on the chart at [index] into [mode]'s availableTypes; null when
+  /// it hasn't been played or another mode is loaded.
+  static ChartBest? at(SongInfo song, Modes mode, int index) {
+    final types =
+        (mode == Modes.singles ? song.singles : song.doubles).availableTypes;
+    if (mode != _mode || types.isEmpty) return null;
+    return _bests[song.name]
+        ?[kInGameDifficultyNames[types[index.clamp(0, types.length - 1)]]];
+  }
+
+  static Future<void> load(Modes mode) async {
+    final (records, scores) = await (
+      DatabaseProvider.getScoreRecordsByMode(mode),
+      DatabaseProvider.getAllScores(),
+    ).wait;
+    // Scores key on the transliterated title, records on the song name.
+    final names = {for (final s in Songs.list) s.titletranslit: s.name};
+    final bests = <String, Map<String, ChartBest>>{};
+    void add(String? song, String difficulty, Grade? grade, ClearLamp? lamp,
+        String? flare) {
+      if (song == null) return;
+      final charts = bests.putIfAbsent(song, () => {});
+      final old = charts[difficulty];
+      final oldGrade = old?.grade, oldLamp = old?.lamp, oldFlare = old?.flare;
+      charts[difficulty] = (
+        // Grades run best first; lamps and flare ranks worst first.
+        grade:
+            oldGrade == null || (grade != null && grade.index < oldGrade.index)
+                ? grade ?? oldGrade
+                : oldGrade,
+        lamp: oldLamp == null || (lamp != null && lamp.index > oldLamp.index)
+            ? lamp ?? oldLamp
+            : oldLamp,
+        flare: oldFlare == null ||
+                (flare != null &&
+                    kFlareRanks.indexOf(flare) > kFlareRanks.indexOf(oldFlare))
+            ? flare ?? oldFlare
+            : oldFlare,
+      );
+    }
+
+    for (final r in records) {
+      add(
+          r.song,
+          r.difficulty,
+          Grade.values.where((g) => g.label == r.rank).firstOrNull,
+          r.clearLamp,
+          r.flareRank.isEmpty ? null : r.flareRank);
+    }
+    for (final s in scores) {
+      if (s.mode != mode) continue;
+      add(names[s.songTitle], s.difficulty,
+          s.score == null ? null : gradeForScore(s.score!), null,
+          resolveOcrFlare(s.flare));
+    }
+    _mode = mode;
+    _bests = bests;
+  }
+}

@@ -8,6 +8,7 @@ import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -31,7 +32,10 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
   // Getting favourite items & returning future for list of SongInfo
   Future<List<SongInfo>> getFavSongInfoList() async {
     Modes mode = Provider.of<SongState>(context, listen: false).modes;
-    List<Favorite>? favorites = await DatabaseProvider.getAllFavorites(mode);
+    final (favorites, _) = await (
+      DatabaseProvider.getAllFavorites(mode),
+      ChartBests.load(mode)
+    ).wait;
 
     List<SongInfo> tempFavoriteSongList = [];
     for (Favorite fav in favorites) {
