@@ -12,11 +12,15 @@ import 'package:ddr_md/helpers.dart'
     show kFlareRanks, kInGameDifficultyNames, resolveOcrFlare;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart' show ClearLamp;
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 
 typedef ChartBest = ({Grade? grade, ClearLamp? lamp, String? flare});
 
 class ChartBests {
+  /// Whether the song list shows bests at all; off, chart rows are plain rows.
+  static bool get shown => Settings.getInt(Settings.songlistHideStatsKey) == 0;
+
   static Modes? _mode;
   // Song name → in-game difficulty → best.
   static Map<String, Map<String, ChartBest>> _bests = {};
@@ -29,6 +33,12 @@ class ChartBests {
     if (mode != _mode || types.isEmpty) return null;
     return _bests[song.name]
         ?[kInGameDifficultyNames[types[index.clamp(0, types.length - 1)]]];
+  }
+
+  /// [load]s unless [mode] is already loaded, so refiltering the list skips
+  /// the database.
+  static Future<void> ensure(Modes mode) async {
+    if (mode != _mode) await load(mode);
   }
 
   static Future<void> load(Modes mode) async {
@@ -72,8 +82,11 @@ class ChartBests {
     }
     for (final s in scores) {
       if (s.mode != mode) continue;
-      add(names[s.songTitle], s.difficulty,
-          s.score == null ? null : gradeForScore(s.score!), null,
+      add(
+          names[s.songTitle],
+          s.difficulty,
+          s.score == null ? null : gradeForScore(s.score!),
+          null,
           resolveOcrFlare(s.flare));
     }
     _mode = mode;
