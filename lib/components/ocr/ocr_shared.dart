@@ -186,6 +186,76 @@ class DebugZoomChip extends StatelessWidget {
   }
 }
 
+// One OCR reading on a riser: its label, then [child] (the value, usually
+// editable) and [trailing], with a Volt bar along the bottom for how many
+// frames agree on it when [confidence] is known.
+class OcrFieldTile extends StatelessWidget {
+  final String label;
+  final Color? labelColor;
+  final double? confidence;
+  final Widget child;
+  final Widget? trailing;
+
+  const OcrFieldTile({
+    super.key,
+    required this.label,
+    this.labelColor,
+    this.confidence,
+    required this.child,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Container(
+      height: 44,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+          color: pop.riser, borderRadius: BorderRadius.circular(14)),
+      child: Stack(fit: StackFit.expand, children: [
+        Padding(
+          padding: EdgeInsets.only(left: 12, right: trailing == null ? 12 : 0),
+          child: Row(children: [
+            Text(label,
+                style: pop.label.copyWith(
+                    letterSpacing: 0.7, color: labelColor ?? pop.haze)),
+            const SizedBox(width: 8),
+            Expanded(child: child),
+            if (trailing != null) trailing!,
+          ]),
+        ),
+        if (confidence != null) ConfidenceBar(confidence!),
+      ]),
+    );
+  }
+}
+
+// A Volt bar along the bottom of a Stack, as wide as the share of frames
+// that agree on a reading.
+class ConfidenceBar extends StatelessWidget {
+  final double confidence;
+
+  const ConfidenceBar(this.confidence, {super.key});
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+        left: 0,
+        bottom: 0,
+        right: 0,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: AnimatedFractionallySizedBox(
+            duration: FloorPop.eighth,
+            curve: FloorPop.settle,
+            widthFactor: confidence.clamp(0.0, 1.0),
+            child: Container(
+                height: 3, color: FloorPop.volt.withValues(alpha: 0.7)),
+          ),
+        ),
+      );
+}
+
 // Returns the saved DetectionSide preference, defaulting to left.
 DetectionSide savedDetectionSide() {
   final index = Settings.getInt(Settings.detectionSideKey);

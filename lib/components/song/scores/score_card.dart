@@ -202,20 +202,25 @@ class _ScoreJudgments extends StatelessWidget {
 /// Full-combo lamp art for a play, from its judgements. Only meaningful when
 /// every count was captured; a missing one could hide the miss that breaks
 /// the combo.
-String? scoreLampArt(Score score) {
-  if (score.marvelous == null ||
-      score.perfect == null ||
-      score.great == null ||
-      score.good == null ||
-      score.miss == null) {
+String? scoreLampArt(Score score) => judgedLampArt(
+    score.marvelous, score.perfect, score.great, score.good, score.miss);
+
+/// [scoreLampArt] from the counts alone, for a play not yet saved.
+String? judgedLampArt(
+    int? marvelous, int? perfect, int? great, int? good, int? miss) {
+  if (marvelous == null ||
+      perfect == null ||
+      great == null ||
+      good == null ||
+      miss == null) {
     return null;
   }
   return switch (fullComboTier(
-    marvelous: score.marvelous!,
-    perfect: score.perfect!,
-    great: score.great!,
-    good: score.good!,
-    miss: score.miss!,
+    marvelous: marvelous,
+    perfect: perfect,
+    great: great,
+    good: good,
+    miss: miss,
   )) {
     FullComboTier.none => null,
     final tier => fullComboIcon(tier),

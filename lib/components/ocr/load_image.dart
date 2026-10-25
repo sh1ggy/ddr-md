@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart' show clearOfBars;
 import 'package:ddr_md/components/ocr/ocr_shared.dart';
 import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_overlay.dart';
@@ -12,6 +13,7 @@ import 'package:ddr_md/helpers.dart'
     show judgmentColor, kFlareRanks, resolveOcrFlare;
 import 'package:ddr_md/models/db_models.dart' show ScoreSource;
 import 'package:ddr_md/ocr_processor.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -324,8 +326,10 @@ class _LoadImageState extends State<LoadImage> {
                   : ListView(
                       shrinkWrap: true,
                       // Bottom gap so the score panel's Save button can
-                      // scroll clear of the floating Process photo FAB.
-                      padding: const EdgeInsets.only(bottom: 88),
+                      // scroll clear of the Process photo FAB and the tab
+                      // bar the page runs under.
+                      padding: clearOfBars(
+                          context, const EdgeInsets.only(bottom: 88)),
                       children: [
                         Stack(
                           children: [
@@ -381,7 +385,9 @@ class _LoadImageState extends State<LoadImage> {
                                     : null;
                               },
                               middleChildren: [
-                                for (final key in _populatedKeys)
+                                // The panel draws the score on its own card.
+                                for (final key in _populatedKeys
+                                    .where((k) => k != 'score'))
                                   if (key == 'flare')
                                     FlareDropdownField(
                                       controller: _fieldControllers[key]!,
@@ -422,11 +428,14 @@ class OCRCandidate {
   const OCRCandidate(this.value, this.count, this.share);
 }
 
-// An editable OCR field: a labelled TextField prefilled with the OCR result.
-// In the camera flow it also renders a clickable [candidates] histogram (sorted
-// by frame count); tapping a bar sets the field to that reading.
+// An editable OCR field on a riser: its label, the value prefilled from the
+// OCR result, and a bar for how many frames agree on it. In the camera flow
+// it can also render a clickable [candidates] histogram (sorted by frame
+// count); tapping a bar sets the field to that reading.
 class OCREditableField extends StatelessWidget {
   final String keyName;
+  // Shorter than the field's full name, for a tile in a grid.
+  final String? label;
   final TextEditingController controller;
   // Optional alternative readings shown as a clickable histogram below the field.
   final List<OCRCandidate> candidates;
@@ -436,91 +445,53 @@ class OCREditableField extends StatelessWidget {
   // tapping a histogram bar — so the parent can stop auto-prefilling this field.
   final ValueChanged<String>? onUserEdit;
   final double? confidence;
-  final int? sampleCount;
 
   const OCREditableField({
     super.key,
     required this.keyName,
+    this.label,
     required this.controller,
     this.candidates = const [],
     this.winnerValue,
     this.onUserEdit,
     this.confidence,
-    this.sampleCount,
   });
 
   @override
   Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Text(
-                  ocrFieldLabel(keyName),
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: judgmentColor(keyName, context: context),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: controller,
-                        onChanged: onUserEdit,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          hintText: '—',
-                          border: UnderlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                    if (confidence != null)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Text(
-                          sampleCount != null
-                              ? '${(confidence! * 100).round()}% ($sampleCount)'
-                              : '${(confidence! * 100).round()}%',
-                          style:
-                              TextStyle(fontSize: 12, color: Colors.grey[600]),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+          OcrFieldTile(
+            label: label ?? ocrFieldLabel(keyName),
+            labelColor: judgmentColor(keyName, context: context),
+            confidence: confidence,
+            child: TextField(
+              controller: controller,
+              onChanged: onUserEdit,
+              textAlign: TextAlign.right,
+              style: keyName == 'username'
+                  ? const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)
+                  : FloorPop.readout(18,
+                      color: keyName == 'miss' ? pop.down : null),
+              decoration: const InputDecoration.collapsed(hintText: '—'),
+            ),
           ),
           if (candidates.length > 1)
             Padding(
-              padding: const EdgeInsets.only(left: 8, top: 4, bottom: 2),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final c in candidates)
-                    _CandidateBar(
-                      candidate: c,
-                      isWinner: c.value == winnerValue,
-                      onTap: () {
-                        controller.text = c.value;
-                        controller.selection =
-                            TextSelection.collapsed(offset: c.value.length);
-                        onUserEdit?.call(c.value);
-                      },
-                    ),
-                ],
+              padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
+              child: OcrCandidateBars(
+                candidates: candidates,
+                winnerValue: winnerValue,
+                onPick: (value) {
+                  controller.text = value;
+                  controller.selection =
+                      TextSelection.collapsed(offset: value.length);
+                  onUserEdit?.call(value);
+                },
               ),
             ),
         ],
@@ -529,7 +500,7 @@ class OCREditableField extends StatelessWidget {
   }
 }
 
-// The flare counterpart of SaveScorePanel's difficulty dropdown: a hard-set
+// The flare counterpart of SaveScorePanel's difficulty menu: a hard-set
 // dropdown of the canonical flare ranks (I..IX, EX — the DDR World flare
 // gauge), pre-selected by resolving the raw OCR reading (see
 // [resolveOcrFlare]) and overridable by the user. Picking a rank writes the
@@ -542,18 +513,17 @@ class FlareDropdownField extends StatelessWidget {
   // can stop auto-prefilling it from the rolling average.
   final ValueChanged<String>? onUserEdit;
   final double? confidence;
-  final int? sampleCount;
 
   const FlareDropdownField({
     super.key,
     required this.controller,
     this.onUserEdit,
     this.confidence,
-    this.sampleCount,
   });
 
   @override
   Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
     // Listen to the controller so live prefills from the camera aggregator
     // (which write straight into it) update the selected rank.
     return ValueListenableBuilder<TextEditingValue>(
@@ -562,87 +532,65 @@ class FlareDropdownField extends StatelessWidget {
         final raw = value.text.trim();
         final rank = resolveOcrFlare(raw);
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'FLARE',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: OcrFieldTile(
+            label: 'FLARE',
+            confidence: confidence,
+            trailing: raw.isEmpty
+                ? null
+                : IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'No flare',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      controller.clear();
+                      onUserEdit?.call('');
+                    },
+                  ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: rank,
+                isExpanded: true,
+                isDense: true,
+                alignment: AlignmentDirectional.centerEnd,
+                borderRadius: BorderRadius.circular(14),
+                hint: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    // No rank matched the reading — show it so the user
+                    // knows what the scan said while they pick.
+                    raw.isEmpty ? 'None' : '"$raw"?',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 15, color: pop.haze),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButton<String>(
-                        value: rank,
-                        isExpanded: true,
-                        hint: Text(
-                          // No rank matched the reading — show it so the user
-                          // knows what the scan said while they pick.
-                          raw.isEmpty ? 'None' : '"$raw"?',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 16,
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        items: [
-                          for (final r in kFlareRanks)
-                            DropdownMenuItem(
-                              value: r,
-                              child: Row(
-                                children: [
-                                  Image.asset(flareRankIcon(r), height: 18),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      r,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                items: [
+                  for (final r in kFlareRanks)
+                    DropdownMenuItem(
+                      value: r,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Image.asset(flareRankIcon(r), height: 18),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              r,
+                              overflow: TextOverflow.ellipsis,
+                              style: FloorPop.readout(16),
                             ),
+                          ),
                         ],
-                        onChanged: (v) {
-                          if (v == null) return;
-                          controller.text = v;
-                          onUserEdit?.call(v);
-                        },
                       ),
                     ),
-                    if (raw.isNotEmpty)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        tooltip: 'No flare',
-                        icon: const Icon(Icons.close, size: 18),
-                        onPressed: () {
-                          controller.clear();
-                          onUserEdit?.call('');
-                        },
-                      ),
-                    if (confidence != null)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Text(
-                          sampleCount != null
-                              ? '${(confidence! * 100).round()}% ($sampleCount)'
-                              : '${(confidence! * 100).round()}%',
-                          style:
-                              TextStyle(fontSize: 12, color: Colors.grey[600]),
-                        ),
-                      ),
-                  ],
-                ),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  controller.text = v;
+                  onUserEdit?.call(v);
+                },
               ),
-            ],
+            ),
           ),
         );
       },
@@ -650,8 +598,34 @@ class FlareDropdownField extends StatelessWidget {
   }
 }
 
-// A clickable histogram bar for one candidate reading. Tapping it sets the
-// field to this value. The winning (modal) value is highlighted green.
+// Every reading a field got, as clickable bars sorted by frame count; the
+// winning (modal) value is Volt. Tapping a bar picks that reading.
+class OcrCandidateBars extends StatelessWidget {
+  const OcrCandidateBars({
+    super.key,
+    required this.candidates,
+    required this.winnerValue,
+    required this.onPick,
+  });
+
+  final List<OCRCandidate> candidates;
+  final String? winnerValue;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final c in candidates)
+            _CandidateBar(
+              candidate: c,
+              isWinner: c.value == winnerValue,
+              onTap: () => onPick(c.value),
+            ),
+        ],
+      );
+}
+
 class _CandidateBar extends StatelessWidget {
   const _CandidateBar({
     required this.candidate,
@@ -665,14 +639,12 @@ class _CandidateBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final barColor = isWinner ? Colors.green : Colors.grey[400]!;
-    final labelColor = theme.colorScheme.onSurface;
-    final mutedColor = theme.colorScheme.onSurface.withValues(alpha: 0.6);
+    final pop = FloorPop.of(context);
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
           children: [
             SizedBox(
@@ -680,25 +652,24 @@ class _CandidateBar extends StatelessWidget {
               child: Text(
                 candidate.value,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: labelColor,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  fontWeight: isWinner ? FontWeight.w600 : FontWeight.w400,
-                ),
+                style: FloorPop.readout(13, color: isWinner ? null : pop.haze),
               ),
             ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(4),
                   child: Stack(
                     children: [
-                      Container(height: 12, color: theme.dividerColor),
+                      Container(height: 8, color: pop.line),
                       FractionallySizedBox(
                         widthFactor: candidate.share.clamp(0.0, 1.0),
-                        child: Container(height: 12, color: barColor),
+                        child: Container(
+                            height: 8,
+                            color: isWinner
+                                ? FloorPop.volt
+                                : pop.haze.withValues(alpha: 0.5)),
                       ),
                     ],
                   ),
@@ -710,7 +681,7 @@ class _CandidateBar extends StatelessWidget {
               child: Text(
                 '${candidate.count} · ${(candidate.share * 100).round()}%',
                 textAlign: TextAlign.right,
-                style: TextStyle(fontSize: 11, color: mutedColor),
+                style: pop.label.copyWith(letterSpacing: 0),
               ),
             ),
           ],
