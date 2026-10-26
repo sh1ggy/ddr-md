@@ -350,7 +350,7 @@ class ScoreBadges extends StatelessWidget {
     final grade = gradeForScore(score);
     final unit = dense ? 0.8 : 1.0;
     final ink = 14 * unit, height = 24 * unit;
-    // Badges hold their width when empty, so score, grade, lamp and flare
+    // Badges hold their width when empty, so score, flare, grade and lamp
     // line up down a list.
     final gap = SizedBox(width: 6 * unit);
     return Row(
@@ -366,12 +366,12 @@ class ScoreBadges extends StatelessWidget {
                   fontFeatures: const [FontFeature.tabularFigures()])),
         ),
         SizedBox(width: 8 * unit),
+        _FlareBadge(flare, ink: ink, height: height),
+        gap,
         ArtBadge(gradeIcon(grade),
             aspect: kGradeAspect, ink: ink, height: height),
         gap,
         ArtBadge(lampArt, aspect: kLampAspect, ink: ink, height: height),
-        gap,
-        _FlareBadge(flare, ink: ink, height: height),
       ],
     );
   }

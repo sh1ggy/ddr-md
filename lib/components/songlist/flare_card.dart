@@ -67,10 +67,10 @@ class FlareFrame extends CustomPainter {
       old.rank != rank || old.radius != radius;
 }
 
-/// A chart's grade, clear lamp and flare as a row of badges in the cabinet's
-/// order, each art drawn [ink] tall (its visible part, not the image's
-/// margin), so the three read at one size. With [score], the best score leads
-/// the row, as on the cabinet.
+/// A chart's flare, grade and clear lamp as a row of badges, the lamp last
+/// since it's the widest, each art drawn [ink] tall (its visible part, not the
+/// image's margin), so the three read at one size. With [score], the best
+/// score leads the row.
 class ChartBestBadges extends StatelessWidget {
   const ChartBestBadges(this.best,
       {super.key,
@@ -113,11 +113,11 @@ class ChartBestBadges extends StatelessWidget {
         ]),
         SizedBox(width: gap + 2),
       ],
+      badge(flare == null ? null : flareRankIcon(flare), kFlareAspect),
+      SizedBox(width: gap),
       badge(grade == null ? null : gradeIcon(grade), kGradeAspect),
       SizedBox(width: gap),
       badge(clearLampIcon(best?.lamp), kLampAspect),
-      SizedBox(width: gap),
-      badge(flare == null ? null : flareRankIcon(flare), kFlareAspect),
     ]);
   }
 }
