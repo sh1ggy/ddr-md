@@ -103,6 +103,7 @@ FullComboTier fullComboTier({
 
 // The generic CLEAR lamp, for clears that earned no full-combo tier.
 const clearIcon = 'assets/icons/cl_li4clear.png';
+const life4Icon = 'assets/icons/cl_life4.png';
 
 /// Grade art (_p = plus, _m = minus).
 String gradeIcon(Grade grade) => 'assets/icons/rank_'

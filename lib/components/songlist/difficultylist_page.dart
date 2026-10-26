@@ -374,7 +374,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                           SliverToBoxAdapter(
                             child: filterPanel(
                                 songState,
-                                hasActiveFilters && ChartBests.shown
+                                ChartBests.shown
                                     ? _listedBests(songItems, songState.modes)
                                     : null),
                           ),
@@ -573,16 +573,15 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               onTap: (level) => _toggleLevel(level, songState),
               spare: bests == null
                   ? null
-                  // Opens the stats on the hardest level picked.
-                  : GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => ScoreOverviewPage(
-                              mode: songState.modes,
-                              level: _filter.levels.isEmpty
-                                  ? null
-                                  : _filter.levels.reduce(max)))),
-                      child: BestRings(bests)),
+                  // The stats open on the hardest level picked.
+                  : BestRings(bests,
+                      onStats: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => ScoreOverviewPage(
+                                  mode: songState.modes,
+                                  level: _filter.levels.isEmpty
+                                      ? null
+                                      : _filter.levels.reduce(max))))),
             ),
           ),
           const SizedBox(height: 12),
@@ -834,39 +833,48 @@ class _SortPill extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
         height: 36,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          InkWell(
-            onTap: () {
-              songState.setSortType(nextSortType(songState.sortType));
-              onSorted();
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(left: 14, right: 8),
-              child: Row(children: [
-                Icon(Icons.sort, size: 18, color: pop.haze),
-                const SizedBox(width: 6),
-                Text(sortLabel(songState.sortType), style: style),
-              ]),
-            ),
-          ),
-          Container(width: 1, height: 18, color: pop.line),
-          InkWell(
-            onTap: () {
-              songState.setSortDescending(!descending);
-              onSorted();
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8, right: 12),
-              child: Tooltip(
-                message: descending ? 'Descending' : 'Ascending',
-                child: Icon(
-                    descending ? Icons.arrow_downward : Icons.arrow_upward,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.primary),
+        child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InkWell(
+                customBorder: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.horizontal(left: Radius.circular(18))),
+                onTap: () {
+                  songState.setSortType(nextSortType(songState.sortType));
+                  onSorted();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 14, right: 8),
+                  child: Row(children: [
+                    Icon(Icons.sort, size: 18, color: pop.haze),
+                    const SizedBox(width: 6),
+                    Text(sortLabel(songState.sortType), style: style),
+                  ]),
+                ),
               ),
-            ),
-          ),
-        ]),
+              Center(child: Container(width: 1, height: 18, color: pop.line)),
+              InkWell(
+                customBorder: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.horizontal(right: Radius.circular(18))),
+                onTap: () {
+                  songState.setSortDescending(!descending);
+                  onSorted();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 12),
+                  child: Tooltip(
+                    message: descending ? 'Descending' : 'Ascending',
+                    child: Icon(
+                        descending ? Icons.arrow_downward : Icons.arrow_upward,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary),
+                  ),
+                ),
+              ),
+            ]),
       ),
     );
   }

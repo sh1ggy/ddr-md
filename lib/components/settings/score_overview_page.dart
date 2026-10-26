@@ -16,6 +16,8 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart'
     show
         Grade,
+        clearIcon,
+        life4Icon,
         flareClassColor,
         flareClassIcon,
         flareRankIcon,
@@ -272,8 +274,8 @@ final _lampBands = <_Band>[
     (ClearLamp.pfc, 'assets/icons/cl_perf.png', 'PFC'),
     (ClearLamp.gfc, 'assets/icons/cl_great.png', 'GFC'),
     (ClearLamp.fc, 'assets/icons/cl_good.png', 'FC'),
-    (ClearLamp.life4, 'assets/icons/cl_life4.png', 'LIFE4'),
-    (ClearLamp.clear, 'assets/icons/cl_li4clear.png', 'CLEAR'),
+    (ClearLamp.life4, life4Icon, 'LIFE4'),
+    (ClearLamp.clear, clearIcon, 'CLEAR'),
     (ClearLamp.failed, 'assets/icons/rank_e.png', 'E'),
   ])
     (
@@ -512,78 +514,49 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
   }
 }
 
-/// Band labels with their counts in a grid of fixed cells, so changing
-/// counts never moves anything. Empty bands are dimmed.
+/// Band labels with their counts as a three-column grid of badge tiles, the
+/// same as the song list's rings card, so changing counts never moves
+/// anything. Empty bands are dimmed.
 class _BandCounts extends StatelessWidget {
   const _BandCounts(this.entries);
 
   final List<(_Band, int)> entries;
 
+  static const _gap = 6.0;
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     const style = TextStyle(
         fontSize: 13,
         height: 1,
         fontWeight: FontWeight.w700,
         fontFeatures: [FontFeature.tabularFigures()]);
-    final surface = scheme.surfaceContainerLow.computeLuminance();
-    // The band's colour, unless it would vanish into the card.
-    Color tint(Color c) =>
-        (c.computeLuminance() - surface).abs() < 0.15 ? scheme.onSurface : c;
-    Widget label(_Band b) => b.icon != null
-        ? ArtBadge(b.icon,
-            aspect: b.icon!.contains('/cl_')
-                ? kLampAspect
-                : b.icon!.contains('/rank_')
-                    ? kGradeAspect
-                    : kFlareAspect,
-            ink: 11,
-            height: _bandHeight + 2,
-            color: b.color)
-        : Text(b.text, style: style.copyWith(color: b.color));
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 4,
-      runSpacing: 6,
-      children: [
-        for (final (b, n) in entries)
-          Opacity(
-            opacity: n > 0 ? 1 : 0.3,
-            child: SizedBox(
-              width: 92,
-              height: _bandHeight + 6,
-              child: Row(children: [
-                SizedBox(
-                    width: 56,
-                    child: Center(
-                        child:
-                            FittedBox(fit: BoxFit.scaleDown, child: label(b)))),
-                Expanded(
-                    child: _tinted(
-                        b,
-                        Text('$n',
-                            textAlign: TextAlign.right,
-                            style: style.copyWith(color: tint(b.color))))),
-                const SizedBox(width: 4),
-              ]),
+    return LayoutBuilder(
+      builder: (context, box) => Wrap(
+        spacing: _gap,
+        runSpacing: _gap,
+        children: [
+          for (final (b, n) in entries)
+            Opacity(
+              opacity: n > 0 ? 1 : 0.3,
+              child: ArtTile(b.icon,
+                  aspect: b.icon == null || b.icon!.contains('/cl_')
+                      ? kLampAspect
+                      : b.icon!.contains('/rank_')
+                          ? kGradeAspect
+                          : kFlareAspect,
+                  ink: 11,
+                  width: (box.maxWidth - 2 * _gap) / 3,
+                  height: _bandHeight + 10,
+                  color: b.color,
+                  label: Text(b.text, style: style.copyWith(color: b.color)),
+                  trailing: Text('$n', style: style)),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
-
-/// [child] painted with the band's gradient where it has one.
-Widget _tinted(_Band b, Widget child) => b.fill == null
-    ? child
-    // Sized to the text so the whole rainbow lands on the digits.
-    : Align(
-        alignment: Alignment.centerRight,
-        child: ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: b.fill!.createShader,
-            child: child));
 
 /// A level's score spread: how many charts land in each band of score, with
 /// the mean marked and one standard deviation either side shaded.

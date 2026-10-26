@@ -1,10 +1,11 @@
 /// Name: ArtBadge
-/// Parent: ChartBestBadges, ScoreBadges, RecentPlays
+/// Parent: ChartBestBadges, ScoreBadges, RecentPlays, BestRings,
+/// ScoreOverviewPage
 /// Description: Grade, lamp and flare art as badges: a tag tinted and
 /// underlined in its tier's colour, pressed in where there's nothing to show.
 /// High tiers catch a light that sweeps across them every few seconds, and
 /// the best of each kind (AAA, MFC, flare EX) has a holo foil drifting under
-/// its art.
+/// its art. As a tile, the badge takes in a count beside its art.
 library;
 
 import 'package:ddr_md/grades.dart';
@@ -26,6 +27,7 @@ final _tiers = <String, (Color?, bool, bool)>{
   fullComboIcon(FullComboTier.gfc)!: (kLampColors[ClearLamp.gfc], false, false),
   fullComboIcon(FullComboTier.fc)!: (kLampColors[ClearLamp.fc], false, false),
   clearIcon: (kLampColors[ClearLamp.clear], false, false),
+  life4Icon: (kLampColors[ClearLamp.life4], false, false),
   for (final r in kFlareRanks)
     flareRankIcon(r): (
       r == 'EX' ? null : flareColor(r),
@@ -48,7 +50,7 @@ class ArtBadge extends StatelessWidget {
   final double aspect;
   final double ink;
   final double height;
-  // Tint for art outside the tiers above (the LIFE4 lamp, a fail).
+  // Tint for art outside the tiers above (a fail, no flare).
   final Color? color;
 
   @override
@@ -61,25 +63,83 @@ class ArtBadge extends StatelessWidget {
       rainbow: tier != null && tier.$1 == null,
       shine: tier?.$2 ?? false,
       foil: tier?.$3 ?? false,
-      child: art == null
-          ? null
-          : OverflowBox(
-              maxWidth: double.infinity,
-              maxHeight: double.infinity,
-              child: Image.asset(art!, height: ink / _drawnHeight(art!))),
+      child: art == null ? null : _image(art!, ink),
     );
   }
+
+  static Widget _image(String art, double ink) => OverflowBox(
+      maxWidth: double.infinity,
+      maxHeight: double.infinity,
+      child: Image.asset(art, height: ink / _drawnHeight(art)));
 
   // How much of an art's height is drawn, the rest being transparent margin.
   static double _drawnHeight(String art) => art.contains('/rank_')
       ? 0.74
-      : art == clearIcon
+      : art == clearIcon || art == life4Icon
           ? 0.67
           : 1;
 }
 
 /// A badge: raised and tinted [color] when it holds something, pressed in
 /// when it's empty, so a missing grade, flare or lamp still keeps its place.
+/// [art] with a [trailing] count beside it, the whole tile one badge [width]
+/// wide: tinted, shining and foiled as [ArtBadge] would be. [label] stands in
+/// where there's no art.
+class ArtTile extends StatelessWidget {
+  const ArtTile(this.art,
+      {super.key,
+      required this.aspect,
+      required this.ink,
+      required this.width,
+      required this.height,
+      required this.trailing,
+      this.label,
+      this.color});
+
+  final String? art;
+  final double aspect;
+  final double ink;
+  final double width;
+  final double height;
+  final Widget trailing;
+  final Widget? label;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final tier = _tiers[art];
+    return CardBadge(
+      width: width,
+      height: height,
+      color: tier == null ? color : tier.$1 ?? kFlareExColors.first,
+      rainbow: tier != null && tier.$1 == null,
+      shine: tier?.$2 ?? false,
+      foil: tier?.$3 ?? false,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(children: [
+          if (art != null)
+            SizedBox(
+                width: ink * aspect,
+                height: ink,
+                child: ArtBadge._image(art!, ink))
+          else if (label != null)
+            Flexible(
+                flex: 2, child: FittedBox(fit: BoxFit.scaleDown, child: label)),
+          const SizedBox(width: 4),
+          // Narrows on a phone too slim for a lamp and four digits.
+          Expanded(
+            child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: trailing),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
 class CardBadge extends StatefulWidget {
   const CardBadge(
       {super.key,

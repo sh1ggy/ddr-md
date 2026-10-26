@@ -301,15 +301,16 @@ class LatestScoreLine extends StatelessWidget {
   }
 }
 
-/// Clear lamp art, where the lamp has one: the full combos, then the generic
-/// clear for any other pass. Only synced records carry a lamp, so a clear is
+/// Clear lamp art, where the lamp has one: the full combos, LIFE4, then the
+/// generic clear for any other pass. Only synced records carry a lamp, so a clear is
 /// always one Konami reported; failed and unknown show nothing.
 String? clearLampIcon(ClearLamp? lamp) => switch (lamp) {
       ClearLamp.mfc => fullComboIcon(FullComboTier.mfc),
       ClearLamp.pfc => fullComboIcon(FullComboTier.pfc),
       ClearLamp.gfc => fullComboIcon(FullComboTier.gfc),
       ClearLamp.fc => fullComboIcon(FullComboTier.fc),
-      ClearLamp.life4 || ClearLamp.clear => clearIcon,
+      ClearLamp.life4 => life4Icon,
+      ClearLamp.clear => clearIcon,
       _ => null,
     };
 
