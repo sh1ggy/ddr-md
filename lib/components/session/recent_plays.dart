@@ -9,6 +9,7 @@ import 'dart:math';
 
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/grades.dart';
@@ -452,12 +453,7 @@ class _Score extends StatelessWidget {
               fontWeight: FontWeight.w700,
               fontFeatures: [FontFeature.tabularFigures()])),
       const SizedBox(width: 6),
-      SizedBox(
-        width: 34,
-        height: 18,
-        child: Image.asset(art,
-            fit: BoxFit.contain, alignment: Alignment.centerLeft),
-      ),
+      ArtBadge(art, aspect: kGradeAspect, ink: 12, height: 20),
     ]);
   }
 }
