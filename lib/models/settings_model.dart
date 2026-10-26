@@ -162,6 +162,66 @@ class Settings {
   static const String eamusePlayCountKey = "eamusePlayCount";
   static const String eamuseProfileLastPlayKey = "eamuseProfileLastPlay";
 
+  // Cloud sync (see CloudSync): on/off (0/1), this device's copy of the
+  // account key, and when the last sync finished (ISO-8601, '' = never).
+  static const String cloudSyncOnKey = "cloudSyncOn";
+  static const String cloudSyncKeyKey = "cloudSyncKey";
+  static const String cloudSyncedAtKey = "cloudSyncedAt";
+
+  // Settings that follow the player to their other devices. Left out: the
+  // timing offsets (they depend on the device's own audio and display), the
+  // running session, and e-amusement sync bookkeeping.
+  static const syncedKeys = {
+    chosenReadSpeedKey,
+    constantOnKey,
+    chartPreviewTurnKey,
+    assistTickOnKey,
+    measureLinesOnKey,
+    guidelineKey,
+    footTrailsOnKey,
+    dancingFeetOnKey,
+    padDancerOnKey,
+    padDancerNoBarKey,
+    dancerViewKey,
+    dancerFormKey,
+    heightKey,
+    barGripKey,
+    gripSpotKey,
+    shoeSizeKey,
+    quantColorsOnKey,
+    staticArrowsOnKey,
+    quantFreezeHeadsOnKey,
+    arcadeSyncOnKey,
+    chartPreviewSpeedTypeKey,
+    chartPreviewHispeedKey,
+    chartPreviewScrollSpeedKey,
+    songSectionOrderKey,
+    songlistViewModeKey,
+    songlistSortKey,
+    songlistSortDescKey,
+    rivalCodeSpeedKey,
+    detectionSideKey,
+    playModeKey,
+    parityProfileKey,
+    parityProfileOnKey,
+    eamuseNameKey,
+    eamusePlayCountKey,
+    eamuseProfileLastPlayKey,
+  };
+
+  static Map<String, Object> syncedPrefs() => {
+        for (final k in syncedKeys)
+          if (_prefsInstance?.get(k) case final Object v) k: v,
+      };
+
+  static Future<void> applySyncedPrefs(Map<String, Object?> prefs) async {
+    for (final MapEntry(:key, :value) in prefs.entries) {
+      if (!syncedKeys.contains(key)) continue;
+      if (value is int) await _prefsInstance?.setInt(key, value);
+      if (value is String) await _prefsInstance?.setString(key, value);
+    }
+  }
+
   static Future<SharedPreferences> get _instance async =>
       _prefsInstance ??= await SharedPreferences.getInstance();
   static SharedPreferences? _prefsInstance;

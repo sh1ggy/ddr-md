@@ -1,14 +1,17 @@
 /// Name: AppSettingsPage
 /// Parent: SessionPage
 /// Description: Settings, opened from Home's gear: check for song updates,
-/// read the privacy notes, and the app version with links.
+/// turn on cloud backup, read the privacy notes, and the app version with
+/// links.
 library;
 
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_updater.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:path_provider/path_provider.dart';
@@ -35,6 +38,7 @@ class AppSettingsPage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 72),
             children: [
               const Card(child: _ContentTile()),
+              const Card(child: _CloudTile()),
               Card(
                 child: ListTile(
                   title: const Text("Privacy",
@@ -146,6 +150,105 @@ class _ContentTileState extends State<_ContentTile> {
               icon: const Icon(Icons.sync),
               onPressed: kContentUrl.isEmpty ? null : _sync,
             ),
+    );
+  }
+}
+
+/// Cloud backup on or off, with a manual sync and a way to delete what's on
+/// the server.
+class _CloudTile extends StatefulWidget {
+  const _CloudTile();
+
+  @override
+  State<_CloudTile> createState() => _CloudTileState();
+}
+
+class _CloudTileState extends State<_CloudTile> {
+  Future<void> _run(Future<void> Function() action, String done) async {
+    String message;
+    try {
+      await action();
+      message = done;
+    } catch (_) {
+      message = "Couldn't reach the backup server; it'll try again later";
+    }
+    if (!mounted) return;
+    setState(() {});
+    showToast(context, message);
+  }
+
+  Future<void> _delete() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete cloud copy?'),
+        content: const Text(
+            "Removes your backed-up data from DDR MD's server and turns backup "
+            "off. Everything on this device stays."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok == true) await _run(CloudSync.deleteCloudCopy, "Cloud copy deleted");
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder(
+      valueListenable: CloudSync.running,
+      builder: (context, running, _) {
+        final on = CloudSync.enabled;
+        final at =
+            DateTime.tryParse(Settings.getString(Settings.cloudSyncedAtKey));
+        final String subtitle;
+        if (!CloudSync.available) {
+          subtitle = "Backup is off in this build";
+        } else if (running) {
+          subtitle = "Backing up…";
+        } else if (on) {
+          subtitle =
+              at == null ? "Not backed up yet" : "Backed up ${formatAgo(at)}";
+        } else {
+          subtitle = "Keep scores, sessions, notes and settings on all your "
+              "devices";
+        }
+        return Column(
+          children: [
+            SwitchListTile(
+              title: const Text("Cloud Backup",
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text(subtitle),
+              value: on,
+              onChanged: !CloudSync.available || running
+                  ? null
+                  : (v) => _run(() => CloudSync.setEnabled(v),
+                      v ? "Backed up" : "Backup turned off"),
+            ),
+            if (on)
+              OverflowBar(
+                alignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                      onPressed: running ? null : _delete,
+                      child: const Text("Delete cloud copy")),
+                  TextButton.icon(
+                      onPressed: running
+                          ? null
+                          : () => _run(() => CloudSync.sync(force: true),
+                              "Backed up"),
+                      icon: const Icon(Icons.sync),
+                      label: const Text("Back up now")),
+                ],
+              ),
+          ],
+        );
+      },
     );
   }
 }

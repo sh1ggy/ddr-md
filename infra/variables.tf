@@ -38,3 +38,21 @@ variable "custom_domain" {
   type        = string
   default     = ""
 }
+
+variable "sync_worker" {
+  description = "Cloud sync Worker name, the first label of its address: <this>.<workers_subdomain>.workers.dev"
+  type        = string
+  default     = "sync"
+}
+
+variable "sync_database" {
+  description = "Cloud sync D1 database name (renaming replaces the database and loses every backup)"
+  type        = string
+  default     = "ddr-md-sync"
+}
+
+variable "workers_subdomain" {
+  description = "The account's workers.dev subdomain (dashboard: Workers & Pages), for the sync_url output"
+  type        = string
+  default     = ""
+}

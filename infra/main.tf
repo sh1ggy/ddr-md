@@ -1,7 +1,9 @@
-# Hosting and CI for over-the-air chart content (see README "Content Updates").
+# Hosting and CI for over-the-air chart content (see README "Content Updates"),
+# and the cloud sync server (README "Cloud Sync").
 #
 #   Cloudflare: the Pages project that serves build/content, and an
-#               account-owned token that can only deploy to Pages.
+#               account-owned token that can only deploy to Pages. The sync
+#               Worker and its D1 database.
 #   GitHub:     the private content repo (raw songs, steps, jackets), its
 #               publish workflow, and the secret + variables that workflow reads.
 #
@@ -103,4 +105,34 @@ resource "github_actions_variable" "content" {
   repository    = github_repository.content.name
   variable_name = each.key
   value         = each.value
+}
+
+# Cloud sync: one Worker over one D1 database. The Worker creates its own
+# tables, so there are no migrations to run.
+resource "cloudflare_d1_database" "sync" {
+  account_id = var.cloudflare_account_id
+  name       = var.sync_database
+  read_replication = {
+    mode = "disabled"
+  }
+}
+
+resource "cloudflare_workers_script" "sync" {
+  account_id         = var.cloudflare_account_id
+  script_name        = var.sync_worker
+  content_file       = "${path.module}/sync/worker.js"
+  content_sha256     = filesha256("${path.module}/sync/worker.js")
+  main_module        = "worker.js"
+  compatibility_date = "2026-10-01"
+  bindings = [{
+    type = "d1"
+    name = "DB"
+    id   = cloudflare_d1_database.sync.id
+  }]
+}
+
+resource "cloudflare_workers_script_subdomain" "sync" {
+  account_id  = var.cloudflare_account_id
+  script_name = cloudflare_workers_script.sync.script_name
+  enabled     = true
 }

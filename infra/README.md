@@ -36,6 +36,8 @@ DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
 | The content itself | content repo's commits | you (pushed from prep output) |
 | Content id | the live `manifest.json`: a hash of what's published, with `source` naming the commits | CI |
 | Terraform state | `infra/terraform.tfstate`, local, gitignored | you |
+| Sync Worker `sync` (code in [sync/worker.js](sync/worker.js)) at `sync.<workers_subdomain>.workers.dev`, and its D1 database `ddr-md-sync` | Cloudflare | Terraform |
+| Players' synced data | that D1 database | the app (see [Cloud Sync](#cloud-sync)) |
 
 ## Reproducible from scratch?
 
@@ -43,8 +45,13 @@ Everything in the cloud, yes: `terraform apply` recreates all of it. Not
 covered by Terraform:
 
 - **Bootstrap credentials.** A Cloudflare token with *Account › Cloudflare
-  Pages › Edit* and *Account › Account API Tokens › Edit* (dashboard only;
-  no CLI can mint one), and a GitHub token with `workflow` scope.
+  Pages › Edit*, *Account › Account API Tokens › Edit*, *Account › Workers
+  Scripts › Edit* and *Account › D1 › Edit* (dashboard only; no CLI can mint
+  one), and a GitHub token with `workflow` scope.
+- **Players' synced data.** It lives only in D1. `terraform destroy` or a
+  replaced database loses every backup; apps keep their own data but don't
+  upload it again on their own. Back it up with `cf d1 export` before risky
+  changes.
 - **The content.** It lives in the content repo's history, so it survives
   anything short of deleting that repo. If you need to push it again, copy
   `songs/`, `steps/`, `jackets/`, `jackets-160/` from a DDR-BPM-prep run.
@@ -148,6 +155,13 @@ for v in CONTENT_URL PAGES_PROJECT CLOUDFLARE_ACCOUNT_ID; do
 done
 ```
 
+For the sync server, with the D1 database id from `cf d1 list`:
+
+```bash
+terraform import cloudflare_d1_database.sync '<account_id>/<database_id>'
+terraform import cloudflare_workers_script.sync '<account_id>/sync'
+```
+
 Don't import the CI token or its secret: a token's value can't be read back.
 Delete the old *ddr-md-content CI deploy* token in the Cloudflare dashboard
 (*Manage Account › Account API Tokens*) and let `terraform apply` create a new
@@ -193,3 +207,41 @@ or is caught before it ships. The ones that need you are marked.
 - The content repo is ~675 MB of plain git. GitHub starts warning near 1 GB;
   past that, prune jacket history or move jackets to Git LFS.
 - Pages serves the content publicly; the content repo is what's private.
+- Sync costs nothing: the account is on the Workers Free plan, where going
+  over a limit fails requests (until 00:00 UTC) instead of billing. The
+  Worker also stops accepting writes at 80,000 D1 rows a day across all
+  players (`DAY_WRITES`), under the free 100,000 and far under what Workers
+  Paid includes, so even an upgraded account wouldn't be billed for sync.
+  Each pushed row costs two (row + revision index), so that's ~40,000 rows
+  a day; a heavy player's first backup is ~2,200, and a launch day with
+  many first backups fills it. Refused pushes stay in the apps' outboxes
+  and go up on a later day, nothing lost. Each player is also capped at
+  20,000 rows a day (`DAY_ROWS`).
+
+## Cloud Sync
+
+Optional backup of players' own data, between their devices. Turned on per
+device under Home → Settings → Cloud Backup; builds without
+`--dart-define=SYNC_URL=…` (the `sync_url` output, which needs
+`workers_subdomain` in `terraform.tfvars`) don't offer it.
+`scripts/build_store.sh` passes it.
+
+- **No sign-in.** The app makes a random 256-bit key on first use and sends
+  it as a bearer token; the server keys everything on its SHA-256. On iOS
+  the key lives in the Keychain (synced by iCloud Keychain), and on every
+  platform in preferences (Android's backup restores it on a new phone).
+  The DDR-CODE, when known, is stored as a label only.
+- **The server never reads rows.** Each is opaque JSON under (table, key);
+  every accepted write gets a per-user revision, and a device pulls
+  everything after its cursor. A write older than the stored one is
+  ignored, so the latest edit to a row wins. Deletes are kept as rows with
+  no data.
+- **The app** (`lib/models/cloud_sync.dart`) records every changed row in
+  `sync_outbox` with SQLite triggers, pushes those rows as they are now,
+  then pulls and applies, mapping venue and cabinet ids to their uids.
+  Adding a synced table means adding it to `syncTables` and giving it
+  triggers in a migration; the server needs no change.
+
+Try it locally: put [sync/worker.js](sync/worker.js) behind a `cf dev`
+project with a D1 binding named `DB`, then run the app with
+`--dart-define=SYNC_URL=http://localhost:<port>`.
