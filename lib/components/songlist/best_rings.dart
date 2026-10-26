@@ -339,7 +339,9 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
                     rect: rect,
                     child: CustomPaint(
                       painter: _RingsPainter(rings, total, fills, track),
-                      // The share played, in the innermost ring's hole.
+                      // The share played, in the innermost ring's hole. The
+                      // last percent counts down what's left instead, and
+                      // every chart played earns a tick.
                       child: Center(
                         child: Opacity(
                           opacity: label,
@@ -347,8 +349,14 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
                             dimension: rect.shortestSide * 0.28,
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
-                              child: Text('${played * 100 ~/ total}%',
-                                  style: FloorPop.readout(20)),
+                              child: played == total
+                                  ? const Icon(Icons.check_rounded,
+                                      size: 28, color: FloorPop.volt)
+                                  : Text(
+                                      played * 100 ~/ total >= 99
+                                          ? '${total - played} left'
+                                          : '${played * 100 ~/ total}%',
+                                      style: FloorPop.readout(20)),
                             ),
                           ),
                         ),
