@@ -2,10 +2,10 @@
 /// Parent: SongListItem, ArcadeGridTile
 /// Description: How the song list marks the player's best on a chart: a card
 /// in the chart's flare colours, the way the cabinet's song select tints it
-/// (a frame over a darker back), and badges for what's on it that keep their
-/// place, pressed in where there's nothing to show.
+/// (a frame over a darker back), and [ArtBadge]s for what's on it.
 library;
 
+import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart'
     show clearLampIcon;
 import 'package:ddr_md/grades.dart';
@@ -67,48 +67,6 @@ class FlareFrame extends CustomPainter {
       old.rank != rank || old.radius != radius;
 }
 
-/// A badge on a card: raised when it holds something, pressed in when it's
-/// empty, so a missing grade, flare or lamp still keeps its place.
-class CardBadge extends StatelessWidget {
-  const CardBadge(
-      {super.key, this.child, required this.width, required this.height});
-
-  final Widget? child;
-  final double width;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final radius = BorderRadius.circular(6);
-    return Container(
-      width: width,
-      height: height,
-      alignment: Alignment.center,
-      decoration: child == null
-          ? BoxDecoration(
-              borderRadius: radius,
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: dark
-                    ? const [Color(0x73000000), Color(0x33000000)]
-                    : const [Color(0x1F000000), Color(0x0A000000)],
-              ),
-            )
-          : BoxDecoration(
-              borderRadius: radius,
-              color: dark ? const Color(0x47000000) : const Color(0xBFFFFFFF),
-              border: Border.all(
-                  color:
-                      dark ? const Color(0x1FFFFFFF) : const Color(0x14000000),
-                  width: 0.5),
-            ),
-      child: child,
-    );
-  }
-}
-
 /// A chart's grade, clear lamp and flare as a row of badges in the cabinet's
 /// order, each art drawn [ink] tall (its visible part, not the image's
 /// margin), so the three read at one size. With [score], the best score leads
@@ -130,19 +88,8 @@ class ChartBestBadges extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final grade = best?.grade, flare = best?.flare;
-    // Each badge fits the widest drawn part of its kind of art: grades are
-    // about 1.6:1, flare badges at most 1.3:1, and the plain CLEAR lamp the
-    // widest of the lamps at 4:1.
-    Widget badge(String? art, double aspect) => CardBadge(
-          width: ink * aspect + 8,
-          height: height,
-          child: art == null
-              ? null
-              : OverflowBox(
-                  maxWidth: double.infinity,
-                  maxHeight: double.infinity,
-                  child: Image.asset(art, height: ink / _drawnHeight(art))),
-        );
+    Widget badge(String? art, double aspect) =>
+        ArtBadge(art, aspect: aspect, ink: ink, height: height);
     final top = best?.score;
     // Even-width digits, so every six-digit score is one width.
     final style = FloorPop.readout(ink + 2)
@@ -166,20 +113,13 @@ class ChartBestBadges extends StatelessWidget {
         ]),
         SizedBox(width: gap + 2),
       ],
-      badge(grade == null ? null : gradeIcon(grade), 1.65),
+      badge(grade == null ? null : gradeIcon(grade), kGradeAspect),
       SizedBox(width: gap),
-      badge(clearLampIcon(best?.lamp), 4.05),
+      badge(clearLampIcon(best?.lamp), kLampAspect),
       SizedBox(width: gap),
-      badge(flare == null ? null : flareRankIcon(flare), 1.3),
+      badge(flare == null ? null : flareRankIcon(flare), kFlareAspect),
     ]);
   }
-
-  // How much of an art's height is drawn, the rest being transparent margin.
-  static double _drawnHeight(String art) => art.contains('/rank_')
-      ? 0.74
-      : art == clearIcon
-          ? 0.67
-          : 1;
 }
 
 /// The darker band along a card's bottom that carries its badges, like the

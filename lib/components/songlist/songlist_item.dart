@@ -153,8 +153,13 @@ class _SongListItemState extends State<SongListItem> {
           ],
         ),
       ),
-      // A card moves these into its footer, giving the title the width.
-      trailing: scoped ? null : stats,
+      // A card moves these into its footer, keeping only the sync beside the
+      // title.
+      trailing: scoped
+          ? DefaultTextStyle.merge(
+              style: const TextStyle(fontSize: 13),
+              child: _syncAdjust(context) ?? const SizedBox.shrink())
+          : stats,
       onTap: scoped ? null : open,
     );
     if (!scoped) return tile;
@@ -174,8 +179,8 @@ class _SongListItemState extends State<SongListItem> {
                 onTap: open,
                 child: Column(children: [
                   tile,
-                  // Score, grade, lamp and flare on the left, sync and BPM on
-                  // the right, the same on every card.
+                  // Score, grade, lamp and flare on the left, version and BPM
+                  // on the right, the same on every card.
                   CardFooter(
                     padding: const EdgeInsets.fromLTRB(16, 5, 16, 5),
                     child: DefaultTextStyle.merge(
@@ -191,10 +196,6 @@ class _SongListItemState extends State<SongListItem> {
                                     style: TextStyle(
                                         color: versionColor(
                                             widget.songInfo.version))),
-                                if (_syncAdjust(context) case final sync?) ...[
-                                  Text(' · ', style: muted),
-                                  sync,
-                                ],
                                 // Gives way first on a long BPM range.
                                 Flexible(
                                   child: Text(

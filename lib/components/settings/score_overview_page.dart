@@ -11,6 +11,7 @@ import 'package:ddr_md/components/session/recent_plays.dart'
     show HomeCard, HomeSubpage;
 import 'package:ddr_md/components/song/difficulty_label.dart'
     show LevelNumber, LevelPicker;
+import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart'
     show
@@ -240,7 +241,8 @@ class _FlareChartRow extends StatelessWidget {
         if (record.flareRank.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Image.asset(flareRankIcon(record.flareRank), height: 18),
+            child: ArtBadge(flareRankIcon(record.flareRank),
+                aspect: kFlareAspect, ink: 14, height: 22),
           ),
         SizedBox(
             width: 40,
@@ -531,11 +533,15 @@ class _BandCounts extends StatelessWidget {
     Color tint(Color c) =>
         (c.computeLuminance() - surface).abs() < 0.15 ? scheme.onSurface : c;
     Widget label(_Band b) => b.icon != null
-        // The grade and empty-flare art have more space around them.
-        ? Image.asset(b.icon!,
-            height: b.icon!.contains('/rank_') || b.text == 'None'
-                ? _bandHeight * 1.6
-                : _bandHeight)
+        ? ArtBadge(b.icon,
+            aspect: b.icon!.contains('/cl_')
+                ? kLampAspect
+                : b.icon!.contains('/rank_')
+                    ? kGradeAspect
+                    : kFlareAspect,
+            ink: 11,
+            height: _bandHeight + 2,
+            color: b.color)
         : Text(b.text, style: style.copyWith(color: b.color));
     return Wrap(
       alignment: WrapAlignment.center,

@@ -1,3 +1,4 @@
+import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/models/db_models.dart' show ClearLamp;
