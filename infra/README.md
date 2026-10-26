@@ -220,11 +220,14 @@ or is caught before it ships. The ones that need you are marked.
 
 ## Cloud Sync
 
-Optional backup of players' own data, between their devices. Turned on per
-device under Home → Settings → Cloud Backup; builds without
-`--dart-define=SYNC_URL=…` (the `sync_url` output, which needs
-`workers_subdomain` in `terraform.tfvars`) don't offer it.
-`scripts/build_store.sh` passes it.
+Optional backup of players' own data, between their devices, at
+`https://sync.ddr-md.workers.dev`. Turned on per device under Home →
+Settings → Cloud Backup. Release builds point at the live server by
+default; others need `--dart-define=SYNC_URL=…` (the `sync_url` output,
+which needs `workers_subdomain` in `terraform.tfvars`) or don't offer it.
+The account's workers.dev subdomain is `ddr-md`, so the Worker's address
+is `<sync_worker>.ddr-md.workers.dev`; changing either moves the server out
+from under released apps.
 
 - **No sign-in.** The app makes a random 256-bit key on first use and sends
   it as a bearer token; the server keys everything on its SHA-256. On iOS

@@ -20,9 +20,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sqflite/sqflite.dart';
 
-/// Empty turns cloud sync off, as in debug builds without
-/// --dart-define=SYNC_URL=… (terraform output sync_url).
-const kSyncUrl = String.fromEnvironment('SYNC_URL');
+/// Release builds default to the live server; debug/profile to off unless
+/// given --dart-define=SYNC_URL=… (terraform output sync_url). Empty = off.
+const kSyncUrl = String.fromEnvironment('SYNC_URL',
+    defaultValue: kReleaseMode ? 'https://sync.ddr-md.workers.dev' : '');
 
 /// A synced table and how its rows are told apart across devices.
 class SyncTable {
