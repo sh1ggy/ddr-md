@@ -5,7 +5,6 @@ library;
 
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/constants.dart';
-import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
@@ -77,16 +76,7 @@ class _SongListItemState extends State<SongListItem> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          if (_syncAdjust(context) case final sync?) ...[
-            sync,
-            const SizedBox(width: 6),
-          ],
-          Text(widget.songInfo.version,
-              style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: versionColor(widget.songInfo.version))),
-        ]),
+        if (_syncAdjust(context) case final sync?) sync,
         Text(widget.songInfo.charts[0].bpmRange),
       ],
     );
@@ -179,8 +169,8 @@ class _SongListItemState extends State<SongListItem> {
                 onTap: open,
                 child: Column(children: [
                   tile,
-                  // Score, grade, lamp and flare on the left, version and BPM
-                  // on the right, the same on every card.
+                  // Score, grade, lamp and flare on the left, BPM on the
+                  // right, the same on every card.
                   CardFooter(
                     padding: const EdgeInsets.fromLTRB(16, 5, 16, 5),
                     child: DefaultTextStyle.merge(
@@ -189,23 +179,12 @@ class _SongListItemState extends State<SongListItem> {
                       child: Row(children: [
                         ChartBestBadges(best, ink: 12, height: 20, score: true),
                         Expanded(
-                          child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Text(widget.songInfo.version,
-                                    style: TextStyle(
-                                        color: versionColor(
-                                            widget.songInfo.version))),
-                                // Gives way first on a long BPM range.
-                                Flexible(
-                                  child: Text(
-                                      ' · ${widget.songInfo.charts[0].bpmRange} BPM',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.right,
-                                      style: muted),
-                                ),
-                              ]),
+                          child: Text(
+                              '${widget.songInfo.charts[0].bpmRange} BPM',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: muted),
                         ),
                       ]),
                     ),
