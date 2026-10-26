@@ -403,3 +403,22 @@ Color? judgmentColor(String key, {BuildContext? context}) {
       return null;
   }
 }
+
+// Each release's signature logo colour, for version labels.
+Color versionColor(String version) =>
+    switch (constants.canonicalVersion(version)) {
+      'WORLD' => const Color(0xFFE6007E),
+      'A3' => const Color(0xFFF08C00),
+      'A20 PLUS' => const Color(0xFF2E7BE0),
+      'A20' => const Color(0xFFD4A82A),
+      'A' => const Color(0xFFE60012),
+      '2014' => const Color(0xFF1FA2E0),
+      '2013' => const Color(0xFF8E44C9),
+      'X3' => const Color(0xFFE85A1C),
+      'X2' => const Color(0xFFD9283C),
+      'X' => const Color(0xFF00A99D),
+      'SuperNOVA2' || 'SuperNOVA' => const Color(0xFF3F6FD8),
+      'EXTREME' => const Color(0xFFD63A2F),
+      'MAX2' || 'MAX' => const Color(0xFFE0B000),
+      _ => const Color(0xFF9E9E9E),
+    };

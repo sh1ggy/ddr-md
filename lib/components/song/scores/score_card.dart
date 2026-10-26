@@ -255,9 +255,19 @@ class LatestScoreLine extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: score?.score == null && best == null
-                ? Text('No score recorded',
-                    style:
-                        TextStyle(fontSize: 14, color: scheme.onSurfaceVariant))
+                // A hidden badge row holds the height, so the card is the same
+                // size with or without a score.
+                ? FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Stack(alignment: Alignment.centerLeft, children: [
+                      const Visibility.maintain(
+                          visible: false, child: ScoreBadges(score: 999999)),
+                      Text('No score recorded',
+                          style: TextStyle(
+                              fontSize: 14, color: scheme.onSurfaceVariant)),
+                    ]),
+                  )
                 : FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,

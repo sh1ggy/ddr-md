@@ -5,6 +5,7 @@ library;
 
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/constants.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
@@ -38,7 +39,7 @@ class SongListItem extends StatefulWidget {
 class _SongListItemState extends State<SongListItem> {
   // The recommended in-game offset adjustment, same figure the song page's
   // sync card leads with: the bias with its sign flipped. Null when this song
-  // has no sync data, so the row can fall back to the version.
+  // has no sync data, so the row shows nothing for it.
   Widget? _syncAdjust(BuildContext context) {
     final chart = widget.difficultyIndex == null
         ? widget.songInfo.charts.first
@@ -76,7 +77,16 @@ class _SongListItemState extends State<SongListItem> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        _syncAdjust(context) ?? Text(widget.songInfo.version),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          if (_syncAdjust(context) case final sync?) ...[
+            sync,
+            const SizedBox(width: 6),
+          ],
+          Text(widget.songInfo.version,
+              style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: versionColor(widget.songInfo.version))),
+        ]),
         Text(widget.songInfo.charts[0].bpmRange),
       ],
     );
@@ -177,8 +187,14 @@ class _SongListItemState extends State<SongListItem> {
                           child: Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                _syncAdjust(context) ??
-                                    Text(widget.songInfo.version, style: muted),
+                                Text(widget.songInfo.version,
+                                    style: TextStyle(
+                                        color: versionColor(
+                                            widget.songInfo.version))),
+                                if (_syncAdjust(context) case final sync?) ...[
+                                  Text(' · ', style: muted),
+                                  sync,
+                                ],
                                 // Gives way first on a long BPM range.
                                 Flexible(
                                   child: Text(
