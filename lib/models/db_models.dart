@@ -307,7 +307,7 @@ class Snippet {
 enum ScoreRecordSource { manual, eamuse }
 
 /// Clear lamp, worst to best. [fc] is a Good full combo.
-enum ClearLamp { failed, assisted, clear, life4, fc, gfc, pfc, mfc }
+enum ClearLamp { failed, clear, life4, fc, gfc, pfc, mfc }
 
 /// The player's best on one chart, from one [source]. Unlike [Score], which
 /// is a single play with its judgements, a record holds what the source keeps
@@ -441,7 +441,10 @@ class ScoreRecord {
         score: json['score'],
         exScore: json['exScore'],
         rank: json['rank'] ?? '',
-        clearLamp: ClearLamp.values.asNameMap()[json['clearLamp']],
+        // Assist clears count as clears; older rows still store 'assisted'.
+        clearLamp: json['clearLamp'] == 'assisted'
+            ? ClearLamp.clear
+            : ClearLamp.values.asNameMap()[json['clearLamp']],
         flareRank: json['flareRank'] ?? '',
         flareSkill: json['flareSkill'],
         maxCombo: json['maxCombo'],

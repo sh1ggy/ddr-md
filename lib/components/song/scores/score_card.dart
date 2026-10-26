@@ -309,7 +309,7 @@ String? clearLampIcon(ClearLamp? lamp) => switch (lamp) {
       ClearLamp.pfc => fullComboIcon(FullComboTier.pfc),
       ClearLamp.gfc => fullComboIcon(FullComboTier.gfc),
       ClearLamp.fc => fullComboIcon(FullComboTier.fc),
-      ClearLamp.life4 || ClearLamp.clear || ClearLamp.assisted => clearIcon,
+      ClearLamp.life4 || ClearLamp.clear => clearIcon,
       _ => null,
     };
 

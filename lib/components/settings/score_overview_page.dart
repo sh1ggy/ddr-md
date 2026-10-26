@@ -274,7 +274,6 @@ final _lampBands = <_Band>[
     (ClearLamp.fc, 'assets/icons/cl_good.png', 'FC'),
     (ClearLamp.life4, 'assets/icons/cl_life4.png', 'LIFE4'),
     (ClearLamp.clear, 'assets/icons/cl_li4clear.png', 'CLEAR'),
-    (ClearLamp.assisted, 'assets/icons/cl_asclear.png', 'ASSIST'),
     (ClearLamp.failed, 'assets/icons/rank_e.png', 'E'),
   ])
     (

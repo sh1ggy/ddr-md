@@ -62,7 +62,7 @@ const _lamps = {
   'cl_good': ClearLamp.fc,
   'cl_li4clear': ClearLamp.life4,
   'cl_clear': ClearLamp.clear,
-  'cl_asclear': ClearLamp.assisted,
+  'cl_asclear': ClearLamp.clear,
   'cl_none': ClearLamp.failed,
 };
 const _difficulties = {'BEGINNER', 'BASIC', 'DIFFICULT', 'EXPERT', 'CHALLENGE'};

@@ -151,7 +151,6 @@ const kLampColors = {
   ClearLamp.fc: Color(0xFF42A5F5),
   ClearLamp.life4: Color(0xFFE8344E),
   ClearLamp.clear: Color(0xFFFF9800),
-  ClearLamp.assisted: Color(0xFFD548E6),
   ClearLamp.failed: Color(0xFF757575),
 };
 

@@ -48,7 +48,7 @@ class ArtBadge extends StatelessWidget {
   final double aspect;
   final double ink;
   final double height;
-  // Tint for art outside the tiers above (LIFE4 and ASSIST lamps, a fail).
+  // Tint for art outside the tiers above (the LIFE4 lamp, a fail).
   final Color? color;
 
   @override
@@ -73,7 +73,7 @@ class ArtBadge extends StatelessWidget {
   // How much of an art's height is drawn, the rest being transparent margin.
   static double _drawnHeight(String art) => art.contains('/rank_')
       ? 0.74
-      : art == clearIcon || art.endsWith('/cl_asclear.png')
+      : art == clearIcon
           ? 0.67
           : 1;
 }
