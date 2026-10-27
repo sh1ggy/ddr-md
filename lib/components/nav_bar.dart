@@ -6,6 +6,8 @@
 /// running credit and starts the next one.
 library;
 
+import 'dart:ui';
+
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/models/session_model.dart';
@@ -45,8 +47,10 @@ class FloorPopNavBar extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
           height: 64,
+          // Frosted like the header and search bar, the page showing through.
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: pop.stage,
+            color: pop.stage.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(26),
             border: Border.all(color: pop.line),
             boxShadow: const [
@@ -56,45 +60,49 @@ class FloorPopNavBar extends StatelessWidget {
                   offset: Offset(0, 10))
             ],
           ),
-          child: Row(children: [
-            for (final (i, (icon, selectedIcon, label)) in _tabs.indexed)
-              Expanded(
-                child: Center(
-                  child: i == kHomeTab
-                      ? _HomeTab(
-                          selected: index == i,
-                          live: live,
-                          onTap: () => onSelected(i))
-                      : Tooltip(
-                          message: label,
-                          child: Semantics(
-                            label: label,
-                            selected: index == i,
-                            button: true,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () => onSelected(i),
-                              child: AnimatedContainer(
-                                duration: FloorPop.eighth,
-                                curve: FloorPop.settle,
-                                width: 52,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                  color: index == i
-                                      ? scheme.onSurface
-                                      : Colors.transparent,
+          child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: Row(children: [
+                for (final (i, (icon, selectedIcon, label)) in _tabs.indexed)
+                  Expanded(
+                    child: Center(
+                      child: i == kHomeTab
+                          ? _HomeTab(
+                              selected: index == i,
+                              live: live,
+                              onTap: () => onSelected(i))
+                          : Tooltip(
+                              message: label,
+                              child: Semantics(
+                                label: label,
+                                selected: index == i,
+                                button: true,
+                                child: InkWell(
                                   borderRadius: BorderRadius.circular(16),
+                                  onTap: () => onSelected(i),
+                                  child: AnimatedContainer(
+                                    duration: FloorPop.eighth,
+                                    curve: FloorPop.settle,
+                                    width: 52,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: index == i
+                                          ? scheme.onSurface
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Icon(
+                                        index == i ? selectedIcon : icon,
+                                        color: index == i
+                                            ? scheme.surface
+                                            : pop.haze),
+                                  ),
                                 ),
-                                child: Icon(index == i ? selectedIcon : icon,
-                                    color:
-                                        index == i ? scheme.surface : pop.haze),
                               ),
                             ),
-                          ),
-                        ),
-                ),
-              ),
-          ]),
+                    ),
+                  ),
+              ])),
         ),
       ),
     ]);

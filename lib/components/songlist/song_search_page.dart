@@ -73,8 +73,15 @@ class _SongSearchPageState extends State<SongSearchPage> {
         songInfo: song,
         isFav: false,
         isSearch: true,
-        regenFavsCallback: widget.regenFavsCallback,
+        regenFavsCallback: _backFromSong,
       );
+
+  // Back from a song lands on the clean song list, ready for the next search.
+  void _backFromSong() {
+    widget.regenFavsCallback?.call();
+    widget.controller.clear();
+    if (mounted) Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -88,26 +95,35 @@ class _SongSearchPageState extends State<SongSearchPage> {
               const BackButton(),
               const SizedBox(width: 8),
               Expanded(
-                child: SearchBar(
+                // A TextField, not a SearchBar: titles aren't words, so
+                // autocorrect has to go and SearchBar can't turn it off.
+                child: TextField(
                   controller: widget.controller,
-                  autoFocus: true,
-                  hintText: "Search song...",
-                  constraints:
-                      const BoxConstraints(minHeight: 48, maxHeight: 48),
-                  padding: const WidgetStatePropertyAll(
-                      EdgeInsets.symmetric(horizontal: 14)),
-                  leading: const Icon(Icons.search, size: 20),
-                  trailing: [
-                    if (widget.controller.text.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 20),
-                        tooltip: 'Clear',
-                        onPressed: () {
-                          widget.controller.clear();
-                          _search('');
-                        },
-                      ),
-                  ],
+                  autofocus: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: "Search song...",
+                    filled: true,
+                    border: const OutlineInputBorder(
+                        borderRadius: BorderRadius.all(Radius.circular(24)),
+                        borderSide: BorderSide.none),
+                    constraints:
+                        const BoxConstraints(minHeight: 48, maxHeight: 48),
+                    contentPadding: EdgeInsets.zero,
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: widget.controller.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            tooltip: 'Clear',
+                            onPressed: () {
+                              widget.controller.clear();
+                              _search('');
+                            },
+                          ),
+                  ),
                   onChanged: _search,
                   onSubmitted: (_) => FocusScope.of(context).unfocus(),
                 ),
