@@ -9,6 +9,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/chart_bests.dart';
+import 'package:ddr_md/models/score_overview.dart' show flareGroup;
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
@@ -76,7 +77,22 @@ class _SongListItemState extends State<SongListItem> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (_syncAdjust(context) case final sync?) sync,
+        // The sync to the left of the song's flare group, the group being
+        // what the cabinet sorts folders and flare skill by.
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          if (_syncAdjust(context) case final sync?) ...[
+            sync,
+            const SizedBox(width: 6),
+          ],
+          if (flareGroup(canonicalVersion(widget.songInfo.version))
+              case final group?)
+            Text(group.label,
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    color: group.color(
+                        Theme.of(context).brightness == Brightness.dark))),
+        ]),
         Text(widget.songInfo.charts[0].bpmRange),
       ],
     );

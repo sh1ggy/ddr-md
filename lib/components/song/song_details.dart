@@ -6,9 +6,11 @@ library;
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_radar.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/constants.dart' show canonicalVersion;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames, versionColor;
 import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/models/score_overview.dart' show flareGroup;
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
@@ -181,6 +183,7 @@ class SongDetails extends StatelessWidget {
               ),
             _Badge(
                 value: songInfo.version,
+                detail: flareGroup(canonicalVersion(songInfo.version))?.label,
                 color: versionColor(songInfo.version)),
             _Badge(
                 value:

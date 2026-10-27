@@ -135,12 +135,6 @@ class _FlareCard extends StatelessWidget {
 
   final FlareSkill skill;
 
-  static const _names = {
-    FlareGroup.classic: 'CLASSIC',
-    FlareGroup.white: 'WHITE',
-    FlareGroup.gold: 'GOLD',
-  };
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -183,7 +177,7 @@ class _FlareCard extends StatelessWidget {
               title: Row(children: [
                 SizedBox(
                     width: 84,
-                    child: Text(_names[g]!,
+                    child: Text(g.label,
                         softWrap: false,
                         style: const TextStyle(fontWeight: FontWeight.w600))),
                 Expanded(
