@@ -127,8 +127,7 @@ class _SyncDoublesTileState extends State<_SyncDoublesTile> {
     return SwitchListTile(
       title: const Text("Sync Doubles",
           style: TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: const Text(
-          "Off leaves doubles charts out of e-amusement syncs, which then read about half as many pages"),
+      subtitle: const Text("Include doubles in e-amusement syncs"),
       value: EamuseSyncState.syncDoubles,
       onChanged: (on) async {
         await EamuseSyncState.setSyncDoubles(on);

@@ -218,8 +218,7 @@ class EamuseSyncState extends ChangeNotifier {
           ];
       note = switch (plan) {
         EamuseFullSync() when resume =>
-          'Carrying on the last read of every chart from '
-              '${walk!.at.mode.name} page ${walk.at.page + 1}',
+          'Resuming from ${walk!.at.mode.name} page ${walk.at.page + 1}',
         EamuseFullSync() when stored.isEmpty =>
           'First sync: reading every chart',
         EamuseFullSync() when since == null =>
@@ -262,6 +261,9 @@ class EamuseSyncState extends ChangeNotifier {
       if (!sync.cancelled) {
         await Settings.setString(
             Settings.eamuseSyncedAtKey, DateTime.now().toIso8601String());
+        // Lets the sync button back once [upToDate] lapses.
+        _wake?.cancel();
+        _wake = Timer(EamuseSync.cooldown, notifyListeners);
         if (plays.isNotEmpty) {
           await Settings.setString(
               Settings.eamuseLastPlayKey, plays.first.playedAt);
