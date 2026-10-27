@@ -323,10 +323,8 @@ class _FlareBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final art = flare.isEmpty ? null : flareIcon(flare);
-    return flare.isNotEmpty && art == null
-        ? Text('Flare $flare', style: const TextStyle(fontSize: 14))
-        : ArtBadge(art, aspect: kFlareAspect, ink: ink, height: height);
+    return ArtBadge(flareIcon(flare),
+        aspect: kFlareAspect, ink: ink, height: height);
   }
 }
 

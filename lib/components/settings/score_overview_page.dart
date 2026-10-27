@@ -302,8 +302,8 @@ final _flareBands = <_Band>[
   (
     holds: (r) => r.flareRank.isEmpty,
     color: const Color(0xFF757575),
-    icon: 'assets/icons/icon_0.png',
-    text: 'None',
+    icon: null,
+    text: 'No flare',
     fill: null,
   ),
 ];

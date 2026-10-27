@@ -1,7 +1,23 @@
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/grades.dart' show flareIcon;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('only resolved flare ranks have badge art', () {
+    for (final reading in [
+      '',
+      'NONE',
+      '0',
+      'FLARE NONE',
+      'FLARE 0',
+      'garbage'
+    ]) {
+      expect(flareIcon(reading), isNull, reason: reading);
+    }
+    expect(flareIcon('FLARE 1X'), 'assets/icons/flare_9.png');
+    expect(flareIcon('EX'), 'assets/icons/flare_ex.png');
+  });
+
   group('resolveOcrFlare', () {
     test('canonical ranks resolve to themselves', () {
       for (final rank in kFlareRanks) {

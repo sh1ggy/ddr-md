@@ -7,6 +7,7 @@ import 'dart:math';
 import 'dart:ui' show Color;
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/constants.dart' show canonicalVersion;
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
 import 'package:ddr_md/models/db_models.dart';
 
@@ -73,7 +74,7 @@ enum FlareGroup {
       this == white && !isDark ? const Color(0xFF8A8A96) : _color;
 }
 
-FlareGroup? flareGroup(String version) => switch (version) {
+FlareGroup? flareGroup(String version) => switch (canonicalVersion(version)) {
       '1st' ||
       '2nd' ||
       '3rd' ||
