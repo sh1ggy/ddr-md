@@ -9,8 +9,6 @@ import 'package:ddr_md/components/songlist/arcade/arcade_grid_tile.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_section_header.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
-import 'package:ddr_md/components/songlist/flare_card.dart';
-import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/router.dart';
 import 'package:flutter/material.dart';
@@ -100,33 +98,26 @@ class _ArcadeGridViewState extends State<ArcadeGridView> {
               // The banner is full-bleed and carries no margin of its own, so
               // the gap below it belongs to the grid.
               padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
-              // The score band's room opens and closes with the tiles' own
-              // reveal, so the cells grow under them instead of jumping.
-              sliver: BestsReveal(
-                shown: section.items.first.isChartScoped && ChartBests.shown,
-                builder: (context, t) => SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    // Square jacket plus the caption below it (and a chart's
-                    // score band), so the artwork stays uncropped whatever the
-                    // column width. The 8 is the grid's horizontal padding.
-                    mainAxisExtent: (MediaQuery.sizeOf(context).width - 8) / 3 -
-                        kArcadeTileGap * 2 +
-                        kArcadeTitleHeight +
-                        kArcadeCaptionHeight +
-                        kArcadeScoreHeight * t,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final SongItem item = section.items[index];
-                      return ArcadeGridTile(
-                        item: item,
-                        mode: widget.mode,
-                        onTap: () => _open(item),
-                      );
-                    },
-                    childCount: section.items.length,
-                  ),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  // Square jacket plus the bands above and below it, so the
+                  // artwork stays uncropped whatever the column width. The 8 is the grid's horizontal padding.
+                  mainAxisExtent: (MediaQuery.sizeOf(context).width - 8) / 3 -
+                      kArcadeTileGap * 2 +
+                      kArcadeTitleHeight +
+                      kArcadeCaptionHeight,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final SongItem item = section.items[index];
+                    return ArcadeGridTile(
+                      item: item,
+                      mode: widget.mode,
+                      onTap: () => _open(item),
+                    );
+                  },
+                  childCount: section.items.length,
                 ),
               ),
             ),
