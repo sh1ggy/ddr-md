@@ -1,7 +1,8 @@
 /// Name: AppSettingsPage
 /// Parent: SessionPage
 /// Description: Settings, opened from Home's gear: check for song updates,
-/// read the privacy notes and credits, and the app version with links.
+/// choose whether e-amusement syncs doubles, read the privacy notes and
+/// credits, and the app version with links.
 library;
 
 import 'package:ddr_md/components/session/recent_plays.dart';
@@ -10,6 +11,7 @@ import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/content_updater.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -39,6 +41,7 @@ class AppSettingsPage extends StatelessWidget {
                         context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
                     children: [
                       const Card(child: _ContentTile()),
+                      const Card(child: _SyncDoublesTile()),
                       Card(
                         child: ListTile(
                           title: const Text("Privacy",
@@ -107,6 +110,30 @@ class AppSettingsPage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SyncDoublesTile extends StatefulWidget {
+  const _SyncDoublesTile();
+
+  @override
+  State<_SyncDoublesTile> createState() => _SyncDoublesTileState();
+}
+
+class _SyncDoublesTileState extends State<_SyncDoublesTile> {
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      title: const Text("Sync Doubles",
+          style: TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: const Text(
+          "Off leaves doubles charts out of e-amusement syncs, which then read about half as many pages"),
+      value: EamuseSyncState.syncDoubles,
+      onChanged: (on) async {
+        await EamuseSyncState.setSyncDoubles(on);
+        if (mounted) setState(() {});
+      },
     );
   }
 }
