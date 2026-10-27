@@ -68,8 +68,11 @@ class _SongListItemState extends State<SongListItem> {
   Widget build(BuildContext context) {
     // Only the mode is shown, so other SongState changes don't rebuild rows.
     final Modes mode = context.select<SongState, Modes>((s) => s.modes);
-    // Only a row standing for one chart shows the player's best on it.
-    final bool scoped = widget.difficultyIndex != null && ChartBests.shown;
+    // Only a row standing for one chart shows the player's best on it. Hiding
+    // the bests keeps the card and folds its score band away; the best is
+    // still read so there's something to fold.
+    final bool scoped = widget.difficultyIndex != null;
+    final bool shown = scoped && ChartBests.shown;
     final best = scoped
         ? ChartBests.at(widget.songInfo, mode, widget.difficultyIndex!)
         : null;
@@ -77,23 +80,18 @@ class _SongListItemState extends State<SongListItem> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // The sync to the left of the song's flare group, the group being
-        // what the cabinet sorts folders and flare skill by.
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          if (_syncAdjust(context) case final sync?) ...[
-            sync,
-            const SizedBox(width: 6),
-          ],
-          if (flareGroup(canonicalVersion(widget.songInfo.version))
-              case final group?)
-            Text(group.label,
-                style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                    color: group.color(
-                        Theme.of(context).brightness == Brightness.dark))),
-        ]),
+        if (_syncAdjust(context) case final sync?) sync,
         Text(widget.songInfo.charts[0].bpmRange),
+        // The song's flare group, what the cabinet sorts folders and flare
+        // skill by.
+        if (flareGroup(canonicalVersion(widget.songInfo.version))
+            case final group?)
+          Text(group.label,
+              style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  color: group
+                      .color(Theme.of(context).brightness == Brightness.dark))),
       ],
     );
     Future<void> open() async {
@@ -164,41 +162,61 @@ class _SongListItemState extends State<SongListItem> {
     final flare = best?.flare;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      child: CustomPaint(
-        foregroundPainter: flare == null ? null : FlareFrame(flare, radius: 12),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: DecoratedBox(
-            decoration: flareCardBack(context, flare, radius: 12),
-            // Ink draws above the card back rather than under it.
-            child: Material(
-              type: MaterialType.transparency,
-              child: InkWell(
-                onTap: open,
-                child: Column(children: [
-                  tile,
-                  // Flare, grade and lamp on the left, the best score's tab
-                  // flush with the right edge, its full height.
-                  CardFooter(
-                    padding: const EdgeInsets.only(left: 16),
-                    child: IntrinsicHeight(
-                      child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 5),
-                              child: ChartBestBadges(best, ink: 12, height: 20),
-                            ),
-                            const Spacer(),
-                            BestScore(best),
-                          ]),
+      child: BestsReveal(
+        shown: shown,
+        builder: (context, t) => Stack(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: revealBack(
+              plain: flareCardBack(context, null, radius: 12),
+              flare: flare == null
+                  ? const BoxDecoration()
+                  : flareCardBack(context, flare, radius: 12),
+              t: t,
+              // Ink draws above the card back rather than under it.
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: open,
+                  child: Column(children: [
+                    tile,
+                    // Flare, grade and lamp on the left, the best score's tab
+                    // flush with the right edge, its full height.
+                    unfoldBand(
+                      t,
+                      CardFooter(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: IntrinsicHeight(
+                          child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 5),
+                                  child: ChartBestBadges(best,
+                                      ink: 12, height: 20),
+                                ),
+                                const Spacer(),
+                                BestScore(best),
+                              ]),
+                        ),
+                      ),
                     ),
-                  ),
-                ]),
+                  ]),
+                ),
               ),
             ),
           ),
-        ),
+          if (flare != null && t > 0)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: t,
+                  child: CustomPaint(painter: FlareFrame(flare, radius: 12)),
+                ),
+              ),
+            ),
+        ]),
       ),
     );
   }

@@ -44,62 +44,77 @@ class ArcadeGridTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     // A tile standing for one chart is a card in its flare colours, with the
-    // player's grade and lamp on it.
-    final carded = item.isChartScoped && ChartBests.shown;
-    final best = carded
+    // player's grade and lamp in a band that unfolds under it; the grid grows
+    // its cells in step (see ArcadeGridView).
+    final best = item.isChartScoped
         ? ChartBests.at(item.songInfo, mode, item.difficultyIndex!)
         : null;
     final flare = best?.flare;
+    final plain = BoxDecoration(color: scheme.surfaceContainerHigh);
     // InkWell rather than a bare GestureDetector: with the tap now committing
     // straight to the song page, the ripple is the only feedback that the
     // press registered.
     return Padding(
       padding: const EdgeInsets.all(kArcadeTileGap),
-      child: CustomPaint(
-        foregroundPainter: flare == null ? null : FlareFrame(flare, radius: 8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              DecoratedBox(
-                decoration: carded
-                    ? flareCardBack(context, flare, radius: 8)
-                    : BoxDecoration(color: scheme.surfaceContainerHigh),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    _titleBand(context),
-                    Expanded(child: _jacket(context)),
-                    _caption(context),
-                    if (carded)
-                      SizedBox(
-                        height: kArcadeScoreHeight,
-                        child: CardFooter(
-                          padding: const EdgeInsets.fromLTRB(3, 2, 3, 2),
-                          // Shrinks rather than overflows on a narrow tile.
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: ChartBestBadges(best,
-                                ink: 9, height: 16, gap: 3),
+      child: BestsReveal(
+        shown: item.isChartScoped && ChartBests.shown,
+        builder: (context, t) => Stack(fit: StackFit.expand, children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                revealBack(
+                  plain: plain,
+                  flare: flare == null
+                      ? const BoxDecoration()
+                      : flareCardBack(context, flare, radius: 8),
+                  t: t,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _titleBand(context),
+                      Expanded(child: _jacket(context)),
+                      _caption(context),
+                      if (item.isChartScoped)
+                        unfoldBand(
+                          t,
+                          SizedBox(
+                            height: kArcadeScoreHeight,
+                            child: CardFooter(
+                              padding: const EdgeInsets.fromLTRB(3, 2, 3, 2),
+                              // Shrinks rather than overflows on a narrow tile.
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: ChartBestBadges(best,
+                                    ink: 9, height: 16, gap: 3),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: onTap,
-                  splashColor: scheme.primary.withValues(alpha: 0.24),
-                  highlightColor: scheme.primary.withValues(alpha: 0.10),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onTap,
+                    splashColor: scheme.primary.withValues(alpha: 0.24),
+                    highlightColor: scheme.primary.withValues(alpha: 0.10),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          if (flare != null && t > 0)
+            IgnorePointer(
+              child: Opacity(
+                opacity: t,
+                child: CustomPaint(painter: FlareFrame(flare, radius: 8)),
+              ),
+            ),
+        ]),
       ),
     );
   }

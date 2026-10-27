@@ -151,3 +151,57 @@ class CardFooter extends StatelessWidget {
         child: Padding(padding: padding, child: child),
       );
 }
+
+/// Runs [builder] with 0..1 easing toward 1 while the bests are [shown], so a
+/// card's colour, frame and score band all move off one value. Starts settled,
+/// so only a toggle animates.
+class BestsReveal extends StatelessWidget {
+  const BestsReveal({super.key, required this.shown, required this.builder});
+
+  static const duration = Duration(milliseconds: 360);
+  static const curve = Curves.easeInOutCubic;
+
+  final bool shown;
+  final Widget Function(BuildContext context, double t) builder;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween(end: shown ? 1 : 0),
+        duration: duration,
+        curve: curve,
+        builder: (context, t, _) => builder(context, t),
+      );
+}
+
+/// The score band unfolding from the card's lower edge at [t]: its height
+/// opens first and the contents fade and settle in behind it.
+Widget unfoldBand(double t, Widget child) => ClipRect(
+      child: Align(
+        alignment: Alignment.topCenter,
+        heightFactor: t,
+        child: Opacity(
+          opacity: const Interval(0.4, 1).transform(t),
+          child: Transform.translate(
+              offset: Offset(0, -6 * (1 - t)), child: child),
+        ),
+      ),
+    );
+
+/// [flare]'s card back laid over [plain] at strength [t]. Layered rather than
+/// lerped: lerping a colour into a gradient fades both through transparent,
+/// flashing the page through the card mid-way.
+Widget revealBack(
+        {required BoxDecoration plain,
+        required BoxDecoration flare,
+        required double t,
+        required Widget child}) =>
+    DecoratedBox(
+      decoration: plain,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+            borderRadius: flare.borderRadius,
+            color: flare.color?.withValues(alpha: flare.color!.a * t),
+            gradient: flare.gradient?.scale(t)),
+        child: child,
+      ),
+    );
