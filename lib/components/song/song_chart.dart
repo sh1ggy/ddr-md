@@ -614,7 +614,7 @@ class _SongSyncChartState extends State<SongSyncChart> {
                       // On-beat reference (0 ms)
                       VerticalLine(
                         x: 0,
-                        color: pop.line,
+                        color: pop.haze,
                         strokeWidth: 1.5,
                         dashArray: [3, 4],
                       ),
