@@ -7,6 +7,7 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song_json.dart' show Modes;
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
@@ -202,20 +203,25 @@ class _ScoreJudgments extends StatelessWidget {
 /// Full-combo lamp art for a play, from its judgements. Only meaningful when
 /// every count was captured; a missing one could hide the miss that breaks
 /// the combo.
-String? scoreLampArt(Score score) {
-  if (score.marvelous == null ||
-      score.perfect == null ||
-      score.great == null ||
-      score.good == null ||
-      score.miss == null) {
+String? scoreLampArt(Score score) => judgedLampArt(
+    score.marvelous, score.perfect, score.great, score.good, score.miss);
+
+/// [scoreLampArt] from the counts alone, for a play not yet saved.
+String? judgedLampArt(
+    int? marvelous, int? perfect, int? great, int? good, int? miss) {
+  if (marvelous == null ||
+      perfect == null ||
+      great == null ||
+      good == null ||
+      miss == null) {
     return null;
   }
   return switch (fullComboTier(
-    marvelous: score.marvelous!,
-    perfect: score.perfect!,
-    great: score.great!,
-    good: score.good!,
-    miss: score.miss!,
+    marvelous: marvelous,
+    perfect: perfect,
+    great: great,
+    good: good,
+    miss: miss,
   )) {
     FullComboTier.none => null,
     final tier => fullComboIcon(tier),
@@ -250,9 +256,19 @@ class LatestScoreLine extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: score?.score == null && best == null
-                ? Text('No score recorded',
-                    style:
-                        TextStyle(fontSize: 14, color: scheme.onSurfaceVariant))
+                // A hidden badge row holds the height, so the card is the same
+                // size with or without a score.
+                ? FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Stack(alignment: Alignment.centerLeft, children: [
+                      const Visibility.maintain(
+                          visible: false, child: ScoreBadges(score: 999999)),
+                      Text('No score recorded',
+                          style: TextStyle(
+                              fontSize: 14, color: scheme.onSurfaceVariant)),
+                    ]),
+                  )
                 : FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
@@ -285,30 +301,32 @@ class LatestScoreLine extends StatelessWidget {
   }
 }
 
-/// Clear lamp art, where the lamp has one: the full combos, then the generic
-/// clear for any other pass. Only synced records carry a lamp, so a clear is
+/// Clear lamp art, where the lamp has one: the full combos, LIFE4, then the
+/// generic clear for any other pass. Only synced records carry a lamp, so a clear is
 /// always one Konami reported; failed and unknown show nothing.
 String? clearLampIcon(ClearLamp? lamp) => switch (lamp) {
       ClearLamp.mfc => fullComboIcon(FullComboTier.mfc),
       ClearLamp.pfc => fullComboIcon(FullComboTier.pfc),
       ClearLamp.gfc => fullComboIcon(FullComboTier.gfc),
       ClearLamp.fc => fullComboIcon(FullComboTier.fc),
-      ClearLamp.life4 || ClearLamp.clear || ClearLamp.assisted => clearIcon,
+      ClearLamp.life4 => life4Icon,
+      ClearLamp.clear => clearIcon,
       _ => null,
     };
 
 class _FlareBadge extends StatelessWidget {
-  const _FlareBadge(this.flare, {this.height = 18});
+  const _FlareBadge(this.flare, {this.ink = 14, this.height = 24});
 
   final String flare;
+  final double ink;
   final double height;
 
   @override
   Widget build(BuildContext context) {
-    final art = flareIcon(flare);
-    return art != null
-        ? Image.asset(art, height: height)
-        : Text('Flare $flare', style: const TextStyle(fontSize: 14));
+    final art = flare.isEmpty ? null : flareIcon(flare);
+    return flare.isNotEmpty && art == null
+        ? Text('Flare $flare', style: const TextStyle(fontSize: 14))
+        : ArtBadge(art, aspect: kFlareAspect, ink: ink, height: height);
   }
 }
 
@@ -331,10 +349,11 @@ class ScoreBadges extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final grade = gradeForScore(score);
-    final gradeArt = gradeIcon(grade);
     final unit = dense ? 0.8 : 1.0;
-    // Fixed-width slots so score, grade, lamp and flare line up down a list.
-    final gap = SizedBox(width: 8 * unit);
+    final ink = 14 * unit, height = 24 * unit;
+    // Badges hold their width when empty, so score, flare, grade and lamp
+    // line up down a list.
+    final gap = SizedBox(width: 6 * unit);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -347,33 +366,13 @@ class ScoreBadges extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   fontFeatures: const [FontFeature.tabularFigures()])),
         ),
+        SizedBox(width: 8 * unit),
+        _FlareBadge(flare, ink: ink, height: height),
         gap,
-        SizedBox(
-          width: 40 * unit,
-          child: Image.asset(gradeArt,
-              height: 22 * unit,
-              fit: BoxFit.contain,
-              alignment: Alignment.centerLeft),
-        ),
+        ArtBadge(gradeIcon(grade),
+            aspect: kGradeAspect, ink: ink, height: height),
         gap,
-        SizedBox(
-          width: 36 * unit,
-          height: 16 * unit,
-          child: lampArt != null
-              ? Image.asset(lampArt!,
-                  fit: BoxFit.contain, alignment: Alignment.centerLeft)
-              : null,
-        ),
-        gap,
-        SizedBox(
-          width: 40 * unit,
-          height: 18 * unit,
-          child: flare.isNotEmpty
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: _FlareBadge(flare, height: 18 * unit))
-              : null,
-        ),
+        ArtBadge(lampArt, aspect: kLampAspect, ink: ink, height: height),
       ],
     );
   }

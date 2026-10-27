@@ -4,6 +4,7 @@
 library;
 
 import 'dart:math';
+import 'dart:ui' show Color;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
@@ -57,7 +58,20 @@ Map<int, LevelCharts> chartsByLevel(
 }
 
 /// DDR WORLD's flare skill groups, by the version a song first appeared in.
-enum FlareGroup { classic, white, gold }
+enum FlareGroup {
+  classic('CLASSIC', Color(0xFF7FA3C8)),
+  white('WHITE', Color(0xFFE8E8F0)),
+  gold('GOLD', Color(0xFFD4A82A));
+
+  const FlareGroup(this.label, this._color);
+
+  final String label;
+  final Color _color;
+
+  /// WHITE darkens to a grey in the light theme so it still reads.
+  Color color(bool isDark) =>
+      this == white && !isDark ? const Color(0xFF8A8A96) : _color;
+}
 
 FlareGroup? flareGroup(String version) => switch (version) {
       '1st' ||

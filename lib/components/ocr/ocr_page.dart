@@ -1,3 +1,8 @@
+/// Name: OcrPage
+/// Parent: Router
+/// Description: The Camera tab: the camera full bleed under a sheet that
+/// reads a cabinet's results screen frame by frame, then, stopped, holds the
+/// readings to check and save as a score.
 library;
 
 import 'dart:async';
@@ -5,17 +10,26 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/ocr/load_image.dart';
 import 'package:ddr_md/components/ocr/ocr_shared.dart';
 import 'package:ddr_md/components/ocr/save_score.dart';
 import 'package:ddr_md/components/roi_painter.dart';
-import 'package:ddr_md/helpers.dart' show parseOcrNumber;
+import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/song_json.dart' show Modes;
+import 'package:ddr_md/grades.dart' show gradeForScore, gradeIcon;
+import 'package:ddr_md/helpers.dart'
+    show difficultyOptions, judgmentColor, parseOcrNumber, resolveOcrDifficulty;
 import 'package:ddr_md/models/db_models.dart' show ScoreSource;
+import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/ocr_processor.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 
 enum CameraState {
   /// OCR processor or camera controller not yet initialised.
@@ -40,6 +54,16 @@ class OcrPage extends StatefulWidget {
 
 late Directory tempDir;
 String get tempPath => '${tempDir.path}/temp.jpg';
+
+// The camera stage stays dark whatever the theme, as a viewfinder does; only
+// the sheet over it follows Night or Day.
+const _stage = FloorPop.night;
+final _stageTheme = floorPopTheme(Brightness.dark);
+
+const _kMinSheet = 0.28;
+const _kIdleSheet = 0.34;
+const _kLiveSheet = 0.5;
+const _kStoppedSheet = 0.64;
 
 class _OcrPageState extends State<OcrPage>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
@@ -70,6 +94,12 @@ class _OcrPageState extends State<OcrPage>
       ValueNotifier(([], null));
   final ValueNotifier<int> _frameTick = ValueNotifier(0);
   late final Ticker _ticker;
+
+  final DraggableScrollableController _sheet = DraggableScrollableController();
+  // Highest the sheet goes: just under the top bar.
+  double _sheetMax = 1;
+  String? _liveTitle;
+  SongMatch? _liveSongMatch;
 
   final ValueNotifier<double> _fps = ValueNotifier(0);
   final List<Duration> _frameTimes = [];
@@ -157,6 +187,7 @@ class _OcrPageState extends State<OcrPage>
     _debugOverlayBytes.dispose();
     _captureData.dispose();
     _fps.dispose();
+    _sheet.dispose();
     for (final c in _fieldControllers.values) {
       c.dispose();
     }
@@ -249,6 +280,7 @@ class _OcrPageState extends State<OcrPage>
       if (mounted) setState(() => _isCameraActive = !_isCameraActive);
     } finally {
       _isTogglingCamera = false;
+      _moveSheet();
     }
   }
 
@@ -263,69 +295,181 @@ class _OcrPageState extends State<OcrPage>
     return CameraState.neverRecorded;
   }
 
+  // How much of the page the sheet takes in each state: a line and Start
+  // when idle, the readout while live, the editable score once stopped.
+  double _sizeFor(CameraState state) => switch (state) {
+        CameraState.active => _kLiveSheet,
+        CameraState.inactive =>
+          _aggregator.detailsCount == 0 ? _kLiveSheet : _kStoppedSheet,
+        _ => _kIdleSheet,
+      };
+
+  void _moveSheet() {
+    if (!mounted || !_sheet.isAttached) return;
+    _sheet.animateTo(min(_sizeFor(cameraState), _sheetMax),
+        duration: FloorPop.beat, curve: FloorPop.settle);
+  }
+
+  // The song the live title reads as, matched again only when the reading
+  // changes rather than on every frame.
+  SongMatch? get _liveMatch {
+    final title = _aggregator.best('title')?.value;
+    if (title != _liveTitle) {
+      _liveTitle = title;
+      _liveSongMatch = title == null ? null : Songs.matchTitle(title);
+    }
+    return _liveSongMatch;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool fullyReady = cameraReady && _ocrReady;
-    final bool canStart = _isCameraActive || fullyReady;
-
+    final state = cameraState;
     return Scaffold(
-      appBar: AppBar(
-        surfaceTintColor: Colors.black,
-        shadowColor: Colors.black,
-        elevation: 2,
-        title: const Text(
-          'Camera',
-          style: TextStyle(
-              fontSize: 20,
-              color: Colors.blueGrey,
-              fontWeight: FontWeight.w600),
-        ),
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
-        actions: <Widget>[
-          IconButton(
-            tooltip: 'Load image',
-            icon: const Icon(Icons.photo_library_outlined),
-            onPressed: () async {
-              final navigator = Navigator.of(context);
-              // Stop the live session first — the subpage shouldn't run over
-              // an active camera stream.
-              if (_isCameraActive) await _toggleCamera();
-              if (!mounted) return;
-              navigator
-                  .push(MaterialPageRoute(builder: (_) => const LoadImage()));
-            },
-          ),
-        ],
-      ),
-      body: switch (cameraState) {
-        CameraState.notReady =>
-          const Center(child: CircularProgressIndicator()),
-        CameraState.neverRecorded => Stack(
-            children: [
-              const OcrEmptyState(
-                icon: Icons.videocam_outlined,
-                title: 'Camera is off',
-                subtitle: 'Start OCR to begin detecting scores',
-              ),
-              _floatingSideSelector,
-            ],
-          ),
-        CameraState.inactive => _buildStoppedView(),
-        CameraState.active => _buildActiveView(),
-      },
-      floatingActionButton: FloatingActionButton(
-        // Disabled (null onPressed + grey) until both camera and OCR are
-        // ready. Stop is always enabled once a session is active.
-        onPressed: canStart ? _toggleCamera : null,
-        backgroundColor: _isCameraActive
-            ? Colors.red
-            : canStart
-                ? null // theme default
-                : Colors.grey.shade400,
-        child: Icon(_isCameraActive ? Icons.stop : Icons.play_arrow),
-      ),
+      backgroundColor: _stage.ink,
+      body: state == CameraState.notReady
+          ? const Center(child: CircularProgressIndicator())
+          : LayoutBuilder(builder: (context, box) {
+              // The camera runs full bleed; the top bar floats over it and
+              // the sheet never rises past it.
+              final top = MediaQuery.paddingOf(context).top + 64;
+              _sheetMax = (1 - top / box.maxHeight).clamp(_kStoppedSheet, 1.0);
+              return Stack(children: [
+                Positioned.fill(
+                  child: Theme(
+                    data: _stageTheme,
+                    child: _buildStage(state, box.maxHeight, top),
+                  ),
+                ),
+                Positioned.fill(child: _buildSheet(state)),
+                Positioned(
+                  top: top - 56,
+                  left: 16,
+                  right: 16,
+                  child: Theme(data: _stageTheme, child: _buildTopBar(state)),
+                ),
+              ]);
+            }),
     );
   }
+
+  Future<void> _openLoadImage() async {
+    final navigator = Navigator.of(context);
+    // Stop the live session first — the subpage shouldn't run over an
+    // active camera stream.
+    if (_isCameraActive) await _toggleCamera();
+    if (!mounted) return;
+    navigator.push(MaterialPageRoute(builder: (_) => const LoadImage()));
+  }
+
+  // Load image, then the side picker (the lock state while live, which
+  // switches side on a tap), then the debug images toggle.
+  Widget _buildTopBar(CameraState state) {
+    final debugOn = _debugImageType == DebugImageType.on;
+    return Row(children: [
+      _StageButton(
+        tooltip: 'Load image',
+        icon: Icons.photo_library_outlined,
+        onPressed: _openLoadImage,
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Center(
+          child: state == CameraState.active
+              ? _LockPill(
+                  roiData: _roiData,
+                  isProcessing: _ocrProcessor.isProcessing,
+                  side: _detectionSide,
+                  onTap: _swapSide,
+                )
+              : DetectionSideSelector(
+                  value: _detectionSide,
+                  onChanged: _setDetectionSide,
+                  overlay: true,
+                ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      _StageButton(
+        tooltip: debugOn ? 'Hide debug images' : 'Show debug images',
+        icon: Icons.bug_report_outlined,
+        selected: debugOn,
+        onPressed: () => _setDebugEnabled(!debugOn),
+      ),
+    ]);
+  }
+
+  // What's behind the sheet: the live preview or the last capture from the
+  // top edge, and the guide frame in the space left between the top bar and
+  // the sheet, following the sheet as it's dragged.
+  Widget _buildStage(CameraState state, double height, double top) {
+    return DecoratedBox(
+      decoration: _stage.stripes(color: _stage.ink),
+      child: Stack(children: [
+        if (state == CameraState.active)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                foregroundPainter: _CameraRoiPainter(_roiData, _frameTick),
+                child: _buildPreview(),
+              ),
+            ),
+          )
+        else if (state == CameraState.inactive)
+          Positioned(top: 0, left: 0, right: 0, child: _buildCapture()),
+        ListenableBuilder(
+          listenable: _sheet,
+          builder: (context, _) {
+            final size = _sheet.isAttached ? _sheet.size : _sizeFor(state);
+            final frame = height * (1 - size) - top - 16;
+            return Positioned(
+              left: 24,
+              right: 24,
+              top: top,
+              height: max(0, frame),
+              child: frame < 80 ? const SizedBox.shrink() : _buildFrame(state),
+            );
+          },
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildFrame(CameraState state) => switch (state) {
+        CameraState.active => Stack(children: [
+            Positioned.fill(
+              child: ValueListenableBuilder(
+                valueListenable: _roiData,
+                builder: (context, roi, _) =>
+                    _Brackets(locked: (roi.$2 ?? -1) >= 0),
+              ),
+            ),
+            Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: _FpsCounter(fps: _fps),
+              ),
+            ),
+          ]),
+        CameraState.inactive => ValueListenableBuilder<_CaptureView?>(
+            valueListenable: _captureData,
+            builder: (context, data, _) => data == null
+                ? const _Viewfinder(icon: Icons.search_off)
+                // Quick access to the zoomable ROI overlay; hidden unless
+                // debug produced one.
+                : Align(
+                    alignment: Alignment.bottomRight,
+                    child: DebugZoomChip(
+                      label: 'ROI overlay',
+                      bytes: _debugOverlayBytes,
+                    ),
+                  ),
+          ),
+        _ => const _Viewfinder(),
+      };
 
   Widget _buildPreview() {
     final id = _ocrProcessor.textureId;
@@ -347,41 +491,110 @@ class _OcrPageState extends State<OcrPage>
     return ar > 0 ? AspectRatio(aspectRatio: ar, child: rotated) : rotated;
   }
 
-  Widget _buildActiveView() {
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 96),
-      children: [
-        Stack(
+  // The last frame that matched, full width with its ROIs.
+  Widget _buildCapture() => ValueListenableBuilder<_CaptureView?>(
+        valueListenable: _captureData,
+        builder: (context, data, _) {
+          if (data == null) return const SizedBox.shrink();
+          return CustomPaint(
+            foregroundPainter: _CaptureRoiPainter(
+              rois: data.rois,
+              detailsRoiIndex: data.detailsRoiIndex,
+              frameWidth: data.frameWidth,
+              frameHeight: data.frameHeight,
+            ),
+            child: Image.memory(
+              data.bytes,
+              gaplessPlayback: true,
+              width: double.infinity,
+              fit: BoxFit.fitWidth,
+            ),
+          );
+        },
+      );
+
+  Widget _buildSheet(CameraState state) {
+    final pop = FloorPop.of(context);
+    return DraggableScrollableSheet(
+      controller: _sheet,
+      initialChildSize: _sizeFor(state),
+      minChildSize: _kMinSheet,
+      maxChildSize: _sheetMax,
+      builder: (context, scroll) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: pop.stage,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: ListView(
+          controller: scroll,
+          padding: EdgeInsets.fromLTRB(
+              16, 12, 16, MediaQuery.paddingOf(context).bottom + 16),
           children: [
-            RepaintBoundary(
-              child: CustomPaint(
-                foregroundPainter: _CameraRoiPainter(_roiData, _frameTick),
-                child: _buildPreview(),
+            Center(
+              child: Container(
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                    color: pop.line, borderRadius: BorderRadius.circular(3)),
               ),
             ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: _ProcessingDot(isProcessing: _ocrProcessor.isProcessing),
-            ),
-            Positioned(
-              top: 12,
-              left: 12,
-              child: _FpsCounter(fps: _fps),
-            ),
-            _floatingSideSelector,
+            const SizedBox(height: 12),
+            ...switch (state) {
+              CameraState.active => _buildLiveSheet(),
+              CameraState.inactive => _buildStoppedSheet(),
+              _ => _buildIdleSheet(),
+            },
+            // Latest debug images remain inspectable after stopping (the
+            // notifiers keep their last values).
+            if (_debugImageType == DebugImageType.on &&
+                state != CameraState.neverRecorded) ...[
+              _buildDebugImagePanel(
+                label: 'Mask (latest frame)',
+                notifier: _debugMaskBytes,
+                emptyText: 'Waiting for mask…',
+              ),
+              _buildDebugImagePanel(
+                label: 'Details crop (last match)',
+                notifier: _debugCropBytes,
+                emptyText: 'No Details matched yet…',
+              ),
+              _buildDebugImagePanel(
+                label: 'ROI overlay (last match)',
+                notifier: _debugOverlayBytes,
+                emptyText: 'No overlay yet…',
+              ),
+            ],
           ],
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: _buildDebugControls(),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: _buildLiveScorePanel(),
-        ),
-      ],
+      ),
     );
+  }
+
+  Widget _startButton(String text, IconData icon) => VoltButton(
+        onPressed: _toggleCamera,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [Icon(icon), const SizedBox(width: 6), Text(text)],
+        ),
+      );
+
+  List<Widget> _buildIdleSheet() => [
+        Text('SCAN YOUR SCORE',
+            style: FloorPop.display(18,
+                color: Theme.of(context).colorScheme.onSurface)),
+        const SizedBox(height: 6),
+        Text('Start, then hold the results screen in the frame',
+            style: TextStyle(fontSize: 14, color: FloorPop.of(context).haze)),
+        const SizedBox(height: 16),
+        _startButton('Start', Icons.play_arrow_rounded),
+      ];
+
+  void _swapSide() {
+    final side = _detectionSide == DetectionSide.right
+        ? DetectionSide.left
+        : DetectionSide.right;
+    Settings.setInt(Settings.detectionSideKey, side.index);
+    _setDetectionSide(side);
   }
 
   void _setDetectionSide(DetectionSide side) {
@@ -389,19 +602,6 @@ class _OcrPageState extends State<OcrPage>
     setState(() => _detectionSide = side);
     _ocrProcessor.side = side;
   }
-
-  // Floats top-centre over every camera state (off, live, stopped) so the
-  // side can always be changed before the next session starts.
-  Widget get _floatingSideSelector => Positioned(
-        top: 12,
-        left: 0,
-        right: 0,
-        child: DetectionSideSelector(
-          value: _detectionSide,
-          onChanged: _setDetectionSide,
-          overlay: true,
-        ),
-      );
 
   void _openDebugViewer(String label, ValueNotifier<Uint8List?> notifier) {
     Navigator.of(context).push(MaterialPageRoute(
@@ -420,39 +620,6 @@ class _OcrPageState extends State<OcrPage>
     }
   }
 
-  Widget _buildDebugControls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Debug images'),
-          subtitle:
-              const Text('Show the binarized mask and matched Details crop'),
-          value: _debugImageType == DebugImageType.on,
-          onChanged: _setDebugEnabled,
-        ),
-        if (_debugImageType == DebugImageType.on) ...[
-          _buildDebugImagePanel(
-            label: 'Mask (latest frame)',
-            notifier: _debugMaskBytes,
-            emptyText: 'Waiting for mask…',
-          ),
-          _buildDebugImagePanel(
-            label: 'Details crop (last match)',
-            notifier: _debugCropBytes,
-            emptyText: 'No Details matched yet…',
-          ),
-          _buildDebugImagePanel(
-            label: 'ROI overlay (last match)',
-            notifier: _debugOverlayBytes,
-            emptyText: 'No overlay yet…',
-          ),
-        ],
-      ],
-    );
-  }
-
   Widget _buildDebugImagePanel({
     required String label,
     required ValueNotifier<Uint8List?> notifier,
@@ -464,12 +631,8 @@ class _OcrPageState extends State<OcrPage>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                )),
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(label.toUpperCase(), style: FloorPop.of(context).label),
           ),
           ValueListenableBuilder<Uint8List?>(
             valueListenable: notifier,
@@ -493,11 +656,10 @@ class _OcrPageState extends State<OcrPage>
                 onTap: _isCameraActive
                     ? null
                     : () => _openDebugViewer(label, notifier),
-                child: DecoratedBox(
+                child: Container(
+                  clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
+                    borderRadius: BorderRadius.circular(14),
                     color: Colors.black,
                   ),
                   child: Stack(
@@ -526,230 +688,277 @@ class _OcrPageState extends State<OcrPage>
     );
   }
 
-  Widget _buildCapturePanel() {
-    return ValueListenableBuilder<_CaptureView?>(
-      valueListenable: _captureData,
-      builder: (context, data, _) {
-        if (data == null) return const SizedBox.shrink();
-
-        final Widget framed = CustomPaint(
-          foregroundPainter: _CaptureRoiPainter(
-            rois: data.rois,
-            detailsRoiIndex: data.detailsRoiIndex,
-            frameWidth: data.frameWidth,
-            frameHeight: data.frameHeight,
-          ),
-          child: Image.memory(
-            data.bytes,
-            gaplessPlayback: true,
-            fit: BoxFit.contain,
-          ),
-        );
-
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  "Last capture",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              // Quick access to the zoomable ROI overlay without scrolling
-              // down to the debug panels; hidden unless debug produced one.
-              Stack(
-                children: [
-                  framed,
-                  Positioned(
-                    bottom: 8,
-                    right: 8,
-                    child: DebugZoomChip(
-                      label: 'ROI overlay',
-                      bytes: _debugOverlayBytes,
-                    ),
-                  ),
-                ],
-              ),
+  // [tiles] in rows of [columns], each row's tiles sharing its width.
+  static Widget _rows(List<Widget> tiles, {int columns = 3, double gap = 0}) =>
+      Column(children: [
+        for (var i = 0; i < tiles.length; i += columns) ...[
+          if (i > 0) SizedBox(height: gap),
+          Row(children: [
+            for (var j = i; j < i + columns; j++) ...[
+              if (j > i) const SizedBox(width: 6),
+              Expanded(
+                  child: j < tiles.length ? tiles[j] : const SizedBox.shrink()),
             ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStoppedView() {
-    // Nothing detected in the last session: skip the capture/debug chrome
-    // entirely and centre the empty state. The side picker stays on top —
-    // switching side is the likely fix before starting OCR again.
-    if (_aggregator.detailsCount == 0) {
-      return Stack(
-        children: [
-          ListenableBuilder(
-            listenable: Listenable.merge(
-                [_ocrProcessor.isProcessing, _ocrProcessor.isDraining]),
-            builder: (context, _) {
-              final busy = _ocrProcessor.isProcessing.value ||
-                  _ocrProcessor.isDraining.value;
-              // Results can still land while the stop drains in-flight frames.
-              if (busy) return const Center(child: CircularProgressIndicator());
-              return const OcrEmptyState(
-                icon: Icons.search_off,
-                title: 'No score detected',
-                subtitle: 'Start OCR again and keep the results screen in view',
-              );
-            },
-          ),
-          _floatingSideSelector,
+          ]),
         ],
-      );
-    }
-    return Stack(
-      children: [
-        ListView(
-          // Top padding clears the floating side picker.
-          padding: const EdgeInsets.fromLTRB(16, 64, 16, 96),
-          children: [
-            _buildCapturePanel(),
-            SaveScorePanel(
-              controllers: _fieldControllers,
-              initialTitle: _aggregator.best('title')?.value ?? '',
-              source: ScoreSource.camera,
-              // Proof image stored with the score: the ROI overlay render
-              // when the debug toggle produced one this session, else the
-              // last captured full-color frame that matched.
-              proofImageBytes: () async =>
-                  _debugOverlayBytes.value ?? _captureData.value?.bytes,
-              middleChildren: [_buildEditableScorePanel()],
-            ),
-            // Latest debug images remain inspectable after stopping (the
-            // notifiers keep their last values); the panel gates internally
-            // on the toggle.
-            _buildDebugControls(),
-          ],
-        ),
-        _floatingSideSelector,
-      ],
-    );
-  }
+      ]);
 
-  // Live (recording) view: read-only rolling-average readout. Editing only
-  // happens once OCR is stopped (see _buildEditableScorePanel).
-  Widget _buildLiveScorePanel() {
-    final rows = <Widget>[
+  // Live (recording) view: read-only rolling-average readout under the song
+  // it reads as, the score on its own card over a grid of the rest. Editing
+  // only happens once OCR is stopped (see _buildEditableScorePanel).
+  List<Widget> _buildLiveSheet() {
+    final pop = FloorPop.of(context);
+    final mode = context.watch<SongState>().modes;
+    final match = _liveMatch;
+    final song = match?.song;
+    final levels = song == null
+        ? null
+        : mode == Modes.singles
+            ? song.singles
+            : song.doubles;
+    final difficulty = levels == null
+        ? null
+        : resolveOcrDifficulty(
+            _aggregator.best('difficulty')?.value ?? '', levels);
+    final level = levels == null
+        ? null
+        : difficultyOptions(levels)
+            .where((o) => o.$1 == difficulty)
+            .firstOrNull
+            ?.$2;
+    final score = _aggregator.best('score');
+    final scoreValue = score == null ? null : parseOcrNumber(score.value);
+    final tiles = [
       for (final key in kOcrFieldOrder)
-        if (key != 'title')
+        if (key != 'title' &&
+            key != 'score' &&
+            // The header already shows the chart it resolved to.
+            !(key == 'difficulty' && difficulty != null))
           if (_aggregator.best(key) case final best?)
-            OCRKeyValue(
-              keyName: ocrFieldLabel(key),
+            _ReadoutTile(
+              label: _tileLabel(key),
               value: best.value,
               confidence: best.confidence,
-              sampleCount: best.count,
+              color: judgmentColor(key, context: context),
             ),
     ];
-    return _scorePanelShell(
-      rows: rows,
-      empty: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24),
-        child: Text(
-          "Reading score…",
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+    final reads = _aggregator.detailsCount;
+    return [
+      ScanSongHeader(
+        song: song,
+        subtitle: song == null
+            ? (reads == 0
+                ? 'Looking for the results screen'
+                : 'No song matched yet · $reads reads')
+            : '${(match!.similarity * 100).round()}% match · $reads reads',
+        difficulty: difficulty == null
+            ? null
+            : DifficultyLabel(difficulty: difficulty, level: level, height: 16),
+      ),
+      const SizedBox(height: 12),
+      if (score == null && tiles.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Text('Reading score…',
+              textAlign: TextAlign.center, style: TextStyle(color: pop.haze)),
+        )
+      else ...[
+        if (score != null)
+          _ReadoutTile(
+            label: 'SCORE',
+            value: score.value,
+            confidence: score.confidence,
+            large: true,
+            trailing: scoreValue == null
+                ? null
+                : Image.asset(gradeIcon(gradeForScore(scoreValue)), height: 26),
+          ),
+        const SizedBox(height: 6),
+        _rows(tiles, gap: 6),
+      ],
+      const SizedBox(height: 16),
+      VoltButton(
+        onPressed: _toggleCamera,
+        color: FloorPop.coral,
+        riser: _coralRiser,
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.stop_rounded),
+            SizedBox(width: 6),
+            Text('Stop'),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildStoppedSheet() {
+    // Nothing detected in the last session: the empty state and a way
+    // straight back in. The side picker stays up top — switching side is the
+    // likely fix before starting OCR again.
+    if (_aggregator.detailsCount == 0) {
+      return [
+        ListenableBuilder(
+          listenable: Listenable.merge(
+              [_ocrProcessor.isProcessing, _ocrProcessor.isDraining]),
+          builder: (context, _) {
+            final busy = _ocrProcessor.isProcessing.value ||
+                _ocrProcessor.isDraining.value;
+            // Results can still land while the stop drains in-flight frames.
+            if (busy) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const OcrEmptyState(
+                  icon: Icons.search_off,
+                  title: 'No score detected',
+                  subtitle: 'Keep the results screen in view and scan again',
+                ),
+                _startButton('Scan again', Icons.refresh_rounded),
+              ],
+            );
+          },
+        ),
+      ];
+    }
+    final pop = FloorPop.of(context);
+    // The score card shows even when no score was read, to type one in.
+    _controllerFor('score');
+    return [
+      SaveScorePanel(
+        controllers: _fieldControllers,
+        initialTitle: _aggregator.best('title')?.value ?? '',
+        source: ScoreSource.camera,
+        // Proof image stored with the score: the ROI overlay render when the
+        // debug toggle produced one this session, else the last captured
+        // full-color frame that matched.
+        proofImageBytes: () async =>
+            _debugOverlayBytes.value ?? _captureData.value?.bytes,
+        middleChildren: [_buildEditableScorePanel()],
+        saveTrailing: SizedBox(
+          width: 61,
+          child: VoltButton(
+            tooltip: 'Scan again',
+            onPressed: _toggleCamera,
+            color: pop.riser,
+            riser: pop.line,
+            foreground: Theme.of(context).colorScheme.onSurface,
+            child: const Icon(Icons.refresh_rounded),
           ),
         ),
       ),
-    );
-  }
-
-  // Stopped view: editable, prefilled fields. "Show values" reveals a clickable
-  // candidate histogram per field — the way the user picks between detected
-  // values (tapping a bar sets that field). Difficulty is excluded:
-  // SaveScorePanel renders it as a dropdown of the matched song's charts.
-  Widget _buildEditableScorePanel() {
-    final bool showHistograms = _histogramsExpanded;
-    final rows = <Widget>[
-      for (final key in kOcrFieldOrder)
-        if (key != 'title' && key != 'difficulty' && key != 'flare')
-          if (_aggregator.best(key) case final best?)
-            OCREditableField(
-              keyName: key,
-              controller: _controllerFor(key),
-              confidence: best.confidence,
-              sampleCount: best.count,
-              winnerValue: best.value,
-              candidates: showHistograms
-                  ? [
-                      for (final c in _aggregator.candidates(key))
-                        OCRCandidate(c.value, c.count, c.share),
-                    ]
-                  : const [],
-              onUserEdit: (_) => _userEditedFields.add(key),
-            ),
     ];
-    // Flare renders as a hard-set rank dropdown (I..IX, EX) instead of a
-    // free-text field, and shows even when no reading landed so the rank can
-    // be set by hand. The dropdown replaces the candidate histogram as the
-    // way to pick between values.
-    if (rows.isNotEmpty) {
-      rows.add(FlareDropdownField(
-        controller: _controllerFor('flare'),
-        confidence: _aggregator.best('flare')?.confidence,
-        sampleCount: _aggregator.best('flare')?.count,
-        onUserEdit: (_) => _userEditedFields.add('flare'),
-      ));
-    }
-    return _scorePanelShell(
-      rows: rows,
-      empty: const OcrEmptyState(
-        icon: Icons.search_off,
-        title: 'No score detected',
-        subtitle: 'Start OCR again and keep the results screen in view',
-      ),
-      showToggle: true,
-    );
   }
 
-  Widget _scorePanelShell({
-    required List<Widget> rows,
-    required Widget empty,
-    bool showToggle = false,
-  }) {
+  void _pickCandidate(String key, String value) {
+    final controller = _controllerFor(key);
+    controller.text = value;
+    controller.selection = TextSelection.collapsed(offset: value.length);
+    _userEditedFields.add(key);
+  }
+
+  // Stopped view: editable fields prefilled from the rolling average, in a
+  // grid like the live readout. "Show values" reveals a clickable candidate
+  // histogram for each field the frames disagreed on — the way the user picks
+  // between detected values. Difficulty is excluded: SaveScorePanel renders
+  // it as a menu of the matched song's charts. Flare is a hard-set rank
+  // dropdown (I..IX, EX) and shows even when no reading landed.
+  Widget _buildEditableScorePanel() {
+    final pop = FloorPop.of(context);
+    Widget field(String key) => OCREditableField(
+          keyName: key,
+          label: _tileLabel(key),
+          controller: _controllerFor(key),
+          confidence: _aggregator.best(key)?.confidence,
+          onUserEdit: (_) => _userEditedFields.add(key),
+        );
+    final disputed = [
+      for (final key in kOcrFieldOrder)
+        if (key != 'title' &&
+            key != 'difficulty' &&
+            key != 'flare' &&
+            _aggregator.candidates(key).length > 1)
+          key,
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (showToggle && rows.isNotEmpty)
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () =>
-                  setState(() => _histogramsExpanded = !_histogramsExpanded),
-              icon: Icon(
-                _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
-                size: 18,
+        _rows([
+          for (final key in const [
+            'marvelous',
+            'perfect',
+            'great',
+            'good',
+            'miss',
+            'exScore',
+          ])
+            field(key),
+        ]),
+        _rows([
+          field('maxCombo'),
+          FlareDropdownField(
+            controller: _controllerFor('flare'),
+            confidence: _aggregator.best('flare')?.confidence,
+            onUserEdit: (_) => _userEditedFields.add('flare'),
+          ),
+        ], columns: 2),
+        if (_aggregator.best('username') != null) field('username'),
+        SizedBox(
+          height: 44,
+          child: Row(children: [
+            Text('${_aggregator.detailsCount} READS', style: pop.label),
+            const Spacer(),
+            if (disputed.isNotEmpty)
+              TextButton.icon(
+                onPressed: () =>
+                    setState(() => _histogramsExpanded = !_histogramsExpanded),
+                icon: Icon(
+                  _histogramsExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                ),
+                label:
+                    Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
               ),
-              label: Text(_histogramsExpanded ? 'Hide values' : 'Show values'),
-            ),
-          ),
-        if (rows.isEmpty) empty else ...rows,
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            "Successful detections: ${_aggregator.detailsCount}",
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
+          ]),
         ),
+        if (_histogramsExpanded)
+          for (final key in disputed)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(ocrFieldLabel(key), style: pop.label),
+                  const SizedBox(height: 2),
+                  OcrCandidateBars(
+                    candidates: [
+                      for (final c in _aggregator.candidates(key))
+                        OCRCandidate(c.value, c.count, c.share),
+                    ],
+                    winnerValue: _aggregator.best(key)?.value,
+                    onPick: (value) => _pickCandidate(key, value),
+                  ),
+                ],
+              ),
+            ),
       ],
     );
   }
+
+  static String _tileLabel(String key) => switch (key) {
+        'marvelous' => 'MARV',
+        'perfect' => 'PERF',
+        'exScore' => 'EX',
+        'maxCombo' => 'COMBO',
+        'username' => 'PLAYER',
+        _ => ocrFieldLabel(key),
+      };
 }
 
 // Fields whose readings are numbers; everything else is tallied as raw text.
@@ -843,31 +1052,128 @@ class _OcrAggregator {
   }
 }
 
-class _ProcessingDot extends StatefulWidget {
-  const _ProcessingDot({required this.isProcessing});
+// The hard edge under the coral Stop button.
+const _coralRiser = Color(0xFFB02E47);
 
-  final ValueNotifier<bool> isProcessing;
+/// The guide frame with nothing in it: a dim panel, faint corners, [icon].
+class _Viewfinder extends StatelessWidget {
+  const _Viewfinder({this.icon = Icons.videocam_outlined});
+
+  final IconData icon;
 
   @override
-  State<_ProcessingDot> createState() => _ProcessingDotState();
+  Widget build(BuildContext context) => Stack(children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _stage.riser.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(18),
+            ),
+          ),
+        ),
+        const Positioned.fill(child: _Brackets(locked: false)),
+        Center(child: Icon(icon, size: 40, color: _stage.haze)),
+      ]);
 }
 
-class _ProcessingDotState extends State<_ProcessingDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
-  late final Animation<double> _opacity;
+/// A round action over the camera: dark glass, Volt while [selected].
+class _StageButton extends StatelessWidget {
+  const _StageButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.selected = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final bool selected;
 
   @override
-  void initState() {
-    super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    )..repeat(reverse: true);
-    _opacity = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+  Widget build(BuildContext context) => IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        isSelected: selected,
+        icon: Icon(icon),
+        style: IconButton.styleFrom(
+          backgroundColor:
+              selected ? FloorPop.volt : Colors.black.withValues(alpha: 0.55),
+          foregroundColor: selected ? FloorPop.onVolt : Colors.white,
+          fixedSize: const Size(44, 44),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      );
+}
+
+/// Viewfinder corners: Volt once the results panel is found, faint until.
+class _Brackets extends StatelessWidget {
+  const _Brackets({required this.locked});
+
+  final bool locked;
+
+  @override
+  Widget build(BuildContext context) {
+    final side = BorderSide(
+        color: locked ? FloorPop.volt : Colors.white.withValues(alpha: 0.5),
+        width: 4);
+    const r = Radius.circular(18);
+    Widget corner(Alignment at) => Align(
+          alignment: at,
+          child: AnimatedContainer(
+            duration: FloorPop.sixteenth,
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              border: Border(
+                top: at.y < 0 ? side : BorderSide.none,
+                bottom: at.y > 0 ? side : BorderSide.none,
+                left: at.x < 0 ? side : BorderSide.none,
+                right: at.x > 0 ? side : BorderSide.none,
+              ),
+              borderRadius: BorderRadius.only(
+                topLeft: at == Alignment.topLeft ? r : Radius.zero,
+                topRight: at == Alignment.topRight ? r : Radius.zero,
+                bottomLeft: at == Alignment.bottomLeft ? r : Radius.zero,
+                bottomRight: at == Alignment.bottomRight ? r : Radius.zero,
+              ),
+            ),
+          ),
+        );
+    return IgnorePointer(
+      child: Stack(children: [
+        corner(Alignment.topLeft),
+        corner(Alignment.topRight),
+        corner(Alignment.bottomLeft),
+        corner(Alignment.bottomRight),
+      ]),
     );
   }
+}
+
+/// Whether the latest frame found the results panel, for which side, with a
+/// dot that pulses while a frame is being read. Tapping it switches side.
+class _LockPill extends StatefulWidget {
+  const _LockPill(
+      {required this.roiData,
+      required this.isProcessing,
+      required this.side,
+      required this.onTap});
+
+  final ValueNotifier<(List<Rectangle<int>>, int?)> roiData;
+  final ValueNotifier<bool> isProcessing;
+  final DetectionSide side;
+  final VoidCallback onTap;
+
+  @override
+  State<_LockPill> createState() => _LockPillState();
+}
+
+class _LockPillState extends State<_LockPill>
+    with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(vsync: this, duration: FloorPop.beat)
+    ..repeat(reverse: true);
 
   @override
   void dispose() {
@@ -877,27 +1183,50 @@ class _ProcessingDotState extends State<_ProcessingDot>
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: widget.isProcessing,
-      builder: (context, active, _) {
-        return AnimatedOpacity(
-          opacity: active ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 200),
-          child: FadeTransition(
-            opacity: _opacity,
-            child: const SizedBox(
-              width: 10,
-              height: 10,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                ),
+    final player = widget.side == DetectionSide.right ? '2P' : '1P';
+    final other = widget.side == DetectionSide.right ? '1P' : '2P';
+    final pill = ListenableBuilder(
+      listenable: Listenable.merge([widget.roiData, widget.isProcessing]),
+      builder: (context, _) {
+        final locked = (widget.roiData.value.$2 ?? -1) >= 0;
+        final color = locked ? FloorPop.volt : Colors.white;
+        return AnimatedContainer(
+          duration: FloorPop.sixteenth,
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: locked
+                ? const Color(0xE616122C)
+                : Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(17),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            FadeTransition(
+              opacity: widget.isProcessing.value
+                  ? Tween(begin: 0.3, end: 1.0).animate(_pulse)
+                  : const AlwaysStoppedAnimation(1),
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Text(locked ? 'Locked on · $player' : 'Searching · $player',
+                style: TextStyle(
+                    color: color, fontSize: 13, fontWeight: FontWeight.w700)),
+            const SizedBox(width: 6),
+            Icon(Icons.swap_horiz, size: 16, color: color),
+          ]),
         );
       },
+    );
+    return Tooltip(
+      message: 'Switch to $other',
+      child: Semantics(
+        button: true,
+        child: GestureDetector(onTap: widget.onTap, child: pill),
+      ),
     );
   }
 }
@@ -912,24 +1241,77 @@ class _FpsCounter extends StatelessWidget {
     return ValueListenableBuilder<double>(
       valueListenable: fps,
       builder: (context, value, _) {
-        return DecoratedBox(
+        return Container(
+          height: 34,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(4),
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(17),
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: Text(
-              '${value.toStringAsFixed(1)} fps',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
+          child: Text('${value.toStringAsFixed(1)} FPS',
+              style: FloorPop.readout(13, color: Colors.white)),
         );
       },
+    );
+  }
+}
+
+/// One live reading on a riser: label, value in the readout face, and a bar
+/// for how many frames agree on it.
+class _ReadoutTile extends StatelessWidget {
+  const _ReadoutTile({
+    required this.label,
+    required this.value,
+    required this.confidence,
+    this.color,
+    this.large = false,
+    this.trailing,
+  });
+
+  final String label, value;
+  final double confidence;
+  final Color? color;
+  final bool large;
+  // After the value, e.g. the score's grade.
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+          color: pop.riser,
+          borderRadius: BorderRadius.circular(large ? 18 : 12)),
+      child: Stack(children: [
+        Padding(
+          padding: EdgeInsets.symmetric(
+              horizontal: large ? 14 : 10, vertical: large ? 12 : 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(label,
+                  style: pop.label
+                      .copyWith(letterSpacing: 0.7, color: color ?? pop.haze)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: BeatSwap(
+                    child: Text(value,
+                        key: ValueKey(value),
+                        style: FloorPop.readout(large ? 34 : 16)),
+                  ),
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+            ],
+          ),
+        ),
+        ConfidenceBar(confidence),
+      ]),
     );
   }
 }

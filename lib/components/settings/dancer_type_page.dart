@@ -8,6 +8,7 @@ import 'package:ddr_md/components/settings/setting_card.dart';
 import 'package:ddr_md/components/song/notes/dancing_feet.dart';
 import 'package:ddr_md/components/song/notes/pad_dancer.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 
 class DancerTypePage extends StatefulWidget {
@@ -43,43 +44,37 @@ class _DancerTypePageState extends State<DancerTypePage> {
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
+        extendBodyBehindAppBar: true,
         appBar: AppBar(
-          surfaceTintColor: Colors.black,
-          shadowColor: Colors.black,
-          elevation: 2,
-          title: const Text(
-            'Dancer Type',
-            style: TextStyle(
-              fontSize: 20,
-              color: Colors.blueGrey,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          iconTheme: const IconThemeData(color: Colors.blueGrey),
+          flexibleSpace: const GlassHeader(),
+          title: const Text('Dancer Type'),
         ),
-        body: ListView(
-          padding: const EdgeInsets.all(8),
-          children: [
-            SettingCard<int>(
-              setValue: _setHeight,
-              chosenValue:
-                  _heightCm == 0 ? (kDancerHeight * 100).round() : _heightCm,
-              field: "Height (cm)",
-              maxLength: 3,
-            ),
-            SettingCard<String>(
-              setValue: _setShoeSize,
-              chosenValue:
-                  ((_shoeTenths == 0 ? kShoeSize * 10 : _shoeTenths) / 10)
-                      .toString()
-                      .replaceFirst(RegExp(r'\.0$'), ''),
-              field: "Shoe Size (US)",
-              maxLength: 4,
-              digitsOnly: false,
-            ),
-            const BarGripCard(),
-          ],
-        ),
+        body: Builder(
+            builder: (context) => ListView(
+                  padding: clearOfBars(context, const EdgeInsets.all(8)),
+                  children: [
+                    SettingCard<int>(
+                      setValue: _setHeight,
+                      chosenValue: _heightCm == 0
+                          ? (kDancerHeight * 100).round()
+                          : _heightCm,
+                      field: "Height (cm)",
+                      maxLength: 3,
+                    ),
+                    SettingCard<String>(
+                      setValue: _setShoeSize,
+                      chosenValue:
+                          ((_shoeTenths == 0 ? kShoeSize * 10 : _shoeTenths) /
+                                  10)
+                              .toString()
+                              .replaceFirst(RegExp(r'\.0$'), ''),
+                      field: "Shoe Size (US)",
+                      maxLength: 4,
+                      digitsOnly: false,
+                    ),
+                    const BarGripCard(),
+                  ],
+                )),
       ),
     );
   }

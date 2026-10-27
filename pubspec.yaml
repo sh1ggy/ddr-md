@@ -68,8 +68,46 @@ flutter:
     - assets/models/ppocr_small_rec.onnx
     - assets/models/ppocrv6_small_dict.txt
     - assets/templates/
+    - fonts/Unbounded-OFL.txt
+    - fonts/Inter-OFL.txt
+    - fonts/ChakraPetch-OFL.txt
   fonts:
     - family: Handel
       fonts: 
         - asset: fonts/handel_gothic.ttf
+    # Floor Pop's faces (lib/theme.dart), static instances under the OFL.
+    - family: Unbounded
+      fonts:
+        - asset: fonts/Unbounded-Bold.ttf
+          weight: 700
+        - asset: fonts/Unbounded-Black.ttf
+          weight: 900
+    - family: Inter
+      fonts:
+        - asset: fonts/Inter-Regular.ttf
+        - asset: fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: fonts/Inter-Bold.ttf
+          weight: 700
+        - asset: fonts/Inter-ExtraBold.ttf
+          weight: 800
+        - asset: fonts/Inter-Black.ttf
+          weight: 900
+        - asset: fonts/Inter-BlackItalic.ttf
+          weight: 900
+          style: italic
+    - family: ChakraPetch
+      fonts:
+        - asset: fonts/ChakraPetch-SemiBold.ttf
+          weight: 600
+        - asset: fonts/ChakraPetch-Bold.ttf
+          weight: 700
+        - asset: fonts/ChakraPetch-SemiBoldItalic.ttf
+          weight: 600
+          style: italic
+        - asset: fonts/ChakraPetch-BoldItalic.ttf
+          weight: 700
+          style: italic
   uses-material-design: true

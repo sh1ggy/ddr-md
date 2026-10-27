@@ -5,13 +5,35 @@
 /// here is typed in; it fills in from a sync on Home.
 library;
 
+import 'dart:math';
+
+import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/grades.dart' show flareClassColor, flareClassIcon;
+import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/score_overview.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/eamuse.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+/// The player's flare skill class, from whichever style is higher, or null
+/// before any scores are synced.
+Future<String?> _flareClass() async {
+  final records =
+      await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse);
+  if (records.isEmpty) return null;
+  final total = [Modes.singles, Modes.doubles]
+      .map((m) => flareSkill(records, Songs.list, m).total)
+      .reduce(max);
+  return flareClass(total).name;
+}
 
 class EamuseProfileCard extends StatelessWidget {
   const EamuseProfileCard({super.key});
@@ -43,72 +65,92 @@ class EamuseProfileCard extends StatelessWidget {
       );
     }
 
+    final pop = FloorPop.of(context);
     Widget stat(String label, String value) => Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label.toUpperCase(),
-                  style: TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 1,
-                      color: muted,
-                      fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Text(value,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600)),
-            ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+                color: pop.riser, borderRadius: BorderRadius.circular(14)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label.toUpperCase(), style: pop.label),
+                const SizedBox(height: 2),
+                Text(value,
+                    style: FloorPop.readout(20,
+                        color: theme.colorScheme.onSurface)),
+              ],
+            ),
           ),
         );
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name.isEmpty ? 'Dancer' : name,
-                          style: theme.textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w800)),
-                      if (code.isNotEmpty)
-                        Text(formatRivalCode(code),
-                            style: TextStyle(
-                                fontSize: 18,
-                                letterSpacing: 2,
-                                color: muted,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures()
-                                ])),
-                    ],
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.all(18),
+      decoration:
+          pop.stripes(color: pop.stage, radius: BorderRadius.circular(26)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FutureBuilder<String?>(
+            future: _flareClass(),
+            builder: (context, snapshot) {
+              final cls = snapshot.data;
+              return Row(
+                children: [
+                  cls == null
+                      ? Transform.rotate(
+                          angle: -0.07,
+                          child: const PadGlyph(size: 48, lit: true))
+                      : Tooltip(
+                          message: 'Flare rank',
+                          child: Image.asset(flareClassIcon(cls),
+                              width: 64, filterQuality: FilterQuality.medium),
+                        ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name.isEmpty ? 'DANCER' : name.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: FloorPop.display(24,
+                                color: theme.colorScheme.onSurface)),
+                        if (code.isNotEmpty)
+                          Text(formatRivalCode(code),
+                              style: FloorPop.readout(18, color: muted)
+                                  .copyWith(letterSpacing: 1.5)),
+                        if (cls != null)
+                          Text(cls,
+                              style: pop.label
+                                  .copyWith(color: flareClassColor(cls))),
+                      ],
+                    ),
                   ),
-                ),
-                if (code.isNotEmpty)
-                  IconButton(
-                    tooltip: "Copy rival code",
-                    icon: const Icon(Icons.copy),
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: code));
-                      if (context.mounted) {
-                        showToast(context, "Copied rival code");
-                      }
-                    },
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(children: [
-              stat("Last play",
-                  lastPlay.isEmpty ? '—' : formatAgo(eamuseTime(lastPlay))),
-              stat("Plays", plays == 0 ? '—' : '$plays'),
-            ]),
-          ],
-        ),
+                  if (code.isNotEmpty)
+                    HeaderButton(
+                      tooltip: "Copy rival code",
+                      icon: const Icon(Icons.copy_rounded, size: 20),
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: code));
+                        if (context.mounted) {
+                          showToast(context, "Copied rival code");
+                        }
+                      },
+                    ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 14),
+          Row(children: [
+            stat("Last play",
+                lastPlay.isEmpty ? '—' : formatAgo(eamuseTime(lastPlay))),
+            const SizedBox(width: 8),
+            stat("Plays", plays == 0 ? '—' : '$plays'),
+          ]),
+        ],
       ),
     );
   }

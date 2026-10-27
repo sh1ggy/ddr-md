@@ -8,7 +8,7 @@
 /// have dropped plays ([planEamuseSync]). Signing in happens on Konami's own
 /// page in a web view, so the app reuses that session's cookies and never
 /// sees the password. Requests are sequential and throttled by
-/// [EamuseSync.gap], and a sync stops at the first error.
+/// [EamuseSync.gap] across every sync, and a sync stops at the first error.
 library;
 
 import 'dart:convert';
@@ -62,7 +62,7 @@ const _lamps = {
   'cl_good': ClearLamp.fc,
   'cl_li4clear': ClearLamp.life4,
   'cl_clear': ClearLamp.clear,
-  'cl_asclear': ClearLamp.assisted,
+  'cl_asclear': ClearLamp.clear,
   'cl_none': ClearLamp.failed,
 };
 const _difficulties = {'BEGINNER', 'BASIC', 'DIFFICULT', 'EXPERT', 'CHALLENGE'};
@@ -312,24 +312,44 @@ String eamuseTitleKey(String title) =>
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
-/// Song `name` for each title key, from both the title and its
-/// transliteration.
-Map<String, String> eamuseTitleIndex(Iterable<SongInfo> songs) => {
-      for (final s in songs) ...{
-        eamuseTitleKey(s.titletranslit): s.name,
-        eamuseTitleKey(s.title): s.name,
-      }
-    };
+/// Finds the song for an e-amusement chart: by Konami ID, else by title
+/// (and its transliteration) among songs with no ID. A song with an ID never
+/// matches by title, so a different song of the same name can't take it.
+class EamuseSongIndex {
+  EamuseSongIndex(Iterable<SongInfo> songs)
+      : _byId = {
+          for (final s in songs)
+            if (s.konamiId.isNotEmpty) s.konamiId: s.name
+        },
+        _byTitle = {
+          for (final s in songs)
+            if (s.konamiId.isEmpty) ...{
+              eamuseTitleKey(s.titletranslit): s.name,
+              eamuseTitleKey(s.title): s.name,
+            }
+        };
+
+  final Map<String, String> _byId;
+  final Map<String, String> _byTitle;
+
+  String? of(String konamiId, String title) =>
+      _byId[konamiId] ?? _byTitle[eamuseTitleKey(title)];
+}
 
 typedef EamuseProgress = void Function(int done, int total);
 
 class EamuseSync {
-  /// Least time between two requests to Konami; each wait adds up to a second
-  /// of jitter on top.
+  /// Least time between two requests to Konami, from any sync; each wait adds
+  /// up to a second of jitter on top.
   static const gap = Duration(seconds: 3);
 
-  /// Least time between two syncs. Most only read the recent plays page.
+  /// Least time between the starts of two syncs. Most only read the recent
+  /// plays page.
   static const cooldown = Duration(minutes: 1);
+
+  /// How long no sync starts after Konami answered with an error, maintenance
+  /// or a block.
+  static const backoff = Duration(minutes: 10);
 
   /// Upper bound on pages per style, in case the pager is misread.
   static const maxPages = 60;
@@ -341,17 +361,18 @@ class EamuseSync {
   /// a response replace theirs here and go to [onCookies] to be kept.
   String cookies;
   final Future<void> Function(List<Cookie>)? onCookies;
-  final Map<String, String> titleIndex;
+  final EamuseSongIndex songs;
   final Future<void> Function(List<ScoreRecord>) save;
   final String host;
   bool cancelled = false;
-  DateTime? _lastRequest;
+  // Shared, so stopping and restarting a sync doesn't skip the gap.
+  static DateTime? _lastRequest;
   final _random = Random();
 
   EamuseSync({
     required this.cookies,
     this.onCookies,
-    required this.titleIndex,
+    required this.songs,
     required this.save,
     this.host = kEamuseHost,
   });
@@ -374,7 +395,8 @@ class EamuseSync {
           plays[i],
           syncedAt);
       if (record == null) continue;
-      final matched = record.withSong(titleIndex[eamuseTitleKey(record.title)]);
+      final matched =
+          record.withSong(songs.of(record.konamiId ?? '', record.title));
       await save([matched]);
       charts++;
       if (matched.song == null) unmatched++;
@@ -450,7 +472,7 @@ class EamuseSync {
         if (mode == Modes.singles) singlesPages = pages;
         final records = [
           for (final r in parsed.records)
-            r.withSong(titleIndex[eamuseTitleKey(r.title)])
+            r.withSong(songs.of(r.konamiId ?? '', r.title))
         ];
         await save(records);
         charts += records.length;

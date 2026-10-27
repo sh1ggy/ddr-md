@@ -136,6 +136,9 @@ class Settings {
   // Defaults to the list, since getInt falls back to 0 when unset.
   static const String songlistViewModeKey = "songlistViewMode";
 
+  // 1 hides the songlist's grade/flare/lamp cards; unset shows them.
+  static const String songlistHideStatsKey = "songlistHideStats";
+
   // The songlist's sort: a SortType index, and 1 for descending.
   static const String songlistSortKey = "songlistSort";
   static const String songlistSortDescKey = "songlistSortDesc";

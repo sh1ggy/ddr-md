@@ -18,6 +18,8 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
+import 'package:ddr_md/theme.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 /// How many plays the level's model counts as when blended into a chart's
@@ -287,11 +289,12 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final muted = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
     final gap = summary.gap;
-    final up = isDark ? Colors.green.shade300 : Colors.green.shade700;
+    final pop = FloorPop.of(context);
+    final up = pop.up, down = pop.down;
     final logged = widget.timing ?? const <TimingPlay>[];
     final timing = logged.isEmpty
         ? null
-        : logged.map((t) => t.averageMs).reduce((a, b) => a + b) /
+        : logged.map((t) => t.offBeatMs).reduce((a, b) => a + b) /
             logged.length;
     final showTiming = _showTiming && timing != null;
     final (played, matched) = reconcileTiming(plays, logged);
@@ -336,12 +339,7 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
             children: [
               Text(
                 '${gap >= 0 ? '+' : '−'}${formatScore(gap.abs().round())}',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: gap >= 0 ? up : scheme.error,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+                style: FloorPop.readout(34, color: gap >= 0 ? up : down),
               ),
               const SizedBox(width: 8),
               Expanded(child: Text('vs your usual', style: muted)),
@@ -350,8 +348,8 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
           const SizedBox(height: 8),
           if (summary.byLevel case final levels when levels.isNotEmpty) ...[
             widget.detailed
-                ? _LevelBars(levels, up: up, down: scheme.error)
-                : _LevelChips(_scoreChips(levels, up: up, down: scheme.error)),
+                ? _LevelBars(levels, up: up, down: down)
+                : _LevelChips(_scoreChips(levels, up: up, down: down)),
             const SizedBox(height: 12),
           ],
           _PlayStrip(
@@ -363,7 +361,7 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
             },
             full: 50000,
             up: up,
-            down: scheme.error,
+            down: down,
             counted: 'compared',
             onPlay: widget.onPlay,
           ),
@@ -475,12 +473,8 @@ class _StatText extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => Text(text,
-      style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-          color: color,
-          fontFeatures: const [FontFeature.tabularFigures()]));
+  Widget build(BuildContext context) =>
+      Text(text, style: FloorPop.readout(17, color: color));
 }
 
 /// Each level's average on one score axis beside its usual, easiest first:
@@ -639,12 +633,7 @@ class _LevelChips extends StatelessWidget {
                   fit: BoxFit.scaleDown,
                   child: Text(
                     c.text,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: c.colour,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                    style: FloorPop.readout(17, color: c.colour),
                   ),
                 ),
               ]),
@@ -688,7 +677,7 @@ List<_Chip> _timingChips(Iterable<RecentPlay> plays,
   for (final p in plays) {
     if (levels[p] case final l?) {
       final ms = byLevel.putIfAbsent(l, () => []);
-      if (matched[p] case final t?) ms.add(t.averageMs);
+      if (matched[p] case final t?) ms.add(t.offBeatMs);
     }
   }
   final chips = <_Chip>[];
@@ -751,12 +740,7 @@ class _TimingChart extends StatelessWidget {
           children: [
             Text(
               '${mean.abs().toStringAsFixed(1)} ms',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: mean < 0 ? fast : slow,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+              style: FloorPop.readout(34, color: mean < 0 ? fast : slow),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -772,10 +756,12 @@ class _TimingChart extends StatelessWidget {
           _LevelChips(chips),
           const SizedBox(height: 12),
         ],
+        _TimingSpread(matched.values, fast: fast, slow: slow),
+        const SizedBox(height: 12),
         _PlayStrip(
           groups,
           value: (p) => switch (matched[p]) {
-            final t? => (t.averageMs, false),
+            final t? => (t.offBeatMs, false),
             null => null,
           },
           full: _fullTimingMs,
@@ -930,4 +916,113 @@ class _StripPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_StripPainter old) => old.credits != credits;
+}
+
+/// Where the set's steps landed, drawn like the song page's Sync curve:
+/// every timed play's average and variation summed into one spread around
+/// the beat, FAST to the left and SLOW to the right.
+class _TimingSpread extends StatelessWidget {
+  const _TimingSpread(this.timing, {required this.fast, required this.slow});
+
+  final Iterable<TimingPlay> timing;
+  final Color fast, slow;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final caption = TextStyle(fontSize: 11, color: pop.haze);
+    final plays = [
+      for (final t in timing) (t.offBeatMs, max(1.0, t.trueVariationMs))
+    ];
+    final range = plays
+        .fold<double>(30, (a, p) => max(a, p.$1.abs() + 2 * p.$2))
+        .ceilToDouble();
+    final density = [
+      for (var x = -range; x <= range; x++)
+        plays.fold<double>(
+            0, (a, p) => a + exp(-pow(x - p.$1, 2) / (2 * p.$2 * p.$2)) / p.$2),
+    ];
+    final peak = density.reduce(max);
+    final mean =
+        plays.fold<double>(0, (a, p) => a + p.$1) / max(1, plays.length);
+    final colour = mean < 0 ? fast : slow;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 64,
+          child: LineChart(
+            LineChartData(
+              titlesData: const FlTitlesData(show: false),
+              lineTouchData: const LineTouchData(enabled: false),
+              extraLinesData: ExtraLinesData(verticalLines: [
+                // Dead on the beat, then where the set really landed.
+                VerticalLine(
+                  x: 0,
+                  color: pop.haze,
+                  strokeWidth: 1.5,
+                  dashArray: [3, 4],
+                  label: VerticalLineLabel(
+                    show: true,
+                    alignment:
+                        mean < 0 ? Alignment.topRight : Alignment.topLeft,
+                    style: caption.copyWith(fontSize: 10),
+                    labelResolver: (_) => 'on time',
+                  ),
+                ),
+                VerticalLine(
+                  x: mean,
+                  color: colour,
+                  strokeWidth: 2,
+                  label: VerticalLineLabel(
+                    show: true,
+                    alignment:
+                        mean < 0 ? Alignment.topLeft : Alignment.topRight,
+                    style: caption.copyWith(
+                        fontSize: 10,
+                        color: colour,
+                        fontWeight: FontWeight.w700),
+                    labelResolver: (_) => 'you',
+                  ),
+                ),
+              ]),
+              clipData: const FlClipData.all(),
+              borderData: FlBorderData(show: false),
+              gridData: const FlGridData(show: false),
+              minX: -range,
+              maxX: range,
+              minY: 0,
+              maxY: 108,
+              lineBarsData: [
+                LineChartBarData(
+                  spots: [
+                    for (final (i, d) in density.indexed)
+                      FlSpot(i - range, d / peak * 100),
+                  ],
+                  barWidth: 2,
+                  color: colour,
+                  dotData: const FlDotData(show: false),
+                  belowBarData: BarAreaData(
+                      show: true, color: colour.withValues(alpha: 0.15)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('fast',
+                style:
+                    caption.copyWith(color: fast, fontWeight: FontWeight.w600)),
+            Text('offset from beat (ms)', style: caption),
+            Text('slow',
+                style:
+                    caption.copyWith(color: slow, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ],
+    );
+  }
 }

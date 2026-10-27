@@ -5,12 +5,15 @@
 /// in each; the gear opens Settings.
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/session_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -25,6 +28,8 @@ String signedMs(double ms) =>
 Future<void> showStartSessionSheet(BuildContext context, {Credit? last}) =>
     showModalBottomSheet(
       context: context,
+      // Over the floating tab bar, wherever it's opened from.
+      useRootNavigator: true,
       isScrollControlled: true,
       builder: (_) => _CreditSheet(newSession: true, last: last),
     );
@@ -33,6 +38,8 @@ Future<void> showStartSessionSheet(BuildContext context, {Credit? last}) =>
 /// unless changed.
 Future<void> showNewCreditSheet(BuildContext context) => showModalBottomSheet(
       context: context,
+      // Over the floating tab bar, wherever it's opened from.
+      useRootNavigator: true,
       isScrollControlled: true,
       builder: (_) => const _CreditSheet(newSession: false),
     );
@@ -47,6 +54,8 @@ Future<void> showEditCreditSheet(BuildContext context,
         required DateTime startedAt}) =>
     showModalBottomSheet(
       context: context,
+      // Over the floating tab bar, wherever it's opened from.
+      useRootNavigator: true,
       isScrollControlled: true,
       builder: (_) => _CreditSheet(
           newSession: false,
@@ -336,33 +345,31 @@ class SessionPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<SessionState>();
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        surfaceTintColor: Colors.black,
-        shadowColor: Colors.black,
-        elevation: 2,
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
-        title: const Text('Home',
-            style: TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600)),
+        flexibleSpace: const GlassHeader(),
+        title: const PageTitle('Home'),
         actions: [
-          IconButton(
+          HeaderButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => context.push('/home/settings'),
           ),
         ],
       ),
-      floatingActionButton: session.active ? null : const StartSessionFab(),
       // The cards scroll with the session below them.
       body: session.active
           ? _ActiveSession(session: session, header: _header)
-          : ListView(
-              // Clear of the start button.
-              padding: const EdgeInsets.only(bottom: 128),
-              children: _header,
-            ),
+          : Builder(
+              builder: (context) => ListView(
+                    padding:
+                        clearOfBars(context, const EdgeInsets.only(bottom: 24)),
+                    children: const [
+                      BeatIn(child: StartSessionCard()),
+                      BeatIn(index: 1, child: EamuseSyncCard()),
+                      BeatIn(index: 2, child: LastSessionCard()),
+                    ],
+                  )),
     );
   }
 }
@@ -387,8 +394,10 @@ class _ActiveSession extends StatelessWidget {
       builder: (context, snapshot) {
         final (credits, plays) = snapshot.data ?? (<Credit>[], <TimingPlay>[]);
         return ListView(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: clearOfBars(context, const EdgeInsets.only(bottom: 12)),
           children: [
+            BeatIn(
+                child: _LiveSessionCard(session: session, plays: plays.length)),
             ...header,
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -396,45 +405,6 @@ class _ActiveSession extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 12),
-                  Card(
-                    child: ListTile(
-                      title: Text(session.session!.venue.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(
-                          'since ${formatDate(session.session!.startedAt)}'
-                          ' · ${plays.length} ${plays.length == 1 ? 'play' : 'plays'}'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: 'Discard session',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () async {
-                              if (await confirmDelete(
-                                  context,
-                                  'Discard this session?',
-                                  'Its credits and every play logged in them go '
-                                      'too.')) {
-                                await session.discard();
-                              }
-                            },
-                          ),
-                          TextButton(
-                            onPressed: session.end,
-                            child: const Text('End'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: FilledButton.tonalIcon(
-                      icon: const Icon(Icons.add),
-                      label: Text('Credit ${session.credit!.number + 1}'),
-                      onPressed: () => showNewCreditSheet(context),
-                    ),
-                  ),
                   for (final credit in credits) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(4, 4, 0, 0),
@@ -508,4 +478,143 @@ class _ActiveSession extends StatelessWidget {
       },
     );
   }
+}
+
+/// The running session, first on Home: where and since when, the credit in
+/// big type with its cab and side (tap to swap), and the next credit.
+class _LiveSessionCard extends StatelessWidget {
+  const _LiveSessionCard({required this.session, required this.plays});
+
+  final SessionState session;
+  final int plays;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final credit = session.credit!;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      padding: const EdgeInsets.all(18),
+      decoration: pop
+          .stripes(color: pop.stage, radius: BorderRadius.circular(26))
+          .copyWith(
+        border:
+            Border.all(color: FloorPop.volt.withValues(alpha: 0.55), width: 2),
+        boxShadow: [
+          BoxShadow(
+              color: FloorPop.volt.withValues(alpha: 0.12), blurRadius: 26)
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    const LivePulse(),
+                    const SizedBox(width: 6),
+                    Text(
+                        'LIVE · SINCE ${formatTime12(session.session!.startedAt).toUpperCase()}',
+                        style: pop.label.copyWith(color: pop.voltText)),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(session.session!.venue.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: FloorPop.display(18, color: scheme.onSurface)
+                          .copyWith(fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Discard session',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () async {
+                if (await confirmDelete(context, 'Discard this session?',
+                    'Its credits and every play logged in them go too.')) {
+                  await session.discard();
+                }
+              },
+            ),
+            OutlinedButton(onPressed: session.end, child: const Text('End')),
+          ]),
+          const SizedBox(height: 14),
+          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  BeatSwap(
+                    child: Text('CREDIT ${credit.number}',
+                        key: ValueKey(credit.number),
+                        style: FloorPop.readout(38, color: scheme.onSurface)),
+                  ),
+                  const SizedBox(height: 6),
+                  // Tapping the credit starts the next one, for a side or cab
+                  // swap.
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => showNewCreditSheet(context),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _CreditPill(credit.cabinet.name.isEmpty
+                            ? 'Main cab'
+                            : credit.cabinet.name),
+                        _CreditPill(sideLabel(credit.side)),
+                        _CreditPill(plays == 1 ? '1 play' : '$plays plays'),
+                        Icon(Icons.swap_horiz, size: 18, color: pop.haze),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 112,
+              child: VoltButton(
+                height: 72,
+                radius: 20,
+                onPressed: () => showNewCreditSheet(context),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.add, size: 26),
+                  Text('Credit ${credit.number + 1}',
+                      style: const TextStyle(
+                          fontFamily: kTextFont,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700)),
+                ]),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+/// One fact about the running credit as a small pill.
+class _CreditPill extends StatelessWidget {
+  const _CreditPill(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+            color: FloorPop.of(context).riser,
+            borderRadius: BorderRadius.circular(8)),
+        child: Text(text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      );
 }

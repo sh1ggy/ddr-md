@@ -4,14 +4,16 @@
 /// Home keeps running while the player moves around the app. Each sync reads
 /// the recent plays page first and fetches only what [planEamuseSync] says it
 /// needs, keeps every listed play in [DatabaseProvider.saveRecentPlays], and
-/// refreshes the player's profile when anything was played. A tap while a sync runs, or within [EamuseSync.cooldown] of the last
-/// finished one, does nothing, and only charts whose best changed are
-/// written.
+/// refreshes the player's profile when anything was played. A tap while a
+/// sync runs, within [EamuseSync.cooldown] of the last one starting, or
+/// within [EamuseSync.backoff] of Konami refusing one, does nothing, and only
+/// charts whose best changed are written.
 library;
 
 import 'dart:async';
 import 'dart:io' as io;
 
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse.dart';
@@ -38,6 +40,8 @@ class EamuseSyncState extends ChangeNotifier {
   // Bumped when a sync ends, so views of what it saved reload.
   int revision = 0;
   EamuseSync? _sync;
+  DateTime? _notBefore;
+  Timer? _wake;
 
   DateTime? get syncedAt =>
       DateTime.tryParse(Settings.getString(Settings.eamuseSyncedAtKey));
@@ -51,7 +55,41 @@ class EamuseSyncState extends ChangeNotifier {
         DateTime.now().difference(at) < EamuseSync.cooldown;
   }
 
+  /// Holding off after the last sync started or was refused, whatever its end.
+  bool get waiting =>
+      _notBefore != null && DateTime.now().isBefore(_notBefore!);
+
+  void _holdOff(Duration wait) {
+    _notBefore = DateTime.now().add(wait);
+    _wake?.cancel();
+    _wake = Timer(wait, notifyListeners);
+  }
+
+  EamuseSyncState() {
+    ContentStore.revision.addListener(relink);
+  }
+
+  @override
+  void dispose() {
+    ContentStore.revision.removeListener(relink);
+    _wake?.cancel();
+    super.dispose();
+  }
+
+  /// Points saved scores and plays at the songs the current song list gives
+  /// them, so charts synced before their song arrived, or matched by an older
+  /// list, link up without another sync. At launch and after a content update.
+  Future<void> relink() async {
+    if (Songs.list.isEmpty) return;
+    if (await DatabaseProvider.relinkEamuse(EamuseSongIndex(Songs.list).of) >
+        0) {
+      revision++;
+      notifyListeners();
+    }
+  }
+
   Future<void> restore() async {
+    await relink();
     charts = await DatabaseProvider.countScoreRecords(ScoreRecordSource.eamuse);
     recentPlays = await DatabaseProvider.countRecentPlays();
     notifyListeners();
@@ -64,10 +102,15 @@ class EamuseSyncState extends ChangeNotifier {
     await restore();
   }
 
-  /// [renewed]: the session was just renewed by [_signInSilently], so a
-  /// second signed-out answer means it really has to be signed into again.
+  /// [renewed]: the session was just renewed, by signing in or by
+  /// [_signInSilently], so a signed-out answer means it really has to be
+  /// signed into again.
   Future<void> sync({bool renewed = false}) async {
-    if (status == EamuseStatus.syncing || upToDate) return;
+    // The sync after a sign-in carries on the one that needed it.
+    if (status == EamuseStatus.syncing || upToDate || (waiting && !renewed)) {
+      return;
+    }
+    _holdOff(EamuseSync.cooldown);
     final stored = {
       for (final r
           in await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse))
@@ -81,7 +124,7 @@ class EamuseSyncState extends ChangeNotifier {
           '${c.name}=${c.value}'
       ].join('; '),
       onCookies: _keepCookies,
-      titleIndex: eamuseTitleIndex(Songs.list),
+      songs: EamuseSongIndex(Songs.list),
       save: (records) async {
         final fresh = [
           for (final r in records)
@@ -109,7 +152,7 @@ class EamuseSyncState extends ChangeNotifier {
             RecentPlay(
               konamiId: p.konamiId,
               title: p.title,
-              song: sync.titleIndex[eamuseTitleKey(p.title)],
+              song: sync.songs.of(p.konamiId, p.title),
               mode: p.mode,
               difficulty: p.difficulty,
               playedAt: eamuseTime(p.playedAt),
@@ -170,7 +213,9 @@ class EamuseSyncState extends ChangeNotifier {
       status = EamuseStatus.signedOut;
     } on EamuseUnavailable catch (e) {
       status = EamuseStatus.failed;
-      error = 'e-amusement unavailable ($e)';
+      error = 'e-amusement unavailable ($e), try again in '
+          '${EamuseSync.backoff.inMinutes} min';
+      _holdOff(EamuseSync.backoff);
     } catch (e) {
       status = EamuseStatus.failed;
       error = 'Sync failed';

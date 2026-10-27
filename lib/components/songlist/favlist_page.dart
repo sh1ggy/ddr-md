@@ -8,9 +8,12 @@ import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -26,11 +29,15 @@ class FavoriteListPage extends StatefulWidget {
 class _FavoriteListPageState extends State<FavoriteListPage> {
   List<Favorite>? favorites;
   Future<List<SongInfo>>? songInfoLoadingPromise;
+  int? _syncRevision;
 
   // Getting favourite items & returning future for list of SongInfo
   Future<List<SongInfo>> getFavSongInfoList() async {
     Modes mode = Provider.of<SongState>(context, listen: false).modes;
-    List<Favorite>? favorites = await DatabaseProvider.getAllFavorites(mode);
+    final (favorites, _) = await (
+      DatabaseProvider.getAllFavorites(mode),
+      ChartBests.load(mode)
+    ).wait;
 
     List<SongInfo> tempFavoriteSongList = [];
     for (Favorite fav in favorites) {
@@ -54,81 +61,91 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
   @override
   void initState() {
     super.initState();
+    _syncRevision = context.read<EamuseSyncState>().revision;
     genSongInfoList(); // initialise favourite items
   }
 
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
+    // A sync while this page stayed open changed the bests.
+    final syncRevision =
+        context.select<EamuseSyncState, int>((s) => s.revision);
+    if (_syncRevision != syncRevision) {
+      _syncRevision = syncRevision;
+      songInfoLoadingPromise = getFavSongInfoList();
+    }
     return SafeArea(
+        bottom: false,
         child: Scaffold(
+            extendBodyBehindAppBar: true,
             appBar: AppBar(
-              surfaceTintColor: Colors.black,
-              shadowColor: Colors.black,
-              elevation: 2,
+              flexibleSpace: const GlassHeader(),
               centerTitle: true,
-              title: const Text(
-                "Favourites",
-                style: TextStyle(
-                    fontSize: 20,
-                    color: Colors.blueGrey,
-                    fontWeight: FontWeight.w600),
-              ),
+              title: const Text("Favourites"),
               actions: const <Widget>[SortMenuButton()],
-              iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
-            body: SingleChildScrollView(
-              child: FutureBuilder(
-                future: songInfoLoadingPromise,
-                builder: (context, snapshot) {
-                  List<Widget> children;
-                  if (snapshot.hasData) {
-                    if (snapshot.data!.isEmpty) {
-                      return SizedBox(
-                          height: MediaQuery.of(context).size.height / 1.5,
-                          child: const Center(child: Text('No favourites...')));
-                    }
-                    List<SongInfo> favSongs = List.of(snapshot.data!);
-                    if (songState.sortType == SortType.level) {
-                      // No level filter here, so a song sorts under its lowest
-                      // charted level in the mode.
-                      final int sign = songState.sortDescending ? -1 : 1;
-                      favSongs.sort((a, b) {
-                        final int byLevel = sign *
-                            primaryLevelFor(a, songState.modes)
-                                .compareTo(primaryLevelFor(b, songState.modes));
-                        return byLevel != 0
-                            ? byLevel
-                            : compareSongInfo(a, b, SortType.title);
-                      });
-                    } else {
-                      favSongs.sort((a, b) => compareSongInfo(
-                          a, b, songState.sortType,
-                          descending: songState.sortDescending));
-                    }
-                    children = favSongs.map<SongListItem>((SongInfo songInfo) {
-                      return SongListItem(
-                        songInfo: songInfo,
-                        isFav: true,
-                        isSearch: false,
-                        regenFavsCallback: genSongInfoList,
-                      );
-                    }).toList();
-                  } else {
-                    children = [
-                      SizedBox(
-                          height: MediaQuery.of(context).size.height / 1.5,
-                          child: const Center(child: Text('Loading...'))),
-                    ];
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.max,
-                    children: children,
-                  );
-                },
-              ),
-            )));
+            body: Builder(
+                builder: (context) => SingleChildScrollView(
+                      padding: clearOfBars(context, EdgeInsets.zero),
+                      child: FutureBuilder(
+                        future: songInfoLoadingPromise,
+                        builder: (context, snapshot) {
+                          List<Widget> children;
+                          if (snapshot.hasData) {
+                            if (snapshot.data!.isEmpty) {
+                              return SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height / 1.5,
+                                  child: const Center(
+                                      child: Text('No favourites...')));
+                            }
+                            List<SongInfo> favSongs = List.of(snapshot.data!);
+                            if (songState.sortType == SortType.level) {
+                              // No level filter here, so a song sorts under its lowest
+                              // charted level in the mode.
+                              final int sign =
+                                  songState.sortDescending ? -1 : 1;
+                              favSongs.sort((a, b) {
+                                final int byLevel = sign *
+                                    primaryLevelFor(a, songState.modes)
+                                        .compareTo(primaryLevelFor(
+                                            b, songState.modes));
+                                return byLevel != 0
+                                    ? byLevel
+                                    : compareSongInfo(a, b, SortType.title);
+                              });
+                            } else {
+                              favSongs.sort((a, b) => compareSongInfo(
+                                  a, b, songState.sortType,
+                                  descending: songState.sortDescending));
+                            }
+                            children =
+                                favSongs.map<SongListItem>((SongInfo songInfo) {
+                              return SongListItem(
+                                songInfo: songInfo,
+                                isFav: true,
+                                isSearch: false,
+                                regenFavsCallback: genSongInfoList,
+                              );
+                            }).toList();
+                          } else {
+                            children = [
+                              SizedBox(
+                                  height:
+                                      MediaQuery.of(context).size.height / 1.5,
+                                  child:
+                                      const Center(child: Text('Loading...'))),
+                            ];
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.max,
+                            children: children,
+                          );
+                        },
+                      ),
+                    ))));
   }
 }

@@ -3,10 +3,12 @@
 /// Description: Widgets relating to the song's BPM & mods
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/notes/chart_chrome.dart';
 import 'package:ddr_md/components/song/notes/constant_speed.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/services.dart';
@@ -137,17 +139,23 @@ class _SongBpmState extends State<SongBpm> {
                                       size: 18,
                                       color: scheme.onSurfaceVariant,
                                       semanticLabel: 'Speed mod'),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    "×${_formatMod(mod)}",
-                                    style: TextStyle(
-                                      fontSize: 19,
-                                      height: 1.1,
-                                      fontWeight: FontWeight.bold,
-                                      color: scheme.primary,
-                                      fontFeatures: const [
-                                        FontFeature.tabularFigures()
-                                      ],
+                                  const SizedBox(width: 8),
+                                  Lean(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 9, vertical: 2),
+                                      decoration: BoxDecoration(
+                                          color: FloorPop.volt,
+                                          borderRadius:
+                                              BorderRadius.circular(8)),
+                                      child: Upright(
+                                        child: BeatSwap(
+                                          child: Text("×${_formatMod(mod)}",
+                                              key: ValueKey(mod),
+                                              style: FloorPop.readout(20,
+                                                  color: FloorPop.onVolt)),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -173,33 +181,29 @@ class _SongBpmState extends State<SongBpm> {
                                           style: TextStyle(
                                             fontSize: 18,
                                             height: 1.1,
-                                            fontWeight: FontWeight.bold,
+                                            fontWeight: FontWeight.w700,
                                           ),
                                         ),
                                       ),
                                     Column(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          "$value",
-                                          style: const TextStyle(
-                                            fontSize: 20,
-                                            height: 1.1,
-                                            fontWeight: FontWeight.bold,
-                                            fontFeatures: [
-                                              FontFeature.tabularFigures()
-                                            ],
-                                          ),
-                                        ),
+                                        Text("$value",
+                                            style: FloorPop.readout(
+                                                caption == 'core' ||
+                                                        caption == null
+                                                    ? 24
+                                                    : 19,
+                                                color: scheme.onSurface)),
                                         if (caption != null)
                                           Text(
                                             caption,
                                             style: TextStyle(
                                               fontSize: 10,
-                                              height: 1.0,
-                                              fontWeight: FontWeight.w600,
-                                              color: scheme.onSurface
-                                                  .withValues(alpha: 0.55),
+                                              height: 1.2,
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 0.8,
+                                              color: scheme.onSurfaceVariant,
                                             ),
                                           ),
                                       ],

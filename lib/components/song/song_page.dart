@@ -3,8 +3,8 @@
 /// Description: Page that displays selected song information
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/history_page.dart';
-import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/components/song/song_chart.dart';
@@ -13,7 +13,6 @@ import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/components/song/song_player_sync.dart';
 import 'package:ddr_md/components/song/song_bpm.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -21,9 +20,11 @@ import 'package:ddr_md/models/pattern_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 /// The song page's reorderable sections, in their default top-to-bottom order.
@@ -110,6 +111,32 @@ class _SongPageState extends State<SongPage> {
   List<ScoreRecord> records = [];
 
   late List<SongSection> _sectionOrder;
+
+  // The hero's title flies up into the header as the page scrolls. The hero
+  // keeps an invisible copy for layout; the one drawn over the page moves
+  // between the two spots with the scroll.
+  final _scroll = ScrollController();
+  final _stackKey = GlobalKey();
+  final _titleKey = GlobalKey();
+  // Where the hero's title sits in the page stack at scroll 0.
+  Rect? _titleRest;
+
+  void _measureTitle() {
+    final title = _titleKey.currentContext?.findRenderObject() as RenderBox?;
+    final stack = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (title == null || stack == null || !title.attached) return;
+    final scrolled = _scroll.hasClients ? _scroll.offset : 0.0;
+    final rest = (title.localToGlobal(Offset.zero, ancestor: stack) +
+            Offset(0, scrolled)) &
+        title.size;
+    if (rest != _titleRest) setState(() => _titleRest = rest);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   // Lazily-loaded per-song note streams for the scrolling chart preview. Keyed
   // by song name so it reloads only when the song changes, not on every
@@ -247,77 +274,60 @@ class _SongPageState extends State<SongPage> {
     final diffKey =
         available[songState.chosenDifficulty.clamp(0, available.length - 1)];
 
-    final difficultyLevel =
-        (mode == Modes.singles ? songInfo.singles : songInfo.doubles)
-            .toJson()[diffKey] as int?;
-    final diffColor = difficultyColor(diffKey);
-    // The in-game name (BASIC/DIFFICULT/EXPERT…), not the StepMania-style data
-    // key — "medium" is a field name, never something a player sees.
-    final diffLabel = kInGameDifficultyNames[diffKey] ??
-        (diffKey.isEmpty
-            ? ""
-            : diffKey[0].toUpperCase() + diffKey.substring(1));
-
     return FutureBuilder<SongSteps?>(
       future: _stepsFuture,
       builder: (context, snapshot) {
         final steps = snapshot.data?.chartFor(mode, diffKey);
-        if (steps == null || steps.notes.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        // Padded here rather than around the FutureBuilder so a song with no
-        // generated steps leaves no gap above the sections below.
+        final ready = steps != null && steps.notes.isNotEmpty;
+        final pop = FloorPop.of(context);
+        // The page's two actions, pinned under it: open the chart, or scan a
+        // result straight after playing it.
         return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Card(
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChartPreviewPage.forChart(
-                        songInfo, mode, diffKey,
-                        stepsFuture: _stepsFuture),
-                  ),
-                );
-              },
-              child: ListTile(
-                // Matches the ExpansionTile cards' tilePadding, so every section
-                // header starts and ends on the same x.
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                // Same header shape as the Sync card.
-                title: Wrap(
-                  spacing: 10,
-                  runSpacing: 2,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    const CardHeading('Chart', icon: Icons.play_circle_outline),
-                    if (kInGameDifficultyColors.containsKey(diffLabel))
-                      DifficultyLabel(
-                          difficulty: diffLabel, level: difficultyLevel)
-                    else
-                      Text(
-                        difficultyLevel != null
-                            ? "$diffLabel $difficultyLevel"
-                            : diffLabel,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          color: diffColor,
-                        ),
-                      ),
-                  ],
-                ),
-                // Not the neighbours' expand_more: this row pushes a route
-                // instead of expanding in place.
-                trailing: Icon(
-                  Icons.chevron_right,
-                  color: Theme.of(context).hintColor,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: SafeArea(
+            top: false,
+            child: Row(children: [
+              Expanded(
+                child: VoltButton(
+                  onPressed: !ready
+                      ? null
+                      : () {
+                          HapticFeedback.selectionClick();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChartPreviewPage.forChart(
+                                  songInfo, mode, diffKey,
+                                  stepsFuture: _stepsFuture),
+                            ),
+                          );
+                        },
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.play_arrow_rounded, size: 26),
+                    SizedBox(width: 8),
+                    Text('Preview chart'),
+                  ]),
                 ),
               ),
-            ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: IconButton.filled(
+                  tooltip: 'Scan a score',
+                  style: IconButton.styleFrom(
+                    backgroundColor: pop.riser,
+                    elevation: 6,
+                    shadowColor: Colors.black,
+                    foregroundColor: Theme.of(context).colorScheme.onSurface,
+                    fixedSize: const Size(56, 56),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18)),
+                  ),
+                  onPressed: () => context.go('/scan'),
+                  icon: const Icon(Icons.document_scanner_outlined),
+                ),
+              ),
+            ]),
           ),
         );
       },
@@ -470,121 +480,171 @@ class _SongPageState extends State<SongPage> {
           ReorderableDelayedDragStartListener(
             key: card.key,
             index: i,
-            child: card,
+            child: BeatIn(index: i, child: card),
           ),
       ],
     );
   }
 
+  // The header's fill and the title over it, both following the scroll: the
+  // title leaves its hero spot as the page moves and lands beside the back
+  // button, shrinking to header size, by the time the jacket has scrolled
+  // away. A title that wraps in the hero hands over to one ellipsised line on
+  // the way.
+  List<Widget> _buildFlyingTitle(String title) {
+    final rest = _titleRest;
+    if (rest == null) return const [];
+    const travel = 96.0;
+    const scale = 16 / 20;
+    final style =
+        FloorPop.display(20, color: Theme.of(context).colorScheme.onSurface);
+    final top = MediaQuery.paddingOf(context).top;
+    final width = MediaQuery.sizeOf(context).width;
+    // Clear of the back button on the left and the two actions on the right.
+    final header = Rect.fromLTWH(
+        kToolbarHeight,
+        top + (kToolbarHeight - style.fontSize! * style.height! * scale) / 2,
+        width - kToolbarHeight - 2 * (44 + 8) - 16,
+        kToolbarHeight);
+    return [
+      AnimatedBuilder(
+        animation: _scroll,
+        builder: (context, _) {
+          final scrolled = _scroll.hasClients ? _scroll.offset : 0.0;
+          final t =
+              FloorPop.settle.transform((scrolled / travel).clamp(0.0, 1.0));
+          final at = Offset.lerp(
+              rest.topLeft - Offset(0, scrolled), header.topLeft, t)!;
+          final oneLine = ((t - 0.6) / 0.4).clamp(0.0, 1.0);
+          return Stack(children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: top + kToolbarHeight,
+              child: IgnorePointer(child: GlassHeader(amount: t)),
+            ),
+            Positioned(
+              left: at.dx,
+              top: at.dy,
+              child: IgnorePointer(
+                child: Transform.scale(
+                  scale: 1 + (scale - 1) * t,
+                  alignment: Alignment.topLeft,
+                  child: Stack(children: [
+                    Opacity(
+                      opacity: 1 - oneLine,
+                      child: SizedBox(
+                          width: rest.width, child: Text(title, style: style)),
+                    ),
+                    Opacity(
+                      opacity: oneLine,
+                      child: SizedBox(
+                        width: header.width / scale,
+                        child: Text(title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: style),
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ]);
+        },
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     var songState = context.watch<SongState>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _measureTitle();
+    });
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: SafeArea(
         top: false,
+        // The page runs under the floating tab bar and clears it itself.
+        bottom: false,
         child: LayoutBuilder(builder: (context, constraints) {
           return Directionality(
             textDirection: TextDirection.ltr,
             child: Scaffold(
-              appBar: AppBar(
-                  surfaceTintColor: Colors.black,
-                  shadowColor: Colors.black,
-                  elevation: 2,
-                  centerTitle: true,
-                  title: const Text(
-                    "Song",
-                    style: TextStyle(
-                        fontSize: 20,
-                        color: Colors.blueGrey,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  iconTheme: const IconThemeData(color: Colors.blueGrey),
-                  actions: <Widget>[
-                    IconButton(
-                        icon: Icon(
-                          favorite == null ? Icons.star_border : Icons.star,
-                        ),
-                        tooltip: favorite == null ? "Favourite" : "Unfavourite",
-                        onPressed: () async {
-                          HapticFeedback.lightImpact();
-                          SongInfo? songStateInfo = songState.songInfo;
-                          if (songStateInfo == null) {
-                            return;
-                          }
-                          if (favorite == null) {
-                            Favorite fav = Favorite(
-                                id: 0,
-                                isFav: true,
-                                songTitle: songStateInfo.titletranslit,
-                                mode: songState.modes);
-                            await DatabaseProvider.addFavorite(fav);
-                            setState(() {
-                              favorite = fav;
-                            });
-                          } else {
-                            await DatabaseProvider.deleteFavorite(favorite!);
-                            setState(() {
-                              favorite = null;
-                            });
-                          }
-                          if (context.mounted) {
-                            showToast(context, "Favourite updated");
-                          }
-                        }),
-                    IconButton(
-                      icon: const Icon(Icons.history),
-                      tooltip: "History",
-                      onPressed: () => openHistory(HistoryPage.notesTab),
-                    )
-                  ]),
-              body: SingleChildScrollView(
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+              // The header is floating buttons over the page, not a bar that
+              // cuts it off: the hero and cards scroll on under them.
+              extendBodyBehindAppBar: true,
+              appBar:
+                  AppBar(backgroundColor: Colors.transparent, actions: <Widget>[
+                HeaderButton(
+                    icon: Icon(
+                      favorite == null ? Icons.star_border : Icons.star,
+                      color: favorite == null ? null : FloorPop.sun,
+                    ),
+                    tooltip: favorite == null ? "Favourite" : "Unfavourite",
+                    onPressed: () async {
+                      HapticFeedback.lightImpact();
+                      SongInfo? songStateInfo = songState.songInfo;
+                      if (songStateInfo == null) {
+                        return;
+                      }
+                      if (favorite == null) {
+                        Favorite fav = Favorite(
+                            id: 0,
+                            isFav: true,
+                            songTitle: songStateInfo.titletranslit,
+                            mode: songState.modes);
+                        await DatabaseProvider.addFavorite(fav);
+                        setState(() {
+                          favorite = fav;
+                        });
+                      } else {
+                        await DatabaseProvider.deleteFavorite(favorite!);
+                        setState(() {
+                          favorite = null;
+                        });
+                      }
+                      if (context.mounted) {
+                        showToast(context, "Favourite updated");
+                      }
+                    }),
+                HeaderButton(
+                  icon: const Icon(Icons.history),
+                  tooltip: "History",
+                  onPressed: () => openHistory(HistoryPage.notesTab),
+                )
+              ]),
+              // The actions float over the page rather than cutting it off:
+              // the scroll runs under them and ends clear of them.
+              body: Stack(key: _stackKey, children: [
+                SingleChildScrollView(
+                  controller: _scroll,
                   child: Column(
                     children: [
-                      Text(
-                        songState.songInfo!.title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          height: 1.1,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
+                      SongDetails(
+                          songInfo: songState.songInfo!,
+                          chart: _chart,
+                          titleKey: _titleKey,
+                          hideTitle: _titleRest != null),
+                      Padding(
+                        // Below the hero, so clear of the tab bar only.
+                        padding: EdgeInsets.fromLTRB(12, 4, 12,
+                            96 + MediaQuery.paddingOf(context).bottom),
+                        child: _buildReorderableSections(songState),
                       ),
-                      if (songState.songInfo!.titletranslit.isNotEmpty &&
-                          songState.songInfo!.titletranslit !=
-                              songState.songInfo!.title)
-                        Text(
-                          songState.songInfo!.titletranslit,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            height: 1.0,
-                            color: Colors.grey,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      if (songState.songInfo!.artist.isNotEmpty)
-                        Text(
-                          songState.songInfo!.artist,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            height: 1.0,
-                            color: Colors.grey,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      const SizedBox(height: 10),
-                      SongDetails(songInfo: songState.songInfo!, chart: _chart),
-                      const SizedBox(height: 10),
-                      // Pinned above the draggable sections so the page's
-                      // primary action always opens from the same place.
-                      _buildChartPreviewButton(songState),
-                      _buildReorderableSections(songState),
                     ],
                   ),
                 ),
-              ),
+                ..._buildFlyingTitle(songState.songInfo!.title),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildChartPreviewButton(songState),
+                ),
+              ]),
             ),
           );
         }),

@@ -7,6 +7,7 @@
 /// it.
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
@@ -16,6 +17,7 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -245,6 +247,7 @@ class _WhereHeading extends StatelessWidget {
       onPressed: () async {
         final session = await showModalBottomSheet<PlaySession>(
           context: context,
+          useRootNavigator: true,
           builder: (_) => _VenueSheet(visit),
         );
         if (session != null && context.mounted) {
@@ -319,27 +322,96 @@ class _VenueSheetState extends State<_VenueSheet> {
   }
 }
 
-/// Home's start button, floating over it: opens the start sheet on the cab
-/// and side last played.
-class StartSessionFab extends StatelessWidget {
-  const StartSessionFab({super.key});
+/// Home's way into a session: one tap starts on the cab and side last
+/// played; "Somewhere else" opens the full start sheet.
+class StartSessionCard extends StatelessWidget {
+  const StartSessionCard({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
     return FutureBuilder<VisitData>(
       future: visitsFor(context),
       builder: (context, snapshot) {
         final last = snapshot.data?.lastCredit;
-        return FloatingActionButton.large(
-          tooltip: last == null
-              ? 'Start session'
-              : 'Start at ${last.cabinet.label} · ${sideLabel(last.side)}',
-          shape: const CircleBorder(),
-          backgroundColor: scheme.secondary,
-          foregroundColor: scheme.onSecondary,
-          onPressed: () => showStartSessionSheet(context, last: last),
-          child: const Icon(Icons.play_arrow, size: 48),
+        return Container(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+          decoration:
+              pop.stripes(color: pop.stage, radius: BorderRadius.circular(26)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                Transform.rotate(
+                    angle: -0.07, child: const PadGlyph(size: 46, lit: true)),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('AT THE ARCADE?', style: pop.label),
+                      const SizedBox(height: 2),
+                      Text('Start a session',
+                          style: FloorPop.display(21, color: scheme.onSurface)),
+                    ],
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              VoltButton(
+                height: 62,
+                radius: 20,
+                tooltip: last == null ? 'Start session' : null,
+                onPressed: () async {
+                  if (last == null) {
+                    await showStartSessionSheet(context);
+                    return;
+                  }
+                  await context.read<SessionState>().start(
+                      Venue(last.cabinet.venueId, last.cabinet.venueName),
+                      last.cabinet,
+                      last.side);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Row(children: [
+                    const Icon(Icons.play_arrow_rounded, size: 30),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(last == null ? 'Start' : 'Start here'),
+                          if (last != null)
+                            Text(
+                              '${last.cabinet.label} · ${sideLabel(last.side)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontFamily: kTextFont,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+              if (last != null)
+                TextButton(
+                  style: TextButton.styleFrom(
+                      foregroundColor: scheme.onSurface,
+                      minimumSize: const Size(44, 44)),
+                  onPressed: () => showStartSessionSheet(context, last: last),
+                  child: const Text('Somewhere else'),
+                ),
+              if (last == null) const SizedBox(height: 10),
+            ],
+          ),
         );
       },
     );
@@ -361,16 +433,35 @@ Future<void> _delete(BuildContext context, Visit v) async {
 
 /// A session in a rounded tile: venue, when, plays and how they went against
 /// usual. Tap for its page; swipe one with a venue to delete it.
-class VisitTile extends StatelessWidget {
+class VisitTile extends StatefulWidget {
   const VisitTile(this.visit, {super.key, required this.model});
 
   final Visit visit;
   final ScoreModel model;
 
   @override
+  State<VisitTile> createState() => _VisitTileState();
+}
+
+class _VisitTileState extends State<VisitTile> {
+  // Swiped away: gone at once, since the list only drops it once the
+  // sessions reload, and a dismissed Dismissible can't stay in the tree.
+  bool _dismissed = false;
+
+  @override
+  void didUpdateWidget(VisitTile old) {
+    super.didUpdateWidget(old);
+    // The list's tiles aren't keyed, so this state can be handed another
+    // session once the deleted one is gone.
+    if (old.visit.key != widget.visit.key) _dismissed = false;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_dismissed) return const SizedBox.shrink();
+    final visit = widget.visit;
+    final model = widget.model;
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final gap = visit.plays.isEmpty ? null : model.summarize(visit.plays).gap;
     final tile = Material(
       color: scheme.surfaceContainerHighest,
@@ -391,10 +482,8 @@ class VisitTile extends StatelessWidget {
                 style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: gap >= 0
-                        ? (isDark
-                            ? Colors.green.shade300
-                            : Colors.green.shade700)
-                        : scheme.error,
+                        ? FloorPop.of(context).up
+                        : FloorPop.of(context).down,
                     fontFeatures: const [FontFeature.tabularFigures()])),
       ),
     );
@@ -414,7 +503,10 @@ class VisitTile extends StatelessWidget {
                   child: const Icon(Icons.delete, color: Colors.white),
                 ),
                 confirmDismiss: (_) => _confirmDelete(context, visit),
-                onDismissed: (_) => _delete(context, visit),
+                onDismissed: (_) {
+                  setState(() => _dismissed = true);
+                  _delete(context, visit);
+                },
                 child: tile,
               ),
       ),
@@ -435,7 +527,7 @@ class SessionsPage extends StatelessWidget {
         builder: (context, snapshot) {
           final data = snapshot.data;
           return ListView(
-            padding: const EdgeInsets.all(12),
+            padding: clearOfBars(context, const EdgeInsets.all(12)),
             children: [
               for (final v in data?.visits ?? <Visit>[])
                 VisitTile(v, model: data!.model),
@@ -526,65 +618,70 @@ class _VisitPageState extends State<VisitPage> {
                 },
               ),
           ],
-          body: ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              HomeCard(
-                title: 'Summary',
-                icon: Icons.insights,
-                heading: visit.session == null
-                    ? _WhereHeading(visit,
-                        onAdded: (s) =>
-                            context.replace('/home/sessions/${s.id}'))
-                    : null,
-                children: [
-                  CardSubtitle(
-                      '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
-                  if (visit.plays.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6),
-                      child: Text('No synced plays: sync after your set to '
-                          'add them.'),
-                    )
-                  else
-                    SessionSummaryBody(
-                      data.model.summarize(visit.plays),
-                      plays: visit.plays,
-                      timed: visit.session != null,
-                      timing: timing,
-                      detailed: true,
-                      credits: credits,
-                      onPlay: (p) =>
-                          _jump(groups, p.playedAt.millisecondsSinceEpoch),
-                    ),
-                ],
-              ),
-              if (visit.plays.isNotEmpty || timing.isNotEmpty)
-                HomeCard(
-                  title: 'Plays',
-                  icon: Icons.history,
-                  children: [
-                    for (final (i, (credit, plays)) in groups.indexed)
-                      _CreditGroup(
-                          key: _creditKeys.putIfAbsent(i, GlobalKey.new),
-                          lit: _lit == i,
-                          credit: credit,
-                          plays: plays,
-                          bests: data.model.bests,
-                          timing: matched,
-                          onEdit: switch (visit.session) {
-                            final session? => () => showEditCreditSheet(context,
-                                session: session,
-                                credit: credit,
-                                last: credits.firstOrNull,
-                                startedAt: plays.lastOrNull?.playedAt ??
-                                    credit!.startedAt),
-                            null => null,
-                          }),
-                  ],
-                ),
-            ],
-          ),
+          body: Builder(
+              builder: (context) => ListView(
+                    padding:
+                        clearOfBars(context, const EdgeInsets.only(bottom: 24)),
+                    children: [
+                      HomeCard(
+                        title: 'Summary',
+                        icon: Icons.insights,
+                        heading: visit.session == null
+                            ? _WhereHeading(visit,
+                                onAdded: (s) =>
+                                    context.replace('/home/sessions/${s.id}'))
+                            : null,
+                        children: [
+                          CardSubtitle(
+                              '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
+                          if (visit.plays.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 6),
+                              child: Text(
+                                  'No synced plays: sync after your set to '
+                                  'add them.'),
+                            )
+                          else
+                            SessionSummaryBody(
+                              data.model.summarize(visit.plays),
+                              plays: visit.plays,
+                              timed: visit.session != null,
+                              timing: timing,
+                              detailed: true,
+                              credits: credits,
+                              onPlay: (p) => _jump(
+                                  groups, p.playedAt.millisecondsSinceEpoch),
+                            ),
+                        ],
+                      ),
+                      if (visit.plays.isNotEmpty || timing.isNotEmpty)
+                        HomeCard(
+                          title: 'Plays',
+                          icon: Icons.history,
+                          children: [
+                            for (final (i, (credit, plays)) in groups.indexed)
+                              _CreditGroup(
+                                  key:
+                                      _creditKeys.putIfAbsent(i, GlobalKey.new),
+                                  lit: _lit == i,
+                                  credit: credit,
+                                  plays: plays,
+                                  bests: data.model.bests,
+                                  timing: matched,
+                                  onEdit: switch (visit.session) {
+                                    final session? => () => showEditCreditSheet(
+                                        context,
+                                        session: session,
+                                        credit: credit,
+                                        last: credits.firstOrNull,
+                                        startedAt: plays.lastOrNull?.playedAt ??
+                                            credit!.startedAt),
+                                    null => null,
+                                  }),
+                          ],
+                        ),
+                    ],
+                  )),
         );
       },
     );

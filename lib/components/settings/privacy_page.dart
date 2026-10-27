@@ -7,6 +7,7 @@
 library;
 
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -91,8 +92,9 @@ const privacySections = <(String, List<String>)>[
           "DDR MD doesn't log them; to stop one network flooding the "
           "server, it counts each day's backups against a one-way "
           'fingerprint of the IP address, cleared the next day.',
-      "- Links: the GitHub, LinkedIn and PayPal buttons open in your browser, "
-          "where those sites' own privacy policies apply.",
+      "- Links: the GitHub, LinkedIn and PayPal buttons, and the links under "
+          "Credits, open in your browser, where those sites' own privacy "
+          'policies apply.',
     ]
   ),
   (
@@ -163,53 +165,52 @@ class PrivacyPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Privacy',
-            style: TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600)),
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
+        flexibleSpace: const GlassHeader(),
+        title: const Text('Privacy'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        children: [
-          Text('Last updated $privacyUpdated',
-              style: theme.textTheme.bodySmall),
-          for (final (heading, paragraphs) in privacySections) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 20, bottom: 6),
-              child: Text(heading, style: theme.textTheme.titleMedium),
-            ),
-            for (final p in paragraphs)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: p.startsWith('- ')
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('•  '),
-                          Expanded(child: Text(p.substring(2))),
-                        ],
-                      )
-                    : Text(p),
-              ),
-          ],
-          Padding(
-            padding: const EdgeInsets.only(top: 20, bottom: 6),
-            child: Text('Contact', style: theme.textTheme.titleMedium),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              style: TextButton.styleFrom(padding: EdgeInsets.zero),
-              onPressed: () => launchUrl(Uri.parse(constants.github),
-                  mode: LaunchMode.externalApplication),
-              child: const Text('github.com/sh1ggy'),
-            ),
-          ),
-        ],
-      ),
+      body: Builder(
+          builder: (context) => ListView(
+                padding: clearOfBars(
+                    context, const EdgeInsets.fromLTRB(20, 8, 20, 32)),
+                children: [
+                  Text('Last updated $privacyUpdated',
+                      style: theme.textTheme.bodySmall),
+                  for (final (heading, paragraphs) in privacySections) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 20, bottom: 6),
+                      child: Text(heading, style: theme.textTheme.titleMedium),
+                    ),
+                    for (final p in paragraphs)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: p.startsWith('- ')
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('•  '),
+                                  Expanded(child: Text(p.substring(2))),
+                                ],
+                              )
+                            : Text(p),
+                      ),
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.only(top: 20, bottom: 6),
+                    child: Text('Contact', style: theme.textTheme.titleMedium),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                      onPressed: () => launchUrl(Uri.parse(constants.github),
+                          mode: LaunchMode.externalApplication),
+                      child: const Text('github.com/sh1ggy'),
+                    ),
+                  ),
+                ],
+              )),
     );
   }
 }

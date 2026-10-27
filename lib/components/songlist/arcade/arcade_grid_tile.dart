@@ -10,7 +10,15 @@ import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
+import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
+import 'package:ddr_md/models/chart_bests.dart';
+import 'package:ddr_md/components/song/scores/art_badge.dart';
+import 'package:ddr_md/components/song/scores/score_card.dart'
+    show clearLampIcon;
+import 'package:ddr_md/grades.dart';
+import 'package:ddr_md/helpers.dart' show formatScore;
+import 'package:ddr_md/theme.dart' show FloorPop;
 import 'package:flutter/material.dart';
 
 // Gap each tile leaves around its jacket, so neighbouring artwork doesn't abut.
@@ -38,37 +46,60 @@ class ArcadeGridTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    // A tile standing for one chart is a card in its flare colours, with the
+    // player's bests pinned to the jacket's corners.
+    final best = item.isChartScoped
+        ? ChartBests.at(item.songInfo, mode, item.difficultyIndex!)
+        : null;
+    final flare = best?.flare;
+    final plain = BoxDecoration(color: scheme.surfaceContainerHigh);
     // InkWell rather than a bare GestureDetector: with the tap now committing
     // straight to the song page, the ripple is the only feedback that the
     // press registered.
     return Padding(
       padding: const EdgeInsets.all(kArcadeTileGap),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ColoredBox(
-              color: scheme.surfaceContainerHigh,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  _titleBand(context),
-                  Expanded(child: _jacket(context)),
-                  _caption(context),
-                ],
+      child: BestsReveal(
+        shown: item.isChartScoped && ChartBests.shown,
+        builder: (context, t) => Stack(fit: StackFit.expand, children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                revealBack(
+                  plain: plain,
+                  flare: flare == null
+                      ? const BoxDecoration()
+                      : flareCardBack(context, flare, radius: 8),
+                  t: t,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _titleBand(context),
+                      Expanded(child: _jacket(context, best, t)),
+                      _caption(context),
+                    ],
+                  ),
+                ),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onTap,
+                    splashColor: scheme.primary.withValues(alpha: 0.24),
+                    highlightColor: scheme.primary.withValues(alpha: 0.10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (flare != null && t > 0)
+            IgnorePointer(
+              child: Opacity(
+                opacity: t,
+                child: CustomPaint(painter: FlareFrame(flare, radius: 8)),
               ),
             ),
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onTap,
-                splashColor: scheme.primary.withValues(alpha: 0.24),
-                highlightColor: scheme.primary.withValues(alpha: 0.10),
-              ),
-            ),
-          ],
-        ),
+        ]),
       ),
     );
   }
@@ -115,7 +146,7 @@ class ArcadeGridTile extends StatelessWidget {
     );
   }
 
-  Widget _jacket(BuildContext context) {
+  Widget _jacket(BuildContext context, ChartBest? best, double t) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -137,9 +168,84 @@ class ArcadeGridTile extends StatelessWidget {
                 shadows: <Shadow>[Shadow(color: Colors.black, blurRadius: 3)],
               ),
             ),
+          if (best != null && t > 0) Opacity(opacity: t, child: _bests(best)),
         ],
       ),
     );
+  }
+
+  // Flare, grade and lamp in a row across the top, score in a tab at the
+  // bottom, both centred. Badges the chart hasn't earned are left off rather
+  // than drawn empty.
+  Widget _bests(ChartBest best) {
+    Widget badge(String art, double aspect) =>
+        ArtBadge(art, aspect: aspect, ink: 9, height: 15);
+    final lamp = clearLampIcon(best.lamp);
+    final score = best.score;
+    const figures = [FontFeature.tabularFigures()];
+    return Stack(children: <Widget>[
+      if (best.flare != null || best.grade != null || lamp != null)
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          // Shrinks rather than overflows on a narrow tile.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                color: Color(0xB0000000),
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(4)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 2,
+                  children: <Widget>[
+                    if (best.flare case final String flare)
+                      badge(flareRankIcon(flare), kFlareAspect),
+                    if (best.grade case final Grade grade)
+                      badge(gradeIcon(grade), kGradeAspect),
+                    if (lamp != null) badge(lamp, kLampAspect),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      if (score != null)
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Center(
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                color: Color(0xB0000000),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(4)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                child: Builder(builder: (context) {
+                  final text = formatScore(score);
+                  final split = text.lastIndexOf(',');
+                  return Text.rich(TextSpan(children: [
+                    TextSpan(
+                        text: text.substring(0, split),
+                        style: FloorPop.readout(12, color: Colors.white)
+                            .copyWith(fontFeatures: figures)),
+                    TextSpan(
+                        text: text.substring(split),
+                        style: FloorPop.readout(9, color: Colors.white70)
+                            .copyWith(fontFeatures: figures)),
+                  ]));
+                }),
+              ),
+            ),
+          ),
+        ),
+    ]);
   }
 
   // The song's charted levels for the current mode, in the canonical

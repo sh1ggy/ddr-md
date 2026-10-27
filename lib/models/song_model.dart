@@ -194,7 +194,9 @@ class Songs {
         final maxLen = max(query.length, key.length);
         final maxDist = ((1 - max(best, floor)) * maxLen + 1e-9).floor();
         if ((query.length - key.length).abs() > maxDist) continue;
-        final distance = _levenshteinWithin(query, key, maxDist);
+        final distance = query.length <= 64
+            ? _myersWithin(query.length, key, maxDist)
+            : _levenshteinWithin(query, key, maxDist);
         if (distance > maxDist) continue;
         similarity = 1 - distance / maxLen;
       }
@@ -235,6 +237,53 @@ class Songs {
     return prev[n];
   }
 
+  // Per query character, the bitmask of positions it holds in the query, for
+  // [_myersWithin]. ASCII in a table, the rest (kana, kanji) in a map.
+  static final Int64List _peqAscii = Int64List(128);
+  static final Map<int, int> _peqOther = {};
+
+  static void _setPeq(String query) {
+    _peqAscii.fillRange(0, 128, 0);
+    _peqOther.clear();
+    for (var i = 0; i < query.length; i++) {
+      final c = query.codeUnitAt(i);
+      if (c < 128) {
+        _peqAscii[c] |= 1 << i;
+      } else {
+        _peqOther[c] = (_peqOther[c] ?? 0) | 1 << i;
+      }
+    }
+  }
+
+  // The same distance as [_levenshteinWithin] for a query of [m] <= 64 code
+  // units (its masks set by [_setPeq]), a whole DP column per word op
+  // (Myers/Hyyrö bit-parallel).
+  static int _myersWithin(int m, String key, int maxDist) {
+    final high = 1 << (m - 1);
+    final n = key.length;
+    var pv = -1, mv = 0, score = m;
+    for (var j = 0; j < n; j++) {
+      final c = key.codeUnitAt(j);
+      final eq = c < 128 ? _peqAscii[c] : (_peqOther[c] ?? 0);
+      final xv = eq | mv;
+      final xh = (((eq & pv) + pv) ^ pv) | eq;
+      var ph = mv | ~(xh | pv);
+      var mh = pv & xh;
+      if (ph & high != 0) {
+        score++;
+      } else if (mh & high != 0) {
+        score--;
+      }
+      ph = (ph << 1) | 1;
+      mh <<= 1;
+      pv = mh | ~(xv | ph);
+      mv = ph & xv;
+      // Each remaining key character can lower the distance by at most one.
+      if (score - (n - 1 - j) > maxDist) return maxDist + 1;
+    }
+    return score;
+  }
+
   // Finds the song whose title (or translit title) is closest to [ocrTitle]
   // by normalized Levenshtein distance. Returns null when the list is empty
   // or the query normalizes to nothing.
@@ -249,6 +298,7 @@ class Songs {
     final query = _normalize(ocrTitle);
     if (query.isEmpty || list.isEmpty) return const [];
     final keys = _searchKeys;
+    if (query.length <= 64) _setPeq(query);
     final matches = <SongMatch>[];
     for (var i = 0; i < list.length; i++) {
       final similarity = _similarity(query, keys[i], minSimilarity);

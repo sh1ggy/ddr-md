@@ -6,6 +6,7 @@
 library;
 
 import 'package:ddr_md/components/session/session_page.dart';
+import 'package:ddr_md/components/session/timing_edit_sheet.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
@@ -13,6 +14,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -184,33 +186,36 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
             await DatabaseProvider.deleteTimingPlay(p.id);
             session.changed();
           },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                    child: Text(formatDate(DateTime.parse(p.playedAt)),
-                        style: small)),
-                Text(
-                  '${p.averageMs.abs().toStringAsFixed(1)} '
-                  '${p.averageMs < 0 ? 'FAST' : 'SLOW'}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: p.averageMs < 0
-                        ? kFastColor(isDark)
-                        : kSlowColor(isDark),
+          child: InkWell(
+            onTap: () => showTimingEditSheet(context, p),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                      child: Text(formatDate(DateTime.parse(p.playedAt)),
+                          style: small)),
+                  Text(
+                    '${p.averageMs.abs().toStringAsFixed(1)} '
+                    '${p.averageMs < 0 ? 'FAST' : 'SLOW'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: p.averageMs < 0
+                          ? kFastColor(isDark)
+                          : kSlowColor(isDark),
+                    ),
                   ),
-                ),
-                Text(' ± ${p.variationMs.toStringAsFixed(1)}', style: small),
-                const SizedBox(width: 12),
-                Text(
-                  'on ${whole(p.syncUsedMs)} → '
-                  '${whole(p.syncUsedMs - p.trueAverageMs)} ms',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-              ],
+                  Text(' ± ${p.variationMs.toStringAsFixed(1)}', style: small),
+                  const SizedBox(width: 12),
+                  Text(
+                    'on ${whole(p.syncUsedMs)} → '
+                    '${whole(p.syncUsedMs - p.trueAverageMs)} ms',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -223,8 +228,15 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
     final songOffset = songOffsetMs(widget.songInfo, widget.chart);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final outline = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(24),
+      side: BorderSide(
+          color: FloorPop.of(context).voltText.withValues(alpha: 0.55),
+          width: 2),
+    );
     if (!session.active) {
       return Card(
+        shape: outline,
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
           title: const CardHeading('Your Sync', icon: Icons.person_pin_circle),
@@ -232,6 +244,9 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
               style: TextStyle(fontSize: 12, color: Colors.grey)),
           trailing: TextButton(
             onPressed: () => showStartSessionSheet(context),
+            // In the card's Volt, not the scheme's primary.
+            style: TextButton.styleFrom(
+                foregroundColor: FloorPop.of(context).voltText),
             child: const Text('Start'),
           ),
         ),
@@ -260,8 +275,11 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
     final timingColor = _fast ? kFastColor(isDark) : kSlowColor(isDark);
     const dense = InputDecoration(isDense: true, suffixText: 'ms');
 
+    // Outlined in Volt, the colour of the number it carries: the one card
+    // that's about you on this cab right now.
     return Card(
       clipBehavior: Clip.antiAlias,
+      shape: outline,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -276,11 +294,8 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
               const SizedBox(width: 10),
               Text(
                 '${shownMs >= 0 ? '+' : ''}$shownMs ms',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+                style:
+                    FloorPop.readout(20, color: FloorPop.of(context).voltText),
               ),
               if (pending != null && _override == null)
                 const Padding(
@@ -325,10 +340,12 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
                 const Text('Logging for',
                     style: TextStyle(fontSize: 12, color: Colors.grey)),
                 const SizedBox(width: 8),
-                SongDifficultyPicker(
-                    difficulty: widget.mode == Modes.singles
-                        ? widget.songInfo.singles
-                        : widget.songInfo.doubles),
+                Expanded(
+                  child: SongDifficultyPicker(
+                      difficulty: widget.mode == Modes.singles
+                          ? widget.songInfo.singles
+                          : widget.songInfo.doubles),
+                ),
               ]),
             ),
             // What the result screen showed.

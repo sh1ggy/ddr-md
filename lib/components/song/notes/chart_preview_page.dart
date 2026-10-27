@@ -19,7 +19,6 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -156,9 +155,9 @@ class ChartPreviewPage extends StatefulWidget {
 class _ChartPreviewPageState extends State<ChartPreviewPage> {
   bool _showFootGuide = false;
 
-  // Footing edit mode (debug builds): a distinct mode, entered from the
-  // header rather than the viewing options.
-  late bool _editFooting = kDebugMode && widget.initialSecond != null;
+  // Footing edit mode: a distinct mode, entered from the header rather than
+  // the viewing options.
+  late bool _editFooting = widget.initialSecond != null;
 
   // Same-foot trails, split out of the foot guide so the movement can be read
   // without the badges (and vice versa). Persisted like the other viewing aids.
@@ -419,8 +418,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
         ? "${_pretty(widget.difficultyKey)} ${widget.difficultyLevel}"
         : _pretty(widget.difficultyKey);
     // Beside the patterns: the snippet's Add/Save while picking, else its
-    // Edit; outside snippets, the footing editor's toggle (debug builds).
-    final Widget? action = _isSnippet
+    // Edit; outside snippets, the footing editor's toggle.
+    final Widget action = _isSnippet
         ? _picking
             ? IconButton(
                 icon: Icon(Icons.check,
@@ -433,14 +432,12 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 tooltip: 'Edit section',
                 onPressed: () => setState(() => _picking = true),
               )
-        : kDebugMode
-            ? IconButton(
-                icon: Icon(_editFooting ? Icons.check : Icons.edit_note,
-                    color: _editFooting ? Colors.white : Colors.blueGrey),
-                tooltip: _editFooting ? 'Done editing' : 'Edit footing',
-                onPressed: () => setState(() => _editFooting = !_editFooting),
-              )
-            : null;
+        : IconButton(
+            icon: Icon(_editFooting ? Icons.check : Icons.edit_note,
+                color: _editFooting ? Colors.white : Colors.blueGrey),
+            tooltip: _editFooting ? 'Done editing' : 'Edit footing',
+            onPressed: () => setState(() => _editFooting = !_editFooting),
+          );
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -462,7 +459,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 icon: const Icon(Icons.arrow_back, color: Colors.blueGrey),
                 onPressed: () => Navigator.of(context).pop(),
               ),
-              if (action != null) const SizedBox(width: 48),
+              const SizedBox(width: 48),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -503,7 +500,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
               // The pattern breakdown, balanced by an empty slot on the left
               // when an action joins it.
               if (widget.feedActive == null) patternsButton,
-              if (action != null) action,
+              action,
             ],
           ),
         ),

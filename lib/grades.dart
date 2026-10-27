@@ -3,7 +3,11 @@
 /// full-combo tier from judgement counts, plus their assets/icons art.
 library;
 
+import 'dart:ui' show Color;
+
 import 'package:ddr_md/helpers.dart' show kFlareRanks, resolveOcrFlare;
+import 'package:ddr_md/models/db_models.dart' show ClearLamp;
+import 'package:flutter/painting.dart' show HSLColor;
 
 /// Grades in descending order with their inclusive score floors.
 /// E is a fail (gauge depleted) and is never reached by score alone.
@@ -99,6 +103,7 @@ FullComboTier fullComboTier({
 
 // The generic CLEAR lamp, for clears that earned no full-combo tier.
 const clearIcon = 'assets/icons/cl_li4clear.png';
+const life4Icon = 'assets/icons/cl_life4.png';
 
 /// Grade art (_p = plus, _m = minus).
 String gradeIcon(Grade grade) => 'assets/icons/rank_'
@@ -119,10 +124,102 @@ String? fullComboIcon(FullComboTier tier) {
   }
 }
 
+// Each letter in its art's colour, + a shade lighter and - a shade darker.
+Color gradeColor(Grade g) {
+  final base = switch (g.label[0]) {
+    'A' when g.label.startsWith('AAA') => const Color(0xFFE8C930),
+    'A' when g.label.startsWith('AA') => const Color(0xFFB0BEC5),
+    'A' => const Color(0xFFD63A4F),
+    'B' => const Color(0xFFF2701F),
+    'C' => const Color(0xFFF5B400),
+    'D' => const Color(0xFF2F6FE0),
+    _ => const Color(0xFF616161),
+  };
+  final hsl = HSLColor.fromColor(base);
+  final shift = g.label.endsWith('+')
+      ? 0.12
+      : g.label.endsWith('-')
+          ? -0.12
+          : 0.0;
+  return hsl.withLightness((hsl.lightness + shift).clamp(0.0, 1.0)).toColor();
+}
+
+/// Each clear lamp's colour, after its lamp art.
+const kLampColors = {
+  ClearLamp.mfc: Color(0xFFB3E5FC),
+  ClearLamp.pfc: Color(0xFFFFC107),
+  ClearLamp.gfc: Color(0xFF66BB6A),
+  ClearLamp.fc: Color(0xFF42A5F5),
+  ClearLamp.life4: Color(0xFFE8344E),
+  ClearLamp.clear: Color(0xFFFF9800),
+  ClearLamp.failed: Color(0xFF757575),
+};
+
+/// A flare rank's colour wherever one stands for it: its card's frame
+/// ([kFlareCardColors]), or for EX the first of its rainbow.
+Color flareColor(String rank) => rank == 'EX'
+    ? kFlareExColors.first
+    : kFlareCardColors[kFlareRanks.indexOf(rank)].frame;
+
+const kFlareExColors = [
+  Color(0xFFFF5A5A),
+  Color(0xFFFFB84D),
+  Color(0xFFFFF15A),
+  Color(0xFF5AFF8C),
+  Color(0xFF5AC8FF),
+  Color(0xFFB45AFF),
+];
+
+/// The frame and back of the flare-tinted card the cabinet's song select
+/// gives a chart, I to IX. EX's frame is a rainbow of [kFlareExColors].
+const kFlareCardColors = [
+  (frame: Color(0xFF0065BD), back: Color(0xFF232E4C)),
+  (frame: Color(0xFF10AADE), back: Color(0xFF233846)),
+  (frame: Color(0xFF18B210), back: Color(0xFF124223)),
+  (frame: Color(0xFFF6B200), back: Color(0xFF493610)),
+  (frame: Color(0xFFA40400), back: Color(0xFF361010)),
+  (frame: Color(0xFF41188B), back: Color(0xFF181039)),
+  (frame: Color(0xFFBDBABD), back: Color(0xFF413A36)),
+  (frame: Color(0xFFEEEEEE), back: Color(0xFF7D7D7D)),
+  (frame: Color(0xFFFFDE20), back: Color(0xFF3E2A0D)),
+];
+
 /// Icon asset for a canonical flare rank from [kFlareRanks].
 String flareRankIcon(String rank) => rank == 'EX'
     ? 'assets/icons/flare_ex.png'
     : 'assets/icons/flare_${kFlareRanks.indexOf(rank) + 1}.png';
+
+const _kFlarePlanets = [
+  'NONE', 'MERCURY', 'VENUS', 'EARTH', 'MARS', 'JUPITER', 'SATURN', //
+  'URANUS', 'NEPTUNE', 'SUN', 'WORLD',
+];
+
+/// Each flare skill planet's main colour, NONE to WORLD, toned to read as
+/// text on light and dark cards.
+const kFlareClassColors = [
+  Color(0xFF8C8C8C),
+  Color(0xFF0C9CE4),
+  Color(0xFFF0A00C),
+  Color(0xFF10B478),
+  Color(0xFFF03C14),
+  Color(0xFFC8965A),
+  Color(0xFFB4306C),
+  Color(0xFF30C0C8),
+  Color(0xFF4058C0),
+  Color(0xFFFC5A0C),
+  Color(0xFF9C48E0),
+];
+
+int _flarePlanet(String name) =>
+    _kFlarePlanets.indexOf(name.replaceAll('+', ''));
+
+/// Icon asset for a flare skill class name from `flareClass` ("EARTH++" →
+/// the EARTH planet).
+String flareClassIcon(String name) =>
+    'assets/icons/flare_skill_${(_flarePlanet(name) + 1).toString().padLeft(2, '0')}.png';
+
+/// Text colour for a flare skill class name, its planet's main colour.
+Color flareClassColor(String name) => kFlareClassColors[_flarePlanet(name)];
 
 /// Icon for the flare rank as detected by OCR ([Score.flare]). Accepts the
 /// raw reading: an optional FLARE prefix, then a roman numeral I-IX, a digit,

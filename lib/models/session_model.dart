@@ -132,6 +132,11 @@ class TimingPlay {
   /// negative, so the average comes off the sync that was used.
   double get personalMs => syncUsedMs - trueAverageMs - songOffsetMs;
 
+  /// Where the steps really landed against the chart's beat, FAST negative:
+  /// the result screen's timing with the sync played on and the song's own
+  /// offset taken out, so plays on different charts and syncs compare.
+  double get offBeatMs => -personalMs;
+
   Map<String, Object?> toMap() => {
         'id': id,
         'playedAt': playedAt,

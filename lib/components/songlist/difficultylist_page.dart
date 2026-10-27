@@ -4,22 +4,32 @@
 /// song list and favourites list to pass to children widgets.
 library;
 
+import 'dart:math' show max;
+import 'dart:ui' show ImageFilter;
+
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
-import 'package:ddr_md/components/song/difficulty_label.dart' show LevelPicker;
+import 'package:ddr_md/theme.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart'
+    show LevelNumber, kGreyLevel;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
+import 'package:ddr_md/components/settings/score_overview_page.dart';
+import 'package:ddr_md/components/songlist/best_rings.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
 import 'package:ddr_md/components/songlist/filter_tray.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
+import 'package:ddr_md/components/songlist/song_search_page.dart';
 import 'package:ddr_md/components/songlist/songlist_item.dart';
 import 'package:ddr_md/components/songlist/sort_menu_button.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
-import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:provider/provider.dart';
@@ -41,23 +51,19 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   // Renders the songlist as the arcade jacket grid instead of the plain list.
   bool _gridMode = Settings.getInt(Settings.songlistViewModeKey) == 1;
 
-  // Below this similarity a result is considered noise and dropped, same
-  // threshold spirit as the OCR title matcher.
-  static const double _kMinSearchSimilarity = 0.3;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchBarFocus = FocusNode(canRequestFocus: false);
 
-  void regenFavCount() async {
+  // Back from a song, where a favourite or score may have changed.
+  void refreshRows() async {
     Modes mode = Provider.of<SongState>(context, listen: false).modes;
-    List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
+    final (favList, _) = await (
+      DatabaseProvider.getAllFavorites(mode),
+      ChartBests.load(mode)
+    ).wait;
     setState(() {
       favCount = favList.length;
     });
-  }
-
-  String levelFilterSummary() {
-    if (_filter.levels.isEmpty) return 'All';
-    final sorted = _filter.levels.toList()..sort();
-    if (sorted.length == 1) return 'Level ${sorted.first}';
-    return '${sorted.length} selected';
   }
 
   String versionFilterSummary() {
@@ -172,6 +178,20 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
+  /// The best on every chart the list shows: a row's own chart, or every
+  /// chart of a song row.
+  static List<ChartBest?> _listedBests(List<SongItem> items, Modes mode) => [
+        for (final item in items)
+          for (final index in item.difficultyIndex != null
+              ? [item.difficultyIndex!]
+              : (mode == Modes.singles
+                      ? item.songInfo.singles
+                      : item.songInfo.doubles)
+                  .chartsByIndex
+                  .map((c) => c.index))
+            ChartBests.at(item.songInfo, mode, index),
+      ];
+
   static String _countLabel(int count, SortType sortType) {
     final String noun = sortType == SortType.level ? 'chart' : 'song';
     return '$count $noun${count == 1 ? '' : 's'}';
@@ -179,7 +199,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
 
   Future<List<SongItem>> generateSongItems(
       Modes mode, SortType sortType, bool descending) async {
-    List<Favorite> favList = await DatabaseProvider.getAllFavorites(mode);
+    final (favList, _) = await (
+      DatabaseProvider.getAllFavorites(mode),
+      ChartBests.ensure(mode)
+    ).wait;
     setState(() {
       favCount = favList.length;
     });
@@ -233,6 +256,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   }
 
   Modes? _lastGenMode;
+  int? _lastSyncRevision;
 
   /// New songs or chart fixes were applied while this page was open.
   void _onContentUpdated() {
@@ -251,6 +275,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     super.initState();
     SongState songState = Provider.of<SongState>(context, listen: false);
     _lastGenMode = songState.modes;
+    _lastSyncRevision = context.read<EamuseSyncState>().revision;
     _songItemsPromise = Future<List<SongItem>>(() => generateSongItems(
         songState.modes, songState.sortType, songState.sortDescending));
     ContentStore.revision.addListener(_onContentUpdated);
@@ -261,6 +286,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   void dispose() {
     ContentStore.revision.removeListener(_onContentUpdated);
     CloudSync.pulled.removeListener(_onCloudPulled);
+    _searchController.dispose();
+    _searchBarFocus.dispose();
     super.dispose();
   }
 
@@ -274,113 +301,155 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       _songItemsPromise = generateSongItems(
           songState.modes, songState.sortType, songState.sortDescending);
     }
+    // A sync on Home, or a relink after a content update, changed the bests
+    // while this tab stayed alive behind it.
+    final syncRevision =
+        context.select<EamuseSyncState, int>((s) => s.revision);
+    if (_lastSyncRevision != syncRevision) {
+      _lastSyncRevision = syncRevision;
+      refreshRows();
+    }
     final Widget page = SafeArea(
       top: false,
+      // The list runs under the floating tab bar and clears it itself.
+      bottom: false,
       child: LayoutBuilder(builder: (context, constraints) {
         return Directionality(
           textDirection: TextDirection.ltr,
           child: Scaffold(
+            extendBodyBehindAppBar: true,
             appBar: AppBar(
-              elevation: 2,
-              title: const Text(
-                'Songlist',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.w600,
+              flexibleSpace: const GlassHeader(),
+              title: PageTitle(
+                'Songs',
+                // Rows are charts under the level sort and songs everywhere
+                // else, so the noun follows the rows.
+                trailing: FutureBuilder<List<SongItem>>(
+                  future: _songItemsPromise,
+                  builder: (context, snapshot) => snapshot.hasData
+                      ? Text(
+                          _countLabel(
+                              snapshot.data!.length, songState.sortType),
+                          style: TextStyle(
+                              color: FloorPop.of(context).haze,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14))
+                      : const SizedBox.shrink(),
                 ),
               ),
               actions: <Widget>[
-                IconButton(
+                HeaderButton(
+                  icon: Icon(ChartBests.shown
+                      ? Icons.military_tech
+                      : Icons.military_tech_outlined),
+                  tooltip: ChartBests.shown ? 'Hide bests' : 'Show bests',
+                  onPressed: () async {
+                    await Settings.setInt(Settings.songlistHideStatsKey,
+                        ChartBests.shown ? 1 : 0);
+                    setState(() {});
+                  },
+                ),
+                HeaderButton(
                   icon: Icon(_gridMode ? Icons.view_list : Icons.grid_view),
                   tooltip: _gridMode ? 'List view' : 'Grid view',
                   onPressed: _toggleViewMode,
                 ),
               ],
-              iconTheme: const IconThemeData(color: Colors.blueGrey),
             ),
-            body: FutureBuilder<List<SongItem>>(
-              future: _songItemsPromise,
-              builder: (context, snapshot) {
-                // The first build waits a frame or two on the favourites
-                // query; blank reads better than a spinner flashing up.
-                if (!snapshot.hasData) return const SizedBox.shrink();
+            // The list and grid read the padding to end clear of the bars;
+            // the floating search adds its height to it.
+            body: Builder(builder: (context) {
+              final mq = MediaQuery.of(context);
+              return Stack(children: [
+                MediaQuery(
+                    data: mq.copyWith(
+                        padding: mq.padding
+                            .copyWith(bottom: mq.padding.bottom + 58)),
+                    child: FutureBuilder<List<SongItem>>(
+                      future: _songItemsPromise,
+                      builder: (context, snapshot) {
+                        // The first build waits a frame or two on the favourites
+                        // query; blank reads better than a spinner flashing up.
+                        if (!snapshot.hasData) return const SizedBox.shrink();
 
-                final List<SongItem> songItems = snapshot.data!;
-                // Search, filters, favourites and the count read the same in
-                // both views, so they are built once and handed to whichever
-                // body is showing.
-                final List<Widget> headerSlivers = <Widget>[
-                  songSearchBar(),
-                  SliverToBoxAdapter(
-                    child: filterPanel(songState),
-                  ),
-                  SliverToBoxAdapter(
-                    child: ListTile(
-                      title: Text(
-                        // Rows are charts under the level sort and songs
-                        // everywhere else, so the noun follows the rows.
-                        _countLabel(songItems.length, songState.sortType),
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyLarge!.color,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                      trailing: SortMenuButton(
-                          onSorted: () => regenSongItems(
-                              songState.modes, songState.sortType)),
-                    ),
-                  ),
-                  if (songItems.isEmpty)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('No songs match the selected filters.'),
-                      ),
-                    ),
-                ];
+                        final List<SongItem> songItems = snapshot.data!;
+                        // Search, filters, favourites and the count read the same in
+                        // both views, so they are built once and handed to whichever
+                        // body is showing.
+                        final List<Widget> headerSlivers = <Widget>[
+                          SliverToBoxAdapter(
+                              child: SizedBox(
+                                  height: MediaQuery.paddingOf(context).top)),
+                          SliverToBoxAdapter(
+                            child: filterPanel(
+                                songState,
+                                ChartBests.shown
+                                    ? _listedBests(songItems, songState.modes)
+                                    : null),
+                          ),
+                          if (songItems.isEmpty)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text(
+                                    'No songs match the selected filters.'),
+                              ),
+                            ),
+                        ];
 
-                if (_gridMode) {
-                  return ArcadeGridView(
-                    songItems: songItems,
-                    sortType: songState.sortType,
-                    mode: songState.modes,
-                    descending: songState.sortDescending,
-                    leadingSlivers: headerSlivers,
-                    regenFavsCallback: () =>
-                        regenSongItems(songState.modes, songState.sortType),
-                  );
-                }
-
-                return CustomScrollView(
-                  slivers: <Widget>[
-                    ...headerSlivers,
-                    if (songItems.isNotEmpty)
-                      // Every row is the same height, so the list lays out by
-                      // arithmetic instead of measuring rows it scrolls past.
-                      SliverPrototypeExtentList.builder(
-                        prototypeItem: SongListItem(
-                          songInfo: songItems.first.songInfo,
-                          isFav: false,
-                          isSearch: false,
-                        ),
-                        itemBuilder: (context, index) {
-                          final SongItem songItem = songItems[index];
-                          return SongListItem(
-                            songInfo: songItem.songInfo,
-                            isFav: songItem.isFav,
-                            isSearch: false,
-                            difficultyIndex: songItem.difficultyIndex,
-                            regenFavsCallback: regenFavCount,
+                        if (_gridMode) {
+                          return ArcadeGridView(
+                            songItems: songItems,
+                            sortType: songState.sortType,
+                            mode: songState.modes,
+                            descending: songState.sortDescending,
+                            leadingSlivers: headerSlivers,
+                            regenFavsCallback: () => regenSongItems(
+                                songState.modes, songState.sortType),
                           );
-                        },
-                        itemCount: songItems.length,
-                      ),
-                  ],
-                );
-              },
-            ),
+                        }
+
+                        return CustomScrollView(
+                          slivers: <Widget>[
+                            ...headerSlivers,
+                            if (songItems.isNotEmpty)
+                              // Every row is the same height, so the list lays out by
+                              // arithmetic instead of measuring rows it scrolls past.
+                              SliverPrototypeExtentList.builder(
+                                prototypeItem: SongListItem(
+                                  songInfo: songItems.first.songInfo,
+                                  isFav: false,
+                                  isSearch: false,
+                                  // Rows standing for a chart are cards, a
+                                  // little taller.
+                                  difficultyIndex:
+                                      songItems.first.difficultyIndex,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final SongItem songItem = songItems[index];
+                                  return SongListItem(
+                                    songInfo: songItem.songInfo,
+                                    isFav: songItem.isFav,
+                                    isSearch: false,
+                                    difficultyIndex: songItem.difficultyIndex,
+                                    regenFavsCallback: refreshRows,
+                                  );
+                                },
+                                itemCount: songItems.length,
+                              ),
+                            SliverToBoxAdapter(
+                              child: SizedBox(
+                                  height:
+                                      MediaQuery.paddingOf(context).bottom + 8),
+                            ),
+                          ],
+                        );
+                      },
+                    )),
+                Positioned(
+                    left: 0, right: 0, bottom: 0, child: songSearchBar()),
+              ]);
+            }),
           ),
         );
       }),
@@ -403,7 +472,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   /// the dedicated favourites page.
   Widget favouritesButton(SongState songState) {
     final bool active = _filter.favouritesOnly;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Tooltip(
       message: active
           ? 'Showing favourites only — long press to open the list'
@@ -416,46 +484,45 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
           );
           regenSongItems(songState.modes, songState.sortType);
         },
-        child: OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            shape: const StadiumBorder(),
-            side: BorderSide(
-                color:
-                    active ? scheme.primary : Theme.of(context).dividerColor),
-            backgroundColor:
-                active ? scheme.primary.withValues(alpha: 0.12) : null,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
+        child: _FilterPill(
+          set: active,
           onPressed: () => _toggleFavouritesOnly(songState),
-          icon: Icon(
-            active ? Icons.star : Icons.star_border,
-            size: 18,
-            color: active ? Colors.redAccent : null,
-          ),
-          label: Text('$favCount'),
+          children: [
+            Icon(active ? Icons.star : Icons.star_border,
+                size: 18, color: active ? Colors.redAccent : null),
+            const SizedBox(width: 6),
+            Text('$favCount'),
+          ],
         ),
       ),
     );
   }
 
-  Widget filterPanel(SongState songState) {
+  Widget filterPanel(SongState songState, List<ChartBest?>? bests) {
     Widget topButton({
       required String label,
       required String value,
       required bool active,
       required VoidCallback onPressed,
     }) {
-      return OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          shape: const StadiumBorder(),
-          side: BorderSide(
-              color: active
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).dividerColor),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        ),
+      final pop = FloorPop.of(context);
+      final bool set = value != 'All';
+      return _FilterPill(
+        set: set,
+        open: active,
         onPressed: onPressed,
-        child: Text('$label: $value'),
+        children: [
+          Text('$label ',
+              style: TextStyle(
+                  fontWeight: FontWeight.w500, color: set ? null : pop.haze)),
+          Text(value),
+          const SizedBox(width: 2),
+          AnimatedRotation(
+            turns: active ? 0.5 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: const Icon(Icons.expand_more, size: 18),
+          ),
+        ],
       );
     }
 
@@ -465,13 +532,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       final SongFilterAxis axis = _activeFilterPanel!;
 
       switch (axis) {
-        case SongFilterAxis.level:
-          return LevelPicker(
-            levels: [for (int l = 1; l <= constants.maxDifficulty; l++) l],
-            isSelected: _filter.levels.contains,
-            onTap: (level) => _toggleLevel(level, songState),
-          );
-
         case SongFilterAxis.version:
           return FilterTray(
             options: <FilterOption>[
@@ -509,66 +569,92 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      padding: const EdgeInsets.only(top: 4, bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: <Widget>[
-                favouritesButton(songState),
-                const SizedBox(width: 8),
-                topButton(
-                  label: 'Name',
-                  value: nameFilterSummary(),
-                  active: _activeFilterPanel == SongFilterAxis.name,
-                  onPressed: () => toggleFilterPanel(SongFilterAxis.name),
-                ),
-                const SizedBox(width: 8),
-                topButton(
-                  label: 'Level',
-                  value: levelFilterSummary(),
-                  active: _activeFilterPanel == SongFilterAxis.level,
-                  onPressed: () => toggleFilterPanel(SongFilterAxis.level),
-                ),
-                const SizedBox(width: 8),
-                topButton(
-                  label: 'Version',
-                  value: versionFilterSummary(),
-                  active: _activeFilterPanel == SongFilterAxis.version,
-                  onPressed: () => toggleFilterPanel(SongFilterAxis.version),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                  ),
-                  onPressed: hasActiveFilters
-                      ? () =>
-                          clearAllFilters(songState.modes, songState.sortType)
-                      : null,
-                  icon: const Icon(Icons.close),
-                  label: const Text('Clear'),
-                ),
-              ],
+          // Level is the filter reached for most, so every level sits out in
+          // the open rather than behind a pill.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _LevelGrid(
+              isSelected: _filter.levels.contains,
+              onTap: (level) => _toggleLevel(level, songState),
+              spare: bests == null
+                  ? null
+                  // The stats open on the hardest level picked.
+                  : BestRings(bests,
+                      onStats: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => ScoreOverviewPage(
+                                  mode: songState.modes,
+                                  level: _filter.levels.isEmpty
+                                      ? null
+                                      : _filter.levels.reduce(max))))),
             ),
           ),
+          const SizedBox(height: 12),
+          Row(children: <Widget>[
+            Expanded(
+              // Scrolls under the sort, which stays put on the right, fading
+              // out before it.
+              child: ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (rect) => const LinearGradient(
+                  colors: [Colors.black, Colors.black, Colors.transparent],
+                  stops: [0, 0.88, 1],
+                ).createShader(rect),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(left: 16, right: 16),
+                  child: Row(
+                    children: <Widget>[
+                      // Leads the row so it never hides under the sort.
+                      if (hasActiveFilters) ...[
+                        _FilterPill(
+                          onPressed: () => clearAllFilters(
+                              songState.modes, songState.sortType),
+                          children: const [Icon(Icons.close, size: 18)],
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      favouritesButton(songState),
+                      const SizedBox(width: 8),
+                      topButton(
+                        label: 'Name',
+                        value: nameFilterSummary(),
+                        active: _activeFilterPanel == SongFilterAxis.name,
+                        onPressed: () => toggleFilterPanel(SongFilterAxis.name),
+                      ),
+                      const SizedBox(width: 8),
+                      topButton(
+                        label: 'Version',
+                        value: versionFilterSummary(),
+                        active: _activeFilterPanel == SongFilterAxis.version,
+                        onPressed: () =>
+                            toggleFilterPanel(SongFilterAxis.version),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: _SortPill(
+                  onSorted: () =>
+                      regenSongItems(songState.modes, songState.sortType)),
+            ),
+          ]),
           if (_activeFilterPanel != null)
             Container(
               width: double.infinity,
-              margin: const EdgeInsets.only(top: 10),
+              margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               padding: const EdgeInsets.all(10),
-              // The level numerals hold together on their own; chips need
-              // the frame.
-              decoration: _activeFilterPanel == SongFilterAxis.level
-                  ? null
-                  : BoxDecoration(
-                      border: Border.all(color: Theme.of(context).dividerColor),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
+              decoration: BoxDecoration(
+                color: FloorPop.of(context).riser,
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: filterTray(),
             ),
         ],
@@ -576,53 +662,229 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     );
   }
 
-  SliverAppBar songSearchBar() {
-    return SliverAppBar(
-      floating: true,
-      pinned: true,
-      backgroundColor: Colors.transparent,
-      flexibleSpace: SearchAnchor(
-          isFullScreen: true,
-          viewOnSubmitted: (value) {
-            FocusScope.of(context).unfocus();
-          },
-          viewHintText: "Search song...",
-          builder: (BuildContext context, SearchController controller) {
-            return SearchBar(
-              controller: controller,
-              onTap: () {
-                controller.openView();
-              },
-              onChanged: (value) => controller.openView(),
-              hintText: "Search song...",
-              constraints: const BoxConstraints(
-                  minWidth: 360.0, maxWidth: 800.0, minHeight: 56.0),
-              shape: WidgetStateProperty.all(const RoundedRectangleBorder(
-                borderRadius: BorderRadius.zero,
-              )),
-              padding: WidgetStateProperty.all(
-                const EdgeInsets.symmetric(vertical: 5.0, horizontal: 20.0),
+  // Floats above the tab bar within thumb reach, frosted like the header,
+  // with the rows scrolling on under it. Read-only: a tap opens the search
+  // page, whose field takes the keyboard.
+  Widget songSearchBar() {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: SearchBar(
+                  controller: _searchController,
+                  focusNode: _searchBarFocus,
+                  readOnly: true,
+                  onTap: () => Navigator.of(context).push(SongSearchPage.route(
+                      _searchController,
+                      regenFavsCallback: refreshRows)),
+                  hintText: "Search song...",
+                  constraints: const BoxConstraints(
+                      maxWidth: 800.0, minHeight: 48.0, maxHeight: 48.0),
+                  shape: const WidgetStatePropertyAll(StadiumBorder()),
+                  backgroundColor: WidgetStatePropertyAll(
+                      FloorPop.of(context).riser.withValues(alpha: 0.7)),
+                  padding: WidgetStateProperty.all(
+                    const EdgeInsets.symmetric(horizontal: 14.0),
+                  ),
+                  leading: const Icon(Icons.search, size: 20),
+                ))),
+      ),
+    );
+  }
+}
+
+/// A filter-row pill on a riser; [set] fills it when its filter narrows the
+/// list, [open] rings it while its tray is showing.
+class _FilterPill extends StatelessWidget {
+  const _FilterPill(
+      {required this.children,
+      required this.onPressed,
+      this.set = false,
+      this.open = false});
+
+  final List<Widget> children;
+  final VoidCallback? onPressed;
+  final bool set;
+  final bool open;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final fg = set ? scheme.onPrimary : scheme.onSurface;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      height: 36,
+      decoration: ShapeDecoration(
+        color: set ? scheme.primary : pop.riser,
+        shape: StadiumBorder(
+            side: BorderSide(
+                color: open ? scheme.primary : Colors.transparent,
+                width: 1.5,
+                strokeAlign: BorderSide.strokeAlignOutside)),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: IconTheme.merge(
+              data: IconThemeData(color: fg),
+              child: DefaultTextStyle.merge(
+                style: TextStyle(
+                    color: fg,
+                    fontFamily: kTextFont,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14),
+                child: Row(mainAxisSize: MainAxisSize.min, children: children),
               ),
-              leading: const Icon(Icons.search),
-            );
-          },
-          // Runs on every keystroke, straight off the controller's text. Ranks
-          // by normalized Levenshtein similarity (same as OCR title matching)
-          // so close-but-not-exact spellings still sort to the top. Keyed rows
-          // keep their loaded jackets as the ranking reshuffles.
-          suggestionsBuilder:
-              (BuildContext context, SearchController controller) {
-            return Songs.matchTitles(controller.text,
-                    limit: Songs.list.length,
-                    minSimilarity: _kMinSearchSimilarity)
-                .map((match) => SongListItem(
-                      key: ValueKey(match.song.name),
-                      songInfo: match.song,
-                      isFav: false,
-                      isSearch: true,
-                      regenFavsCallback: regenFavCount,
-                    ));
-          }),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Every level at once in two rows of ten, 1–10 over 11–19, so none is ever
+/// scrolled out of reach. Picked levels light up on a tile; the rest grey out.
+/// [spare] takes the slot after the last level.
+class _LevelGrid extends StatelessWidget {
+  const _LevelGrid({required this.isSelected, required this.onTap, this.spare});
+
+  final bool Function(int level) isSelected;
+  final ValueChanged<int> onTap;
+  final Widget? spare;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final bool any =
+        [for (int l = 1; l <= constants.maxDifficulty; l++) l].any(isSelected);
+
+    Widget cell(int level) {
+      if (level > constants.maxDifficulty) {
+        return Expanded(
+            child: Center(
+                child: level == constants.maxDifficulty + 1 ? spare : null));
+      }
+      final bool on = isSelected(level);
+      final number =
+          LevelNumber(level: level, difficulty: 'EXPERT', height: 18);
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.all(2),
+          child: AnimatedContainer(
+            duration: FloorPop.sixteenth,
+            height: 34,
+            decoration: BoxDecoration(
+              color: on ? scheme.primary : pop.stage,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => onTap(level),
+                // Nothing picked means every level counts, so none greys out.
+                child: Center(
+                    child: on || !any
+                        ? number
+                        : Opacity(
+                            opacity: 0.4,
+                            child: ColorFiltered(
+                                colorFilter: kGreyLevel, child: number))),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: pop.riser,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(children: [
+        for (final start in const [1, 11])
+          Row(children: [for (int l = start; l < start + 10; l++) cell(l)]),
+      ]),
+    );
+  }
+}
+
+/// The sort as one pill: the key cycles on the left, the arrow flips the
+/// order on the right.
+class _SortPill extends StatelessWidget {
+  const _SortPill({required this.onSorted});
+
+  final VoidCallback onSorted;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final songState = context.watch<SongState>();
+    final bool descending = songState.sortDescending;
+    const style = TextStyle(
+        fontFamily: kTextFont, fontWeight: FontWeight.w700, fontSize: 14);
+    return Material(
+      color: pop.riser,
+      shape: const StadiumBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        height: 36,
+        child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InkWell(
+                customBorder: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.horizontal(left: Radius.circular(18))),
+                onTap: () {
+                  songState.setSortType(nextSortType(songState.sortType));
+                  onSorted();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 14, right: 8),
+                  child: Row(children: [
+                    Icon(Icons.sort, size: 18, color: pop.haze),
+                    const SizedBox(width: 6),
+                    Text(sortLabel(songState.sortType), style: style),
+                  ]),
+                ),
+              ),
+              Center(child: Container(width: 1, height: 18, color: pop.line)),
+              InkWell(
+                customBorder: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.horizontal(right: Radius.circular(18))),
+                onTap: () {
+                  songState.setSortDescending(!descending);
+                  onSorted();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, right: 12),
+                  child: Tooltip(
+                    message: descending ? 'Descending' : 'Ascending',
+                    child: Icon(
+                        descending ? Icons.arrow_downward : Icons.arrow_upward,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary),
+                  ),
+                ),
+              ),
+            ]),
+      ),
     );
   }
 }

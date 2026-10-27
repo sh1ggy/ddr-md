@@ -11,15 +11,30 @@ import 'package:ddr_md/components/session/recent_plays.dart'
     show HomeCard, HomeSubpage;
 import 'package:ddr_md/components/song/difficulty_label.dart'
     show LevelNumber, LevelPicker;
+import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart'
-    show Grade, flareRankIcon, gradeForScore, gradeIcon;
+    show
+        Grade,
+        clearIcon,
+        life4Icon,
+        flareClassColor,
+        flareClassIcon,
+        flareRankIcon,
+        gradeColor,
+        gradeForScore,
+        flareColor,
+        gradeIcon,
+        kFlareExColors,
+        kLampColors;
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/score_overview.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -31,14 +46,20 @@ Future<_Loaded> _load() async => (
     );
 
 class ScoreOverviewPage extends StatefulWidget {
-  const ScoreOverviewPage({super.key});
+  const ScoreOverviewPage({super.key, this.mode = Modes.singles, this.level});
+
+  /// Opens on [mode], scrolled to the level cards with [level] picked.
+  final Modes mode;
+  final int? level;
 
   @override
   State<ScoreOverviewPage> createState() => _ScoreOverviewPageState();
 }
 
 class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
-  Modes _mode = Modes.singles;
+  late Modes _mode = widget.mode;
+  final _levelsKey = GlobalKey();
+  late bool _scrollToLevels = widget.level != null;
 
   @override
   Widget build(BuildContext context) {
@@ -62,35 +83,41 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
             ));
           }
           final levels = chartsByLevel(data.records, Songs.list, _mode);
+          if (_scrollToLevels) {
+            _scrollToLevels = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final cards = _levelsKey.currentContext;
+              if (cards != null && cards.mounted) {
+                Scrollable.ensureVisible(cards,
+                    duration: FloorPop.beat, curve: FloorPop.settle);
+              }
+            });
+          }
           return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
+            padding: clearOfBars(context, const EdgeInsets.only(bottom: 24)),
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                child: SegmentedButton<Modes>(
-                  showSelectedIcon: false,
-                  expandedInsets: EdgeInsets.zero,
-                  style:
-                      const ButtonStyle(visualDensity: VisualDensity.compact),
-                  segments: [
+                child: PillTabs<Modes>(
+                  values: const [Modes.singles, Modes.doubles],
+                  tabs: [
                     for (final (mode, asset) in [
                       (Modes.singles, 'assets/icons/style_single.png'),
                       (Modes.doubles, 'assets/icons/style_double.png'),
                     ])
-                      ButtonSegment(
-                          value: mode,
-                          label: Opacity(
-                            opacity: _mode == mode ? 1 : 0.4,
-                            child: Image.asset(asset, height: 15),
-                          )),
+                      Tab(
+                          child: Opacity(
+                        opacity: _mode == mode ? 1 : 0.4,
+                        child: Image.asset(asset, height: 15),
+                      )),
                   ],
-                  selected: {_mode},
-                  onSelectionChanged: (s) => setState(() => _mode = s.single),
+                  selected: _mode,
+                  onChanged: (m) => setState(() => _mode = m),
                 ),
               ),
               _FlareCard(flareSkill(data.records, Songs.list, _mode)),
-              _LevelsCard(levels),
-              _LevelStatsCard(levels),
+              _LevelsCard(levels, key: _levelsKey, initial: widget.level),
+              _LevelStatsCard(levels, initial: widget.level),
               _ActivityCard(playsPerDay(data.plays, data.records)),
             ],
           );
@@ -108,12 +135,6 @@ class _FlareCard extends StatelessWidget {
 
   final FlareSkill skill;
 
-  static const _names = {
-    FlareGroup.classic: 'CLASSIC',
-    FlareGroup.white: 'WHITE',
-    FlareGroup.gold: 'GOLD',
-  };
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -124,6 +145,9 @@ class _FlareCard extends StatelessWidget {
       title: 'Flare Skill',
       icon: Icons.local_fire_department_outlined,
       children: [
+        Center(
+            child: Image.asset(flareClassIcon(cls.name),
+                width: 96, filterQuality: FilterQuality.medium)),
         Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -137,7 +161,7 @@ class _FlareCard extends StatelessWidget {
                   style: TextStyle(
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1,
-                      color: theme.colorScheme.primary)),
+                      color: flareClassColor(cls.name))),
             ]),
         if (cls.next != null)
           Text('${_thousands(cls.next! - total)} to the next class',
@@ -153,7 +177,7 @@ class _FlareCard extends StatelessWidget {
               title: Row(children: [
                 SizedBox(
                     width: 84,
-                    child: Text(_names[g]!,
+                    child: Text(g.label,
                         softWrap: false,
                         style: const TextStyle(fontWeight: FontWeight.w600))),
                 Expanded(
@@ -213,7 +237,8 @@ class _FlareChartRow extends StatelessWidget {
         if (record.flareRank.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Image.asset(flareRankIcon(record.flareRank), height: 18),
+            child: ArtBadge(flareRankIcon(record.flareRank),
+                aspect: kFlareAspect, ink: 14, height: 22),
           ),
         SizedBox(
             width: 40,
@@ -238,62 +263,38 @@ typedef _Band = ({
 
 // Best first. A chart without a lamp shows as failed.
 final _lampBands = <_Band>[
-  for (final (lamp, color, icon, text) in const [
-    (ClearLamp.mfc, Color(0xFFB3E5FC), 'assets/icons/cl_marv.png', 'MFC'),
-    (ClearLamp.pfc, Color(0xFFFFC107), 'assets/icons/cl_perf.png', 'PFC'),
-    (ClearLamp.gfc, Color(0xFF66BB6A), 'assets/icons/cl_great.png', 'GFC'),
-    (ClearLamp.fc, Color(0xFF42A5F5), 'assets/icons/cl_good.png', 'FC'),
-    (ClearLamp.life4, Color(0xFFE8344E), 'assets/icons/cl_life4.png', 'LIFE4'),
-    (
-      ClearLamp.clear,
-      Color(0xFFFF9800),
-      'assets/icons/cl_li4clear.png',
-      'CLEAR'
-    ),
-    (
-      ClearLamp.assisted,
-      Color(0xFFD548E6),
-      'assets/icons/cl_asclear.png',
-      'ASSIST'
-    ),
-    (ClearLamp.failed, Color(0xFF757575), 'assets/icons/rank_e.png', 'E'),
+  for (final (lamp, icon, text) in const [
+    (ClearLamp.mfc, 'assets/icons/cl_marv.png', 'MFC'),
+    (ClearLamp.pfc, 'assets/icons/cl_perf.png', 'PFC'),
+    (ClearLamp.gfc, 'assets/icons/cl_great.png', 'GFC'),
+    (ClearLamp.fc, 'assets/icons/cl_good.png', 'FC'),
+    (ClearLamp.life4, life4Icon, 'LIFE4'),
+    (ClearLamp.clear, clearIcon, 'CLEAR'),
+    (ClearLamp.failed, 'assets/icons/rank_e.png', 'E'),
   ])
     (
       holds: (r) => (r.clearLamp ?? ClearLamp.failed) == lamp,
-      color: color,
+      color: kLampColors[lamp]!,
       icon: icon,
       text: text,
       fill: null,
     ),
 ];
 
-// EX first, then IX down to I, then no flare. Each in its badge's own colour.
-const _flareColors = [
-  Color(0xFF0C9CFC), Color(0xFF0CCCFC), Color(0xFF0CFC0C), // I–III
-  Color(0xFFFCCC0C), Color(0xFFFC0C0C), Color(0xFF6C0CFC), // IV–VI
-  Color(0xFFB4B4B4), Color(0xFFE4E4E4), Color(0xFF303030), // VII–IX
-];
+// EX first, then IX down to I, then no flare.
 
 final _flareBands = <_Band>[
   (
     holds: (r) => r.flareRank == 'EX',
-    color: const Color(0xFFFCB46C),
+    color: flareColor('EX'),
     icon: flareRankIcon('EX'),
     text: 'EX',
-    // The EX badge is a rainbow.
-    fill: const LinearGradient(colors: [
-      Color(0xFFFF5A5A),
-      Color(0xFFFFB84D),
-      Color(0xFFFFF15A),
-      Color(0xFF5AFF8C),
-      Color(0xFF5AC8FF),
-      Color(0xFFB45AFF),
-    ]),
+    fill: const LinearGradient(colors: kFlareExColors),
   ),
   for (var i = 8; i >= 0; i--)
     (
       holds: (r) => r.flareRank == kFlareRanks[i],
-      color: _flareColors[i],
+      color: flareColor(kFlareRanks[i]),
       icon: flareRankIcon(kFlareRanks[i]),
       text: kFlareRanks[i],
       fill: null,
@@ -312,32 +313,12 @@ final _gradeBands = <_Band>[
   for (final g in Grade.values)
     (
       holds: (r) => _grade(r) == g,
-      color: _gradeColor(g),
+      color: gradeColor(g),
       icon: gradeIcon(g),
       text: g.label,
       fill: null,
     ),
 ];
-
-// Each letter in its art's colour, + a shade lighter and - a shade darker.
-Color _gradeColor(Grade g) {
-  final base = switch (g.label[0]) {
-    'A' when g.label.startsWith('AAA') => const Color(0xFFE8C930),
-    'A' when g.label.startsWith('AA') => const Color(0xFFB0BEC5),
-    'A' => const Color(0xFFD63A4F),
-    'B' => const Color(0xFFF2701F),
-    'C' => const Color(0xFFF5B400),
-    'D' => const Color(0xFF2F6FE0),
-    _ => const Color(0xFF616161),
-  };
-  final hsl = HSLColor.fromColor(base);
-  final shift = g.label.endsWith('+')
-      ? 0.12
-      : g.label.endsWith('-')
-          ? -0.12
-          : 0.0;
-  return hsl.withLightness((hsl.lightness + shift).clamp(0.0, 1.0)).toColor();
-}
 
 Grade _grade(ScoreRecord r) => gradeForScore(r.score ?? 0,
     failed: (r.clearLamp ?? ClearLamp.failed) == ClearLamp.failed);
@@ -347,9 +328,10 @@ const _bandHeight = 18.0;
 enum _Tab { lamps, grades, flare }
 
 class _LevelsCard extends StatefulWidget {
-  const _LevelsCard(this.levels);
+  const _LevelsCard(this.levels, {super.key, this.initial});
 
   final Map<int, LevelCharts> levels;
+  final int? initial;
 
   @override
   State<_LevelsCard> createState() => _LevelsCardState();
@@ -357,7 +339,7 @@ class _LevelsCard extends StatefulWidget {
 
 class _LevelsCardState extends State<_LevelsCard> {
   _Tab _tab = _Tab.lamps;
-  int? _picked;
+  late int? _picked = widget.initial;
 
   @override
   Widget build(BuildContext context) {
@@ -374,18 +356,15 @@ class _LevelsCardState extends State<_LevelsCard> {
       title: 'By Level',
       icon: Icons.emoji_events_outlined,
       children: [
-        Center(
-          child: SegmentedButton<_Tab>(
-            showSelectedIcon: false,
-            style: const ButtonStyle(visualDensity: VisualDensity.compact),
-            segments: const [
-              ButtonSegment(value: _Tab.lamps, label: Text('Lamps')),
-              ButtonSegment(value: _Tab.grades, label: Text('Grades')),
-              ButtonSegment(value: _Tab.flare, label: Text('Flare')),
-            ],
-            selected: {_tab},
-            onSelectionChanged: (s) => setState(() => _tab = s.single),
-          ),
+        PillTabs<_Tab>(
+          values: _Tab.values,
+          tabs: const [
+            Tab(text: 'Lamps'),
+            Tab(text: 'Grades'),
+            Tab(text: 'Flare')
+          ],
+          selected: _tab,
+          onChanged: (t) => setState(() => _tab = t),
         ),
         const SizedBox(height: 8),
         for (final MapEntry(key: level, value: row) in widget.levels.entries)
@@ -489,16 +468,17 @@ class _Level extends StatelessWidget {
 
 /// One level picked from a row of numerals and how its scores spread.
 class _LevelStatsCard extends StatefulWidget {
-  const _LevelStatsCard(this.levels);
+  const _LevelStatsCard(this.levels, {this.initial});
 
   final Map<int, LevelCharts> levels;
+  final int? initial;
 
   @override
   State<_LevelStatsCard> createState() => _LevelStatsCardState();
 }
 
 class _LevelStatsCardState extends State<_LevelStatsCard> {
-  int? _picked;
+  late int? _picked = widget.initial;
 
   @override
   Widget build(BuildContext context) {
@@ -528,74 +508,49 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
   }
 }
 
-/// Band labels with their counts in a grid of fixed cells, so changing
-/// counts never moves anything. Empty bands are dimmed.
+/// Band labels with their counts as a three-column grid of badge tiles, the
+/// same as the song list's rings card, so changing counts never moves
+/// anything. Empty bands are dimmed.
 class _BandCounts extends StatelessWidget {
   const _BandCounts(this.entries);
 
   final List<(_Band, int)> entries;
 
+  static const _gap = 6.0;
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     const style = TextStyle(
         fontSize: 13,
         height: 1,
         fontWeight: FontWeight.w700,
         fontFeatures: [FontFeature.tabularFigures()]);
-    final surface = scheme.surfaceContainerLow.computeLuminance();
-    // The band's colour, unless it would vanish into the card.
-    Color tint(Color c) =>
-        (c.computeLuminance() - surface).abs() < 0.15 ? scheme.onSurface : c;
-    Widget label(_Band b) => b.icon != null
-        // The grade and empty-flare art have more space around them.
-        ? Image.asset(b.icon!,
-            height: b.icon!.contains('/rank_') || b.text == 'None'
-                ? _bandHeight * 1.6
-                : _bandHeight)
-        : Text(b.text, style: style.copyWith(color: b.color));
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 4,
-      runSpacing: 6,
-      children: [
-        for (final (b, n) in entries)
-          Opacity(
-            opacity: n > 0 ? 1 : 0.3,
-            child: SizedBox(
-              width: 92,
-              height: _bandHeight + 6,
-              child: Row(children: [
-                SizedBox(
-                    width: 56,
-                    child: Center(
-                        child:
-                            FittedBox(fit: BoxFit.scaleDown, child: label(b)))),
-                Expanded(
-                    child: _tinted(
-                        b,
-                        Text('$n',
-                            textAlign: TextAlign.right,
-                            style: style.copyWith(color: tint(b.color))))),
-                const SizedBox(width: 4),
-              ]),
+    return LayoutBuilder(
+      builder: (context, box) => Wrap(
+        spacing: _gap,
+        runSpacing: _gap,
+        children: [
+          for (final (b, n) in entries)
+            Opacity(
+              opacity: n > 0 ? 1 : 0.3,
+              child: ArtTile(b.icon,
+                  aspect: b.icon == null || b.icon!.contains('/cl_')
+                      ? kLampAspect
+                      : b.icon!.contains('/rank_')
+                          ? kGradeAspect
+                          : kFlareAspect,
+                  ink: 11,
+                  width: (box.maxWidth - 2 * _gap) / 3,
+                  height: _bandHeight + 10,
+                  color: b.color,
+                  label: Text(b.text, style: style.copyWith(color: b.color)),
+                  trailing: Text('$n', style: style)),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
-
-/// [child] painted with the band's gradient where it has one.
-Widget _tinted(_Band b, Widget child) => b.fill == null
-    ? child
-    // Sized to the text so the whole rainbow lands on the digits.
-    : Align(
-        alignment: Alignment.centerRight,
-        child: ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: b.fill!.createShader,
-            child: child));
 
 /// A level's score spread: how many charts land in each band of score, with
 /// the mean marked and one standard deviation either side shaded.

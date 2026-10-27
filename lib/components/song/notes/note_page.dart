@@ -75,25 +75,34 @@ class NotesTabState extends State<NotesTab> {
     var songState = context.watch<SongState>();
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      floatingActionButton: FloatingActionButton(
-          backgroundColor: Colors.red,
-          child: const Icon(Icons.edit, color: Colors.white),
-          onPressed: () async {
-            // Wait for return from modalBottomSheet
-            final result = await showModalBottomSheet<bool>(
-              isScrollControlled: true,
-              context: context,
-              builder: (BuildContext context) {
-                return const NewNoteField();
-              },
-            );
-            // If return is the expected value, execute getNotes and re-render
-            if (result == true) {
-              setState(() {
-                getNotes(songState.songInfo!.titletranslit, songState.modes);
-              });
-            }
-          }),
+      // Lifted clear of the floating tab bar, which the page runs under,
+      // 10 above it like the other floating buttons (the FAB adds 16).
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(
+            bottom: (MediaQuery.paddingOf(context).bottom - 6)
+                .clamp(0.0, double.infinity)),
+        child: FloatingActionButton(
+            tooltip: 'New note',
+            child: const Icon(Icons.edit),
+            onPressed: () async {
+              // Wait for return from modalBottomSheet
+              final result = await showModalBottomSheet<bool>(
+                // Over the floating tab bar, like the other sheets.
+                useRootNavigator: true,
+                isScrollControlled: true,
+                context: context,
+                builder: (BuildContext context) {
+                  return const NewNoteField();
+                },
+              );
+              // If return is the expected value, execute getNotes and re-render
+              if (result == true) {
+                setState(() {
+                  getNotes(songState.songInfo!.titletranslit, songState.modes);
+                });
+              }
+            }),
+      ),
       body: Padding(
         padding: const EdgeInsets.fromLTRB(5, 0, 5, 0),
         child: Column(

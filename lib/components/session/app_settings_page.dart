@@ -1,17 +1,19 @@
 /// Name: AppSettingsPage
 /// Parent: SessionPage
 /// Description: Settings, opened from Home's gear: check for song updates,
-/// turn on cloud backup, read the privacy notes, and the app version with
-/// links.
+/// turn on cloud backup, read the privacy notes and credits, and the app
+/// version with links.
 library;
 
 import 'package:ddr_md/components/session/recent_plays.dart';
+import 'package:ddr_md/components/settings/credits_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:path_provider/path_provider.dart';
@@ -34,26 +36,42 @@ class AppSettingsPage extends StatelessWidget {
       // The links float at the bottom, over anything scrolled under them.
       body: Stack(
         children: [
-          ListView(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 72),
-            children: [
-              const Card(child: _ContentTile()),
-              const Card(child: _CloudTile()),
-              Card(
-                child: ListTile(
-                  title: const Text("Privacy",
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PrivacyPage())),
-                ),
-              ),
-            ],
-          ),
+          Builder(
+              builder: (context) => ListView(
+                    padding: clearOfBars(
+                        context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
+                    children: [
+                      const Card(child: _ContentTile()),
+                      const Card(child: _CloudTile()),
+                      Card(
+                        child: ListTile(
+                          title: const Text("Privacy",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const PrivacyPage())),
+                        ),
+                      ),
+                      Card(
+                        child: ListTile(
+                          title: const Text("Credits",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle:
+                              const Text("Inspiration, thanks and arcades"),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const CreditsPage())),
+                        ),
+                      ),
+                    ],
+                  )),
           Positioned(
             left: 0,
             right: 0,
-            bottom: 12,
+            // Clear of the floating tab bar the page runs under.
+            bottom: 10 + MediaQuery.paddingOf(context).bottom,
             child: Center(
               child: Material(
                 elevation: 3,
@@ -242,8 +260,8 @@ class _CloudTileState extends State<_CloudTile> {
                   TextButton.icon(
                       onPressed: running
                           ? null
-                          : () => _run(() => CloudSync.sync(force: true),
-                              "Backed up"),
+                          : () => _run(
+                              () => CloudSync.sync(force: true), "Backed up"),
                       icon: const Icon(Icons.sync),
                       label: const Text("Back up now")),
                 ],

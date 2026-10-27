@@ -2,22 +2,31 @@
 /// Description: Shared by the load-image and camera pages. Fuzzy-matches the
 /// OCR'd title against the master song list ([Songs]) via Levenshtein
 /// distance and saves the score fields to that song's record in SQLite.
-/// Tapping the matched song opens a searchable picker (ranked by the same
-/// distance) to override the automatic match. The difficulty is a dropdown of
-/// the charts that exist on the matched song, pre-selected by matching the
-/// raw OCR reading against them (see [resolveOcrDifficulty]) — mirroring how
-/// the song itself is matched-but-overridable.
+/// Change opens a searchable picker (ranked by the same distance) to override
+/// the automatic match. The difficulty is a menu of the charts that exist on
+/// the matched song, pre-selected by matching the raw OCR reading against
+/// them (see [resolveOcrDifficulty]) — mirroring how the song itself is
+/// matched-but-overridable. The score sits on its own card with its grade,
+/// lamp and the change against the chart's best.
 library;
 
 import 'dart:typed_data';
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/song/scores/score_card.dart'
+    show judgedLampArt;
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/jacket_image.dart';
+import 'package:ddr_md/grades.dart' show gradeForScore, gradeIcon;
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/score_images.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -43,6 +52,8 @@ class SaveScorePanel extends StatefulWidget {
   // capture time, so its play date is user-set here and editable later; a
   // camera score is stamped with the current time and its date is fixed.
   final ScoreSource source;
+  // Beside the save button, e.g. the camera's scan-again.
+  final Widget? saveTrailing;
 
   const SaveScorePanel({
     super.key,
@@ -51,6 +62,7 @@ class SaveScorePanel extends StatefulWidget {
     this.middleChildren = const [],
     this.proofImageBytes,
     required this.source,
+    this.saveTrailing,
   });
 
   @override
@@ -74,6 +86,17 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   // no profile is linked (warning disabled).
   final String _savedUsername =
       Settings.getString(Settings.eamuseNameKey).trim();
+
+  @override
+  void initState() {
+    super.initState();
+    // Fresh bests for the delta on the score card, this panel's scores
+    // included once saved.
+    ChartBests.load(Provider.of<SongState>(context, listen: false).modes)
+        .then((_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   String _text(String key) => widget.controllers[key]?.text.trim() ?? '';
 
@@ -227,100 +250,128 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   Widget build(BuildContext context) {
     final state = _resolveMatchState();
     final mode = context.watch<SongState>().modes;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildMatchContent(
-            context,
-            song: state.song,
-            match: state.match,
-            isPicked: state.isPicked,
-            isWeak: state.isWeak,
-          ),
-          if (state.song != null) _buildDifficultyRow(state.song!, mode),
-          if (widget.middleChildren.isNotEmpty) ...widget.middleChildren,
-          if (widget.source == ScoreSource.loadImage) _buildDateRow(),
-          _buildUsernameMismatchWarning(),
-          buildSaveButton(
-            padding:
-                EdgeInsets.only(top: widget.middleChildren.isEmpty ? 0 : 12),
-          ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildMatchContent(
+          context,
+          song: state.song,
+          match: state.match,
+          isPicked: state.isPicked,
+          isWeak: state.isWeak,
+          mode: mode,
+        ),
+        const SizedBox(height: 12),
+        if (widget.controllers.containsKey('score')) ...[
+          _buildScoreCard(state.song, mode),
+          const SizedBox(height: 6),
         ],
-      ),
+        ...widget.middleChildren,
+        if (widget.source == ScoreSource.loadImage) _buildDateRow(),
+        _buildUsernameMismatchWarning(),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: _buildSaveButton(state.song)),
+          if (widget.saveTrailing != null) ...[
+            const SizedBox(width: 10),
+            widget.saveTrailing!,
+          ],
+        ]),
+      ],
     );
   }
 
-  // Difficulty dropdown in the style of the OCR field rows: it offers only
-  // the charts that exist on [song] in [mode], pre-selected with the
-  // automatic match for the raw OCR reading — the difficulty counterpart of
-  // the matched-but-overridable song row above it.
-  Widget _buildDifficultyRow(SongInfo song, Modes mode) {
+  // The charts that exist on [song] in [mode], drawn in the cabinet's
+  // lettering and pre-selected with the automatic match for the raw OCR
+  // reading — the difficulty counterpart of the matched-but-overridable song.
+  Widget _buildDifficultyPicker(SongInfo song, Modes mode) {
+    final pop = FloorPop.of(context);
     final options = difficultyOptions(_levels(song, mode));
     if (options.isEmpty) return const SizedBox.shrink();
     final isPicked = options.any((o) => o.$1 == _pickedDifficulty);
     final value = _effectiveDifficulty(song, mode);
+    final level = options.where((o) => o.$1 == value).firstOrNull?.$2;
     final raw = _text('difficulty');
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'DIFFICULTY',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+    return PopupMenuButton<String>(
+      tooltip: 'Chart',
+      enabled: !_savedOnce,
+      initialValue: value,
+      // An empty value is the way back to the automatic match.
+      onSelected: (v) =>
+          setState(() => _pickedDifficulty = v.isEmpty ? null : v),
+      itemBuilder: (context) => [
+        for (final (name, level) in options)
+          PopupMenuItem(
+              value: name,
+              child: DifficultyLabel(difficulty: name, level: level)),
+        if (isPicked)
+          const PopupMenuItem(value: '', child: Text('Back to the match')),
+      ],
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (value != null)
+          DifficultyLabel(difficulty: value, level: level, height: 16)
+        else
+          Text(
+            // No chart matched the reading — show it so the user knows
+            // what the scan said while they pick.
+            raw.isEmpty ? 'Pick chart' : '"$raw"?',
+            style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w600, color: pop.down),
           ),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: DropdownButton<String>(
-                    value: value,
-                    isExpanded: true,
-                    hint: Text(
-                      // No chart matched the reading — show it so the user
-                      // knows what the scan said while they pick.
-                      raw.isEmpty ? 'Select…' : '"$raw"?',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    items: [
-                      for (final (name, level) in options)
-                        DropdownMenuItem(
-                          value: name,
-                          child: Text(
-                            '$name $level',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: kInGameDifficultyColors[name],
-                            ),
-                          ),
-                        ),
-                    ],
-                    onChanged: _savedOnce
-                        ? null
-                        : (v) => setState(() => _pickedDifficulty = v),
-                  ),
-                ),
-                if (isPicked)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    tooltip: 'Back to automatic match',
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () => setState(() => _pickedDifficulty = null),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        Icon(Icons.expand_more, size: 18, color: pop.haze),
+      ]),
     );
+  }
+
+  // The score on its own riser: editable, with the grade and full-combo lamp
+  // it earns and how far it lands from the best on this chart.
+  Widget _buildScoreCard(SongInfo? song, Modes mode) {
+    final pop = FloorPop.of(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge(widget.controllers.values.toList()),
+      builder: (context, _) {
+        final score = _number('score');
+        final lamp = judgedLampArt(_number('marvelous'), _number('perfect'),
+            _number('great'), _number('good'), _number('miss'));
+        final best = song == null ? null : _bestOn(song, mode);
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+              color: pop.riser, borderRadius: BorderRadius.circular(18)),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: widget.controllers['score'],
+                enabled: !_savedOnce,
+                style: FloorPop.readout(34),
+                decoration: const InputDecoration.collapsed(hintText: 'Score'),
+              ),
+            ),
+            if (score != null) ...[
+              const SizedBox(width: 8),
+              Image.asset(gradeIcon(gradeForScore(score)), height: 26),
+            ],
+            if (lamp != null) ...[
+              const SizedBox(width: 8),
+              Image.asset(lamp, height: 20),
+            ],
+            if (score != null && best != null) ...[
+              const SizedBox(width: 8),
+              _BestDelta(score - best),
+            ],
+          ]),
+        );
+      },
+    );
+  }
+
+  // The best score on the chart this one will be saved under, before it.
+  int? _bestOn(SongInfo song, Modes mode) {
+    final difficulty = _effectiveDifficulty(song, mode);
+    final index = _levels(song, mode)
+        .availableTypes
+        .indexWhere((k) => kInGameDifficultyNames[k] == difficulty);
+    return index < 0 ? null : ChartBests.at(song, mode, index)?.score;
   }
 
   // Editable play-date row, shown only for load-image scores (a screenshot has
@@ -328,31 +379,29 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   // picker and the time is pinned to noon so the stored timestamp can't drift
   // across a day boundary under a timezone offset.
   Widget _buildDateRow() {
+    final pop = FloorPop.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'PLAY DATE',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _savedOnce ? null : _pickPlayDate,
-                icon: const Icon(Icons.calendar_today, size: 16),
-                label: Text(
-                  formatPlayDate(_playedAt),
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.only(left: 14, right: 4),
+        decoration: BoxDecoration(
+            color: pop.riser, borderRadius: BorderRadius.circular(14)),
+        child: Row(
+          children: [
+            Text('PLAY DATE', style: pop.label),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: _savedOnce ? null : _pickPlayDate,
+              icon: const Icon(Icons.calendar_today, size: 16),
+              label: Text(
+                formatPlayDate(_playedAt),
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -391,28 +440,43 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
           return const SizedBox.shrink();
         }
         return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(top: 8),
           child: Text(
             'Detected player "$detected" doesn\'t match '
             'your dancer name "$_savedUsername".',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: Colors.orange),
+            style: TextStyle(fontSize: 12, color: FloorPop.of(context).down),
           ),
         );
       },
     );
   }
 
-  Widget buildSaveButton({EdgeInsetsGeometry? padding}) {
-    final state = _resolveMatchState();
-    final song = state.song;
-    return Padding(
-      padding: padding ?? EdgeInsets.zero,
-      child: ElevatedButton.icon(
-        onPressed: (song == null || _savedOnce) ? null : () => _save(song),
-        icon: const Icon(Icons.save),
-        label: Text(_savedOnce ? 'Saved' : 'Save score'),
-      ),
+  // Volt until saved, then the panel stays down on its riser.
+  Widget _buildSaveButton(SongInfo? song) {
+    if (!_savedOnce) {
+      return VoltButton(
+        onPressed: song == null ? null : () => _save(song),
+        child: const Text('Save score'),
+      );
+    }
+    final pop = FloorPop.of(context);
+    return Container(
+      height: 56,
+      margin: const EdgeInsets.only(top: 5),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+          color: pop.riser, borderRadius: BorderRadius.circular(18)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.check_rounded, color: pop.voltText),
+        const SizedBox(width: 8),
+        Text('Saved',
+            style: TextStyle(
+                fontFamily: kDisplayFont,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                color: Theme.of(context).colorScheme.onSurface)),
+      ]),
     );
   }
 
@@ -422,75 +486,154 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
     required SongMatch? match,
     required bool isPicked,
     required bool isWeak,
+    required Modes mode,
   }) {
+    final pop = FloorPop.of(context);
     if (Songs.list.isEmpty) {
-      return const Text(
+      return Text(
         'Song list not loaded — cannot link score to a song.',
         textAlign: TextAlign.center,
-        style: TextStyle(color: Colors.orange),
+        style: TextStyle(color: pop.down),
       );
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (song != null)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+    final similarity = '${((match?.similarity ?? 0) * 100).round()}%';
+    final (subtitle, color) = song == null
+        ? ('No song matched — tap Choose to search', pop.down)
+        : isPicked
+            ? ('Picked by hand', pop.haze)
+            : isWeak
+                ? ('Weak match · $similarity — check the song', pop.down)
+                : ('Matched · $similarity', pop.haze);
+    return ScanSongHeader(
+      song: song,
+      subtitle: subtitle,
+      subtitleColor: color,
+      difficulty: song == null ? null : _buildDifficultyPicker(song, mode),
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (isPicked)
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Back to automatic match',
+            icon: const Icon(Icons.close, size: 18),
+            onPressed: () => setState(() => _selectedSong = null),
+          ),
+        TextButton(
+          onPressed: _openPicker,
+          style: TextButton.styleFrom(
+            backgroundColor: pop.riser,
+            foregroundColor: Theme.of(context).colorScheme.onSurface,
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            textStyle:
+                const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          child: Text(song == null ? 'Choose' : 'Change'),
+        ),
+      ]),
+    );
+  }
+}
+
+/// The song a scan is for: jacket, title with its chart, and a line under it
+/// on how it was found. Shared by the live readout and the save panel.
+class ScanSongHeader extends StatelessWidget {
+  const ScanSongHeader({
+    super.key,
+    required this.song,
+    required this.subtitle,
+    this.subtitleColor,
+    this.difficulty,
+    this.trailing,
+  });
+
+  final SongInfo? song;
+  final String subtitle;
+  final Color? subtitleColor;
+  final Widget? difficulty;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Row(children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox.square(
+          dimension: 52,
+          child: song != null
+              ? JacketImage(song!, iconSize: 24)
+              : ColoredBox(
+                  color: pop.riser,
+                  child: Icon(Icons.music_note, size: 24, color: pop.haze)),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
               Flexible(
-                child: InkWell(
-                  onTap: _openPicker,
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                    child: Text(
-                      isPicked
-                          ? 'Selected: ${song.title}'
-                          : 'Matched: ${song.title} '
-                              '(${(match!.similarity * 100).round()}%)',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isWeak ? Colors.orange : Colors.green,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
+                child: Text(
+                  song?.title ?? 'No song yet',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
                 ),
               ),
-              if (isPicked)
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: 'Back to automatic match',
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () => setState(() => _selectedSong = null),
-                ),
-            ],
-          )
-        else
-          Align(
-            alignment: Alignment.center,
-            child: TextButton.icon(
-              onPressed: _openPicker,
-              icon: const Icon(Icons.search, size: 18),
-              label: const Text('Choose song'),
+              if (difficulty != null) ...[
+                const SizedBox(width: 8),
+                difficulty!,
+              ],
+            ]),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: subtitleColor ?? pop.haze),
             ),
+          ],
+        ),
+      ),
+      if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+    ]);
+  }
+}
+
+/// How far a score lands from the chart's best: Sun for a new best.
+class _BestDelta extends StatelessWidget {
+  const _BestDelta(this.delta);
+
+  final int delta;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final up = delta > 0;
+    final color = up ? FloorPop.onVolt : pop.haze;
+    return Tooltip(
+      message: 'Against your best',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+            color: up ? FloorPop.sun : pop.line,
+            borderRadius: BorderRadius.circular(10)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (up) Icon(Icons.keyboard_arrow_up, size: 16, color: color),
+          Text(
+            up
+                ? '+${formatScore(delta)}'
+                : delta == 0
+                    ? '±0'
+                    : '−${formatScore(-delta)}',
+            style: FloorPop.readout(14, color: color),
           ),
-        if (isWeak)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              match == null
-                  ? 'No song matched — tap to search for one.'
-                  : 'Weak match — tap the song name to pick another.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-      ],
+        ]),
+      ),
     );
   }
 }
@@ -547,7 +690,6 @@ class _SongSearchSheetState extends State<_SongSearchSheet> {
                             setState(() {});
                           },
                         ),
-                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
               ),

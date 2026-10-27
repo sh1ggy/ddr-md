@@ -13,8 +13,10 @@ import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/router.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:ddr_md/models/development_snippets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -30,6 +32,16 @@ void main() async {
   await ContentStore.init(support);
   await Songs.load();
   await LevelProfiles.load();
+  LicenseRegistry.addLicense(() async* {
+    for (final (family, file) in [
+      (['Unbounded'], 'Unbounded'),
+      (['Inter'], 'Inter'),
+      (['Chakra Petch'], 'ChakraPetch'),
+    ]) {
+      yield LicenseEntryWithLineBreaks(
+          family, await rootBundle.loadString('fonts/$file-OFL.txt'));
+    }
+  });
   final session = SessionState();
   await session.restore();
   final eamuse = EamuseSyncState();
@@ -66,15 +78,8 @@ class App extends StatelessWidget {
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
       title: 'ddr_bpm',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xff8cb2dd),
-            primary: const Color(0xff2f4d89),
-            secondary: const Color(0xffb6445b),
-            tertiary: Colors.grey.shade800),
-      ),
-      darkTheme: ThemeData.dark(useMaterial3: true),
+      theme: floorPopTheme(Brightness.light),
+      darkTheme: floorPopTheme(Brightness.dark),
       themeMode: ThemeMode.system,
       routerConfig: router,
     );

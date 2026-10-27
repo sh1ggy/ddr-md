@@ -7,8 +7,10 @@ library;
 
 import 'dart:math';
 
+import 'package:ddr_md/components/session/timing_edit_sheet.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/grades.dart';
@@ -18,6 +20,7 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/router.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -101,17 +104,11 @@ class HomeSubpage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        surfaceTintColor: Colors.black,
-        shadowColor: Colors.black,
-        elevation: 2,
+        flexibleSpace: const GlassHeader(),
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.blueGrey),
-        title: Text(title,
-            style: const TextStyle(
-                fontSize: 20,
-                color: Colors.blueGrey,
-                fontWeight: FontWeight.w600)),
+        title: Text(title),
         actions: actions,
       ),
       body: body,
@@ -238,6 +235,11 @@ class _PlayCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: song == null ? null : () => _openChart(context, play),
+        // Long-press fixes the timing logged for it.
+        onLongPress: switch (timing) {
+          final t? => () => showTimingEditSheet(context, t),
+          null => null,
+        },
         child: Stack(children: [
           Padding(
             padding: const EdgeInsets.all(8),
@@ -457,12 +459,7 @@ class _Score extends StatelessWidget {
               fontWeight: FontWeight.w700,
               fontFeatures: [FontFeature.tabularFigures()])),
       const SizedBox(width: 6),
-      SizedBox(
-        width: 34,
-        height: 18,
-        child: Image.asset(art,
-            fit: BoxFit.contain, alignment: Alignment.centerLeft),
-      ),
+      ArtBadge(art, aspect: kGradeAspect, ink: 12, height: 20),
     ]);
   }
 }

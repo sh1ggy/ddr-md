@@ -65,18 +65,7 @@ class _BpmPageState extends State<BpmPage> {
             },
             child: Scaffold(
               appBar: AppBar(
-                surfaceTintColor: Colors.black,
-                shadowColor: Colors.black,
-                elevation: 2,
-                title: const Text(
-                  'BPM',
-                  style: TextStyle(
-                    fontSize: 20,
-                    color: Colors.blueGrey,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                iconTheme: const IconThemeData(color: Colors.blueGrey),
+                title: const Text('BPM'),
               ),
               body: Padding(
                 padding: const EdgeInsets.all(8.0),
