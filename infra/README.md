@@ -49,9 +49,9 @@ covered by Terraform:
   Scripts › Edit* and *Account › D1 › Edit* (dashboard only; no CLI can mint
   one), and a GitHub token with `workflow` scope.
 - **Players' synced data.** It lives only in D1. `terraform destroy` or a
-  replaced database loses every backup; apps keep their own data but don't
-  upload it again on their own. Back it up with `cf d1 export` before risky
-  changes.
+  replaced database loses every backup; each app uploads its own data again
+  at its next sync, but whatever only lived on a lost phone is gone. Back
+  it up with `cf d1 export` before risky changes.
 - **The content.** It lives in the content repo's history, so it survives
   anything short of deleting that repo. If you need to push it again, copy
   `songs/`, `steps/`, `jackets/`, `jackets-160/` from a DDR-BPM-prep run.
@@ -216,7 +216,9 @@ or is caught before it ships. The ones that need you are marked.
   a day; a heavy player's first backup is ~2,200, and a launch day with
   many first backups fills it. Refused pushes stay in the apps' outboxes
   and go up on a later day, nothing lost. Each player is also capped at
-  20,000 rows a day (`DAY_ROWS`).
+  20,000 rows a day (`DAY_ROWS`), and each IP address at 30,000 however
+  many keys it makes (`NETWORK_ROWS`, counted against a one-way
+  fingerprint cleared daily), so one script can't spend the day's budget.
 
 ## Cloud Sync
 
@@ -236,9 +238,13 @@ from under released apps.
   The DDR-CODE, when known, is stored as a label only.
 - **The server never reads rows.** Each is opaque JSON under (table, key);
   every accepted write gets a per-user revision, and a device pulls
-  everything after its cursor. A write older than the stored one is
-  ignored, so the latest edit to a row wins. Deletes are kept as rows with
-  no data.
+  everything after its cursor. The latest edit to a row wins: an older
+  write keeps the stored data but still takes a new revision, so the
+  device that sent it pulls the winner back. Times from a clock running
+  ahead are clamped to the server's. Deletes are kept as rows with no
+  data. A push reports the account's revision, so a device that was the
+  only writer skips pulling its own rows back; a pull reports it too, so a
+  device ahead of the server (data lost) uploads everything again.
 - **The app** (`lib/models/cloud_sync.dart`) records every changed row in
   `sync_outbox` with SQLite triggers, pushes those rows as they are now,
   then pulls and applies, mapping venue and cabinet ids to their uids.

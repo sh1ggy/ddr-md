@@ -169,6 +169,8 @@ class _CloudTileState extends State<_CloudTile> {
     try {
       await action();
       message = done;
+    } on SyncLimitException {
+      message = "Backup is full for today; the rest goes up tomorrow";
     } catch (_) {
       message = "Couldn't reach the backup server; it'll try again later";
     }

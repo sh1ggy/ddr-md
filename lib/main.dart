@@ -52,6 +52,7 @@ void main() async {
   });
 
   // Cloud sync, when on: now, and whenever the app is left or comes back.
+  CloudSync.pulled.addListener(eamuse.reloadSaved);
   CloudSync.syncQuietly();
   AppLifecycleListener(
       onHide: CloudSync.syncQuietly, onResume: CloudSync.syncQuietly);

@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
@@ -82,17 +83,27 @@ const _now = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 /// v15: uids on venues and cabinets, the outbox, and its triggers. Every
 /// existing row starts in the outbox, ready for the first sync.
 Future<void> installSync(Database db) async {
+  const fillUids = [
+    'UPDATE venues SET uid = name WHERE uid IS NULL',
+    "UPDATE cabinets SET uid = (SELECT v.uid FROM venues v WHERE v.id = cabinets.venueId) || '/' || name || "
+        "CASE WHEN EXISTS (SELECT 1 FROM cabinets c WHERE c.venueId = cabinets.venueId AND c.name = cabinets.name AND c.id < cabinets.id) "
+        "THEN '#' || id ELSE '' END WHERE uid IS NULL",
+  ];
   // Already done: a build on an older schema (another worktree's, sharing
-  // this app's database) can wind user_version back without undoing it.
+  // this app's database) can wind user_version back without undoing it, and
+  // adds venues and cabinets without uids meanwhile.
   final venues = await db.rawQuery('PRAGMA table_info(venues)');
-  if (venues.any((c) => c['name'] == 'uid')) return;
+  if (venues.any((c) => c['name'] == 'uid')) {
+    for (final sql in fillUids) {
+      await db.execute(sql);
+    }
+    return;
+  }
   await db.execute('ALTER TABLE venues ADD COLUMN uid TEXT');
-  await db.execute('UPDATE venues SET uid = name');
   await db.execute('ALTER TABLE cabinets ADD COLUMN uid TEXT');
-  await db.execute(
-      "UPDATE cabinets SET uid = (SELECT v.uid FROM venues v WHERE v.id = cabinets.venueId) || '/' || name || "
-      "CASE WHEN EXISTS (SELECT 1 FROM cabinets c WHERE c.venueId = cabinets.venueId AND c.name = cabinets.name AND c.id < cabinets.id) "
-      "THEN '#' || id ELSE '' END");
+  for (final sql in fillUids) {
+    await db.execute(sql);
+  }
   await db.execute('CREATE UNIQUE INDEX venues_uid ON venues(uid)');
   await db.execute('CREATE UNIQUE INDEX cabinets_uid ON cabinets(uid)');
   await db.execute(
@@ -124,11 +135,19 @@ Future<void> queueEverything(DatabaseExecutor db) async {
 /// the row (null when deleted).
 typedef SyncChange = ({String t, String k, String u, Map<String, Object?>? d});
 
-abstract class SyncServer {
-  Future<void> push(List<SyncChange> changes, {String? ddrCode});
+/// The server's daily write budget is spent; what's waiting goes up later.
+class SyncLimitException implements Exception {}
 
-  /// Changes after [cursor], oldest first.
-  Future<({List<SyncChange> changes, int cursor, bool more})> pull(int cursor);
+abstract class SyncServer {
+  /// The account's revision after the push, and the indexes of [changes]
+  /// that a newer write beat.
+  Future<({int rev, List<int> lost})> push(List<SyncChange> changes,
+      {String? ddrCode});
+
+  /// Changes after [cursor], oldest first, and the account's latest
+  /// revision.
+  Future<({List<SyncChange> changes, int cursor, bool more, int head})> pull(
+      int cursor);
   Future<void> deleteAll();
 }
 
@@ -139,16 +158,19 @@ class HttpSyncServer implements SyncServer {
   final String key;
 
   @override
-  Future<void> push(List<SyncChange> changes, {String? ddrCode}) => _send(
-      'POST', 'v1/push', {
-    'ddrCode': ddrCode,
-    'changes': [
-      for (final c in changes) {'t': c.t, 'k': c.k, 'u': c.u, 'd': c.d}
-    ]
-  });
+  Future<({int rev, List<int> lost})> push(List<SyncChange> changes,
+      {String? ddrCode}) async {
+    final body = await _send('POST', 'v1/push', {
+      'ddrCode': ddrCode,
+      'changes': [
+        for (final c in changes) {'t': c.t, 'k': c.k, 'u': c.u, 'd': c.d}
+      ]
+    }) as Map;
+    return (rev: body['rev'] as int, lost: (body['lost'] as List).cast<int>());
+  }
 
   @override
-  Future<({List<SyncChange> changes, int cursor, bool more})> pull(
+  Future<({List<SyncChange> changes, int cursor, bool more, int head})> pull(
       int cursor) async {
     final body = await _send('GET', 'v1/pull?cursor=$cursor') as Map;
     return (
@@ -163,6 +185,7 @@ class HttpSyncServer implements SyncServer {
       ],
       cursor: body['cursor'] as int,
       more: body['more'] as bool,
+      head: body['head'] as int,
     );
   }
 
@@ -181,6 +204,7 @@ class HttpSyncServer implements SyncServer {
       }
       final res = await req.close().timeout(const Duration(seconds: 30));
       final text = await res.transform(utf8.decoder).join();
+      if (res.statusCode == 429) throw SyncLimitException();
       if (res.statusCode >= 300) {
         throw HttpException('HTTP ${res.statusCode}', uri: url);
       }
@@ -194,9 +218,15 @@ class HttpSyncServer implements SyncServer {
 /// One sync of [db] with [server]: push the outbox, then pull and apply.
 class SyncEngine {
   SyncEngine(this.db, this.server,
-      {required this.readPrefs, required this.writePrefs, this.ddrCode});
+      {required this.account,
+      required this.readPrefs,
+      required this.writePrefs,
+      this.ddrCode});
   final Database db;
   final SyncServer server;
+
+  /// Which account the cursor and outbox are for (a fingerprint of the key).
+  final String account;
   final Map<String, Object> Function() readPrefs;
   final Future<void> Function(Map<String, Object?> prefs) writePrefs;
   final String? ddrCode;
@@ -204,15 +234,31 @@ class SyncEngine {
   // Per request; the server refuses more.
   static const _chunk = 200;
 
-  // Settings go up last, so a new device takes the account's settings
-  // rather than sending up its defaults.
-  Future<void> run() async {
+  /// True when rows or settings came down. Settings go up last, so a new
+  /// device takes the account's settings rather than sending up its
+  /// defaults.
+  Future<bool> run() async {
+    if (await _meta('account') != account) await _startOver();
     await _push();
-    await _pull();
+    var pulled = await _pull();
+    if (pulled == null) {
+      await _startOver();
+      await _push();
+      pulled = await _pull() ?? false;
+    }
     await _pushPrefs();
+    return pulled;
   }
 
+  // Everything here goes up again: another account, or one the server lost.
+  Future<void> _startOver() => db.transaction((txn) async {
+        await txn.delete('sync_meta');
+        await queueEverything(txn);
+        await _setMeta(txn, 'account', account);
+      });
+
   Future<void> _push() async {
+    var cursor = int.parse(await _meta('cursor') ?? '0');
     final outbox = await db.query('sync_outbox');
     final uids = await _uidsById(db);
     final pending = <(Map<String, Object?>, SyncChange)>[];
@@ -238,9 +284,17 @@ class SyncEngine {
       }
     }
     for (var i = 0; i < pending.length; i += _chunk) {
-      final chunk = pending.skip(i).take(_chunk);
-      await server.push([for (final (_, c) in chunk) c], ddrCode: ddrCode);
+      final chunk = pending.skip(i).take(_chunk).toList();
+      final pushed =
+          await server.push([for (final (_, c) in chunk) c], ddrCode: ddrCode);
       final batch = db.batch();
+      // Nothing else was written since the cursor and every row held, so
+      // pulling these back would only echo them.
+      if (pushed.lost.isEmpty && pushed.rev - chunk.length == cursor) {
+        cursor = pushed.rev;
+        batch.insert('sync_meta', {'k': 'cursor', 'v': '$cursor'},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
       for (final (e, _) in chunk) {
         // Only if unchanged since it was read: a newer edit still needs
         // pushing.
@@ -257,7 +311,8 @@ class SyncEngine {
   Future<void> _pushPrefs() async {
     final prefs = _canonical(readPrefs());
     if (prefs == await _meta('prefs')) return;
-    await server.push([
+    final cursor = int.parse(await _meta('cursor') ?? '0');
+    final pushed = await server.push([
       (
         t: 'prefs',
         k: 'app',
@@ -266,18 +321,24 @@ class SyncEngine {
       )
     ], ddrCode: ddrCode);
     await _setMeta(db, 'prefs', prefs);
+    if (pushed.lost.isEmpty && pushed.rev - 1 == cursor) {
+      await _setMeta(db, 'cursor', '${pushed.rev}');
+    }
   }
 
-  Future<void> _pull() async {
+  // Whether anything came down; null when the server has less than this
+  // device already pulled (its data was lost), so everything must go up again.
+  Future<bool?> _pull() async {
     var cursor = int.parse(await _meta('cursor') ?? '0');
     final changes = <SyncChange>[];
     for (var more = true; more;) {
       final page = await server.pull(cursor);
+      if (page.head < cursor) return null;
       changes.addAll(page.changes);
       cursor = page.cursor;
       more = page.more;
     }
-    if (changes.isEmpty) return;
+    if (changes.isEmpty) return false;
     Map<String, Object?>? prefs;
     await db.transaction((txn) async {
       await _setMeta(txn, 'applying', '1');
@@ -350,6 +411,7 @@ class SyncEngine {
       await writePrefs(edits);
       await _setMeta(db, 'prefs', _canonical(remote));
     }
+    return true;
   }
 
   static Map<String, Object?> _portable(SyncTable t, Map<String, Object?> row,
@@ -403,6 +465,9 @@ class SyncEngine {
 /// The app's sync: on when the player turns it on and the build has a server.
 class CloudSync {
   static final running = ValueNotifier(false);
+
+  /// Bumped when a sync brings down rows or settings, so open pages reload.
+  static final pulled = ValueNotifier(0);
   static Future<void>? _running;
   static DateTime? _last;
 
@@ -433,13 +498,16 @@ class CloudSync {
     try {
       final rival =
           Settings.getString(Settings.rivalCodeSpeedKey).replaceAll(RegExp(r'\D'), '');
-      await SyncEngine(
+      final key = await _key();
+      final pulled = await SyncEngine(
         await DatabaseProvider.db,
-        HttpSyncServer(kSyncUrl, await _key()),
+        HttpSyncServer(kSyncUrl, key),
+        account: sha256.convert(utf8.encode(key)).toString().substring(0, 16),
         readPrefs: Settings.syncedPrefs,
         writePrefs: Settings.applySyncedPrefs,
         ddrCode: rival.length == 8 ? rival : null,
       ).run();
+      if (pulled) CloudSync.pulled.value++;
       _last = DateTime.now();
       await Settings.setString(
           Settings.cloudSyncedAtKey, _last!.toIso8601String());
@@ -454,17 +522,13 @@ class CloudSync {
   }
 
   /// Deletes this account's copy on the server and turns sync off. The next
-  /// time it's turned on, everything here goes up again under a new key.
+  /// time it's turned on, everything here goes up again under a new key
+  /// (the engine starts over for an account it hasn't synced).
   static Future<void> deleteCloudCopy() async {
     await _running;
     await HttpSyncServer(kSyncUrl, await _key()).deleteAll();
     await Settings.setInt(Settings.cloudSyncOnKey, 0);
     await Settings.setString(Settings.cloudSyncedAtKey, '');
-    final db = await DatabaseProvider.db;
-    await db.transaction((txn) async {
-      await txn.delete('sync_meta');
-      await queueEverything(txn);
-    });
     await _store(_newKey());
   }
 

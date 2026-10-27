@@ -87,8 +87,10 @@ const privacySections = <(String, List<String>)>[
           'Google backup on a new phone). The server stores a one-way '
           'fingerprint of that key, never the key itself, and your rival '
           'code if DDR MD has one, so a backup can be recognised as yours. '
-          'Cloudflare sees your IP address and the time of each request; '
-          "DDR MD doesn't log or keep these.",
+          'Cloudflare sees your IP address and the time of each request. '
+          "DDR MD doesn't log them; to stop one network flooding the "
+          "server, it counts each day's backups against a one-way "
+          'fingerprint of the IP address, cleared the next day.',
       "- Links: the GitHub, LinkedIn and PayPal buttons open in your browser, "
           "where those sites' own privacy policies apply.",
     ]

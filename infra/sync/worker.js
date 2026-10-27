@@ -7,7 +7,10 @@
 // is no sign-in. A DDR-CODE, when the app has one, is kept as a label only.
 //
 //   POST   /v1/push  {ddrCode?, changes: [{t, k, u, d}]}  d null = deleted
-//   GET    /v1/pull?cursor=N  -> {changes: [{t, k, u, d}], cursor, more}
+//                    -> {accepted, rev, lost}  rev = the user's revision
+//                    after it; lost = indexes of changes a newer write beat
+//   GET    /v1/pull?cursor=N  -> {changes: [{t, k, u, d}], cursor, more, head}
+//                    head = the user's latest revision (0 when unknown)
 //   DELETE /v1/me
 
 const SCHEMA = [
@@ -15,16 +18,20 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS rows(owner TEXT NOT NULL, t TEXT NOT NULL, k TEXT NOT NULL, u TEXT NOT NULL, d TEXT, rev INTEGER NOT NULL, PRIMARY KEY(owner, t, k)) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS rows_rev ON rows(owner, rev)`,
   `CREATE TABLE IF NOT EXISTS days(day TEXT PRIMARY KEY, writes INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS networks(day TEXT NOT NULL, ip TEXT NOT NULL, rows INTEGER NOT NULL, PRIMARY KEY(day, ip))`,
 ];
 
 const MAX_CHANGES = 200; // per push; keeps a request inside the free plan's CPU budget
 const MAX_ROW = 32 * 1024;
 const PULL_LIMIT = 500;
 const DAY_ROWS = 20000; // rows per user per UTC day
+// Rows per IP address per UTC day, however many keys it makes, so one
+// script can't take the whole day's budget. A heavy first backup is ~2,200.
+const NETWORK_ROWS = 30000;
 // D1 rows written per UTC day, everyone together: 80% of the free plan's
 // 100,000, and a small fraction of what a paid plan includes, so the
 // account is never billed for sync. Each row costs two (row + revision
-// index), each push two more (users, days).
+// index), each push three more (users, days, networks).
 const DAY_WRITES = 80000;
 
 let ready;
@@ -49,15 +56,20 @@ async function route(request, db) {
   const owner = await sha256(key);
   const { pathname, searchParams } = new URL(request.url);
   const route = `${request.method} ${pathname}`;
-  if (route === "POST /v1/push") return push(db, owner, await request.json().catch(() => null));
+  if (route === "POST /v1/push") {
+    const ip = request.headers.get("CF-Connecting-IP") ?? "";
+    return push(db, owner, ip, await request.json().catch(() => null));
+  }
   if (route === "GET /v1/pull") return pull(db, owner, Number(searchParams.get("cursor") ?? 0));
   if (route === "DELETE /v1/me") return remove(db, owner);
   return json({ error: "not found" }, 404);
 }
 
-async function push(db, owner, body) {
+async function push(db, owner, ip, body) {
   const changes = body?.changes;
   if (!Array.isArray(changes) || changes.length > MAX_CHANGES) return json({ error: "changes" }, 400);
+  const now = new Date().toISOString();
+  const day = now.slice(0, 10);
   const rows = [];
   for (const c of changes) {
     const d = c.d == null ? null : JSON.stringify(c.d);
@@ -67,56 +79,81 @@ async function push(db, owner, body) {
       typeof c.u !== "string" || c.u.length > 32 ||
       (d !== null && (typeof c.d !== "object" || Array.isArray(c.d) || d.length > MAX_ROW))
     ) return json({ error: "change" }, 400);
-    rows.push([c.t, c.k, c.u, d]);
+    // A phone whose clock runs ahead would otherwise win every later edit.
+    rows.push([c.t, c.k, c.u > now ? now : c.u, d]);
   }
   const ddrCode = /^\d{8}$/.test(body.ddrCode ?? "") ? body.ddrCode : null;
-  const now = new Date().toISOString();
-  const day = now.slice(0, 10);
   const user = await db
     .prepare(
       `INSERT INTO users(owner, ddrCode, createdAt, seenAt) VALUES (?1, ?2, ?3, ?3)
        ON CONFLICT(owner) DO UPDATE SET seenAt = ?3, ddrCode = coalesce(?2, ddrCode)
-       RETURNING day, dayRows`,
+       RETURNING day, dayRows, rev`,
     )
     .bind(owner, ddrCode, now)
     .first();
   const used = user.day === day ? user.dayRows : 0;
   if (used + rows.length > DAY_ROWS) return json({ error: "daily limit" }, 429);
-  if (rows.length === 0) return json({ accepted: 0 });
+  if (rows.length === 0) return json({ accepted: 0, rev: user.rev, lost: [] });
   const n = rows.length;
-  const writes = n * 2 + 2;
-  const total = await db.prepare(`SELECT writes FROM days WHERE day = ?`).bind(day).first("writes");
-  if ((total ?? 0) + writes > DAY_WRITES) return json({ error: "daily limit" }, 429);
+  const writes = n * 2 + 3;
+  // The IP is kept only as a one-way fingerprint, and only for the day.
+  const network = (await sha256(`${day} ${ip}`)).slice(0, 32);
+  const counts = await db
+    .prepare(
+      `SELECT (SELECT writes FROM days WHERE day = ?1) AS total,
+              (SELECT rows FROM networks WHERE day = ?1 AND ip = ?2) AS network`,
+    )
+    .bind(day, network)
+    .first();
+  if ((counts.total ?? 0) + writes > DAY_WRITES) return json({ error: "daily limit" }, 429);
+  if ((counts.network ?? 0) + n > NETWORK_ROWS) return json({ error: "daily limit" }, 429);
 
   // One transaction: reserve n revisions, then give each row its own. A row
-  // older than what's stored (another device wrote it later) keeps the newer.
-  await db.batch([
+  // older than what's stored (another device wrote it later) keeps the newer
+  // data but still takes the new revision, so the device that sent the older
+  // one pulls the winner back.
+  const prune = counts.total == null;
+  const results = await db.batch([
+    db
+      .prepare(`UPDATE users SET rev = rev + ?1, day = ?2, dayRows = ?3 WHERE owner = ?4 RETURNING rev`)
+      .bind(n, day, used + n, owner),
     db
       .prepare(`INSERT INTO days(day, writes) VALUES (?1, ?2) ON CONFLICT(day) DO UPDATE SET writes = writes + ?2`)
       .bind(day, writes),
     db
-      .prepare(`UPDATE users SET rev = rev + ?1, day = ?2, dayRows = ?3 WHERE owner = ?4`)
-      .bind(n, day, used + n, owner),
+      .prepare(`INSERT INTO networks(day, ip, rows) VALUES (?1, ?2, ?3) ON CONFLICT(day, ip) DO UPDATE SET rows = rows + ?3`)
+      .bind(day, network, n),
+    // The day's first push clears earlier days' fingerprints.
+    ...(prune ? [db.prepare(`DELETE FROM networks WHERE day < ?`).bind(day)] : []),
     ...rows.map(([t, k, u, d], i) =>
       db
         .prepare(
           `INSERT INTO rows(owner, t, k, u, d, rev)
            VALUES (?1, ?2, ?3, ?4, ?5, (SELECT rev FROM users WHERE owner = ?1) - ?6)
-           ON CONFLICT(owner, t, k) DO UPDATE SET u = excluded.u, d = excluded.d, rev = excluded.rev
-           WHERE excluded.u >= rows.u`,
+           ON CONFLICT(owner, t, k) DO UPDATE SET
+             d = CASE WHEN excluded.u >= rows.u THEN excluded.d ELSE rows.d END,
+             u = max(rows.u, excluded.u),
+             rev = excluded.rev
+           RETURNING u`,
         )
         .bind(owner, t, k, u, d, n - 1 - i),
     ),
   ]);
-  return json({ accepted: n });
+  // Indexes of rows a newer write beat.
+  const lost = results
+    .slice(prune ? 4 : 3)
+    .flatMap((r, i) => (r.results[0].u === rows[i][2] ? [] : [i]));
+  return json({ accepted: n, rev: results[0].results[0].rev, lost });
 }
 
 async function pull(db, owner, cursor) {
   if (!Number.isSafeInteger(cursor) || cursor < 0) return json({ error: "cursor" }, 400);
-  const { results } = await db
-    .prepare(`SELECT t, k, u, d, rev FROM rows WHERE owner = ? AND rev > ? ORDER BY rev LIMIT ?`)
-    .bind(owner, cursor, PULL_LIMIT + 1)
-    .all();
+  const [{ results }, head] = await db.batch([
+    db
+      .prepare(`SELECT t, k, u, d, rev FROM rows WHERE owner = ? AND rev > ? ORDER BY rev LIMIT ?`)
+      .bind(owner, cursor, PULL_LIMIT + 1),
+    db.prepare(`SELECT rev FROM users WHERE owner = ?`).bind(owner),
+  ]);
   const more = results.length > PULL_LIMIT;
   const page = results.slice(0, PULL_LIMIT);
   const next = page.length ? page[page.length - 1].rev : cursor;
@@ -125,9 +162,10 @@ async function pull(db, owner, cursor) {
   const changes = page
     .map((r) => `{"t":${JSON.stringify(r.t)},"k":${JSON.stringify(r.k)},"u":${JSON.stringify(r.u)},"d":${r.d ?? "null"}}`)
     .join(",");
-  return new Response(`{"changes":[${changes}],"cursor":${next},"more":${more}}`, {
-    headers: { "content-type": "application/json" },
-  });
+  return new Response(
+    `{"changes":[${changes}],"cursor":${next},"more":${more},"head":${head.results[0]?.rev ?? 0}}`,
+    { headers: { "content-type": "application/json" } },
+  );
 }
 
 async function remove(db, owner) {

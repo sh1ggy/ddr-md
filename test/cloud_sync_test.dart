@@ -6,25 +6,31 @@ import 'package:ddr_md/models/database.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-/// The Worker's rules: the latest write to a row wins, and pulls page
-/// through rows by revision.
+/// The Worker's rules: the latest write to a row wins (a beaten one still
+/// takes a new revision), and pulls page through rows by revision.
 class _Server implements SyncServer {
   final _rows = <(String, String), (SyncChange, int)>{};
   var _rev = 0;
 
   @override
-  Future<void> push(List<SyncChange> changes, {String? ddrCode}) async {
-    for (final c in changes) {
+  Future<({int rev, List<int> lost})> push(List<SyncChange> changes,
+      {String? ddrCode}) async {
+    final lost = <int>[];
+    for (final (i, c) in changes.indexed) {
       final d = json.decode(json.encode(c.d)) as Map<String, Object?>?;
-      final old = _rows[(c.t, c.k)];
-      if (old == null || c.u.compareTo(old.$1.u) >= 0) {
+      final old = _rows[(c.t, c.k)]?.$1;
+      if (old == null || c.u.compareTo(old.u) >= 0) {
         _rows[(c.t, c.k)] = ((t: c.t, k: c.k, u: c.u, d: d), ++_rev);
+      } else {
+        _rows[(c.t, c.k)] = (old, ++_rev);
+        lost.add(i);
       }
     }
+    return (rev: _rev, lost: lost);
   }
 
   @override
-  Future<({List<SyncChange> changes, int cursor, bool more})> pull(
+  Future<({List<SyncChange> changes, int cursor, bool more, int head})> pull(
       int cursor) async {
     final after = _rows.values.where((r) => r.$2 > cursor).toList()
       ..sort((a, b) => a.$2.compareTo(b.$2));
@@ -33,11 +39,15 @@ class _Server implements SyncServer {
       changes: [for (final r in page) r.$1],
       cursor: page.isEmpty ? cursor : page.last.$2,
       more: after.length > 3,
+      head: _rows.isEmpty ? 0 : _rev,
     );
   }
 
   @override
-  Future<void> deleteAll() async => _rows.clear();
+  Future<void> deleteAll() async {
+    _rows.clear();
+    _rev = 0;
+  }
 }
 
 void main() {
@@ -54,6 +64,7 @@ void main() {
     Future<void> sync(Database db, Map<String, Object> prefs) => SyncEngine(
           db,
           server,
+          account: 'test',
           readPrefs: () => prefs,
           writePrefs: (p) async => prefs.addAll(p.cast()),
         ).run();
@@ -136,6 +147,20 @@ void main() {
     expect((await b.query('parity_pins')).single['foot'], 'R');
     expect(await a.query('sync_outbox'), isEmpty);
     expect(await b.query('sync_outbox'), isEmpty);
+
+    // An edit beaten by a newer one elsewhere is replaced by the winner.
+    await b.update('notes', {'contents': 'older'}, where: "id = 'na'");
+    await b.update('sync_outbox', {'at': '2000-01-01T00:00:00.000Z'},
+        where: "k = 'na'");
+    await a.update('notes', {'contents': 'newer'}, where: "id = 'na'");
+    await sync(a, prefsA);
+    await sync(b, prefsB);
+    expect((await b.query('notes')).single['contents'], 'newer');
+
+    // A server that lost everything gets it all back.
+    await server.deleteAll();
+    await sync(a, prefsA);
+    expect((await server.pull(0)).head, greaterThan(0));
 
     await a.close();
     await b.close();
