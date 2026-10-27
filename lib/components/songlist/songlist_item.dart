@@ -86,8 +86,6 @@ class _SongListItemState extends State<SongListItem> {
       widget.regenFavsCallback?.call();
     }
 
-    final muted =
-        TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant);
     final tile = ListTile(
       visualDensity: VisualDensity.adaptivePlatformDensity,
       // A fixed square, so the title doesn't shift when the jacket arrives.
@@ -143,13 +141,7 @@ class _SongListItemState extends State<SongListItem> {
           ],
         ),
       ),
-      // A card moves these into its footer, keeping only the sync beside the
-      // title.
-      trailing: scoped
-          ? DefaultTextStyle.merge(
-              style: const TextStyle(fontSize: 13),
-              child: _syncAdjust(context) ?? const SizedBox.shrink())
-          : stats,
+      trailing: stats,
       onTap: scoped ? null : open,
     );
     if (!scoped) return tile;
@@ -169,24 +161,21 @@ class _SongListItemState extends State<SongListItem> {
                 onTap: open,
                 child: Column(children: [
                   tile,
-                  // Score, grade, lamp and flare on the left, BPM on the
-                  // right, the same on every card.
+                  // Flare, grade and lamp on the left, the best score's tab
+                  // flush with the right edge, its full height.
                   CardFooter(
-                    padding: const EdgeInsets.fromLTRB(16, 5, 16, 5),
-                    child: DefaultTextStyle.merge(
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
-                      child: Row(children: [
-                        ChartBestBadges(best, ink: 12, height: 20, score: true),
-                        Expanded(
-                          child: Text(
-                              '${widget.songInfo.charts[0].bpmRange} BPM',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.right,
-                              style: muted),
-                        ),
-                      ]),
+                    padding: const EdgeInsets.only(left: 16),
+                    child: IntrinsicHeight(
+                      child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 5),
+                              child: ChartBestBadges(best, ink: 12, height: 20),
+                            ),
+                            const Spacer(),
+                            BestScore(best),
+                          ]),
                     ),
                   ),
                 ]),

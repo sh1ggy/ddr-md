@@ -69,56 +69,69 @@ class FlareFrame extends CustomPainter {
 
 /// A chart's flare, grade and clear lamp as a row of badges, the lamp last
 /// since it's the widest, each art drawn [ink] tall (its visible part, not the
-/// image's margin), so the three read at one size. With [score], the best
-/// score leads the row.
+/// image's margin), so the three read at one size.
 class ChartBestBadges extends StatelessWidget {
   const ChartBestBadges(this.best,
-      {super.key,
-      required this.ink,
-      required this.height,
-      this.gap = 6,
-      this.score = false});
+      {super.key, required this.ink, required this.height, this.gap = 6});
 
   final ChartBest? best;
   final double ink;
   final double height;
   final double gap;
-  final bool score;
 
   @override
   Widget build(BuildContext context) {
-    final grade = best?.grade, flare = best?.flare;
+    final flare = best?.flare;
     Widget badge(String? art, double aspect) =>
         ArtBadge(art, aspect: aspect, ink: ink, height: height);
-    final top = best?.score;
-    // Even-width digits, so every six-digit score is one width.
-    final style = FloorPop.readout(ink + 2)
-        .copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      if (score) ...[
-        // A six-digit score, hidden, sets the slot so the badges line up down
-        // the list; a 1,000,000 narrows to fit it rather than widening every
-        // row's slot.
-        Stack(children: [
-          Visibility.maintain(
-              visible: false, child: Text(formatScore(999999), style: style)),
-          if (top != null)
-            Positioned.fill(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(formatScore(top), style: style),
-              ),
-            ),
-        ]),
-        SizedBox(width: gap + 2),
-      ],
       badge(flare == null ? null : flareRankIcon(flare), kFlareAspect),
       SizedBox(width: gap),
-      badge(grade == null ? null : gradeIcon(grade), kGradeAspect),
+      badge(best?.grade == null ? null : gradeIcon(best!.grade!), kGradeAspect),
       SizedBox(width: gap),
       badge(clearLampIcon(best?.lamp), kLampAspect),
     ]);
+  }
+}
+
+/// A chart's best score in a darker tab cut into a card footer's right end,
+/// its last three digits small and muted so the leading ones carry the read.
+/// Nothing when the chart has no score.
+class BestScore extends StatelessWidget {
+  const BestScore(this.best, {super.key});
+
+  final ChartBest? best;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = best?.score;
+    if (top == null) return const SizedBox.shrink();
+    final text = formatScore(top);
+    final split = text.lastIndexOf(',');
+    const figures = [FontFeature.tabularFigures()];
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0x40000000)
+            : const Color(0x0D000000),
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(8)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Center(
+          child: Text.rich(TextSpan(children: [
+            TextSpan(
+                text: text.substring(0, split),
+                style: FloorPop.readout(17).copyWith(fontFeatures: figures)),
+            TextSpan(
+                text: text.substring(split),
+                style: FloorPop.readout(12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant)
+                    .copyWith(fontFeatures: figures)),
+          ])),
+        ),
+      ),
+    );
   }
 }
 
