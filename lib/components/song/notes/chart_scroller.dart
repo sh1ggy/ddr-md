@@ -2732,116 +2732,164 @@ class _ChartScrollerState extends State<ChartScroller>
             onScaleStart: feed ? null : _onScaleStart,
             onScaleUpdate: feed ? null : _onScaleUpdate,
             onScaleEnd: feed ? null : _onScaleEnd,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // RepaintBoundary so the per-frame canvas repaint (driven by
-                // the playhead notifier) never invalidates the overlay/control
-                // layers around it; willChange hints the compositor not to
-                // bother caching a layer that changes every frame.
-                // Until the skin resolves (first preview of the app run only)
-                // paint nothing: a blank frame is invisible, a receptor-skin
-                // swap is not.
-                if (_dancerOn)
-                  RepaintBoundary(
-                    child: CustomPaint(
-                      painter: PadDancerPainter(
-                        stances: _stances,
-                        notes: _turnedNotes,
-                        shockPlans: _shockPlans,
-                        playhead: _playhead,
-                        columnCount: dirs.length,
-                        visualOffset: _visualOffsetSeconds,
-                        form: _form,
-                        bar: _dancerBar,
-                        grip: _grip,
-                        gripSpot: _gripSpot,
-                        height: _height,
-                        shoeSize: _shoeSize,
-                        cabinet: cabinet,
-                        view: _dancerView,
-                        screen: cabinet ? chart : null,
-                      ),
-                      size: Size.infinite,
-                      willChange: true,
-                    ),
-                  ),
-                if (chart == null || cabinet)
-                  const SizedBox.expand()
-                else
-                  RepaintBoundary(
-                    child: CustomPaint(
-                      painter: chart,
-                      size: Size.infinite,
-                      willChange: true,
-                    ),
-                  ),
-                IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity: _showTapOverlay ? 1 : 0,
-                    duration: const Duration(milliseconds: 130),
-                    child: Center(
-                      child: Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.26),
-                          shape: BoxShape.circle,
+            // The painters draw past the field's edges; clip them so nothing
+            // spills onto the page underneath during a back swipe.
+            child: ClipRect(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // RepaintBoundary so the per-frame canvas repaint (driven by
+                  // the playhead notifier) never invalidates the overlay/control
+                  // layers around it; willChange hints the compositor not to
+                  // bother caching a layer that changes every frame.
+                  // Until the skin resolves (first preview of the app run only)
+                  // paint nothing: a blank frame is invisible, a receptor-skin
+                  // swap is not.
+                  if (_dancerOn)
+                    RepaintBoundary(
+                      child: CustomPaint(
+                        painter: PadDancerPainter(
+                          stances: _stances,
+                          notes: _turnedNotes,
+                          shockPlans: _shockPlans,
+                          playhead: _playhead,
+                          columnCount: dirs.length,
+                          visualOffset: _visualOffsetSeconds,
+                          form: _form,
+                          bar: _dancerBar,
+                          grip: _grip,
+                          gripSpot: _gripSpot,
+                          height: _height,
+                          shoeSize: _shoeSize,
+                          cabinet: cabinet,
+                          view: _dancerView,
+                          screen: cabinet ? chart : null,
                         ),
-                        child: Icon(
-                          _tapOverlayIcon,
-                          color: Colors.white.withValues(alpha: 0.88),
-                          size: 32,
-                        ),
+                        size: Size.infinite,
+                        willChange: true,
                       ),
                     ),
-                  ),
-                ),
-                // Double-tap seek flash: lights up the tapped half of the field
-                // with a skip icon + "±5s", YouTube-style.
-                IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity: _showSeekOverlay ? 1 : 0,
-                    duration: const Duration(milliseconds: 100),
-                    child: Align(
-                      alignment: _seekOverlayLeft
-                          ? Alignment.centerLeft
-                          : Alignment.centerRight,
-                      child: FractionallySizedBox(
-                        widthFactor: 0.42,
-                        heightFactor: 1,
+                  if (chart == null || cabinet)
+                    const SizedBox.expand()
+                  else
+                    RepaintBoundary(
+                      child: CustomPaint(
+                        painter: chart,
+                        size: Size.infinite,
+                        willChange: true,
+                      ),
+                    ),
+                  IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _showTapOverlay ? 1 : 0,
+                      duration: const Duration(milliseconds: 130),
+                      child: Center(
                         child: Container(
-                          alignment: Alignment.center,
+                          width: 56,
+                          height: 56,
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.horizontal(
-                              left: _seekOverlayLeft
-                                  ? Radius.zero
-                                  : const Radius.circular(80),
-                              right: _seekOverlayLeft
-                                  ? const Radius.circular(80)
-                                  : Radius.zero,
+                            color: Colors.black.withValues(alpha: 0.26),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _tapOverlayIcon,
+                            color: Colors.white.withValues(alpha: 0.88),
+                            size: 32,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Double-tap seek flash: lights up the tapped half of the field
+                  // with a skip icon + "±5s", YouTube-style.
+                  IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _showSeekOverlay ? 1 : 0,
+                      duration: const Duration(milliseconds: 100),
+                      child: Align(
+                        alignment: _seekOverlayLeft
+                            ? Alignment.centerLeft
+                            : Alignment.centerRight,
+                        child: FractionallySizedBox(
+                          widthFactor: 0.42,
+                          heightFactor: 1,
+                          child: Container(
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.horizontal(
+                                left: _seekOverlayLeft
+                                    ? Radius.zero
+                                    : const Radius.circular(80),
+                                right: _seekOverlayLeft
+                                    ? const Radius.circular(80)
+                                    : Radius.zero,
+                              ),
                             ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _seekOverlayLeft
+                                      ? Icons.fast_rewind_rounded
+                                      : Icons.fast_forward_rounded,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  size: 30,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _seekOverlayLeft
+                                      ? "-${_seekStepSeconds.toInt()}s"
+                                      : "+${_seekStepSeconds.toInt()}s",
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Big centred value while horizontally scrubbing a control, so
+                  // the change reads on the field without watching the pane.
+                  IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _showScrubOverlay ? 1 : 0,
+                      duration: const Duration(milliseconds: 120),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 22, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.34),
+                            borderRadius: BorderRadius.circular(16),
                           ),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                _seekOverlayLeft
-                                    ? Icons.fast_rewind_rounded
-                                    : Icons.fast_forward_rounded,
-                                color: Colors.white.withValues(alpha: 0.9),
-                                size: 30,
+                              Text(
+                                _scrubOverlayCaption ?? "",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  letterSpacing: 1.0,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                ),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                _seekOverlayLeft
-                                    ? "-${_seekStepSeconds.toInt()}s"
-                                    : "+${_seekStepSeconds.toInt()}s",
+                                _scrubOverlayLabel ?? "",
                                 style: TextStyle(
-                                  fontSize: 15,
+                                  fontSize: 40,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white.withValues(alpha: 0.92),
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
                                 ),
                               ),
                             ],
@@ -2850,96 +2898,52 @@ class _ChartScrollerState extends State<ChartScroller>
                       ),
                     ),
                   ),
-                ),
-                // Big centred value while horizontally scrubbing a control, so
-                // the change reads on the field without watching the pane.
-                IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity: _showScrubOverlay ? 1 : 0,
-                    duration: const Duration(milliseconds: 120),
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 22, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.34),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _scrubOverlayCaption ?? "",
-                              style: TextStyle(
-                                fontSize: 11,
-                                letterSpacing: 1.0,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white.withValues(alpha: 0.6),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _scrubOverlayLabel ?? "",
-                              style: TextStyle(
-                                fontSize: 40,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white.withValues(alpha: 0.92),
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures()
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // Persistent badge while press-and-hold fast-forward is active,
-                // so the 2x state reads at a glance for as long as it's held.
-                IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity: _holdFastForward ? 1 : 0,
-                    duration: const Duration(milliseconds: 100),
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          top: MediaQuery.of(context).padding.top + 12,
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.4),
-                            borderRadius: BorderRadius.circular(20),
+                  // Persistent badge while press-and-hold fast-forward is active,
+                  // so the 2x state reads at a glance for as long as it's held.
+                  IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _holdFastForward ? 1 : 0,
+                      duration: const Duration(milliseconds: 100),
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            top: MediaQuery.of(context).padding.top + 12,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                  _holdSpeedMultiplier < 1
-                                      ? Icons.slow_motion_video_rounded
-                                      : Icons.fast_forward_rounded,
-                                  color: Colors.white.withValues(alpha: 0.92),
-                                  size: 16),
-                              const SizedBox(width: 4),
-                              Text(
-                                "${_holdSpeedMultiplier < 1 ? _holdSpeedMultiplier : _holdSpeedMultiplier.toInt()}x",
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white.withValues(alpha: 0.92),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                    _holdSpeedMultiplier < 1
+                                        ? Icons.slow_motion_video_rounded
+                                        : Icons.fast_forward_rounded,
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                    size: 16),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "${_holdSpeedMultiplier < 1 ? _holdSpeedMultiplier : _holdSpeedMultiplier.toInt()}x",
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 
