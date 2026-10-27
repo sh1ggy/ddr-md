@@ -6,6 +6,7 @@
 library;
 
 import 'package:ddr_md/components/session/session_page.dart';
+import 'package:ddr_md/components/session/timing_edit_sheet.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
@@ -185,33 +186,36 @@ class _SongPlayerSyncState extends State<SongPlayerSync> {
             await DatabaseProvider.deleteTimingPlay(p.id);
             session.changed();
           },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                    child: Text(formatDate(DateTime.parse(p.playedAt)),
-                        style: small)),
-                Text(
-                  '${p.averageMs.abs().toStringAsFixed(1)} '
-                  '${p.averageMs < 0 ? 'FAST' : 'SLOW'}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: p.averageMs < 0
-                        ? kFastColor(isDark)
-                        : kSlowColor(isDark),
+          child: InkWell(
+            onTap: () => showTimingEditSheet(context, p),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                      child: Text(formatDate(DateTime.parse(p.playedAt)),
+                          style: small)),
+                  Text(
+                    '${p.averageMs.abs().toStringAsFixed(1)} '
+                    '${p.averageMs < 0 ? 'FAST' : 'SLOW'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: p.averageMs < 0
+                          ? kFastColor(isDark)
+                          : kSlowColor(isDark),
+                    ),
                   ),
-                ),
-                Text(' ± ${p.variationMs.toStringAsFixed(1)}', style: small),
-                const SizedBox(width: 12),
-                Text(
-                  'on ${whole(p.syncUsedMs)} → '
-                  '${whole(p.syncUsedMs - p.trueAverageMs)} ms',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-              ],
+                  Text(' ± ${p.variationMs.toStringAsFixed(1)}', style: small),
+                  const SizedBox(width: 12),
+                  Text(
+                    'on ${whole(p.syncUsedMs)} → '
+                    '${whole(p.syncUsedMs - p.trueAverageMs)} ms',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

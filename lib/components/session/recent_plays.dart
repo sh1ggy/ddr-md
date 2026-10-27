@@ -7,6 +7,7 @@ library;
 
 import 'dart:math';
 
+import 'package:ddr_md/components/session/timing_edit_sheet.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/scores/art_badge.dart';
@@ -234,6 +235,11 @@ class _PlayCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: song == null ? null : () => _openChart(context, play),
+        // Long-press fixes the timing logged for it.
+        onLongPress: switch (timing) {
+          final t? => () => showTimingEditSheet(context, t),
+          null => null,
+        },
         child: Stack(children: [
           Padding(
             padding: const EdgeInsets.all(8),
