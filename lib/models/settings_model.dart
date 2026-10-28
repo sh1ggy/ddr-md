@@ -90,18 +90,13 @@ class Settings {
   // their controls stay hidden. Stored as 0/1.
   static const String arcadeSyncOnKey = "chartPreviewArcadeSyncOn";
 
-  // DDR TIMING offsets for the chart preview, mirroring the cabinet's two
-  // timing dials. The cabinet uses DIFFERENT units and scales for these, so
-  // they are stored differently — they are not interchangeable:
-  //
-  // VISUAL (表示タイミング) — the cabinet's -5.0..+5.0 dial in 0.1 steps. Stored
-  //   as TENTHS of a dial unit, so the range is -50..+50. Moves the arrows'
-  //   aiming position: PLUS corrects a FAST bias, MINUS corrects SLOW.
-  // AUDIO (判定タイミング) — natively in MILLISECONDS on the cabinet, where
-  //   players work in roughly ±10-20ms. Stored as whole ms, clamped to ±50.
-  //
-  // Both default to an unset 0, which is correctly neutral for each.
+  // Display timing is ±5.0 in 0.1 steps (0.1 = 1ms); audio correction shifts
+  // both judgement and display against the music. Store both delays as whole ms.
+  // Keep the legacy visual key for migration from its tenths dial.
   static const String chartPreviewVisualOffsetKey = "chartPreviewVisualOffset";
+  static const String chartPreviewVisualOffsetMsKey =
+      "chartPreviewVisualOffsetMs";
+  static const String chartPreviewTimingFormatKey = "chartPreviewTimingFormat";
   static const String chartPreviewAudioOffsetMsKey =
       "chartPreviewAudioOffsetMs";
 

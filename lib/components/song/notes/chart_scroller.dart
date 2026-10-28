@@ -393,37 +393,27 @@ class _ChartScrollerState extends State<ChartScroller>
   double _visualOffsetOnEntry = 0;
   double _audioOffsetMsOnEntry = 0;
 
-  // The cabinet's two TIMING dials, in their own units:
-  //
-  //   VISUAL (表示タイミング) — a -5.0..+5.0 dial in 0.1 steps, moving the
-  //     arrows' aiming position rather than the judgement against the music.
-  //   AUDIO (判定タイミング) — natively milliseconds, where players work in
-  //     roughly ±10-20ms. Kept in ms so a cabinet number means the same here.
-  //
-  // The preview has no judgement or input, so these reproduce the settings'
-  // effect — they can't tell you your offset.
-  static const double _visualOffsetMin = -5.0;
-  static const double _visualOffsetMax = 5.0;
-  static const double _visualOffsetStep = 0.1;
+  // Display timing uses a signed ±5.0 dial in 0.1 steps: one whole unit
+  // delays the displayed chart by 10ms. Audio calibration delays the judgement
+  // clock against the music, and the display clock inherits that delay too.
+  // Behaviour notes kept locally.
+  static const double _visualOffsetMin = -5;
+  static const double _visualOffsetMax = 5;
+  static const double _visualOffsetUnitSeconds = -0.010;
 
+  // Relative preview correction, not an operator menu's absolute calibration.
+  // Retain the preview's ±50ms tuning range.
   static const double _audioOffsetMinMs = -50;
   static const double _audioOffsetMaxMs = 50;
 
-  /// Seconds of arrow travel per whole VISUAL dial unit. The cabinet publishes
-  /// the dial as a bare number, so this is the preview's own calibration: one
-  /// unit = one 60fps frame, putting the full ±5.0 dial at ±83ms.
-  static const double _visualOffsetUnitSeconds = 1.0 / 60.0;
+  double _visualOffset = 0; // display dial units, 0.1 = 1ms
+  double _audioOffsetMs = 0; // relative audio calibration in milliseconds
 
-  double _visualOffset = 0; // dial units, -5.0..+5.0
-  double _audioOffsetMs = 0; // milliseconds, -50..+50
-
-  /// Seconds fed to the painter / tick clock, gated once here so no caller can
-  /// apply an offset while ARCADE SYNC is off. The gate lives in free functions
-  /// so tests can exercise it — the field painter is unobservable in a widget
-  /// test, since the scroller paints nothing until the noteskin future resolves.
+  // The field inherits the audio clock correction before its display delay.
   double get _visualOffsetSeconds => debugGatedVisualOffsetSeconds(
         arcadeSyncOn: _arcadeSyncOn,
         units: _visualOffset,
+        audioMs: _audioOffsetMs,
       );
   double get _audioOffsetSeconds => debugGatedAudioOffsetSeconds(
         arcadeSyncOn: _arcadeSyncOn,
@@ -904,19 +894,31 @@ class _ChartScrollerState extends State<ChartScroller>
   // unless the modifier is switched on.
   double? get _effectiveConstantMs => _constantOn ? _constantMs : null;
 
-  // Restore ARCADE SYNC and both TIMING offsets. VISUAL is stored as tenths of a
-  // dial unit so its 0.1 step round-trips through the int-only Settings API;
-  // AUDIO is already whole ms. For both, "never set" (0) is the neutral default.
+  // The legacy visual setting already stores tenths of the display dial,
+  // exactly the whole-ms delay the renderer needs. Keep the newer ms storage
+  // separate, preserving values already adjusted in that format.
   void _loadTimingOffsets() {
     _arcadeSyncOn = Settings.getInt(Settings.arcadeSyncOnKey) == 1;
+    final timingFormat = Settings.getInt(Settings.chartPreviewTimingFormatKey);
+    if (timingFormat == 0) {
+      final oldTenths = Settings.getInt(Settings.chartPreviewVisualOffsetKey);
+      Settings.setInt(Settings.chartPreviewVisualOffsetMsKey,
+          (_clampVisualOffset(oldTenths / 10.0) * 10).round());
+    }
+    if (timingFormat < 2) {
+      // Earlier versions treated positive AUDIO as an advance. Preserve the
+      // existing audible adjustment when adopting a positive-delay dial.
+      Settings.setInt(Settings.chartPreviewAudioOffsetMsKey,
+          -Settings.getInt(Settings.chartPreviewAudioOffsetMsKey));
+      Settings.setInt(Settings.chartPreviewTimingFormatKey, 2);
+    }
     _visualOffset = _clampVisualOffset(
-        Settings.getInt(Settings.chartPreviewVisualOffsetKey) / 10.0);
+        Settings.getInt(Settings.chartPreviewVisualOffsetMsKey) / 10.0);
     _audioOffsetMs = _clampAudioOffsetMs(
         Settings.getInt(Settings.chartPreviewAudioOffsetMsKey).toDouble());
 
-    // The offsets cancel a PER-SONG bias, so a pair seeded against another
-    // song's reading would ride along and land this one off by the difference
-    // between the two biases.
+    // Audio correction is per song; never carry another song's correction
+    // into this one. The independent display adjustment survives re-seeding.
     if (_arcadeSyncOn && !_offsetsMatchThisSong()) {
       _seedOffsetsFromSync();
     }
@@ -938,22 +940,15 @@ class _ChartScrollerState extends State<ChartScroller>
     return (storedFor - _songBiasMs).abs() < 0.005;
   }
 
-  // Snap the VISUAL dial to its 0.1 grid inside the cabinet's ±5.0 range.
-  static double _clampVisualOffset(double units) {
-    final clamped = units.clamp(_visualOffsetMin, _visualOffsetMax);
-    return (clamped / _visualOffsetStep).round() * _visualOffsetStep;
-  }
+  static double _clampVisualOffset(double units) =>
+      (units.clamp(_visualOffsetMin, _visualOffsetMax) * 10).round() / 10.0;
 
-  // AUDIO is whole milliseconds — no sub-ms dial, players talk in integers.
   static double _clampAudioOffsetMs(double ms) =>
       ms.roundToDouble().clamp(_audioOffsetMinMs, _audioOffsetMaxMs);
 
-  // The VISUAL dial reads like the cabinet's: always signed, one decimal, so
-  // "+0.0" reads as deliberately neutral rather than unset.
   static String _visualOffsetLabel(double units) =>
       "${units >= 0 ? "+" : "-"}${units.abs().toStringAsFixed(1)}";
 
-  // AUDIO reads in the unit players actually use ("+10ms").
   static String _audioOffsetLabel(double ms) =>
       "${ms >= 0 ? "+" : "-"}${ms.abs().round()}ms";
 
@@ -962,49 +957,16 @@ class _ChartScrollerState extends State<ChartScroller>
   // audio), negative means SLOW. 0 when the song ships no sync data.
   double get _songBiasMs => widget.sync?.biasMs ?? 0;
 
-  // ARCADE SYNC treats the song's own bias as the STARTING POINT and the two
-  // dials as adjustments from it, matching how you'd actually sync on a cabinet:
-  // the song is already off by some amount, and you dial against that. So a song
-  // measured at +9.0ms reads "+9.0ms" the moment the mode is switched on, and a
-  // dialled -2.0ms takes the effective figure to +7.0ms.
-  //
-  // Both dials are folded into one effective millisecond figure — VISUAL is
-  // converted from its dial units so the two are commensurable.
+  // Judgement sync is relative to the audio, independent of the display
+  // delay. With the simulation off the caption reports the raw song reading.
   double get _effectiveSyncMs =>
-      _songBiasMs +
-      _visualOffset * _visualOffsetUnitSeconds * 1000 +
-      _audioOffsetMs;
+      _songBiasMs - (_arcadeSyncOn ? _audioOffsetMs : 0);
 
-  // Pre-dial the offsets that cancel the song's measured bias, so engaging
-  // ARCADE SYNC opens already corrected. The correction is the bias with its
-  // sign flipped (a chart running +9ms FAST is fixed by −9ms), the same
-  // adjustment the song page's Sync card suggests.
-  //
-  // The bias is split across the two dials by granularity, not arbitrarily: the
-  // VISUAL dial is coarse (one unit ≈ 16.67ms) so it takes as many WHOLE units
-  // as fit without overshooting, and the finer AUDIO dial (1ms) mops up the
-  // remainder. A ±9ms bias therefore lands entirely on AUDIO, while a large one
-  // uses both. Each is clamped to its own range, so a bias beyond their combined
-  // reach is corrected as far as the dials allow.
+  // Correct a song's measured bias using judgement timing alone. Keep the
+  // display delay: it is an independent viewing/cabinet adjustment, not part of
+  // the song's audio correction.
   void _seedOffsetsFromSync() {
-    const msPerVisualUnit = _visualOffsetUnitSeconds * 1000;
-    final correctionMs = -_songBiasMs;
-
-    // The AUDIO dial is exact in whole milliseconds while VISUAL only lands on
-    // multiples of ~1.67ms (0.1 of a 16.67ms unit), so AUDIO carries the
-    // correction wherever it can — that's what keeps typical songs landing at
-    // 0.0-0.5ms. VISUAL only picks up the overflow past AUDIO's ±50ms range,
-    // which real data never reaches (measured max |bias| is ~50ms).
-    final audioShare = _clampAudioOffsetMs(correctionMs);
-    _visualOffset =
-        _clampVisualOffset((correctionMs - audioShare) / msPerVisualUnit);
-    // Re-derive AUDIO from what VISUAL actually landed on, so the 0.1-grid
-    // rounding is absorbed here rather than left as residue.
-    _audioOffsetMs =
-        _clampAudioOffsetMs(correctionMs - _visualOffset * msPerVisualUnit);
-
-    Settings.setInt(
-        Settings.chartPreviewVisualOffsetKey, (_visualOffset * 10).round());
+    _audioOffsetMs = _clampAudioOffsetMs(_songBiasMs);
     Settings.setInt(
         Settings.chartPreviewAudioOffsetMsKey, _audioOffsetMs.round());
     _stampOffsetBias();
@@ -1017,15 +979,13 @@ class _ChartScrollerState extends State<ChartScroller>
   void _stampOffsetBias() => Settings.setInt(
       Settings.chartPreviewOffsetForBiasKey, (_songBiasMs * 100).round());
 
-  /// Below this the effective sync is reported as "on the beat" — half of the
-  /// AUDIO dial's 1ms resolution, so a reading only counts as off-beat when a
-  /// dial could actually do something about it.
+  /// Neutral at the displayed tenth-of-a-millisecond precision.
   static const double _onBeatEpsilonMs = 0.05;
 
   /// True when the song has nothing to report: no sync block AND no dialled
   /// offset that would make an effective figure meaningful.
   bool get _hasNoSyncReading =>
-      widget.sync == null && _visualOffset == 0 && _audioOffsetMs == 0;
+      widget.sync == null && (!_arcadeSyncOn || _audioOffsetMs == 0);
 
   /// FAST/SLOW hue for the current effective sync, or null when it's on the beat
   /// (or unknown). Used by the ARCADE SYNC caption.
@@ -1038,9 +998,8 @@ class _ChartScrollerState extends State<ChartScroller>
     );
   }
 
-  // The ARCADE SYNC caption: the effective sync after both dials, in the same
-  // terms and sign convention as the previous page's Sync card. Reads as the
-  // song's raw bias until a dial is moved, then tracks the adjustment.
+  // The caption reports judgement vs audio. Display delay only changes the
+  // field and ghost row; it must not change this song-audio reading.
   String get _arcadeSyncSummary {
     if (_hasNoSyncReading) return "no sync data for this song";
     final ms = _effectiveSyncMs;
@@ -1103,7 +1062,7 @@ class _ChartScrollerState extends State<ChartScroller>
       HapticFeedback.selectionClick();
       setState(() => _visualOffset = next);
       Settings.setInt(
-          Settings.chartPreviewVisualOffsetKey, (next * 10).round());
+          Settings.chartPreviewVisualOffsetMsKey, (next * 10).round());
       _stampOffsetBias(); // hand-tuned for THIS song — don't re-seed over it
       _flashScrubOverlay(_visualOffsetLabel(next), "VISUAL OFFSET");
       return;
@@ -1139,7 +1098,7 @@ class _ChartScrollerState extends State<ChartScroller>
     if (!visual) _resyncTickClock();
     Settings.setInt(
       visual
-          ? Settings.chartPreviewVisualOffsetKey
+          ? Settings.chartPreviewVisualOffsetMsKey
           : Settings.chartPreviewAudioOffsetMsKey,
       0,
     );
@@ -2572,6 +2531,7 @@ class _ChartScrollerState extends State<ChartScroller>
     required double topInset,
     double? constantMs,
     double visualOffset = 0,
+    double? hitOffset,
     double? pxPerBeat,
     double? pxPerSecond,
     double? zoom,
@@ -2628,6 +2588,7 @@ class _ChartScrollerState extends State<ChartScroller>
       constantMs: constantMs,
       topInset: topInset,
       visualOffset: visualOffset,
+      hitOffset: hitOffset,
       arcadeQuant: !widget.quantColorsOn,
       arrowBlink: widget.arrowBlinkOn,
       quantFreezeHeads: widget.quantFreezeHeadsOn,
@@ -2704,6 +2665,7 @@ class _ChartScrollerState extends State<ChartScroller>
               topInset: topInset,
               constantMs: _effectiveConstantMs,
               visualOffset: _visualOffsetSeconds,
+              hitOffset: _arcadeSyncOn ? _audioOffsetSeconds : null,
             );
       // Taps find notes on the full-field chart only.
       _painter = cabinet ? null : chart;
@@ -3618,34 +3580,35 @@ class _ChartScrollerState extends State<ChartScroller>
 double debugGatedVisualOffsetSeconds({
   required bool arcadeSyncOn,
   required double units,
+  double audioMs = 0,
 }) =>
-    arcadeSyncOn ? units * _ChartScrollerState._visualOffsetUnitSeconds : 0;
+    arcadeSyncOn
+        ? units * _ChartScrollerState._visualOffsetUnitSeconds - audioMs / 1000
+        : 0;
 
-/// The same gate for the AUDIO dial, in seconds (its dial is milliseconds).
+/// Applied judgement-clock shift. Positive audio calibration delays judgement,
+/// so the clock shift is negative. The field inherits the same shift.
 @visibleForTesting
 double debugGatedAudioOffsetSeconds({
   required bool arcadeSyncOn,
   required double ms,
 }) =>
-    arcadeSyncOn ? ms / 1000.0 : 0;
+    arcadeSyncOn ? -ms / 1000.0 : 0;
 
-/// The VISUAL dial unit → seconds of arrow travel. The cabinet publishes this
-/// dial as a bare number, so the conversion is the preview's own calibration
-/// (one unit = one 60fps frame); exposed so tests pin it rather than re-deriving.
+/// Display dial units → field-clock shift: +1.0 delays alignment by 10ms.
 @visibleForTesting
 double visualOffsetSeconds(double units) =>
     units * _ChartScrollerState._visualOffsetUnitSeconds;
 
-/// Formats each dial the way its chip does — they use different units, so the
-/// VISUAL dial reads "+1.5" while AUDIO reads "-10ms".
+/// Display timing uses a signed one-decimal dial; audio correction uses ms.
 @visibleForTesting
 String visualOffsetLabel(double units) =>
     _ChartScrollerState._visualOffsetLabel(units);
 @visibleForTesting
 String audioOffsetLabel(double ms) => _ChartScrollerState._audioOffsetLabel(ms);
 
-/// Clamps/snaps each dial to its own range: VISUAL to ±5.0 on the 0.1 grid,
-/// AUDIO to ±50 whole milliseconds.
+/// Display timing is ±5.0 in 0.1 steps. Audio's ±50ms is a relative preview
+/// correction range, not a claim about a separate player option menu.
 @visibleForTesting
 double visualOffsetClamp(double units) =>
     _ChartScrollerState._clampVisualOffset(units);
@@ -3653,7 +3616,7 @@ double visualOffsetClamp(double units) =>
 double audioOffsetClampMs(double ms) =>
     _ChartScrollerState._clampAudioOffsetMs(ms);
 
-/// Builds two field painters differing ONLY in their VISUAL OFFSET (in frames)
+/// Builds two field painters differing ONLY in their display dial value
 /// and reports whether the renderer treats that as a repaint-worthy change, plus
 /// the receptor-relative second each one puts the playhead at.
 ///
