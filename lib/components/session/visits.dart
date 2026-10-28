@@ -598,6 +598,14 @@ class _VisitPageState extends State<VisitPage> {
         final credits = data.credits[visit.session?.id] ?? [];
         final (played, matched) = reconcileTiming(visit.plays, timing);
         final groups = groupByCredit(played, credits, matched);
+        final creditNumbers = <int, int>{};
+        var number = 0;
+        for (var i = groups.length - 1; i >= 0; i--) {
+          if (groups[i].$2.length >= kMinSongsPerCredit &&
+              groups[i].$2.any((p) => !p.konamiId.startsWith('timing:'))) {
+            creditNumbers[i] = ++number;
+          }
+        }
         if (_pending case final at?) {
           _pending = null;
           WidgetsBinding.instance
@@ -664,6 +672,7 @@ class _VisitPageState extends State<VisitPage> {
                                   key:
                                       _creditKeys.putIfAbsent(i, GlobalKey.new),
                                   lit: _lit == i,
+                                  number: creditNumbers[i],
                                   credit: credit,
                                   plays: plays,
                                   bests: data.model.bests,
@@ -689,14 +698,15 @@ class _VisitPageState extends State<VisitPage> {
 }
 
 /// One credit's plays beside a narrow rail: its number, side and songs
-/// played, on a bar in the primary colour (outlined and numbered "?" for a
-/// credit that wasn't logged). The cabinet, when the venue has more than
-/// one, is the number's tooltip. Tapping the rail runs [onEdit], to log the
-/// credit or fix its cabinet and side.
+/// played, on a bar in the primary colour (outlined for a credit that
+/// wasn't logged). Synced credits are numbered by their timeline. The
+/// cabinet, when the venue has more than one, is the number's tooltip.
+/// Tapping the rail runs [onEdit], to log the credit or fix its cabinet and side.
 class _CreditGroup extends StatelessWidget {
   const _CreditGroup(
       {super.key,
       this.lit = false,
+      this.number,
       required this.credit,
       required this.plays,
       required this.bests,
@@ -704,6 +714,9 @@ class _CreditGroup extends StatelessWidget {
       this.onEdit});
 
   final Credit? credit;
+  // Synced groups are numbered by the timeline, regardless of the number
+  // of times Next Credit was tapped while logging manually.
+  final int? number;
   final List<RecentPlay> plays;
   final Map<String, int?> bests;
   final Map<RecentPlay, TimingPlay> timing;
@@ -716,6 +729,7 @@ class _CreditGroup extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final c = credit;
+    final partial = plays.isNotEmpty && plays.length < kMinSongsPerCredit;
     final bar = c == null ? scheme.outlineVariant : scheme.primary;
     final small = text.labelSmall?.copyWith(color: scheme.onSurfaceVariant);
     return AnimatedContainer(
@@ -736,14 +750,27 @@ class _CreditGroup extends StatelessWidget {
                 Tooltip(
                   message:
                       c == null || c.cabinet.name.isEmpty ? '' : c.cabinet.name,
-                  child: Text(c == null ? '?' : '${c.number}',
+                  child: Text(
+                      partial
+                          ? '?'
+                          : number?.toString() ??
+                              (c == null ? '?' : '${c.number}'),
                       style: text.titleSmall?.copyWith(
                           color: c == null ? scheme.onSurfaceVariant : bar,
                           fontWeight: FontWeight.w800)),
                 ),
                 if (c != null)
                   Text(c.side == PadSide.p1 ? 'P1' : 'P2', style: small),
-                Text('${plays.length}/$kSongsPerCredit', style: small),
+                Tooltip(
+                  message: partial
+                      ? 'Incomplete record: a complete credit has 3 or 4 songs'
+                      : '${plays.length} songs',
+                  child: Text(
+                      partial
+                          ? '${plays.length}/?'
+                          : '${plays.length}/$kSongsPerCredit',
+                      style: small),
+                ),
               ]),
             ),
           ),

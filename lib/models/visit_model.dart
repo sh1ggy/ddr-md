@@ -126,7 +126,11 @@ const kCreditGrace = Duration(minutes: 2);
 /// The most songs one credit plays.
 const kSongsPerCredit = 4;
 
-/// The longest wait between two songs of one credit.
+/// The fewest songs in a complete credit.
+const kMinSongsPerCredit = 3;
+
+/// The pause that balances the cost of inferring another credit. Gaps are
+/// evidence for boundaries, never a reason to create a one-song credit.
 const kCreditBreak = Duration(minutes: 10);
 
 /// How far apart a logged timing and its synced play can be.
@@ -158,6 +162,7 @@ const kTimingMatch = Duration(minutes: 10);
     ..removeWhere((e) => e.$3 > kTimingMatch)
     ..sort((a, b) => a.$4 != b.$4 ? a.$4 - b.$4 : a.$3.compareTo(b.$3));
   final matched = <RecentPlay, TimingPlay>{};
+  final combined = [...plays];
   final used = <String>{};
   for (final (p, t, _, _) in pairs) {
     if (matched.containsKey(p) || used.contains(t.id)) continue;
@@ -166,7 +171,7 @@ const kTimingMatch = Duration(minutes: 10);
   }
   for (final t in timing) {
     if (used.contains(t.id)) continue;
-    matched[RecentPlay(
+    final standIn = RecentPlay(
       konamiId: 'timing:${t.id}',
       title: t.song,
       song: t.song,
@@ -174,13 +179,14 @@ const kTimingMatch = Duration(minutes: 10);
       difficulty: chart(t.difficulty),
       playedAt: DateTime.parse(t.playedAt),
       score: null,
-    )] = t;
+    );
+    matched[standIn] = t;
+    // Insert manual-only plays without re-sorting the synced list. In
+    // particular, equal timestamps must keep Konami's scraped order.
+    final i = combined.indexWhere((p) => p.playedAt.isBefore(standIn.playedAt));
+    combined.insert(i < 0 ? combined.length : i, standIn);
   }
-  return (
-    matched.keys.toSet().union(plays.toSet()).toList()
-      ..sort((a, b) => b.playedAt.compareTo(a.playedAt)),
-    matched
-  );
+  return (combined, matched);
 }
 
 /// The timing plays [matched] to a synced play on another chart, each with
@@ -193,64 +199,179 @@ List<(TimingPlay, String)> timingFixes(Map<RecentPlay, TimingPlay> matched) => [
     ];
 
 /// [plays] (newest first) split into the [credits] they were played in,
-/// newest first. A play whose [timing] was logged in a credit goes to it;
-/// any other goes to the last credit started before it, up to
-/// [kSongsPerCredit] songs and no more than [kCreditBreak] after its last;
-/// the rest are split into credits that weren't
-/// logged (a null credit), at most [kSongsPerCredit] songs each and broken
-/// wherever songs are more than [kCreditBreak] apart.
+/// newest first. The synced timeline defines groups of three or four
+/// songs, preferring boundaries at longer pauses. Nearby manual starts and
+/// timing-credit changes corroborate a larger gap; counters alone cannot
+/// force a boundary. Logged credits supply cabinet and side where their
+/// times fit; surplus empty
+/// manual credits are omitted once synced plays are available.
 List<(Credit?, List<RecentPlay>)> groupByCredit(
     List<RecentPlay> plays, List<Credit> credits,
     [Map<RecentPlay, TimingPlay> timing = const {}]) {
+  bool manual(RecentPlay p) => p.konamiId == 'timing:${timing[p]?.id}';
+  final synced = plays.where((p) => !manual(p)).toList();
+  if (synced.isEmpty) return _groupManualCredits(plays, credits, timing);
+
   final ordered = [...credits]
     ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-  final byCredit = {for (final c in ordered) c.id: <RecentPlay>[]};
-  final rest = <RecentPlay>[];
-  final pinned = {
-    for (final MapEntry(key: p, value: t) in timing.entries)
-      if (byCredit.containsKey(t.creditId)) p: t.creditId!,
-  };
-  for (final p in plays.reversed) {
-    if (pinned[p] case final id?) byCredit[id]!.add(p);
-  }
-  for (final p in plays.reversed) {
-    if (pinned.containsKey(p)) continue;
+  final groups = _inferCreditGroups(synced, credits: credits, timing: timing);
+
+  final used = <String>{};
+  final result = <(Credit?, List<RecentPlay>)>[];
+  for (final ps in groups) {
     final c = ordered
-        .where((c) => !c.startedAt.subtract(kCreditGrace).isAfter(p.playedAt))
+        .where((c) =>
+            !c.startedAt.subtract(kCreditGrace).isAfter(ps.first.playedAt))
         .firstOrNull;
-    final before = c == null
-        ? null
-        : byCredit[c.id]!
-            .where((e) => !e.playedAt.isAfter(p.playedAt))
-            .map((e) => e.playedAt)
-            .fold<DateTime?>(null, (a, t) => a == null || t.isAfter(a) ? t : a);
-    if (c != null &&
-        byCredit[c.id]!.length < kSongsPerCredit &&
-        (before == null || p.playedAt.difference(before) <= kCreditBreak)) {
-      byCredit[c.id]!.add(p);
-    } else {
-      rest.add(p);
+    final credit =
+        ps.length >= kMinSongsPerCredit && c != null && used.add(c.id)
+            ? c
+            : null;
+    result.insert(0, (credit, ps.reversed.toList()));
+  }
+
+  // Three synced songs already form a complete credit. An unmatched manual
+  // entry cannot invent a fourth song or shift the remaining boundaries.
+  final loose = plays.where(manual).toList();
+  for (final (c, ps) in _groupManualCredits(loose, credits, timing)) {
+    if (ps.isEmpty) continue;
+    final credit = c != null && used.add(c.id) ? c : null;
+    final i = result
+        .indexWhere((g) => g.$2.first.playedAt.isBefore(ps.first.playedAt));
+    result.insert(i < 0 ? result.length : i, (credit, ps));
+  }
+  return result;
+}
+
+/// Partitions the scraped order into complete three/four-song credits,
+/// oldest first. Minimise missing edge data first, then time spent inside
+/// credits plus [kCreditBreak] per credit. A manual start during a larger
+/// gap, or matched timings changing credits across it, strengthens that
+/// boundary by at most two minutes; repeated taps never stack. Equal
+/// evidence favours four songs in the older group.
+/// If the recorded count cannot form complete credits (1, 2 or 5 songs),
+/// retain the incomplete edge separately instead of inventing more plays.
+List<List<RecentPlay>> _inferCreditGroups(List<RecentPlay> plays,
+    {List<Credit> credits = const [],
+    Map<RecentPlay, TimingPlay> timing = const {}}) {
+  final chronological = plays.reversed.toList();
+  final n = chronological.length;
+  final gaps = [
+    for (var i = 1; i < n; i++)
+      chronological[i]
+          .playedAt
+          .difference(chronological[i - 1].playedAt)
+          .inMilliseconds,
+  ];
+  final sortedGaps = [...gaps]..sort();
+  final typicalGap = sortedGaps.isEmpty
+      ? 0
+      : (sortedGaps[sortedGaps.length ~/ 2] +
+              sortedGaps[(sortedGaps.length - 1) ~/ 2]) ~/
+          2;
+  final knownCredits = {for (final c in credits) c.id};
+  final support = List<int>.filled(n, 0);
+  for (var i = 1; i < n; i++) {
+    final gap = gaps[i - 1];
+    final extra = gap - typicalGap;
+    // A human hint can corroborate a noticeably longer re-entry pause,
+    // not turn an ordinary between-song interval into a credit boundary.
+    if (extra < const Duration(seconds: 30).inMilliseconds ||
+        gap * 4 < typicalGap * 5) {
+      continue;
+    }
+    final before = chronological[i - 1].playedAt;
+    final after = chronological[i].playedAt;
+    final startInGap = credits.any(
+        (c) => !c.startedAt.isBefore(before) && !c.startedAt.isAfter(after));
+    String? creditNear(int start, int step) {
+      for (var j = start, distance = 0;
+          j >= 0 && j < n && distance < kSongsPerCredit;
+          j += step, distance++) {
+        final id = timing[chronological[j]]?.creditId;
+        if (knownCredits.contains(id)) return id;
+      }
+      return null;
+    }
+
+    final left = creditNear(i - 1, -1), right = creditNear(i, 1);
+    final timingChanged = left != null && right != null && left != right;
+    if (startInGap || timingChanged) {
+      final weight = extra * 2;
+      const maximumSupport = Duration(minutes: 2);
+      support[i] = weight < maximumSupport.inMilliseconds
+          ? weight
+          : maximumSupport.inMilliseconds;
     }
   }
-  // Oldest first so far; unlogged credits fill from their first song.
-  final unlogged = <List<RecentPlay>>[];
-  for (final p in rest) {
-    final last = unlogged.lastOrNull;
-    if (last == null ||
-        last.length == kSongsPerCredit ||
-        p.playedAt.difference(last.last.playedAt) > kCreditBreak) {
-      unlogged.add([p]);
-    } else {
-      last.add(p);
+  final costs = List<(int, int)?>.filled(n + 1, null);
+  final lengths = List<int>.filled(n + 1, 0);
+  costs[n] = (0, 0);
+  for (var start = n - 1; start >= 0; start--) {
+    for (var length = kSongsPerCredit; length >= 1; length--) {
+      final end = start + length;
+      if (end > n || costs[end] == null) continue;
+      final partial = length < kMinSongsPerCredit;
+      if (partial && start != 0 && end != n) continue;
+      var span = 0;
+      for (var i = start + 1; i < end; i++) {
+        span += chronological[i]
+            .playedAt
+            .difference(chronological[i - 1].playedAt)
+            .inMilliseconds;
+      }
+      final next = costs[end]!;
+      final candidate = (
+        next.$1 + (partial ? length : 0),
+        next.$2 + span + kCreditBreak.inMilliseconds - support[start],
+      );
+      final best = costs[start];
+      if (best == null ||
+          candidate.$1 < best.$1 ||
+          (candidate.$1 == best.$1 && candidate.$2 < best.$2)) {
+        costs[start] = candidate;
+        lengths[start] = length;
+      }
     }
   }
-  for (final list in byCredit.values) {
-    list.sort((a, b) => a.playedAt.compareTo(b.playedAt));
-  }
-  DateTime at((Credit?, List<RecentPlay>) g) =>
-      g.$2.lastOrNull?.playedAt ?? g.$1!.startedAt;
   return [
-    for (final c in ordered) (c, byCredit[c.id]!.reversed.toList()),
-    for (final g in unlogged) (null, g.reversed.toList()),
-  ]..sort((a, b) => at(b).compareTo(at(a)));
+    for (var i = 0; i < n; i += lengths[i])
+      chronological.sublist(i, i + lengths[i]),
+  ];
+}
+
+/// Before syncing, retain the manual timings as provisional plays. Their
+/// credit counters still cannot create completed one/two-song credits.
+List<(Credit?, List<RecentPlay>)> _groupManualCredits(List<RecentPlay> plays,
+    List<Credit> credits, Map<RecentPlay, TimingPlay> timing) {
+  final ordered = [...credits]
+    ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+  final byId = {for (final c in ordered) c.id: c};
+  final used = <String>{};
+  final groups = <(Credit?, List<RecentPlay>)>[];
+  for (final ps
+      in _inferCreditGroups(plays, credits: credits, timing: timing)) {
+    final p = ps.first;
+    final t = timing[p];
+    final c = byId[t?.creditId] ??
+        ordered
+            .where(
+                (c) => !c.startedAt.subtract(kCreditGrace).isAfter(p.playedAt))
+            .firstOrNull;
+    final credit =
+        ps.length >= kMinSongsPerCredit && c != null && used.add(c.id)
+            ? c
+            : null;
+    groups.add((credit, ps));
+  }
+  final result = [
+    for (final (c, ps) in groups.reversed) (c, ps.reversed.toList()),
+  ];
+  // Keep empty logged credits visible without sorting the plays again.
+  for (final c in ordered.where((c) => !used.contains(c.id))) {
+    final i = result.indexWhere((g) =>
+        (g.$2.firstOrNull?.playedAt ?? g.$1!.startedAt).isBefore(c.startedAt));
+    result.insert(i < 0 ? result.length : i, (c, <RecentPlay>[]));
+  }
+  return result;
 }
