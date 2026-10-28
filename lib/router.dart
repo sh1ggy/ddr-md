@@ -9,6 +9,7 @@ import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/session/app_settings_page.dart';
 import 'package:ddr_md/components/session/session_page.dart';
+import 'package:ddr_md/components/session/session_trends_page.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/settings/settings_page.dart';
 import 'package:ddr_md/components/snippets/snippets_page.dart';
@@ -82,6 +83,10 @@ final router = GoRouter(
               pageBuilder: (context, state) =>
                   _page(state, const SessionPage()),
               routes: [
+                GoRoute(
+                    path: 'trends',
+                    pageBuilder: (context, state) =>
+                        _page(state, const SessionTrendsPage())),
                 GoRoute(
                     path: 'sessions',
                     pageBuilder: (context, state) =>
