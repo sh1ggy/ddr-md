@@ -41,22 +41,30 @@ void main() {
       for (var i = 0; i < 40; i++) _song('c$i', 'X3'),
       _song('w', 'A20'),
       _song('g', 'WORLD'),
+      _song('prefixed', 'DDR A20 Plus'),
+      _song('no-flare', 'DDR WORLD'),
     ];
     final records = [
       for (var i = 0; i < 40; i++) _record('c$i', 'EXPERT', 100 + i),
       _record('w', 'CHALLENGE', 500, ClearLamp.pfc),
       _record('g', 'EXPERT', 700, ClearLamp.mfc),
+      _record('prefixed', 'EXPERT', 600),
+      _record('no-flare', 'EXPERT', 0, ClearLamp.clear),
     ];
 
     final skill = flareSkill(records, songs, Modes.singles);
     expect(skill.groups[FlareGroup.classic]!.length, 30);
     expect(skill.groupTotal(FlareGroup.classic),
         [for (var i = 10; i < 40; i++) 100 + i].reduce((a, b) => a + b));
-    expect(skill.total, skill.groupTotal(FlareGroup.classic) + 1200);
+    expect(skill.groupTotal(FlareGroup.white), 500);
+    expect(skill.groupTotal(FlareGroup.gold), 1300);
+    expect(skill.total, skill.groupTotal(FlareGroup.classic) + 1800);
+    expect(
+        skill.groups[FlareGroup.gold]!.map((r) => r.song), ['g', 'prefixed']);
 
     final levels = chartsByLevel(records, songs, Modes.singles);
-    expect(levels[15]!.charts, 42);
-    expect(levels[15]!.played.length, 41);
+    expect(levels[15]!.charts, 44);
+    expect(levels[15]!.played.length, 43);
     expect(levels[17]!.played.single.clearLamp, ClearLamp.pfc);
     expect(meanAndSd([90, 100, 110])!.mean, 100);
   });

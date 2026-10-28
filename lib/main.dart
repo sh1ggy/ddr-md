@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/database.dart';
@@ -61,6 +62,12 @@ void main() async {
     debugPrint('Content update failed: $e');
     return false;
   });
+
+  // Cloud sync, when on: now, and whenever the app is left or comes back.
+  CloudSync.pulled.addListener(eamuse.reloadSaved);
+  CloudSync.syncQuietly();
+  AppLifecycleListener(
+      onHide: CloudSync.syncQuietly, onResume: CloudSync.syncQuietly);
 }
 
 class App extends StatelessWidget {

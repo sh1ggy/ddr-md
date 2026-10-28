@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -14,6 +15,21 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class SongState extends ChangeNotifier {
+  SongState() {
+    CloudSync.pulled.addListener(_reloadSettings);
+  }
+
+  // Play style and sort, as another device may have just synced them.
+  void _reloadSettings() {
+    _mode = Settings.getInt(Settings.playModeKey) == Modes.doubles.index
+        ? Modes.doubles
+        : Modes.singles;
+    final sort = Settings.getInt(Settings.songlistSortKey);
+    _sortType = sort == 0 ? SortType.version : SortType.values[sort - 1];
+    _sortDescending = Settings.getInt(Settings.songlistSortDescKey) == 1;
+    notifyListeners();
+  }
+
   SongInfo? _songInfo;
   SongInfo? get songInfo => _songInfo;
 

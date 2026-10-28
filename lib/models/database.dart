@@ -1,4 +1,5 @@
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_labels.dart';
@@ -11,6 +12,7 @@ class DatabaseProvider {
   static Future<Database> get _instance async =>
       _database ??= await getDatabaseInstance();
   static Database? _database;
+  static Future<Database> get db => _instance;
 
   static Future<Database?> init() async {
     _database = await _instance;
@@ -70,6 +72,7 @@ class DatabaseProvider {
     await db.execute(_recentPlaysDdl);
     await _addRecentPlayFailed(db);
     await _addRecentPlayOrder(db);
+    await installSync(db);
   }
 
   static Future<void> _addRecentPlayFailed(Database db) => db.execute(
@@ -127,9 +130,11 @@ class DatabaseProvider {
   static const _dbName =
       String.fromEnvironment('DB_NAME', defaultValue: 'ddr_database.db');
 
-  static Future<Database> getDatabaseInstance() async {
-    String path = join(await getDatabasesPath(), _dbName);
-    return await openDatabase(path, version: 16, onCreate: (db, version) async {
+  static Future<Database> getDatabaseInstance() async =>
+      open(join(await getDatabasesPath(), _dbName));
+
+  static Future<Database> open(String path) {
+    return openDatabase(path, version: 16, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -155,6 +160,7 @@ class DatabaseProvider {
       if (oldVersion < 13) await db.execute(_recentPlaysDdl);
       // Before v6 the schema was just made whole, column included.
       if (oldVersion >= 6 && oldVersion < 14) await _addRecentPlayFailed(db);
+      if (oldVersion < 15) await installSync(db);
       if (oldVersion >= 6 && oldVersion < 16) await _addRecentPlayOrder(db);
     });
   }
@@ -168,11 +174,12 @@ class DatabaseProvider {
     ];
   }
 
-  // A new venue comes with its one cabinet.
+  // A new venue comes with its one cabinet. uids name them across devices
+  // (see syncTables).
   static Future<Venue> addVenue(String name) async {
     final db = await _instance;
-    final id = await db.insert("venues", {'name': name});
-    await db.insert("cabinets", {'venueId': id, 'name': ''});
+    final id = await db.insert("venues", {'name': name, 'uid': name});
+    await db.insert("cabinets", {'venueId': id, 'name': '', 'uid': '$name/'});
     return Venue(id, name);
   }
 
@@ -187,7 +194,13 @@ class DatabaseProvider {
 
   static Future<Cabinet> addCabinet(Venue venue, String name) async {
     final db = await _instance;
-    final id = await db.insert("cabinets", {'venueId': venue.id, 'name': name});
+    var uid = '${venue.name}/$name';
+    if ((await db.query("cabinets", where: "uid = ?", whereArgs: [uid]))
+        .isNotEmpty) {
+      uid += '#${const Uuid().v4()}';
+    }
+    final id = await db.insert(
+        "cabinets", {'venueId': venue.id, 'name': name, 'uid': uid});
     return Cabinet(id, venue.id, venue.name, name);
   }
 

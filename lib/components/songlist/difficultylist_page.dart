@@ -7,6 +7,7 @@ library;
 import 'dart:math' show max;
 import 'dart:ui' show ImageFilter;
 
+import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart'
@@ -263,6 +264,12 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     regenSongItems(songState.modes, songState.sortType);
   }
 
+  /// A cloud sync brought down scores, favourites or this list's settings.
+  void _onCloudPulled() {
+    _gridMode = Settings.getInt(Settings.songlistViewModeKey) == 1;
+    _onContentUpdated();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -272,11 +279,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     _songItemsPromise = Future<List<SongItem>>(() => generateSongItems(
         songState.modes, songState.sortType, songState.sortDescending));
     ContentStore.revision.addListener(_onContentUpdated);
+    CloudSync.pulled.addListener(_onCloudPulled);
   }
 
   @override
   void dispose() {
     ContentStore.revision.removeListener(_onContentUpdated);
+    CloudSync.pulled.removeListener(_onCloudPulled);
     _searchController.dispose();
     _searchBarFocus.dispose();
     super.dispose();

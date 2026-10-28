@@ -95,14 +95,19 @@ class EamuseSyncState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Another device's scores or profile arrived through cloud sync: views of
+  /// what a sync saved reload, as after one of ours.
+  Future<void> reloadSaved() async {
+    revision++;
+    await restore();
+  }
+
   /// [renewed]: the session was just renewed, by signing in or by
   /// [_signInSilently], so a signed-out answer means it really has to be
   /// signed into again.
   Future<void> sync({bool renewed = false}) async {
     // The sync after a sign-in carries on the one that needed it.
-    if (status == EamuseStatus.syncing ||
-        upToDate ||
-        (waiting && !renewed)) {
+    if (status == EamuseStatus.syncing || upToDate || (waiting && !renewed)) {
       return;
     }
     _holdOff(EamuseSync.cooldown);

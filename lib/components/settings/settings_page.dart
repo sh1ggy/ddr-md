@@ -10,6 +10,7 @@ import 'package:ddr_md/components/settings/footing_style_page.dart';
 import 'package:ddr_md/components/settings/score_overview_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -31,6 +32,13 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _loadPrefs();
+    CloudSync.pulled.addListener(_loadPrefs);
+  }
+
+  @override
+  void dispose() {
+    CloudSync.pulled.removeListener(_loadPrefs);
+    super.dispose();
   }
 
   /// Load the initial counter value from persistent storage on start,

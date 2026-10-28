@@ -11,7 +11,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '25 October 2026';
+const privacyUpdated = '26 October 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
@@ -19,11 +19,11 @@ const privacySections = <(String, List<String>)>[
   (
     'In Short',
     [
-      "DDR MD keeps everything on your device. There's no DDR MD account, "
-          "no ads, no analytics and no tracking, and nothing you save, type "
-          "or photograph is sent anywhere. It downloads song data, with "
-          'nothing about you attached, and, only if you link your '
-          'e-amusement account, your own scores from Konami.',
+      "DDR MD keeps everything on your device. There's no sign-in, no ads, "
+          'no analytics and no tracking, and nothing you save or type leaves '
+          'your device unless you turn on Cloud Backup. Photos never do. It '
+          'downloads song data, with nothing about you attached, and, only '
+          'if you link your e-amusement account, your own scores from Konami.',
     ]
   ),
   (
@@ -69,9 +69,29 @@ const privacySections = <(String, List<String>)>[
           'one page every few seconds. It saves your best score, rank, clear '
           'lamp, flare and max combo on each chart, each recent play\'s score, '
           'and your dancer name, rival code, play count and last play date on '
-          'your device. Nothing is sent to DDR MD or anyone else. Konami sees '
+          'your device. Nothing is sent to DDR MD or anyone else, unless '
+          'Cloud Backup (below) is on. Konami sees '
           "these requests as coming from your account, and Konami's own "
           'privacy policy applies to them.',
+      '- Cloud Backup (optional, off until you turn it on under Home → '
+          'Settings): copies your scores (saved and synced), sessions, '
+          'venues, cabinets and their timing, notes, favourites, hand-set '
+          'feet, snippets and settings to DDR MD\'s sync server (hosted on '
+          'Cloudflare), and brings back what your other devices saved. It '
+          'syncs when DDR MD opens, when you leave or return to it, and when '
+          'you tap Back up now. Score photos, timing offsets, your Konami '
+          'sign-in and e-amusement cookies are never sent. There is no '
+          'account: your backup is filed under a random key DDR MD makes on '
+          "first use, which only DDR MD on your devices knows. It's kept in "
+          "your iPhone's Keychain (iCloud Keychain carries it to your other "
+          'Apple devices) or in DDR MD\'s settings on Android (restored by '
+          'Google backup on a new phone). The server stores a one-way '
+          'fingerprint of that key, never the key itself, and your rival '
+          'code if DDR MD has one, so a backup can be recognised as yours. '
+          'Cloudflare sees your IP address and the time of each request. '
+          "DDR MD doesn't log them; to stop one network flooding the "
+          "server, it counts each day's backups against a one-way "
+          'fingerprint of the IP address, cleared the next day.',
       "- Links: the GitHub, LinkedIn and PayPal buttons, and the links under "
           "Credits, open in your browser, where those sites' own privacy "
           'policies apply.',
@@ -94,8 +114,12 @@ const privacySections = <(String, List<String>)>[
       'Notes, favourites and hand-set feet can be removed in the app. Sign '
           'out of e-amusement on Home deletes the Konami sign-in '
           'cookie. '
-          'Uninstalling DDR MD deletes everything it has stored, including '
-          "scores and their photos. Nothing is kept anywhere else, so there's "
+          'Uninstalling DDR MD deletes everything it has stored on your '
+          'device, including scores and their photos. With Cloud Backup on, '
+          'Delete cloud copy under Home → Settings removes everything on the '
+          'sync server straight away and turns backup off. Deleting a row '
+          'on your device deletes it from the backup at the next sync. '
+          "Without Cloud Backup nothing is kept anywhere else, so there's "
           'nothing for me to delete on your behalf.',
     ]
   ),

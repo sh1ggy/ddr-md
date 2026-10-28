@@ -224,13 +224,10 @@ Color flareClassColor(String name) => kFlareClassColors[_flarePlanet(name)];
 /// Icon for the flare rank as detected by OCR ([Score.flare]). Accepts the
 /// raw reading: an optional FLARE prefix, then a roman numeral I-IX, a digit,
 /// "EX", or "NONE" (see [resolveOcrFlare], which normalises 1/l misreads of I
-/// so "FLARE 1X" still correlates to flare_9). A blank/NONE reading gets the
-/// empty-slot icon; an unreadable one gets no icon.
+/// so "FLARE 1X" still correlates to flare_9). No flare or an unreadable
+/// reading gets no icon.
 String? flareIcon(String flare) {
   final rank = resolveOcrFlare(flare);
   if (rank != null) return flareRankIcon(rank);
-  var f = flare.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
-  if (f.startsWith('FLARE')) f = f.substring(5);
-  if (f.isEmpty || f == 'NONE' || f == '0') return 'assets/icons/icon_0.png';
   return null;
 }
