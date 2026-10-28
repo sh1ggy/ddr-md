@@ -529,6 +529,12 @@ class SessionsPage extends StatelessWidget {
           return ListView(
             padding: clearOfBars(context, const EdgeInsets.all(12)),
             children: [
+              ListTile(
+                  leading: const Icon(Icons.insights),
+                  title: const Text('Trends'),
+                  subtitle: const Text('Your progress over weeks'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/home/trends')),
               for (final v in data?.visits ?? <Visit>[])
                 VisitTile(v, model: data!.model),
             ],
