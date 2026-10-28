@@ -4,15 +4,18 @@
 /// Home keeps running while the player moves around the app. Each sync reads
 /// the recent plays page first and fetches only what [planEamuseSync] says it
 /// needs, keeps every listed play in [DatabaseProvider.saveRecentPlays], and
-/// refreshes the player's profile when anything was played. A tap while a
-/// sync runs, within [EamuseSync.cooldown] of the last one starting, or
-/// within [EamuseSync.backoff] of Konami refusing one, does nothing, and only
-/// charts whose best changed are written.
+/// refreshes the player's profile when anything was played. A walk of every
+/// page that stops part way carries on from where it stopped next time. A tap
+/// while a sync runs, within [EamuseSync.cooldown] of the last one starting,
+/// or within [EamuseSync.backoff] of Konami refusing one, does nothing, and
+/// only charts whose best changed are written.
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' as io;
 
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -45,6 +48,40 @@ class EamuseSyncState extends ChangeNotifier {
 
   DateTime? get syncedAt =>
       DateTime.tryParse(Settings.getString(Settings.eamuseSyncedAtKey));
+
+  static bool get syncDoubles =>
+      Settings.getInt(Settings.eamuseSkipDoublesKey) == 0;
+
+  static List<Modes> get _styles =>
+      [Modes.singles, if (syncDoubles) Modes.doubles];
+
+  /// Turning doubles on after a sync reads its pages on the next one.
+  static Future<void> setSyncDoubles(bool on) async {
+    await Settings.setInt(Settings.eamuseSkipDoublesKey, on ? 0 : 1);
+    final lastPlay = Settings.getString(Settings.eamuseLastPlayKey);
+    if (on && _walk == null && lastPlay.isNotEmpty) {
+      await _keepWalk((mode: Modes.doubles, page: 0), lastPlay);
+    }
+  }
+
+  static ({EamuseWalk at, String since})? get _walk {
+    final text = Settings.getString(Settings.eamuseWalkKey);
+    if (text.isEmpty) return null;
+    final json = jsonDecode(text);
+    return (
+      at: (mode: Modes.values.byName(json['mode']), page: json['page'] as int),
+      since: json['since'] as String,
+    );
+  }
+
+  static Future<void> _keepWalk(
+          EamuseWalk? at, String since) =>
+      Settings.setString(
+          Settings.eamuseWalkKey,
+          at == null
+              ? ''
+              : jsonEncode(
+                  {'mode': at.mode.name, 'page': at.page, 'since': since}));
 
   /// Within the cooldown of the last sync, unless that sync kept no plays
   /// (one from before plays were kept), which leaves Home with nothing to show.
@@ -171,8 +208,24 @@ class EamuseSyncState extends ChangeNotifier {
               : at == null
                   ? null
                   : eamuseTimeText(at);
-      final plan = planEamuseSync(plays, since, EamuseSync.recentSize);
+      // Plays since an unfinished walk began may be on pages it already
+      // read; if too many to list, it starts over.
+      final walk = _walk;
+      final missed = walk == null
+          ? null
+          : planEamuseSync(plays, walk.since, EamuseSync.recentSize);
+      final resume = missed != null && missed is! EamuseFullSync;
+      final plan = resume
+          ? EamuseFullSync()
+          : planEamuseSync(plays, since, EamuseSync.recentSize);
+      final styles = _styles;
+      List<EamusePlay> wanted(List<EamusePlay> charts) => [
+            for (final p in charts)
+              if (styles.contains(p.mode)) p
+          ];
       note = switch (plan) {
+        EamuseFullSync() when resume =>
+          'Resuming from ${walk!.at.mode.name} page ${walk.at.page + 1}',
         EamuseFullSync() when stored.isEmpty =>
           'First sync: reading every chart',
         EamuseFullSync() when since == null =>
@@ -194,15 +247,30 @@ class EamuseSyncState extends ChangeNotifier {
       }
       switch (plan) {
         case EamuseFullSync():
-          await sync.run(onProgress);
+          final walkSince = resume
+              ? walk!.since
+              : plays.isEmpty
+                  ? eamuseTimeText(DateTime.now())
+                  : plays.first.playedAt;
+          await sync.run(onProgress,
+              styles: styles,
+              from: resume ? walk!.at : null,
+              onPage: (next) => _keepWalk(next, walkSince));
+          if (missed case EamuseRecentSync(:final charts)
+              when resume && !sync.cancelled) {
+            await sync.details(wanted(charts), onProgress);
+          }
         case EamuseRecentSync(:final charts):
-          await sync.details(charts, onProgress);
+          await sync.details(wanted(charts), onProgress);
         case EamuseNothingNew():
           break;
       }
       if (!sync.cancelled) {
         await Settings.setString(
             Settings.eamuseSyncedAtKey, DateTime.now().toIso8601String());
+        // Lets the sync button back once [upToDate] lapses.
+        _wake?.cancel();
+        _wake = Timer(EamuseSync.cooldown, notifyListeners);
         if (plays.isNotEmpty) {
           await Settings.setString(
               Settings.eamuseLastPlayKey, plays.first.playedAt);
@@ -221,6 +289,7 @@ class EamuseSyncState extends ChangeNotifier {
       error = 'Sync failed';
       debugPrint('e-amusement sync failed: $e');
     }
+    sync.close();
     _sync = null;
     changed = changedNow;
     revision++;
@@ -320,6 +389,7 @@ class EamuseSyncState extends ChangeNotifier {
     await Settings.setString(Settings.eamuseSyncedAtKey, '');
     // Another account may sign in next, so its first sync walks every page.
     await Settings.setString(Settings.eamuseLastPlayKey, '');
+    await Settings.setString(Settings.eamuseWalkKey, '');
     status = EamuseStatus.signedOut;
     notifyListeners();
   }
