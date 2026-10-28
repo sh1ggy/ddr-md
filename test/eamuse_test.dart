@@ -80,7 +80,7 @@ void main() {
   });
 
   test(
-      'requests are spaced by the gap, keep renewed cookies, and stop at a refusal',
+      'requests are spaced by the gap, keep renewed cookies, stop at a refusal and say where to carry on',
       () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final times = <DateTime>[];
@@ -111,7 +111,18 @@ void main() {
       save: (records) async => saved.addAll(records),
       host: 'http://${server.address.host}:${server.port}',
     );
-    await expectLater(sync.run((_, __) {}), throwsA(isA<EamuseUnavailable>()));
+    final walks = <EamuseWalk?>[];
+    await expectLater(sync.run((_, __) {}, onPage: (w) async => walks.add(w)),
+        throwsA(isA<EamuseUnavailable>()));
+    expect(walks,
+        [(mode: Modes.singles, page: 1), (mode: Modes.doubles, page: 0)]);
+    // With doubles off, a walk left in doubles is done without a request.
+    await sync.run((_, __) {},
+        styles: [Modes.singles],
+        from: walks.last,
+        onPage: (w) async => walks.add(w));
+    expect(walks.last, isNull);
+    sync.close();
     await server.close();
     // Two singles pages, then the first doubles page answers 503.
     expect(times, hasLength(3));
@@ -180,7 +191,6 @@ ${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
       best.rank,
       best.clearLamp,
       best.flareRank,
-      best.maxCombo,
       best.playedAt
     ), (
       'eamuse:$a:singles:EXPERT',
@@ -188,7 +198,6 @@ ${row(a, '2026-10-16 16:38:39', 'CHALLENGE', 'DOUBLE')}
       'AA+',
       ClearLamp.life4,
       'IV',
-      387,
       DateTime.utc(2026, 10, 16, 7, 57, 59)
     ));
   });

@@ -1,8 +1,8 @@
 /// Name: AppSettingsPage
 /// Parent: SessionPage
 /// Description: Settings, opened from Home's gear: check for song updates,
-/// turn on cloud backup, read the privacy notes and credits, and the app
-/// version with links.
+/// turn on cloud backup, choose whether e-amusement syncs doubles, read the
+/// privacy notes and credits, and the app version with links.
 library;
 
 import 'package:ddr_md/components/session/recent_plays.dart';
@@ -13,6 +13,7 @@ import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -43,6 +44,7 @@ class AppSettingsPage extends StatelessWidget {
                     children: [
                       const Card(child: _ContentTile()),
                       const Card(child: _CloudTile()),
+                      const Card(child: _SyncDoublesTile()),
                       Card(
                         child: ListTile(
                           title: const Text("Privacy",
@@ -111,6 +113,29 @@ class AppSettingsPage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SyncDoublesTile extends StatefulWidget {
+  const _SyncDoublesTile();
+
+  @override
+  State<_SyncDoublesTile> createState() => _SyncDoublesTileState();
+}
+
+class _SyncDoublesTileState extends State<_SyncDoublesTile> {
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      title: const Text("Sync Doubles",
+          style: TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: const Text("Include doubles in e-amusement syncs"),
+      value: EamuseSyncState.syncDoubles,
+      onChanged: (on) async {
+        await EamuseSyncState.setSyncDoubles(on);
+        if (mounted) setState(() {});
+      },
     );
   }
 }
