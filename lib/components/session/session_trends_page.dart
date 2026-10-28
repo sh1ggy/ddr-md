@@ -1,10 +1,9 @@
 /// Name: SessionTrendsPage
 /// Parent: SessionPage, SessionsPage
 /// Description: Browse score and timing trends by week, fortnight or month,
-/// with chart, level, mode and cabinet filters and like-for-like comparisons.
+/// with chart, level, mode and cabinet filters and level-based comparisons.
 library;
 
-import 'dart:math' as math;
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -83,6 +82,13 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         update();
         _selected = null;
       });
+
+  void _movePeriod(int amount) {
+    final window = TrendWindow.containing(_anchor, _range);
+    final next = window.shift(amount);
+    if (next.start.isAfter(widget.now ?? DateTime.now())) return;
+    _change(() => _anchor = next.start);
+  }
 
   Future<void> _pickChart() async {
     final charts = {
@@ -170,9 +176,6 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         .toList();
     final chartTitle = widget.plays.where((p) => p.chart == _chart).firstOrNull;
     final selected = _selected == null ? null : summary.samples[_selected!];
-    final first = widget.plays
-        .map((p) => p.play.playedAt)
-        .fold<DateTime?>(null, (a, b) => a == null || b.isBefore(a) ? b : a);
     return ListView(
       padding: clearOfBars(context, const EdgeInsets.all(16)),
       children: [
@@ -182,32 +185,36 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
           selected: _range,
           onChanged: (range) => _change(() => _range = range),
         ),
-        const SizedBox(height: 12),
-        Row(children: [
-          IconButton(
-              tooltip: 'Previous period',
-              icon: const Icon(Icons.chevron_left),
-              onPressed: first == null || !first.isBefore(window.start)
-                  ? null
-                  : () => _change(() => _anchor = window.shift(-1).start)),
-          Expanded(
-              child: Text('${date(window.start)} – ${date(end)}',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleSmall)),
-          IconButton(
-              tooltip: 'Next period',
-              icon: const Icon(Icons.chevron_right),
-              onPressed: !window.end.isBefore(now)
-                  ? null
-                  : () => _change(() => _anchor = window.shift(1).start)),
-        ]),
-        if (!window.contains(now))
-          Align(
-              alignment: Alignment.center,
-              child: TextButton(
-                  onPressed: () => _change(() => _anchor = now),
-                  child: const Text('Today'))),
-        BeatIn(child: _hero(summary, selected)),
+        _PeriodSwipe(
+            onMove: _movePeriod,
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    IconButton(
+                        tooltip: 'Previous period',
+                        icon: const Icon(Icons.chevron_left),
+                        onPressed: () => _movePeriod(-1)),
+                    Expanded(
+                        child: Text('${date(window.start)} – ${date(end)}',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.titleSmall)),
+                    IconButton(
+                        tooltip: 'Next period',
+                        icon: const Icon(Icons.chevron_right),
+                        onPressed: !window.end.isBefore(now)
+                            ? null
+                            : () => _movePeriod(1)),
+                  ]),
+                  if (!window.contains(now))
+                    Align(
+                        alignment: Alignment.center,
+                        child: TextButton(
+                            onPressed: () => _change(() => _anchor = now),
+                            child: const Text('Today'))),
+                  BeatIn(child: _hero(summary, selected)),
+                ])),
         const SizedBox(height: 16),
         Text('Focus', style: Theme.of(context).textTheme.titleMedium),
         Wrap(spacing: 12, runSpacing: 4, children: [
@@ -292,8 +299,8 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     );
   }
 
-  String _format(double value, {bool signed = false}) =>
-      '${signed && value >= 0 ? '+' : ''}${_metric == TrendMetric.score ? value.round() : value.toStringAsFixed(1)}${_metric == TrendMetric.timing ? ' ms' : ' pts'}';
+  String _format(double value) =>
+      '${_metric == TrendMetric.score ? formatScore(value.round()) : value.toStringAsFixed(1)}${_metric == TrendMetric.timing ? ' ms' : ' pts'}';
 
   Widget _picker<T>(String label, T? value, Map<T, String> choices,
           ValueChanged<T?> onChanged) =>
@@ -316,37 +323,21 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
   Widget _hero(TrendSummary summary, TrendSample? selected) {
     final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final delta = summary.comparison;
     final score = _metric == TrendMetric.score;
-    final colour = selected != null && selected.value != null
-        ? score
-            ? (selected.value! >= 0 ? pop.up : pop.down)
-            : FloorPop.grape
-        : delta == null || delta == 0
-            ? pop.voltText
-            : delta > 0
-                ? pop.up
-                : pop.down;
-    final status = selected != null
-        ? 'DAY DETAIL'
-        : delta == null
-            ? 'BUILDING'
-            : delta == 0
-                ? 'STEADY'
-                : delta > 0
-                    ? 'IMPROVING'
-                    : 'BELOW PRIOR';
-    final value = selected?.value ?? delta;
+    final colour = score ? scheme.primary : FloorPop.grape;
+    final status = selected != null ? 'DAY DETAIL' : 'AVERAGE';
+    final value = selected == null ? summary.average : selected.value;
+    final observations = selected?.observations ?? summary.observations;
     final number = value == null
         ? '—'
         : score
-            ? '${value >= 0 ? '+' : '−'}${formatScore(value.abs().round())}'
-            : '${selected == null && value > 0 ? '−' : selected == null && value < 0 ? '+' : ''}${value.abs().toStringAsFixed(1)}';
+            ? formatScore(value.round())
+            : value.toStringAsFixed(1);
     final caption = selected != null
         ? MaterialLocalizations.of(context)
             .formatMediumDate(selected.day)
             .toUpperCase()
-        : 'VS PREVIOUS ${_range == TrendRange.week ? 'WEEK' : _range == TrendRange.fortnight ? 'FORTNIGHT' : 'MONTH'}';
+        : 'THIS ${_range == TrendRange.week ? 'WEEK' : _range == TrendRange.fortnight ? 'FORTNIGHT' : 'MONTH'}';
     final hasData = summary.samples.any((s) => s.value != null);
     return Material(
       color: pop.stage,
@@ -371,14 +362,8 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                       color: colour.withValues(alpha: .12),
                       borderRadius: BorderRadius.circular(8)),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(
-                        delta != null && delta > 0
-                            ? Icons.north_east
-                            : delta != null && delta < 0
-                                ? Icons.south_east
-                                : Icons.insights,
-                        size: 14,
-                        color: colour),
+                    Icon(score ? Icons.bar_chart : Icons.graphic_eq,
+                        size: 14, color: colour),
                     const SizedBox(width: 5),
                     Text(status,
                         style: pop.label.copyWith(
@@ -386,23 +371,28 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                   ])),
             ]),
             const SizedBox(height: 14),
-            Align(
-                alignment: Alignment.centerLeft,
-                child: BeatSwap(
-                    child: Text(number,
-                        key: ValueKey((_metric, _selected, number)),
-                        style: FloorPop.readout(46, color: colour)))),
+            Semantics(
+                container: true,
+                excludeSemantics: true,
+                label:
+                    '${score ? 'Average score' : 'Average timing variation'}: $number',
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: BeatSwap(
+                        child: Text(number,
+                            key: ValueKey((_metric, _selected, number)),
+                            style: FloorPop.readout(46, color: colour))))),
             const SizedBox(height: 4),
-            Text('${score ? 'POINTS' : 'MS VARIATION'} · $caption',
+            Text(
+                '${score ? 'AVERAGE SCORE' : 'AVERAGE VARIATION · MS'} · $caption',
                 style: pop.label.copyWith(fontSize: 9, letterSpacing: .8)),
             const SizedBox(height: 7),
-            Text(
-                selected != null
-                    ? '${selected.plays} plays · ${score ? 'score vs chart reference' : 'lower is tighter'}'
-                    : delta == null
-                        ? 'Repeat a chart across periods to compare.'
-                        : '${summary.comparedCharts} shared charts · compared like for like',
+            Text('$observations ${score ? 'cleared plays' : 'timed plays'}',
                 style: TextStyle(fontSize: 11, color: pop.haze)),
+            if (selected == null) ...[
+              const SizedBox(height: 12),
+              _comparison(summary),
+            ],
             if (selected != null)
               Align(
                   alignment: Alignment.centerLeft,
@@ -422,7 +412,10 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
             child: Column(children: [
               if (hasData)
-                SizedBox(height: 180, child: _plot(summary, scheme))
+                SizedBox(
+                    key: const ValueKey('trend-plot'),
+                    height: 180,
+                    child: _plot(summary, scheme))
               else
                 SizedBox(
                     height: 144,
@@ -436,7 +429,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                           summary.current.isEmpty
                               ? 'No plays in this period with these filters.'
                               : score
-                                  ? 'Play these charts on another day to start a trend.'
+                                  ? 'No cleared scores in this period.'
                                   : 'Log result-screen timing to track consistency.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: pop.haze, fontSize: 12)),
@@ -447,12 +440,10 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
               ],
               const SizedBox(height: 10),
               Row(children: [
-                _legend(score ? pop.up : FloorPop.grape,
-                    score ? 'Above reference' : 'Variation · ms'),
-                const SizedBox(width: 14),
-                if (score) _legend(pop.down, 'Below'),
+                _legend(score ? scheme.primary : FloorPop.grape,
+                    score ? 'Daily average score' : 'Variation · ms'),
                 const Spacer(),
-                Text(score ? 'HIGHER ↑' : 'LOWER ↓',
+                Text('SWIPE TO BROWSE',
                     style: pop.label.copyWith(fontSize: 8, letterSpacing: .6)),
               ]),
               const SizedBox(height: 18),
@@ -486,12 +477,56 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                     children: [
                       Text(
                           score
-                              ? 'Daily score vs earlier averages on the same charts. New repeated charts use their first day as zero. Failed plays are excluded. A good set meets or beats its earlier chart averages.'
-                              : 'Daily timing variation in ms. Lower is more consistent, even when scores stay flat. Only logged timing counts. Good sets are measured using cleared scores.',
+                              ? 'The headline and bars show actual average cleared scores. Song choice affects those averages. Relative performance compares the same level and mode across periods, even on different songs, with equal weight per shared level. SP and DP stay separate. A good set meets or beats earlier averages at its levels. Unknown levels are left out of comparisons.'
+                              : 'Daily average timing variation in ms; lower is more consistent. Period comparisons use the same level and mode across periods, even on different songs. Only logged timing counts. Good sets use cleared scores against earlier averages at the same levels.',
                           style: TextStyle(fontSize: 11, color: pop.haze))
                     ],
                   )),
             ])),
+      ]),
+    );
+  }
+
+  Widget _comparison(TrendSummary summary) {
+    final pop = FloorPop.of(context);
+    final score = _metric == TrendMetric.score;
+    final delta = summary.comparison;
+    final previous = _range == TrendRange.week
+        ? 'week'
+        : _range == TrendRange.fortnight
+            ? 'fortnight'
+            : 'month';
+    if (delta == null) {
+      return Text('No previous-$previous comparison at these levels yet.',
+          style: TextStyle(fontSize: 11, color: pop.haze));
+    }
+    final colour = delta == 0
+        ? pop.haze
+        : delta > 0
+            ? pop.up
+            : pop.down;
+    final rawChange = score ? delta : -delta;
+    final change =
+        '${rawChange < 0 ? '−' : '+'}${score ? formatScore(rawChange.abs().round()) : rawChange.abs().toStringAsFixed(1)} ${score ? 'pts' : 'ms'}';
+    final label = summary.levels.length == 1 ? 'level' : 'levels';
+    return Container(
+      key: const ValueKey('trend-comparison'),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+          color: colour.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(10)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('$change vs previous $previous',
+            style: TextStyle(
+                color: colour, fontSize: 13, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text(
+            '${summary.levels.length} matching $label · ${summary.levels.map((l) => l.label).join(', ')}',
+            style: TextStyle(fontSize: 10, color: pop.haze)),
+        const SizedBox(height: 4),
+        Text(
+            'Level-matched averages: ${_format(summary.comparedPrevious!)} → ${_format(summary.comparedCurrent!)}',
+            style: TextStyle(fontSize: 10, color: pop.haze)),
       ]),
     );
   }
@@ -503,13 +538,13 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         Expanded(
             child: Tooltip(
           message:
-              '${MaterialLocalizations.of(context).formatMediumDate(sample.day)} · ${sample.value == null ? 'No comparable data' : _format(sample.value!, signed: _metric == TrendMetric.score)}',
+              '${MaterialLocalizations.of(context).formatMediumDate(sample.day)} · ${sample.value == null ? 'No comparable data' : _format(sample.value!)}',
           child: Semantics(
             key: ValueKey('trend-day-$i'),
             button: sample.value != null,
             selected: _selected == i,
             label:
-                '${MaterialLocalizations.of(context).formatMediumDate(sample.day)}: ${sample.value == null ? 'no comparable data' : _format(sample.value!, signed: _metric == TrendMetric.score)}',
+                '${MaterialLocalizations.of(context).formatMediumDate(sample.day)}: ${sample.value == null ? 'no comparable data' : _format(sample.value!)}',
             child: InkWell(
               onTap: sample.value == null
                   ? null
@@ -523,9 +558,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                         ? pop.riser
                         : (_metric == TrendMetric.timing
                                 ? FloorPop.grape
-                                : sample.value! >= 0
-                                    ? pop.up
-                                    : pop.down)
+                                : Theme.of(context).colorScheme.primary)
                             .withValues(alpha: .65),
                     border: _selected == i
                         ? Border.all(
@@ -576,43 +609,31 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     final score = _metric == TrendMetric.score;
     final samples = summary.samples;
     final values = samples.map((s) => s.value).whereType<double>().toList();
-    final low = values.reduce(math.min), high = values.reduce(math.max);
-    final pad = math.max(score ? 1000.0 : 1.0, (high - low) * .2);
-    final span =
-        math.max(1.0, high + pad - (score ? math.min(0.0, low - pad) : 0.0));
-    final magnitude =
-        math.pow(10, (math.log(span / 4) / math.ln10).floor()).toDouble();
-    final step =
-        [1, 2, 5, 10].firstWhere((n) => n * magnitude >= span / 4) * magnitude;
-    final minY = score ? (math.min(0.0, low - pad) / step).floor() * step : 0.0;
-    final maxY = (math.max(0.0, high + pad) / step).ceil() * step;
+    final axis = TrendAxis.forValues(values,
+        minimumPadding: score ? 1000 : 1,
+        floor: 0,
+        ceiling: score ? 1000000 : null);
     String tick(double value) => score
         ? value == 0
             ? '0'
-            : step < 1000
+            : axis.step < 1000
                 ? formatScore(value.round())
-                : '${value < 0 ? '−' : ''}${(value.abs() / 1000).round()}k'
-        : value.toStringAsFixed(step < 1 ? 1 : 0);
+                : '${(value / 1000).round()}k'
+        : value.toStringAsFixed(axis.step < 1 ? 1 : 0);
     return LayoutBuilder(
         builder: (context, box) => BarChart(
+            key: ValueKey(
+                (_metric, samples.first.day, axis.min, axis.max, axis.step)),
             BarChartData(
-              minY: minY,
-              maxY: maxY,
+              minY: axis.min,
+              maxY: axis.max,
               alignment: BarChartAlignment.spaceAround,
               borderData: FlBorderData(show: false),
               gridData: FlGridData(
                   drawVerticalLine: false,
-                  horizontalInterval: step,
+                  horizontalInterval: axis.step,
                   getDrawingHorizontalLine: (value) => FlLine(
                       color: pop.line.withValues(alpha: .6), strokeWidth: 1)),
-              extraLinesData: ExtraLinesData(horizontalLines: [
-                if (score)
-                  HorizontalLine(
-                      y: 0,
-                      color: pop.haze.withValues(alpha: .7),
-                      strokeWidth: 1,
-                      dashArray: [3, 4])
-              ]),
               titlesData: FlTitlesData(
                 topTitles:
                     const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -621,8 +642,8 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                 leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                         showTitles: true,
-                        reservedSize: 32,
-                        interval: step,
+                        reservedSize: 48,
+                        interval: axis.step,
                         getTitlesWidget: (value, meta) => Text(tick(value),
                             style: TextStyle(fontSize: 9, color: pop.haze)))),
                 bottomTitles: AxisTitles(
@@ -661,7 +682,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                           null
                       ? null
                       : BarTooltipItem(
-                          '${MaterialLocalizations.of(context).formatMediumDate(samples[group.x].day)}\n${_format(rod.toY, signed: score)}',
+                          '${MaterialLocalizations.of(context).formatMediumDate(samples[group.x].day)}\n${_format(rod.toY)}',
                           TextStyle(
                               color: scheme.onSurface,
                               fontWeight: FontWeight.w600)),
@@ -677,27 +698,18 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                 for (var i = 0; i < samples.length; i++)
                   BarChartGroupData(x: i, barRods: [
                     BarChartRodData(
-                      toY: samples[i].value ?? 0,
-                      width: ((box.maxWidth - 32) / samples.length * .58)
+                      fromY: axis.min,
+                      toY: samples[i].value ?? axis.min,
+                      width: ((box.maxWidth - 48) / samples.length * .58)
                           .clamp(3.0, 24.0),
                       borderRadius: BorderRadius.circular(4),
                       gradient: LinearGradient(
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                           colors: [
-                            (score
-                                    ? samples[i].value != null &&
-                                            samples[i].value! < 0
-                                        ? pop.down
-                                        : pop.up
-                                    : FloorPop.grape)
+                            (score ? scheme.primary : FloorPop.grape)
                                 .withValues(alpha: .45),
-                            score
-                                ? samples[i].value != null &&
-                                        samples[i].value! < 0
-                                    ? pop.down
-                                    : pop.up
-                                : FloorPop.grape,
+                            score ? scheme.primary : FloorPop.grape,
                           ]),
                       borderSide: _selected == i
                           ? BorderSide(color: scheme.onSurface, width: 1.5)
@@ -708,4 +720,51 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
             ),
             swapAnimationDuration: FloorPop.eighth));
   }
+}
+
+/// Observes swipes without competing with the chart's own pan recognizer or
+/// the surrounding vertical list. A horizontal swipe moves exactly one period.
+class _PeriodSwipe extends StatefulWidget {
+  const _PeriodSwipe({required this.onMove, required this.child});
+  final ValueChanged<int> onMove;
+  final Widget child;
+  @override
+  State<_PeriodSwipe> createState() => _PeriodSwipeState();
+}
+
+class _PeriodSwipeState extends State<_PeriodSwipe> {
+  int? _pointer;
+  Offset? _start, _last;
+  @override
+  Widget build(BuildContext context) => Listener(
+        key: const ValueKey('trend-period-swipe'),
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (e) {
+          if (_pointer != null) {
+            _start = null;
+            return;
+          }
+          _pointer = e.pointer;
+          _start = _last = e.position;
+        },
+        onPointerMove: (e) {
+          if (e.pointer == _pointer) _last = e.position;
+        },
+        onPointerCancel: (e) {
+          _pointer = null;
+          _start = null;
+        },
+        onPointerUp: (e) {
+          if (e.pointer != _pointer) return;
+          final start = _start, last = _last;
+          _pointer = null;
+          _start = null;
+          if (start == null || last == null) return;
+          final delta = last - start;
+          if (delta.dx.abs() >= 60 && delta.dx.abs() > delta.dy.abs() * 1.5) {
+            widget.onMove(delta.dx > 0 ? -1 : 1);
+          }
+        },
+        child: widget.child,
+      );
 }
