@@ -358,10 +358,6 @@ class _SongPageState extends State<SongPage> {
             isBpmChange: _isBpmChange,
             chart: _chart);
       case SongSection.sync:
-        // Gated on what the card actually displays, not on the simfile block
-        // alone — a song carrying only the cabinet fingerprint still has an
-        // offset to recommend.
-        if (songInfo.displaySyncFor(_chart) == null) return null;
         return SongSyncChart(songInfo: songInfo, chart: _chart);
       case SongSection.playerSync:
         final available = (songState.modes == Modes.singles

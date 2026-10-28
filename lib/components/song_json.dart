@@ -249,6 +249,10 @@ class Chart {
 /// [biasMs]. Positive bias: the audio attack lands after the charted beat.
 class Sync {
   double biasMs;
+
+  /// Neutral at the displayed tenth-of-a-millisecond precision, matching the
+  /// chart preview's on-the-beat reading.
+  bool get isOnSync => biasMs.abs() < 0.05;
   double confidence;
   double curveStartMs;
   double curveStepMs;
