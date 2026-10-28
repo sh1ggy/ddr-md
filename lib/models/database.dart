@@ -69,10 +69,19 @@ class DatabaseProvider {
     await _createScoreRecords(db);
     await db.execute(_recentPlaysDdl);
     await _addRecentPlayFailed(db);
+    await _addRecentPlayOrder(db);
   }
 
   static Future<void> _addRecentPlayFailed(Database db) => db.execute(
       'ALTER TABLE recent_plays ADD COLUMN failed INT NOT NULL DEFAULT 0');
+
+  // v16: preserve the scraped order when several plays share a timestamp.
+  static Future<void> _addRecentPlayOrder(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(recent_plays)');
+    if (columns.any((c) => c['name'] == 'syncOrder')) return;
+    await db.execute(
+        'ALTER TABLE recent_plays ADD COLUMN syncOrder INTEGER NOT NULL DEFAULT 0');
+  }
 
   static Future<void> _createScoreRecords(Database db) async {
     await db.execute(_scoreRecordsDdl);
@@ -120,7 +129,7 @@ class DatabaseProvider {
 
   static Future<Database> getDatabaseInstance() async {
     String path = join(await getDatabasesPath(), _dbName);
-    return await openDatabase(path, version: 14, onCreate: (db, version) async {
+    return await openDatabase(path, version: 16, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -146,6 +155,7 @@ class DatabaseProvider {
       if (oldVersion < 13) await db.execute(_recentPlaysDdl);
       // Before v6 the schema was just made whole, column included.
       if (oldVersion >= 6 && oldVersion < 14) await _addRecentPlayFailed(db);
+      if (oldVersion >= 6 && oldVersion < 16) await _addRecentPlayOrder(db);
     });
   }
 
@@ -486,22 +496,29 @@ class DatabaseProvider {
   }
 
   // -- RECENT PLAY FUNCTIONS
-  // Replaces by play, so a later sync can fill in a song match.
+  // [plays] is in scraped order, newest first. Replaces by play, so a later
+  // sync can fill in a song match and refresh the order of tied timestamps.
   static Future<void> saveRecentPlays(List<RecentPlay> plays) async {
     final db = await _instance;
-    final batch = db.batch();
-    for (final p in plays) {
-      batch.insert("recent_plays", p.toMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    if (plays.isEmpty) return;
+    await db.transaction((txn) async {
+      final newest = Sqflite.firstIntValue(await txn.rawQuery(
+              'SELECT COALESCE(MAX(syncOrder), 0) FROM recent_plays'))! +
+          plays.length;
+      final batch = txn.batch();
+      for (final (i, p) in plays.indexed) {
+        batch.insert("recent_plays", {...p.toMap(), 'syncOrder': newest - i},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   // Newest first.
   static Future<List<RecentPlay>> getRecentPlays({int? limit}) async {
     final db = await _instance;
-    final rows =
-        await db.query("recent_plays", orderBy: "playedAt DESC", limit: limit);
+    final rows = await db.query("recent_plays",
+        orderBy: "playedAt DESC, syncOrder DESC, rowid ASC", limit: limit);
     return [for (final r in rows) RecentPlay.fromMap(r)];
   }
 
