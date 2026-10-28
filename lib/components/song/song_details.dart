@@ -85,38 +85,57 @@ class SongDetails extends StatelessWidget {
     final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 14, height: 1.3, color: pop.haze);
+    final scroll = Scrollable.maybeOf(context)?.position;
     return Stack(
+      // The artwork extends into the space revealed by a pull past the top.
+      clipBehavior: Clip.none,
       children: [
         Positioned.fill(
-          child: ExcludeSemantics(
-            child: IgnorePointer(
-              child: ClipRect(
-                child: Stack(fit: StackFit.expand, children: [
-                  ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-                    child: SongArtwork(
-                        songName: songInfo.name, title: songInfo.title),
+          child: LayoutBuilder(
+            builder: (context, constraints) => AnimatedBuilder(
+              animation: scroll ?? const AlwaysStoppedAnimation(0.0),
+              // Stretch only the paint: relaying out the scroll content while
+              // overscrolled would make its viewport reset the scroll offset.
+              builder: (context, child) => Transform.scale(
+                alignment: Alignment.bottomCenter,
+                scaleY: 1 +
+                    (scroll != null && scroll.hasPixels && scroll.pixels < 0
+                            ? -scroll.pixels
+                            : 0) /
+                        constraints.maxHeight,
+                child: child,
+              ),
+              child: ExcludeSemantics(
+                child: IgnorePointer(
+                  child: ClipRect(
+                    child: Stack(fit: StackFit.expand, children: [
+                      ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: 36, sigmaY: 36),
+                        child: SongArtwork(
+                            songName: songInfo.name, title: songInfo.title),
+                      ),
+                      DecoratedBox(
+                          decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            pop.ink.withValues(alpha: 0.66),
+                            pop.ink.withValues(alpha: 0.82),
+                            pop.ink
+                          ],
+                          stops: const [0, 0.65, 1],
+                        ),
+                      )),
+                      DecoratedBox(decoration: pop.stripes()),
+                    ]),
                   ),
-                  DecoratedBox(
-                      decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        pop.ink.withValues(alpha: 0.66),
-                        pop.ink.withValues(alpha: 0.82),
-                        pop.ink
-                      ],
-                      stops: const [0, 0.65, 1],
-                    ),
-                  )),
-                ]),
+                ),
               ),
             ),
           ),
         ),
-        Container(
-          decoration: pop.stripes(),
+        Padding(
           // The page's header buttons float over this, so it starts under them.
           padding: EdgeInsets.fromLTRB(
               20, MediaQuery.paddingOf(context).top + 4, 20, 14),

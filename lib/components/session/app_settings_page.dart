@@ -20,6 +20,17 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// Paragraphs at the bottom of Settings: the case for the real thing.
+const arcadeSupport = [
+  'DanceDanceRevolution is made by Konami, and DDR MD is only a study '
+      'companion to it. None of this exists without the cabinets.',
+  'Play at your local arcade, on official machines, with your own '
+      'e-amusement pass. Arcades keep their DDR cabinets because people put '
+      'credits in them, so play often, bring friends, and let the staff know '
+      'you want the machine to stay. Supporting the official game is what '
+      'keeps new versions, songs and charts coming.',
+];
+
 class AppSettingsPage extends StatelessWidget {
   const AppSettingsPage({super.key});
 
@@ -47,6 +58,7 @@ class AppSettingsPage extends StatelessWidget {
                       const Card(child: _SyncDoublesTile()),
                       Card(
                         child: ListTile(
+                          leading: const Icon(Icons.privacy_tip_outlined),
                           title: const Text("Privacy",
                               style: TextStyle(fontWeight: FontWeight.w600)),
                           trailing: const Icon(Icons.chevron_right),
@@ -57,14 +69,32 @@ class AppSettingsPage extends StatelessWidget {
                       ),
                       Card(
                         child: ListTile(
+                          leading: const Icon(Icons.favorite_outline),
                           title: const Text("Credits",
                               style: TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle:
-                              const Text("Inspiration, thanks and arcades"),
+                          subtitle: const Text("Inspiration and thanks"),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
                                   builder: (_) => const CreditsPage())),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Support Your Local Arcade',
+                                style: Theme.of(context).textTheme.titleMedium),
+                            const SizedBox(height: 8),
+                            for (final paragraph in arcadeSupport)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(paragraph,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall),
+                              ),
+                          ],
                         ),
                       ),
                     ],
@@ -128,6 +158,7 @@ class _SyncDoublesTileState extends State<_SyncDoublesTile> {
   @override
   Widget build(BuildContext context) {
     return SwitchListTile(
+      secondary: const Icon(Icons.people_outline),
       title: const Text("Sync Doubles",
           style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: const Text("Include doubles in e-amusement syncs"),
@@ -182,6 +213,7 @@ class _ContentTileState extends State<_ContentTile> {
       subtitle = "New songs and chart fixes";
     }
     return ListTile(
+      leading: const Icon(Icons.library_music_outlined),
       title: const Text("Song Updates",
           style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle),
@@ -266,6 +298,7 @@ class _CloudTileState extends State<_CloudTile> {
         return Column(
           children: [
             SwitchListTile(
+              secondary: const Icon(Icons.cloud_outlined),
               title: const Text("Cloud Backup",
                   style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(subtitle),

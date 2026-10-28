@@ -113,6 +113,42 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
+    testWidgets('artwork fills the top during overscroll / $brightness',
+        (tester) async {
+      final state = SongState()..setSongInfo(song);
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      await tester.pumpWidget(ChangeNotifierProvider.value(
+        value: state,
+        child: MaterialApp(
+          theme: floorPopTheme(brightness),
+          home: Scaffold(
+            body: SingleChildScrollView(
+              controller: scroll,
+              physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics()),
+              child: Column(children: [
+                SongDetails(songInfo: song, chart: null),
+                const SizedBox(height: 1000),
+              ]),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      final top = tester.getTopLeft(find.byType(SingleChildScrollView)).dy;
+      scroll.jumpTo(-120);
+      await tester.pump();
+      // The details move down during overscroll, but their backdrop still
+      // covers the space above them, right up to the viewport's top edge.
+      expect(tester.getTopLeft(find.byType(SongDetails)).dy, greaterThan(top));
+      expect(tester.getTopLeft(find.byType(SongArtwork).first).dy,
+          closeTo(top, 0.01));
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
     for (final width in [320.0, 430.0]) {
       testWidgets('missing jacket details and zoom at $width / $brightness',
           (tester) async {
