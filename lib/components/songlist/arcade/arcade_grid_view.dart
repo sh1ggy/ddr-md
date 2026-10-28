@@ -95,8 +95,7 @@ class _ArcadeGridViewState extends State<ArcadeGridView> {
           // Dropped rather than sized to zero, so the jackets stop being built.
           if (!_collapsed.contains(section.label))
             SliverPadding(
-              // The banner is full-bleed and carries no margin of its own, so
-              // the gap below it belongs to the grid.
+              // Keep a little air between the leaning banner and its jackets.
               padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
               sliver: SliverGrid(
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(

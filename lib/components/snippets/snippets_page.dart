@@ -14,7 +14,7 @@ import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
-import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -327,14 +327,10 @@ class _SnippetsPageState extends State<SnippetsPage> {
                 Row(children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Image(
-                      width: 52,
-                      height: 52,
-                      image: ContentStore.image(
-                          'assets/jackets-160/${s.song}.png'),
-                      errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.music_note, size: 40),
-                    ),
+                    child: SizedBox.square(
+                        dimension: 52,
+                        child:
+                            SongArtwork(songName: s.song, title: song?.title)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(

@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:ddr_md/theme.dart';
 
 import 'chart_chrome.dart';
 import 'chart_models.dart';
@@ -1369,7 +1370,7 @@ class _ChartScrollerState extends State<ChartScroller>
     final p = _pattern;
     return IconButton(
       icon: Icon(p == null ? Icons.insights : kPatternIcons[p]),
-      color: p == null ? Colors.blueGrey : Colors.white,
+      color: p == null ? FloorPop.night.haze : FloorPop.volt,
       tooltip: 'Patterns',
       onPressed: _footwork == null ? null : () => _openBreakdown(context),
     );
@@ -1422,8 +1423,9 @@ class _ChartScrollerState extends State<ChartScroller>
     final i = _hits.indexWhere((h) => h.$1 == _hitAt);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(12),
+        color: FloorPop.night.stage.withValues(alpha: 0.97),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FloorPop.night.line),
       ),
       child: Row(
         children: [
@@ -1712,8 +1714,9 @@ class _ChartScrollerState extends State<ChartScroller>
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(12),
+        color: FloorPop.night.stage.withValues(alpha: 0.97),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: FloorPop.night.line),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2845,14 +2848,8 @@ class _ChartScrollerState extends State<ChartScroller>
                               const SizedBox(height: 2),
                               Text(
                                 _scrubOverlayLabel ?? "",
-                                style: TextStyle(
-                                  fontSize: 40,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white.withValues(alpha: 0.92),
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures()
-                                  ],
-                                ),
+                                style:
+                                    FloorPop.readout(40, color: FloorPop.volt),
                               ),
                             ],
                           ),
@@ -3091,11 +3088,7 @@ class _ChartScrollerState extends State<ChartScroller>
                   Expanded(
                     child: Text(
                       fmtTime(s),
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontFeatures: const [FontFeature.tabularFigures()]),
+                      style: FloorPop.readout(13, color: FloorPop.night.haze),
                     ),
                   ),
                   // The section under the playhead; its numbers change as the
@@ -3106,11 +3099,7 @@ class _ChartScrollerState extends State<ChartScroller>
                     child: Text(
                       fmtTime(_endSecond),
                       textAlign: TextAlign.right,
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontFeatures: const [FontFeature.tabularFigures()]),
+                      style: FloorPop.readout(13, color: FloorPop.night.haze),
                     ),
                   ),
                 ],
@@ -3525,9 +3514,9 @@ class _ChartScrollerState extends State<ChartScroller>
       decoration: BoxDecoration(
         color: Theme.of(context)
             .colorScheme
-            .surfaceContainerHighest
-            .withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(12),
+            .surfaceContainerLow
+            .withValues(alpha: 0.97),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [

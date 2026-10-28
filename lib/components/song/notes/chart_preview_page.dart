@@ -20,6 +20,7 @@ import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/services.dart';
 
 class ChartPreviewPage extends StatefulWidget {
@@ -302,105 +303,109 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     final diffColor = difficultyColor(widget.difficultyKey);
     // Edge-to-edge: the field owns the whole screen (including behind the status
     // bar) and the controls float over it, so no AppBar / SafeArea chrome here.
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF080A0E),
-        body: FutureBuilder<SongSteps?>(
-          future: widget.stepsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final steps =
-                snapshot.data?.chartFor(widget.mode, widget.difficultyKey);
-            if (steps == null || steps.notes.isEmpty) {
-              return Stack(
-                children: [
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        "No chart data available for this difficulty.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey),
+    return Theme(
+      // The chart is a dark stage even when the rest of the app uses Day.
+      data: floorPopTheme(Brightness.dark),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+          backgroundColor: const Color(0xFF080A0E),
+          body: FutureBuilder<SongSteps?>(
+            future: widget.stepsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final steps =
+                  snapshot.data?.chartFor(widget.mode, widget.difficultyKey);
+              if (steps == null || steps.notes.isEmpty) {
+                return Stack(
+                  children: [
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          "No chart data available for this difficulty.",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey),
+                        ),
                       ),
                     ),
-                  ),
-                  // Still offer a way back when there's nothing to show.
-                  SafeArea(
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back,
-                            color: Colors.blueGrey),
-                        onPressed: () => Navigator.of(context).pop(),
+                    // Still offer a way back when there's nothing to show.
+                    SafeArea(
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: IconButton(
+                          icon: Icon(Icons.arrow_back,
+                              color: FloorPop.night.haze),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              );
-            }
-            return ChartScroller(
-              key: ValueKey(
-                  "${widget.title}-${widget.mode.name}-${widget.difficultyKey}"),
-              steps: steps,
-              feedActive: widget.feedActive,
-              playbackRate: widget.playbackRate,
-              onPlaybackRateChanged: widget.onPlaybackRateChanged,
-              caption: (
-                title: widget.title,
-                jacket: ContentStore.image(
-                    'assets/jackets/${snapshot.data!.name}.png'),
+                  ],
+                );
+              }
+              return ChartScroller(
+                key: ValueKey(
+                    "${widget.title}-${widget.mode.name}-${widget.difficultyKey}"),
+                steps: steps,
+                feedActive: widget.feedActive,
+                playbackRate: widget.playbackRate,
+                onPlaybackRateChanged: widget.onPlaybackRateChanged,
+                caption: (
+                  title: widget.title,
+                  jacket: ContentStore.image(
+                      'assets/jackets/${snapshot.data!.name}.png'),
+                  mode: widget.mode,
+                  difficulty: _pretty(widget.difficultyKey),
+                  level: widget.difficultyLevel,
+                  note: widget.snippet?.label ?? '',
+                ),
+                onShareReady: widget.onShareReady,
                 mode: widget.mode,
-                difficulty: _pretty(widget.difficultyKey),
-                level: widget.difficultyLevel,
-                note: widget.snippet?.label ?? '',
-              ),
-              onShareReady: widget.onShareReady,
-              mode: widget.mode,
-              songLength: widget.songLength,
-              chartBpm: widget.chartBpm,
-              minBpm: widget.minBpm,
-              maxBpm: widget.maxBpm,
-              bpms: widget.bpms,
-              stops: widget.stops,
-              sync: widget.sync,
-              timeSignatures: widget.timeSignatures,
-              showFootGuide: _showFootGuide,
-              showFootTrails: _showFootTrails,
-              showDancingFeet: _dancingFeet,
-              showMeasureLines: _measureLines,
-              assistTickOn: _assistTick,
-              quantColorsOn: _quantColors,
-              arrowBlinkOn: _arrowBlink,
-              quantFreezeHeadsOn: _quantFreezeHeads,
-              onToggleMeasureLines: _toggleMeasureLines,
-              onToggleFootGuide: () =>
-                  setState(() => _showFootGuide = !_showFootGuide),
-              onToggleFootTrails: _toggleFootTrails,
-              onToggleDancingFeet: _toggleDancingFeet,
-              onToggleAssistTick: _toggleAssistTick,
-              onToggleQuantColors: _toggleQuantColors,
-              onToggleArrowBlink: _toggleArrowBlink,
-              onToggleQuantFreezeHeads: _toggleQuantFreezeHeads,
-              headerBuilder: (context, patternsButton) => _buildHeader(
-                  context,
-                  diffColor,
-                  patternsButton,
-                  () => _saveSnippet(snapshot.data!, steps)),
-              footingRef: ChartRef(
-                  snapshot.data!.name,
-                  widget.mode == Modes.doubles ? 'dp' : 'sp',
-                  widget.difficultyKey),
-              editFooting: _editFooting,
-              initialSecond: widget.initialSecond,
-              section: _section,
-              pickSection: _picking,
-              onSaveSection: () => _saveSnippet(snapshot.data!, steps),
-              onSectionChanged: (s) => setState(() => _section = s),
-            );
-          },
+                songLength: widget.songLength,
+                chartBpm: widget.chartBpm,
+                minBpm: widget.minBpm,
+                maxBpm: widget.maxBpm,
+                bpms: widget.bpms,
+                stops: widget.stops,
+                sync: widget.sync,
+                timeSignatures: widget.timeSignatures,
+                showFootGuide: _showFootGuide,
+                showFootTrails: _showFootTrails,
+                showDancingFeet: _dancingFeet,
+                showMeasureLines: _measureLines,
+                assistTickOn: _assistTick,
+                quantColorsOn: _quantColors,
+                arrowBlinkOn: _arrowBlink,
+                quantFreezeHeadsOn: _quantFreezeHeads,
+                onToggleMeasureLines: _toggleMeasureLines,
+                onToggleFootGuide: () =>
+                    setState(() => _showFootGuide = !_showFootGuide),
+                onToggleFootTrails: _toggleFootTrails,
+                onToggleDancingFeet: _toggleDancingFeet,
+                onToggleAssistTick: _toggleAssistTick,
+                onToggleQuantColors: _toggleQuantColors,
+                onToggleArrowBlink: _toggleArrowBlink,
+                onToggleQuantFreezeHeads: _toggleQuantFreezeHeads,
+                headerBuilder: (context, patternsButton) => _buildHeader(
+                    context,
+                    diffColor,
+                    patternsButton,
+                    () => _saveSnippet(snapshot.data!, steps)),
+                footingRef: ChartRef(
+                    snapshot.data!.name,
+                    widget.mode == Modes.doubles ? 'dp' : 'sp',
+                    widget.difficultyKey),
+                editFooting: _editFooting,
+                initialSecond: widget.initialSecond,
+                section: _section,
+                pickSection: _picking,
+                onSaveSection: () => _saveSnippet(snapshot.data!, steps),
+                onSectionChanged: (s) => setState(() => _section = s),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -428,80 +433,84 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 onPressed: _section == null ? null : onSaveSnippet,
               )
             : IconButton(
-                icon: const Icon(Icons.edit, color: Colors.blueGrey),
+                icon: Icon(Icons.edit, color: FloorPop.night.haze),
                 tooltip: 'Edit section',
                 onPressed: () => setState(() => _picking = true),
               )
         : IconButton(
             icon: Icon(_editFooting ? Icons.check : Icons.edit_note,
-                color: _editFooting ? Colors.white : Colors.blueGrey),
+                color: _editFooting ? Colors.white : FloorPop.night.haze),
             tooltip: _editFooting ? 'Done editing' : 'Edit footing',
             onPressed: () => setState(() => _editFooting = !_editFooting),
           );
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withValues(alpha: 0.72),
-            Colors.black.withValues(alpha: 0.0),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.blueGrey),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              const SizedBox(width: 48),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      widget.title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          fontSize: 18,
-                          color: Colors.blueGrey,
-                          fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (widget.feedLabel != null)
-                      Text(widget.feedLabel!,
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 12)),
-                    if (kInGameDifficultyColors
-                        .containsKey(_pretty(widget.difficultyKey)))
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: DifficultyLabel(
-                            difficulty: _pretty(widget.difficultyKey),
-                            level: widget.difficultyLevel,
-                            height: 16),
-                      )
-                    else
-                      Text(
-                        difficultyLabel,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: diffColor,
-                            fontWeight: FontWeight.w900),
-                      ),
-                  ],
-                ),
-              ),
-              // The pattern breakdown, balanced by an empty slot on the left
-              // when an action joins it.
-              if (widget.feedActive == null) patternsButton,
-              action,
+    return IconButtonTheme(
+      data: IconButtonThemeData(
+          style: IconButton.styleFrom(
+        backgroundColor: FloorPop.night.riser,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      )),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              FloorPop.night.ink.withValues(alpha: 0.94),
+              FloorPop.night.ink.withValues(alpha: 0.0),
             ],
+          ),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: FloorPop.night.haze),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 48),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.title,
+                        textAlign: TextAlign.center,
+                        style: FloorPop.display(18, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (widget.feedLabel != null)
+                        Text(widget.feedLabel!,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12)),
+                      if (kInGameDifficultyColors
+                          .containsKey(_pretty(widget.difficultyKey)))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: DifficultyLabel(
+                              difficulty: _pretty(widget.difficultyKey),
+                              level: widget.difficultyLevel,
+                              height: 16),
+                        )
+                      else
+                        Text(
+                          difficultyLabel,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: diffColor,
+                              fontWeight: FontWeight.w900),
+                        ),
+                    ],
+                  ),
+                ),
+                // The pattern breakdown, balanced by an empty slot on the left
+                // when an action joins it.
+                if (widget.feedActive == null) patternsButton,
+                action,
+              ],
+            ),
           ),
         ),
       ),
