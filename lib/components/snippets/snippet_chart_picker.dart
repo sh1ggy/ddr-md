@@ -8,7 +8,7 @@ library;
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
-import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -84,14 +84,7 @@ class _SnippetChartPickerState extends State<SnippetChartPicker> {
           return ListTile(
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image(
-                width: 48,
-                height: 48,
-                image:
-                    ContentStore.image('assets/jackets-160/${song.name}.png'),
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.music_note, size: 40),
-              ),
+              child: SizedBox.square(dimension: 48, child: JacketImage(song)),
             ),
             title: Text(song.title, overflow: TextOverflow.ellipsis),
             subtitle: Text(song.artist, overflow: TextOverflow.ellipsis),

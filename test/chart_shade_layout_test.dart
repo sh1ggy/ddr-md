@@ -8,6 +8,7 @@ import 'package:ddr_md/components/song/notes/chart_scroller.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -31,7 +32,8 @@ void main() {
       });
 
       await tester.pumpWidget(MaterialApp(
-        theme: ThemeData(platform: TargetPlatform.iOS),
+        theme: floorPopTheme(Brightness.dark)
+            .copyWith(platform: TargetPlatform.iOS),
         home: MediaQuery(
           data: MediaQueryData(
             size: size,

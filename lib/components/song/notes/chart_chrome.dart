@@ -8,6 +8,7 @@ library;
 
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:flutter/material.dart';
+import 'package:ddr_md/theme.dart';
 
 /// The tempo readout in the scrub bar's time row: the BPM of the section under
 /// the playhead and the read speed it reads at (localBpm × mod). CONSTANT is
@@ -38,12 +39,7 @@ class TempoBadge extends StatelessWidget {
             const SizedBox(width: 5),
             Text(
               value,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.white.withValues(alpha: 0.92),
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
+              style: FloorPop.readout(14, color: FloorPop.volt),
             ),
           ],
         );
@@ -114,25 +110,25 @@ class SpeedPane extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 9,
-                    height: 1.0,
-                    letterSpacing: 0.6,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    height: 1.1,
-                    fontWeight: FontWeight.bold,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 9,
+                        height: 1.0,
+                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    )),
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: FloorPop.readout(18, color: scheme.onSurface),
+                    )),
                 // The BPM-change min–core–max range (cabinet
                 // num_min/num_core/num_max) sits on its own line UNDER the
                 // value, not beside it: on wide-range charts "150–300–602" is
@@ -141,16 +137,18 @@ class SpeedPane extends StatelessWidget {
                 // Stacking keeps the value centred and gives the range its own
                 // uncramped row.
                 if (r != null)
-                  Text(
-                    r,
-                    style: TextStyle(
-                      fontSize: 10,
-                      height: 1.0,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onSurface.withValues(alpha: 0.55),
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
+                  FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        r,
+                        style: TextStyle(
+                          fontSize: 10,
+                          height: 1.0,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface.withValues(alpha: 0.55),
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      )),
               ],
             ),
           ),
@@ -199,11 +197,7 @@ class SongSpeedPane extends StatelessWidget {
           ),
           Text(
             "${rate.toStringAsFixed(2)}×",
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
+            style: FloorPop.readout(18, color: scheme.onSurface),
           ),
         ],
       ),
@@ -219,7 +213,7 @@ class ControlPane extends StatelessWidget {
     required this.child,
     required this.onDragUpdate,
     this.onTap,
-    this.borderRadius = 10,
+    this.borderRadius = 14,
     this.fill,
   });
 
@@ -227,7 +221,7 @@ class ControlPane extends StatelessWidget {
   final GestureDragUpdateCallback onDragUpdate;
   final VoidCallback? onTap;
 
-  /// Corner rounding. Defaults to the preview chrome's 10; the song page
+  /// Corner rounding. Defaults to the preview chrome's 14; the song page
   /// passes Material's card radius so its pane matches the cards it sits among.
   final double borderRadius;
 
@@ -248,8 +242,7 @@ class ControlPane extends StatelessWidget {
         onHorizontalDragUpdate: onDragUpdate,
         child: Container(
           decoration: BoxDecoration(
-            color:
-                fill ?? scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            color: fill ?? scheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(borderRadius),
           ),
           child: child,
@@ -316,8 +309,12 @@ class _SettingsShadeState extends State<SettingsShade> {
         padding: const EdgeInsets.symmetric(vertical: 8),
         constraints: BoxConstraints(maxHeight: widget.maxHeight),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(12),
+          color: scheme.surfaceContainerLow.withValues(alpha: 0.97),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+                color: Colors.black38, blurRadius: 24, offset: Offset(0, 8))
+          ],
         ),
         // No close button — the menu tab dismisses the card.
         child: Column(
@@ -367,28 +364,19 @@ class _SettingsShadeState extends State<SettingsShade> {
   }
 }
 
-/// Fill/border/foreground for a shade control. Inactive deliberately matches
-/// [ControlPane] so the shade tiles read as the same buttons as the bottom
-/// config; active lifts the same surface brighter with a hairline border —
-/// monochrome, never a purple accent.
+/// Selected controls carry Volt on a violet riser; the sync summary keeps
+/// its FAST/SLOW colour so the timing direction remains readable.
 ({Color fill, Color border, Color fg, Color fgMuted}) _tileColors(
-    ColorScheme scheme, bool active) {
-  final onSurface = scheme.onSurface;
-  final surface = scheme.surfaceContainerHighest;
-  return active
-      ? (
-          fill: surface.withValues(alpha: 0.9),
-          border: onSurface.withValues(alpha: 0.45),
-          fg: onSurface,
-          fgMuted: onSurface.withValues(alpha: 0.7),
-        )
-      : (
-          fill: surface.withValues(alpha: 0.5),
-          border: Colors.transparent,
-          fg: onSurface.withValues(alpha: 0.85),
-          fgMuted: onSurface.withValues(alpha: 0.55),
-        );
-}
+        ColorScheme scheme, bool active) =>
+    (
+      fill: active
+          ? Color.alphaBlend(FloorPop.volt.withValues(alpha: 0.10),
+              scheme.surfaceContainerHighest)
+          : scheme.surfaceContainerHighest,
+      border: active ? FloorPop.volt : scheme.outline,
+      fg: active ? FloorPop.volt : scheme.onSurface,
+      fgMuted: scheme.onSurfaceVariant,
+    );
 
 /// The accent for a dial value: the FAST hue for positive, SLOW for negative,
 /// null at neutral. Uses the app's sync palette, shared with the song page's
@@ -402,8 +390,8 @@ Color? timingAccent(double value, bool isDark) {
 
 /// The CONSTANT-modifier tile: the full-width top row of the ARROWS section.
 /// Tap toggles the modifier on/off (no separate switch); dragging horizontally
-/// sweeps the display time. Styled neutrally like the rest of the shade — when
-/// on it reads a touch brighter and shows the current ms, off it reads "OFF".
+/// sweeps the display time. Styled like the rest of the shade — when
+/// on it carries Volt and shows the current ms, off it reads "OFF".
 class ConstantChip extends StatelessWidget {
   const ConstantChip({
     super.key,
@@ -443,7 +431,7 @@ class ConstantChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             color: c.fill,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: c.border, width: 1),
           ),
           child: Row(
@@ -478,12 +466,7 @@ class ConstantChip extends StatelessWidget {
               ],
               Text(
                 on ? "${ms.round()}ms" : "OFF",
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: c.fg,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+                style: FloorPop.readout(15, color: c.fg),
               ),
             ],
           ),
@@ -556,7 +539,7 @@ class TimingOffsetChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: c.fill,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: c.border, width: 1),
           ),
           // Stacked rather than side-by-side: at half width there isn't room for
@@ -590,12 +573,7 @@ class TimingOffsetChip extends StatelessWidget {
                 children: [
                   Text(
                     valueLabel,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      color: c.fg,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                    style: FloorPop.readout(17, color: c.fg),
                   ),
                   const Spacer(),
                   // Drag affordance: the chip is swept horizontally, which
@@ -658,7 +636,7 @@ class ArcadeSyncHeader extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: c.fill,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: c.border, width: 1),
         ),
         child: Row(
@@ -721,9 +699,8 @@ class ArcadeSyncHeader extends StatelessWidget {
 }
 
 /// A single TURN tile (MIRROR / LEFT / RIGHT) in the split second row of the
-/// ARROWS section. Neutral like [ConstantChip]; the selected turn reads a touch
-/// brighter with a stronger border. Tapping the active one turns it off (handled
-/// by the caller).
+/// ARROWS section. Like [ConstantChip], the selected turn carries Volt.
+/// Tapping the active one turns it off (handled by the caller).
 class TurnTile extends StatelessWidget {
   const TurnTile({
     super.key,
@@ -756,12 +733,14 @@ class TurnTile extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : FloorPop.sixteenth,
         height: height,
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
         decoration: BoxDecoration(
           color: c.fill,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: c.border, width: 1),
         ),
         child: Column(
@@ -816,7 +795,8 @@ class EdgeTab extends StatelessWidget {
         width: 30,
         height: 52,
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.42),
+          color: FloorPop.night.riser.withValues(alpha: 0.95),
+          border: Border.all(color: FloorPop.night.line),
           borderRadius: BorderRadius.horizontal(
             left: leftEdge ? Radius.zero : const Radius.circular(12),
             right: leftEdge ? const Radius.circular(12) : Radius.zero,
@@ -825,7 +805,7 @@ class EdgeTab extends StatelessWidget {
         alignment: Alignment.center,
         child: Icon(
           icon,
-          color: Colors.white.withValues(alpha: 0.9),
+          color: FloorPop.volt,
           size: 22,
         ),
       ),

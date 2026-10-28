@@ -15,7 +15,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
-import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -464,8 +464,7 @@ class _Score extends StatelessWidget {
   }
 }
 
-/// A song's jacket, or the song list's music note when it has none or the
-/// play matched no song.
+/// A song's artwork, generated when missing; unmatched plays keep a note.
 class _Jacket extends StatelessWidget {
   const _Jacket({required this.song, this.size});
 
@@ -485,13 +484,7 @@ class _Jacket extends StatelessWidget {
       child: SizedBox(
         width: size ?? double.infinity,
         height: size ?? double.infinity,
-        child: song == null
-            ? fallback
-            : Image(
-                image: ContentStore.image('assets/jackets-160/$song.png'),
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => fallback,
-              ),
+        child: song == null ? fallback : SongArtwork(songName: song!),
       ),
     );
   }
