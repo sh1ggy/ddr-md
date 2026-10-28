@@ -205,8 +205,10 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
     final rings = _rings(widget.bests);
     final total = widget.bests.length;
     final played = widget.bests.where((b) => b != null).length;
-    final size =
-        math.min(MediaQuery.sizeOf(context).width - 120, 220).toDouble();
+    final media = MediaQuery.of(context);
+    final availableHeight = media.size.height - media.padding.vertical - 48;
+    final size = math.min(
+        math.min(media.size.width - 120, 220.0), availableHeight * 0.28);
     // The card's ground, so the unplayed reads against it.
     final track = pop.stage;
 
@@ -266,29 +268,43 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
               Text('$played of $total charts played',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: pop.haze)),
-              const SizedBox(height: 18),
-              for (final (i, (title, aspect)) in const [
-                ('GRADE', kGradeAspect),
-                ('CLEAR LAMP', kLampAspect),
-                ('FLARE', kFlareAspect),
-              ].indexed)
-                if (rings[i].isNotEmpty) ...[
-                  _rise(i, section(title, _kNoneLabels[i], rings[i], aspect)),
-                  const SizedBox(height: 14),
-                ],
-              if (widget.onStats != null)
-                _rise(
-                    3,
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          widget.onStats!();
-                        },
-                        child: const Text('All stats'),
-                      ),
-                    )),
+              Flexible(
+                fit: FlexFit.loose,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 18),
+                      for (final (i, (title, aspect)) in const [
+                        ('GRADE', kGradeAspect),
+                        ('CLEAR LAMP', kLampAspect),
+                        ('FLARE', kFlareAspect),
+                      ].indexed)
+                        if (rings[i].isNotEmpty) ...[
+                          _rise(
+                              i,
+                              section(
+                                  title, _kNoneLabels[i], rings[i], aspect)),
+                          const SizedBox(height: 14),
+                        ],
+                      if (widget.onStats != null)
+                        _rise(
+                            3,
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                  widget.onStats!();
+                                },
+                                child: const Text('All stats'),
+                              ),
+                            )),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -305,14 +321,16 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
               onTap: () => Navigator.of(context).pop(),
             ),
           ),
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: FadeTransition(
-                  opacity: CurvedAnimation(
-                      parent: widget.animation,
-                      curve: const Interval(0.15, 0.6)),
-                  child: card),
+          SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: FadeTransition(
+                    opacity: CurvedAnimation(
+                        parent: widget.animation,
+                        curve: const Interval(0.15, 0.6)),
+                    child: card),
+              ),
             ),
           ),
           IgnorePointer(
