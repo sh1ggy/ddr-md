@@ -234,7 +234,13 @@ void main() {
         ]))));
     await tester.pumpAndSettle();
     expect(tester.takeException(), null);
-    expect(find.text('10000 pts better'), findsOneWidget);
+    expect(find.text('+10,000'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('trend-day-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('DAY DETAIL'), findsOneWidget);
+    await tester.tap(find.text('Period summary'));
+    await tester.pumpAndSettle();
+    expect(find.text('IMPROVING'), findsOneWidget);
     await tester.tap(find.text('Fortnight'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), null);
@@ -251,6 +257,9 @@ void main() {
     await tester.tap(find.text('Today'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('All charts'), 250);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('All charts'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('All charts'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'long chart');
