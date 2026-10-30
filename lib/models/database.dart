@@ -1,4 +1,5 @@
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/parity.dart';
@@ -80,6 +81,10 @@ class DatabaseProvider {
   static const String _recentPlaysDdl =
       'CREATE TABLE IF NOT EXISTS recent_plays(konamiId TEXT NOT NULL, title TEXT NOT NULL, song TEXT, mode TEXT NOT NULL, difficulty TEXT NOT NULL, playedAt TEXT NOT NULL, score INT, PRIMARY KEY(konamiId, mode, difficulty, playedAt))';
 
+  // v18: what each sync did to the player's cards (see CardGain).
+  static const String _cardGainsDdl =
+      'CREATE TABLE IF NOT EXISTS card_gains(id TEXT PRIMARY KEY, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, layer TEXT NOT NULL, fromValue TEXT NOT NULL, toValue TEXT NOT NULL, score INT, grade TEXT, lamp TEXT, flare TEXT, playedAt TEXT NOT NULL, syncedAt TEXT NOT NULL)';
+
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
     await db.execute(_favoritesDdl);
@@ -92,6 +97,7 @@ class DatabaseProvider {
     await db.execute(_recentPlaysDdl);
     await _addRecentPlayFailed(db);
     await _addRecentPlayOrder(db);
+    await db.execute(_cardGainsDdl);
     await installSync(db);
   }
 
@@ -154,7 +160,7 @@ class DatabaseProvider {
       open(join(await getDatabasesPath(), _dbName));
 
   static Future<Database> open(String path) {
-    return openDatabase(path, version: 17, onCreate: (db, version) async {
+    return openDatabase(path, version: 18, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -180,6 +186,8 @@ class DatabaseProvider {
       if (oldVersion < 13) await db.execute(_recentPlaysDdl);
       // Before v6 the schema was just made whole, column included.
       if (oldVersion >= 6 && oldVersion < 14) await _addRecentPlayFailed(db);
+      // Before installSync, which puts triggers on every synced table.
+      if (oldVersion < 18) await db.execute(_cardGainsDdl);
       if (oldVersion < 15) await installSync(db);
       if (oldVersion >= 6 && oldVersion < 16) await _addRecentPlayOrder(db);
       if (oldVersion >= 6 && oldVersion < 17) {
@@ -187,6 +195,10 @@ class DatabaseProvider {
         if (!columns.any((c) => c['name'] == 'completionLamp')) {
           await db.execute('ALTER TABLE scores ADD COLUMN completionLamp TEXT');
         }
+      }
+      if (oldVersion >= 15 && oldVersion < 18) {
+        await addSyncTriggers(
+            db, syncTables.firstWhere((t) => t.name == 'card_gains'));
       }
     });
   }
@@ -569,6 +581,26 @@ class DatabaseProvider {
     return Sqflite.firstIntValue(
             await db.rawQuery('SELECT COUNT(*) FROM recent_plays')) ??
         0;
+  }
+
+  // -- CARD GAIN FUNCTIONS
+  // A gain already had keeps when it was first had.
+  static Future<void> saveCardGains(List<CardGain> gains) async {
+    final db = await _instance;
+    if (gains.isEmpty) return;
+    final batch = db.batch();
+    for (final g in gains) {
+      batch.insert("card_gains", g.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  // Oldest first.
+  static Future<List<CardGain>> getCardGains() async {
+    final db = await _instance;
+    final rows = await db.query("card_gains", orderBy: "playedAt, rowid");
+    return [for (final r in rows) CardGain.fromMap(r)];
   }
 
   // -- SNIPPET FUNCTIONS

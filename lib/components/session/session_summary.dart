@@ -11,10 +11,12 @@ library;
 import 'dart:math';
 
 import 'package:ddr_md/components/session/recent_plays.dart';
+import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
@@ -259,6 +261,8 @@ class SessionSummaryBody extends StatefulWidget {
       this.timed = false,
       this.detailed = false,
       this.credits = const [],
+      this.gains = const [],
+      this.onCollected,
       this.onPlay});
 
   final SetSummary summary;
@@ -270,6 +274,9 @@ class SessionSummaryBody extends StatefulWidget {
   final bool detailed;
   // The credits logged in the session, to split the play strip by.
   final List<Credit> credits;
+  // What the session's plays did to your cards, and opening its wrap.
+  final List<CardGain> gains;
+  final VoidCallback? onCollected;
   // A play tapped on the strip.
   final ValueChanged<RecentPlay>? onPlay;
 
@@ -411,6 +418,10 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
               ),
             ),
         ]),
+        if (widget.gains.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          CollectedTile(widget.gains, onTap: widget.onCollected),
+        ],
       ],
     );
   }

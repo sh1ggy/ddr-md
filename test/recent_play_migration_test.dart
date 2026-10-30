@@ -48,7 +48,7 @@ void main() {
     await db.close();
 
     db = await DatabaseProvider.open(path);
-    expect(await db.getVersion(), 17);
+    expect(await db.getVersion(), 18);
     final rows = await db.query('recent_plays', orderBy: 'rowid');
     expect(rows.map((r) => r['konamiId']), ['a', 'b']);
     expect(rows.map((r) => r['syncOrder']), [0, 0]);

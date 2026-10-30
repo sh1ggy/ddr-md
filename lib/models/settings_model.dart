@@ -170,6 +170,11 @@ class Settings {
   // it carries on from, and the newest play it covers ('' = none).
   static const String eamuseWalkKey = "eamuseWalk";
 
+  // The newest play before a sync that brought new ones (ISO-8601, '' =
+  // none waiting): Home offers the wrap of a session played since, until
+  // it's opened or dismissed.
+  static const String sessionWrapSinceKey = "sessionWrapSince";
+
   // 1 = leave doubles charts out of e-amusement syncs.
   static const String eamuseSkipDoublesKey = "eamuseSkipDoubles";
 

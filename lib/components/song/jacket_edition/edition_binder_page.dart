@@ -11,16 +11,19 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:ddr_md/components/session/session_wrap.dart' show CardTally;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/best_rings.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'compact_jacket_edition.dart';
 import 'edition_model.dart';
@@ -110,14 +113,31 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
   ];
 }
 
+/// A chart's pocket, by song and in-game difficulty name.
+typedef BinderChart = ({String song, String difficulty});
+
 class EditionBinderPage extends StatefulWidget {
-  const EditionBinderPage({super.key, this.level, this.song, this.difficulty});
+  const EditionBinderPage(
+      {super.key,
+      this.level,
+      this.song,
+      this.difficulty,
+      this.arrivals = const {},
+      this.haul = const []});
 
   /// The level to open on, else the highest.
   final int? level;
 
   /// A chart to open on the sheet of, its pocket picked out.
   final String? song, difficulty;
+
+  /// Cards a session just collected or upgraded, each with what its pocket
+  /// held before (null when empty). They slot into their pockets as their
+  /// sheet comes up.
+  final Map<BinderChart, EditionFacts?> arrivals;
+
+  /// What those cards gained, tallied under the sheets while they arrive.
+  final List<CardGain> haul;
 
   @override
   State<EditionBinderPage> createState() => _EditionBinderPageState();
@@ -135,6 +155,8 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   // its cover. Kept so repaginating stays put.
   ({int level, int start})? _at;
   // The chart opened on, until the style changes.
+  // Arrivals already in their pockets.
+  final _landed = <BinderChart>{};
   late ({String song, String difficulty})? _focus =
       widget.song == null || widget.difficulty == null
           ? null
@@ -196,6 +218,14 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
     return pages;
   }
 
+  static BinderChart _chart(BinderPocket p) =>
+      (song: p.song.name, difficulty: p.difficulty);
+
+  bool _arriving(BinderPocket p) =>
+      p.card != null &&
+      widget.arrivals.containsKey(_chart(p)) &&
+      !_landed.contains(_chart(p));
+
   void _settle(int page) {
     final p = _pages![page];
     _page = page;
@@ -247,10 +277,24 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                 top: false,
                 child: LayoutBuilder(builder: (context, box) {
                   const tabs = 44.0, footer = 28.0, margin = 8.0;
+                  final haul = widget.haul.isEmpty ? 0.0 : 52.0;
                   final width = math.min(box.maxWidth, _kPageMaxWidth);
-                  final grid = _grid(width - 32 - 2 * _kPad,
-                      box.maxHeight - tabs - footer - 2 * margin - 2 * _kPad);
+                  final grid = _grid(
+                      width - 32 - 2 * _kPad,
+                      box.maxHeight -
+                          tabs -
+                          footer -
+                          haul -
+                          2 * margin -
+                          2 * _kPad);
                   final pages = _paginate(grid.rows * _kColumns);
+                  // Levels with cards still to slot in, marked on their tab.
+                  final waiting = {
+                    for (final p in pages)
+                      if (p is BinderSheet &&
+                          p.pockets.any((c) => _arriving(c)))
+                        p.level
+                  };
                   final level = pages.isEmpty ? null : pages[_page].level;
                   final sheets = pages
                       .where((p) => p is BinderSheet && p.level == level)
@@ -275,12 +319,37 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                                       child: ChoiceChip(
                                           showCheckmark: false,
                                           selected: p.level == level,
-                                          label: LevelNumber(
-                                              level: p.level,
-                                              difficulty: 'EXPERT',
-                                              height: 16),
+                                          label: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                LevelNumber(
+                                                    level: p.level,
+                                                    difficulty: 'EXPERT',
+                                                    height: 16),
+                                                if (waiting.contains(p.level))
+                                                  Container(
+                                                      width: 7,
+                                                      height: 7,
+                                                      margin:
+                                                          const EdgeInsets.only(
+                                                              left: 5),
+                                                      decoration:
+                                                          const BoxDecoration(
+                                                              color:
+                                                                  FloorPop.volt,
+                                                              shape: BoxShape
+                                                                  .circle)),
+                                              ]),
+                                          // To the sheet a card is coming
+                                          // into, else the cover.
                                           onSelected: (_) =>
-                                              _controller.jumpToPage(i))),
+                                              _controller.jumpToPage(math.max(
+                                                  i,
+                                                  pages.indexWhere((s) =>
+                                                      s is BinderSheet &&
+                                                      s.level == p.level &&
+                                                      s.pockets
+                                                          .any(_arriving)))))),
                             ])),
                     Expanded(
                         child: SizedBox(
@@ -298,11 +367,34 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                                       final BinderDivider d =>
                                         _Cover(divider: d, onOpen: _open),
                                       final BinderSheet s => _Sheet(
+                                          key: ValueKey((
+                                            s.level,
+                                            s.start,
+                                            _landed.length
+                                          )),
                                           sheet: s,
                                           side: grid.side,
                                           focus: _focus,
+                                          arrivals: {
+                                            for (final c in s.pockets)
+                                              if (_arriving(c))
+                                                _chart(c):
+                                                    widget.arrivals[_chart(c)],
+                                          },
+                                          fresh: {
+                                            for (final MapEntry(:key, :value)
+                                                in widget.arrivals.entries)
+                                              if (value == null) key
+                                          },
+                                          onLanded: (charts) => setState(
+                                              () => _landed.addAll(charts)),
                                           onOpen: _open),
                                     })))),
+                    if (widget.haul.isNotEmpty)
+                      SizedBox(
+                          height: haul,
+                          child: Center(
+                              child: CardTally(widget.haul, height: 30))),
                     SizedBox(
                         height: footer,
                         child: Center(
@@ -439,49 +531,191 @@ class _Fan extends StatelessWidget {
       });
 }
 
-class _Sheet extends StatelessWidget {
+class _Sheet extends StatefulWidget {
   const _Sheet(
-      {required this.sheet,
+      {super.key,
+      required this.sheet,
       required this.side,
       required this.onOpen,
-      this.focus});
+      this.focus,
+      this.arrivals = const {},
+      this.fresh = const {},
+      this.onLanded});
   final BinderSheet sheet;
   // A pocket's side, from [_grid].
   final double side;
   final ValueChanged<BinderPocket> onOpen;
   final ({String song, String difficulty})? focus;
+  // Its cards still to slot in, with what their pockets held before.
+  final Map<BinderChart, EditionFacts?> arrivals;
+  // Charts whose card is new, tagged once in.
+  final Set<BinderChart> fresh;
+  final ValueChanged<Set<BinderChart>>? onLanded;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-      decoration: BoxDecoration(
-          color: FloorPop.of(context).riser,
-          borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-          padding: const EdgeInsets.all(_kPad),
-          child: Align(
-              alignment: Alignment.topCenter,
-              child: SizedBox(
-                  width: _kColumns * side + (_kColumns - 1) * _kGap,
-                  child: Wrap(spacing: _kGap, runSpacing: _kGap, children: [
-                    for (final pocket in sheet.pockets)
-                      SizedBox.square(
-                          dimension: side,
-                          child: _Pocket(
-                              pocket: pocket,
-                              onOpen: onOpen,
-                              focused: pocket.song.name == focus?.song &&
-                                  pocket.difficulty == focus?.difficulty)),
-                  ])))));
+  State<_Sheet> createState() => _SheetState();
+}
+
+// The sheet's arrivals rise in from below one after another, each over what
+// its pocket held, the pocket glowing as it goes in.
+class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
+  late final List<int> _order = [
+    for (final (i, p) in widget.sheet.pockets.indexed)
+      if (widget.arrivals
+          .containsKey((song: p.song.name, difficulty: p.difficulty)))
+        i
+  ];
+  late final _clock = AnimationController(
+      vsync: this, duration: Duration(milliseconds: 500 + 420 * _order.length))
+    ..addListener(_tick);
+  int _in = 0;
+
+  static const _lead = .15, _flight = .35;
+
+  Interval _interval(int n) {
+    final step = (1 - _lead - _flight) / math.max(1, _order.length - 1);
+    return Interval(_lead + n * step, _lead + n * step + _flight,
+        curve: Curves.easeOutBack);
+  }
+
+  void _tick() {
+    final landed = [
+      for (var n = 0; n < _order.length; n++)
+        if (_clock.value >= _interval(n).end) n
+    ].length;
+    if (landed > _in) HapticFeedback.selectionClick();
+    _in = landed;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (_order.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (MediaQuery.of(context).disableAnimations) _clock.value = 1;
+      _clock.forward().whenComplete(() {
+        if (mounted) widget.onLanded?.call(widget.arrivals.keys.toSet());
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final side = widget.side;
+    final pockets = widget.sheet.pockets;
+    BinderChart chart(BinderPocket p) =>
+        (song: p.song.name, difficulty: p.difficulty);
+    return DecoratedBox(
+        decoration: BoxDecoration(
+            color: FloorPop.of(context).riser,
+            borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+            padding: const EdgeInsets.all(_kPad),
+            child: Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                    width: _kColumns * side + (_kColumns - 1) * _kGap,
+                    child: Stack(clipBehavior: Clip.none, children: [
+                      Wrap(spacing: _kGap, runSpacing: _kGap, children: [
+                        for (final pocket in pockets)
+                          SizedBox.square(
+                              dimension: side,
+                              child: widget.arrivals.containsKey(chart(pocket))
+                                  // What it held, until the card is in.
+                                  ? _Pocket(pocket: (
+                                      song: pocket.song,
+                                      difficulty: pocket.difficulty,
+                                      best: null,
+                                      card: widget.arrivals[chart(pocket)]
+                                    ), onOpen: (_) {}, dimmed: true)
+                                  : _Pocket(
+                                      pocket: pocket,
+                                      onOpen: widget.onOpen,
+                                      fresh:
+                                          widget.fresh.contains(chart(pocket)),
+                                      focused: pocket.song.name ==
+                                              widget.focus?.song &&
+                                          pocket.difficulty ==
+                                              widget.focus?.difficulty)),
+                      ]),
+                      for (final (n, i) in _order.indexed)
+                        AnimatedBuilder(
+                            animation: _clock,
+                            builder: (context, child) {
+                              final interval = _interval(n);
+                              final t = interval.transform(_clock.value);
+                              final glow = _clock.value < interval.end
+                                  ? 0.0
+                                  : 1 -
+                                      ((_clock.value - interval.end) / .12)
+                                          .clamp(0.0, 1.0);
+                              return Positioned(
+                                  left: (i % _kColumns) * (side + _kGap),
+                                  top: (i ~/ _kColumns) * (side + _kGap),
+                                  width: side,
+                                  height: side,
+                                  child: Opacity(
+                                      opacity: t <= 0 ? 0 : 1,
+                                      child: Transform.translate(
+                                          offset: Offset(0, (1 - t) * 420),
+                                          child: Transform.rotate(
+                                              angle: (1 - t) * .3,
+                                              child: Transform.scale(
+                                                  scale: 1 + .4 * (1 - t),
+                                                  child: DecoratedBox(
+                                                      decoration: BoxDecoration(
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(8),
+                                                          boxShadow: [
+                                                            if (glow > 0)
+                                                              BoxShadow(
+                                                                  color: FloorPop
+                                                                      .volt
+                                                                      .withValues(
+                                                                          alpha:
+                                                                              glow),
+                                                                  blurRadius:
+                                                                      18,
+                                                                  spreadRadius: 2 +
+                                                                      6 *
+                                                                          (1 -
+                                                                              glow)),
+                                                          ]),
+                                                      child: child))))));
+                            },
+                            child: _Pocket(
+                                pocket: pockets[i],
+                                onOpen: widget.onOpen,
+                                fresh:
+                                    widget.fresh.contains(chart(pockets[i])))),
+                    ])))));
+  }
 }
 
 // A sleeve: the card when collected, else the chart's jacket as a ghost.
 class _Pocket extends StatelessWidget {
   const _Pocket(
-      {required this.pocket, required this.onOpen, this.focused = false});
+      {required this.pocket,
+      required this.onOpen,
+      this.focused = false,
+      this.dimmed = false,
+      this.fresh = false});
   final BinderPocket pocket;
   final ValueChanged<BinderPocket> onOpen;
   // Picked out, as the chart the binder was opened on.
   final bool focused;
+  // What a pocket held, under the card coming in to it.
+  final bool dimmed;
+  // A card just collected, tagged NEW.
+  final bool fresh;
 
   static const _grey = ColorFilter.matrix([
     .2126, .7152, .0722, 0, 0, //
@@ -528,6 +762,22 @@ class _Pocket extends StatelessWidget {
                 tierSuffix: false
               ),
               child: art));
+    }
+    if (dimmed) return Opacity(opacity: .5, child: sleeve);
+    if (fresh) {
+      return Stack(clipBehavior: Clip.none, children: [
+        Positioned.fill(child: sleeve),
+        Positioned(
+            left: -4,
+            top: -6,
+            child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                    color: FloorPop.volt,
+                    borderRadius: BorderRadius.circular(5)),
+                child: Text('NEW',
+                    style: FloorPop.display(9, color: FloorPop.onVolt)))),
+      ]);
     }
     if (!focused) return sleeve;
     return DecoratedBox(

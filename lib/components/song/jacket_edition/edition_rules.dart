@@ -3,8 +3,11 @@
 /// Description: Pure achievement/axis to material selection.
 library;
 
+import 'dart:math' as math;
+
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart' show kFlareRanks, kInGameDifficultyNames;
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/version_group.dart';
@@ -26,17 +29,14 @@ EditionRecipe resolveEdition(EditionFacts facts,
     [EditionOptions options = defaultEditionOptions]) {
   final precision = facts.precision?.award;
   final lamp = facts.lamp;
-  final frame = lamp == ClearLamp.mfc || precision == PrecisionAward.mfc
-      ? EditionFrame.starlight
-      : lamp == ClearLamp.pfc ||
-              precision == PrecisionAward.pfc ||
-              precision == PrecisionAward.sdp
-          ? EditionFrame.gold
-          : lamp == ClearLamp.gfc
-              ? EditionFrame.jade
-              : lamp == ClearLamp.fc || lamp == ClearLamp.life4
-                  ? EditionFrame.silver
-                  : EditionFrame.stock;
+  // Frames run stock to starlight in the lamp's tiers.
+  final frame = EditionFrame.values[math.max(
+      cardFrameTier(lamp),
+      switch (precision) {
+        PrecisionAward.mfc => 4,
+        PrecisionAward.pfc || PrecisionAward.sdp => 3,
+        _ => 0,
+      })];
   final tier = editionTier(facts.level);
   final difficulty = kInGameDifficultyNames[facts.chart.difficulty];
   final flare = kFlareRanks.indexOf(facts.flare ?? '');

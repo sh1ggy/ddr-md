@@ -9,7 +9,8 @@ library;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart'
-    show kFlareRanks, kInGameDifficultyNames, resolveOcrFlare;
+    show kInGameDifficultyNames, resolveOcrFlare;
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart' show ClearLamp;
@@ -49,6 +50,11 @@ class ChartBests {
 
   static ChartBest? forChart(String song, Modes mode, String difficulty) =>
       _cache[mode]?.bests[song]?[difficulty];
+
+  /// Every chart's best in [mode] as loaded, by song then difficulty. A load
+  /// makes a new map, so this one stays as it was.
+  static Map<String, Map<String, ChartBest>> bestsOf(Modes mode) =>
+      _cache[mode]?.bests ?? const {};
 
   /// The best on the chart at [index] into [mode]'s availableTypes; null when
   /// it hasn't been played or another mode is loaded.
@@ -94,29 +100,8 @@ class ChartBests {
         ClearLamp? lamp, String? flare) {
       if (song == null) return;
       final charts = bests.putIfAbsent(song, () => {});
-      final old = charts[difficulty];
-      final oldScore = old?.score,
-          oldGrade = old?.grade,
-          oldLamp = old?.lamp,
-          oldFlare = old?.flare;
-      charts[difficulty] = (
-        score: oldScore == null || (score != null && score > oldScore)
-            ? score ?? oldScore
-            : oldScore,
-        // Grades run best first; lamps and flare ranks worst first.
-        grade:
-            oldGrade == null || (grade != null && grade.index < oldGrade.index)
-                ? grade ?? oldGrade
-                : oldGrade,
-        lamp: oldLamp == null || (lamp != null && lamp.index > oldLamp.index)
-            ? lamp ?? oldLamp
-            : oldLamp,
-        flare: oldFlare == null ||
-                (flare != null &&
-                    kFlareRanks.indexOf(flare) > kFlareRanks.indexOf(oldFlare))
-            ? flare ?? oldFlare
-            : oldFlare,
-      );
+      charts[difficulty] = mergeBest(charts[difficulty],
+          (score: score, grade: grade, lamp: lamp, flare: flare));
     }
 
     for (final r in records) {

@@ -8,6 +8,7 @@
 library;
 
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 
@@ -50,6 +51,21 @@ class Visit {
 
   /// Its id in routes: the session's, or the set's first play time.
   String get key => session?.id ?? 'set-${start.millisecondsSinceEpoch}';
+}
+
+/// The [gains] [visit]'s plays made: each on one of its charts, set at one
+/// of its plays.
+List<CardGain> gainsIn(Visit visit, List<CardGain> gains) {
+  int second(DateTime t) => t.millisecondsSinceEpoch ~/ 1000;
+  final played = {
+    for (final p in visit.plays)
+      (p.song, p.mode, p.difficulty, second(p.playedAt))
+  };
+  return [
+    for (final g in gains)
+      if (played.contains((g.song, g.mode, g.difficulty, second(g.playedAt))))
+        g
+  ];
 }
 
 /// Every visit, newest first, from [plays] and [sessions] (both newest
