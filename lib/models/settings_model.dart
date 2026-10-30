@@ -158,6 +158,13 @@ class Settings {
   static const String eamuseSyncedAtKey = "eamuseSyncedAt";
   static const String eamuseLastPlayKey = "eamuseLastPlay";
 
+  // An unfinished walk of every music_data page, as JSON: the style and page
+  // it carries on from, and the newest play it covers ('' = none).
+  static const String eamuseWalkKey = "eamuseWalk";
+
+  // 1 = leave doubles charts out of e-amusement syncs.
+  static const String eamuseSkipDoublesKey = "eamuseSkipDoubles";
+
   // The e-amusement player status, from the play data index: dancer name,
   // total plays and last play (Japan-time text, as above). The rival code is
   // kept under [rivalCodeSpeedKey].

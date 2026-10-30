@@ -7,8 +7,9 @@
 /// last sync; it walks every music_data page only when the recent list may
 /// have dropped plays ([planEamuseSync]). Signing in happens on Konami's own
 /// page in a web view, so the app reuses that session's cookies and never
-/// sees the password. Requests are sequential and throttled by
-/// [EamuseSync.gap] across every sync, and a sync stops at the first error.
+/// sees the password. Requests are sequential, start at least [EamuseSync.gap]
+/// apart across every sync and share one connection; a sync stops at the
+/// first error. Only the score, grade, lamp and flare of each chart are kept.
 library;
 
 import 'dart:convert';
@@ -247,7 +248,6 @@ ScoreRecord? parseEamuseDetail(
     clearLamp: _lamps[_imageName(data, '.clearkind')],
     flareRank: _flareRank(_imageName(data, '.flarerank')),
     flareSkill: value('.flareskill'),
-    maxCombo: value('.maxcombo'),
     playedAt: lastPlay == null ? null : eamuseTime(lastPlay),
     updatedAt: syncedAt,
   );
@@ -338,9 +338,12 @@ class EamuseSongIndex {
 
 typedef EamuseProgress = void Function(int done, int total);
 
+/// Where a walk of the music_data pages carries on: the next page to fetch.
+typedef EamuseWalk = ({Modes mode, int page});
+
 class EamuseSync {
-  /// Least time between two requests to Konami, from any sync; each wait adds
-  /// up to a second of jitter on top.
+  /// Least time between the starts of two requests to Konami, from any sync;
+  /// each wait adds up to a second of jitter on top.
   static const gap = Duration(seconds: 3);
 
   /// Least time between the starts of two syncs. Most only read the recent
@@ -368,6 +371,8 @@ class EamuseSync {
   // Shared, so stopping and restarting a sync doesn't skip the gap.
   static DateTime? _lastRequest;
   final _random = Random();
+  // Kept open between requests, so each page skips a new TLS handshake.
+  HttpClient? _client;
 
   EamuseSync({
     required this.cookies,
@@ -411,26 +416,24 @@ class EamuseSync {
           DateTime.now().difference(_lastRequest!);
       if (wait > Duration.zero) await Future.delayed(wait);
     }
-    final client = HttpClient()
+    _lastRequest = DateTime.now();
+    final client = _client ??= HttpClient()
       ..connectionTimeout = const Duration(seconds: 20);
-    try {
-      final request = await client.getUrl(url);
-      request.followRedirects = false;
-      request.headers.set(HttpHeaders.cookieHeader, cookies);
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
-      await _keep(response);
-      // A redirect from a play data page goes to the login page.
-      if (response.isRedirect) throw EamuseSignedOut();
-      if (response.statusCode != 200) {
-        throw EamuseUnavailable('Konami answered ${response.statusCode}');
-      }
-      return body;
-    } finally {
-      _lastRequest = DateTime.now();
-      client.close();
+    final request = await client.getUrl(url);
+    request.followRedirects = false;
+    request.headers.set(HttpHeaders.cookieHeader, cookies);
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    await _keep(response);
+    // A redirect from a play data page goes to the login page.
+    if (response.isRedirect) throw EamuseSignedOut();
+    if (response.statusCode != 200) {
+      throw EamuseUnavailable('Konami answered ${response.statusCode}');
     }
+    return body;
   }
+
+  void close() => _client?.close();
 
   Future<void> _keep(HttpClientResponse response) async {
     final List<Cookie> set;
@@ -452,24 +455,35 @@ class EamuseSync {
     await onCookies?.call(set);
   }
 
-  /// Syncs both styles, saving each page as it arrives. Returns how many
-  /// charts were saved and how many of them matched no song.
-  Future<({int charts, int unmatched})> run(EamuseProgress onProgress) async {
+  /// Walks [styles]' music_data pages from [from], saving each page as it
+  /// arrives and then passing [onPage] where the walk carries on, or null
+  /// once it's done. Returns how many charts were saved and how many of them
+  /// matched no song.
+  Future<({int charts, int unmatched})> run(
+    EamuseProgress onProgress, {
+    List<Modes> styles = Modes.values,
+    EamuseWalk? from,
+    Future<void> Function(EamuseWalk? next)? onPage,
+  }) async {
     final syncedAt = DateTime.now();
     var charts = 0, unmatched = 0;
-    // Doubles' page count is unknown until its first page; until then it's
-    // taken to match singles'.
-    var singlesPages = 1;
-    for (final mode in Modes.values) {
-      var pages = 1;
-      for (var page = 0; page < pages && !cancelled; page++) {
-        final before = mode == Modes.singles ? 0 : singlesPages;
-        onProgress(before + page,
-            singlesPages + (mode == Modes.singles ? singlesPages : pages));
+    // A style's page count is unknown until its first page; until then it's
+    // taken to match the other's.
+    final pages = <Modes, int>{};
+    int count(Modes m) => pages[m] ?? pages.values.firstOrNull ?? 1;
+    int total(Iterable<Modes> ms) => ms.fold(0, (n, m) => n + count(m));
+    final start = from ?? (mode: styles.first, page: 0);
+    // A walk left in a style no longer synced is done.
+    if (!styles.contains(start.mode)) await onPage?.call(null);
+    for (var s = styles.indexOf(start.mode);
+        s >= 0 && s < styles.length && !cancelled;
+        s++) {
+      final mode = styles[s];
+      for (var page = mode == start.mode ? start.page : 0; !cancelled; page++) {
+        onProgress(total(styles.take(s)) + page, total(styles));
         final parsed = parseEamusePage(
             await _get(eamusePageUrl(mode, page, host)), mode, syncedAt);
-        pages = min(parsed.pages, maxPages);
-        if (mode == Modes.singles) singlesPages = pages;
+        pages[mode] = min(parsed.pages, maxPages);
         final records = [
           for (final r in parsed.records)
             r.withSong(songs.of(r.konamiId ?? '', r.title))
@@ -477,6 +491,13 @@ class EamuseSync {
         await save(records);
         charts += records.length;
         unmatched += records.where((r) => r.song == null).length;
+        final last = page + 1 >= pages[mode]!;
+        await onPage?.call(!last
+            ? (mode: mode, page: page + 1)
+            : s + 1 < styles.length
+                ? (mode: styles[s + 1], page: 0)
+                : null);
+        if (last) break;
       }
     }
     return (charts: charts, unmatched: unmatched);

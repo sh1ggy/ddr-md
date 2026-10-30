@@ -153,7 +153,7 @@ void main() {
     ]);
   });
 
-  test('plays split into the credit they were played in', () {
+  test('long pauses and manual starts cannot create undersized credits', () {
     const cab = Cabinet(1, 1, 'Round1', '');
     Credit credit(int n, int hoursAgo) => Credit(
         id: '$n',
@@ -164,17 +164,17 @@ void main() {
         startedAt: t.subtract(Duration(hours: hoursAgo)));
     RecentPlay at(int minutesAgo) =>
         play('$minutesAgo', 0, 1).copyWithTime(minutesAgo);
-    // Credit 1 at -60 min takes 4 songs; the rest split at the breaks.
+    // Eight synced songs form two complete credits, even when individual
+    // pauses would previously have split them into one/two-song credits.
     final groups = groupByCredit([
       for (final m in [5, 20, 23, 50, 52, 54, 56, 59]) at(m)
     ], [
       credit(1, 1)
     ]);
     expect([for (final (c, p) in groups) (c?.number, p.length)],
-        [(null, 1), (null, 2), (null, 1), (1, 4)]);
+        [(null, 4), (1, 4)]);
 
-    // Logging the pair at -23 min as a credit keeps the song after the
-    // break out of it.
+    // An extra manual start cannot turn the pair at -23 min into a credit.
     final logged = groupByCredit([
       for (final m in [5, 20, 23, 50, 52, 54, 56, 59]) at(m)
     ], [
@@ -187,7 +187,7 @@ void main() {
           startedAt: t.subtract(const Duration(minutes: 23))),
     ]);
     expect([for (final (c, p) in logged) (c?.number, p.length)],
-        [(null, 1), (2, 2), (null, 1), (1, 4)]);
+        [(null, 4), (1, 4)]);
   });
 
   test('timing matches the synced play of its song', () {
@@ -214,5 +214,318 @@ void main() {
         [('a', 'hard')]);
     // 'b' was never synced: it stands in without a score.
     expect([for (final p in plays) (p.song, p.score)], [('a', 1), ('b', null)]);
+  });
+
+  group('credit reconciliation', () {
+    const cab = Cabinet(1, 1, 'Round1', '');
+    Credit credit(int n, int minutesAgo) => Credit(
+        id: '$n',
+        sessionId: 's',
+        number: n,
+        cabinet: cab,
+        side: PadSide.p1,
+        startedAt: t.subtract(Duration(minutes: minutesAgo)));
+    TimingPlay timing(RecentPlay p, String creditId) => TimingPlay(
+        id: 'timing-${p.konamiId}',
+        playedAt: p.playedAt.toIso8601String(),
+        creditId: creditId,
+        cabinetId: cab.id,
+        side: PadSide.p1,
+        song: p.song!,
+        mode: p.mode,
+        difficulty: 'hard',
+        songOffsetMs: 0,
+        syncUsedMs: 0,
+        averageMs: -3,
+        variationMs: 10);
+    List<RecentPlay> sixPlays() =>
+        [for (var i = 0; i < 6; i++) play('$i', 0, 1).copyWithTime(i * 2)];
+
+    test('six manual matches cannot overfill their logged credit', () {
+      final synced = sixPlays();
+      final (played, matched) =
+          reconcileTiming(synced, [for (final p in synced) timing(p, '1')]);
+      final groups = groupByCredit(played, [credit(1, 12)], matched);
+
+      expect([for (final (c, ps) in groups) (c?.number, ps.length)],
+          [(null, 3), (1, 3)]);
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+      expect(matched.length, 6);
+    });
+
+    test('conflicting manual credit IDs cannot reorder synced plays', () {
+      final synced = [
+        for (var i = 0; i < 8; i++) play('$i', 0, 1).copyWithTime(i * 3)
+      ];
+      // Every timing was accidentally logged against the opposite credit.
+      final (played, matched) = reconcileTiming(synced,
+          [for (final (i, p) in synced.indexed) timing(p, i < 4 ? '1' : '2')]);
+      final groups =
+          groupByCredit(played, [credit(2, 9), credit(1, 23)], matched);
+
+      expect([for (final (c, ps) in groups) (c?.number, ps.length)],
+          [(2, 4), (1, 4)]);
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+      expect(matched.length, 8);
+    });
+
+    test('overflow on either side of a logged credit stays separate', () {
+      final synced = [
+        for (var i = 0; i < 12; i++) play('$i', 0, 1).copyWithTime(i * 3)
+      ];
+      final groups = groupByCredit(synced, [credit(1, 21)]);
+
+      expect([for (final (c, ps) in groups) (c?.number, ps.length)],
+          [(null, 4), (1, 4), (null, 4)]);
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+    });
+
+    test('tied timestamps retain scraped order through reconciliation', () {
+      // Enough ties to catch an unstable sort, including matched plays
+      // whose insertion order differs from the scrape's.
+      final synced = [for (var i = 0; i < 32; i++) play('$i', 0, 1)];
+      final (played, matched) = reconcileTiming(
+          synced, [for (final p in synced.reversed) timing(p, '1')]);
+      final groups = groupByCredit(played, [credit(1, 1)], matched);
+
+      expect(played, orderedEquals(synced));
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+      expect(groups.map((g) => g.$2.length), everyElement(4));
+      expect(groups.where((g) => g.$1 != null), hasLength(1));
+    });
+
+    test('six manual-only plays form three plus three without losing timing',
+        () {
+      final (played, matched) =
+          reconcileTiming([], [for (final p in sixPlays()) timing(p, '1')]);
+      final groups = groupByCredit(played, [credit(1, 12)], matched);
+
+      expect([for (final (c, ps) in groups) (c?.number, ps.length)],
+          [(null, 3), (1, 3)]);
+      expect(groups.expand((g) => g.$2), orderedEquals(played));
+      expect(matched.length, 6);
+    });
+
+    test('empty logged credits remain visible in chronological order', () {
+      final groups = groupByCredit([], [credit(1, 12), credit(2, 1)]);
+      expect([for (final (c, ps) in groups) (c?.number, ps.length)],
+          [(2, 0), (1, 0)]);
+    });
+
+    test('extra and early manual credit starts do not split synced credits',
+        () {
+      final synced = [
+        for (var i = 0; i < 8; i++) play('$i', 0, 1).copyWithTime(i * 3)
+      ];
+      final manual = [
+        credit(1, 23),
+        credit(2, 19), // Accidental Next Credit during the first credit.
+        credit(3, 16),
+        credit(4, 13), // Logged the next real credit a song too early.
+        credit(5, 2),
+        credit(6, 0), // Extra tap after the last song.
+      ];
+      final (played, matched) = reconcileTiming(synced,
+          [for (final (i, p) in synced.indexed) timing(p, '${i % 6 + 1}')]);
+      final groups = groupByCredit(played, manual, matched);
+
+      expect(groups, hasLength(2));
+      expect(groups.map((g) => g.$2.length), [4, 4]);
+      expect(groups.map((g) => g.$2),
+          [orderedEquals(synced.take(4)), orderedEquals(synced.skip(4))]);
+      expect(matched.length, 8);
+    });
+
+    test('missing manual credits cannot merge or shift synced credits', () {
+      final synced = [
+        for (var i = 0; i < 12; i++) play('$i', 0, 1).copyWithTime(i * 3)
+      ];
+      final (played, matched) =
+          reconcileTiming(synced, [for (final p in synced) timing(p, '1')]);
+      final groups = groupByCredit(played, [credit(1, 35)], matched);
+
+      expect(groups, hasLength(3));
+      expect(groups.map((g) => g.$2.length), [4, 4, 4]);
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+      expect(matched.length, 12);
+    });
+
+    test('unmatched manual entries cannot consume synced credit slots', () {
+      final synced = [
+        for (var i = 0; i < 8; i++) play('$i', 0, 1).copyWithTime(i * 3)
+      ];
+      final unmatched = timing(play('manual-only', 0, 1).copyWithTime(17), '1');
+      final (played, matched) = reconcileTiming(synced, [unmatched]);
+      final groups = groupByCredit(played, [credit(1, 23)], matched);
+      final syncedGroups = [
+        for (final (_, ps) in groups)
+          if (ps.any(synced.contains)) ps.where(synced.contains).toList(),
+      ];
+
+      expect(syncedGroups,
+          [orderedEquals(synced.take(4)), orderedEquals(synced.skip(4))]);
+      expect(
+          groups.map((g) => g.$2.length), everyElement(lessThanOrEqualTo(4)));
+      expect(groups.expand((g) => g.$2), hasLength(9));
+      expect(matched.values, contains(unmatched));
+    });
+
+    test('complete histories always partition into three/four-song credits',
+        () {
+      for (var count = 3; count <= 64; count++) {
+        if (count == 5) continue; // This count cannot be a complete history.
+        final synced = [
+          for (var i = 0; i < count; i++) play('$i', 0, 1).copyWithTime(i * 3)
+        ];
+        final groups = groupByCredit(synced, [credit(1, count * 3)]);
+        expect(groups.map((g) => g.$2.length),
+            everyElement(inInclusiveRange(3, 4)),
+            reason: '$count songs');
+        expect(groups.expand((g) => g.$2), orderedEquals(synced));
+      }
+    });
+
+    test(
+        'nine songs form three credits of three, never four plus four plus one',
+        () {
+      final synced = [
+        for (var i = 0; i < 9; i++) play('$i', 0, 1).copyWithTime(i * 3)
+      ];
+      expect(groupByCredit(synced, []).map((g) => g.$2.length), [3, 3, 3]);
+    });
+
+    test('timestamp gaps choose between three plus four and four plus three',
+        () {
+      for (final (times, expected) in [
+        ([0, 3, 6, 9, 18, 21, 24], [4, 3]),
+        ([0, 3, 6, 18, 21, 24, 27], [3, 4]),
+      ]) {
+        final synced = [
+          for (final (i, minutes) in times.indexed)
+            play('$i', 0, 1).copyWithTime(minutes)
+        ];
+        final groups = groupByCredit(synced, [
+          credit(1, 30),
+          credit(2, 20),
+          credit(3, 19),
+          credit(4, 0),
+        ]);
+        expect(groups.map((g) => g.$2.length), expected);
+        expect(groups.expand((g) => g.$2), orderedEquals(synced));
+      }
+    });
+
+    test('a manual start corroborates a larger re-entry gap', () {
+      final synced = [
+        for (final minutes in [0, 3, 6, 11, 15, 18, 21])
+          play('$minutes', 0, 1).copyWithTime(minutes)
+      ];
+      // The two candidate gaps are 4 and 5 minutes (usual interval 3).
+      // Starting the next credit during the 4-minute gap supports 3 + 4.
+      expect(groupByCredit(synced, []).map((g) => g.$2.length), [3, 4]);
+      final groups = groupByCredit(synced, [credit(1, 23), credit(2, 13)]);
+      expect(groups.map((g) => g.$2.length), [4, 3]);
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+    });
+
+    test('sparse matched timing changes can corroborate a larger gap', () {
+      final synced = [
+        for (final minutes in [0, 3, 6, 11, 15, 18, 21])
+          play('$minutes', 0, 1).copyWithTime(minutes)
+      ];
+      // Neither credit start lies near the gap; the matched timing records
+      // on either side carry the change, with an unlogged song in between.
+      final (played, matched) = reconcileTiming(
+          synced, [timing(synced[5], '1'), timing(synced[3], '2')]);
+      final groups =
+          groupByCredit(played, [credit(1, 24), credit(2, 23)], matched);
+      expect(groups.map((g) => g.$2.length), [4, 3]);
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+    });
+
+    test('supported modest gaps can distinguish four triples from three fours',
+        () {
+      final synced = [
+        for (final minutes in [0, 3, 6, 10, 13, 16, 20, 23, 26, 30, 33, 36])
+          play('$minutes', 0, 1).copyWithTime(minutes)
+      ];
+      expect(groupByCredit(synced, []).map((g) => g.$2.length), [4, 4, 4]);
+      final groups = groupByCredit(synced, [
+        credit(1, 38),
+        credit(2, 28),
+        credit(3, 18),
+        credit(4, 8),
+      ]);
+      expect(groups.map((g) => g.$2.length), [3, 3, 3, 3]);
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+    });
+
+    test('manual inputs alone cannot create a gap in evenly timed songs', () {
+      final synced = [
+        for (var i = 0; i < 7; i++) play('$i', 0, 1).copyWithTime(i * 3)
+      ];
+      final (played, matched) = reconcileTiming(synced, [
+        for (final (i, p) in synced.indexed) timing(p, i < 4 ? '2' : '1'),
+      ]);
+      final groups =
+          groupByCredit(played, [credit(1, 20), credit(2, 11)], matched);
+      expect(groups.map((g) => g.$2.length), [3, 4]);
+      expect(groups.expand((g) => g.$2), orderedEquals(synced));
+    });
+
+    test('a stronger synced gap outweighs misleading or repeated manual taps',
+        () {
+      final synced = [
+        for (final minutes in [0, 3, 6, 14, 18, 21, 24])
+          play('$minutes', 0, 1).copyWithTime(minutes)
+      ];
+      // The wrong manual start is in a 4-minute gap. The 8-minute synced
+      // gap wins; twenty taps in the wrong gap must not stack twenty votes.
+      for (final count in [1, 20]) {
+        final groups = groupByCredit(synced, [
+          credit(1, 26),
+          for (var i = 0; i < count; i++) credit(i + 2, 16),
+        ]);
+        expect(groups.map((g) => g.$2.length), [3, 4]);
+        expect(groups.expand((g) => g.$2), orderedEquals(synced));
+      }
+    });
+
+    test('pauses can distinguish four triples from three quadruples', () {
+      final synced = [
+        for (final minutes in [0, 3, 6, 18, 21, 24, 36, 39, 42, 54, 57, 60])
+          play('$minutes', 0, 1).copyWithTime(minutes)
+      ];
+      expect(groupByCredit(synced, []).map((g) => g.$2.length), [3, 3, 3, 3]);
+    });
+
+    test('an unmatched manual entry cannot turn three synced songs into four',
+        () {
+      final synced = [
+        for (var i = 0; i < 3; i++) play('$i', 0, 1).copyWithTime(i * 3)
+      ];
+      final unmatched = timing(play('manual-only', 0, 1).copyWithTime(2), '1');
+      final (played, matched) = reconcileTiming(synced, [unmatched]);
+      final groups = groupByCredit(played, [credit(1, 8)], matched);
+      final syncedGroup =
+          groups.singleWhere((g) => g.$2.contains(synced.first));
+      expect(syncedGroup.$2, orderedEquals(synced));
+      expect(groups.singleWhere((g) => g != syncedGroup).$2, hasLength(1));
+      expect(matched.values, contains(unmatched));
+    });
+
+    test('incomplete edge records retain their plays without a credit label',
+        () {
+      for (final count in [1, 2, 5]) {
+        final synced = [
+          for (var i = 0; i < count; i++) play('$i', 0, 1).copyWithTime(i * 3)
+        ];
+        final groups = groupByCredit(synced, [credit(1, count * 3)]);
+        expect(groups.expand((g) => g.$2), orderedEquals(synced));
+        for (final (c, ps) in groups) {
+          if (ps.length < kMinSongsPerCredit) expect(c, isNull);
+        }
+      }
+    });
   });
 }
