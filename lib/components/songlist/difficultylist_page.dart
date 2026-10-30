@@ -611,6 +611,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               for (final category in ChartCategory.values)
                 FilterOption(
                   label: kCategoryLabels[category]!,
+                  icon: kCategoryIcons[category],
                   selected: _filter.categories.contains(category),
                   onTap: () => _toggleCategory(category, songState),
                 ),

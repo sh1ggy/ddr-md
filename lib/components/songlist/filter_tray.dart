@@ -15,9 +15,11 @@ class FilterOption {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.icon,
   });
 
   final String label;
+  final IconData? icon;
   final bool selected;
   final VoidCallback onTap;
 }
@@ -44,6 +46,11 @@ class FilterTray extends StatelessWidget {
   Widget _chip(BuildContext context, FilterOption option) {
     final scheme = Theme.of(context).colorScheme;
     return FilterChip(
+      avatar: option.icon == null
+          ? null
+          : Icon(option.icon,
+              size: 16,
+              color: option.selected ? scheme.onPrimary : scheme.onSurface),
       label: Text(option.label),
       selected: option.selected,
       showCheckmark: false,
