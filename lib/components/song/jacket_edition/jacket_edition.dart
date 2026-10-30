@@ -194,31 +194,16 @@ class _JacketEditionState extends State<JacketEdition>
                               child: RepaintBoundary(
                                   child: EditionAchievementStamps(
                                       recipe: _recipe, motion: _motion)))),
-                    if (_recipe.modeStamp != null ||
-                        _recipe.difficultyStamp != null)
+                    if (EditionFooter.shows(_recipe))
                       Positioned(
                           left: geometry.width,
-                          bottom: geometry.width,
-                          height: size.height * editionScoreTabHeight,
-                          child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                  maxWidth: size.width * editionTabMaxWidth),
-                              child: IgnorePointer(
-                                  child: EditionChartTab(
-                                      recipe: _recipe,
-                                      corner: geometry.inner.blRadiusX)))),
-                    if (_recipe.scoreStamp case final score?)
-                      Positioned(
                           right: geometry.width,
                           bottom: geometry.width,
-                          height: size.height * editionScoreTabHeight,
-                          child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                  maxWidth: size.width * editionTabMaxWidth),
-                              child: IgnorePointer(
-                                  child: EditionScoreTab(
-                                      score: score,
-                                      corner: geometry.inner.brRadiusX)))),
+                          height: size.height * editionFooterHeight,
+                          child: IgnorePointer(
+                              child: EditionFooter(
+                                  recipe: _recipe,
+                                  corner: geometry.inner.blRadiusX))),
                   ]))),
         ),
       );
@@ -265,96 +250,98 @@ class EditionAchievementStamps extends StatelessWidget {
           ]);
 }
 
-/// Play style and difficulty in a tab carved out of the art's bottom left
-/// corner, mirroring the score's.
-class EditionChartTab extends StatelessWidget {
-  const EditionChartTab(
-      {super.key, required this.recipe, required this.corner});
+/// A band across the art's foot, as on the song list's rows: play style and
+/// difficulty on the left, the best score in a darker tab flush right,
+/// thousands large and the rest small.
+class EditionFooter extends StatelessWidget {
+  const EditionFooter({super.key, required this.recipe, required this.corner});
   final EditionRecipe recipe;
+  // The art's corner radius, which the band's corners follow.
   final double corner;
-  @override
-  Widget build(BuildContext context) => _CarvedTab(
-      key: const ValueKey('edition-chart-stamp'),
-      left: true,
-      corner: corner,
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (recipe.modeStamp case final mode?) ...[
-          Image.asset(
-              'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
-              height: 13,
-              semanticLabel: mode == 'singles' ? 'SINGLE' : 'DOUBLE',
-              errorBuilder: (_, __, ___) => Text(
-                  mode == 'singles' ? 'SINGLE' : 'DOUBLE',
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w900))),
-          if (recipe.difficultyStamp != null) const SizedBox(width: 8),
-        ],
-        if (recipe.difficultyStamp case final difficulty?)
-          DifficultyLabel(
-              difficulty: difficulty,
-              level: recipe.levelStamp,
-              levelSuffix: recipe.tierSuffix,
-              height: 15),
-      ]));
-}
 
-// A dark tab flush with one of the art's bottom corners, following its
-// radius, rounded where it meets the art.
-class _CarvedTab extends StatelessWidget {
-  const _CarvedTab(
-      {super.key,
-      required this.left,
-      required this.corner,
-      required this.child});
-  final bool left;
-  final double corner;
-  final Widget child;
+  static bool shows(EditionRecipe recipe) =>
+      recipe.modeStamp != null ||
+      recipe.difficultyStamp != null ||
+      recipe.scoreStamp != null;
+
   @override
   Widget build(BuildContext context) =>
       LayoutBuilder(builder: (context, constraints) {
         final h = constraints.maxHeight;
+        final score = recipe.scoreStamp;
+        final text = score == null ? null : formatScore(score);
+        final split = text?.lastIndexOf(',') ?? 0;
+        const figures = [FontFeature.tabularFigures()];
         return ClipRRect(
-            borderRadius: left
-                ? BorderRadius.only(
-                    topRight: Radius.circular(h * .4),
-                    bottomLeft: Radius.circular(corner))
-                : BorderRadius.only(
-                    topLeft: Radius.circular(h * .4),
-                    bottomRight: Radius.circular(corner)),
+            key: const ValueKey('edition-chart-stamp'),
+            borderRadius:
+                BorderRadius.vertical(bottom: Radius.circular(corner)),
             child: ColoredBox(
-                color: const Color(0xD916122C),
-                child: Padding(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: h * .45, vertical: h * .14),
-                    child: FittedBox(fit: BoxFit.scaleDown, child: child))));
+                color: const Color(0xB316122C),
+                child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                          child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: h * .45, vertical: h * .2),
+                              child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (recipe.modeStamp
+                                            case final mode?) ...[
+                                          Image.asset(
+                                              'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
+                                              height: 13,
+                                              semanticLabel: mode == 'singles'
+                                                  ? 'SINGLE'
+                                                  : 'DOUBLE',
+                                              errorBuilder: (_, __, ___) =>
+                                                  Text(
+                                                      mode == 'singles'
+                                                          ? 'SINGLE'
+                                                          : 'DOUBLE',
+                                                      style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight: FontWeight
+                                                              .w900))),
+                                          if (recipe.difficultyStamp != null)
+                                            const SizedBox(width: 8),
+                                        ],
+                                        if (recipe.difficultyStamp
+                                            case final difficulty?)
+                                          DifficultyLabel(
+                                              difficulty: difficulty,
+                                              level: recipe.levelStamp,
+                                              levelSuffix: recipe.tierSuffix,
+                                              height: 15),
+                                      ])))),
+                      if (text != null)
+                        DecoratedBox(
+                            key: const ValueKey('edition-score-tab'),
+                            decoration: BoxDecoration(
+                                color: const Color(0x66000000),
+                                borderRadius: BorderRadius.only(
+                                    topLeft: Radius.circular(h * .4))),
+                            child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: h * .45, vertical: h * .16),
+                                child: FittedBox(
+                                    child: Text.rich(TextSpan(children: [
+                                  TextSpan(
+                                      text: text.substring(0, split),
+                                      style: FloorPop.readout(17,
+                                              color: Colors.white)
+                                          .copyWith(fontFeatures: figures)),
+                                  TextSpan(
+                                      text: text.substring(split),
+                                      style: FloorPop.readout(12,
+                                              color: Colors.white70)
+                                          .copyWith(fontFeatures: figures)),
+                                ]))))),
+                    ])));
       });
-}
-
-/// The best score in a tab carved out of the art's bottom right corner, as on
-/// the song list's rows: thousands large, the rest small.
-class EditionScoreTab extends StatelessWidget {
-  const EditionScoreTab({super.key, required this.score, required this.corner});
-  final int score;
-  // The art's corner radius, which the tab's own corner follows.
-  final double corner;
-  @override
-  Widget build(BuildContext context) {
-    final text = formatScore(score);
-    final split = text.lastIndexOf(',');
-    const figures = [FontFeature.tabularFigures()];
-    return _CarvedTab(
-        key: const ValueKey('edition-score-tab'),
-        left: false,
-        corner: corner,
-        child: Text.rich(TextSpan(children: [
-          TextSpan(
-              text: text.substring(0, split),
-              style: FloorPop.readout(17, color: Colors.white)
-                  .copyWith(fontFeatures: figures)),
-          TextSpan(
-              text: text.substring(split),
-              style: FloorPop.readout(12, color: Colors.white70)
-                  .copyWith(fontFeatures: figures)),
-        ])));
-  }
 }

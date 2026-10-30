@@ -100,9 +100,8 @@ const editionCuts = {
 
 // Logical pixels around each icon's silhouette, rather than a label panel.
 const editionStampRim = 1.8;
-// The bottom corners' tabs, of the card's side.
-const editionScoreTabHeight = .085;
-const editionTabMaxWidth = .46;
+// The band across the art's foot, of the card's side.
+const editionFooterHeight = .09;
 const editionCompactMotifLines = 8;
 const editionCompactGlints = 4;
 const editionCompactFinishStrength = .55;
