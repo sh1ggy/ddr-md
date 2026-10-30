@@ -7,6 +7,9 @@ library;
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/songlist/song_search_sheet.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/session_trends.dart';
@@ -61,20 +64,24 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
   late DateTime _anchor = widget.now ?? DateTime.now();
   TrendRange _range = TrendRange.week;
   TrendMetric _metric = TrendMetric.score;
-  Modes? _mode;
-  int? _level, _venue, _cabinet, _selected;
-  String? _chart;
-  PadSide? _side;
+  TrendFilter _filter = const TrendFilter();
+  int? _selected;
 
   @override
   void didUpdateWidget(SessionTrendsView oldWidget) {
     super.didUpdateWidget(oldWidget);
     // A sync or deleted visit can remove the last option in a picker.
-    if (!widget.plays.any((p) => p.play.mode == _mode)) _mode = null;
-    if (!widget.plays.any((p) => p.level == _level)) _level = null;
-    if (!widget.plays.any((p) => p.chart == _chart)) _chart = null;
-    if (!widget.cabinets.values.any((c) => c.venueId == _venue)) _venue = null;
-    if (!widget.cabinets.containsKey(_cabinet)) _cabinet = null;
+    final f = _filter;
+    _filter = TrendFilter(
+      mode: widget.plays.any((p) => p.play.mode == f.mode) ? f.mode : null,
+      level: widget.plays.any((p) => p.level == f.level) ? f.level : null,
+      chart: widget.plays.any((p) => p.chart == f.chart) ? f.chart : null,
+      venueId: widget.cabinets.values.any((c) => c.venueId == f.venueId)
+          ? f.venueId
+          : null,
+      cabinetId: widget.cabinets.containsKey(f.cabinetId) ? f.cabinetId : null,
+      side: f.side,
+    );
     _selected = null;
   }
 
@@ -90,235 +97,141 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     _change(() => _anchor = next.start);
   }
 
-  Future<void> _pickChart() async {
-    final charts = {
-      for (final p in widget.plays)
-        if ((_mode == null || p.play.mode == _mode) &&
-            (_level == null || p.level == _level))
-          p.chart: p
-    };
-    final sorted = charts.values.toList()
-      ..sort((a, b) => a.play.title.compareTo(b.play.title));
-    final picked = await showModalBottomSheet<String>(
+  Future<void> _showFilters() async {
+    final picked = await showModalBottomSheet<TrendFilter>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
-      builder: (context) {
-        var query = '';
-        return StatefulBuilder(
-            builder: (context, update) => SafeArea(
-                  child: SizedBox(
-                    height: MediaQuery.sizeOf(context).height * 0.75,
-                    child: Column(children: [
-                      Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: TextField(
-                            decoration: const InputDecoration(
-                                labelText: 'Find a chart',
-                                prefixIcon: Icon(Icons.search)),
-                            onChanged: (text) =>
-                                update(() => query = text.toLowerCase()),
-                          )),
-                      ListTile(
-                          title: const Text('All charts'),
-                          onTap: () => Navigator.pop(context, '')),
-                      Expanded(
-                          child: ListView(children: [
-                        for (final p in sorted.where(
-                            (p) => p.play.title.toLowerCase().contains(query)))
-                          ListTile(
-                              title: Text(p.play.title),
-                              subtitle: Text(
-                                  '${p.play.mode == Modes.singles ? 'SP' : 'DP'} · ${p.play.difficulty} · ${p.level ?? '?'}'),
-                              selected: _chart == p.chart,
-                              onTap: () => Navigator.pop(context, p.chart)),
-                      ])),
-                    ]),
-                  ),
-                ));
-      },
+      showDragHandle: true,
+      builder: (_) => _TrendFiltersSheet(
+          plays: widget.plays, cabinets: widget.cabinets, initial: _filter),
     );
-    if (picked != null && mounted) {
-      _change(() => _chart = picked.isEmpty ? null : picked);
-    }
+    if (picked != null && mounted) _change(() => _filter = picked);
   }
 
   @override
   Widget build(BuildContext context) {
     final window = TrendWindow.containing(_anchor, _range);
     final now = widget.now ?? DateTime.now();
-    final summary = summarizeTrends(
-        widget.plays,
-        window,
-        TrendFilter(
-            mode: _mode,
-            level: _level,
-            chart: _chart,
-            venueId: _venue,
-            cabinetId: _cabinet,
-            side: _side),
-        _metric);
-    final dates = MaterialLocalizations.of(context);
-    String date(DateTime d) => dates.formatMediumDate(d);
-    final end = DateTime(window.end.year, window.end.month, window.end.day - 1);
-    final levels = widget.plays
-        .where((p) => _mode == null || p.play.mode == _mode)
-        .map((p) => p.level)
-        .whereType<int>()
-        .toSet()
-        .toList()
-      ..sort();
-    final venues = {
-      for (final c in widget.cabinets.values) c.venueId: c.venueName
-    };
-    final cabs = widget.cabinets.values
-        .where((c) => _venue == null || c.venueId == _venue)
-        .toList();
-    final chartTitle = widget.plays.where((p) => p.chart == _chart).firstOrNull;
+    final summary = summarizeTrends(widget.plays, window, _filter, _metric);
     final selected = _selected == null ? null : summary.samples[_selected!];
+    final pop = FloorPop.of(context);
+    final labels = _filterLabels(_filter, widget.plays, widget.cabinets);
     return ListView(
       padding: clearOfBars(context, const EdgeInsets.all(16)),
       children: [
         PillTabs<TrendRange>(
+          tabHeight: 48,
           values: TrendRange.values,
           tabs: const [Text('Week'), Text('Fortnight'), Text('Month')],
           selected: _range,
           onChanged: (range) => _change(() => _range = range),
         ),
-        _PeriodSwipe(
-            onMove: _movePeriod,
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    IconButton(
-                        tooltip: 'Previous period',
-                        icon: const Icon(Icons.chevron_left),
-                        onPressed: () => _movePeriod(-1)),
-                    Expanded(
-                        child: Text('${date(window.start)} – ${date(end)}',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleSmall)),
-                    IconButton(
-                        tooltip: 'Next period',
-                        icon: const Icon(Icons.chevron_right),
-                        onPressed: !window.end.isBefore(now)
-                            ? null
-                            : () => _movePeriod(1)),
-                  ]),
-                  if (!window.contains(now))
-                    Align(
-                        alignment: Alignment.center,
-                        child: TextButton(
-                            onPressed: () => _change(() => _anchor = now),
-                            child: const Text('Today'))),
-                  BeatIn(child: _hero(summary, selected)),
-                ])),
-        const SizedBox(height: 16),
-        Text('Focus', style: Theme.of(context).textTheme.titleMedium),
-        Wrap(spacing: 12, runSpacing: 4, children: [
-          _picker<Modes>(
-              'Mode',
-              _mode,
-              {
-                for (final m in Modes.values)
-                  m: m == Modes.singles ? 'SP' : 'DP'
-              },
-              (v) => _change(() {
-                    _mode = v;
-                    _level = null;
-                    _chart = null;
-                  })),
-          _picker<int>(
-              'Level',
-              _level,
-              {for (final l in levels) l: '$l'},
-              (v) => _change(() {
-                    _level = v;
-                    _chart = null;
-                  })),
+        const SizedBox(height: 20),
+        _periodHeader(window, now),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(
+              child: Text(labels.isEmpty ? 'All plays' : labels.join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: pop.haze))),
+          const SizedBox(width: 8),
+          TextButton.icon(
+              key: const ValueKey('trend-filters'),
+              onPressed: _showFilters,
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: Text(
+                  labels.isEmpty ? 'Filters' : 'Filters (${labels.length})')),
         ]),
-        ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(chartTitle?.play.title ?? 'All charts'),
-            subtitle: chartTitle == null
-                ? const Text('Choose a chart to track it over time')
-                : Text(
-                    '${chartTitle.play.mode == Modes.singles ? 'SP' : 'DP'} · ${chartTitle.play.difficulty}'),
-            trailing: const Icon(Icons.search),
-            onTap: _pickChart),
         const SizedBox(height: 8),
-        Text('Where you played',
-            style: Theme.of(context).textTheme.titleMedium),
-        Wrap(spacing: 12, runSpacing: 4, children: [
-          _picker<int>(
-              'Venue',
-              _venue,
-              venues,
-              (v) => _change(() {
-                    _venue = v;
-                    _cabinet = null;
-                  })),
-          _picker<int>(
-              'Cabinet',
-              _cabinet,
-              {
-                for (final c in cabs)
-                  c.id: c.name.isEmpty ? c.venueName : c.label
-              },
-              (v) => _change(() => _cabinet = v)),
-          _picker<PadSide>(
-              'Side',
-              _side,
-              const {PadSide.p1: '1P', PadSide.p2: '2P'},
-              (v) => _change(() => _side = v)),
-        ]),
-        const Text(
-            'Plays without a logged venue or credit appear in All. Cab and side filters require an assigned credit or timing.',
-            style: TextStyle(fontSize: 12)),
-        if (_mode != null ||
-            _level != null ||
-            _chart != null ||
-            _venue != null ||
-            _cabinet != null ||
-            _side != null)
-          Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton(
-                  onPressed: () => _change(() {
-                        _mode = null;
-                        _level = null;
-                        _chart = null;
-                        _venue = null;
-                        _cabinet = null;
-                        _side = null;
-                      }),
-                  child: const Text('Reset filters'))),
+        BeatIn(child: _hero(summary, selected)),
       ],
     );
   }
 
+  Widget _periodHeader(TrendWindow window, DateTime now) {
+    final dates = MaterialLocalizations.of(context);
+    final pop = FloorPop.of(context);
+    final end = DateTime(window.end.year, window.end.month, window.end.day - 1);
+    final sameMonth =
+        window.start.year == end.year && window.start.month == end.month;
+    final sameYear = window.start.year == end.year;
+    final title = _range == TrendRange.month
+        ? dates
+            .formatMonthYear(window.start)
+            .replaceFirst(dates.formatYear(window.start), '')
+            .trim()
+        : sameMonth
+            ? '${dates.formatShortMonthDay(window.start)}–${end.day}'
+            : '${dates.formatShortMonthDay(window.start)} – ${dates.formatShortMonthDay(end)}';
+    final year = sameYear
+        ? dates.formatYear(window.start)
+        : '${dates.formatYear(window.start)}–${dates.formatYear(end)}';
+    final current = window.contains(now);
+    final period = switch (_range) {
+      TrendRange.week => 'This week',
+      TrendRange.fortnight => 'This fortnight',
+      TrendRange.month => 'This month',
+    };
+    return Column(children: [
+      Row(children: [
+        _periodButton('Previous period', Icons.chevron_left_rounded,
+            () => _movePeriod(-1)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: Semantics(
+          key: const ValueKey('trend-period-label'),
+          label:
+              '${dates.formatMediumDate(window.start)} – ${dates.formatMediumDate(end)}',
+          excludeSemantics: true,
+          child: Column(children: [
+            Text(title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -.5)),
+            const SizedBox(height: 5),
+            Text(
+                _range == TrendRange.month
+                    ? year
+                    : current
+                        ? '$period · $year'
+                        : year,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: pop.haze)),
+          ]),
+        )),
+        const SizedBox(width: 12),
+        _periodButton('Next period', Icons.chevron_right_rounded,
+            current ? null : () => _movePeriod(1)),
+      ]),
+      if (!current)
+        Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: TextButton.icon(
+                onPressed: () => _change(() => _anchor = now),
+                icon: const Icon(Icons.today_rounded, size: 16),
+                label: Text('Back to ${period.toLowerCase()}'))),
+    ]);
+  }
+
+  Widget _periodButton(
+          String tooltip, IconData icon, VoidCallback? onPressed) =>
+      IconButton.filledTonal(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 30),
+        style: IconButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+
   String _format(double value) =>
       '${_metric == TrendMetric.score ? formatScore(value.round()) : value.toStringAsFixed(1)}${_metric == TrendMetric.timing ? ' ms' : ' pts'}';
-
-  Widget _picker<T>(String label, T? value, Map<T, String> choices,
-          ValueChanged<T?> onChanged) =>
-      SizedBox(
-          width: 160,
-          child: DropdownButtonFormField<T>(
-              key: ValueKey((label, value)),
-              initialValue: value,
-              isExpanded: true,
-              decoration: InputDecoration(labelText: label),
-              items: [
-                DropdownMenuItem<T>(value: null, child: const Text('All')),
-                for (final e in choices.entries)
-                  DropdownMenuItem(
-                      value: e.key,
-                      child: Text(e.value, overflow: TextOverflow.ellipsis))
-              ],
-              onChanged: onChanged));
 
   Widget _hero(TrendSummary summary, TrendSample? selected) {
     final pop = FloorPop.of(context);
@@ -337,7 +250,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         ? MaterialLocalizations.of(context)
             .formatMediumDate(selected.day)
             .toUpperCase()
-        : 'THIS ${_range == TrendRange.week ? 'WEEK' : _range == TrendRange.fortnight ? 'FORTNIGHT' : 'MONTH'}';
+        : null;
     final hasData = summary.samples.any((s) => s.value != null);
     return Material(
       color: pop.stage,
@@ -384,7 +297,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                             style: FloorPop.readout(46, color: colour))))),
             const SizedBox(height: 4),
             Text(
-                '${score ? 'AVERAGE SCORE' : 'AVERAGE VARIATION · MS'} · $caption',
+                '${score ? 'AVERAGE SCORE' : 'AVERAGE VARIATION · MS'}${caption == null ? '' : ' · $caption'}',
                 style: pop.label.copyWith(fontSize: 9, letterSpacing: .8)),
             const SizedBox(height: 7),
             Text('$observations ${score ? 'cleared plays' : 'timed plays'}',
@@ -404,6 +317,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         Padding(
             padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
             child: PillTabs<TrendMetric>(
+                tabHeight: 48,
                 values: TrendMetric.values,
                 tabs: const [Text('Score'), Text('Timing variation')],
                 selected: _metric,
@@ -439,13 +353,19 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                 _dayStrip(summary),
               ],
               const SizedBox(height: 10),
-              Row(children: [
-                _legend(score ? scheme.primary : FloorPop.grape,
-                    score ? 'Daily average score' : 'Variation · ms'),
-                const Spacer(),
-                Text('SWIPE TO BROWSE',
-                    style: pop.label.copyWith(fontSize: 8, letterSpacing: .6)),
-              ]),
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 16,
+                runSpacing: 8,
+                children: [
+                  _legend(score ? scheme.primary : FloorPop.grape,
+                      score ? 'Daily average score' : 'Variation · ms'),
+                  if (hasData)
+                    Text('TAP A DAY',
+                        style:
+                            pop.label.copyWith(fontSize: 8, letterSpacing: .6)),
+                ],
+              ),
               const SizedBox(height: 18),
               Row(spacing: 6, children: [
                 _stat('PLAYS', '${summary.current.length}', scheme.primary,
@@ -722,49 +642,264 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
   }
 }
 
-/// Observes swipes without competing with the chart's own pan recognizer or
-/// the surrounding vertical list. A horizontal swipe moves exactly one period.
-class _PeriodSwipe extends StatefulWidget {
-  const _PeriodSwipe({required this.onMove, required this.child});
-  final ValueChanged<int> onMove;
-  final Widget child;
-  @override
-  State<_PeriodSwipe> createState() => _PeriodSwipeState();
+List<String> _filterLabels(
+    TrendFilter filter, List<TrendPlay> plays, Map<int, Cabinet> cabinets) {
+  final chart = plays.where((p) => p.chart == filter.chart).firstOrNull;
+  final venue =
+      cabinets.values.where((c) => c.venueId == filter.venueId).firstOrNull;
+  final cabinet = cabinets[filter.cabinetId];
+  return [
+    if (filter.mode != null) filter.mode == Modes.singles ? 'SP' : 'DP',
+    if (chart == null && filter.level != null) 'Level ${filter.level}',
+    if (chart != null) '${chart.play.title} (${chart.play.difficulty})',
+    if (venue != null) venue.venueName,
+    if (cabinet != null)
+      cabinet.name.isEmpty ? cabinet.venueName : cabinet.label,
+    if (filter.side != null) filter.side == PadSide.p1 ? '1P' : '2P',
+  ];
 }
 
-class _PeriodSwipeState extends State<_PeriodSwipe> {
-  int? _pointer;
-  Offset? _start, _last;
+/// Keep edits local until Apply, including when a nested chart picker is open.
+class _TrendFiltersSheet extends StatefulWidget {
+  const _TrendFiltersSheet(
+      {required this.plays, required this.cabinets, required this.initial});
+  final List<TrendPlay> plays;
+  final Map<int, Cabinet> cabinets;
+  final TrendFilter initial;
+
   @override
-  Widget build(BuildContext context) => Listener(
-        key: const ValueKey('trend-period-swipe'),
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (e) {
-          if (_pointer != null) {
-            _start = null;
-            return;
-          }
-          _pointer = e.pointer;
-          _start = _last = e.position;
-        },
-        onPointerMove: (e) {
-          if (e.pointer == _pointer) _last = e.position;
-        },
-        onPointerCancel: (e) {
-          _pointer = null;
-          _start = null;
-        },
-        onPointerUp: (e) {
-          if (e.pointer != _pointer) return;
-          final start = _start, last = _last;
-          _pointer = null;
-          _start = null;
-          if (start == null || last == null) return;
-          final delta = last - start;
-          if (delta.dx.abs() >= 60 && delta.dx.abs() > delta.dy.abs() * 1.5) {
-            widget.onMove(delta.dx > 0 ? -1 : 1);
-          }
-        },
-        child: widget.child,
-      );
+  State<_TrendFiltersSheet> createState() => _TrendFiltersSheetState();
+}
+
+class _TrendFiltersSheetState extends State<_TrendFiltersSheet> {
+  late Modes? _mode = widget.initial.mode;
+  late int? _level = widget.initial.level;
+  late String? _chart = widget.initial.chart;
+  late int? _venue = widget.initial.venueId;
+  late int? _cabinet = widget.initial.cabinetId;
+  late PadSide? _side = widget.initial.side;
+
+  TrendFilter get _filter => TrendFilter(
+      mode: _mode,
+      level: _level,
+      chart: _chart,
+      venueId: _venue,
+      cabinetId: _cabinet,
+      side: _side);
+
+  Future<void> _pickChart() async {
+    final charts = {
+      for (final p in widget.plays)
+        if ((_mode == null || p.play.mode == _mode) &&
+            (_chart != null || _level == null || p.level == _level))
+          p.chart: p
+    };
+    final sorted = charts.values.toList()
+      ..sort((a, b) => a.play.title.compareTo(b.play.title));
+    final songs = {for (final song in Songs.list) song.name: song};
+    final picked = await showSongSearchSheet<String>(
+      context,
+      selected: _chart,
+      browseWhenEmpty: true,
+      allOption: (label: 'All charts', value: ''),
+      options: [
+        for (final p in sorted)
+          SongSearchOption(
+            value: p.chart,
+            // Keep older plays selectable even when their song is absent
+            // from the current catalogue.
+            song: songs[p.play.song] ??
+                SongInfo.fromJson({
+                  'name': p.play.song ?? p.play.konamiId,
+                  'title': p.play.title,
+                }),
+            mode: p.play.mode,
+            difficulty: p.play.difficulty,
+            level: p.level,
+          ),
+      ],
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _chart = picked.isEmpty ? null : picked;
+        _level = charts[picked]?.level;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final levels = widget.plays
+        .where((p) => _mode == null || p.play.mode == _mode)
+        .map((p) => p.level)
+        .whereType<int>()
+        .toSet()
+        .toList()
+      ..sort();
+    final venues = {
+      for (final c in widget.cabinets.values) c.venueId: c.venueName
+    };
+    final cabs = widget.cabinets.values
+        .where((c) => _venue == null || c.venueId == _venue);
+    final chart = widget.plays.where((p) => p.chart == _chart).firstOrNull;
+    final count = _filterLabels(_filter, widget.plays, widget.cabinets).length;
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .8,
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+            child: Row(children: [
+              Expanded(
+                  child: Text('Filters',
+                      style: Theme.of(context).textTheme.titleLarge)),
+              TextButton(
+                onPressed: count == 0
+                    ? null
+                    : () => setState(() {
+                          _mode = null;
+                          _level = null;
+                          _chart = null;
+                          _venue = null;
+                          _cabinet = null;
+                          _side = null;
+                        }),
+                child: const Text('Reset filters'),
+              ),
+            ]),
+          ),
+          Expanded(
+              child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            children: [
+              Text('CHARTS', style: pop.label),
+              const SizedBox(height: 12),
+              PillTabs<Modes?>(
+                tabHeight: 48,
+                values: const [null, Modes.singles, Modes.doubles],
+                tabs: const [Text('All modes'), Text('SP'), Text('DP')],
+                selected: _mode,
+                onChanged: (mode) => setState(() {
+                  _mode = mode;
+                  _level = null;
+                  _chart = null;
+                }),
+              ),
+              const SizedBox(height: 16),
+              if (chart != null)
+                Semantics(
+                  label: 'Level set by selected chart',
+                  enabled: false,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Level',
+                      helperText: 'Set by selected chart',
+                      enabled: false,
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: chart.level == null
+                          ? const Text('Unknown')
+                          : LevelNumber(
+                              level: chart.level!,
+                              difficulty: chart.play.difficulty),
+                    ),
+                  ),
+                )
+              else
+                _picker<int>(
+                    'Level',
+                    'All levels',
+                    _level,
+                    {for (final level in levels) level: '$level'},
+                    (level) => setState(() {
+                          _level = level;
+                          _chart = null;
+                        }),
+                    itemBuilder: (level) => Semantics(
+                          label: 'Level $level',
+                          child: ExcludeSemantics(
+                            child:
+                                LevelNumber(level: level, difficulty: 'EXPERT'),
+                          ),
+                        )),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(chart?.play.title ?? 'All charts'),
+                subtitle: Text(chart == null
+                    ? 'Track a specific chart'
+                    : '${chart.play.mode == Modes.singles ? 'SP' : 'DP'} · ${chart.play.difficulty}'),
+                trailing: const Icon(Icons.search_rounded),
+                onTap: _pickChart,
+              ),
+              const Divider(height: 32),
+              Text('LOCATION', style: pop.label),
+              const SizedBox(height: 16),
+              _picker<int>(
+                  'Venue',
+                  'All venues',
+                  _venue,
+                  venues,
+                  (venue) => setState(() {
+                        _venue = venue;
+                        _cabinet = null;
+                      })),
+              const SizedBox(height: 16),
+              _picker<int>(
+                  'Cabinet',
+                  'All cabinets',
+                  _cabinet,
+                  {
+                    for (final c in cabs)
+                      c.id: c.name.isEmpty ? c.venueName : c.label
+                  },
+                  (cabinet) => setState(() => _cabinet = cabinet)),
+              const SizedBox(height: 16),
+              Text('Pad side', style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              PillTabs<PadSide?>(
+                tabHeight: 48,
+                values: const [null, PadSide.p1, PadSide.p2],
+                tabs: const [Text('Both sides'), Text('1P'), Text('2P')],
+                selected: _side,
+                onChanged: (side) => setState(() => _side = side),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                  'Location filters use logged venues and credits. Choose All to include plays without this information.',
+                  style: TextStyle(fontSize: 12, color: pop.haze)),
+            ],
+          )),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+            child: FilledButton(
+              onPressed: () => Navigator.pop(context, _filter),
+              child: const Text('Apply filters'),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _picker<T>(String label, String all, T? value, Map<T, String> choices,
+          ValueChanged<T?> onChanged,
+          {Widget Function(T)? itemBuilder}) =>
+      DropdownButtonFormField<T>(
+          key: ValueKey((label, value)),
+          initialValue: value,
+          isExpanded: true,
+          decoration: InputDecoration(labelText: label),
+          items: [
+            DropdownMenuItem<T>(value: null, child: Text(all)),
+            for (final e in choices.entries)
+              DropdownMenuItem(
+                  value: e.key,
+                  child: itemBuilder?.call(e.key) ??
+                      Text(e.value, overflow: TextOverflow.ellipsis)),
+          ],
+          onChanged: onChanged);
 }

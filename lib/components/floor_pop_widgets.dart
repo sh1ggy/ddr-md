@@ -342,18 +342,23 @@ class BeatSwap extends StatelessWidget {
 /// the surrounding [DefaultTabController] unless [controller] is given.
 class PillTabBar extends StatelessWidget {
   const PillTabBar(
-      {super.key, required this.tabs, this.controller, this.onTap});
+      {super.key,
+      required this.tabs,
+      this.controller,
+      this.onTap,
+      this.tabHeight = 36});
 
   final List<Widget> tabs;
   final TabController? controller;
   final ValueChanged<int>? onTap;
+  final double tabHeight;
 
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: 44,
+      height: tabHeight + 8,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
           color: pop.riser, borderRadius: BorderRadius.circular(16)),
@@ -367,7 +372,13 @@ class PillTabBar extends StatelessWidget {
         labelColor: scheme.onPrimary,
         unselectedLabelColor: pop.haze,
         splashBorderRadius: BorderRadius.circular(12),
-        tabs: tabs,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+        // Plain Text tabs otherwise shrink the InkWell to the label's height.
+        // TabBar adds its 2px indicator inset below each child.
+        tabs: [
+          for (final tab in tabs)
+            SizedBox(height: tabHeight - 2, child: Center(child: tab)),
+        ],
       ),
     );
   }
@@ -381,12 +392,14 @@ class PillTabs<T> extends StatefulWidget {
       required this.values,
       required this.tabs,
       required this.selected,
-      required this.onChanged});
+      required this.onChanged,
+      this.tabHeight = 36});
 
   final List<T> values;
   final List<Widget> tabs;
   final T selected;
   final ValueChanged<T> onChanged;
+  final double tabHeight;
 
   @override
   State<PillTabs<T>> createState() => _PillTabsState<T>();
@@ -416,6 +429,7 @@ class _PillTabsState<T> extends State<PillTabs<T>>
   Widget build(BuildContext context) => PillTabBar(
         controller: _controller,
         tabs: widget.tabs,
+        tabHeight: widget.tabHeight,
         onTap: (i) => widget.onChanged(widget.values[i]),
       );
 }

@@ -1,5 +1,6 @@
 import 'package:ddr_md/components/session/session_summary.dart';
 import 'package:ddr_md/components/session/session_trends_page.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
@@ -271,8 +272,7 @@ void main() {
     expect(result.map((p) => p.chart).toSet().length, 2);
   });
 
-  testWidgets(
-      'swiping the chart navigates periods, empty history and the current-period limit',
+  testWidgets('arrows browse periods and swiping leaves the period unchanged',
       (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -287,50 +287,51 @@ void main() {
         ]))));
     await tester.pumpAndSettle();
     final plot = find.byKey(const ValueKey('trend-plot'));
-    await tester.drag(plot, const Offset(-160, 0));
-    await tester.pumpAndSettle();
-    expect(find.text('Today'), findsNothing);
+    final previous =
+        find.widgetWithIcon(IconButton, Icons.chevron_left_rounded);
+    final next = find.widgetWithIcon(IconButton, Icons.chevron_right_rounded);
+    expect(find.text('Oct 26 – Nov 1'), findsOneWidget);
+    expect(tester.widget<IconButton>(next).onPressed, isNull);
+    expect(tester.getSize(previous).width, greaterThanOrEqualTo(48));
     await tester.drag(plot, const Offset(160, 0));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Oct 19'), findsOneWidget);
-    expect(find.text('Today'), findsOneWidget);
-    await tester.drag(
-        find.byKey(const ValueKey('trend-plot')), const Offset(160, 0));
+    expect(find.text('Oct 26 – Nov 1'), findsOneWidget);
+    await tester.drag(plot, const Offset(-160, 0));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Oct 12'), findsOneWidget);
-    // Browsing is not stopped at the oldest saved play.
-    await tester.drag(
-        find.byKey(const ValueKey('trend-period-swipe')), const Offset(160, 0));
+    expect(find.text('Oct 26 – Nov 1'), findsOneWidget);
+    await tester.tap(previous);
     await tester.pumpAndSettle();
-    expect(find.textContaining('Oct 5'), findsOneWidget);
-    await tester.drag(find.byKey(const ValueKey('trend-period-swipe')),
-        const Offset(-160, 0));
+    expect(find.text('Oct 19–25'), findsOneWidget);
+    expect(tester.widget<IconButton>(next).onPressed, isNotNull);
+    await tester.tap(previous);
     await tester.pumpAndSettle();
-    expect(find.textContaining('Oct 12'), findsOneWidget);
-    await tester.tap(find.text('Today'));
+    expect(find.text('Oct 12–18'), findsOneWidget);
+    // Browsing also works when the period has no plays.
+    await tester.tap(previous);
     await tester.pumpAndSettle();
-    await tester.drag(plot, const Offset(0, -100));
+    expect(find.text('Oct 5–11'), findsOneWidget);
+    await tester.tap(next);
     await tester.pumpAndSettle();
-    expect(find.text('Today'), findsNothing);
-    await tester.drag(plot, const Offset(20, 0));
+    expect(find.text('Oct 12–18'), findsOneWidget);
+    await tester.tap(find.text('Back to this week'));
     await tester.pumpAndSettle();
-    expect(find.text('Today'), findsNothing);
-    await tester.scrollUntilVisible(find.text('Fortnight'), -200);
-    await tester.pumpAndSettle();
+    expect(find.text('Oct 26 – Nov 1'), findsOneWidget);
     await tester.tap(find.text('Fortnight'));
     await tester.pumpAndSettle();
-    await tester.drag(
-        find.byKey(const ValueKey('trend-plot')), const Offset(160, 0));
+    await tester.tap(previous);
     await tester.pumpAndSettle();
-    expect(find.textContaining('Oct 5'), findsOneWidget);
-    await tester.tap(find.text('Today'));
+    expect(find.text('Oct 5–18'), findsOneWidget);
+    await tester.tap(find.text('Back to this fortnight'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Month'));
     await tester.pumpAndSettle();
-    await tester.drag(
-        find.byKey(const ValueKey('trend-plot')), const Offset(160, 0));
+    expect(find.text('October'), findsOneWidget);
+    expect(find.text('2026'), findsOneWidget);
+    await tester.tap(previous);
     await tester.pumpAndSettle();
-    expect(find.textContaining('Sep 1'), findsOneWidget);
+    expect(find.text('September'), findsOneWidget);
+    expect(find.text('2026'), findsOneWidget);
+    expect(find.text('Monthly view'), findsNothing);
     expect(tester.takeException(), null);
   });
 
@@ -373,12 +374,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Previous period'));
     await tester.pumpAndSettle();
-    expect(find.text('Today'), findsOneWidget);
-    await tester.tap(find.text('Today'));
+    expect(find.text('Back to this week'), findsOneWidget);
+    await tester.tap(find.text('Back to this week'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('All charts'), 250);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('All charts'));
+    await tester.tap(find.byKey(const ValueKey('trend-filters')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('All charts'));
     await tester.pumpAndSettle();
@@ -388,10 +387,161 @@ void main() {
         find.text('A long chart title to check wrapping on a small phone'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), null);
-    await tester.scrollUntilVisible(find.text('Reset filters'), 200);
-    expect(find.text('Reset filters'), findsOneWidget);
+    await tester.tap(find.text('Apply filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Filters (1)'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('trend-filters')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Reset filters'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('All plays'), findsOneWidget);
     expect(tester.takeException(), null);
+  });
+
+  testWidgets('filter edits are applied together and dismissal discards edits',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MaterialApp(
+      theme: floorPopTheme(Brightness.light),
+      home: Scaffold(
+          body: SessionTrendsView(now: DateTime(2026, 10, 28), plays: [
+        play('single', 27, 900000),
+        play('double', 27, 800000, mode: Modes.doubles),
+      ])),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Average score: 850,000'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('trend-filters')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SP'));
+    await tester.pumpAndSettle();
+    // Back dismisses the sheet, preserving the applied filter.
+    Navigator.of(tester.element(find.text('Apply filters'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('All plays'), findsOneWidget);
+    expect(find.bySemanticsLabel('Average score: 850,000'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('trend-filters')));
+    await tester.pumpAndSettle();
+    expect(find.text('All modes'), findsOneWidget);
+    final modeTarget = find
+        .ancestor(of: find.text('DP'), matching: find.byType(InkWell))
+        .first;
+    final modeRect = tester.getRect(modeTarget);
+    expect(modeRect.height, 48);
+    await tester.tapAt(modeRect.topRight + const Offset(-3, 3));
+    await tester.tap(find.text('Apply filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Filters (1)'), findsOneWidget);
+    expect(find.bySemanticsLabel('Average score: 800,000'), findsOneWidget);
+    await tester.tap(find.byTooltip('Previous period'));
+    await tester.pumpAndSettle();
+    expect(find.text('Filters (1)'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a tracked chart owns its level and clearing restores all levels',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MaterialApp(
+      theme: floorPopTheme(Brightness.dark),
+      home: Scaffold(
+          body: SessionTrendsView(
+        now: DateTime(2026, 10, 28),
+        plays: [
+          play('First chart', 27, 900000, level: 15),
+          play('Second chart', 27, 800000, level: 16),
+        ],
+      )),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('trend-filters')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<int>).first);
+    await tester.pumpAndSettle();
+    // Level choices use the same numerals as the chart results.
+    expect(find.byWidgetPredicate((w) => w is LevelNumber && w.level == 15),
+        findsWidgets);
+    await tester.tap(
+        find.byWidgetPredicate((w) => w is LevelNumber && w.level == 15).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All charts'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('First chart'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set by selected chart'), findsOneWidget);
+    expect(
+        find.ancestor(
+            of: find.text('Level'),
+            matching: find.byType(DropdownButtonFormField<int>)),
+        findsNothing);
+    expect(find.byWidgetPredicate((w) => w is LevelNumber && w.level == 15),
+        findsOneWidget);
+
+    // The chart's automatic level must not restrict the next chart choice.
+    await tester.tap(find.text('First chart'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Second chart'));
+    await tester.pumpAndSettle();
+    expect(find.byWidgetPredicate((w) => w is LevelNumber && w.level == 16),
+        findsOneWidget);
+    await tester.tap(find.text('Apply filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Filters (1)'), findsOneWidget);
+    expect(find.bySemanticsLabel('Average score: 800,000'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('trend-filters')));
+    await tester.pumpAndSettle();
+    expect(find.text('Set by selected chart'), findsOneWidget);
+    await tester.tap(find.text('Second chart'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All charts'));
+    await tester.pumpAndSettle();
+    expect(find.text('Set by selected chart'), findsNothing);
+    expect(find.text('All levels'), findsOneWidget);
+    await tester.tap(find.text('Apply filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('All plays'), findsOneWidget);
+    expect(find.bySemanticsLabel('Average score: 850,000'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('date header handles a year boundary on a narrow phone',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MaterialApp(
+      theme: floorPopTheme(Brightness.dark),
+      home: Scaffold(
+          body: SessionTrendsView(
+        now: DateTime(2027, 1, 1),
+        plays: const [],
+      )),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Dec 28 – Jan 3'), findsOneWidget);
+    expect(find.text('This week · 2026–2027'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('trend-filters')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Both sides'), 150,
+        scrollable: find.byType(Scrollable).last);
+    final sideTarget = find
+        .ancestor(of: find.text('1P'), matching: find.byType(InkWell))
+        .first;
+    final sideRect = tester.getRect(sideTarget);
+    expect(sideRect.height, 48);
+    await tester.tapAt(sideRect.bottomLeft + const Offset(3, -3));
+    await tester.tap(find.text('Apply filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Filters (1)'), findsOneWidget);
   });
 }

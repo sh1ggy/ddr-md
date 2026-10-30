@@ -295,19 +295,29 @@ class Songs {
       matchTitles(ocrTitle, limit: 1).firstOrNull;
 
   // The [limit] closest songs to [ocrTitle] scoring at least [minSimilarity],
-  // best first. Empty when the list is empty or the query normalizes to
-  // nothing.
+  // best first. Optional candidates restrict the search to eligible songs,
+  // including history entries absent from the catalogue. Empty when the list
+  // is empty or the query normalizes to nothing.
   static List<SongMatch> matchTitles(String ocrTitle,
-      {int limit = 10, double minSimilarity = 0}) {
+      {int limit = 10, double minSimilarity = 0, List<SongInfo>? candidates}) {
     final query = _normalize(ocrTitle);
-    if (query.isEmpty || list.isEmpty) return const [];
-    final keys = _searchKeys;
+    final songs = candidates ?? list;
+    if (query.isEmpty || songs.isEmpty) return const [];
+    final keys = candidates == null
+        ? _searchKeys
+        : [
+            for (final song in songs)
+              {song.title, song.titletranslit, song.name}
+                  .map(_normalize)
+                  .where((key) => key.isNotEmpty)
+                  .toList(growable: false)
+          ];
     if (query.length <= 64) _setPeq(query);
     final matches = <SongMatch>[];
-    for (var i = 0; i < list.length; i++) {
+    for (var i = 0; i < songs.length; i++) {
       final similarity = _similarity(query, keys[i], minSimilarity);
       if (similarity >= minSimilarity) {
-        matches.add(SongMatch(list[i], similarity));
+        matches.add(SongMatch(songs[i], similarity));
       }
     }
     matches.sort((a, b) => b.similarity.compareTo(a.similarity));
