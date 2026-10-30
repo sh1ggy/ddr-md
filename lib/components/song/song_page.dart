@@ -383,7 +383,13 @@ class _SongPageState extends State<SongPage> {
             available[
                 songState.chosenDifficulty.clamp(0, available.length - 1)]);
         if (chart == null) return null;
-        return SongPatternsCard(patterns: chart);
+        return SongPatternsCard(
+            patterns: chart,
+            chartKey: chartCategoryKey(
+                songInfo.name,
+                songState.modes,
+                available[
+                    songState.chosenDifficulty.clamp(0, available.length - 1)]));
       case SongSection.bpmGraph:
         if (!_isBpmChange && _chart.stops.isEmpty) return null;
         return SongChart(context: context, songInfo: songInfo, chart: _chart);
@@ -560,7 +566,9 @@ class _SongPageState extends State<SongPage> {
       if (mounted) _measureTitle();
     });
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark,
+      value: Theme.of(context).brightness == Brightness.dark
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
       child: SafeArea(
         top: false,
         // The page runs under the floating tab bar and clears it itself.

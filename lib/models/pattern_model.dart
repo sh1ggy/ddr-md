@@ -37,6 +37,68 @@ const kPatternIcons = <Pattern, IconData>{
   Pattern.staircase: Icons.stairs,
 };
 
+/// What a chart is known for, relative to its level. Balanced when nothing
+/// leads; Signature (one uncommon pattern) only by the player's pick.
+enum ChartCategory {
+  stream,
+  stamina,
+  burst,
+  jumps,
+  jack,
+  crossover,
+  footswitch,
+  bracket,
+  swing,
+  freeze,
+  gimmick,
+  signature,
+  balanced,
+}
+
+const kCategoryLabels = <ChartCategory, String>{
+  ChartCategory.stream: "Stream",
+  ChartCategory.stamina: "Stamina",
+  ChartCategory.burst: "Burst",
+  ChartCategory.jumps: "Jumps",
+  ChartCategory.jack: "Jack/trill",
+  ChartCategory.crossover: "Crossover",
+  ChartCategory.footswitch: "Footswitch",
+  ChartCategory.bracket: "Bracket",
+  ChartCategory.swing: "Swing",
+  ChartCategory.freeze: "Freeze",
+  ChartCategory.gimmick: "Gimmick",
+  ChartCategory.signature: "Signature",
+  ChartCategory.balanced: "Balanced",
+};
+
+const kCategoryIcons = <ChartCategory, IconData>{
+  ChartCategory.stream: Icons.waves,
+  ChartCategory.stamina: Icons.battery_charging_full,
+  ChartCategory.burst: Icons.bolt,
+  ChartCategory.jumps: Icons.unfold_more,
+  ChartCategory.jack: Icons.repeat_one,
+  ChartCategory.crossover: Icons.shuffle,
+  ChartCategory.footswitch: Icons.swap_vert,
+  ChartCategory.bracket: Icons.data_array,
+  ChartCategory.swing: Icons.music_note,
+  ChartCategory.freeze: Icons.ac_unit,
+  ChartCategory.gimmick: Icons.speed,
+  ChartCategory.signature: Icons.fingerprint,
+  ChartCategory.balanced: Icons.balance,
+};
+
+/// The categories ranked against the level.
+final kRankedCategories = [
+  for (final c in ChartCategory.values)
+    if (c != ChartCategory.balanced && c != ChartCategory.signature) c
+];
+
+/// A chart takes a category from this percentile of its level, and leads with
+/// it when it is also this far clear of the next.
+const kCategoryPercentile = 85;
+const kCategoryLead = 5;
+const kMaxSecondaryCategories = 2;
+
 /// A pattern stands out when the chart has at least this many and does more
 /// of it per step than this share of its level.
 const kStandoutMinCount = 4;
@@ -81,6 +143,13 @@ class ChartPatterns {
   /// charts within a level either side that do less of it per step.
   final Map<String, int> percentiles;
 
+  /// [characterOf]'s measures, plus "gimmick": time off the main BPM and
+  /// stops. Empty in files made before categories existed.
+  final Map<String, double> character;
+
+  /// Per [kRankedCategories] entry, ranked like [percentiles].
+  final Map<ChartCategory, int> categoryPercentiles;
+
   const ChartPatterns({
     required this.level,
     required this.steps,
@@ -91,9 +160,12 @@ class ChartPatterns {
     required this.downFootswitches,
     required this.rhythm,
     this.percentiles = const {},
+    this.character = const {},
+    this.categoryPercentiles = const {},
   });
 
-  factory ChartPatterns.fromAnalysis(ChartAnalysis a, int level) =>
+  factory ChartPatterns.fromAnalysis(ChartAnalysis a, int level,
+          {double gimmick = 0}) =>
       ChartPatterns(
         level: level,
         steps: a.steps,
@@ -103,9 +175,15 @@ class ChartPatterns {
         upFootswitches: a.footwork.upFootswitches,
         downFootswitches: a.footwork.downFootswitches,
         rhythm: a.rhythm,
+        character: {
+          for (final e in a.character.entries) e.key: _rounded(e.value),
+          if (a.character.isNotEmpty) "gimmick": _rounded(gimmick),
+        },
       );
 
-  ChartPatterns withPercentiles(Map<String, int> percentiles) => ChartPatterns(
+  ChartPatterns withPercentiles(Map<String, int> percentiles,
+          Map<ChartCategory, int> categoryPercentiles) =>
+      ChartPatterns(
         level: level,
         steps: steps,
         counts: counts,
@@ -115,10 +193,63 @@ class ChartPatterns {
         downFootswitches: downFootswitches,
         rhythm: rhythm,
         percentiles: percentiles,
+        character: character,
+        categoryPercentiles: categoryPercentiles,
       );
 
   /// Occurrences per 100 steps, what [percentiles] rank.
   double rate(Pattern p) => steps == 0 ? 0 : _rounded(counts[p]! * 100 / steps);
+
+  /// What [categoryPercentiles] rank, null without [character].
+  double? categoryValue(ChartCategory c) {
+    if (character.isEmpty) return null;
+    final grid = rhythm.values.fold(0, (a, b) => a + b);
+    return switch (c) {
+      ChartCategory.stamina => steps.toDouble(),
+      ChartCategory.jack => rate(Pattern.jack) + rate(Pattern.drill),
+      ChartCategory.crossover => rate(Pattern.crossover),
+      ChartCategory.footswitch =>
+        rate(Pattern.footswitch) + rate(Pattern.sideswitch),
+      ChartCategory.bracket => rate(Pattern.bracket),
+      ChartCategory.swing => grid == 0
+          ? 0
+          : _rounded(1 -
+              ((rhythm["4"] ?? 0) + (rhythm["8"] ?? 0) + (rhythm["16"] ?? 0)) /
+                  grid),
+      ChartCategory.balanced || ChartCategory.signature => null,
+      _ => character[c.name],
+    };
+  }
+
+  /// Top-ranked categories at or over [kCategoryPercentile], highest first.
+  List<ChartCategory> get _strong => [
+        for (final c in kRankedCategories)
+          if ((categoryPercentiles[c] ?? 0) >= kCategoryPercentile) c
+      ]..sort(
+          (a, b) => categoryPercentiles[b]!.compareTo(categoryPercentiles[a]!));
+
+  /// The category the chart leads with, Balanced when none is clear; null
+  /// when the chart has no category ranks.
+  ChartCategory? get primaryCategory {
+    if (categoryPercentiles.isEmpty) return null;
+    final ranked = kRankedCategories.toList()
+      ..sort(
+          (a, b) => categoryPercentiles[b]!.compareTo(categoryPercentiles[a]!));
+    final top = categoryPercentiles[ranked[0]]!;
+    return top >= kCategoryPercentile &&
+            top - categoryPercentiles[ranked[1]]! >= kCategoryLead
+        ? ranked[0]
+        : ChartCategory.balanced;
+  }
+
+  /// Other strong categories after the primary one.
+  List<ChartCategory> get secondaryCategories {
+    final primary = primaryCategory;
+    return [
+      for (final c in _strong)
+        if (c != primary) c
+    ].take(kMaxSecondaryCategories).toList();
+  }
 
   /// The patterns this chart is known for, most distinctive first.
   List<Pattern> get standouts => [
@@ -143,6 +274,10 @@ class ChartPatterns {
       upFootswitches: j["up_footswitches"],
       downFootswitches: j["down_footswitches"],
       rhythm: (j["rhythm"] as Map<String, dynamic>).cast<String, int>(),
+      character: {
+        for (final e in (j["character"] as Map<String, dynamic>? ?? {}).entries)
+          e.key: (e.value as num).toDouble()
+      },
     );
   }
 
@@ -160,6 +295,7 @@ class ChartPatterns {
       "up_footswitches": upFootswitches,
       "down_footswitches": downFootswitches,
       "rhythm": rhythm,
+      if (character.isNotEmpty) "character": character,
     };
   }
 }
@@ -194,10 +330,16 @@ class SongPatterns {
 class PatternLevels {
   final Map<Modes, Map<int, Map<Pattern, List<double>>>> rates;
 
-  const PatternLevels(this.rates);
+  /// [ChartPatterns.categoryValue]s the same way, from charts that have them.
+  final Map<Modes, Map<int, Map<ChartCategory, List<double>>>> categories;
+
+  const PatternLevels(this.rates, [this.categories = const {}]);
 
   factory PatternLevels.of(Iterable<(Modes, ChartPatterns)> charts) {
     final rates = <Modes, Map<int, Map<Pattern, List<double>>>>{
+      for (final m in Modes.values) m: {}
+    };
+    final categories = <Modes, Map<int, Map<ChartCategory, List<double>>>>{
       for (final m in Modes.values) m: {}
     };
     for (final (mode, c) in charts) {
@@ -206,15 +348,23 @@ class PatternLevels {
       for (final p in Pattern.values) {
         byPattern[p]!.add(c.rate(p));
       }
+      if (c.character.isEmpty) continue;
+      final byCategory = categories[mode]!.putIfAbsent(
+          c.level, () => {for (final k in kRankedCategories) k: []});
+      for (final k in kRankedCategories) {
+        byCategory[k]!.add(c.categoryValue(k)!);
+      }
     }
-    for (final levels in rates.values) {
-      for (final byPattern in levels.values) {
-        for (final list in byPattern.values) {
-          list.sort();
+    for (final table in [rates, categories]) {
+      for (final levels in table.values) {
+        for (final byKey in levels.values) {
+          for (final list in byKey.values) {
+            list.sort();
+          }
         }
       }
     }
-    return PatternLevels(rates);
+    return PatternLevels(rates, categories);
   }
 
   /// [c] ranked against same-style charts within a level either side.
@@ -223,14 +373,25 @@ class PatternLevels {
       for (int l = c.level - 1; l <= c.level + 1; l++)
         if (rates[mode]![l] case final byPattern?) byPattern
     ];
+    final categoryCohort = [
+      for (int l = c.level - 1; l <= c.level + 1; l++)
+        if (categories[mode]?[l] case final byCategory?) byCategory
+    ];
     return c.withPercentiles({
       for (final p in Pattern.values)
         p.name: percentileOf(c.rate(p), [for (final b in cohort) ...b[p]!]),
+    }, {
+      if (c.character.isNotEmpty && categoryCohort.isNotEmpty)
+        for (final k in kRankedCategories)
+          k: percentileOf(
+              c.categoryValue(k)!, [for (final b in categoryCohort) ...b[k]!]),
     });
   }
 
   static String _key(Modes m) => m == Modes.singles ? "sp" : "dp";
 
+  // Category lists sit under each level's "character" key, which apps from
+  // before categories skip.
   factory PatternLevels.fromJson(Map<String, dynamic> j) => PatternLevels({
         for (final m in Modes.values)
           m: {
@@ -244,6 +405,21 @@ class PatternLevels {
                   ]
               }
           }
+      }, {
+        for (final m in Modes.values)
+          m: {
+            for (final MapEntry(key: level, value: byPattern)
+                in (j[_key(m)] as Map<String, dynamic>).entries)
+              if ((byPattern as Map<String, dynamic>)["character"]
+                  case final Map<String, dynamic> byCategory)
+                int.parse(level): {
+                  for (final k in kRankedCategories)
+                    k: [
+                      for (final r in byCategory[k.name] ?? [])
+                        (r as num).toDouble()
+                    ]
+                }
+          }
       });
 
   Map<String, dynamic> toJson() => {
@@ -254,7 +430,11 @@ class PatternLevels {
             // were analysed in (directory listing order differs by OS).
             for (final level in levels.keys.toList()..sort())
               "$level": {
-                for (final e in levels[level]!.entries) e.key.name: e.value
+                for (final e in levels[level]!.entries) e.key.name: e.value,
+                if (categories[m]?[level] case final byCategory?)
+                  "character": {
+                    for (final e in byCategory.entries) e.key.name: e.value
+                  },
               }
           }
       };

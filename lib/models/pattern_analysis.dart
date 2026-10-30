@@ -237,11 +237,75 @@ class ChartAnalysis {
   /// Arrows per beat grid: "4", "8", "12", "16", "24", "32", "other".
   final Map<String, int> rhythm;
 
+  /// Timing measures behind the chart categories, see [characterOf].
+  final Map<String, double> character;
+
   const ChartAnalysis({
     required this.steps,
     required this.footwork,
     required this.rhythm,
+    this.character = const {},
   });
+}
+
+/// A stream run: at least this many rows, each gap at most [kStreamGap]
+/// seconds (5 steps a second) and within [kStreamEvenness] of the run's first.
+const kStreamRows = 16;
+const double kStreamGap = 0.2;
+const double kStreamEvenness = 0.15;
+
+/// Measured in time rather than beats, so a chart reads the same whatever its
+/// BPM or quantisation:
+/// - stream: share of rows inside stream runs
+/// - burst: the busiest 2-second windows (95th percentile) over the average
+/// - jumps: share of rows that step two or more arrows
+/// - freeze: share of the chart's length spent holding
+Map<String, double> characterOf(List<StepNote> notes, List<FootedRow> rows) {
+  if (rows.length < 2) return const {};
+  final times = [for (final r in rows) r.second];
+  final length = times.last - times.first;
+  if (length <= 0) return const {};
+
+  var streamRows = 0, run = 1;
+  double? ref;
+  void endRun() {
+    if (run >= kStreamRows) streamRows += run;
+    run = 1;
+  }
+
+  for (int i = 1; i < times.length; i++) {
+    final gap = times[i] - times[i - 1];
+    if (gap <= kStreamGap &&
+        (ref == null || (gap - ref).abs() <= kStreamEvenness * ref)) {
+      run++;
+      ref ??= gap;
+    } else {
+      endRun();
+      ref = gap <= kStreamGap ? gap : null;
+    }
+  }
+  endRun();
+
+  const window = 2.0;
+  final bins = List.filled((length ~/ window) + 1, 0);
+  for (final t in times) {
+    bins[(t - times.first) ~/ window]++;
+  }
+  bins.sort();
+  final peak = bins[(bins.length * 0.95).floor().clamp(0, bins.length - 1)];
+  final mean = rows.length / length;
+
+  var held = 0.0;
+  for (final n in notes) {
+    if (n.isHold && n.endSecond != null) held += n.endSecond! - n.second;
+  }
+
+  return {
+    "stream": streamRows / rows.length,
+    "burst": peak / window / mean,
+    "jumps": rows.where((r) => r.steps.length >= 2).length / rows.length,
+    "freeze": held / length,
+  };
 }
 
 const _grids = [4, 8, 12, 16, 24, 32];
@@ -305,5 +369,6 @@ ChartAnalysis analyseChart(List<StepNote> notes, Modes mode,
     steps: rows.length,
     footwork: countFootwork(rows, mode, holdSpans: _holdSpans(notes)),
     rhythm: rhythm,
+    character: characterOf(notes, rows),
   );
 }

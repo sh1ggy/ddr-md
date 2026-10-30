@@ -4,8 +4,12 @@
 /// known for at a glance, then footwork and rhythm.
 library;
 
+import 'dart:convert';
+
+import 'package:ddr_md/components/settings/chart_categories_page.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
 import 'package:ddr_md/models/pattern_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -31,14 +35,102 @@ const _arcadeRhythmBuckets = <(String, List<String>, Color)>[
   ("Other", ["12", "24", "32", "other"], QuantColors.other),
 ];
 
-class SongPatternsCard extends StatelessWidget {
-  const SongPatternsCard({super.key, required this.patterns});
+/// Where the player's own category for a chart is kept in
+/// [Settings.chartCategoriesKey].
+String chartCategoryKey(String songName, Modes mode, String difficulty) =>
+    '$songName|${mode == Modes.singles ? "sp" : "dp"}|$difficulty';
+
+Map<String, dynamic> _ownCategories() {
+  try {
+    return json.decode(Settings.getString(Settings.chartCategoriesKey))
+        as Map<String, dynamic>;
+  } catch (_) {
+    return {};
+  }
+}
+
+/// The category the player picked for the chart at [chartKey], if any.
+ChartCategory? ownCategory(String chartKey) =>
+    switch (_ownCategories()[chartKey]) {
+      final String name =>
+        ChartCategory.values.where((c) => c.name == name).firstOrNull,
+      _ => null,
+    };
+
+class SongPatternsCard extends StatefulWidget {
+  const SongPatternsCard(
+      {super.key, required this.patterns, required this.chartKey});
 
   final ChartPatterns patterns;
 
+  /// Where the player's own category for this chart is kept, see
+  /// [Settings.chartCategoriesKey].
+  final String chartKey;
+
+  @override
+  State<SongPatternsCard> createState() => _SongPatternsCardState();
+}
+
+class _SongPatternsCardState extends State<SongPatternsCard> {
+  /// The category can only be changed with the card open, so a tap on the
+  /// closed card can't change it by accident.
+  bool _expanded = false;
+
+  ChartCategory? get _own => ownCategory(widget.chartKey);
+
+  Future<void> _pick() async {
+    final auto = widget.patterns.primaryCategory;
+    final current = _own ?? auto;
+    // Picking the suggested category drops the player's own.
+    final picked = await showModalBottomSheet<ChartCategory>(
+      context: context,
+      useRootNavigator: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+              child: Row(children: [
+                Expanded(
+                    child: Text('Chart category',
+                        style: Theme.of(context).textTheme.titleLarge)),
+                IconButton(
+                  tooltip: 'What they mean',
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const ChartCategoriesPage())),
+                ),
+              ]),
+            ),
+            for (final c in ChartCategory.values)
+              ListTile(
+                leading: Icon(kCategoryIcons[c]),
+                title: Text(kCategoryLabels[c]!),
+                subtitle: c == auto ? const Text('Suggested') : null,
+                selected: c == current,
+                onTap: () => Navigator.pop(context, c),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null) return;
+    final all = _ownCategories();
+    if (picked == auto) {
+      all.remove(widget.chartKey);
+    } else {
+      all[widget.chartKey] = picked.name;
+    }
+    await Settings.setString(Settings.chartCategoriesKey, json.encode(all));
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    final p = patterns;
+    final p = widget.patterns;
+    final own = _own;
     final hint = Theme.of(context).hintColor;
     final standouts = p.standouts;
     final present = [
@@ -56,10 +148,28 @@ class SongPatternsCard extends StatelessWidget {
           // the card closed.
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: standouts.isEmpty
-                ? Text('Nothing unusual for its level',
-                    style: TextStyle(fontSize: 12, color: hint))
-                : Wrap(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (own ?? p.primaryCategory case final primary?)
+                  InkWell(
+                    onTap: _expanded ? _pick : null,
+                    borderRadius: BorderRadius.circular(8),
+                    child: _CategoryHeadline(
+                        primary,
+                        [
+                          for (final c in p.secondaryCategories)
+                            if (c != primary) c
+                        ],
+                        own: own != null,
+                        editable: _expanded),
+                  )
+                else if (standouts.isEmpty)
+                  Text('Nothing unusual for its level',
+                      style: TextStyle(fontSize: 12, color: hint)),
+                if (standouts.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
                     spacing: 6,
                     runSpacing: 6,
                     children: [
@@ -67,12 +177,17 @@ class SongPatternsCard extends StatelessWidget {
                         _Tag(pattern, p.counts[pattern]!),
                     ],
                   ),
+                ],
+              ],
+            ),
           ),
+          onExpansionChanged: (open) => setState(() => _expanded = open),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (present.isNotEmpty) ...[
+              const _Heading('Footwork'),
               for (final pattern in present)
                 _PatternRow(
                   pattern: pattern,
@@ -97,6 +212,74 @@ String? _detail(ChartPatterns p, Pattern pattern) => switch (pattern) {
         '${p.upFootswitches} up · ${p.downFootswitches} down',
       _ => null,
     };
+
+/// The chart's lead category as an icon badge and a name, its other strong
+/// categories underneath.
+class _CategoryHeadline extends StatelessWidget {
+  const _CategoryHeadline(this.primary, this.secondary,
+      {required this.own, required this.editable});
+
+  final ChartCategory primary;
+  final List<ChartCategory> secondary;
+
+  /// The player picked [primary] themselves.
+  final bool own;
+
+  /// Tapping it picks another, so it shows a pencil.
+  final bool editable;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hint = Theme.of(context).hintColor;
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: scheme.primary,
+          child:
+              Icon(kCategoryIcons[primary], size: 20, color: scheme.onPrimary),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text('${kCategoryLabels[primary]} chart',
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                  if (own || editable) ...[
+                    const SizedBox(width: 4),
+                    Icon(editable ? Icons.edit : Icons.person,
+                        size: 13, color: hint),
+                  ],
+                ],
+              ),
+              if (secondary.isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final c in secondary)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(kCategoryIcons[c], size: 13, color: hint),
+                          const SizedBox(width: 3),
+                          Text(kCategoryLabels[c]!,
+                              style: TextStyle(fontSize: 12, color: hint)),
+                        ],
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _Tag extends StatelessWidget {
   const _Tag(this.pattern, this.count);
@@ -238,14 +421,12 @@ class _RhythmBar extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(3),
-          child: SizedBox(
-            height: 12,
-            child: Row(
-              children: [
-                for (final (_, count, color) in buckets)
-                  Expanded(flex: count, child: ColoredBox(color: color)),
-              ],
-            ),
+          child: Row(
+            children: [
+              for (final (_, count, color) in buckets)
+                Expanded(
+                    flex: count, child: Container(height: 12, color: color)),
+            ],
           ),
         ),
         const SizedBox(height: 8),

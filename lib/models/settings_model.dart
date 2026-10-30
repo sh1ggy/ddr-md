@@ -151,6 +151,10 @@ class Settings {
   static const String detectionSideKey = "detectionSide";
   static const String playModeKey = "playMode";
   static const String parityProfileKey = "parityProfile";
+
+  /// The player's own category per chart, a JSON map from
+  /// "<song>|<sp/dp>|<difficulty>" to a ChartCategory name.
+  static const String chartCategoriesKey = "chartCategories";
   static const String parityProfileOnKey = "parityProfileOn";
 
   // Id of the running play session ('' = none).
@@ -224,6 +228,7 @@ class Settings {
     playModeKey,
     parityProfileKey,
     parityProfileOnKey,
+    chartCategoriesKey,
     eamuseNameKey,
     eamusePlayCountKey,
     eamuseProfileLastPlayKey,
