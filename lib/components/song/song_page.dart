@@ -385,9 +385,11 @@ class _SongPageState extends State<SongPage> {
         if (chart == null) return null;
         return SongPatternsCard(
             patterns: chart,
-            chartKey: '${songInfo.name}|'
-                '${songState.modes == Modes.singles ? "sp" : "dp"}|'
-                '${available[songState.chosenDifficulty.clamp(0, available.length - 1)]}');
+            chartKey: chartCategoryKey(
+                songInfo.name,
+                songState.modes,
+                available[
+                    songState.chosenDifficulty.clamp(0, available.length - 1)]));
       case SongSection.bpmGraph:
         if (!_isBpmChange && _chart.stops.isEmpty) return null;
         return SongChart(context: context, songInfo: songInfo, chart: _chart);

@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'package:ddr_md/components/settings/chart_categories_page.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/notes/noteskin.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
 import 'package:ddr_md/models/pattern_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -34,6 +35,28 @@ const _arcadeRhythmBuckets = <(String, List<String>, Color)>[
   ("Other", ["12", "24", "32", "other"], QuantColors.other),
 ];
 
+/// Where the player's own category for a chart is kept in
+/// [Settings.chartCategoriesKey].
+String chartCategoryKey(String songName, Modes mode, String difficulty) =>
+    '$songName|${mode == Modes.singles ? "sp" : "dp"}|$difficulty';
+
+Map<String, dynamic> _ownCategories() {
+  try {
+    return json.decode(Settings.getString(Settings.chartCategoriesKey))
+        as Map<String, dynamic>;
+  } catch (_) {
+    return {};
+  }
+}
+
+/// The category the player picked for the chart at [chartKey], if any.
+ChartCategory? ownCategory(String chartKey) =>
+    switch (_ownCategories()[chartKey]) {
+      final String name =>
+        ChartCategory.values.where((c) => c.name == name).firstOrNull,
+      _ => null,
+    };
+
 class SongPatternsCard extends StatefulWidget {
   const SongPatternsCard(
       {super.key, required this.patterns, required this.chartKey});
@@ -53,20 +76,7 @@ class _SongPatternsCardState extends State<SongPatternsCard> {
   /// closed card can't change it by accident.
   bool _expanded = false;
 
-  Map<String, dynamic> _all() {
-    try {
-      return json.decode(Settings.getString(Settings.chartCategoriesKey))
-          as Map<String, dynamic>;
-    } catch (_) {
-      return {};
-    }
-  }
-
-  ChartCategory? get _own => switch (_all()[widget.chartKey]) {
-        final String name =>
-          ChartCategory.values.where((c) => c.name == name).firstOrNull,
-        _ => null,
-      };
+  ChartCategory? get _own => ownCategory(widget.chartKey);
 
   Future<void> _pick() async {
     final auto = widget.patterns.primaryCategory;
@@ -107,7 +117,7 @@ class _SongPatternsCardState extends State<SongPatternsCard> {
       ),
     );
     if (picked == null) return;
-    final all = _all();
+    final all = _ownCategories();
     if (picked == auto) {
       all.remove(widget.chartKey);
     } else {
@@ -411,14 +421,12 @@ class _RhythmBar extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(3),
-          child: SizedBox(
-            height: 12,
-            child: Row(
-              children: [
-                for (final (_, count, color) in buckets)
-                  Expanded(flex: count, child: ColoredBox(color: color)),
-              ],
-            ),
+          child: Row(
+            children: [
+              for (final (_, count, color) in buckets)
+                Expanded(
+                    flex: count, child: Container(height: 12, color: color)),
+            ],
           ),
         ),
         const SizedBox(height: 8),
