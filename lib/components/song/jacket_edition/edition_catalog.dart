@@ -20,6 +20,7 @@ const editionFramePalettes = {
     Color(0xFFEAF1FA),
     Color(0xFF8F9DAF)
   ],
+  EditionFrame.jade: [Color(0xFF1E4A2C), Color(0xFFC8F5CF), Color(0xFF4FA864)],
   EditionFrame.gold: [Color(0xFF694014), Color(0xFFFFE3A0), Color(0xFFC48822)],
   EditionFrame.starlight: [
     Color(0xFF6E6F9E),
@@ -30,6 +31,7 @@ const editionFramePalettes = {
 const editionFrameWidths = {
   EditionFrame.stock: .014,
   EditionFrame.silver: .023,
+  EditionFrame.jade: .032,
   EditionFrame.gold: .040,
   EditionFrame.starlight: .045
 };

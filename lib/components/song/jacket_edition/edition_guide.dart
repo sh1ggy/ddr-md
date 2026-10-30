@@ -1,20 +1,17 @@
 /// Name: EditionGuidePage
 /// Parent: EditionViewer, DevelopmentPage
 /// Description: How a card is built, as one diagram: its four layers pulled
-/// apart in depth, each beside what earns it, on the real renderer. Change
-/// the grade, lamp, flare and top score below and the layers change with
-/// them; tap the diagram to stack them back into the card.
+/// apart in depth, each beside what earns it, on the real renderer, in one
+/// screen. Tap a card to stack the layers back
+/// into the card.
 library;
 
 import 'dart:math' as math;
 
-import 'package:ddr_md/components/song_json.dart';
+import 'edition_artwork_picker.dart' show editionArtwork;
 import 'package:ddr_md/grades.dart';
-import 'package:ddr_md/helpers.dart' show kFlareRanks;
-import 'package:ddr_md/models/chart_bests.dart' show ChartBests;
 import 'package:ddr_md/models/db_models.dart';
 import 'package:flutter/material.dart';
-import 'edition_artwork_picker.dart';
 import 'edition_model.dart';
 import 'edition_rules.dart';
 import 'jacket_edition.dart';
@@ -43,12 +40,13 @@ class EditionGuidePage extends StatefulWidget {
 
 class _EditionGuidePageState extends State<EditionGuidePage>
     with SingleTickerProviderStateMixin {
-  late Grade? _grade = widget.facts == null ? Grade.aaa : widget.facts!.grade;
-  late ClearLamp? _lamp =
+  late final Grade? _grade =
+      widget.facts == null ? Grade.aaa : widget.facts!.grade;
+  late final ClearLamp? _lamp =
       widget.facts == null ? ClearLamp.pfc : widget.facts!.lamp;
-  late String? _flare = widget.facts == null ? 'VIII' : widget.facts!.flare;
-  late bool _top = widget.facts?.levelTop ?? false;
-  SongInfo? _song;
+  late final String? _flare =
+      widget.facts == null ? 'VIII' : widget.facts!.flare;
+  late final bool _top = widget.facts?.levelTop ?? false;
   late final _spread = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 450), value: 1);
 
@@ -67,9 +65,7 @@ class _EditionGuidePageState extends State<EditionGuidePage>
       flare: _flare,
       levelTop: _top);
 
-  Widget get _art => _song != null || widget.artwork == null
-      ? editionArtwork(_song)
-      : widget.artwork!;
+  Widget get _art => widget.artwork ?? editionArtwork(null);
 
   // What each layer shows now, and what earns it.
   List<(EditionLayer, String, String, String)> _labels() {
@@ -95,6 +91,7 @@ class _EditionGuidePageState extends State<EditionGuidePage>
           null || ClearLamp.failed || ClearLamp.clear => 'Dark stock',
           ClearLamp.mfc => 'MFC · rainbow, with a glint',
           ClearLamp.pfc => 'PFC · gold, catching the light',
+          ClearLamp.gfc => 'GFC · green, with a sheen',
           final l =>
             '${l == ClearLamp.life4 ? 'LIFE4' : l.name.toUpperCase()} · silver',
         }
@@ -122,90 +119,21 @@ class _EditionGuidePageState extends State<EditionGuidePage>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    Widget chips<T>(String label, List<(T, String)> values, T value,
-            ValueChanged<T> onSelected) =>
-        Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: theme.textTheme.labelLarge),
-              const SizedBox(height: 6),
-              SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(children: [
-                    for (final (v, name) in values)
-                      Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ChoiceChip(
-                              label: Text(name),
-                              selected: v == value,
-                              onSelected: (_) =>
-                                  setState(() => onSelected(v)))),
-                  ])),
-            ]));
-
-    return Scaffold(
-        backgroundColor: widget.sheet ? Colors.transparent : null,
-        appBar: AppBar(
-            title: const Text('How cards work'),
-            automaticallyImplyLeading: !widget.sheet,
-            backgroundColor: widget.sheet ? Colors.transparent : null),
-        body: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-            children: [
-              const Text('A card is its badges made physical. Each best owns '
-                  'one layer, so they stack instead of fighting. Tap the '
-                  'diagram to stack the layers into the card.'),
-              const SizedBox(height: 8),
-              GestureDetector(
-                  onTap: () => _spread.value > .5
-                      ? _spread.reverse()
-                      : _spread.forward(),
-                  child: _Diagram(
-                      facts: _facts,
-                      art: _art,
-                      labels: _labels(),
-                      spread: _spread)),
-              chips<Grade?>(
-                  'Grade',
-                  [(null, '—'), (Grade.aa, 'AA'), (Grade.aaa, 'AAA')],
-                  _grade,
-                  (v) => _grade = v),
-              chips<ClearLamp?>(
-                  'Lamp',
-                  [
-                    (null, '—'),
-                    (ClearLamp.clear, 'CLEAR'),
-                    (ClearLamp.fc, 'FC'),
-                    (ClearLamp.gfc, 'GFC'),
-                    (ClearLamp.pfc, 'PFC'),
-                    (ClearLamp.mfc, 'MFC'),
-                  ],
-                  _lamp,
-                  (v) => _lamp = v),
-              chips<String?>(
-                  'Flare',
-                  [(null, '—'), for (final r in kFlareRanks) (r, r)],
-                  _flare,
-                  (v) => _flare = v),
-              SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Top score of its level'),
-                  subtitle: const Text('Once ${ChartBests.levelTopMinCharts} '
-                      'charts there have a score'),
-                  value: _top,
-                  onChanged: (v) => setState(() => _top = v)),
-              EditionArtworkPicker(
-                  song: _song, onChanged: (s) => setState(() => _song = s)),
-              const SizedBox(height: 12),
-              Text(
-                  'Your badges and score stay on the score card; the card '
-                  'carries none of them. A shared card puts them back on, as '
-                  'stickers and a band along its foot. The binder files '
-                  'every card by level.',
-                  style: theme.textTheme.bodySmall),
-            ]));
+    final diagram = SafeArea(
+        top: false,
+        child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: GestureDetector(
+                onTap: () =>
+                    _spread.value > .5 ? _spread.reverse() : _spread.forward(),
+                child: _Diagram(
+                    facts: _facts,
+                    art: _art,
+                    labels: _labels(),
+                    spread: _spread))));
+    // In a sheet, as tall as the diagram and no taller.
+    if (widget.sheet) return diagram;
+    return Scaffold(appBar: AppBar(), body: diagram);
   }
 }
 
@@ -225,9 +153,12 @@ class _Diagram extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       LayoutBuilder(builder: (context, constraints) {
-        final side = math.min(constraints.maxWidth * .38, 200.0);
+        // As large as fits the space, so nothing scrolls.
+        final steps = EditionLayer.values.length - 1;
+        final side = math.min(math.min(constraints.maxWidth * .38, 200.0),
+            constraints.maxHeight / (1.1 + .62 * steps));
         final gap = side * .62;
-        final height = side * 1.1 + gap * (EditionLayer.values.length - 1);
+        final height = side * 1.1 + gap * steps;
         final theme = Theme.of(context);
         final cx = side * .78;
         return AnimatedBuilder(
@@ -300,7 +231,8 @@ class _Diagram extends StatelessWidget {
                                     ])),
                                     const SizedBox(height: 2),
                                     Text(now,
-                                        maxLines: 2,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: theme.textTheme.bodySmall),
                                   ]))),
                   ]));

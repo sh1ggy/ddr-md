@@ -308,9 +308,10 @@ class EditionLightPainter extends CustomPainter {
           TileMode.repeated);
       canvas.drawRect(rect, _paint);
     }
-    // The light sweeps only where a badge would shine: AAA, PFC and MFC
-    // frames, flare IX and EX.
+    // The light sweeps only where a badge would shine: AAA, GFC, PFC and
+    // MFC frames, flare IX and EX.
     final shines = recipe.finish == EditionFinish.prism ||
+        recipe.frame == EditionFrame.jade ||
         recipe.frame == EditionFrame.gold ||
         recipe.frame == EditionFrame.starlight ||
         recipe.flareIndex >= 8 ||

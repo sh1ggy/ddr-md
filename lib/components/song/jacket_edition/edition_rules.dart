@@ -32,11 +32,11 @@ EditionRecipe resolveEdition(EditionFacts facts,
               precision == PrecisionAward.pfc ||
               precision == PrecisionAward.sdp
           ? EditionFrame.gold
-          : lamp == ClearLamp.fc ||
-                  lamp == ClearLamp.gfc ||
-                  lamp == ClearLamp.life4
-              ? EditionFrame.silver
-              : EditionFrame.stock;
+          : lamp == ClearLamp.gfc
+              ? EditionFrame.jade
+              : lamp == ClearLamp.fc || lamp == ClearLamp.life4
+                  ? EditionFrame.silver
+                  : EditionFrame.stock;
   final tier = editionTier(facts.level);
   final difficulty = kInGameDifficultyNames[facts.chart.difficulty];
   final flare = kFlareRanks.indexOf(facts.flare ?? '');

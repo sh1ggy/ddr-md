@@ -605,7 +605,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                       onBinder: () => Navigator.of(context).push(
                           MaterialPageRoute(
                               builder: (_) => EditionBinderPage(
-                                  mode: songState.modes,
                                   level: _filter.levels.isEmpty
                                       ? null
                                       : _filter.levels.reduce(max))))),

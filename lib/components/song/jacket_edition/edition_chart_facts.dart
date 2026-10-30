@@ -29,8 +29,8 @@ class _EditionChartFactsState extends State<EditionChartFacts> {
   @override
   void initState() {
     super.initState();
+    // The facts it's given are current; only a later score changes them.
     DatabaseProvider.achievementsRevision.addListener(_refresh);
-    _refresh();
   }
 
   @override

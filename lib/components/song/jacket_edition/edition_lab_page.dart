@@ -128,7 +128,6 @@ class _EditionLabPageState extends State<EditionLabPage> {
         tierSuffix: _tierSuffix
       ),
       artwork: _artwork(),
-      heroTag: 'edition-lab-preview',
       refreshScores: false);
 
   void _record(List<FrameTiming> frames) {

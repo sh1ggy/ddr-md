@@ -10,7 +10,7 @@ import 'package:ddr_md/models/version_group.dart';
 
 enum EditionFinish { print, satin, metallic, holo, texturedHolo, prism }
 
-enum EditionFrame { stock, silver, gold, starlight }
+enum EditionFrame { stock, silver, jade, gold, starlight }
 
 enum EditionMotif { neutral, classic, white, gold }
 

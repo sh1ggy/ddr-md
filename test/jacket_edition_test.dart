@@ -372,7 +372,10 @@ void main() {
     await mouse.addPointer(location: Offset.zero);
     await mouse.moveTo(
         tester.getTopLeft(find.byType(JacketEdition)) + const Offset(290, 40));
-    await tester.pump(const Duration(milliseconds: 20));
+    // The tilt eases in over a few frames.
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
     expect(transform().transform.entry(0, 2).abs(), greaterThan(.01));
     await tester.pumpWidget(host(viewer(), reduced: true));
     await tester.pump();

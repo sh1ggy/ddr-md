@@ -13,9 +13,16 @@ class EditionMotion extends ChangeNotifier {
     _ticker = vsync.createTicker(_tick);
   }
   late final Ticker _ticker;
-  Offset light = const Offset(.35, .3);
+  // Where the light rests while still; the idle drift starts from here, so
+  // the sheen never jumps when motion starts.
+  static const rest = Offset(.35, .3);
+  static final _phase =
+      Offset(math.asin((rest.dx - .5) / .35), math.asin((rest.dy - .5) / .3));
+  Offset light = rest;
   Offset tilt = Offset.zero;
   Offset? _pending;
+  // Where the pointer last was, which the light eases towards while held.
+  Offset _aim = rest;
   bool _held = false;
   Duration _last = Duration.zero;
   double time = 0;
@@ -26,7 +33,7 @@ class EditionMotion extends ChangeNotifier {
       _ticker.stop();
       _pending = null;
       _held = false;
-      final next = frozenLight ?? const Offset(.35, .3);
+      final next = frozenLight ?? rest;
       if (light != next || time != 0 || tilt != Offset.zero) {
         light = next;
         time = 0;
@@ -51,21 +58,27 @@ class EditionMotion extends ChangeNotifier {
   void _tick(Duration elapsed) {
     // Input follows display vsync; decorative movement invalidates at 30 fps.
     if (_pending == null &&
+        !_held &&
+        elapsed > Duration.zero &&
         elapsed - _last < const Duration(microseconds: 33333)) {
       return;
     }
     _last = elapsed;
     time = elapsed.inMicroseconds / 1e6;
-    light = _pending ??
-        (_held
-            ? light
-            : Offset(.5 + math.sin(time / 1.7) * .35,
-                .5 + math.sin(time / 2.3) * .3));
-    final target =
-        _held ? Offset((light.dx - .5) * 2, (light.dy - .5) * 2) : Offset.zero;
-    tilt = Offset.lerp(tilt, target, _held ? 1 : .22)!;
-    if (tilt.distance < .001) tilt = Offset.zero;
+    _aim = _pending ?? _aim;
     _pending = null;
+    // The light and tilt ease to the pointer and back, so a pointer
+    // arriving over the card never snaps it.
+    final target = _held
+        ? _aim
+        : Offset(.5 + math.sin(time / 1.7 + _phase.dx) * .35,
+            .5 + math.sin(time / 2.3 + _phase.dy) * .3);
+    light = Offset.lerp(light, target, .3)!;
+    tilt = Offset.lerp(
+        tilt,
+        _held ? Offset((light.dx - .5) * 2, (light.dy - .5) * 2) : Offset.zero,
+        .22)!;
+    if (tilt.distance < .001) tilt = Offset.zero;
     notifyListeners();
   }
 

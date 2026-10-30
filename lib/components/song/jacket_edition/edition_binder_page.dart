@@ -1,6 +1,6 @@
 /// Name: EditionBinderPage
 /// Parent: DevelopmentPage, BestRings (from the level list)
-/// Description: The player's cards as a binder, one play style at a time:
+/// Description: The player's cards as a binder, in the profile's play style:
 /// a cover for each level, highest first, with its charts' bests as the
 /// level list's rings and its best cards fanned out, then sheets of every
 /// chart at that level in title order, three across and as many rows as the
@@ -111,12 +111,9 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
 }
 
 class EditionBinderPage extends StatefulWidget {
-  const EditionBinderPage(
-      {super.key, this.mode, this.level, this.song, this.difficulty});
+  const EditionBinderPage({super.key, this.level, this.song, this.difficulty});
 
-  /// The play style to open on, else the one picked; and the level, else the
-  /// highest.
-  final Modes? mode;
+  /// The level to open on, else the highest.
   final int? level;
 
   /// A chart to open on the sheet of, its pocket picked out.
@@ -127,7 +124,7 @@ class EditionBinderPage extends StatefulWidget {
 }
 
 class _EditionBinderPageState extends State<EditionBinderPage> {
-  late Modes _mode = widget.mode ?? context.read<SongState>().modes;
+  late Modes _mode = context.read<SongState>().modes;
   bool _ready = false;
   // Paginated for [_perSheet] pockets, which follows the screen's height.
   List<BinderPage>? _pages;
@@ -157,10 +154,6 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
 
   Future<void> _load() async {
     final mode = _mode;
-    setState(() {
-      _ready = false;
-      _pages = _perSheet = null;
-    });
     await ChartBests.ensure(mode);
     if (!mounted || mode != _mode) return;
     setState(() => _ready = true);
@@ -230,27 +223,24 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Follows the profile's style, staying on the level's cover.
+    final mode = context.watch<SongState>().modes;
+    if (mode == _mode) return;
+    if (_at case final at?) _at = (level: at.level, start: -1);
+    _mode = mode;
+    _focus = null;
+    _ready = false;
+    _pages = _perSheet = null;
+    _load();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     return Scaffold(
-        appBar: AppBar(title: const Text('Binder'), actions: [
-          Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: SegmentedButton<Modes>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: Modes.singles, label: Text('SP')),
-                    ButtonSegment(value: Modes.doubles, label: Text('DP')),
-                  ],
-                  selected: {_mode},
-                  // Stays on the level's cover, in the other style.
-                  onSelectionChanged: (s) {
-                    if (_at case final at?) _at = (level: at.level, start: -1);
-                    _mode = s.first;
-                    _focus = null;
-                    _load();
-                  })),
-        ]),
+        appBar: AppBar(title: const Text('Binder')),
         body: !_ready
             ? const Center(child: CircularProgressIndicator())
             : SafeArea(

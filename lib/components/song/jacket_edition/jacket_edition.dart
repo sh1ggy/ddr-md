@@ -91,8 +91,11 @@ class _JacketEditionState extends State<JacketEdition>
     final route = _route;
     final visible = route == null ||
         (route.isCurrent &&
+            // Already moving as its route comes in, so the light doesn't
+            // switch on as it lands.
             (route.animation == null ||
-                route.animation!.status == AnimationStatus.completed) &&
+                route.animation!.status == AnimationStatus.completed ||
+                route.animation!.status == AnimationStatus.forward) &&
             (route.secondaryAnimation == null ||
                 route.secondaryAnimation!.status == AnimationStatus.dismissed));
     _motion.configure(

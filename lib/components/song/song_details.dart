@@ -31,11 +31,6 @@ Widget _zoomArtwork(SongInfo song, {double radius = 22}) => ClipRRect(
         fullResolution: true,
         fade: Duration.zero));
 
-// Interpolating square bounds directly keeps the art square on every frame;
-// the default Material corner arcs can temporarily stretch it in flight.
-Tween<Rect?> _jacketRectTween(Rect? begin, Rect? end) =>
-    RectTween(begin: begin, end: end);
-
 final _difficultyColors = <String, Color>{
   for (final MapEntry(:key, :value) in kInGameDifficultyNames.entries)
     key: kInGameDifficultyColors[value]!,
@@ -157,106 +152,108 @@ class SongDetails extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GestureDetector(
-                    child: Hero(
-                      tag: "imgZoom",
-                      createRectTween: _jacketRectTween,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(22),
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.35),
-                                blurRadius: 30,
-                                offset: const Offset(0, 12)),
-                          ],
-                        ),
-                        child: SizedBox.square(
-                            dimension: 96, child: _zoomArtwork(songInfo)),
-                      ),
-                    ),
-                    // Zooming image onTap
-                    onTap: () async {
-                      // Both Hero endpoints use the same decoded image. Avoid
-                      // swapping a thumbnail for a fading full-size image in
-                      // the middle of the flight, including a tap before load.
-                      // Freeze identity before image/database awaits.
-                      final mode = songState.modes;
-                      final index = songState.chosenDifficulty;
-                      final levels = mode == Modes.singles
-                          ? songInfo.singles
-                          : songInfo.doubles;
-                      final key = _chosenDifficultyKey(levels, index);
-                      final level = levels.toJson()[key] as int?;
-                      final options = editionPreferences();
-                      final (_, loaded) = await (
-                        precacheImage(
-                            ContentStore.image(
-                                'assets/jackets/${songInfo.name}.png'),
-                            context,
-                            onError: (_, __) {}),
-                        // Without bests the jacket still opens, plain.
-                        editionDevelopmentEnabled && options.effects
-                            ? ChartBests.ensure(mode)
-                                .then((_) => true, onError: (_) => false)
-                            : Future.value(false),
-                      ).wait;
-                      if (!context.mounted) return;
-                      // The card's finish comes from the chart picked below.
-                      final best = loaded && key != null
-                          ? ChartBests.forChart(
-                              songInfo.name, mode, kInGameDifficultyNames[key]!)
-                          : null;
-                      final facts = EditionFacts(
-                        chart: (
-                          song: songInfo.name,
-                          mode: mode.name,
-                          difficulty: key ?? ''
-                        ),
-                        level: level,
-                        version: flareGroup(songInfo.version),
-                        grade: best?.grade,
-                        flare: best?.flare,
-                        lamp: best?.lamp,
-                        precision: loaded && key != null
-                            ? ChartBests.precisionAt(songInfo.name, mode,
-                                kInGameDifficultyNames[key]!)
-                            : null,
-                        score: best?.score,
-                        levelTop: loaded &&
-                            key != null &&
-                            ChartBests.levelTop(songInfo.name, mode,
-                                kInGameDifficultyNames[key]!),
-                      );
-                      await showEditionViewer(context,
-                          facts: facts,
-                          options: (
-                            borderId: options.borderId,
-                            effects:
-                                editionDevelopmentEnabled && options.effects,
-                            motion: options.motion,
-                            // The score card carries the chart's badges;
-                            // the card is its finish alone.
-                            modeStamp: false,
-                            gradeStamp: false,
-                            difficultyStamp: false,
-                            tierSuffix: false
-                          ),
-                          heroTag: 'imgZoom',
-                          artwork: _zoomArtwork(songInfo),
-                          // To this chart's pocket.
-                          onBinder: key == null
-                              ? null
-                              : () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                      builder: (_) => EditionBinderPage(
-                                          mode: mode,
-                                          level: level,
-                                          song: songInfo.name,
-                                          difficulty:
-                                              kInGameDifficultyNames[key]))));
-                    },
-                  ),
+                  Builder(
+                      builder: (jacket) => GestureDetector(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(22),
+                                boxShadow: [
+                                  BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.35),
+                                      blurRadius: 30,
+                                      offset: const Offset(0, 12)),
+                                ],
+                              ),
+                              child: SizedBox.square(
+                                  dimension: 96, child: _zoomArtwork(songInfo)),
+                            ),
+                            // Zooming image onTap
+                            onTap: () async {
+                              // The jacket and the card use the same decoded image. Avoid
+                              // swapping a thumbnail for a fading full-size image in
+                              // the middle of the opening, including a tap before load.
+                              // Freeze identity before image/database awaits.
+                              final mode = songState.modes;
+                              final index = songState.chosenDifficulty;
+                              final levels = mode == Modes.singles
+                                  ? songInfo.singles
+                                  : songInfo.doubles;
+                              final key = _chosenDifficultyKey(levels, index);
+                              final level = levels.toJson()[key] as int?;
+                              final options = editionPreferences();
+                              final (_, loaded) = await (
+                                precacheImage(
+                                    ContentStore.image(
+                                        'assets/jackets/${songInfo.name}.png'),
+                                    context,
+                                    onError: (_, __) {}),
+                                // Without bests the jacket still opens, plain.
+                                editionDevelopmentEnabled && options.effects
+                                    ? ChartBests.ensure(mode).then((_) => true,
+                                        onError: (_) => false)
+                                    : Future.value(false),
+                              ).wait;
+                              if (!context.mounted) return;
+                              // The card's finish comes from the chart picked below.
+                              final best = loaded && key != null
+                                  ? ChartBests.forChart(songInfo.name, mode,
+                                      kInGameDifficultyNames[key]!)
+                                  : null;
+                              final facts = EditionFacts(
+                                chart: (
+                                  song: songInfo.name,
+                                  mode: mode.name,
+                                  difficulty: key ?? ''
+                                ),
+                                level: level,
+                                version: flareGroup(songInfo.version),
+                                grade: best?.grade,
+                                flare: best?.flare,
+                                lamp: best?.lamp,
+                                precision: loaded && key != null
+                                    ? ChartBests.precisionAt(songInfo.name,
+                                        mode, kInGameDifficultyNames[key]!)
+                                    : null,
+                                score: best?.score,
+                                levelTop: loaded &&
+                                    key != null &&
+                                    ChartBests.levelTop(songInfo.name, mode,
+                                        kInGameDifficultyNames[key]!),
+                              );
+                              await showEditionViewer(context,
+                                  facts: facts,
+                                  options: (
+                                    borderId: options.borderId,
+                                    effects: editionDevelopmentEnabled &&
+                                        options.effects,
+                                    motion: options.motion,
+                                    // The score card carries the chart's badges;
+                                    // the card is its finish alone.
+                                    modeStamp: false,
+                                    gradeStamp: false,
+                                    difficultyStamp: false,
+                                    tierSuffix: false
+                                  ),
+                                  from: switch (jacket.findRenderObject()) {
+                                    final RenderBox box when box.hasSize =>
+                                      box.localToGlobal(Offset.zero) & box.size,
+                                    _ => null
+                                  },
+                                  artwork: _zoomArtwork(songInfo),
+                                  // To this chart's pocket.
+                                  onBinder: key == null
+                                      ? null
+                                      : () => Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                              builder: (_) => EditionBinderPage(
+                                                  level: level,
+                                                  song: songInfo.name,
+                                                  difficulty:
+                                                      kInGameDifficultyNames[
+                                                          key]))));
+                            },
+                          )),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
