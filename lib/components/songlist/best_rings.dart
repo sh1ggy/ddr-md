@@ -5,7 +5,7 @@
 /// clockwise from the top, best tier first, in the stats page's colours;
 /// played charts without one follow in grey, and the rest is the unplayed.
 /// Tapped, the rings lift out of the list and grow into a card that counts
-/// every tier.
+/// every tier, with ways on to the full stats and the binder.
 library;
 
 import 'dart:math' as math;
@@ -74,7 +74,8 @@ List<List<_Tier>> _rings(List<ChartBest?> bests) => [
     ];
 
 class BestRings extends StatefulWidget {
-  const BestRings(this.bests, {super.key, this.size = 30, this.onStats});
+  const BestRings(this.bests,
+      {super.key, this.size = 30, this.onStats, this.onBinder});
 
   /// One per listed chart, null where it hasn't been played.
   final List<ChartBest?> bests;
@@ -82,6 +83,9 @@ class BestRings extends StatefulWidget {
 
   /// Opens the full stats, from the expanded card.
   final VoidCallback? onStats;
+
+  /// Opens the binder, from the expanded card.
+  final VoidCallback? onBinder;
 
   @override
   State<BestRings> createState() => _BestRingsState();
@@ -103,8 +107,8 @@ class _BestRingsState extends State<BestRings> {
       barrierColor: Colors.black54,
       transitionDuration: FloorPop.beat + FloorPop.eighth,
       reverseTransitionDuration: FloorPop.beat,
-      pageBuilder: (_, animation, __) =>
-          _ExpandedRings(widget.bests, from, animation, widget.onStats),
+      pageBuilder: (_, animation, __) => _ExpandedRings(
+          widget.bests, from, animation, widget.onStats, widget.onBinder),
     );
     Navigator.of(context, rootNavigator: true).push(route);
     // Back in their spot only once they've flown home.
@@ -145,12 +149,13 @@ class _BestRingsState extends State<BestRings> {
 /// place a little after the one outside it, while the card's counts rise in
 /// below.
 class _ExpandedRings extends StatefulWidget {
-  const _ExpandedRings(this.bests, this.from, this.animation, this.onStats);
+  const _ExpandedRings(
+      this.bests, this.from, this.animation, this.onStats, this.onBinder);
 
   final List<ChartBest?> bests;
   final Rect from;
   final Animation<double> animation;
-  final VoidCallback? onStats;
+  final VoidCallback? onStats, onBinder;
 
   @override
   State<_ExpandedRings> createState() => _ExpandedRingsState();
@@ -288,18 +293,25 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
                                   title, _kNoneLabels[i], rings[i], aspect)),
                           const SizedBox(height: 14),
                         ],
-                      if (widget.onStats != null)
+                      if (widget.onStats != null || widget.onBinder != null)
                         _rise(
                             3,
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                  widget.onStats!();
-                                },
-                                child: const Text('All stats'),
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                for (final (label, onTap) in [
+                                  ('Open binder', widget.onBinder),
+                                  ('All stats', widget.onStats),
+                                ])
+                                  if (onTap != null)
+                                    TextButton(
+                                      onPressed: () {
+                                        Navigator.of(context).pop();
+                                        onTap();
+                                      },
+                                      child: Text(label),
+                                    ),
+                              ],
                             )),
                     ],
                   ),

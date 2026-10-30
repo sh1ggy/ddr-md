@@ -82,10 +82,12 @@ void main() {
               value: state,
               child: MaterialApp(
                   theme: floorPopTheme(Brightness.dark),
-                  home: const EditionBinderPage())));
+                  home: const EditionBinderPage(level: 14))));
           await Future<void>.delayed(const Duration(milliseconds: 80));
           await tester.pump();
           expect(tester.takeException(), isNull);
+          expect(find.text('Level 14'), findsOneWidget);
+          expect(find.text('3 of 3 collected'), findsOneWidget);
           await tester.pumpWidget(const SizedBox());
         });
       } finally {

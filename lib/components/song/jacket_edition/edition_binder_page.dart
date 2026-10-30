@@ -1,14 +1,17 @@
 /// Name: EditionBinderPage
-/// Parent: DevelopmentPage
+/// Parent: DevelopmentPage, BestRings (from the level list)
 /// Description: The player's cards as a binder, one play style at a time:
-/// a divider for each level, highest first, with how many of its charts
-/// you've collected and its top card, then nine-pocket sheets of every
+/// a divider for each level, highest first, with its charts' bests as the
+/// level list's rings and its top card, then nine-pocket sheets of every
 /// chart at that level in title order. A chart without a best is an empty
 /// pocket, its jacket a ghost, so the gaps show. Tapping a card opens it.
 library;
 
+import 'dart:math' as math;
+
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/best_rings.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
 import 'package:ddr_md/models/chart_bests.dart';
@@ -23,8 +26,13 @@ import 'jacket_edition.dart';
 
 const binderPockets = 9;
 
-/// One chart's pocket: its card's facts when it has a best, else empty.
-typedef BinderPocket = ({SongInfo song, String difficulty, EditionFacts? card});
+/// One chart's pocket: its best and card's facts when it has one, else empty.
+typedef BinderPocket = ({
+  SongInfo song,
+  String difficulty,
+  ChartBest? best,
+  EditionFacts? card
+});
 
 sealed class BinderPage {
   const BinderPage(this.level);
@@ -32,9 +40,12 @@ sealed class BinderPage {
 }
 
 class BinderDivider extends BinderPage {
-  const BinderDivider(super.level,
-      {required this.collected, required this.total, this.top});
-  final int collected, total;
+  const BinderDivider(super.level, {required this.bests, this.top});
+
+  /// One per chart at the level, null where it hasn't been played.
+  final List<ChartBest?> bests;
+  int get collected => bests.where((b) => b != null).length;
+  int get total => bests.length;
   // The level's negative, its top score.
   final BinderPocket? top;
 }
@@ -57,6 +68,7 @@ List<BinderPage> binderPages(Modes mode) {
       levels.putIfAbsent(level, () => []).add((
         song: song,
         difficulty: value,
+        best: best,
         card: best == null
             ? null
             : EditionFacts(
@@ -80,8 +92,7 @@ List<BinderPage> binderPages(Modes mode) {
               a.song.title.toLowerCase().compareTo(b.song.title.toLowerCase()));
         return [
           BinderDivider(level,
-              collected: pockets.where((p) => p.card != null).length,
-              total: pockets.length,
+              bests: [for (final p in pockets) p.best],
               top: pockets.where((p) => p.card?.levelTop ?? false).firstOrNull),
           for (var i = 0; i < pockets.length; i += binderPockets)
             BinderSheet(
@@ -94,21 +105,27 @@ List<BinderPage> binderPages(Modes mode) {
 }
 
 class EditionBinderPage extends StatefulWidget {
-  const EditionBinderPage({super.key});
+  const EditionBinderPage({super.key, this.mode, this.level});
+
+  /// The play style to open on, else the one picked; and the level, else the
+  /// highest.
+  final Modes? mode;
+  final int? level;
+
   @override
   State<EditionBinderPage> createState() => _EditionBinderPageState();
 }
 
 class _EditionBinderPageState extends State<EditionBinderPage> {
-  late Modes _mode = context.read<SongState>().modes;
+  late Modes _mode = widget.mode ?? context.read<SongState>().modes;
   List<BinderPage>? _pages;
-  final _controller = PageController();
+  var _controller = PageController();
   int _page = 0;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _load(widget.level);
   }
 
   @override
@@ -117,16 +134,23 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  // Opens on [level]'s divider, or the first page without it.
+  Future<void> _load([int? level]) async {
     final mode = _mode;
     setState(() => _pages = null);
     await ChartBests.ensure(mode);
     if (!mounted || mode != _mode) return;
+    final pages = binderPages(mode);
+    final page = math.max(
+        0, pages.indexWhere((p) => p is BinderDivider && p.level == level));
+    // The PageView is out while loading, so it comes back on a controller
+    // already at [page].
+    _controller.dispose();
     setState(() {
-      _pages = binderPages(mode);
-      _page = 0;
+      _controller = PageController(initialPage: page);
+      _pages = pages;
+      _page = page;
     });
-    if (_controller.hasClients) _controller.jumpToPage(0);
   }
 
   void _open(BinderPocket pocket) {
@@ -174,9 +198,13 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                     ButtonSegment(value: Modes.doubles, label: Text('DP')),
                   ],
                   selected: {_mode},
+                  // Stays on the level, in the other style.
                   onSelectionChanged: (s) {
+                    final level = _pages == null || _pages!.isEmpty
+                        ? null
+                        : _pages![_page].level;
                     _mode = s.first;
-                    _load();
+                    _load(level);
                   })),
         ]),
         body: pages == null
@@ -277,17 +305,17 @@ class _Divider extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              LevelNumber(
-                  level: divider.level, difficulty: 'EXPERT', height: 64),
+              // The level's bests as the level list's rings, tapped open
+              // the same way.
+              Row(children: [
+                LevelNumber(
+                    level: divider.level, difficulty: 'EXPERT', height: 64),
+                const Spacer(),
+                BestRings(divider.bests, size: 64),
+              ]),
               const SizedBox(height: 12),
               Text('${divider.collected} of ${divider.total} collected',
                   style: theme.textTheme.titleMedium),
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                  value: divider.total == 0
-                      ? 0
-                      : divider.collected / divider.total,
-                  borderRadius: BorderRadius.circular(4)),
               const SizedBox(height: 24),
               if (top != null) ...[
                 Text('Top card', style: theme.textTheme.labelLarge),
