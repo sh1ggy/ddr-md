@@ -566,7 +566,9 @@ class _SongPageState extends State<SongPage> {
       if (mounted) _measureTitle();
     });
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark,
+      value: Theme.of(context).brightness == Brightness.dark
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
       child: SafeArea(
         top: false,
         // The page runs under the floating tab bar and clears it itself.

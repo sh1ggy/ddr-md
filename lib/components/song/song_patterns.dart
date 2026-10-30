@@ -85,7 +85,6 @@ class _SongPatternsCardState extends State<SongPatternsCard> {
     final picked = await showModalBottomSheet<ChartCategory>(
       context: context,
       useRootNavigator: true,
-      isScrollControlled: true,
       showDragHandle: true,
       builder: (context) => SafeArea(
         child: ListView(
@@ -97,10 +96,11 @@ class _SongPatternsCardState extends State<SongPatternsCard> {
                 Expanded(
                     child: Text('Chart category',
                         style: Theme.of(context).textTheme.titleLarge)),
-                TextButton(
+                IconButton(
+                  tooltip: 'What they mean',
+                  icon: const Icon(Icons.info_outline),
                   onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => const ChartCategoriesPage())),
-                  child: const Text('What they mean'),
                 ),
               ]),
             ),

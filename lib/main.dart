@@ -82,6 +82,13 @@ class App extends StatelessWidget {
       darkTheme: floorPopTheme(Brightness.dark),
       themeMode: ThemeMode.system,
       routerConfig: router,
+      // Status bar icons follow the theme on pages without an AppBar.
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: Theme.of(context).brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
+        child: child!,
+      ),
     );
   }
 }
