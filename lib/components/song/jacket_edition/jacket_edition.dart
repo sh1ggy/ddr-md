@@ -181,8 +181,8 @@ class _JacketEditionState extends State<JacketEdition>
                               child: FittedBox(
                                   fit: BoxFit.scaleDown,
                                   alignment: Alignment.topLeft,
-                                  child:
-                                      _AchievementStamps(recipe: _recipe))))),
+                                  child: EditionAchievementStamps(
+                                      recipe: _recipe))))),
                 if (_recipe.modeStamp != null ||
                     _recipe.difficultyStamp != null)
                   Positioned(
@@ -202,8 +202,8 @@ class _JacketEditionState extends State<JacketEdition>
   }
 }
 
-class _AchievementStamps extends StatelessWidget {
-  const _AchievementStamps({required this.recipe});
+class EditionAchievementStamps extends StatelessWidget {
+  const EditionAchievementStamps({super.key, required this.recipe});
   final EditionRecipe recipe;
   @override
   Widget build(BuildContext context) => Row(

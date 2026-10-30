@@ -14,14 +14,14 @@ import 'edition_motion.dart';
 /// Per-viewer resources. No raster masks, retained textures, blur, saveLayer,
 /// or global combination cache. Recreated only on a recipe/size change.
 class EditionGeometry {
-  EditionGeometry(this.recipe, this.size) {
+  EditionGeometry(this.recipe, this.size, {this.compact = false}) {
     final side = size.shortestSide;
     width = side * editionFrameWidths[recipe.frame]!;
     outer = RRect.fromRectAndRadius(
         Offset.zero & size, Radius.circular(side * .065));
     inner = outer.deflate(width);
     glints = List.unmodifiable(List.generate(
-        editionGlintCount,
+        compact ? 0 : editionGlintCount,
         (i) => Offset(size.width * (.12 + (i * .173) % .77),
             size.height * (.15 + (i * .293) % .70))));
     final back = ui.PictureRecorder();
@@ -33,6 +33,7 @@ class EditionGeometry {
   }
   final EditionRecipe recipe;
   final Size size;
+  final bool compact;
   late final double width;
   late final RRect outer, inner;
   late final ui.Picture frame, motif;
@@ -79,7 +80,9 @@ class EditionGeometry {
       ..color = palette[0].withValues(alpha: .65)
       ..strokeWidth = math.max(.5, side / 1100);
     final step = side / (recipe.border == EditionBorder.engraved ? 44 : 28);
-    for (var x = side * .09; x < size.width - side * .09; x += step) {
+    for (var x = side * .09;
+        !compact && x < size.width - side * .09;
+        x += step) {
       final length = width * (recipe.border == EditionBorder.bevel ? .22 : .42);
       canvas.drawLine(
           Offset(x, width * .32), Offset(x + length, width * .68), engraving);
@@ -88,12 +91,14 @@ class EditionGeometry {
     }
     // Difficulty owns corner geometry; no achievement seals or badges.
     final cut = side * (.023 + recipe.difficultyShape * .003);
-    for (final corner in [
-      Offset(width, width),
-      Offset(size.width - width, width),
-      Offset(width, size.height - width),
-      Offset(size.width - width, size.height - width)
-    ]) {
+    for (final corner in compact
+        ? <Offset>[]
+        : [
+            Offset(width, width),
+            Offset(size.width - width, width),
+            Offset(width, size.height - width),
+            Offset(size.width - width, size.height - width)
+          ]) {
       canvas.drawCircle(corner, cut * .34, Paint()..color = palette[1]);
       canvas.drawCircle(corner, cut * .18, Paint()..color = palette[0]);
     }
@@ -125,7 +130,8 @@ class EditionGeometry {
     }
     if (finish != EditionFinish.print || premium) {
       final cut = editionCuts[recipe.cut]!;
-      final count = math.min(editionMaxMotifLines, cut.lines);
+      final count = math.min(
+          compact ? editionCompactMotifLines : editionMaxMotifLines, cut.lines);
       paint.color =
           (recipe.secret ? const Color(0xFFFFD575) : Colors.white).withValues(
               alpha: premium
@@ -159,7 +165,7 @@ class EditionGeometry {
     if (premium || finish == EditionFinish.prism) {
       paint.color =
           recipe.secret ? const Color(0x66FFE0A0) : const Color(0x44FFFFFF);
-      for (var i = 0; i < 28; i++) {
+      for (var i = 0; i < (compact ? editionCompactGlints : 28); i++) {
         final p = Offset(size.width * (.08 + (i * .61803) % .84),
             size.height * (.08 + (i * .38197) % .84));
         final d = side * (recipe.frame == EditionFrame.starlight ? .005 : .003);
@@ -168,7 +174,8 @@ class EditionGeometry {
       }
     }
     // Complete static finish. This stays when motion is disabled.
-    final alpha = editionFinishAlpha[finish.index] * recipe.strength;
+    final strength = compact ? editionCompactFinishStrength : 1.0;
+    final alpha = editionFinishAlpha[finish.index] * recipe.strength * strength;
     if (alpha > 0 || recipe.ex || recipe.secret) {
       canvas.drawRect(
           inner.outerRect,
@@ -177,7 +184,10 @@ class EditionGeometry {
                     colors: finish.index >= EditionFinish.holo.index ||
                             recipe.ex ||
                             recipe.secret
-                        ? editionSpectrum
+                        ? [
+                            for (final color in editionSpectrum)
+                              color.withValues(alpha: color.a * strength)
+                          ]
                         : [
                             Colors.transparent,
                             Colors.white.withValues(alpha: alpha),

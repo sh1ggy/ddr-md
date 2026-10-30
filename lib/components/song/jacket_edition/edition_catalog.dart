@@ -67,4 +67,7 @@ const editionCuts = {
 
 // Logical pixels around each icon's silhouette, rather than a label panel.
 const editionStampRim = 1.2;
+const editionCompactMotifLines = 8;
+const editionCompactGlints = 4;
+const editionCompactFinishStrength = .55;
 const editionTiltRadians = .14;

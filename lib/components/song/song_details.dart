@@ -7,6 +7,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_viewer.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_chart_facts.dart';
+import 'package:ddr_md/components/song/jacket_edition/compact_jacket_edition.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_radar.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -22,8 +24,8 @@ import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-Widget _zoomArtwork(SongInfo song) => ClipRRect(
-    borderRadius: BorderRadius.circular(22),
+Widget _zoomArtwork(SongInfo song, {double radius = 22}) => ClipRRect(
+    borderRadius: BorderRadius.circular(radius),
     child: SongArtwork(
         songName: song.name,
         title: song.title,
@@ -93,6 +95,26 @@ class SongDetails extends StatelessWidget {
     final chosenNotecount =
         chosenKey == null ? null : notecounts.toJson()[chosenKey];
 
+    final preferences = editionPreferences();
+    final editionEnabled = editionDevelopmentEnabled && preferences.effects;
+    final compactOptions = (
+      borderId: preferences.borderId,
+      effects: editionEnabled,
+      motion: false,
+      modeStamp: false,
+      gradeStamp: false,
+      difficultyStamp: false,
+      tierSuffix: false
+    );
+    final chartFacts = EditionFacts(
+        chart: (
+          song: songInfo.name,
+          mode: songState.modes.name,
+          difficulty: chosenKey ?? ''
+        ),
+        level: difficulty.toJson()[chosenKey] as int?,
+        version: flareGroup(songInfo.version));
+
     final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(fontSize: 14, height: 1.3, color: pop.haze);
@@ -153,129 +175,143 @@ class SongDetails extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    child: Hero(
-                      tag: "imgZoom",
-                      createRectTween: _jacketRectTween,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(22),
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.35),
-                                blurRadius: 30,
-                                offset: const Offset(0, 12)),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(22),
-                          child: SizedBox.square(
-                              dimension: 96,
-                              child: SongArtwork(
-                                  songName: songInfo.name,
-                                  title: songInfo.title,
-                                  fullResolution: true,
-                                  fade: Duration.zero)),
-                        ),
-                      ),
-                    ),
-                    // Zooming image onTap
-                    onTap: () async {
-                      // Both Hero endpoints use the same decoded image. Avoid
-                      // swapping a thumbnail for a fading full-size image in
-                      // the middle of the flight, including a tap before load.
-                      // Freeze identity before image/database awaits.
-                      final mode = songState.modes;
-                      final index = songState.chosenDifficulty;
-                      final levels = mode == Modes.singles
-                          ? songInfo.singles
-                          : songInfo.doubles;
-                      final key = _chosenDifficultyKey(levels, index);
-                      final level = levels.toJson()[key] as int?;
-                      final options = editionPreferences();
-                      final (_, loaded) = await (
-                        precacheImage(
-                            ContentStore.image(
-                                'assets/jackets/${songInfo.name}.png'),
-                            context,
-                            onError: (_, __) {}),
-                        // Without bests the jacket still opens, plain.
-                        editionDevelopmentEnabled && options.effects
-                            ? ChartBests.ensure(mode)
-                                .then((_) => true, onError: (_) => false)
-                            : Future.value(false),
-                      ).wait;
-                      if (!context.mounted) return;
-                      // The card's finish comes from the chart picked below.
-                      final best = loaded && key != null
-                          ? ChartBests.forChart(
-                              songInfo.name, mode, kInGameDifficultyNames[key]!)
-                          : null;
-                      final facts = EditionFacts(
-                        chart: (
-                          song: songInfo.name,
-                          mode: mode.name,
-                          difficulty: key ?? ''
-                        ),
-                        level: level,
-                        version: flareGroup(songInfo.version),
-                        grade: best?.grade,
-                        flare: best?.flare,
-                        lamp: best?.lamp,
-                        precision: loaded && key != null
-                            ? ChartBests.precisionAt(songInfo.name, mode,
-                                kInGameDifficultyNames[key]!)
-                            : null,
-                      );
-                      await showEditionViewer(context,
-                          facts: facts,
-                          options: (
-                            borderId: options.borderId,
-                            effects:
-                                editionDevelopmentEnabled && options.effects,
-                            motion: options.motion,
-                            modeStamp: options.modeStamp,
-                            gradeStamp: options.gradeStamp,
-                            difficultyStamp: options.difficultyStamp,
-                            tierSuffix: options.tierSuffix
+              EditionChartFacts(
+                  facts: chartFacts,
+                  enabled: editionEnabled,
+                  builder: (context, facts) => Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          GestureDetector(
+                            child: Hero(
+                              tag: "imgZoom",
+                              createRectTween: _jacketRectTween,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(22),
+                                  boxShadow: [
+                                    BoxShadow(
+                                        color: Colors.black
+                                            .withValues(alpha: 0.35),
+                                        blurRadius: 30,
+                                        offset: const Offset(0, 12)),
+                                  ],
+                                ),
+                                child: SizedBox.square(
+                                    dimension: 96,
+                                    child: CompactJacketEdition(
+                                        facts: facts,
+                                        options: compactOptions,
+                                        child: _zoomArtwork(songInfo,
+                                            radius: editionEnabled ? 4 : 22))),
+                              ),
+                            ),
+                            // Zooming image onTap
+                            onTap: () async {
+                              // Both Hero endpoints use the same decoded image. Avoid
+                              // swapping a thumbnail for a fading full-size image in
+                              // the middle of the flight, including a tap before load.
+                              // Freeze identity before image/database awaits.
+                              final mode = songState.modes;
+                              final index = songState.chosenDifficulty;
+                              final levels = mode == Modes.singles
+                                  ? songInfo.singles
+                                  : songInfo.doubles;
+                              final key = _chosenDifficultyKey(levels, index);
+                              final level = levels.toJson()[key] as int?;
+                              final options = editionPreferences();
+                              final (_, loaded) = await (
+                                precacheImage(
+                                    ContentStore.image(
+                                        'assets/jackets/${songInfo.name}.png'),
+                                    context,
+                                    onError: (_, __) {}),
+                                // Without bests the jacket still opens, plain.
+                                editionDevelopmentEnabled && options.effects
+                                    ? ChartBests.ensure(mode).then((_) => true,
+                                        onError: (_) => false)
+                                    : Future.value(false),
+                              ).wait;
+                              if (!context.mounted) return;
+                              // The card's finish comes from the chart picked below.
+                              final best = loaded && key != null
+                                  ? ChartBests.forChart(songInfo.name, mode,
+                                      kInGameDifficultyNames[key]!)
+                                  : null;
+                              final facts = EditionFacts(
+                                chart: (
+                                  song: songInfo.name,
+                                  mode: mode.name,
+                                  difficulty: key ?? ''
+                                ),
+                                level: level,
+                                version: flareGroup(songInfo.version),
+                                grade: best?.grade,
+                                flare: best?.flare,
+                                lamp: best?.lamp,
+                                precision: loaded && key != null
+                                    ? ChartBests.precisionAt(songInfo.name,
+                                        mode, kInGameDifficultyNames[key]!)
+                                    : null,
+                              );
+                              await showEditionViewer(context,
+                                  facts: facts,
+                                  options: (
+                                    borderId: options.borderId,
+                                    effects: editionDevelopmentEnabled &&
+                                        options.effects,
+                                    motion: options.motion,
+                                    modeStamp: options.modeStamp,
+                                    gradeStamp: options.gradeStamp,
+                                    difficultyStamp: options.difficultyStamp,
+                                    tierSuffix: options.tierSuffix
+                                  ),
+                                  heroTag: 'imgZoom',
+                                  artwork: _zoomArtwork(songInfo));
+                            },
                           ),
-                          heroTag: 'imgZoom',
-                          artwork: _zoomArtwork(songInfo));
-                    },
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Opacity(
-                          opacity: hideTitle ? 0 : 1,
-                          child: Text(songInfo.title,
-                              key: titleKey,
-                              style: FloorPop.display(20,
-                                  color: scheme.onSurface)),
-                        ),
-                        if (songInfo.titletranslit.isNotEmpty &&
-                            songInfo.titletranslit != songInfo.title)
-                          Text(songInfo.titletranslit, style: muted),
-                        if (songInfo.artist.isNotEmpty)
-                          Text(songInfo.artist, style: muted),
-                      ],
-                    ),
-                  ),
-                  if (songInfo.radarFor(
-                          songState.modes, songState.chosenDifficulty)
-                      case final radar?)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: SongRadarChart(
-                          radar: radar, color: _difficultyColors[chosenKey]),
-                    ),
-                ],
-              ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Opacity(
+                                  opacity: hideTitle ? 0 : 1,
+                                  child: Text(songInfo.title,
+                                      key: titleKey,
+                                      style: FloorPop.display(20,
+                                          color: scheme.onSurface)),
+                                ),
+                                if (songInfo.titletranslit.isNotEmpty &&
+                                    songInfo.titletranslit != songInfo.title)
+                                  Text(songInfo.titletranslit, style: muted),
+                                if (songInfo.artist.isNotEmpty)
+                                  Text(songInfo.artist, style: muted),
+                                if (editionEnabled &&
+                                    preferences.gradeStamp &&
+                                    (facts.grade != null ||
+                                        facts.flare != null))
+                                  Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: EditionAchievementStamps(
+                                              recipe: resolveEdition(
+                                                  facts, preferences)))),
+                              ],
+                            ),
+                          ),
+                          if (songInfo.radarFor(
+                                  songState.modes, songState.chosenDifficulty)
+                              case final radar?)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: SongRadarChart(
+                                  radar: radar,
+                                  color: _difficultyColors[chosenKey]),
+                            ),
+                        ],
+                      )),
               const SizedBox(height: 12),
               // The song at a glance, one row of pills under its title.
               Wrap(spacing: 6, runSpacing: 6, children: [

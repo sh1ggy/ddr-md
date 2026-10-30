@@ -6,6 +6,7 @@ import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_motion.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_stamp.dart';
+import 'package:ddr_md/components/song/jacket_edition/compact_jacket_edition.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -150,6 +151,34 @@ void main() {
         }
       }
     }
+  });
+  testWidgets('compact material stays static under idle and pointer movement',
+      (tester) async {
+    var paints = 0;
+    await tester.pumpWidget(host(SizedBox.square(
+        dimension: 96,
+        child: CompactJacketEdition(
+            facts: facts(),
+            options: options(stamps: true),
+            child: PaintCounter(() => paints++)))));
+    await tester.pumpAndSettle();
+    final initial = paints;
+    final compact = find.byType(CompactJacketEdition);
+    expect(find.descendant(of: compact, matching: find.byType(MouseRegion)),
+        findsNothing);
+    expect(find.descendant(of: compact, matching: find.byType(EditionStamp)),
+        findsNothing);
+    final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await pointer.addPointer(location: tester.getCenter(compact));
+    await pointer.moveBy(const Offset(20, 10));
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(paints, initial);
+    expect(tester.binding.transientCallbackCount, 0);
+    await pointer.removePointer();
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
   });
   testWidgets('a light sweep and pointer burst never repaint the image',
       (tester) async {
