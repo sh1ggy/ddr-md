@@ -411,12 +411,21 @@ enum Modes {
 }
 
 // The cabinet's sort keys. `version` is the release order the cabinet treats as
-// its default.
+// its default. The last three sort on the player's bests, only while the
+// songlist shows them.
 enum SortType {
   level,
   title,
   version,
   bpm,
+  score,
+  flare,
+  lamp;
+
+  bool get isBest => index >= score.index;
+
+  /// Rows stand for one chart each, not a song.
+  bool get isChartScoped => this == level || isBest;
 }
 
 class Difficulty {
