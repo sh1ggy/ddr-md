@@ -20,6 +20,7 @@ Future<void> showEditionViewer(
   required Widget artwork,
   Object? heroTag,
   bool refreshScores = true,
+  VoidCallback? onBinder,
 }) async {
   final still = MediaQuery.disableAnimationsOf(context);
   await Navigator.of(context).push<void>(PageRouteBuilder(
@@ -35,7 +36,8 @@ Future<void> showEditionViewer(
           options: options,
           artwork: artwork,
           heroTag: heroTag,
-          refreshScores: refreshScores)));
+          refreshScores: refreshScores,
+          onBinder: onBinder)));
 }
 
 class _ViewerPage extends StatefulWidget {
@@ -44,12 +46,15 @@ class _ViewerPage extends StatefulWidget {
       required this.options,
       required this.artwork,
       required this.heroTag,
-      required this.refreshScores});
+      required this.refreshScores,
+      required this.onBinder});
   final EditionFacts facts;
   final EditionOptions options;
   final Widget artwork;
   final Object? heroTag;
   final bool refreshScores;
+  // Closes the viewer for the binder, at this card.
+  final VoidCallback? onBinder;
   @override
   State<_ViewerPage> createState() => _ViewerPageState();
 }
@@ -116,6 +121,15 @@ class _ViewerPageState extends State<_ViewerPage> {
           child: Align(
               alignment: Alignment.topRight,
               child: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (widget.onBinder case final onBinder?)
+                  IconButton(
+                      tooltip: 'Open in binder',
+                      color: Colors.white,
+                      icon: const Icon(Icons.collections_bookmark_outlined),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        onBinder();
+                      }),
                 IconButton(
                     tooltip: 'Share card',
                     color: Colors.white,

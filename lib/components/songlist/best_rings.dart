@@ -75,11 +75,14 @@ List<List<_Tier>> _rings(List<ChartBest?> bests) => [
 
 class BestRings extends StatefulWidget {
   const BestRings(this.bests,
-      {super.key, this.size = 30, this.onStats, this.onBinder});
+      {super.key, this.size = 30, this.track, this.onStats, this.onBinder});
 
   /// One per listed chart, null where it hasn't been played.
   final List<ChartBest?> bests;
   final double size;
+
+  /// The unplayed, for ground the default would vanish into.
+  final Color? track;
 
   /// Opens the full stats, from the expanded card.
   final VoidCallback? onStats;
@@ -136,8 +139,12 @@ class _BestRingsState extends State<BestRings> {
           curve: FloorPop.settle,
           builder: (context, t, _) => CustomPaint(
             size: Size.square(widget.size),
-            painter: _RingsPainter(rings, widget.bests.length, [t, t, t],
-                Theme.of(context).colorScheme.surfaceContainerHighest),
+            painter: _RingsPainter(
+                rings,
+                widget.bests.length,
+                [t, t, t],
+                widget.track ??
+                    Theme.of(context).colorScheme.surfaceContainerHighest),
           ),
         ),
       ),

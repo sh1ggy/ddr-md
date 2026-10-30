@@ -1,6 +1,6 @@
 /// Name: Edition binder tests
 /// Parent: EditionBinderPage
-/// Description: A divider per level with its count and top card, then
+/// Description: A cover per level with its count and top card, then
 /// sheets of every chart there, collected or not.
 library;
 
@@ -86,8 +86,7 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 80));
           await tester.pump();
           expect(tester.takeException(), isNull);
-          expect(find.text('Level 14'), findsOneWidget);
-          expect(find.text('3 of 3 collected'), findsOneWidget);
+          expect(find.text('3/3'), findsOneWidget);
           await tester.pumpWidget(const SizedBox());
         });
       } finally {

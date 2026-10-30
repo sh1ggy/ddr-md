@@ -6,6 +6,7 @@ library;
 import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/components/song/jacket_edition.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_viewer.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_radar.dart';
@@ -242,7 +243,18 @@ class SongDetails extends StatelessWidget {
                             tierSuffix: false
                           ),
                           heroTag: 'imgZoom',
-                          artwork: _zoomArtwork(songInfo));
+                          artwork: _zoomArtwork(songInfo),
+                          // To this chart's pocket.
+                          onBinder: key == null
+                              ? null
+                              : () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                      builder: (_) => EditionBinderPage(
+                                          mode: mode,
+                                          level: level,
+                                          song: songInfo.name,
+                                          difficulty:
+                                              kInGameDifficultyNames[key]))));
                     },
                   ),
                   const SizedBox(width: 14),
