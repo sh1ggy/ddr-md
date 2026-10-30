@@ -1,12 +1,13 @@
 /// Name: JacketImage
 /// Parent: SongListItem, ArcadeGridTile, SongDetails
-/// Description: A song's jacket with deterministic generated art while its
-/// image loads or when no artwork is available.
+/// Description: A song's jacket. Behind it, a plain music-note tile for songs
+/// in the list, or deterministic generated art for songs it doesn't know.
 library;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/generated_jacket.dart';
 import 'package:ddr_md/models/content_store.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/material.dart';
 
 class JacketImage extends StatelessWidget {
@@ -42,7 +43,17 @@ class SongArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fallback = GeneratedJacket(songName: songName, title: title);
+    final scheme = Theme.of(context).colorScheme;
+    final fallback = Songs.contains(songName)
+        ? ColoredBox(
+            color: scheme.surfaceContainerLow,
+            child: FractionallySizedBox(
+                widthFactor: 0.4,
+                heightFactor: 0.4,
+                child: FittedBox(
+                    child: Icon(Icons.music_note,
+                        color: scheme.onSurfaceVariant))))
+        : GeneratedJacket(songName: songName, title: title);
     final still = MediaQuery.disableAnimationsOf(context);
     return Semantics(
         image: true,

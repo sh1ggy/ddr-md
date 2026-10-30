@@ -105,6 +105,18 @@ class Songs {
   static List<String> assets = [];
   static List<SongInfo> list = [];
 
+  static List<SongInfo>? _namedList;
+  static Set<String> _names = const {};
+
+  /// Whether [name] is a song in the loaded list.
+  static bool contains(String name) {
+    if (!identical(_namedList, list)) {
+      _namedList = list;
+      _names = {for (final song in list) song.name};
+    }
+    return _names.contains(name);
+  }
+
   // Load song list JSONs from the asset bundle into the static list.
   // `cache: false` throughout: rootBundle otherwise pins every decoded JSON
   // string in its cache for the app's lifetime, doubling what the parsed
