@@ -82,22 +82,10 @@ class MissingDifficultyBundle extends CachingAssetBundle {
 }
 
 void main() {
-  test('one deliberate grade table including plus/minus', () {
+  test('only AAA is foiled, as on its badge', () {
     for (final grade in Grade.values) {
-      final f = finishFor(grade);
-      if (grade.label.startsWith('AAA')) {
-        expect(f, EditionFinish.prism);
-      } else if (grade.label.startsWith('AA')) {
-        expect(f, EditionFinish.texturedHolo);
-      } else if (grade.label.startsWith('A')) {
-        expect(f, EditionFinish.holo);
-      } else if (grade.label.startsWith('B')) {
-        expect(f, EditionFinish.metallic);
-      } else if (grade.label.startsWith('C')) {
-        expect(f, EditionFinish.satin);
-      } else {
-        expect(f, EditionFinish.print);
-      }
+      expect(finishFor(grade),
+          grade == Grade.aaa ? EditionFinish.prism : EditionFinish.print);
     }
   });
   test('tier boundaries, unknown versions and removed style IDs are neutral',

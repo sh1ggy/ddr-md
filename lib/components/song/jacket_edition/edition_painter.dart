@@ -201,8 +201,7 @@ class EditionGeometry {
           inner.outerRect,
           Paint()
             ..shader = LinearGradient(
-                    colors: finish.index >= EditionFinish.holo.index ||
-                            recipe.secret
+                    colors: recipe.secret
                         ? [
                             for (final color in editionSpectrum)
                               color.withValues(alpha: color.a * strength)
@@ -248,12 +247,34 @@ class EditionLightPainter extends CustomPainter {
     final side = size.shortestSide;
     final at =
         Offset(motion.light.dx * size.width, motion.light.dy * size.height);
-    final color = recipe.flareIndex >= 0 && recipe.flareIndex < 9
-        ? kFlareCardColors[recipe.flareIndex].frame
-        : Colors.white;
     final rect = geometry.outer.outerRect;
     canvas.save();
     canvas.clipRRect(geometry.outer);
+    if (recipe.finish == EditionFinish.prism) {
+      // AAA's gold foil, as on its badge, drifting with the light.
+      final drift = (motion.light.dx + motion.light.dy) * side * .4;
+      _paint.shader = ui.Gradient.linear(
+          Offset(drift, 0),
+          Offset(drift + side * .45, side * .3),
+          editionGoldFoil,
+          [
+            for (var i = 0; i < editionGoldFoil.length; i++)
+              i / (editionGoldFoil.length - 1)
+          ],
+          TileMode.repeated);
+      canvas.drawRect(rect, _paint);
+    }
+    // The light sweeps only where a badge would shine: AAA, PFC and MFC
+    // frames, flare IX and EX.
+    final shines = recipe.finish == EditionFinish.prism ||
+        recipe.frame == EditionFrame.gold ||
+        recipe.frame == EditionFrame.starlight ||
+        recipe.flareIndex >= 8 ||
+        recipe.secret;
+    if (!shines) {
+      canvas.restore();
+      return;
+    }
     // Exactly one animated full-card gradient; no per-axis blend layers.
     final spectrum = recipe.secret;
     _paint.shader = ui.Gradient.linear(
@@ -263,7 +284,7 @@ class EditionLightPainter extends CustomPainter {
             ? editionSpectrum
             : [
                 Colors.transparent,
-                color.withValues(alpha: .08 + recipe.finish.index * .025),
+                Colors.white.withValues(alpha: .22),
                 Colors.transparent
               ],
         spectrum ? const [0, .25, .5, .75, 1] : const [0, .5, 1]);

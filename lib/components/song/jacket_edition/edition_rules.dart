@@ -11,14 +11,9 @@ import 'package:ddr_md/models/version_group.dart';
 import 'edition_model.dart';
 import 'edition_catalog.dart';
 
-EditionFinish finishFor(Grade? grade) => switch (grade) {
-      Grade.aaa => EditionFinish.prism,
-      Grade.aaPlus || Grade.aa || Grade.aaMinus => EditionFinish.texturedHolo,
-      Grade.aPlus || Grade.a || Grade.aMinus => EditionFinish.holo,
-      Grade.bPlus || Grade.b || Grade.bMinus => EditionFinish.metallic,
-      Grade.cPlus || Grade.c || Grade.cMinus => EditionFinish.satin,
-      _ => EditionFinish.print,
-    };
+// As the grade badges: only AAA is foiled; the rest leave the art clean.
+EditionFinish finishFor(Grade? grade) =>
+    grade == Grade.aaa ? EditionFinish.prism : EditionFinish.print;
 
 int? editionTier(int? level) {
   if (level == null || level < 1 || level > editionTierCeilings.last) {

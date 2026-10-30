@@ -43,14 +43,24 @@ const editionSpectrum = [
 const editionFinishAlpha = [0.0, .06, .10, .12, .14, .16];
 const editionGlintCount = 6;
 // MFC's frame, round the card.
+// The badges' rainbow (kFlareExColors), round the card.
 const editionRainbowFrame = [
-  Color(0xFFFF8A8A),
-  Color(0xFFFFD27A),
-  Color(0xFFFFF59A),
-  Color(0xFF8AF5AE),
-  Color(0xFF8AD6FF),
-  Color(0xFFC79AFF),
-  Color(0xFFFF8A8A),
+  Color(0xFFFF5A5A),
+  Color(0xFFFFB84D),
+  Color(0xFFFFF15A),
+  Color(0xFF5AFF8C),
+  Color(0xFF5AC8FF),
+  Color(0xFFB45AFF),
+  Color(0xFFFF5A5A),
+];
+// AAA's foil, the AAA badge's gold at a lighter touch over art.
+const editionGoldFoil = [
+  Color(0x408A6512),
+  Color(0x40FFE98A),
+  Color(0x40C99A1E),
+  Color(0x40FFF6CF),
+  Color(0x40A8780F),
+  Color(0x408A6512),
 ];
 // Flare aura: particles per rank within a band, EX's, the small card's, and
 // each halo ring's width, of the card's side.
