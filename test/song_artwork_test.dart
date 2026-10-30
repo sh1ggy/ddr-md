@@ -98,8 +98,8 @@ void main() {
         expectDecodedSquare();
       }
       await tester.pumpAndSettle();
-      expect(tester.getCenter(find.byType(Hero).last),
-          tester.getCenter(find.byType(SongArtwork).last));
+      expect(tester.getCenter(find.byType(SongArtwork).last),
+          tester.getCenter(find.byType(Scaffold).last));
       await tester.tap(find.byType(SongArtwork).last);
       await tester.pump();
       for (var frame = 0; frame < 4; frame++) {
@@ -108,7 +108,7 @@ void main() {
       }
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(tester.getSize(find.byType(Hero).first), const Size(96, 96));
+      expect(tester.getSize(find.byType(SongArtwork).last), const Size(96, 96));
     }
   });
 
@@ -169,8 +169,10 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         final art = find.byType(SongArtwork).last;
-        // The card, frame and all; the art sits inside its frame.
-        final rect = tester.getRect(find.byType(Hero).first);
+        // The jacket, frame and all; the art sits inside its frame.
+        final rect = tester.getRect(find
+            .ancestor(of: art, matching: find.byType(SizedBox))
+            .first);
         expect(rect.width, 96);
         expect(rect.size.aspectRatio, 1);
         expect(find.byType(GeneratedJacket), findsNWidgets(2));
@@ -179,11 +181,8 @@ void main() {
         expect(tester.takeException(), isNull);
         final zoom = find.byType(SongArtwork).last;
         expect(tester.getSize(zoom).width, greaterThan(rect.width));
-        // The flight must target the jacket square, not the screen-sized
-        // centring container (which distorts the image during the flight).
-        final hero = find.byType(Hero).last;
-        expect(tester.getRect(hero).contains(tester.getCenter(zoom)), isTrue);
-        expect(tester.getSize(hero).aspectRatio, 1);
+        // The card lands square, not stretched to the screen.
+        expect(tester.getSize(zoom).aspectRatio, closeTo(1, 0.001));
         await tester.tap(zoom);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
