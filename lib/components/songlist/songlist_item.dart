@@ -41,12 +41,6 @@ class SongListItem extends StatefulWidget {
 }
 
 class _SongListItemState extends State<SongListItem> {
-  /// Kept across rows so scrolling back doesn't re-read a song's patterns.
-  static final _patterns = <String, Future<SongPatterns?>>{};
-
-  Future<SongPatterns?> get _songPatterns => _patterns.putIfAbsent(
-      widget.songInfo.name, () => PatternsLoader.load(widget.songInfo.name));
-
   /// The scoped chart's category as a badge for the jacket's corner: the
   /// player's pick, else the suggested one.
   Widget _category(BuildContext context, Modes mode) {
@@ -54,13 +48,11 @@ class _SongListItemState extends State<SongListItem> {
             ? widget.songInfo.singles
             : widget.songInfo.doubles)
         .availableTypes[widget.difficultyIndex!];
-    final own =
-        ownCategory(chartCategoryKey(widget.songInfo.name, mode, difficulty));
     return FutureBuilder(
-      future: _songPatterns,
+      future: PatternsLoader.cached(widget.songInfo.name),
       builder: (context, snapshot) {
-        final category =
-            own ?? snapshot.data?.chartFor(mode, difficulty)?.primaryCategory;
+        final category = chartCategory(
+            widget.songInfo.name, mode, difficulty, snapshot.data);
         if (category == null) return const SizedBox.shrink();
         final scheme = Theme.of(context).colorScheme;
         return Tooltip(

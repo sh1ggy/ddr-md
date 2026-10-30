@@ -30,6 +30,8 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/models/pattern_model.dart';
+import 'package:ddr_md/components/song/song_patterns.dart' show chartCategory;
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/constants.dart' as constants;
@@ -75,6 +77,14 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     return '${_filter.versionBuckets.length} selected';
   }
 
+  String patternFilterSummary() {
+    if (_filter.categories.isEmpty) return 'All';
+    if (_filter.categories.length == 1) {
+      return kCategoryLabels[_filter.categories.first]!;
+    }
+    return '${_filter.categories.length} selected';
+  }
+
   String nameFilterSummary() {
     return _filter.nameBucket ?? 'All';
   }
@@ -106,6 +116,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         versionBuckets: _filter.versionBuckets,
         nameBucket: _filter.nameBucket,
         favouritesOnly: _filter.favouritesOnly,
+        categories: _filter.categories,
       ),
       songState,
     );
@@ -118,6 +129,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         versionBuckets: _filter.versionBuckets,
         nameBucket: _filter.nameBucket,
         favouritesOnly: !_filter.favouritesOnly,
+        categories: _filter.categories,
       ),
       songState,
     );
@@ -132,6 +144,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         versionBuckets: buckets,
         nameBucket: _filter.nameBucket,
         favouritesOnly: _filter.favouritesOnly,
+        categories: _filter.categories,
       ),
       songState,
     );
@@ -144,6 +157,22 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         versionBuckets: _filter.versionBuckets,
         nameBucket: bucket,
         favouritesOnly: _filter.favouritesOnly,
+        categories: _filter.categories,
+      ),
+      songState,
+    );
+  }
+
+  void _toggleCategory(ChartCategory category, SongState songState) {
+    final Set<ChartCategory> categories = Set.of(_filter.categories);
+    if (!categories.remove(category)) categories.add(category);
+    _applyFilter(
+      SongFilter(
+        levels: _filter.levels,
+        versionBuckets: _filter.versionBuckets,
+        nameBucket: _filter.nameBucket,
+        favouritesOnly: _filter.favouritesOnly,
+        categories: categories,
       ),
       songState,
     );
@@ -159,14 +188,18 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
   /// hardest chart among the filtered levels, since that is the one the filter
   /// was reaching for. A song charting both 18 and 19 reads as its 19 rather
   /// than appearing twice.
-  SongItem _filteredChartItem(SongInfo song, Modes mode, bool isFav) {
+  SongItem? _filteredChartItem(
+      SongInfo song, Modes mode, bool isFav, bool Function(int index)? keep) {
     final Difficulty difficulty =
         mode == Modes.singles ? song.singles : song.doubles;
     final charts = difficulty.chartsByIndex
         .where((c) => c.level >= 1 && c.level <= constants.maxDifficulty)
-        .where((c) => _filter.levels.contains(c.level))
+        .where(
+            (c) => _filter.levels.isEmpty || _filter.levels.contains(c.level))
+        .where((c) => keep == null || keep(c.index))
         .toList();
     if (charts.isEmpty) {
+      if (keep != null) return null;
       // No chart in this mode; it sorts into the NO CHART folder.
       return SongItem(songInfo: song, isFav: isFav);
     }
@@ -213,6 +246,13 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     // filter still scopes the row to the chart it was reaching for, so the row
     // opens there.
     final Set<String> favTitles = {for (final fav in favList) fav.songTitle};
+    // The pattern filter needs every song's patterns, read once and kept.
+    final Map<String, SongPatterns?> patterns = _filter.categories.isEmpty
+        ? const {}
+        : Map.fromIterables(
+            Songs.list.map((s) => s.name),
+            await Future.wait(
+                Songs.list.map((s) => PatternsLoader.cached(s.name))));
     List<SongItem> songItems = [];
     for (SongInfo song in Songs.list) {
       // Resolved before the filter runs — the favourites axis needs it.
@@ -221,13 +261,19 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         continue;
       }
 
+      final types =
+          (mode == Modes.singles ? song.singles : song.doubles).availableTypes;
+      final keep = _filter.categories.isEmpty
+          ? null
+          : (int index) => _filter.categories.contains(chartCategory(
+              song.name, mode, types[index], patterns[song.name]));
       if (sortType.isChartScoped) {
-        songItems.addAll(
-            chartItemsFor(song, mode, isFav: isFav, levels: _filter.levels));
-      } else {
-        songItems.add(_filter.levels.isEmpty
-            ? SongItem(songInfo: song, isFav: isFav)
-            : _filteredChartItem(song, mode, isFav));
+        songItems.addAll(chartItemsFor(song, mode,
+            isFav: isFav, levels: _filter.levels, keep: keep));
+      } else if (_filter.levels.isEmpty && keep == null) {
+        songItems.add(SongItem(songInfo: song, isFav: isFav));
+      } else if (_filteredChartItem(song, mode, isFav, keep) case final item?) {
+        songItems.add(item);
       }
     }
 
@@ -559,6 +605,19 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             ],
           );
 
+        case SongFilterAxis.pattern:
+          return FilterTray(
+            options: <FilterOption>[
+              for (final category in ChartCategory.values)
+                FilterOption(
+                  label: kCategoryLabels[category]!,
+                  icon: kCategoryIcons[category],
+                  selected: _filter.categories.contains(category),
+                  onTap: () => _toggleCategory(category, songState),
+                ),
+            ],
+          );
+
         case SongFilterAxis.name:
           return FilterTray(
             options: <FilterOption>[
@@ -650,6 +709,14 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                         active: _activeFilterPanel == SongFilterAxis.version,
                         onPressed: () =>
                             toggleFilterPanel(SongFilterAxis.version),
+                      ),
+                      const SizedBox(width: 8),
+                      topButton(
+                        label: 'Pattern',
+                        value: patternFilterSummary(),
+                        active: _activeFilterPanel == SongFilterAxis.pattern,
+                        onPressed: () =>
+                            toggleFilterPanel(SongFilterAxis.pattern),
                       ),
                     ],
                   ),

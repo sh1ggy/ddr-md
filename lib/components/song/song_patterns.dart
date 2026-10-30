@@ -40,13 +40,21 @@ const _arcadeRhythmBuckets = <(String, List<String>, Color)>[
 String chartCategoryKey(String songName, Modes mode, String difficulty) =>
     '$songName|${mode == Modes.singles ? "sp" : "dp"}|$difficulty';
 
+String? _ownRaw;
+Map<String, dynamic> _own = {};
+
+/// Decoded once per change, since the song list filter asks for every chart.
 Map<String, dynamic> _ownCategories() {
-  try {
-    return json.decode(Settings.getString(Settings.chartCategoriesKey))
-        as Map<String, dynamic>;
-  } catch (_) {
-    return {};
+  final raw = Settings.getString(Settings.chartCategoriesKey);
+  if (raw != _ownRaw) {
+    _ownRaw = raw;
+    try {
+      _own = json.decode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      _own = {};
+    }
   }
+  return _own;
 }
 
 /// The category the player picked for the chart at [chartKey], if any.
@@ -56,6 +64,13 @@ ChartCategory? ownCategory(String chartKey) =>
         ChartCategory.values.where((c) => c.name == name).firstOrNull,
       _ => null,
     };
+
+/// A chart's category as the player sees it: their own pick, else the
+/// suggested one.
+ChartCategory? chartCategory(String songName, Modes mode, String difficulty,
+        SongPatterns? patterns) =>
+    ownCategory(chartCategoryKey(songName, mode, difficulty)) ??
+    patterns?.chartFor(mode, difficulty)?.primaryCategory;
 
 class SongPatternsCard extends StatefulWidget {
   const SongPatternsCard(

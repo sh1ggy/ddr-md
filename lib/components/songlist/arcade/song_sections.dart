@@ -12,6 +12,7 @@ import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/db_models.dart' show ClearLamp;
+import 'package:ddr_md/models/pattern_model.dart' show ChartCategory;
 
 // Name buckets in the order the filter tray and the grid's folders present
 // them: Japanese titles first, then non-alphabetic, then the letter ranges.
@@ -71,7 +72,8 @@ int levelForItem(SongItem item, Modes mode) =>
 /// charting both 3 and 19 belongs in LEVEL 3 *and* LEVEL 19, which is what the
 /// cabinet's level folders list. Folding it under a single level would hide it
 /// from the folder someone went looking in. [levels], when non-empty, keeps
-/// only the charts the level filter selected.
+/// only the charts the level filter selected, and [keep] the charts the
+/// pattern filter does.
 ///
 /// A song with no chart in the mode yields one song-scoped row, so it still
 /// appears once under NO CHART.
@@ -80,14 +82,17 @@ List<SongItem> chartItemsFor(
   Modes mode, {
   required bool isFav,
   Set<int> levels = const <int>{},
+  bool Function(int index)? keep,
 }) {
   final Difficulty difficulty =
       mode == Modes.singles ? song.singles : song.doubles;
   final charts = difficulty.chartsByIndex
       .where((c) => c.level >= 1 && c.level <= constants.maxDifficulty)
       .where((c) => levels.isEmpty || levels.contains(c.level))
+      .where((c) => keep == null || keep(c.index))
       .toList();
   if (charts.isEmpty) {
+    if (keep != null) return const <SongItem>[];
     return <SongItem>[SongItem(songInfo: song, isFav: isFav)];
   }
   return <SongItem>[
@@ -175,6 +180,7 @@ class SongFilter {
     this.versionBuckets = const <String>{},
     this.nameBucket,
     this.favouritesOnly = false,
+    this.categories = const <ChartCategory>{},
   });
 
   final Set<int> levels;
@@ -183,12 +189,16 @@ class SongFilter {
   // bucket, so picking a second could only ever narrow to nothing.
   final String? nameBucket;
   final bool favouritesOnly;
+  // Per chart rather than per song, so the page applies it with the
+  // categories it has loaded.
+  final Set<ChartCategory> categories;
 
   bool get isEmpty =>
       levels.isEmpty &&
       versionBuckets.isEmpty &&
       nameBucket == null &&
-      !favouritesOnly;
+      !favouritesOnly &&
+      categories.isEmpty;
 
   /// Whether [song] passes every axis. [isFav] comes from the caller because
   /// favourite state lives in the database, not on [SongInfo].
@@ -204,7 +214,7 @@ class SongFilter {
   }
 }
 
-enum SongFilterAxis { name, version }
+enum SongFilterAxis { name, version, pattern }
 
 /// One folder of the arcade grid: a banner label plus the songs under it.
 class ArcadeSection {
