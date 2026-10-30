@@ -1,12 +1,15 @@
 /// Name: CompactJacketEdition
 /// Parent: SongDetails
-/// Description: Static small-card material with no ticker or input controller.
+/// Description: Static small-card material and stickers, with no ticker or
+/// input controller.
 library;
 
 import 'package:flutter/widgets.dart';
+import 'edition_catalog.dart';
 import 'edition_model.dart';
 import 'edition_rules.dart';
 import 'edition_painter.dart';
+import 'jacket_edition.dart';
 
 class CompactJacketEdition extends StatefulWidget {
   const CompactJacketEdition(
@@ -44,16 +47,42 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
         geometry = _geometry = EditionGeometry(recipe, size, compact: true);
       }
       return RepaintBoundary(
-          child: Stack(fit: StackFit.expand, children: [
+          child:
+              Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
         CustomPaint(painter: EditionStaticPainter(geometry)),
         Padding(
             padding: EdgeInsets.all(geometry.width),
             child: ClipRRect(
                 borderRadius: BorderRadius.circular(geometry.inner.tlRadiusX),
-                child: RepaintBoundary(child: widget.child))),
+                child: RepaintBoundary(
+                    child: recipe.negative
+                        ? ColorFiltered(
+                            colorFilter: editionNegative, child: widget.child)
+                        : widget.child))),
         IgnorePointer(
             child: CustomPaint(
-                painter: EditionStaticPainter(geometry, foreground: true))),
+                painter: EditionStaticPainter(geometry, foreground: true),
+                foregroundPainter: EditionFlarePainter(geometry))),
+        // Stickers at full size, scaled down to the card.
+        if (recipe.gradeStamp != null || recipe.flareStamp != null)
+          Positioned(
+              left: geometry.width + 3,
+              right: geometry.width + 3,
+              top: geometry.width + 3,
+              child: IgnorePointer(
+                  child: SizedBox(
+                      height: size.height * .22,
+                      child: EditionAchievementStamps(recipe: recipe)))),
+        if (recipe.modeStamp != null || recipe.difficultyStamp != null)
+          Positioned(
+              left: geometry.width + 3,
+              right: geometry.width + 3,
+              bottom: geometry.width + 3,
+              child: IgnorePointer(
+                  child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.bottomLeft,
+                      child: EditionChartStamps(recipe: recipe)))),
       ]));
     });
   }

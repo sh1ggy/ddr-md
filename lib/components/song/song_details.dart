@@ -102,9 +102,9 @@ class SongDetails extends StatelessWidget {
       effects: editionEnabled,
       motion: false,
       modeStamp: false,
-      gradeStamp: false,
-      difficultyStamp: false,
-      tierSuffix: false
+      gradeStamp: preferences.gradeStamp,
+      difficultyStamp: preferences.difficultyStamp,
+      tierSuffix: preferences.tierSuffix
     );
     final chartFacts = EditionFacts(
         chart: (
@@ -252,6 +252,10 @@ class SongDetails extends StatelessWidget {
                                     ? ChartBests.precisionAt(songInfo.name,
                                         mode, kInGameDifficultyNames[key]!)
                                     : null,
+                                levelTop: loaded &&
+                                    key != null &&
+                                    ChartBests.levelTop(songInfo.name, mode,
+                                        kInGameDifficultyNames[key]!),
                               );
                               await showEditionViewer(context,
                                   facts: facts,
@@ -286,18 +290,6 @@ class SongDetails extends StatelessWidget {
                                   Text(songInfo.titletranslit, style: muted),
                                 if (songInfo.artist.isNotEmpty)
                                   Text(songInfo.artist, style: muted),
-                                if (editionEnabled &&
-                                    preferences.gradeStamp &&
-                                    (facts.grade != null ||
-                                        facts.flare != null))
-                                  Padding(
-                                      padding: const EdgeInsets.only(top: 6),
-                                      child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          alignment: Alignment.centerLeft,
-                                          child: EditionAchievementStamps(
-                                              recipe: resolveEdition(
-                                                  facts, preferences)))),
                               ],
                             ),
                           ),

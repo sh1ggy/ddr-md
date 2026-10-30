@@ -64,6 +64,7 @@ EditionRecipe resolveEdition(EditionFacts facts,
     ex: facts.flare == 'EX',
     secret: frame == EditionFrame.gold && precision == PrecisionAward.sdp,
     failed: lamp == ClearLamp.failed || facts.grade == Grade.e,
+    negative: facts.levelTop,
     strength: facts.grade?.label.endsWith('-') == true
         ? .65
         : facts.grade?.label.endsWith('+') == true

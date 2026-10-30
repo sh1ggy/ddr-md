@@ -58,7 +58,8 @@ class EditionFacts {
       this.grade,
       this.flare,
       this.lamp,
-      this.precision});
+      this.precision,
+      this.levelTop = false});
   final EditionChartKey chart;
   final int? level;
   final FlareGroup? version;
@@ -66,6 +67,8 @@ class EditionFacts {
   final String? flare;
   final ClearLamp? lamp;
   final PrecisionEvidence? precision;
+  // The player's highest score of this chart's level.
+  final bool levelTop;
 }
 
 /// Value equality comes from records. No picture, image, database or ticker
@@ -82,6 +85,7 @@ typedef EditionRecipe = ({
   bool ex,
   bool secret,
   bool failed,
+  bool negative,
   double strength,
   bool effects,
   bool motion,
@@ -112,6 +116,7 @@ extension EditionRecipeDetails on EditionRecipe {
         'ex': ex,
         'secret': secret,
         'failed': failed,
+        'negative': negative,
         'strength': strength,
         'effects': effects,
         'motion': motion,

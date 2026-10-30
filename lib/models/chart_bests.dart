@@ -31,13 +31,21 @@ class ChartBests {
       ({
     int revision,
     Map<String, Map<String, ChartBest>> bests,
-    Map<String, Map<String, PrecisionEvidence>> precision
+    Map<String, Map<String, PrecisionEvidence>> precision,
+    Set<(String, String)> levelTops
   })>{};
   static final _loads = <Modes, Future<void>>{};
 
   static PrecisionEvidence? precisionAt(
           String song, Modes mode, String difficulty) =>
       _cache[mode]?.precision[song]?[difficulty];
+
+  /// Whether this chart holds the player's highest score of its level, out
+  /// of at least [levelTopMinCharts] scored charts there. Ties all hold it.
+  static bool levelTop(String song, Modes mode, String difficulty) =>
+      _cache[mode]?.levelTops.contains((song, difficulty)) ?? false;
+
+  static const levelTopMinCharts = 3;
 
   static ChartBest? forChart(String song, Modes mode, String difficulty) =>
       _cache[mode]?.bests[song]?[difficulty];
@@ -146,6 +154,40 @@ class ChartBests {
         charts[s.difficulty] = evidence;
       }
     }
-    _cache[mode] = (revision: revision, bests: bests, precision: precision);
+    final levels =
+        <int, ({int score, int charts, List<(String, String)> tops})>{};
+    for (final song in Songs.list) {
+      final charts = bests[song.name];
+      if (charts == null) continue;
+      final json =
+          (mode == Modes.singles ? song.singles : song.doubles).toJson();
+      for (final MapEntry(:key, :value) in kInGameDifficultyNames.entries) {
+        final level = json[key], score = charts[value]?.score;
+        if (level is! int || score == null) continue;
+        final old = levels[level];
+        levels[level] = old == null || score > old.score
+            ? (
+                score: score,
+                charts: (old?.charts ?? 0) + 1,
+                tops: [(song.name, value)]
+              )
+            : (
+                score: old.score,
+                charts: old.charts + 1,
+                tops: score == old.score
+                    ? [...old.tops, (song.name, value)]
+                    : old.tops
+              );
+      }
+    }
+    _cache[mode] = (
+      revision: revision,
+      bests: bests,
+      precision: precision,
+      levelTops: {
+        for (final l in levels.values)
+          if (l.charts >= levelTopMinCharts) ...l.tops
+      }
+    );
   }
 }

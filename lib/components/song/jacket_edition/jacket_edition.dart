@@ -14,8 +14,10 @@ import 'edition_motion.dart';
 import 'edition_painter.dart';
 import 'edition_stamp.dart';
 
-/// Opt in for device validation. Default stays plain until phone gates pass.
-const editionDevelopmentEnabled = bool.fromEnvironment('JACKET_EDITIONS');
+/// On unless built with JACKET_EDITIONS=false, e.g. to compare frame
+/// timings against the plain jacket.
+const editionDevelopmentEnabled =
+    bool.fromEnvironment('JACKET_EDITIONS', defaultValue: true);
 
 EditionOptions editionPreferences() => (
       borderId: Settings.getString(Settings.jacketBorderKey),
@@ -147,101 +149,133 @@ class _JacketEditionState extends State<JacketEdition>
                     ..rotateY(_motion.tilt.dx * editionTiltRadians),
                   child: child),
               child: RepaintBoundary(
-                  child: Stack(fit: StackFit.expand, children: [
-                RepaintBoundary(
-                    child: CustomPaint(
-                        painter: EditionStaticPainter(staticGeometry))),
-                Padding(
-                    padding: EdgeInsets.all(geometry.width),
-                    child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(geometry.inner.tlRadiusX),
+                  child: Stack(
+                      fit: StackFit.expand,
+                      clipBehavior: Clip.none,
+                      children: [
+                    RepaintBoundary(
+                        child: CustomPaint(
+                            painter: EditionStaticPainter(staticGeometry))),
+                    Padding(
+                        padding: EdgeInsets.all(geometry.width),
+                        child: ClipRRect(
+                            borderRadius:
+                                BorderRadius.circular(geometry.inner.tlRadiusX),
+                            child: RepaintBoundary(
+                                key: const ValueKey('edition-art'),
+                                child: _recipe.negative
+                                    ? ColorFiltered(
+                                        colorFilter: editionNegative,
+                                        child: widget.child)
+                                    : widget.child))),
+                    IgnorePointer(
                         child: RepaintBoundary(
-                            key: const ValueKey('edition-art'),
-                            child: widget.child))),
-                IgnorePointer(
-                    child: RepaintBoundary(
-                        child: CustomPaint(
-                            painter: EditionStaticPainter(staticGeometry,
-                                foreground: true)))),
-                // Only this sibling listens to light. The decoded image and both
-                // display lists retain separate layers throughout a sweep.
-                IgnorePointer(
-                    child: RepaintBoundary(
-                        child: CustomPaint(
-                            painter:
-                                EditionLightPainter(staticGeometry, _motion)))),
-                if (_recipe.gradeStamp != null || _recipe.flareStamp != null)
-                  Positioned(
-                      left: geometry.width + 8,
-                      right: geometry.width + 8,
-                      top: geometry.width + 8,
-                      child: IgnorePointer(
-                          child: RepaintBoundary(
-                              child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.topLeft,
+                            child: CustomPaint(
+                                painter: EditionStaticPainter(staticGeometry,
+                                    foreground: true)))),
+                    // Only this sibling listens to light. The decoded image and both
+                    // display lists retain separate layers throughout a sweep.
+                    IgnorePointer(
+                        child: RepaintBoundary(
+                            child: CustomPaint(
+                                painter: EditionLightPainter(
+                                    staticGeometry, _motion),
+                                foregroundPainter: EditionFlarePainter(
+                                    staticGeometry, _motion)))),
+                    if (_recipe.gradeStamp != null ||
+                        _recipe.flareStamp != null)
+                      Positioned(
+                          left: geometry.width + 8,
+                          right: geometry.width + 8,
+                          top: geometry.width + 8,
+                          child: IgnorePointer(
+                              child: RepaintBoundary(
                                   child: EditionAchievementStamps(
-                                      recipe: _recipe))))),
-                if (_recipe.modeStamp != null ||
-                    _recipe.difficultyStamp != null)
-                  Positioned(
-                      left: geometry.width + 8,
-                      right: geometry.width + 8,
-                      bottom: geometry.width + 8,
-                      child: IgnorePointer(
-                          child: RepaintBoundary(
-                              child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.bottomLeft,
-                                  child: _ChartStamps(recipe: _recipe))))),
-              ]))),
+                                      recipe: _recipe, motion: _motion)))),
+                    if (_recipe.modeStamp != null ||
+                        _recipe.difficultyStamp != null)
+                      Positioned(
+                          left: geometry.width + 8,
+                          right: geometry.width + 8,
+                          bottom: geometry.width + 8,
+                          child: IgnorePointer(
+                              child: RepaintBoundary(
+                                  child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.bottomLeft,
+                                      child: EditionChartStamps(
+                                          recipe: _recipe, motion: _motion))))),
+                  ]))),
         ),
       );
     });
   }
 }
 
+/// The flare in the card's top left corner and the grade in its top right,
+/// across the width it's given.
 class EditionAchievementStamps extends StatelessWidget {
-  const EditionAchievementStamps({super.key, required this.recipe});
+  const EditionAchievementStamps(
+      {super.key, required this.recipe, this.motion});
   final EditionRecipe recipe;
+  final EditionMotion? motion;
   @override
   Widget build(BuildContext context) => Row(
           key: const ValueKey('edition-achievement-stamp'),
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            if (recipe.gradeStamp case final grade?)
-              EditionStamp(
-                  asset: gradeIcon(grade), height: 22, label: grade.label),
-            if (recipe.gradeStamp != null && recipe.flareStamp != null)
-              const SizedBox(width: 8),
             if (recipe.flareStamp case final flare?)
-              EditionStamp(
-                  asset: flareRankIcon(flare), height: 22, label: flare),
+              Flexible(
+                  child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topLeft,
+                      child: EditionStamp(
+                          key: const ValueKey('edition-flare-stamp'),
+                          asset: flareRankIcon(flare),
+                          height: 22,
+                          label: flare,
+                          motion: motion))),
+            if (recipe.flareStamp == null) const SizedBox.shrink(),
+            if (recipe.gradeStamp case final grade?)
+              Flexible(
+                  child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topRight,
+                      child: EditionStamp(
+                          key: const ValueKey('edition-grade-stamp'),
+                          asset: gradeIcon(grade),
+                          height: 22,
+                          label: grade.label,
+                          motion: motion))),
           ]);
 }
 
-class _ChartStamps extends StatelessWidget {
-  const _ChartStamps({required this.recipe});
+class EditionChartStamps extends StatelessWidget {
+  const EditionChartStamps({super.key, required this.recipe, this.motion});
   final EditionRecipe recipe;
+  final EditionMotion? motion;
   @override
-  Widget build(BuildContext context) => Row(
-          key: const ValueKey('edition-chart-stamp'),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (recipe.modeStamp case final mode?) ...[
-              EditionStamp(
-                  asset:
-                      'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
-                  height: 13,
-                  label: mode == 'singles' ? 'SINGLE' : 'DOUBLE'),
-              if (recipe.difficultyStamp != null) const SizedBox(width: 8),
-            ],
-            if (recipe.difficultyStamp case final difficulty?)
-              DifficultyLabel(
-                  difficulty: difficulty,
-                  level: recipe.levelStamp,
-                  levelSuffix: recipe.tierSuffix,
-                  height: 15),
-          ]);
+  Widget build(BuildContext context) => EditionLabelSticker(
+      key: const ValueKey('edition-chart-stamp'),
+      motion: motion,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (recipe.modeStamp case final mode?) ...[
+          Image.asset(
+              'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
+              height: 13,
+              semanticLabel: mode == 'singles' ? 'SINGLE' : 'DOUBLE',
+              errorBuilder: (_, __, ___) => Text(
+                  mode == 'singles' ? 'SINGLE' : 'DOUBLE',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w900))),
+          if (recipe.difficultyStamp != null) const SizedBox(width: 8),
+        ],
+        if (recipe.difficultyStamp case final difficulty?)
+          DifficultyLabel(
+              difficulty: difficulty,
+              level: recipe.levelStamp,
+              levelSuffix: recipe.tierSuffix,
+              height: 15),
+      ]));
 }

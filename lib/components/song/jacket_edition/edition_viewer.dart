@@ -7,6 +7,7 @@ import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'edition_model.dart';
 import 'edition_chart_facts.dart';
+import 'edition_guide.dart';
 import 'jacket_edition.dart';
 
 // Shared route dimensions and transition for song jackets and lab previews.
@@ -31,25 +32,38 @@ Future<void> showEditionViewer(
         final card = refreshScores
             ? EditionViewer(facts: facts, options: options, child: artwork)
             : JacketEdition(facts: facts, options: options, child: artwork);
-        return GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Center(
-                child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 640),
-                        child: AspectRatio(
-                            aspectRatio: 1,
-                            child: heroTag == null
-                                ? card
-                                : Hero(
-                                    tag: heroTag,
-                                    transitionOnUserGestures: true,
-                                    createRectTween: (begin, end) =>
-                                        RectTween(begin: begin, end: end),
-                                    flightShuttleBuilder:
-                                        (_, __, ___, ____, _____) => artwork,
-                                    child: card))))));
+        return Stack(children: [
+          GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Center(
+                  child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 640),
+                          child: AspectRatio(
+                              aspectRatio: 1,
+                              child: heroTag == null
+                                  ? card
+                                  : Hero(
+                                      tag: heroTag,
+                                      transitionOnUserGestures: true,
+                                      createRectTween: (begin, end) =>
+                                          RectTween(begin: begin, end: end),
+                                      flightShuttleBuilder:
+                                          (_, __, ___, ____, _____) => artwork,
+                                      child: card)))))),
+          SafeArea(
+              child: Align(
+                  alignment: Alignment.topRight,
+                  child: IconButton(
+                      tooltip: 'How cards work',
+                      color: Colors.white,
+                      icon: const Icon(Icons.info_outline),
+                      onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  EditionGuidePage(artwork: artwork)))))),
+        ]);
       }));
 }
 

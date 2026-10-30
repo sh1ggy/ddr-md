@@ -42,6 +42,39 @@ const editionSpectrum = [
 ];
 const editionFinishAlpha = [0.0, .06, .10, .12, .14, .16];
 const editionGlintCount = 6;
+// MFC's frame, round the card.
+const editionRainbowFrame = [
+  Color(0xFFFF8A8A),
+  Color(0xFFFFD27A),
+  Color(0xFFFFF59A),
+  Color(0xFF8AF5AE),
+  Color(0xFF8AD6FF),
+  Color(0xFFC79AFF),
+  Color(0xFFFF8A8A),
+];
+// Flare aura: particles per rank within a band, EX's, the small card's, and
+// each halo ring's width, of the card's side.
+const editionSparksPerRank = 3;
+const editionMaxSparks = 16;
+const editionCompactSparks = 4;
+const editionHaloWidth = .008;
+// Flare EX's polychrome over the art, mirrored so its bands never seam.
+const editionPolychrome = [
+  Color(0xFFFF4D6D),
+  Color(0xFFFFB347),
+  Color(0xFFF9F871),
+  Color(0xFF4DFFA0),
+  Color(0xFF4DC3FF),
+  Color(0xFFB04DFF),
+];
+const editionPolychromeAlpha = .55;
+// Negative: the art inverted, leaning blue-violet.
+const editionNegative = ColorFilter.matrix([
+  -.9, 0, 0, 0, 225, //
+  0, -.85, 0, 0, 210,
+  0, 0, -1, 0, 255,
+  0, 0, 0, 1, 0,
+]);
 const editionMaxMotifLines = 52;
 // CPU display lists only: no application-owned effect textures. The active viewer
 // owns two small pictures and releases them on recipe/size change/disposal.
@@ -66,7 +99,8 @@ const editionCuts = {
 };
 
 // Logical pixels around each icon's silhouette, rather than a label panel.
-const editionStampRim = 1.2;
+const editionStampRim = 1.8;
+const editionLabelRim = 1.8;
 const editionCompactMotifLines = 8;
 const editionCompactGlints = 4;
 const editionCompactFinishStrength = .55;

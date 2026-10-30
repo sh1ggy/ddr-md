@@ -5,7 +5,7 @@ library;
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:ddr_md/grades.dart' show kFlareCardColors;
+import 'package:ddr_md/grades.dart' show kFlareCardColors, kFlareExColors;
 import 'package:flutter/material.dart';
 import 'edition_model.dart';
 import 'edition_catalog.dart';
@@ -24,6 +24,22 @@ class EditionGeometry {
         compact ? 0 : editionGlintCount,
         (i) => Offset(size.width * (.12 + (i * .173) % .77),
             size.height * (.15 + (i * .293) % .70))));
+    final random = math.Random(recipe.flareIndex + 1);
+    sparks = List.unmodifiable(List.generate(
+        recipe.flareIndex < 0
+            ? 0
+            : compact
+                ? editionCompactSparks
+                : recipe.ex
+                    ? editionMaxSparks
+                    : editionSparksPerRank * (recipe.flareIndex % 3 + 2),
+        (_) => (
+              along: random.nextDouble(),
+              phase: random.nextDouble(),
+              speed: 1.6 + random.nextDouble() * 1.6,
+              size: .009 + random.nextDouble() * .009,
+              out: (random.nextDouble() - .3) * .05,
+            )));
     final back = ui.PictureRecorder();
     _recordFrame(Canvas(back));
     frame = back.endRecording();
@@ -38,6 +54,7 @@ class EditionGeometry {
   late final RRect outer, inner;
   late final ui.Picture frame, motif;
   late final List<Offset> glints;
+  late final List<EditionSpark> sparks;
 
   void _recordFrame(Canvas canvas) {
     final palette = editionFramePalettes[recipe.frame]!;
@@ -45,23 +62,26 @@ class EditionGeometry {
     canvas.drawRRect(
         outer,
         Paint()
-          ..shader = LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                palette[0],
-                palette[1],
-                palette[2],
-                palette[1],
-                palette[0]
-              ],
-              stops: const [
-                0,
-                .22,
-                .5,
-                .76,
-                1
-              ]).createShader(rect));
+          ..shader = (recipe.frame == EditionFrame.starlight
+                  ? const SweepGradient(colors: editionRainbowFrame)
+                  : LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                          palette[0],
+                          palette[1],
+                          palette[2],
+                          palette[1],
+                          palette[0]
+                        ],
+                      stops: const [
+                          0,
+                          .22,
+                          .5,
+                          .76,
+                          1
+                        ]))
+              .createShader(rect));
     final line = Paint()..style = PaintingStyle.stroke;
     // Raised bevel remains visible with motion disabled, especially PFC.
     for (final (inset, alpha) in [
@@ -176,13 +196,12 @@ class EditionGeometry {
     // Complete static finish. This stays when motion is disabled.
     final strength = compact ? editionCompactFinishStrength : 1.0;
     final alpha = editionFinishAlpha[finish.index] * recipe.strength * strength;
-    if (alpha > 0 || recipe.ex || recipe.secret) {
+    if (alpha > 0 || recipe.secret) {
       canvas.drawRect(
           inner.outerRect,
           Paint()
             ..shader = LinearGradient(
                     colors: finish.index >= EditionFinish.holo.index ||
-                            recipe.ex ||
                             recipe.secret
                         ? [
                             for (final color in editionSpectrum)
@@ -236,7 +255,7 @@ class EditionLightPainter extends CustomPainter {
     canvas.save();
     canvas.clipRRect(geometry.outer);
     // Exactly one animated full-card gradient; no per-axis blend layers.
-    final spectrum = recipe.ex || recipe.secret;
+    final spectrum = recipe.secret;
     _paint.shader = ui.Gradient.linear(
         at - Offset(side * .5, side * .18),
         at + Offset(side * .5, side * .18),
@@ -261,9 +280,178 @@ class EditionLightPainter extends CustomPainter {
       canvas.drawLine(p - Offset(0, d), p + Offset(0, d), _paint);
     }
     canvas.restore();
+    if (recipe.frame == EditionFrame.starlight) {
+      // A glint running round the rainbow frame.
+      _paint
+        ..color = Colors.white
+        ..shader = SweepGradient(colors: const [
+          Color(0x00FFFFFF),
+          Color(0xB3FFFFFF),
+          Color(0x00FFFFFF),
+          Color(0x00FFFFFF)
+        ], stops: const [
+          0,
+          .06,
+          .12,
+          1
+        ], transform: GradientRotation(motion.time * 1.6))
+            .createShader(rect);
+      canvas.drawDRRect(geometry.outer, geometry.inner, _paint);
+      _paint.shader = null;
+    }
   }
 
   @override
   bool shouldRepaint(EditionLightPainter old) =>
+      old.geometry != geometry || old.motion != motion;
+}
+
+typedef EditionSpark = ({
+  double along,
+  double phase,
+  double speed,
+  double size,
+  double out
+});
+
+/// The flare's aura, outside the art: a halo round the card and particles
+/// on its edge, stronger up each band. I–III sparks rise, IV–VI motes run
+/// round the frame, VII–IX stars twinkle and EX's stars and halo are rainbow.
+/// Unblurred; without [motion] it holds its first frame.
+class EditionFlarePainter extends CustomPainter {
+  EditionFlarePainter(this.geometry, [this.motion]) : super(repaint: motion);
+  final EditionGeometry geometry;
+  final EditionMotion? motion;
+  final Paint _paint = Paint();
+
+  static final _star = () {
+    final path = Path()..moveTo(0, -1);
+    for (final (x, y) in [
+      (.2, -.2),
+      (1.0, 0.0),
+      (.2, .2),
+      (0.0, 1.0),
+      (-.2, .2),
+      (-1.0, 0.0),
+      (-.2, -.2),
+    ]) {
+      path.lineTo(x, y);
+    }
+    return path..close();
+  }();
+
+  // A point [along] the card's edge, clockwise from the top left, pushed
+  // [out] of it.
+  static Offset _edge(Size size, double along, double out) {
+    final w = size.width, h = size.height;
+    final d = (along % 1) * 2 * (w + h);
+    final o = out * size.shortestSide;
+    if (d < w) return Offset(d, -o);
+    if (d < w + h) return Offset(w + o, d - w);
+    if (d < 2 * w + h) return Offset(w - (d - w - h), h + o);
+    return Offset(-o, h - (d - 2 * w - h));
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final recipe = geometry.recipe;
+    if (recipe.flareIndex < 0) return;
+    final side = size.shortestSide;
+    final t = motion?.time ?? 0;
+    final band = recipe.ex ? 3 : recipe.flareIndex ~/ 3;
+    final rank = recipe.ex ? 1.0 : (recipe.flareIndex % 3 + 1) / 3;
+    final color = recipe.ex
+        ? kFlareExColors.first
+        : kFlareCardColors[recipe.flareIndex].frame;
+    // The halo stays white like foil so it never reads as a coloured
+    // border; only the particles carry a hint of the rank's colour.
+    final bright = Color.lerp(color, Colors.white, .6)!;
+
+    if (recipe.ex) {
+      // Polychrome: the art's own light and shade, recoloured by bands of
+      // rainbow that drift with time and the light.
+      final light = motion?.light ?? const Offset(.35, .3);
+      final shift = (light.dx + light.dy) * side * .35 + t * side * .08;
+      canvas.save();
+      canvas.clipRRect(geometry.inner);
+      _paint
+        ..blendMode = BlendMode.color
+        ..color = Colors.white.withValues(alpha: editionPolychromeAlpha)
+        ..shader = ui.Gradient.linear(
+            Offset(shift, 0),
+            Offset(shift + side * .9, side * .55),
+            editionPolychrome,
+            [
+              for (var i = 0; i < editionPolychrome.length; i++)
+                i / (editionPolychrome.length - 1)
+            ],
+            TileMode.mirror);
+      canvas.drawRect(geometry.inner.outerRect, _paint);
+      _paint
+        ..blendMode = BlendMode.srcOver
+        ..shader = null;
+      canvas.restore();
+    }
+
+    _paint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = side * editionHaloWidth;
+    if (recipe.ex) {
+      _paint.shader = SweepGradient(
+              colors: [...kFlareExColors, kFlareExColors.first],
+              transform: GradientRotation(t * .9))
+          .createShader(geometry.outer.outerRect);
+    }
+    for (var i = 0; i < 4; i++) {
+      _paint.color = Colors.white.withValues(
+          alpha: const [.32, .16, .07, .03][i] * (.45 + rank * .55));
+      canvas.drawRRect(
+          geometry.outer.inflate(side * editionHaloWidth * (i + .5)), _paint);
+    }
+    _paint
+      ..shader = null
+      ..style = PaintingStyle.fill;
+
+    for (var i = 0; i < geometry.sparks.length; i++) {
+      final s = geometry.sparks[i];
+      final f = (t / s.speed + s.phase) % 1;
+      final dot = side * s.size;
+      final Offset at;
+      var alpha = 1.0;
+      switch (band) {
+        case 0:
+          // Up the sides, fading in and out.
+          final right = s.along > .5;
+          at = Offset(right ? size.width + s.out * side : -s.out * side,
+              size.height * (1 - f));
+          alpha = math.sin(f * math.pi);
+        case 1:
+          at = _edge(size, s.along + t / (s.speed * 6), s.out);
+          alpha = .9;
+        default:
+          at = _edge(size, s.along, s.out);
+          alpha = math.sin(f * math.pi);
+      }
+      if (alpha <= .02) continue;
+      _paint.color = (recipe.ex
+              ? Color.lerp(
+                  kFlareExColors[i % kFlareExColors.length], Colors.white, .3)!
+              : bright)
+          .withValues(alpha: alpha);
+      if (band < 2) {
+        canvas.drawCircle(at, dot, _paint);
+      } else {
+        canvas.save();
+        canvas.translate(at.dx, at.dy);
+        canvas.rotate(alpha * math.pi / 4);
+        canvas.scale(dot * 2.4 * alpha * (recipe.ex ? 1.3 : 1));
+        canvas.drawPath(_star, _paint);
+        canvas.restore();
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(EditionFlarePainter old) =>
       old.geometry != geometry || old.motion != motion;
 }

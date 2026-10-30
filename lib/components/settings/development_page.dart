@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/jacket_edition.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_guide.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_lab_page.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_browser.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_store.dart';
@@ -51,6 +52,14 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const EditionLabPage())))),
+            Card(
+                child: ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: const Text('How cards work'),
+                    subtitle: const Text('What earns each layer of a card'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const EditionGuidePage())))),
             Card(
                 child: ListTile(
                     leading: const Icon(Icons.storage_outlined),

@@ -20,6 +20,7 @@ import 'edition_catalog.dart';
 import 'edition_artwork_picker.dart';
 import 'edition_viewer.dart';
 import 'edition_fixture_browser.dart';
+import 'edition_guide.dart';
 import 'edition_model.dart';
 import 'edition_rules.dart';
 import 'jacket_edition.dart';
@@ -43,6 +44,7 @@ class _EditionLabPageState extends State<EditionLabPage> {
   SongInfo? _song;
   PrecisionEvidence? _seededEvidence;
   bool _modeStamp = true;
+  bool _levelTop = false;
   bool _motion = false,
       _gradeStamp = true,
       _difficultyStamp = true,
@@ -74,6 +76,7 @@ class _EditionLabPageState extends State<EditionLabPage> {
           lamp: _lamp,
           flare: _flare,
           version: _version,
+          levelTop: _levelTop,
           precision: _seededEvidence != null &&
                   precision == null &&
                   _seededEvidence!.award == _precision
@@ -286,7 +289,13 @@ class _EditionLabPageState extends State<EditionLabPage> {
       'timings': _report
     });
     return Scaffold(
-        appBar: AppBar(title: const Text('Jacket edition lab')),
+        appBar: AppBar(title: const Text('Jacket edition lab'), actions: [
+          IconButton(
+              tooltip: 'How cards work',
+              icon: const Icon(Icons.info_outline),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => EditionGuidePage(artwork: _artwork())))),
+        ]),
         body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
             children: [
@@ -355,6 +364,11 @@ class _EditionLabPageState extends State<EditionLabPage> {
                   ['', ...kFlareRanks],
                   (v) => _flare = v.isEmpty ? null : v,
                   (v) => v.isEmpty ? 'Unknown' : v),
+              SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Top score of its level (negative)'),
+                  value: _levelTop,
+                  onChanged: (v) => setState(() => _levelTop = v)),
               _select(
                   'Version group',
                   _version?.name ?? '',
