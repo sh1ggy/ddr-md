@@ -302,7 +302,7 @@ int bpmKey(SongInfo song) =>
     song.charts.isEmpty ? 0 : song.charts.first.dominantBpm;
 
 // Comparator for song lists under the given sort. Callers should skip
-// sorting entirely for SortType.level: List.sort isn't stable, so a
+// sorting entirely for the chart-scoped sorts: List.sort isn't stable, so a
 // zero-comparator would still shuffle the original order.
 //
 // `descending` flips the key but never the title tiebreak, so equal-key runs
@@ -312,6 +312,9 @@ int compareSongInfo(SongInfo a, SongInfo b, SortType sortType,
   final int sign = descending ? -1 : 1;
   switch (sortType) {
     case SortType.level:
+    case SortType.score:
+    case SortType.flare:
+    case SortType.lamp:
       return 0;
     case SortType.title:
       return sign * _titleKey(a).compareTo(_titleKey(b));

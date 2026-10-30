@@ -193,7 +193,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       ];
 
   static String _countLabel(int count, SortType sortType) {
-    final String noun = sortType == SortType.level ? 'chart' : 'song';
+    final String noun = sortType.isChartScoped ? 'chart' : 'song';
     return '$count $noun${count == 1 ? '' : 's'}';
   }
 
@@ -207,8 +207,8 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       favCount = favList.length;
     });
 
-    // One row per song, except under the level sort, where a row stands for a
-    // chart: a song sits in every level folder it charts. Off that sort a level
+    // One row per song, except under the level and bests sorts, where a row
+    // stands for a chart: a song sits in every level folder it charts. Off that sort a level
     // filter still scopes the row to the chart it was reaching for, so the row
     // opens there.
     final Set<String> favTitles = {for (final fav in favList) fav.songTitle};
@@ -220,7 +220,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         continue;
       }
 
-      if (sortType == SortType.level) {
+      if (sortType.isChartScoped) {
         songItems.addAll(
             chartItemsFor(song, mode, isFav: isFav, levels: _filter.levels));
       } else {
@@ -241,6 +241,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             ? byLevel
             : compareSongInfo(a.songInfo, b.songInfo, SortType.title);
       });
+    } else if (sortType.isBest) {
+      songItems.sort((a, b) =>
+          compareBestItems(a, b, sortType, mode, descending: descending));
     } else {
       songItems.sort((a, b) => compareSongInfo(a.songInfo, b.songInfo, sortType,
           descending: descending));
@@ -344,9 +347,15 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                       : Icons.military_tech_outlined),
                   tooltip: ChartBests.shown ? 'Hide bests' : 'Show bests',
                   onPressed: () async {
+                    final wasBestSort = songState.sortType.isBest;
                     await Settings.setInt(Settings.songlistHideStatsKey,
                         ChartBests.shown ? 1 : 0);
-                    setState(() {});
+                    // A bests sort falls back to the default while hidden.
+                    if (wasBestSort || songState.sortType.isBest) {
+                      regenSongItems(songState.modes, songState.sortType);
+                    } else {
+                      setState(() {});
+                    }
                   },
                 ),
                 HeaderButton(
@@ -851,7 +860,8 @@ class _SortPill extends StatelessWidget {
                     borderRadius:
                         BorderRadius.horizontal(left: Radius.circular(18))),
                 onTap: () {
-                  songState.setSortType(nextSortType(songState.sortType));
+                  songState.setSortType(nextSortType(songState.sortType,
+                      bests: ChartBests.shown));
                   onSorted();
                 },
                 child: Padding(

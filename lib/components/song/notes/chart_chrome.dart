@@ -39,7 +39,7 @@ class TempoBadge extends StatelessWidget {
             const SizedBox(width: 5),
             Text(
               value,
-              style: FloorPop.readout(14, color: FloorPop.volt),
+              style: FloorPop.readout(14, color: Colors.white),
             ),
           ],
         );
@@ -805,7 +805,7 @@ class EdgeTab extends StatelessWidget {
         alignment: Alignment.center,
         child: Icon(
           icon,
-          color: FloorPop.volt,
+          color: Colors.white,
           size: 22,
         ),
       ),

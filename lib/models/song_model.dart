@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -43,7 +44,10 @@ class SongState extends ChangeNotifier {
   SortType _sortType = Settings.getInt(Settings.songlistSortKey) == 0
       ? SortType.version
       : SortType.values[Settings.getInt(Settings.songlistSortKey) - 1];
-  SortType get sortType => _sortType;
+  // A bests sort reads as the default while bests are hidden, and comes back
+  // when they're shown.
+  SortType get sortType =>
+      _sortType.isBest && !ChartBests.shown ? SortType.version : _sortType;
 
   bool _sortDescending = Settings.getInt(Settings.songlistSortDescKey) == 1;
   bool get sortDescending => _sortDescending;
