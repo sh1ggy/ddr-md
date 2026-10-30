@@ -2,8 +2,9 @@
 /// Parent: DevelopmentPage, BestRings (from the level list)
 /// Description: The player's cards as a binder, one play style at a time:
 /// a cover for each level, highest first, with its charts' bests as the
-/// level list's rings and its best cards fanned out, then nine-pocket
-/// sheets of every chart at that level in title order. A chart without a
+/// level list's rings and its best cards fanned out, then sheets of every
+/// chart at that level in title order, three across and as many rows as the
+/// screen holds. Jackets alone, like a binder's sleeves. A chart without a
 /// best is an empty pocket, its jacket a ghost, so the gaps show. Tapping a
 /// card opens it.
 library;
@@ -54,13 +55,16 @@ class BinderDivider extends BinderPage {
 }
 
 class BinderSheet extends BinderPage {
-  const BinderSheet(super.level, this.pockets);
+  const BinderSheet(super.level, this.pockets, {this.start = 0});
   final List<BinderPocket> pockets;
+
+  /// Where its first pocket falls among the level's charts.
+  final int start;
 }
 
-/// Every chart of [mode] by level, highest first, as dividers and sheets.
-/// Reads [ChartBests], which must be loaded for [mode].
-List<BinderPage> binderPages(Modes mode) {
+/// Every chart of [mode] by level, highest first, as covers and sheets of
+/// [perSheet] pockets. Reads [ChartBests], which must be loaded for [mode].
+List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
   final levels = <int, List<BinderPocket>>{};
   for (final song in Songs.list) {
     final json = (mode == Modes.singles ? song.singles : song.doubles).toJson();
@@ -97,11 +101,10 @@ List<BinderPage> binderPages(Modes mode) {
           BinderDivider(level,
               pockets: pockets,
               top: pockets.where((p) => p.card?.levelTop ?? false).firstOrNull),
-          for (var i = 0; i < pockets.length; i += binderPockets)
-            BinderSheet(
-                level,
-                pockets.sublist(
-                    i, (i + binderPockets).clamp(0, pockets.length))),
+          for (var i = 0; i < pockets.length; i += perSheet)
+            BinderSheet(level,
+                pockets.sublist(i, (i + perSheet).clamp(0, pockets.length)),
+                start: i),
         ];
       }(),
   ];
@@ -125,9 +128,15 @@ class EditionBinderPage extends StatefulWidget {
 
 class _EditionBinderPageState extends State<EditionBinderPage> {
   late Modes _mode = widget.mode ?? context.read<SongState>().modes;
+  bool _ready = false;
+  // Paginated for [_perSheet] pockets, which follows the screen's height.
   List<BinderPage>? _pages;
+  int? _perSheet;
   var _controller = PageController();
   int _page = 0;
+  // Where the binder is open: a level and the first pocket in view, -1 for
+  // its cover. Kept so repaginating stays put.
+  ({int level, int start})? _at;
   // The chart opened on, until the style changes.
   late ({String song, String difficulty})? _focus =
       widget.song == null || widget.difficulty == null
@@ -137,7 +146,7 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   @override
   void initState() {
     super.initState();
-    _load(widget.level);
+    _load();
   }
 
   @override
@@ -146,32 +155,58 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
     super.dispose();
   }
 
-  // Opens on the focused chart's sheet, else [level]'s cover, else the first.
-  Future<void> _load([int? level]) async {
+  Future<void> _load() async {
     final mode = _mode;
-    setState(() => _pages = null);
+    setState(() {
+      _ready = false;
+      _pages = _perSheet = null;
+    });
     await ChartBests.ensure(mode);
     if (!mounted || mode != _mode) return;
-    final pages = binderPages(mode);
-    final focus = _focus;
-    var page = focus == null
-        ? -1
-        : pages.indexWhere((p) =>
-            p is BinderSheet &&
-            p.pockets.any((c) =>
-                c.song.name == focus.song && c.difficulty == focus.difficulty));
+    setState(() => _ready = true);
+  }
+
+  // The pages for [perSheet] pockets, built afresh and opened where the
+  // binder was when that changes.
+  List<BinderPage> _paginate(int perSheet) {
+    if (perSheet == _perSheet && _pages != null) return _pages!;
+    final pages = binderPages(_mode, perSheet: perSheet);
+    final at = _at, focus = _focus;
+    var page = -1;
+    if (at == null && focus != null) {
+      page = pages.indexWhere((p) =>
+          p is BinderSheet &&
+          p.pockets.any((c) =>
+              c.song.name == focus.song && c.difficulty == focus.difficulty));
+    }
+    if (page < 0 && at != null && at.start >= 0) {
+      page = pages.indexWhere((p) =>
+          p is BinderSheet &&
+          p.level == at.level &&
+          at.start >= p.start &&
+          at.start < p.start + p.pockets.length);
+    }
     if (page < 0) {
       page = math.max(
-          0, pages.indexWhere((p) => p is BinderDivider && p.level == level));
+          0,
+          pages.indexWhere((p) =>
+              p is BinderDivider && p.level == (at?.level ?? widget.level)));
     }
-    // The PageView is out while loading, so it comes back on a controller
-    // already at [page].
-    _controller.dispose();
-    setState(() {
-      _controller = PageController(initialPage: page);
-      _pages = pages;
-      _page = page;
-    });
+    // The PageView takes a new controller at [page], the old one let go once
+    // it's off it.
+    final old = _controller;
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    _controller = PageController(initialPage: page);
+    _pages = pages;
+    _perSheet = perSheet;
+    _settle(page);
+    return pages;
+  }
+
+  void _settle(int page) {
+    final p = _pages![page];
+    _page = page;
+    _at = (level: p.level, start: p is BinderSheet ? p.start : -1);
   }
 
   void _open(BinderPocket pocket) {
@@ -196,19 +231,7 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = _pages;
     final pop = FloorPop.of(context);
-    final dividers = [
-      if (pages != null)
-        for (var i = 0; i < pages.length; i++)
-          if (pages[i] is BinderDivider) (i, pages[i].level)
-    ];
-    final level = pages == null || pages.isEmpty ? null : pages[_page].level;
-    final sheets =
-        pages?.where((p) => p is BinderSheet && p.level == level).length ?? 0;
-    final sheet = pages == null || level == null
-        ? 0
-        : pages.sublist(0, _page + 1).where((p) => p.level == level).length - 1;
     return Scaffold(
         appBar: AppBar(title: const Text('Binder'), actions: [
           Padding(
@@ -220,83 +243,103 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                     ButtonSegment(value: Modes.doubles, label: Text('DP')),
                   ],
                   selected: {_mode},
-                  // Stays on the level, in the other style.
+                  // Stays on the level's cover, in the other style.
                   onSelectionChanged: (s) {
-                    final level = _pages == null || _pages!.isEmpty
-                        ? null
-                        : _pages![_page].level;
+                    if (_at case final at?) _at = (level: at.level, start: -1);
                     _mode = s.first;
                     _focus = null;
-                    _load(level);
+                    _load();
                   })),
         ]),
-        body: pages == null
+        body: !_ready
             ? const Center(child: CircularProgressIndicator())
             : SafeArea(
                 top: false,
-                child: Column(children: [
-                  // A tab for each level, to jump to its cover.
-                  SizedBox(
-                      height: 44,
-                      child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          children: [
-                            for (final (index, l) in dividers)
-                              Padding(
-                                  padding: const EdgeInsets.only(right: 6),
-                                  child: ChoiceChip(
-                                      showCheckmark: false,
-                                      selected: l == level,
-                                      label: LevelNumber(
-                                          level: l,
-                                          difficulty: 'EXPERT',
-                                          height: 16),
-                                      onSelected: (_) =>
-                                          _controller.jumpToPage(index))),
-                          ])),
-                  // Pages as tall as a sheet's pockets need, the rest of the
-                  // screen left below rather than padded in between.
-                  Flexible(child: LayoutBuilder(builder: (context, box) {
-                    final width = math.min(box.maxWidth, _kPageMaxWidth);
-                    return SizedBox(
-                        width: width,
-                        height: math.min(
-                            box.maxHeight, _sheetHeight(width - 32) + 16),
-                        child: PageView.builder(
-                            controller: _controller,
-                            itemCount: pages.length,
-                            onPageChanged: (i) => setState(() => _page = i),
-                            itemBuilder: (context, i) => Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                                child: switch (pages[i]) {
-                                  final BinderDivider d =>
-                                    _Cover(divider: d, onOpen: _open),
-                                  final BinderSheet s => _Sheet(
-                                      sheet: s, focus: _focus, onOpen: _open),
-                                })));
-                  })),
-                  SizedBox(
-                      height: 28,
-                      child: Center(
-                          child: sheet == 0
-                              ? null
-                              : Text('$sheet/$sheets',
-                                  style:
-                                      FloorPop.readout(14, color: pop.haze)))),
-                ])));
+                child: LayoutBuilder(builder: (context, box) {
+                  const tabs = 44.0, footer = 28.0, margin = 8.0;
+                  final width = math.min(box.maxWidth, _kPageMaxWidth);
+                  final grid = _grid(width - 32 - 2 * _kPad,
+                      box.maxHeight - tabs - footer - 2 * margin - 2 * _kPad);
+                  final pages = _paginate(grid.rows * _kColumns);
+                  final level = pages.isEmpty ? null : pages[_page].level;
+                  final sheets = pages
+                      .where((p) => p is BinderSheet && p.level == level)
+                      .length;
+                  final sheet = pages
+                          .sublist(0, _page + 1)
+                          .where((p) => p.level == level)
+                          .length -
+                      1;
+                  return Column(children: [
+                    // A tab for each level, to jump to its cover.
+                    SizedBox(
+                        height: tabs,
+                        child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            children: [
+                              for (final (i, p) in pages.indexed)
+                                if (p is BinderDivider)
+                                  Padding(
+                                      padding: const EdgeInsets.only(right: 6),
+                                      child: ChoiceChip(
+                                          showCheckmark: false,
+                                          selected: p.level == level,
+                                          label: LevelNumber(
+                                              level: p.level,
+                                              difficulty: 'EXPERT',
+                                              height: 16),
+                                          onSelected: (_) =>
+                                              _controller.jumpToPage(i))),
+                            ])),
+                    Expanded(
+                        child: SizedBox(
+                            width: width,
+                            child: PageView.builder(
+                                key: ObjectKey(_controller),
+                                controller: _controller,
+                                itemCount: pages.length,
+                                onPageChanged: (i) =>
+                                    setState(() => _settle(i)),
+                                itemBuilder: (context, i) => Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: margin),
+                                    child: switch (pages[i]) {
+                                      final BinderDivider d =>
+                                        _Cover(divider: d, onOpen: _open),
+                                      final BinderSheet s => _Sheet(
+                                          sheet: s,
+                                          side: grid.side,
+                                          focus: _focus,
+                                          onOpen: _open),
+                                    })))),
+                    SizedBox(
+                        height: footer,
+                        child: Center(
+                            child: sheet == 0
+                                ? null
+                                : Text('$sheet/$sheets',
+                                    style: FloorPop.readout(14,
+                                        color: pop.haze)))),
+                  ]);
+                })));
   }
 }
 
-const _kPageMaxWidth = 520.0;
-// A sheet's padding, the gap between pockets and a pocket's caption.
-const _kPad = 10.0, _kGap = 8.0, _kCaption = 16.0;
+const _kPageMaxWidth = 520.0, _kColumns = 3;
+// A sheet's padding and the gap between pockets.
+const _kPad = 10.0, _kGap = 8.0;
 
-// The height three rows of square pockets take in a sheet [width] wide.
-double _sheetHeight(double width) {
-  final side = (width - 2 * _kPad - 2 * _kGap) / 3;
-  return 3 * (side + _kCaption) + 2 * _kGap + 2 * _kPad;
+// The rows of square pockets that fill a sheet's [width] by [height], at
+// least three, and their side: as wide as three across allow, shrunk a touch
+// where that leaves the last row short of the bottom.
+({int rows, double side}) _grid(double width, double height) {
+  final across = (width - (_kColumns - 1) * _kGap) / _kColumns;
+  final rows = math.max(3, ((height + _kGap) / (across + _kGap)).round());
+  return (
+    rows: rows,
+    side: math.max(0, math.min(across, (height - (rows - 1) * _kGap) / rows))
+  );
 }
 
 // A level's cover: its number and rings across the top, its best cards
@@ -387,7 +430,7 @@ class _Fan extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        final side = math.min(box.maxHeight - 16, box.maxWidth * .46);
+        final side = math.min(box.maxHeight - 32, box.maxWidth * .52);
         Widget card(BinderPocket pocket, double turn, double shift) =>
             Transform.translate(
                 offset: Offset(shift * side, 0),
@@ -399,52 +442,46 @@ class _Fan extends StatelessWidget {
                         child: _Pocket(pocket: pocket, onOpen: onOpen))));
         return Center(
             child: Stack(alignment: Alignment.center, children: [
-          if (pockets.length > 2) card(pockets[2], .16, .42),
-          if (pockets.length > 1) card(pockets[1], -.16, -.42),
+          if (pockets.length > 2) card(pockets[2], .16, .3),
+          if (pockets.length > 1) card(pockets[1], -.16, -.3),
           card(pockets[0], 0, 0),
         ]));
       });
 }
 
 class _Sheet extends StatelessWidget {
-  const _Sheet({required this.sheet, required this.onOpen, this.focus});
+  const _Sheet(
+      {required this.sheet,
+      required this.side,
+      required this.onOpen,
+      this.focus});
   final BinderSheet sheet;
+  // A pocket's side, from [_grid].
+  final double side;
   final ValueChanged<BinderPocket> onOpen;
   final ({String song, String difficulty})? focus;
 
   @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    return DecoratedBox(
-        decoration: BoxDecoration(
-            color: pop.riser, borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-            padding: const EdgeInsets.all(_kPad),
-            child: LayoutBuilder(builder: (context, constraints) {
-              // Three by three, captions under each, square pockets that fit.
-              final side = ((constraints.maxWidth - _kGap * 2) / 3).clamp(
-                  0.0, (constraints.maxHeight - _kGap * 2) / 3 - _kCaption);
-              return Wrap(spacing: _kGap, runSpacing: _kGap, children: [
-                for (final pocket in sheet.pockets)
-                  SizedBox(
-                      width: side,
-                      height: side + _kCaption,
-                      child: Column(children: [
-                        SizedBox.square(
-                            dimension: side,
-                            child: _Pocket(
-                                pocket: pocket,
-                                onOpen: onOpen,
-                                focused: pocket.song.name == focus?.song &&
-                                    pocket.difficulty == focus?.difficulty)),
-                        const SizedBox(height: 3),
-                        DifficultyLabel(
-                            difficulty: pocket.difficulty,
-                            height: _kCaption - 5),
-                      ])),
-              ]);
-            })));
-  }
+  Widget build(BuildContext context) => DecoratedBox(
+      decoration: BoxDecoration(
+          color: FloorPop.of(context).riser,
+          borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+          padding: const EdgeInsets.all(_kPad),
+          child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                  width: _kColumns * side + (_kColumns - 1) * _kGap,
+                  child: Wrap(spacing: _kGap, runSpacing: _kGap, children: [
+                    for (final pocket in sheet.pockets)
+                      SizedBox.square(
+                          dimension: side,
+                          child: _Pocket(
+                              pocket: pocket,
+                              onOpen: onOpen,
+                              focused: pocket.song.name == focus?.song &&
+                                  pocket.difficulty == focus?.difficulty)),
+                  ])))));
 }
 
 // A sleeve: the card when collected, else the chart's jacket as a ghost.
