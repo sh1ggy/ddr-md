@@ -70,9 +70,11 @@ class EditionGuidePage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
             children: [
               const Text(
-                  'A chart\'s card is its jacket, finished by your best on it. '
-                  'Each best owns one layer, so they stack instead of '
-                  'fighting. Drag across a card to tilt it and move the light.'),
+                  'A chart\'s card is its badges made physical: the score '
+                  'card tells you your bests, the card shows them as its '
+                  'finish. Each best owns one layer, so they stack instead '
+                  'of fighting. Drag across a card to tilt it and move the '
+                  'light. The binder files every card by level.'),
               _Section(
                   layer: 'Frame',
                   from: 'Clear lamp',
@@ -151,12 +153,11 @@ class EditionGuidePage extends StatelessWidget {
                           DifficultyLabel(difficulty: value, height: 12)),
                   ]),
               const _Section(
-                  layer: 'Stickers',
-                  from: 'The chart',
-                  about: 'Grade and flare stuck in the top corner; play style, '
-                      'difficulty and level on a label along the bottom. '
-                      'They sit on top of the finish, with their own shine '
-                      'and shadow. Each can be hidden in Development.',
+                  layer: 'Sharing',
+                  from: 'The share button',
+                  about: 'A shared card leaves the score card behind, so it '
+                      'carries its grade and flare as stickers and a band of '
+                      'play style, difficulty and score along its foot.',
                   cards: []),
             ]));
   }

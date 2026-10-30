@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'edition_model.dart';
 import 'edition_chart_facts.dart';
 import 'edition_guide.dart';
+import 'edition_share.dart';
 import 'jacket_edition.dart';
 
 // Shared route dimensions and transition for song jackets and lab previews.
@@ -94,20 +95,33 @@ class _ViewerPageState extends State<_ViewerPage> {
                                   transitionOnUserGestures: true,
                                   createRectTween: (begin, end) =>
                                       RectTween(begin: begin, end: end),
-                                  // The card holds its finish through the
-                                  // flight, still, rather than flashing plain.
-                                  flightShuttleBuilder: (_, __, ___, ____,
-                                          _____) =>
-                                      JacketEdition(
-                                          facts: widget.facts,
-                                          options: _options,
-                                          frozenLight: const Offset(.35, .3),
-                                          child: artwork),
+                                  // The plain jacket and the still card cross
+                                  // over through the flight, so neither
+                                  // flashes in at an end.
+                                  flightShuttleBuilder: (_, animation, __, ___,
+                                          ____) =>
+                                      Stack(fit: StackFit.expand, children: [
+                                        artwork,
+                                        FadeTransition(
+                                            opacity: animation,
+                                            child: JacketEdition(
+                                                facts: widget.facts,
+                                                options: _options,
+                                                frozenLight:
+                                                    const Offset(.35, .3),
+                                                child: artwork)),
+                                      ]),
                                   child: card)))))),
       SafeArea(
           child: Align(
               alignment: Alignment.topRight,
               child: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                    tooltip: 'Share card',
+                    color: Colors.white,
+                    icon: const Icon(Icons.ios_share),
+                    onPressed: () => showEditionShare(context,
+                        facts: widget.facts, artwork: artwork)),
                 IconButton(
                     tooltip: _options.effects
                         ? 'Turn card effects off'

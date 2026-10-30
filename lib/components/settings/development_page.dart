@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/jacket_edition.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_guide.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_lab_page.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_browser.dart';
@@ -54,6 +55,14 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                         builder: (_) => const EditionLabPage())))),
             Card(
                 child: ListTile(
+                    leading: const Icon(Icons.collections_bookmark_outlined),
+                    title: const Text('Binder'),
+                    subtitle: const Text('Your cards, filed by level'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const EditionBinderPage())))),
+            Card(
+                child: ListTile(
                     leading: const Icon(Icons.info_outline),
                     title: const Text('How cards work'),
                     subtitle: const Text('What earns each layer of a card'),
@@ -84,10 +93,6 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
               for (final (label, key) in [
                 ('Jacket effects', Settings.jacketEffectsOffKey),
                 ('Jacket motion', Settings.jacketMotionOffKey),
-                ('Play style stamp', Settings.jacketModeOffKey),
-                ('Grade, flare and score stamps', Settings.jacketGradeOffKey),
-                ('Difficulty stamp', Settings.jacketDifficultyOffKey),
-                ('Optical tier suffix', Settings.jacketTierOffKey),
               ])
                 SwitchListTile(
                     title: Text(label),
