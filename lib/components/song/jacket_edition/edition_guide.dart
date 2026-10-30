@@ -43,8 +43,10 @@ EditionFacts _facts(
         levelTop: levelTop);
 
 class EditionGuidePage extends StatelessWidget {
-  const EditionGuidePage({super.key, this.artwork});
+  const EditionGuidePage({super.key, this.artwork, this.sheet = false});
   final Widget? artwork;
+  // Shown in a sheet, which has its own handle instead of a back button.
+  final bool sheet;
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +67,11 @@ class EditionGuidePage extends StatelessWidget {
     Widget text(String s) => Text(s, style: const TextStyle(fontSize: 11));
 
     return Scaffold(
-        appBar: AppBar(title: const Text('How cards work')),
+        backgroundColor: sheet ? Colors.transparent : null,
+        appBar: AppBar(
+            title: const Text('How cards work'),
+            automaticallyImplyLeading: !sheet,
+            backgroundColor: sheet ? Colors.transparent : null),
         body: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
             children: [

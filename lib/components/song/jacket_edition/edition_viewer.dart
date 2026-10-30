@@ -135,10 +135,18 @@ class _ViewerPageState extends State<_ViewerPage> {
                     tooltip: 'How cards work',
                     color: Colors.white,
                     icon: const Icon(Icons.info_outline),
-                    onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                EditionGuidePage(artwork: artwork)))),
+                    // A sheet over the card, not a page: a page would take
+                    // the card and the song page beneath out of view, and a
+                    // hover tooltip moving with them breaks the frame.
+                    onPressed: () => showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        showDragHandle: true,
+                        builder: (context) => FractionallySizedBox(
+                            heightFactor: .9,
+                            child: EditionGuidePage(
+                                artwork: artwork, sheet: true)))),
               ]))),
     ]);
   }
