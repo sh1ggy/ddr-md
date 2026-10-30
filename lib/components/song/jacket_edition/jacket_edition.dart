@@ -252,26 +252,56 @@ class EditionAchievementStamps extends StatelessWidget {
 
 /// A band across the art's foot, as on the song list's rows: play style and
 /// difficulty on the left, the best score in a darker tab flush right,
-/// thousands large and the rest small.
+/// thousands large and the rest small. Everything scales with the band's
+/// height alone; the score's tab is as wide as 999,999 would be, so a
+/// 1,000,000 shrinks within it and nothing else moves.
 class EditionFooter extends StatelessWidget {
-  const EditionFooter({super.key, required this.recipe, required this.corner});
+  const EditionFooter(
+      {super.key,
+      required this.recipe,
+      required this.corner,
+      this.shortStyle = false});
   final EditionRecipe recipe;
   // The art's corner radius, which the band's corners follow.
   final double corner;
+  // SINGLE or DOUBLE without STYLE, for the small card.
+  final bool shortStyle;
 
   static bool shows(EditionRecipe recipe) =>
       recipe.modeStamp != null ||
       recipe.difficultyStamp != null ||
       recipe.scoreStamp != null;
 
+  // The band's content height before scaling.
+  static const _content = 18.0;
+  static const _figures = [FontFeature.tabularFigures()];
+
+  static TextSpan _score(String text) {
+    final split = text.lastIndexOf(',');
+    return TextSpan(children: [
+      TextSpan(
+          text: text.substring(0, split),
+          style: FloorPop.readout(17, color: Colors.white)
+              .copyWith(fontFeatures: _figures)),
+      TextSpan(
+          text: text.substring(split),
+          style: FloorPop.readout(12, color: Colors.white70)
+              .copyWith(fontFeatures: _figures)),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) =>
       LayoutBuilder(builder: (context, constraints) {
         final h = constraints.maxHeight;
+        final scale = h / (_content * 1.6);
         final score = recipe.scoreStamp;
-        final text = score == null ? null : formatScore(score);
-        final split = text?.lastIndexOf(',') ?? 0;
-        const figures = [FontFeature.tabularFigures()];
+        final slot = (TextPainter(
+                text: _score('999,999'),
+                textDirection: TextDirection.ltr,
+                textScaler: TextScaler.noScaling)
+              ..layout())
+            .width;
         return ClipRRect(
             key: const ValueKey('edition-chart-stamp'),
             borderRadius:
@@ -281,67 +311,87 @@ class EditionFooter extends StatelessWidget {
                 child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      SizedBox(width: _content * .45 * scale),
                       Expanded(
-                          child: Padding(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: h * .45, vertical: h * .2),
-                              child: FittedBox(
-                                  fit: BoxFit.scaleDown,
+                          child: ClipRect(
+                              child: Align(
                                   alignment: Alignment.centerLeft,
-                                  child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (recipe.modeStamp
-                                            case final mode?) ...[
-                                          Image.asset(
-                                              'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
-                                              height: 13,
-                                              semanticLabel: mode == 'singles'
-                                                  ? 'SINGLE'
-                                                  : 'DOUBLE',
-                                              errorBuilder: (_, __, ___) =>
-                                                  Text(
-                                                      mode == 'singles'
-                                                          ? 'SINGLE'
-                                                          : 'DOUBLE',
-                                                      style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontWeight: FontWeight
-                                                              .w900))),
-                                          if (recipe.difficultyStamp != null)
-                                            const SizedBox(width: 8),
-                                        ],
-                                        if (recipe.difficultyStamp
-                                            case final difficulty?)
-                                          DifficultyLabel(
-                                              difficulty: difficulty,
-                                              level: recipe.levelStamp,
-                                              levelSuffix: recipe.tierSuffix,
-                                              height: 15),
-                                      ])))),
-                      if (text != null)
+                                  child: Transform.scale(
+                                      scale: scale,
+                                      alignment: Alignment.centerLeft,
+                                      child: OverflowBox(
+                                          alignment: Alignment.centerLeft,
+                                          maxWidth: double.infinity,
+                                          child: _chart()))))),
+                      if (score != null)
                         DecoratedBox(
                             key: const ValueKey('edition-score-tab'),
                             decoration: BoxDecoration(
                                 color: const Color(0x66000000),
                                 borderRadius: BorderRadius.only(
                                     topLeft: Radius.circular(h * .4))),
-                            child: Padding(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: h * .45, vertical: h * .16),
-                                child: FittedBox(
-                                    child: Text.rich(TextSpan(children: [
-                                  TextSpan(
-                                      text: text.substring(0, split),
-                                      style: FloorPop.readout(17,
-                                              color: Colors.white)
-                                          .copyWith(fontFeatures: figures)),
-                                  TextSpan(
-                                      text: text.substring(split),
-                                      style: FloorPop.readout(12,
-                                              color: Colors.white70)
-                                          .copyWith(fontFeatures: figures)),
-                                ]))))),
+                            child: SizedBox(
+                                width: (slot + _content * .9) * scale,
+                                child: Center(
+                                    child: SizedBox(
+                                        width: slot * scale,
+                                        child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerRight,
+                                            child: Text.rich(
+                                                _score(formatScore(score)),
+                                                textScaler: TextScaler.linear(
+                                                    scale))))))),
                     ])));
       });
+
+  Widget _chart() => Row(mainAxisSize: MainAxisSize.min, children: [
+        if (recipe.modeStamp case final mode?) ...[
+          _Style(mode: mode, short: shortStyle, height: 13),
+          if (recipe.difficultyStamp != null) const SizedBox(width: 8),
+        ],
+        if (recipe.difficultyStamp case final difficulty?)
+          DifficultyLabel(
+              difficulty: difficulty,
+              level: recipe.levelStamp,
+              levelSuffix: recipe.tierSuffix,
+              height: 15),
+      ]);
+}
+
+// The play style's lettering; [short] keeps SINGLE or DOUBLE and crops STYLE.
+class _Style extends StatelessWidget {
+  const _Style({required this.mode, required this.short, required this.height});
+  final String mode;
+  final bool short;
+  final double height;
+
+  // Of the 314×42 artwork: where the word starts and STYLE begins.
+  static const _source = Size(314, 42);
+  static const _crop = {'singles': (22.0, 155.0), 'doubles': (6.0, 155.0)};
+
+  @override
+  Widget build(BuildContext context) {
+    final name = mode == 'singles' ? 'SINGLE' : 'DOUBLE';
+    final image = Image.asset(
+        'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
+        height: height,
+        semanticLabel: name,
+        errorBuilder: (_, __, ___) => Text(name,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w900)));
+    final crop = _crop[mode];
+    if (!short || crop == null) return image;
+    final unit = height / _source.height;
+    return SizedBox(
+        width: (crop.$2 - crop.$1) * unit,
+        height: height,
+        child: ClipRect(
+            child: OverflowBox(
+                alignment: Alignment.centerLeft,
+                maxWidth: _source.width * unit,
+                minWidth: _source.width * unit,
+                child: Transform.translate(
+                    offset: Offset(-crop.$1 * unit, 0), child: image))));
+  }
 }

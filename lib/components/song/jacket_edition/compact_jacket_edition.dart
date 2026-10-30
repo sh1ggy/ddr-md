@@ -81,7 +81,9 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
               height: size.height * editionFooterHeight * 1.3,
               child: IgnorePointer(
                   child: EditionFooter(
-                      recipe: recipe, corner: geometry.inner.blRadiusX))),
+                      recipe: recipe,
+                      corner: geometry.inner.blRadiusX,
+                      shortStyle: true))),
       ]));
     });
   }
