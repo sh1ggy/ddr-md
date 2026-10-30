@@ -4,6 +4,8 @@
 /// preferences, persisted with shared_preferences
 library;
 
+import 'package:ddr_md/components/settings/development_page.dart';
+
 import 'package:ddr_md/components/settings/dancer_type_page.dart';
 import 'package:ddr_md/components/settings/eamuse_profile_card.dart';
 import 'package:ddr_md/components/settings/footing_style_page.dart';
@@ -85,6 +87,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                 clearOfBars(context, const EdgeInsets.all(8)),
                             children: [
                               const EamuseProfileCard(),
+                              if (developmentToolsEnabled)
+                                const DevelopmentToolsTile(),
                               Card(
                                 child: ListTile(
                                   leading:

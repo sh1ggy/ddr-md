@@ -5,6 +5,8 @@ library;
 
 import 'dart:ui' show ImageFilter;
 
+import 'package:ddr_md/components/song/jacket_edition.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_viewer.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_radar.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -12,12 +14,21 @@ import 'package:ddr_md/constants.dart' show canonicalVersion;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames, versionColor;
 import 'package:ddr_md/components/songlist/jacket_image.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/score_overview.dart' show flareGroup;
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+Widget _zoomArtwork(SongInfo song) => ClipRRect(
+    borderRadius: BorderRadius.circular(22),
+    child: SongArtwork(
+        songName: song.name,
+        title: song.title,
+        fullResolution: true,
+        fade: Duration.zero));
 
 // Interpolating square bounds directly keeps the art square on every frame;
 // the default Material corner arcs can temporarily stretch it in flight.
@@ -177,12 +188,49 @@ class SongDetails extends StatelessWidget {
                       // swapping a thumbnail for a fading full-size image in
                       // the middle of the flight, including a tap before load.
                       final navigator = Navigator.of(context);
-                      await precacheImage(
-                          ContentStore.image(
-                              'assets/jackets/${songInfo.name}.png'),
-                          context,
-                          onError: (_, __) {});
+                      // Freeze identity before image/database awaits.
+                      final mode = songState.modes;
+                      final index = songState.chosenDifficulty;
+                      final levels = mode == Modes.singles
+                          ? songInfo.singles
+                          : songInfo.doubles;
+                      final key = _chosenDifficultyKey(levels, index);
+                      final level = levels.toJson()[key] as int?;
+                      final options = editionPreferences();
+                      final (_, loaded) = await (
+                        precacheImage(
+                            ContentStore.image(
+                                'assets/jackets/${songInfo.name}.png'),
+                            context,
+                            onError: (_, __) {}),
+                        // Without bests the jacket still opens, plain.
+                        editionDevelopmentEnabled && options.effects
+                            ? ChartBests.ensure(mode)
+                                .then((_) => true, onError: (_) => false)
+                            : Future.value(false),
+                      ).wait;
                       if (!context.mounted) return;
+                      // The card's finish comes from the chart picked below.
+                      final best = loaded && key != null
+                          ? ChartBests.forChart(
+                              songInfo.name, mode, kInGameDifficultyNames[key]!)
+                          : null;
+                      final facts = EditionFacts(
+                        chart: (
+                          song: songInfo.name,
+                          mode: mode.name,
+                          difficulty: key ?? ''
+                        ),
+                        level: level,
+                        version: flareGroup(songInfo.version),
+                        grade: best?.grade,
+                        flare: best?.flare,
+                        lamp: best?.lamp,
+                        precision: loaded && key != null
+                            ? ChartBests.precisionAt(songInfo.name, mode,
+                                kInGameDifficultyNames[key]!)
+                            : null,
+                      );
                       // The jacket flies up to full size over a darkening page,
                       // a beat long (instant under reduced motion).
                       final still = MediaQuery.of(context).disableAnimations;
@@ -213,15 +261,25 @@ class SongDetails extends StatelessWidget {
                                         tag: "imgZoom",
                                         createRectTween: _jacketRectTween,
                                         transitionOnUserGestures: true,
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(22),
-                                          child: SongArtwork(
-                                            songName: songInfo.name,
-                                            title: songInfo.title,
-                                            fullResolution: true,
-                                            fade: Duration.zero,
+                                        // Keep material setup out of the Hero flight.
+                                        flightShuttleBuilder:
+                                            (_, __, ___, ____, _____) =>
+                                                _zoomArtwork(songInfo),
+                                        child: EditionViewer(
+                                          facts: facts,
+                                          options: (
+                                            borderId: options.borderId,
+                                            effects:
+                                                editionDevelopmentEnabled &&
+                                                    options.effects,
+                                            motion: options.motion,
+                                            modeStamp: options.modeStamp,
+                                            gradeStamp: options.gradeStamp,
+                                            difficultyStamp:
+                                                options.difficultyStamp,
+                                            tierSuffix: options.tierSuffix
                                           ),
+                                          child: _zoomArtwork(songInfo),
                                         ),
                                       ),
                                     ),
