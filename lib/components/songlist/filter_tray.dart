@@ -42,6 +42,7 @@ class FilterTray extends StatelessWidget {
   }
 
   Widget _chip(BuildContext context, FilterOption option) {
+    final scheme = Theme.of(context).colorScheme;
     return FilterChip(
       label: Text(option.label),
       selected: option.selected,
@@ -50,6 +51,9 @@ class FilterTray extends StatelessWidget {
           compact ? const VisualDensity(horizontal: -2, vertical: -2) : null,
       // The tray sits on a riser, so chips step down to the stage.
       backgroundColor: FloorPop.of(context).stage,
+      selectedColor: scheme.primary,
+      labelStyle: TextStyle(
+          color: option.selected ? scheme.onPrimary : scheme.onSurface),
       onSelected: (_) => option.onTap(),
     );
   }

@@ -9,7 +9,7 @@ library;
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/constants.dart';
+import 'package:ddr_md/components/song/song_sync_status.dart';
 import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/chart_bests.dart';
@@ -272,34 +272,20 @@ class ArcadeGridTile extends StatelessWidget {
       ? item.songInfo.chartAt(mode, item.difficultyIndex!)
       : item.songInfo.charts.first;
 
-  // Recommended in-game offset adjustment: the bias with its sign flipped.
-  (String, Color)? _syncAdjust(bool isDark) {
-    final Sync? sync = item.songInfo.displaySyncFor(_chart);
-    if (sync == null) return null;
-    final double adjustBy = -sync.biasMs;
-    final Color color = sync.biasMs < 0
-        ? kSlowColor(isDark)
-        : sync.biasMs > 0
-            ? kFastColor(isDark)
-            : Colors.grey;
-    return ('${adjustBy >= 0 ? '+' : ''}${adjustBy.toStringAsFixed(0)}', color);
-  }
-
   Widget _statStrip(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
       children: <Widget>[
         Expanded(
           child: _statText(
               _chart.bpmRange, Theme.of(context).colorScheme.onSurfaceVariant),
         ),
-        if (_syncAdjust(isDark) case (final String label, final Color color))
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: _statText(label, color),
-          ),
+        const SizedBox(width: 4),
+        SongSyncStatus(
+          sync: item.songInfo.displaySyncFor(_chart),
+          fontSize: 10,
+          showUnit: false,
+          compact: true,
+        ),
       ],
     );
   }

@@ -117,7 +117,11 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                               });
                             } else {
                               favSongs.sort((a, b) => compareSongInfo(
-                                  a, b, songState.sortType,
+                                  a,
+                                  b,
+                                  songState.sortType.isBest
+                                      ? SortType.version
+                                      : songState.sortType,
                                   descending: songState.sortDescending));
                             }
                             children =

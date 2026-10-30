@@ -53,6 +53,7 @@ class ChartPainter extends CustomPainter {
     this.constantMs,
     this.topInset = 0,
     this.visualOffset = 0,
+    this.hitOffset,
     this.arcadeQuant = false,
     this.arrowBlink = false,
     this.quantFreezeHeads = false,
@@ -123,16 +124,27 @@ class ChartPainter extends CustomPainter {
   /// else about the painter is per-build configuration.
   final ValueListenable<double> playhead;
 
-  /// VISUAL OFFSET in seconds (cabinet convention: positive = EARLIER). Added to
-  /// the playhead rather than subtracted from every note — advancing the
-  /// reference second is equivalent, and everything downstream (note Ys, the
-  /// cull window, stop expansion, CONSTANT) already keys off [second].
+  /// The applied VISUAL clock shift in seconds. A positive display-delay dial
+  /// supplies a negative shift, making arrows align later. Note Ys, the cull
+  /// window, stop expansion and CONSTANT all key off [second].
   ///
   /// Only the rendered field shifts; the transport's readout keeps the true
   /// playhead, so the offset never desyncs the seek bar from the audio.
   final double visualOffset;
 
   double get second => playhead.value + visualOffset;
+
+  /// When enabled, ghost receptors mark the assist tick's actual hit time.
+  /// The shared audio correction also belongs in [visualOffset], before the
+  /// independent display delay. Null keeps ordinary visual receptor arrivals;
+  /// zero is an enabled, neutral judgement-clock shift.
+  final double? hitOffset;
+
+  double get hitSecond =>
+      hitOffset == null ? second : playhead.value + hitOffset!;
+
+  /// The live hit target in the same tempo/stop geometry as the arrows.
+  double hitY(Size size) => _geometry(size).yFor(hitSecond);
 
   final double pxPerSecond;
 
@@ -283,6 +295,9 @@ class ChartPainter extends CustomPainter {
       :yFor,
     ) = _geometry(size);
 
+    final targetSecond = hitSecond;
+    final targetY = yFor(targetSecond);
+
     // TURN modifier: a note originally in column `c` is drawn in `turned(c)`,
     // taking that panel's glyph orientation. Bounds-guarded so a mismatched map
     // (e.g. mode/width change mid-frame) falls back to the note's own column.
@@ -297,9 +312,9 @@ class ChartPainter extends CustomPainter {
 
     _paintLanes(canvas, size, fieldLeft, laneStride, _receptorTop);
 
-    // Visible window's far edge, in seconds. Notes draw on-screen until they
-    // align with the receptor, then disappear immediately. Holds are the
-    // exception: a held head stays pinned to the receptor while the body drains.
+    // Visible window's far edge, in seconds. Notes draw until their hit time,
+    // then disappear. In sync mode that is the ghost row's audio clock; otherwise
+    // it is visual alignment. A held head stays on the hit target as it drains.
     final double maxT = beatLocked
         ? timing.secondAt(
                 currentBeat + (size.height - _receptorTop) / pxPerBeat) +
@@ -324,8 +339,9 @@ class ChartPainter extends CustomPainter {
     // overhangs the receptor (see [noteFlashCurve]) and would be sheared by a
     // clip cut to the arrow alone — but never above the safe area, so on wide
     // fields the flash is cut rather than the status bar overrun.
-    final flashTop =
-        _receptorTop - arrowSize * noteFlashPeakScale / 2 - arrowSize * 0.12;
+    final flashTop = math.min(_receptorTop, targetY) -
+        arrowSize * noteFlashPeakScale / 2 -
+        arrowSize * 0.12;
     final clipTop = flashTop < topInset ? topInset : flashTop;
     canvas.save();
     canvas
@@ -396,13 +412,12 @@ class ChartPainter extends CustomPainter {
     for (final n in holds) {
       if (n.second > maxT) break; // sorted: nothing later can be visible
       final endS = n.endSecond ?? n.second;
-      if (endS < second) continue;
+      if (endS < targetSecond) continue;
       // A freeze appears as one piece under CONSTANT, keyed on its head's second
       // — the whole body fades in together as the head enters its window.
       final holdAlpha = _constantAlpha(n.second) * _focusAlpha(n);
       if (holdAlpha <= 0) continue;
-      final headY =
-          n.second >= second ? yFor(n.second) : _receptorTop.toDouble();
+      final headY = n.second >= targetSecond ? yFor(n.second) : targetY;
       final col = turned(n.col);
       final holdX = laneCenterX(col);
       // Freezes use the same beat-space as taps during playback: a stop adds
@@ -412,9 +427,9 @@ class ChartPainter extends CustomPainter {
       if (playing && beatLocked && n.endBeat != null) {
         // Preserve the chart's stored sustain length rather than reconstructing
         // it from rounded seconds. Only moving beats consume that length.
-        final elapsedBeats =
-            timing.beatAt(math.max(second, n.second)) - timing.beatAt(n.second);
-        final remaining = second >= endS
+        final elapsedBeats = timing.beatAt(math.max(targetSecond, n.second)) -
+            timing.beatAt(n.second);
+        final remaining = targetSecond >= endS
             ? 0.0
             : math.max(0.0, n.endBeat! - n.beat - elapsedBeats);
         tailY = headY + remaining * pxPerBeat;
@@ -431,7 +446,7 @@ class ChartPainter extends CustomPainter {
             holdX - arrowSize, headY, holdX + arrowSize, tailY + arrowSize));
         if (freezeAtlas != null && n.type != StepType.roll) {
           _paintDdrFreeze(canvas, freezeAtlas, holdX, headY, tailY, arrowSize,
-              dirs[col], ddrFreezeRow(second - n.second));
+              dirs[col], ddrFreezeRow(targetSecond - n.second));
         } else {
           skin.paintHoldBody(canvas, holdX, headY, tailY, arrowSize, dirs[col],
               n.type == StepType.roll);
@@ -451,9 +466,9 @@ class ChartPainter extends CustomPainter {
     if (playing) {
       final longest =
           [_flashSeconds, receptorRecoilSeconds, bombSeconds].reduce(math.max);
-      for (int i = _lowerBoundBySecond(notes, second) - 1; i >= 0; i--) {
+      for (int i = _lowerBoundBySecond(notes, targetSecond) - 1; i >= 0; i--) {
         final n = notes[i];
-        final age = second - n.second;
+        final age = targetSecond - n.second;
         if (age >= longest) break; // sorted: everything earlier is older
         if (n.type == StepType.mine) continue; // mines aren't "hit"
         if (section != null &&
@@ -472,8 +487,8 @@ class ChartPainter extends CustomPainter {
     // pressed and lit for as long as the freeze lasts.
     final held = <int>{};
     for (final n in holds) {
-      if (n.second > second) break; // sorted: nothing later has started
-      if ((n.endSecond ?? n.second) >= second) held.add(turned(n.col));
+      if (n.second > targetSecond) break; // sorted: nothing later has started
+      if ((n.endSecond ?? n.second) >= targetSecond) held.add(turned(n.col));
     }
     for (int c = 0; c < columnCount; c++) {
       final age = arrivals[c];
@@ -492,17 +507,44 @@ class ChartPainter extends CustomPainter {
       }
     }
 
+    // Use the active receptor art again, tinted and translucent, so the hit
+    // position remains readable against the original receptor row.
+    final ghostBounds =
+        Rect.fromLTRB(0, targetY - arrowSize, size.width, targetY + arrowSize)
+            .intersect(
+                Rect.fromLTWH(0, topInset, size.width, size.height - topInset));
+    if (hitOffset != null && !ghostBounds.isEmpty) {
+      const ghostColor = Color(0xFF64DED1);
+      canvas.saveLayer(
+        ghostBounds,
+        Paint()
+          ..colorFilter = const ColorFilter.mode(ghostColor, BlendMode.srcIn)
+          ..color = Colors.white.withValues(alpha: 0.55),
+      );
+      for (int c = 0; c < columnCount; c++) {
+        if (atlas != null) {
+          _drawDdr(canvas, atlas.tap(DdrPalette.receptor, pos), laneCenterX(c),
+              targetY, arrowSize, dirs[c]);
+        } else {
+          skin.paintReceptor(
+              canvas, laneCenterX(c), targetY, arrowSize, dirs[c], 0.75);
+        }
+      }
+      canvas.restore();
+    }
+
     // 1.5) Foot-flow paths: connect each note to the previous note struck by the
     // same foot, so the chart's left/right movement reads as two flowing lines.
     if (feet.isNotEmpty) {
-      _paintFootPaths(canvas, laneCenterX, yFor, arrowSize, second, maxT);
+      _paintFootPaths(
+          canvas, laneCenterX, yFor, arrowSize, targetSecond, maxT, targetY);
     }
 
     // 2) Shock rows: an animated bolt spanning each affected pad,
     // disappearing once it reaches the receptor.
     for (final s in shocks) {
       if (s.second > maxT) break; // sorted by second
-      if (s.second < second) continue;
+      if (s.second < targetSecond) continue;
       final shockAlpha = _constantAlpha(s.second); // fades in under CONSTANT
       if (shockAlpha <= 0) continue;
       final y = yFor(s.second);
@@ -527,7 +569,7 @@ class ChartPainter extends CustomPainter {
       if (noteAlpha <= 0) return;
       final col = turned(n.col);
       final x = laneCenterX(col);
-      final y = held ? _receptorTop.toDouble() : yFor(n.second);
+      final y = held ? targetY : yFor(n.second);
       if (n.type == StepType.mine && shockNotes.contains(n)) {
         return; // drawn in the shock pass
       }
@@ -574,7 +616,7 @@ class ChartPainter extends CustomPainter {
           if (freezeHead && freezeAtlas != null) {
             _drawDdr(
                 canvas,
-                freezeAtlas.freezeHead(ddrFreezeRow(second - n.second)),
+                freezeAtlas.freezeHead(ddrFreezeRow(targetSecond - n.second)),
                 x,
                 y,
                 arrowSize,
@@ -603,7 +645,7 @@ class ChartPainter extends CustomPainter {
 
     // Farthest first, so a nearer arrow overlapping the next one sits on top
     // of it, and held heads, on the line, over everything.
-    final first = _lowerBoundBySecond(notes, second);
+    final first = _lowerBoundBySecond(notes, targetSecond);
     var last = first;
     while (last < notes.length && notes[last].second <= maxT) {
       last++;
@@ -612,8 +654,10 @@ class ChartPainter extends CustomPainter {
       drawHead(notes[i], false);
     }
     for (final n in holds) {
-      if (n.second >= second) break; // at/after the playhead: scrolls normally
-      if ((n.endSecond ?? n.second) < second) continue;
+      if (n.second >= targetSecond) {
+        break; // at/after the hit time: scrolls normally
+      }
+      if ((n.endSecond ?? n.second) < targetSecond) continue;
       drawHead(n, true);
     }
 
@@ -625,38 +669,38 @@ class ChartPainter extends CustomPainter {
     // field.
     if (skin.hasBomb) {
       for (final MapEntry(key: col, value: age) in arrivals.entries) {
-        skin.paintBomb(canvas, laneCenterX(col), _receptorTop, arrowSize, age);
+        skin.paintBomb(canvas, laneCenterX(col), targetY, arrowSize, age);
       }
       if (playing) {
         for (final n in holds) {
-          if (n.second > second) break;
-          final age = second - (n.endSecond ?? n.second);
+          if (n.second > targetSecond) break;
+          final age = targetSecond - (n.endSecond ?? n.second);
           if (age < 0 || age >= bombSeconds) continue;
           if (section != null &&
               (n.second < section!.$1 || n.second > section!.$2)) {
             continue;
           }
           skin.paintBomb(
-              canvas, laneCenterX(turned(n.col)), _receptorTop, arrowSize, age,
+              canvas, laneCenterX(turned(n.col)), targetY, arrowSize, age,
               freeze: true);
         }
       }
     } else if (atlas == null) {
       for (final MapEntry(key: col, value: age) in arrivals.entries) {
         if (age >= _flashSeconds) continue; // recoil outlasts the flash
-        skin.paintNoteFlash(canvas, laneCenterX(col), _receptorTop, arrowSize,
+        skin.paintNoteFlash(canvas, laneCenterX(col), targetY, arrowSize,
             dirs[col], age / _flashSeconds);
       }
     }
     if (atlas != null) {
-      final frame = (second * 60).floor();
+      final frame = (targetSecond * 60).floor();
       for (final n in holds) {
-        if (n.second > second) break;
+        if (n.second > targetSecond) break;
         if (n.type == StepType.roll) continue;
         final end = n.endSecond ?? n.second;
         final col = turned(n.col);
         for (var f = frame - frame % 4; f >= 0; f -= 4) {
-          final age = second - f / 60;
+          final age = targetSecond - f / 60;
           if (age >= ddrGlowSeconds) break;
           if (f / 60 < n.second || f / 60 >= end) continue;
           final p = age / ddrGlowSeconds;
@@ -664,7 +708,7 @@ class ChartPainter extends CustomPainter {
               canvas,
               atlas.tap(DdrPalette.other, pos),
               laneCenterX(col),
-              _receptorTop.toDouble(),
+              targetY,
               arrowSize * (1 + (ddrGlowPeakScale - 1) * p),
               dirs[col],
               Paint()
@@ -690,6 +734,17 @@ class ChartPainter extends CustomPainter {
       _paintMeasureLines(canvas, size, markY, currentBeat,
           currentBeat + (size.height - _receptorTop) / pxPerBeat,
           labels: true);
+    }
+
+    if (hitOffset != null && targetY >= topInset && targetY < size.height) {
+      final gapMs = (hitOffset! - visualOffset) * 1000;
+      final gap = gapMs.abs() < 0.05
+          ? 'aligned'
+          : '${gapMs.abs().toStringAsFixed(1)}ms '
+              '${gapMs > 0 ? 'before' : 'after'} receptor';
+      _paintMarkerLabel(
+          canvas, size, targetY, 'HIT · $gap', const Color(0xFF64DED1),
+          alignLeft: true);
     }
 
     canvas.restore(); // end note clip
@@ -897,13 +952,14 @@ class ChartPainter extends CustomPainter {
     double arrowSize,
     double second,
     double maxT,
+    double targetY,
   ) {
     // On-screen anchor for a note: pinned to the receptor while a hold is held,
     // else its scrolling position.
     Offset anchor(StepNote n) {
       final endS = n.endSecond ?? n.second;
       final held = n.isHold && n.second < second && endS >= second;
-      final y = held ? _receptorTop.toDouble() : yFor(n.second);
+      final y = held ? targetY : yFor(n.second);
       final col = (n.col >= 0 && n.col < colMap.length) ? colMap[n.col] : n.col;
       return Offset(laneCenterX(col), y);
     }
@@ -1313,6 +1369,7 @@ class ChartPainter extends CustomPainter {
       // paused: the playhead notifier hasn't changed, so nothing else here
       // would report the repaint.
       old.visualOffset != visualOffset ||
+      old.hitOffset != hitOffset ||
       old.focus != focus ||
       old.highlights != highlights ||
       old.section != section ||

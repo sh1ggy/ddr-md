@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -43,7 +44,10 @@ class SongState extends ChangeNotifier {
   SortType _sortType = Settings.getInt(Settings.songlistSortKey) == 0
       ? SortType.version
       : SortType.values[Settings.getInt(Settings.songlistSortKey) - 1];
-  SortType get sortType => _sortType;
+  // A bests sort reads as the default while bests are hidden, and comes back
+  // when they're shown.
+  SortType get sortType =>
+      _sortType.isBest && !ChartBests.shown ? SortType.version : _sortType;
 
   bool _sortDescending = Settings.getInt(Settings.songlistSortDescKey) == 1;
   bool get sortDescending => _sortDescending;
@@ -100,6 +104,18 @@ class SongMatch {
 class Songs {
   static List<String> assets = [];
   static List<SongInfo> list = [];
+
+  static List<SongInfo>? _namedList;
+  static Set<String> _names = const {};
+
+  /// Whether [name] is a song in the loaded list.
+  static bool contains(String name) {
+    if (!identical(_namedList, list)) {
+      _namedList = list;
+      _names = {for (final song in list) song.name};
+    }
+    return _names.contains(name);
+  }
 
   // Load song list JSONs from the asset bundle into the static list.
   // `cache: false` throughout: rootBundle otherwise pins every decoded JSON
@@ -291,19 +307,29 @@ class Songs {
       matchTitles(ocrTitle, limit: 1).firstOrNull;
 
   // The [limit] closest songs to [ocrTitle] scoring at least [minSimilarity],
-  // best first. Empty when the list is empty or the query normalizes to
-  // nothing.
+  // best first. Optional candidates restrict the search to eligible songs,
+  // including history entries absent from the catalogue. Empty when the list
+  // is empty or the query normalizes to nothing.
   static List<SongMatch> matchTitles(String ocrTitle,
-      {int limit = 10, double minSimilarity = 0}) {
+      {int limit = 10, double minSimilarity = 0, List<SongInfo>? candidates}) {
     final query = _normalize(ocrTitle);
-    if (query.isEmpty || list.isEmpty) return const [];
-    final keys = _searchKeys;
+    final songs = candidates ?? list;
+    if (query.isEmpty || songs.isEmpty) return const [];
+    final keys = candidates == null
+        ? _searchKeys
+        : [
+            for (final song in songs)
+              {song.title, song.titletranslit, song.name}
+                  .map(_normalize)
+                  .where((key) => key.isNotEmpty)
+                  .toList(growable: false)
+          ];
     if (query.length <= 64) _setPeq(query);
     final matches = <SongMatch>[];
-    for (var i = 0; i < list.length; i++) {
+    for (var i = 0; i < songs.length; i++) {
       final similarity = _similarity(query, keys[i], minSimilarity);
       if (similarity >= minSimilarity) {
-        matches.add(SongMatch(list[i], similarity));
+        matches.add(SongMatch(songs[i], similarity));
       }
     }
     matches.sort((a, b) => b.similarity.compareTo(a.similarity));

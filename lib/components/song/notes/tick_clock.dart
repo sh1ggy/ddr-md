@@ -82,9 +82,10 @@ class TickClock {
   /// Voices primed-but-not-yet-fired, keyed by the row index they belong to.
   final Map<int, SoundHandle> _primed = {};
 
-  /// AUDIO OFFSET in seconds, cabinet convention: positive = EARLIER. Shifts
-  /// each row's target on the clock timeline, independent of [_releaseLatency],
-  /// which centres a tick on whatever target this sets.
+  /// Applied judgement-clock shift in seconds. Positive advances the clock;
+  /// negative delays it. The audio calibration dial supplies a negative shift
+  /// for a positive delay. Independent of [_releaseLatency], which centres the
+  /// sample on the resulting target.
   ///
   /// Writes apply to rows not yet primed, so a mid-playback change settles
   /// within [_primeLead].

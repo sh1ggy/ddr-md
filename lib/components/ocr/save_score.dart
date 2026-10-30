@@ -10,6 +10,8 @@
 /// lamp and the change against the chart's best.
 library;
 
+import 'package:ddr_md/components/song/scores/completion_lamp_field.dart';
+
 import 'dart:typed_data';
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -18,6 +20,7 @@ import 'package:ddr_md/components/song/scores/score_card.dart'
     show judgedLampArt;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
+import 'package:ddr_md/components/songlist/song_search_sheet.dart';
 import 'package:ddr_md/grades.dart' show gradeForScore, gradeIcon;
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/chart_bests.dart';
@@ -77,6 +80,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   // picking a different song).
   String? _pickedDifficulty;
   bool _savedOnce = false;
+  ClearLamp? _completionLamp;
 
   // The play date for the score. Seeded to now; for load-image scores the user
   // can change the day via the date row (camera scores keep the capture time).
@@ -206,6 +210,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       good: _number('good'),
       miss: _number('miss'),
       maxCombo: _maxCombo(song, mode),
+      completionLamp: _completionLamp,
     );
     final bytes = await widget.proofImageBytes?.call();
     if (bytes != null) {
@@ -219,13 +224,15 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   }
 
   Future<void> _openPicker() async {
-    final picked = await showModalBottomSheet<SongInfo>(
-      context: context,
-      isScrollControlled: true,
-      // Keep the sheet out of the top notch when the keyboard pushes it up
-      // on small screens.
-      useSafeArea: true,
-      builder: (context) => _SongSearchSheet(initialQuery: widget.initialTitle),
+    final mode = context.read<SongState>().modes;
+    final picked = await showSongSearchSheet<SongInfo>(
+      context,
+      initialQuery: widget.initialTitle,
+      selected: _resolveMatchState().song,
+      options: [
+        for (final song in Songs.list)
+          SongSearchOption(value: song, song: song, mode: mode),
+      ],
     );
     if (picked != null) {
       setState(() => _selectedSong = picked);
@@ -267,6 +274,10 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
           const SizedBox(height: 6),
         ],
         ...widget.middleChildren,
+        CompletionLampField(
+            value: _completionLamp,
+            onChanged:
+                _savedOnce ? null : (v) => setState(() => _completionLamp = v)),
         if (widget.source == ScoreSource.loadImage) _buildDateRow(),
         _buildUsernameMismatchWarning(),
         const SizedBox(height: 12),
@@ -633,107 +644,6 @@ class _BestDelta extends StatelessWidget {
             style: FloorPop.readout(14, color: color),
           ),
         ]),
-      ),
-    );
-  }
-}
-
-// Bottom-sheet song picker: a search field prefilled with the OCR'd title and
-// a result list ranked by Levenshtein similarity, updating as the user types.
-// Pops with the chosen SongInfo.
-class _SongSearchSheet extends StatefulWidget {
-  final String initialQuery;
-
-  const _SongSearchSheet({required this.initialQuery});
-
-  @override
-  State<_SongSearchSheet> createState() => _SongSearchSheetState();
-}
-
-class _SongSearchSheetState extends State<_SongSearchSheet> {
-  late final TextEditingController _searchController =
-      TextEditingController(text: widget.initialQuery);
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final matches = Songs.matchTitles(_searchController.text, limit: 20);
-    return Padding(
-      // Keep the sheet above the on-screen keyboard.
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.6,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: TextField(
-                controller: _searchController,
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: 'Search songs…',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _searchController.text.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {});
-                          },
-                        ),
-                  isDense: true,
-                ),
-              ),
-            ),
-            Expanded(
-              child: matches.isEmpty
-                  ? Center(
-                      child: Text(
-                        _searchController.text.trim().isEmpty
-                            ? 'Type to search the song list.'
-                            : 'No songs found.',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      itemCount: matches.length,
-                      itemBuilder: (context, i) {
-                        final m = matches[i];
-                        final translit = m.song.titletranslit;
-                        return ListTile(
-                          dense: true,
-                          title: Text(m.song.title),
-                          subtitle:
-                              translit.isNotEmpty && translit != m.song.title
-                                  ? Text(translit)
-                                  : null,
-                          trailing: Text(
-                            '${(m.similarity * 100).round()}%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                          ),
-                          onTap: () => Navigator.pop(context, m.song),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
       ),
     );
   }

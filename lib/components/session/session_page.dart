@@ -351,6 +351,10 @@ class SessionPage extends StatelessWidget {
         title: const PageTitle('Home'),
         actions: [
           HeaderButton(
+              tooltip: 'Trends',
+              icon: const Icon(Icons.insights),
+              onPressed: () => context.push('/home/trends')),
+          HeaderButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => context.push('/home/settings'),

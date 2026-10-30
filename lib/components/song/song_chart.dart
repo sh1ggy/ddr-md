@@ -7,6 +7,7 @@ import 'dart:math' as math;
 
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/song_details.dart';
+import 'package:ddr_md/components/song/song_sync_status.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -537,13 +538,12 @@ class _SongSyncChartState extends State<SongSyncChart> {
     final songInfo = widget.songInfo;
     final chart = widget.chart;
     final sync = songInfo.displaySyncFor(chart);
-    if (sync == null || sync.curve.isEmpty) return const SizedBox.shrink();
     // Cabinet fingerprint when the arcade data covers this song; otherwise
     // the simfile fallback, which says nothing about how the cab feels.
     final isCabinet = sync == songInfo.arcadeSync;
 
     final spots = <FlSpot>[
-      for (var i = 0; i < sync.curve.length; i++)
+      for (var i = 0; sync != null && i < sync.curve.length; i++)
         FlSpot(
           sync.curveStartMs + i * sync.curveStepMs,
           sync.curve[i].toDouble(),
@@ -555,17 +555,21 @@ class _SongSyncChartState extends State<SongSyncChart> {
     // preview's ARCADE SYNC dials tint from the same pair.
     final fastColor = kFastColor(isDark);
     final slowColor = kSlowColor(isDark);
-    final biasColor = sync.biasMs < 0
-        ? slowColor
-        : sync.biasMs > 0
-            ? fastColor
-            : pop.haze;
-    // Positive bias: chart plays fast (steps land ahead of the beat), which
-    // in-game is corrected by nudging the audio offset negative — so the
-    // suggested adjustment is the bias with its sign flipped.
-    final adjustBy = -sync.biasMs;
-    final adjustLabel =
-        '${adjustBy >= 0 ? '+' : ''}${adjustBy.toStringAsFixed(1)} ms';
+    final biasColor = sync == null
+        ? pop.haze
+        : sync.isOnSync
+            ? pop.up
+            : sync.biasMs < 0
+                ? slowColor
+                : sync.biasMs > 0
+                    ? fastColor
+                    : pop.haze;
+    final source = isCabinet ? 'cabinet' : 'simfile';
+    final subtitle = sync == null
+        ? 'Timing has not been measured for this song'
+        : sync.isOnSync
+            ? 'No offset adjustment needed ($source)'
+            : 'recommended offset ($source)';
     final caption = TextStyle(fontSize: 11, color: pop.haze);
 
     // Always open: the curve is short enough to read at a glance, so it sits
@@ -577,86 +581,87 @@ class _SongSyncChartState extends State<SongSyncChart> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
               children: [
                 const CardHeading('Sync', icon: Icons.av_timer),
-                const SizedBox(width: 10),
-                Text(adjustLabel,
-                    style: FloorPop.readout(20, color: biasColor)),
+                const Spacer(),
+                SongSyncStatus(
+                    sync: sync, fontSize: sync == null ? 13 : 20, decimals: 1),
               ],
             ),
-            Text('recommended offset (${isCabinet ? 'cabinet' : 'simfile'})',
-                style: caption),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 64,
-              child: LineChart(
-                LineChartData(
-                  titlesData: const FlTitlesData(show: false),
-                  lineTouchData: LineTouchData(
-                      touchTooltipData: LineTouchTooltipData(
-                          fitInsideHorizontally: true,
-                          getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-                            return touchedBarSpots.map((barSpot) {
-                              return LineTooltipItem(
-                                  '${barSpot.x >= 0 ? '+' : ''}${barSpot.x.toStringAsFixed(0)} ms',
-                                  const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold));
-                            }).toList();
-                          },
-                          tooltipBgColor: pop.riser,
-                          tooltipPadding: const EdgeInsets.all(4),
-                          tooltipBorder: BorderSide(color: pop.line))),
-                  extraLinesData: ExtraLinesData(
-                    verticalLines: [
-                      // On-beat reference (0 ms)
-                      VerticalLine(
-                        x: 0,
-                        color: pop.haze,
-                        strokeWidth: 1.5,
-                        dashArray: [3, 4],
+            const SizedBox(height: 4),
+            Text(subtitle, style: caption),
+            if (sync != null && spots.length > 1) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 64,
+                child: LineChart(
+                  LineChartData(
+                    titlesData: const FlTitlesData(show: false),
+                    lineTouchData: LineTouchData(
+                        touchTooltipData: LineTouchTooltipData(
+                            fitInsideHorizontally: true,
+                            getTooltipItems:
+                                (List<LineBarSpot> touchedBarSpots) {
+                              return touchedBarSpots.map((barSpot) {
+                                return LineTooltipItem(
+                                    '${barSpot.x >= 0 ? '+' : ''}${barSpot.x.toStringAsFixed(0)} ms',
+                                    const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold));
+                              }).toList();
+                            },
+                            tooltipBgColor: pop.riser,
+                            tooltipPadding: const EdgeInsets.all(4),
+                            tooltipBorder: BorderSide(color: pop.line))),
+                    extraLinesData: ExtraLinesData(
+                      verticalLines: [
+                        // On-beat reference (0 ms)
+                        VerticalLine(
+                          x: 0,
+                          color: pop.haze,
+                          strokeWidth: 1.5,
+                          dashArray: [3, 4],
+                        ),
+                      ],
+                    ),
+                    clipData: const FlClipData.all(),
+                    borderData: FlBorderData(show: false),
+                    gridData: const FlGridData(show: false),
+                    minX: sync.curveStartMs,
+                    maxX: sync.curveStartMs +
+                        (sync.curve.length - 1) * sync.curveStepMs,
+                    minY: 0,
+                    maxY: 108,
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: spots,
+                        barWidth: 2,
+                        color: biasColor,
+                        isCurved: false,
+                        dotData: const FlDotData(show: false),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          color: biasColor.withValues(alpha: 0.15),
+                        ),
                       ),
                     ],
                   ),
-                  clipData: const FlClipData.all(),
-                  borderData: FlBorderData(show: false),
-                  gridData: const FlGridData(show: false),
-                  minX: sync.curveStartMs,
-                  maxX: sync.curveStartMs +
-                      (sync.curve.length - 1) * sync.curveStepMs,
-                  minY: 0,
-                  maxY: 108,
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      barWidth: 2,
-                      color: biasColor,
-                      isCurved: false,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: biasColor.withValues(alpha: 0.15),
-                      ),
-                    ),
-                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('chart is slow',
-                    style: caption.copyWith(
-                        color: slowColor, fontWeight: FontWeight.w600)),
-                Text('offset from beat (ms)', style: caption),
-                Text('chart is fast',
-                    style: caption.copyWith(
-                        color: fastColor, fontWeight: FontWeight.w600)),
-              ],
-            ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('chart is slow',
+                      style: caption.copyWith(
+                          color: slowColor, fontWeight: FontWeight.w600)),
+                  Text('offset from beat (ms)', style: caption),
+                  Text('chart is fast',
+                      style: caption.copyWith(
+                          color: fastColor, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ],
           ],
         ),
       ),

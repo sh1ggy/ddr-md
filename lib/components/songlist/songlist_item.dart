@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/song_difficulties.dart';
+import 'package:ddr_md/components/song/song_sync_status.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/flare_card.dart';
@@ -37,31 +38,14 @@ class SongListItem extends StatefulWidget {
 }
 
 class _SongListItemState extends State<SongListItem> {
-  // The recommended in-game offset adjustment, same figure the song page's
-  // sync card leads with: the bias with its sign flipped. Null when this song
-  // has no sync data, so the row shows nothing for it.
-  Widget? _syncAdjust(BuildContext context) {
+  Widget _syncAdjust(BuildContext context) {
     final chart = widget.difficultyIndex == null
         ? widget.songInfo.charts.first
         : widget.songInfo.chartAt(
             Provider.of<SongState>(context, listen: false).modes,
             widget.difficultyIndex!);
-    final sync = widget.songInfo.displaySyncFor(chart);
-    if (sync == null) return null;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    // Rounded first, so a bias under half a ms reads +0, never +-0.
-    final adjustBy = (-sync.biasMs).round();
-    return Text(
-      '${adjustBy >= 0 ? '+' : ''}$adjustBy ms',
-      style: TextStyle(
-        fontWeight: FontWeight.w700,
-        color: sync.biasMs < 0
-            ? kSlowColor(isDark)
-            : sync.biasMs > 0
-                ? kFastColor(isDark)
-                : Colors.grey.shade600,
-      ),
-    );
+    return SongSyncStatus(
+        sync: widget.songInfo.displaySyncFor(chart), compact: true);
   }
 
   @override
@@ -80,8 +64,8 @@ class _SongListItemState extends State<SongListItem> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (_syncAdjust(context) case final sync?) sync,
         Text(widget.songInfo.charts[0].bpmRange),
+        _syncAdjust(context),
         // The song's flare group, what the cabinet sorts folders and flare
         // skill by.
         if (flareGroup(canonicalVersion(widget.songInfo.version))

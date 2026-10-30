@@ -249,6 +249,10 @@ class Chart {
 /// [biasMs]. Positive bias: the audio attack lands after the charted beat.
 class Sync {
   double biasMs;
+
+  /// Neutral at the displayed tenth-of-a-millisecond precision, matching the
+  /// chart preview's on-the-beat reading.
+  bool get isOnSync => biasMs.abs() < 0.05;
   double confidence;
   double curveStartMs;
   double curveStepMs;
@@ -407,12 +411,21 @@ enum Modes {
 }
 
 // The cabinet's sort keys. `version` is the release order the cabinet treats as
-// its default.
+// its default. The last three sort on the player's bests, only while the
+// songlist shows them.
 enum SortType {
   level,
   title,
   version,
   bpm,
+  score,
+  flare,
+  lamp;
+
+  bool get isBest => index >= score.index;
+
+  /// Rows stand for one chart each, not a song.
+  bool get isChartScoped => this == level || isBest;
 }
 
 class Difficulty {

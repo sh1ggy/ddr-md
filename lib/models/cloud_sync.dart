@@ -398,6 +398,9 @@ class SyncEngine {
       await txn.delete('sync_meta', where: "k = 'applying'");
       await _setMeta(txn, 'cursor', '$cursor');
     });
+    if (changes.any((c) => c.t == 'scores' || c.t == 'score_records')) {
+      DatabaseProvider.invalidateAchievements();
+    }
     if (prefs case final remote?) {
       // Settings changed here since the last sync stay, on top of the
       // pulled ones, and go up after.

@@ -8,7 +8,10 @@ library;
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
+import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/chart_bests.dart';
+import 'package:ddr_md/models/db_models.dart' show ClearLamp;
 
 // Name buckets in the order the filter tray and the grid's folders present
 // them: Japanese titles first, then non-alphabetic, then the letter ranges.
@@ -96,6 +99,36 @@ List<SongItem> chartItemsFor(
         level: chart.level,
       ),
   ];
+}
+
+/// What a chart-scoped row sorts on under a bests sort, higher being better;
+/// null for a chart without that best.
+int? bestKeyFor(SongItem item, SortType sortType, Modes mode) {
+  if (!item.isChartScoped) return null;
+  final best = ChartBests.at(item.songInfo, mode, item.difficultyIndex!);
+  final flare = best?.flare;
+  return switch (sortType) {
+    SortType.score => best?.score,
+    SortType.flare => flare == null ? null : kFlareRanks.indexOf(flare),
+    SortType.lamp => best?.lamp?.index,
+    _ => null,
+  };
+}
+
+/// Orders rows under a bests sort. Charts without the best sit last in both
+/// directions; ties read by title, then level.
+int compareBestItems(SongItem a, SongItem b, SortType sortType, Modes mode,
+    {bool descending = false}) {
+  final ka = bestKeyFor(a, sortType, mode), kb = bestKeyFor(b, sortType, mode);
+  if (ka != kb) {
+    if (ka == null) return 1;
+    if (kb == null) return -1;
+    return descending ? kb.compareTo(ka) : ka.compareTo(kb);
+  }
+  final byTitle = compareSongInfo(a.songInfo, b.songInfo, SortType.title);
+  return byTitle != 0
+      ? byTitle
+      : levelForItem(a, mode).compareTo(levelForItem(b, mode));
 }
 
 String versionBucketFor(String version) {
@@ -196,6 +229,7 @@ List<ArcadeSection> groupSongItems(
   bool descending = false,
 }) {
   if (items.isEmpty) return const <ArcadeSection>[];
+  if (sortType.isBest) return _groupBests(items, sortType, mode, descending);
   final List<ArcadeSection> sections = _groupAscending(items, sortType, mode);
   if (!descending) return sections;
   // Reversed at both levels so the folders and their contents agree.
@@ -271,6 +305,11 @@ List<ArcadeSection> _groupAscending(
           ),
       ];
 
+    case SortType.score:
+    case SortType.flare:
+    case SortType.lamp:
+      return _groupBests(items, sortType, mode, false);
+
     case SortType.bpm:
       // BPM has no natural folder boundaries, so it bands by tens.
       final Map<int, List<SongItem>> byBand = <int, List<SongItem>>{};
@@ -288,6 +327,41 @@ List<ArcadeSection> _groupAscending(
           ),
       ];
   }
+}
+
+// Bests folders: a grade, flare rank or lamp each, the charts inside ordered
+// as the list orders them, with NO PLAY last in both directions.
+List<ArcadeSection> _groupBests(
+    List<SongItem> items, SortType sortType, Modes mode, bool descending) {
+  // Folder ids rise with the best: grades run best first, so they negate.
+  int? folderOf(int? key) => key == null
+      ? null
+      : sortType == SortType.score
+          ? -gradeForScore(key).index
+          : key;
+  String label(int folder) => switch (sortType) {
+        SortType.score => Grade.values[-folder].label,
+        SortType.flare => 'FLARE ${kFlareRanks[folder]}',
+        _ => ClearLamp.values[folder].name.toUpperCase(),
+      };
+  final Map<int?, List<SongItem>> byFolder = <int?, List<SongItem>>{};
+  for (final item in items) {
+    byFolder
+        .putIfAbsent(
+            folderOf(bestKeyFor(item, sortType, mode)), () => <SongItem>[])
+        .add(item);
+  }
+  final folders = byFolder.keys.whereType<int>().toList()
+    ..sort((a, b) => descending ? b.compareTo(a) : a.compareTo(b));
+  ArcadeSection section(String label, List<SongItem> items) => ArcadeSection(
+      label: label,
+      items: items
+        ..sort((a, b) =>
+            compareBestItems(a, b, sortType, mode, descending: descending)));
+  return <ArcadeSection>[
+    for (final folder in folders) section(label(folder), byFolder[folder]!),
+    if (byFolder.containsKey(null)) section('NO PLAY', byFolder[null]!),
+  ];
 }
 
 // Sorts a folder's songs by title. The lists come from the maps built above,

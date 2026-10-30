@@ -1,7 +1,7 @@
 /// Name: CreditsPage
 /// Parent: AppSettingsPage
 /// Description: Credits and inspiration: the apps, people and projects DDR MD
-/// learnt from or builds on, and a word for arcades and Konami. Add credits to
+/// learnt from or builds on. Add credits to
 /// [creditSections].
 library;
 
@@ -133,17 +133,6 @@ const creditSections = <(String, List<(String, String, String?)>)>[
   ),
 ];
 
-/// Paragraphs under the credits: the case for the real thing.
-const arcadeSupport = [
-  'DanceDanceRevolution is made by Konami, and DDR MD is only a study '
-      'companion to it. None of this exists without the cabinets.',
-  'Play at your local arcade, on official machines, with your own '
-      'e-amusement pass. Arcades keep their DDR cabinets because people put '
-      'credits in them, so play often, bring friends, and let the staff know '
-      'you want the machine to stay. Supporting the official game is what '
-      'keeps new versions, songs and charts coming.',
-];
-
 class CreditsPage extends StatelessWidget {
   const CreditsPage({super.key});
 
@@ -188,12 +177,6 @@ class CreditsPage extends StatelessWidget {
                                 mode: LaunchMode.externalApplication),
                       ),
                   ],
-                  heading('Support Your Local Arcade'),
-                  for (final p in arcadeSupport)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text(p),
-                    ),
                 ],
               )),
     );
