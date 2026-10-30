@@ -443,9 +443,17 @@ class PatternLevels {
 class PatternsLoader {
   /// Loaded with the first song and kept: it covers the whole library.
   static PatternLevels? _levels;
+  static final _songs = <String, Future<SongPatterns?>>{};
 
-  /// Drops the cached levels table, after an update replaced it.
-  static void reset() => _levels = null;
+  /// Drops the cached levels table and songs, after an update replaced them.
+  static void reset() {
+    _levels = null;
+    _songs.clear();
+  }
+
+  /// [load], kept so the song list and its filter read each song once.
+  static Future<SongPatterns?> cached(String songName) =>
+      _songs.putIfAbsent(songName, () => load(songName));
 
   /// Null when the song has no analysis, so the page hides the section.
   static Future<SongPatterns?> load(String songName) async {
