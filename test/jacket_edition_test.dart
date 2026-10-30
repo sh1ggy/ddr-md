@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/components/songlist/generated_jacket.dart';
 import 'package:ddr_md/components/song/jacket_edition.dart';
@@ -302,7 +303,8 @@ void main() {
             chart: (song: 'test', mode: 'doubles', difficulty: 'challenge'),
             grade: Grade.aaa,
             level: 17,
-            lamp: ClearLamp.pfc),
+            lamp: ClearLamp.pfc,
+            flare: 'EX'),
         options: options(motion: false, stamps: true),
         child: const ColoredBox(color: Colors.indigo))));
     await tester.pumpAndSettle();
@@ -313,11 +315,43 @@ void main() {
         .map((a) => a.assetName);
     expect(names, contains('assets/icons/rank_aaa.png'));
     expect(names, contains('assets/icons/style_double.png'));
+    expect(names, contains('assets/icons/flare_ex.png'));
+    expect(find.text('.'), findsNothing);
+    expect(names, contains('assets/difficulty/level_challenge_8.png'));
     final label = tester.widget<DifficultyLabel>(find.byType(DifficultyLabel));
     expect(label.difficulty, 'CHALLENGE');
     expect(label.level, 17);
     expect(label.levelSuffix, 8);
+    expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey('edition-achievement-stamp')))
+            .dy,
+        lessThan(tester
+            .getTopLeft(find.byKey(const ValueKey('edition-chart-stamp')))
+            .dy));
     expect(find.textContaining('TIER'), findsNothing);
+  });
+  testWidgets('hover tilts the retained card; reduced motion keeps it flat',
+      (tester) async {
+    Widget viewer() => JacketEdition(
+        facts: facts(),
+        options: options(),
+        child: const ColoredBox(color: Colors.indigo));
+    await tester.pumpWidget(host(viewer()));
+    await tester.pump(const Duration(milliseconds: 40));
+    Transform transform() =>
+        tester.widget<Transform>(find.byKey(const ValueKey('edition-tilt')));
+    expect(transform().transform.entry(0, 2), 0);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+        tester.getTopLeft(find.byType(JacketEdition)) + const Offset(290, 40));
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(transform().transform.entry(0, 2).abs(), greaterThan(.01));
+    await tester.pumpWidget(host(viewer(), reduced: true));
+    await tester.pump();
+    expect(transform().transform.entry(0, 2), 0);
+    await mouse.removePointer();
   });
   test('motion coalesces pointer events to one vsync', () {
     const provider = TestVSync();

@@ -14,6 +14,7 @@ class EditionMotion extends ChangeNotifier {
   }
   late final Ticker _ticker;
   Offset light = const Offset(.35, .3);
+  Offset tilt = Offset.zero;
   Offset? _pending;
   bool _held = false;
   Duration _last = Duration.zero;
@@ -26,9 +27,10 @@ class EditionMotion extends ChangeNotifier {
       _pending = null;
       _held = false;
       final next = frozenLight ?? const Offset(.35, .3);
-      if (light != next || time != 0) {
+      if (light != next || time != 0 || tilt != Offset.zero) {
         light = next;
         time = 0;
+        tilt = Offset.zero;
         notifyListeners();
       }
     } else if (!_ticker.isActive) {
@@ -59,6 +61,10 @@ class EditionMotion extends ChangeNotifier {
             ? light
             : Offset(.5 + math.sin(time / 1.7) * .35,
                 .5 + math.sin(time / 2.3) * .3));
+    final target =
+        _held ? Offset((light.dx - .5) * 2, (light.dy - .5) * 2) : Offset.zero;
+    tilt = Offset.lerp(tilt, target, _held ? 1 : .22)!;
+    if (tilt.distance < .001) tilt = Offset.zero;
     _pending = null;
     notifyListeners();
   }

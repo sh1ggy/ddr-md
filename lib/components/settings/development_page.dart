@@ -80,7 +80,7 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                 ('Jacket effects', Settings.jacketEffectsOffKey),
                 ('Jacket motion', Settings.jacketMotionOffKey),
                 ('Play style stamp', Settings.jacketModeOffKey),
-                ('Grade stamp', Settings.jacketGradeOffKey),
+                ('Grade / flare stamps', Settings.jacketGradeOffKey),
                 ('Difficulty stamp', Settings.jacketDifficultyOffKey),
                 ('Optical tier suffix', Settings.jacketTierOffKey),
               ])

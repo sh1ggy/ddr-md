@@ -33,7 +33,7 @@ class DifficultyLabel extends StatelessWidget {
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final int? level;
-  // Optional optical tier appended to a jacket level, e.g. 17.8.
+  // Optional small raised optical-cut digit using the same native artwork.
   final int? levelSuffix;
   final double height;
 
@@ -108,26 +108,17 @@ class LevelNumber extends StatelessWidget {
     if (suffix == null) return numeral(level);
     final fractionalHeight = height * .62;
     return Semantics(
-        label: '$level.$suffix',
+        label: '$level, optical cut ${suffix! + 1}',
         child: ExcludeSemantics(
             child: Row(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
               numeral(level),
               Padding(
-                  padding: EdgeInsets.only(bottom: height * .04),
-                  child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        _CabinetText('.',
-                            difficulty: difficulty,
-                            height: fractionalHeight,
-                            fill: Colors.black,
-                            outline: Colors.white),
-                        numeral(suffix!, atHeight: fractionalHeight),
-                      ])),
+                  padding:
+                      EdgeInsets.only(left: height * .04, top: height * .02),
+                  child: numeral(suffix!, atHeight: fractionalHeight)),
             ])));
   }
 }

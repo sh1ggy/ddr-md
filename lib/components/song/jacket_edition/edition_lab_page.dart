@@ -48,6 +48,7 @@ class _EditionLabPageState extends State<EditionLabPage> {
       _tierSuffix = true;
   double _x = .35, _y = .3;
   Timer? _timer;
+  bool _recording = false;
   final _frames = <FrameTiming>[];
   Map<String, Object?>? _report;
   bool get _capturing => _timer != null;
@@ -110,8 +111,9 @@ class _EditionLabPageState extends State<EditionLabPage> {
     final hz = display.refreshRate;
     final side = MediaQuery.sizeOf(context).width;
     SchedulerBinding.instance.addTimingsCallback(_record);
+    _recording = true;
     setState(() => _timer = Timer(const Duration(seconds: 5), () {
-          SchedulerBinding.instance.removeTimingsCallback(_record);
+          _stopRecording();
           int percentile(List<int> values, double p) {
             values.sort();
             return values.isEmpty
@@ -157,10 +159,17 @@ class _EditionLabPageState extends State<EditionLabPage> {
         }));
   }
 
+  void _stopRecording() {
+    if (_recording) {
+      SchedulerBinding.instance.removeTimingsCallback(_record);
+      _recording = false;
+    }
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
-    SchedulerBinding.instance.removeTimingsCallback(_record);
+    _stopRecording();
     super.dispose();
   }
 
@@ -363,7 +372,8 @@ class _EditionLabPageState extends State<EditionLabPage> {
               _select('Border study', _border, editionBorders.keys,
                   (v) => _border = v, (v) => v),
               _toggle('Play style stamp', _modeStamp, (v) => _modeStamp = v),
-              _toggle('Grade stamp', _gradeStamp, (v) => _gradeStamp = v),
+              _toggle(
+                  'Grade / flare stamps', _gradeStamp, (v) => _gradeStamp = v),
               _toggle('Difficulty / level stamp', _difficultyStamp,
                   (v) => _difficultyStamp = v),
               _toggle(

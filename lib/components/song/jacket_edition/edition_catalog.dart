@@ -64,3 +64,8 @@ const editionCuts = {
   EditionCut.brilliant: (lines: 42, angle: .40, cross: true),
   EditionCut.fine: (lines: 48, angle: .78, cross: true),
 };
+
+// Small printed stock behind native marks. No animated shadow/blur pass.
+const editionStampStock = Color(0xE6FFFFFF);
+const editionStampEdge = Color(0x99FFFFFF);
+const editionTiltRadians = .14;
