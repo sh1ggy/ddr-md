@@ -2849,7 +2849,7 @@ class _ChartScrollerState extends State<ChartScroller>
                               Text(
                                 _scrubOverlayLabel ?? "",
                                 style:
-                                    FloorPop.readout(40, color: FloorPop.volt),
+                                    FloorPop.readout(40, color: Colors.white),
                               ),
                             ],
                           ),
