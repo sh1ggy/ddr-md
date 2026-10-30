@@ -5,6 +5,15 @@ library;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Settings {
+  // Appearance follows the player; reduced motion remains a device preference.
+  static const jacketBorderKey = 'jacketEditionBorder';
+  static const jacketEffectsOffKey = 'jacketEditionEffectsOff';
+  static const jacketMotionOffKey = 'jacketEditionMotionOff';
+  static const jacketModeOffKey = 'jacketEditionModeOff';
+  static const jacketGradeOffKey = 'jacketEditionGradeOff';
+  static const jacketDifficultyOffKey = 'jacketEditionDifficultyOff';
+  static const jacketTierOffKey = 'jacketEditionTierOff';
+
   static const String chosenReadSpeedKey = "chosenReadSpeed";
 
   // DDR CONSTANT modifier for the chart preview: the arrow display time in ms
@@ -177,6 +186,12 @@ class Settings {
   // timing offsets (they depend on the device's own audio and display), the
   // running session, and e-amusement sync bookkeeping.
   static const syncedKeys = {
+    jacketBorderKey,
+    jacketEffectsOffKey,
+    jacketModeOffKey,
+    jacketGradeOffKey,
+    jacketDifficultyOffKey,
+    jacketTierOffKey,
     chosenReadSpeedKey,
     constantOnKey,
     chartPreviewTurnKey,

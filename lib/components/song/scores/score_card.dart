@@ -10,6 +10,7 @@ import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song_json.dart' show Modes;
 import 'package:ddr_md/grades.dart';
+import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -209,23 +210,8 @@ String? scoreLampArt(Score score) => judgedLampArt(
 /// [scoreLampArt] from the counts alone, for a play not yet saved.
 String? judgedLampArt(
     int? marvelous, int? perfect, int? great, int? good, int? miss) {
-  if (marvelous == null ||
-      perfect == null ||
-      great == null ||
-      good == null ||
-      miss == null) {
-    return null;
-  }
-  return switch (fullComboTier(
-    marvelous: marvelous,
-    perfect: perfect,
-    great: great,
-    good: good,
-    miss: miss,
-  )) {
-    FullComboTier.none => null,
-    final tier => fullComboIcon(tier),
-  };
+  final tier = judgedTapTier(marvelous, perfect, great, good, miss);
+  return tier == null ? null : fullComboIcon(tier);
 }
 
 /// Clear art for a play with no full-combo tier, only when the synced best

@@ -11,6 +11,7 @@ import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart'
     show kFlareRanks, kInGameDifficultyNames, resolveOcrFlare;
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart' show ClearLamp;
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -26,33 +27,60 @@ class ChartBests {
   /// Whether the song list shows bests at all; off, chart rows are plain rows.
   static bool get shown => Settings.getInt(Settings.songlistHideStatsKey) == 0;
 
-  static Modes? _mode;
-  // Song name → in-game difficulty → best.
-  static Map<String, Map<String, ChartBest>> _bests = {};
+  static final _cache = <Modes,
+      ({
+    int revision,
+    Map<String, Map<String, ChartBest>> bests,
+    Map<String, Map<String, PrecisionEvidence>> precision
+  })>{};
+  static final _loads = <Modes, Future<void>>{};
+
+  static PrecisionEvidence? precisionAt(
+          String song, Modes mode, String difficulty) =>
+      _cache[mode]?.precision[song]?[difficulty];
+
+  static ChartBest? forChart(String song, Modes mode, String difficulty) =>
+      _cache[mode]?.bests[song]?[difficulty];
 
   /// The best on the chart at [index] into [mode]'s availableTypes; null when
   /// it hasn't been played or another mode is loaded.
   static ChartBest? at(SongInfo song, Modes mode, int index) {
     final types =
         (mode == Modes.singles ? song.singles : song.doubles).availableTypes;
-    if (mode != _mode || types.isEmpty) return null;
-    return _bests[song.name]
+    if (types.isEmpty) return null;
+    return _cache[mode]?.bests[song.name]
         ?[kInGameDifficultyNames[types[index.clamp(0, types.length - 1)]]];
   }
 
   /// [load]s unless [mode] is already loaded, so refiltering the list skips
   /// the database.
   static Future<void> ensure(Modes mode) async {
-    if (mode != _mode) await load(mode);
+    while (
+        _cache[mode]?.revision != DatabaseProvider.achievementsRevision.value) {
+      await load(mode);
+    }
   }
 
   static Future<void> load(Modes mode) async {
+    do {
+      await (_loads[mode] ??= _load(mode).whenComplete(() {
+        _loads.remove(mode);
+      }));
+    } while (
+        _cache[mode]?.revision != DatabaseProvider.achievementsRevision.value);
+  }
+
+  static Future<void> _load(Modes mode) async {
+    final revision = DatabaseProvider.achievementsRevision.value;
     final (records, scores) = await (
       DatabaseProvider.getScoreRecordsByMode(mode),
       DatabaseProvider.getAllScores(),
     ).wait;
     // Scores key on the transliterated title, records on the song name.
-    final names = {for (final s in Songs.list) s.titletranslit: s.name};
+    final names = {
+      for (final s in Songs.list)
+        (s.titletranslit.isEmpty ? s.title : s.titletranslit): s.name
+    };
     final bests = <String, Map<String, ChartBest>>{};
     void add(String? song, String difficulty, int? score, Grade? grade,
         ClearLamp? lamp, String? flare) {
@@ -102,7 +130,22 @@ class ChartBests {
           null,
           resolveOcrFlare(s.flare));
     }
-    _mode = mode;
-    _bests = bests;
+    // Use a local map so concurrent loads never mix evidence between modes.
+    final precision = <String, Map<String, PrecisionEvidence>>{};
+    for (final s in scores) {
+      final name = names[s.songTitle];
+      if (s.mode != mode || name == null) continue;
+      final evidence = precisionForPlay(s);
+      if (evidence == null) continue;
+      final charts = precision.putIfAbsent(name, () => {});
+      final old = charts[s.difficulty];
+      if (old == null ||
+          evidence.award.index > old.award.index ||
+          (evidence.award == old.award &&
+              evidence.sourceRowId.compareTo(old.sourceRowId) < 0)) {
+        charts[s.difficulty] = evidence;
+      }
+    }
+    _cache[mode] = (revision: revision, bests: bests, precision: precision);
   }
 }

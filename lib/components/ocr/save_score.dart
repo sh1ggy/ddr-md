@@ -10,6 +10,8 @@
 /// lamp and the change against the chart's best.
 library;
 
+import 'package:ddr_md/components/song/scores/completion_lamp_field.dart';
+
 import 'dart:typed_data';
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -77,6 +79,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
   // picking a different song).
   String? _pickedDifficulty;
   bool _savedOnce = false;
+  ClearLamp? _completionLamp;
 
   // The play date for the score. Seeded to now; for load-image scores the user
   // can change the day via the date row (camera scores keep the capture time).
@@ -206,6 +209,7 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
       good: _number('good'),
       miss: _number('miss'),
       maxCombo: _maxCombo(song, mode),
+      completionLamp: _completionLamp,
     );
     final bytes = await widget.proofImageBytes?.call();
     if (bytes != null) {
@@ -267,6 +271,10 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
           const SizedBox(height: 6),
         ],
         ...widget.middleChildren,
+        CompletionLampField(
+            value: _completionLamp,
+            onChanged:
+                _savedOnce ? null : (v) => setState(() => _completionLamp = v)),
         if (widget.source == ScoreSource.loadImage) _buildDateRow(),
         _buildUsernameMismatchWarning(),
         const SizedBox(height: 12),

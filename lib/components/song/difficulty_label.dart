@@ -26,12 +26,15 @@ class DifficultyLabel extends StatelessWidget {
     super.key,
     required this.difficulty,
     this.level,
+    this.levelSuffix,
     this.height = kLevelHeight,
   });
 
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final int? level;
+  // Optional optical tier appended to a jacket level, e.g. 17.8.
+  final int? levelSuffix;
   final double height;
 
   @override
@@ -52,7 +55,11 @@ class DifficultyLabel extends StatelessWidget {
         ),
         if (level != null) ...[
           SizedBox(width: height * 0.25),
-          LevelNumber(level: level!, difficulty: difficulty, height: height),
+          LevelNumber(
+              level: level!,
+              difficulty: difficulty,
+              height: height,
+              suffix: levelSuffix),
         ],
       ],
     );
@@ -68,9 +75,11 @@ class LevelNumber extends StatelessWidget {
     required this.difficulty,
     this.height = kLevelHeight,
     this.dimmed = false,
+    this.suffix,
   });
 
   final int level;
+  final int? suffix;
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final double height;
@@ -80,19 +89,47 @@ class LevelNumber extends StatelessWidget {
   @override
   // Dimmed through the image's own paint alpha rather than an Opacity
   // layer, which a list full of rows would pay for per numeral.
-  Widget build(BuildContext context) => Image.asset(
-        'assets/difficulty/level_${difficulty.toLowerCase()}_$level.png',
-        height: height,
-        opacity: dimmed ? const AlwaysStoppedAnimation(0.35) : null,
-        errorBuilder: (_, __, ___) => Opacity(
-          opacity: dimmed ? 0.35 : 1,
-          child: _CabinetText('$level',
-              difficulty: difficulty,
-              height: height,
-              fill: Colors.black,
-              outline: Colors.white),
-        ),
-      );
+  Widget build(BuildContext context) {
+    Widget numeral(int value, {double? atHeight}) {
+      final numberHeight = atHeight ?? height;
+      return Image.asset(
+          'assets/difficulty/level_${difficulty.toLowerCase()}_$value.png',
+          height: numberHeight,
+          opacity: dimmed ? const AlwaysStoppedAnimation(0.35) : null,
+          errorBuilder: (_, __, ___) => Opacity(
+              opacity: dimmed ? .35 : 1,
+              child: _CabinetText('$value',
+                  difficulty: difficulty,
+                  height: numberHeight,
+                  fill: Colors.black,
+                  outline: Colors.white)));
+    }
+
+    if (suffix == null) return numeral(level);
+    final fractionalHeight = height * .62;
+    return Semantics(
+        label: '$level.$suffix',
+        child: ExcludeSemantics(
+            child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+              numeral(level),
+              Padding(
+                  padding: EdgeInsets.only(bottom: height * .04),
+                  child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        _CabinetText('.',
+                            difficulty: difficulty,
+                            height: fractionalHeight,
+                            fill: Colors.black,
+                            outline: Colors.white),
+                        numeral(suffix!, atHeight: fractionalHeight),
+                      ])),
+            ])));
+  }
 }
 
 /// A song's levels for one mode, Beginner to Challenge, skipping charts it

@@ -82,6 +82,9 @@ class Score {
   final int? good;
   final int? miss;
   final int? maxCombo;
+  // Explicitly confirmed result of this play, including holds/shocks.
+  // Legacy and tap-only OCR rows stay unknown.
+  final ClearLamp? completionLamp;
   // Path of the proof image captured when the score was saved, relative to
   // the app documents dir (e.g. "scores/xxx.png") — the documents dir itself
   // moves across iOS app updates so only the relative part is stored. Empty
@@ -105,6 +108,7 @@ class Score {
     this.good,
     this.miss,
     this.maxCombo,
+    this.completionLamp,
     this.imagePath = '',
   }) : id = id ?? _uuid.v4();
 
@@ -126,6 +130,7 @@ class Score {
       'good': good,
       'miss': miss,
       'maxCombo': maxCombo,
+      'completionLamp': completionLamp?.name,
       'imagePath': imagePath,
     };
   }
@@ -151,6 +156,8 @@ class Score {
     int? miss,
     int? maxCombo,
     String? imagePath,
+    ClearLamp? completionLamp,
+    bool clearCompletionLamp = false,
   }) =>
       Score(
         id: id,
@@ -169,6 +176,8 @@ class Score {
         good: good ?? this.good,
         miss: miss ?? this.miss,
         maxCombo: maxCombo ?? this.maxCombo,
+        completionLamp:
+            clearCompletionLamp ? null : completionLamp ?? this.completionLamp,
         imagePath: imagePath ?? this.imagePath,
       );
 
@@ -189,6 +198,7 @@ class Score {
         good: json["good"],
         miss: json["miss"],
         maxCombo: json["maxCombo"],
+        completionLamp: ClearLamp.values.asNameMap()[json["completionLamp"]],
         imagePath: json["imagePath"] ?? '',
       );
 
