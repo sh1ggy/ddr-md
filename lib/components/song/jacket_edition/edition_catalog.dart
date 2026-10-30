@@ -100,10 +100,9 @@ const editionCuts = {
 
 // Logical pixels around each icon's silhouette, rather than a label panel.
 const editionStampRim = 1.8;
-const editionLabelRim = 1.8;
-// The score tab, of the card's side; stickers on the left stop short of it.
+// The bottom corners' tabs, of the card's side.
 const editionScoreTabHeight = .085;
-const editionScoreTabWidth = .36;
+const editionTabMaxWidth = .46;
 const editionCompactMotifLines = 8;
 const editionCompactGlints = 4;
 const editionCompactFinishStrength = .55;

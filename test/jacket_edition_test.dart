@@ -352,7 +352,7 @@ void main() {
         .widgetList<EditionStamp>(find.byType(EditionStamp))
         .map((w) => w.asset);
     expect(stamps, contains('assets/icons/rank_aaa.png'));
-    expect(stamps, contains('assets/icons/style_double.png'));
+    expect(names, contains('assets/icons/style_double.png'));
     expect(stamps, contains('assets/icons/flare_ex.png'));
     expect(find.text('.'), findsNothing);
     expect(names, contains('assets/difficulty/level_challenge_8.png'));

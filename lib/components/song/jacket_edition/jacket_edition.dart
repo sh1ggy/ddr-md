@@ -197,26 +197,28 @@ class _JacketEditionState extends State<JacketEdition>
                     if (_recipe.modeStamp != null ||
                         _recipe.difficultyStamp != null)
                       Positioned(
-                          left: geometry.width + 8,
-                          right: geometry.width +
-                              size.width * editionScoreTabWidth,
-                          bottom: geometry.width + 8,
-                          child: IgnorePointer(
-                              child: RepaintBoundary(
-                                  child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.bottomLeft,
-                                      child: EditionChartStamps(
-                                          recipe: _recipe, motion: _motion))))),
+                          left: geometry.width,
+                          bottom: geometry.width,
+                          height: size.height * editionScoreTabHeight,
+                          child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                  maxWidth: size.width * editionTabMaxWidth),
+                              child: IgnorePointer(
+                                  child: EditionChartTab(
+                                      recipe: _recipe,
+                                      corner: geometry.inner.blRadiusX)))),
                     if (_recipe.scoreStamp case final score?)
                       Positioned(
                           right: geometry.width,
                           bottom: geometry.width,
                           height: size.height * editionScoreTabHeight,
-                          child: IgnorePointer(
-                              child: EditionScoreTab(
-                                  score: score,
-                                  corner: geometry.inner.brRadiusX))),
+                          child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                  maxWidth: size.width * editionTabMaxWidth),
+                              child: IgnorePointer(
+                                  child: EditionScoreTab(
+                                      score: score,
+                                      corner: geometry.inner.brRadiusX)))),
                   ]))),
         ),
       );
@@ -263,34 +265,69 @@ class EditionAchievementStamps extends StatelessWidget {
           ]);
 }
 
-/// Play style as a die-cut sticker and the difficulty on its own label.
-class EditionChartStamps extends StatelessWidget {
-  const EditionChartStamps({super.key, required this.recipe, this.motion});
+/// Play style and difficulty in a tab carved out of the art's bottom left
+/// corner, mirroring the score's.
+class EditionChartTab extends StatelessWidget {
+  const EditionChartTab(
+      {super.key, required this.recipe, required this.corner});
   final EditionRecipe recipe;
-  final EditionMotion? motion;
+  final double corner;
   @override
-  Widget build(BuildContext context) => Row(
-          key: const ValueKey('edition-chart-stamp'),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (recipe.modeStamp case final mode?) ...[
-              EditionStamp(
-                  asset:
-                      'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
-                  height: 13,
-                  label: mode == 'singles' ? 'SINGLE' : 'DOUBLE',
-                  motion: motion),
-              if (recipe.difficultyStamp != null) const SizedBox(width: 8),
-            ],
-            if (recipe.difficultyStamp case final difficulty?)
-              EditionLabelSticker(
-                  motion: motion,
-                  child: DifficultyLabel(
-                      difficulty: difficulty,
-                      level: recipe.levelStamp,
-                      levelSuffix: recipe.tierSuffix,
-                      height: 15)),
-          ]);
+  Widget build(BuildContext context) => _CarvedTab(
+      key: const ValueKey('edition-chart-stamp'),
+      left: true,
+      corner: corner,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (recipe.modeStamp case final mode?) ...[
+          Image.asset(
+              'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
+              height: 13,
+              semanticLabel: mode == 'singles' ? 'SINGLE' : 'DOUBLE',
+              errorBuilder: (_, __, ___) => Text(
+                  mode == 'singles' ? 'SINGLE' : 'DOUBLE',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w900))),
+          if (recipe.difficultyStamp != null) const SizedBox(width: 8),
+        ],
+        if (recipe.difficultyStamp case final difficulty?)
+          DifficultyLabel(
+              difficulty: difficulty,
+              level: recipe.levelStamp,
+              levelSuffix: recipe.tierSuffix,
+              height: 15),
+      ]));
+}
+
+// A dark tab flush with one of the art's bottom corners, following its
+// radius, rounded where it meets the art.
+class _CarvedTab extends StatelessWidget {
+  const _CarvedTab(
+      {super.key,
+      required this.left,
+      required this.corner,
+      required this.child});
+  final bool left;
+  final double corner;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) =>
+      LayoutBuilder(builder: (context, constraints) {
+        final h = constraints.maxHeight;
+        return ClipRRect(
+            borderRadius: left
+                ? BorderRadius.only(
+                    topRight: Radius.circular(h * .4),
+                    bottomLeft: Radius.circular(corner))
+                : BorderRadius.only(
+                    topLeft: Radius.circular(h * .4),
+                    bottomRight: Radius.circular(corner)),
+            child: ColoredBox(
+                color: const Color(0xD916122C),
+                child: Padding(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: h * .45, vertical: h * .14),
+                    child: FittedBox(fit: BoxFit.scaleDown, child: child))));
+      });
 }
 
 /// The best score in a tab carved out of the art's bottom right corner, as on
@@ -305,29 +342,19 @@ class EditionScoreTab extends StatelessWidget {
     final text = formatScore(score);
     final split = text.lastIndexOf(',');
     const figures = [FontFeature.tabularFigures()];
-    return LayoutBuilder(builder: (context, constraints) {
-      final h = constraints.maxHeight;
-      return ClipRRect(
-          key: const ValueKey('edition-score-tab'),
-          borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(h * .4),
-              bottomRight: Radius.circular(corner)),
-          child: ColoredBox(
-              color: const Color(0xD916122C),
-              child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: h * .45),
-                  child: Center(
-                      child: FittedBox(
-                          child: Text.rich(TextSpan(children: [
-                    TextSpan(
-                        text: text.substring(0, split),
-                        style: FloorPop.readout(17, color: Colors.white)
-                            .copyWith(fontFeatures: figures)),
-                    TextSpan(
-                        text: text.substring(split),
-                        style: FloorPop.readout(12, color: Colors.white70)
-                            .copyWith(fontFeatures: figures)),
-                  ])))))));
-    });
+    return _CarvedTab(
+        key: const ValueKey('edition-score-tab'),
+        left: false,
+        corner: corner,
+        child: Text.rich(TextSpan(children: [
+          TextSpan(
+              text: text.substring(0, split),
+              style: FloorPop.readout(17, color: Colors.white)
+                  .copyWith(fontFeatures: figures)),
+          TextSpan(
+              text: text.substring(split),
+              style: FloorPop.readout(12, color: Colors.white70)
+                  .copyWith(fontFeatures: figures)),
+        ])));
   }
 }
