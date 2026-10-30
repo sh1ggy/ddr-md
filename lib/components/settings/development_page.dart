@@ -19,12 +19,12 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Always reachable in debug and profile builds; absent from release UI.
-const developmentToolsEnabled = !kReleaseMode;
+/// Reachable in every build for now, release included, so the session wrap
+/// can be tried on a phone; back to `!kReleaseMode` before it ships.
+const developmentToolsEnabled = true;
 
 class DevelopmentToolsTile extends StatelessWidget {
   const DevelopmentToolsTile({super.key});
