@@ -70,21 +70,61 @@ const double _zoom = 0.6;
 /// Seconds shown before a moment's first row and held after its last.
 const double _leadIn = 1.0, _tail = 0.6;
 
-/// One divisive pattern's moment (picked by tool/mine_parity_quiz.dart), with
-/// its chart and the active style's solve of it.
-class _Moment {
-  final String pattern, song, difficulty;
+/// A stretch of a real chart looped on a card, with the active style's solve
+/// of it: a divisive pattern here (picked by tool/mine_parity_quiz.dart), a
+/// chart category on [ChartCategoriesPage].
+class ChartMoment {
+  final String title, song, difficulty;
   final double from, key, to;
   final List<StepNote> notes;
+  final IconData? icon;
+
+  /// A line under the title saying what the moment shows.
+  final String? blurb;
   Map<StepNote, Foot> feet = const {};
   List<ParityStance> stances = const [];
   final ValueNotifier<double> playhead;
 
-  _Moment(this.pattern, this.song, this.difficulty, this.from, this.key,
-      this.to, this.notes)
+  ChartMoment(this.title, this.song, this.difficulty, this.from, this.key,
+      this.to, this.notes,
+      {this.icon, this.blurb})
       : playhead = ValueNotifier(from - _leadIn);
 
   double get loop => to - from + _leadIn + _tail;
+
+  /// Moves [playhead] to [elapsed] seconds into its loop.
+  void tick(double elapsed) => playhead.value = from - _leadIn + elapsed % loop;
+}
+
+/// Solves every moment's whole chart with the active style, off the UI thread.
+Future<void> solveMoments(List<ChartMoment> moments) async {
+  final solved = await compute(
+      _solveAll, ([for (final m in moments) m.notes], ParityProfile.active));
+  for (int i = 0; i < moments.length; i++) {
+    final (feet, stances) = solved[i];
+    final m = moments[i];
+    m.feet = {
+      for (int j = 0; j < m.notes.length; j++)
+        if (feet[j] case final f?)
+          m.notes[j]: f == ParityFoot.left ? Foot.left : Foot.right
+    };
+    m.stances = stances;
+  }
+}
+
+/// Opens [m]'s whole chart on the moment.
+Future<void> openMomentChart(BuildContext context, ChartMoment m) async {
+  final info = Songs.list.where((s) => s.name == m.song).firstOrNull;
+  if (info == null) return;
+  HapticFeedback.selectionClick();
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ChartPreviewPage.forChart(
+          info, Modes.singles, m.difficulty,
+          initialSecond: m.key),
+    ),
+  );
 }
 
 /// Each chart solved whole with [weights]; feet come back by note index since
@@ -110,14 +150,14 @@ class FootingStylePage extends StatefulWidget {
 
 class _FootingStylePageState extends State<FootingStylePage>
     with SingleTickerProviderStateMixin {
-  List<_Moment> _moments = const [];
+  List<ChartMoment> _moments = const [];
   FootingFit? _fit;
 
   // One ticker loops every moment at its own real tempo.
   late final Ticker _ticker = createTicker((elapsed) {
     final t = elapsed.inMicroseconds / 1e6;
     for (final m in _moments) {
-      m.playhead.value = m.from - _leadIn + t % m.loop;
+      m.tick(t);
     }
   });
 
@@ -135,14 +175,14 @@ class _FootingStylePageState extends State<FootingStylePage>
     final fit = await refitFromEdits();
     final picks = json.decode(
         await ContentStore.loadString('assets/parity_patterns.json')) as List;
-    final moments = <_Moment>[];
+    final moments = <ChartMoment>[];
     for (final p in picks) {
       final song = await StepsLoader.load(p['song'] as String);
       final notes =
           song?.chartFor(Modes.singles, p['difficulty'] as String)?.notes;
       if (notes == null) continue;
-      moments.add(_Moment(
-          p['pattern'] as String,
+      moments.add(ChartMoment(
+          _patternNames[p['pattern']] ?? p['pattern'] as String,
           p['song'] as String,
           p['difficulty'] as String,
           (p['from'] as num).toDouble(),
@@ -157,21 +197,8 @@ class _FootingStylePageState extends State<FootingStylePage>
   }
 
   Future<void> _solve() async {
-    final solved = await compute(
-        _solveAll, ([for (final m in _moments) m.notes], ParityProfile.active));
-    if (!mounted) return;
-    setState(() {
-      for (int i = 0; i < _moments.length; i++) {
-        final (feet, stances) = solved[i];
-        final m = _moments[i];
-        m.feet = {
-          for (int j = 0; j < m.notes.length; j++)
-            if (feet[j] case final f?)
-              m.notes[j]: f == ParityFoot.left ? Foot.left : Foot.right
-        };
-        m.stances = stances;
-      }
-    });
+    await solveMoments(_moments);
+    if (mounted) setState(() {});
   }
 
   @override
@@ -205,7 +232,7 @@ class _FootingStylePageState extends State<FootingStylePage>
                       ),
                       const SizedBox(height: 8),
                       for (final m in _moments)
-                        _MomentCard(m, onTap: () => _openChart(m)),
+                        MomentCard(m, onTap: () => _openChart(m)),
                       if (_fit case final fit?) _editsLine(fit),
                     ],
                   )),
@@ -214,18 +241,8 @@ class _FootingStylePageState extends State<FootingStylePage>
 
   // The moment's whole chart, opened on it to judge — and correct — the footing.
   // Coming back re-learns Yours from whatever was edited there.
-  Future<void> _openChart(_Moment m) async {
-    final info = Songs.list.where((s) => s.name == m.song).firstOrNull;
-    if (info == null) return;
-    HapticFeedback.selectionClick();
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChartPreviewPage.forChart(
-            info, Modes.singles, m.difficulty,
-            initialSecond: m.key),
-      ),
-    );
+  Future<void> _openChart(ChartMoment m) async {
+    await openMomentChart(context, m);
     final fit = await refitFromEdits();
     if (!mounted) return;
     _fit = fit;
@@ -247,10 +264,10 @@ class _FootingStylePageState extends State<FootingStylePage>
   }
 }
 
-class _MomentCard extends StatelessWidget {
-  const _MomentCard(this.m, {required this.onTap});
+class MomentCard extends StatelessWidget {
+  const MomentCard(this.m, {super.key, required this.onTap});
 
-  final _Moment m;
+  final ChartMoment m;
   final VoidCallback onTap;
 
   @override
@@ -264,9 +281,18 @@ class _MomentCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(_patternNames[m.pattern] ?? m.pattern,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700)),
+              Row(
+                children: [
+                  if (m.icon case final icon?) ...[
+                    Icon(icon, size: 18),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(m.title,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                ],
+              ),
+              if (m.blurb case final blurb?) Text(blurb),
               Text.rich(
                 TextSpan(children: [
                   TextSpan(text: '${m.song}  '),
@@ -310,7 +336,7 @@ class _MomentCard extends StatelessWidget {
 class _MomentChart extends StatelessWidget {
   const _MomentChart(this.m);
 
-  final _Moment m;
+  final ChartMoment m;
 
   @override
   Widget build(BuildContext context) {

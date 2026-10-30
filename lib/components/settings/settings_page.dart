@@ -4,6 +4,7 @@
 /// preferences, persisted with shared_preferences
 library;
 
+import 'package:ddr_md/components/settings/chart_categories_page.dart';
 import 'package:ddr_md/components/settings/development_page.dart';
 
 import 'package:ddr_md/components/settings/dancer_type_page.dart';
@@ -146,6 +147,20 @@ class _SettingsPageState extends State<SettingsPage> {
                                                 const FootingStylePage()));
                                     if (mounted) setState(() {});
                                   },
+                                ),
+                              ),
+                              Card(
+                                child: ListTile(
+                                  title: const Text("Chart Categories",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  subtitle: const Text(
+                                      "What each category looks like"),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const ChartCategoriesPage())),
                                 ),
                               ),
                             ],
