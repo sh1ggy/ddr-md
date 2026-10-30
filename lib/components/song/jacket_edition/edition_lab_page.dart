@@ -6,18 +6,19 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'package:ddr_md/components/song/difficulty_label.dart';
-import 'package:ddr_md/components/songlist/jacket_image.dart';
+import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart' show kFlareRanks, kInGameDifficultyNames;
 import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
-import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'edition_catalog.dart';
+import 'edition_artwork_picker.dart';
+import 'edition_viewer.dart';
 import 'edition_fixture_browser.dart';
 import 'edition_model.dart';
 import 'edition_rules.dart';
@@ -39,7 +40,7 @@ class _EditionLabPageState extends State<EditionLabPage> {
   String _difficulty = 'hard';
   int? _level = 16;
   String _border = 'gilded';
-  int _art = 0;
+  SongInfo? _song;
   PrecisionEvidence? _seededEvidence;
   bool _modeStamp = true;
   bool _motion = false,
@@ -64,7 +65,7 @@ class _EditionLabPageState extends State<EditionLabPage> {
       );
   EditionFacts _facts({PrecisionAward? precision}) => EditionFacts(
           chart: (
-            song: _art == 0 ? 'neutral' : Songs.list[_art - 1].name,
+            song: _song?.name ?? 'neutral',
             mode: _mode,
             difficulty: _difficulty
           ),
@@ -84,19 +85,43 @@ class _EditionLabPageState extends State<EditionLabPage> {
                       (precision ?? _precision) == PrecisionAward.sdp ? 9 : null
                 ));
 
-  Widget _artwork() => _art == 0
-      ? const DecoratedBox(
-          decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [
-          Color(0xFF354260),
-          Color(0xFFD7CDBA),
-          Color(0xFF22293D)
-        ], begin: Alignment.topLeft, end: Alignment.bottomRight)))
-      : SongArtwork(
-          songName: Songs.list[_art - 1].name,
-          title: Songs.list[_art - 1].title,
-          fullResolution: true,
-          fade: Duration.zero);
+  Widget _artwork() => editionArtwork(_song);
+
+  void _chooseSong(SongInfo? song) => setState(() {
+        _song = song;
+        if (song == null) return;
+        _version = flareGroup(song.version);
+        final levels =
+            (_mode == 'singles' ? song.singles : song.doubles).toJson();
+        if (levels[_difficulty] == null) {
+          _difficulty =
+              levels.entries.where((e) => e.value != null).lastOrNull?.key ??
+                  _difficulty;
+        }
+        _level = levels[_difficulty] as int?;
+      });
+
+  void _updateChartLevel() {
+    final song = _song;
+    if (song == null) return;
+    _level = (_mode == 'singles' ? song.singles : song.doubles)
+        .toJson()[_difficulty] as int?;
+  }
+
+  Future<void> _openViewer() => showEditionViewer(context,
+      facts: _facts(),
+      options: (
+        borderId: _border,
+        effects: true,
+        motion: true,
+        modeStamp: _modeStamp,
+        gradeStamp: _gradeStamp,
+        difficultyStamp: _difficultyStamp,
+        tierSuffix: _tierSuffix
+      ),
+      artwork: _artwork(),
+      heroTag: 'edition-lab-preview',
+      refreshScores: false);
 
   void _record(List<FrameTiming> frames) {
     // A bounded sample also protects the inspector if a device stalls.
@@ -226,11 +251,14 @@ class _EditionLabPageState extends State<EditionLabPage> {
       });
 
   Future<void> _browseSeeds() async {
-    final facts = await Navigator.of(context).push<EditionFacts>(
+    final selection = await Navigator.of(context).push<EditionFixtureSelection>(
         MaterialPageRoute(
-            builder: (_) => EditionFixtureBrowser(artwork: _artwork())));
-    if (!mounted || facts == null) return;
+            builder: (_) =>
+                EditionFixtureBrowser(song: _song, returnSelection: true)));
+    if (!mounted || selection == null) return;
+    final facts = selection.facts;
     setState(() {
+      _song = selection.song;
       _grade = facts.grade;
       _lamp = facts.lamp;
       _flare = facts.flare;
@@ -273,11 +301,19 @@ class _EditionLabPageState extends State<EditionLabPage> {
                           const BoxConstraints(maxWidth: editionMaxSide),
                       child: AspectRatio(
                           aspectRatio: 1,
-                          child: JacketEdition(
-                              facts: _facts(),
-                              options: _options,
-                              frozenLight: _motion ? null : Offset(_x, _y),
-                              child: _artwork())))),
+                          child: GestureDetector(
+                              key: const ValueKey('edition-lab-card'),
+                              onTap: _capturing ? null : _openViewer,
+                              child: Hero(
+                                  tag: 'edition-lab-preview',
+                                  createRectTween: (begin, end) =>
+                                      RectTween(begin: begin, end: end),
+                                  child: JacketEdition(
+                                      facts: _facts(),
+                                      options: _options,
+                                      frozenLight:
+                                          _motion ? null : Offset(_x, _y),
+                                      child: _artwork())))))),
               _toggle('Animate this preview', _motion, (v) => _motion = v),
               if (!_motion) ...[
                 const Text('Frozen light X / Y'),
@@ -304,12 +340,9 @@ class _EditionLabPageState extends State<EditionLabPage> {
                       label: Text(id),
                       onPressed: _capturing ? null : () => _fixture(id))
               ]),
-              _select(
-                  'Artwork',
-                  _art,
-                  List.generate(1 + Songs.list.take(3).length, (i) => i),
-                  (v) => _art = v,
-                  (v) => v == 0 ? 'Neutral test' : Songs.list[v - 1].title),
+              const Text('Tap the card to open the song-jacket viewer.'),
+              EditionArtworkPicker(
+                  song: _song, onChanged: _capturing ? null : _chooseSong),
               _select(
                   'Grade',
                   _grade?.name ?? '',
@@ -345,8 +378,10 @@ class _EditionLabPageState extends State<EditionLabPage> {
                   onChanged: _capturing
                       ? null
                       : (v) => setState(() => _level = v == 0 ? null : v)),
-              _select('Play style', _mode, ['singles', 'doubles'],
-                  (v) => _mode = v, (v) => v),
+              _select('Play style', _mode, ['singles', 'doubles'], (v) {
+                _mode = v;
+                _updateChartLevel();
+              }, (v) => v),
               DropdownButtonFormField<String>(
                   key: ValueKey('lab-difficulty:$_difficulty'),
                   initialValue: _difficulty,
@@ -360,7 +395,10 @@ class _EditionLabPageState extends State<EditionLabPage> {
                   ],
                   onChanged: _capturing
                       ? null
-                      : (v) => setState(() => _difficulty = v!)),
+                      : (v) => setState(() {
+                            _difficulty = v!;
+                            _updateChartLevel();
+                          })),
               _select(
                   'Lamp',
                   _lamp?.name ?? '',

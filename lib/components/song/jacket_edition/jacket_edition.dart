@@ -12,6 +12,7 @@ import 'edition_catalog.dart';
 import 'edition_rules.dart';
 import 'edition_motion.dart';
 import 'edition_painter.dart';
+import 'edition_stamp.dart';
 
 /// Opt in for device validation. Default stays plain until phone gates pass.
 const editionDevelopmentEnabled = bool.fromEnvironment('JACKET_EDITIONS');
@@ -201,69 +202,46 @@ class _JacketEditionState extends State<JacketEdition>
   }
 }
 
-class _StampStock extends StatelessWidget {
-  const _StampStock({super.key, required this.child});
-  final Widget child;
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-      decoration: BoxDecoration(
-          color: editionStampStock,
-          border: Border.all(color: editionStampEdge, width: .7),
-          borderRadius: BorderRadius.circular(3),
-          boxShadow: const [
-            BoxShadow(color: Color(0x26000000), offset: Offset(0, 1))
-          ]),
-      child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-          child: child));
-}
-
 class _AchievementStamps extends StatelessWidget {
   const _AchievementStamps({required this.recipe});
   final EditionRecipe recipe;
   @override
-  Widget build(BuildContext context) => _StampStock(
-      key: const ValueKey('edition-achievement-stamp'),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (recipe.gradeStamp case final grade?)
-          Image.asset(gradeIcon(grade),
-              height: 22,
-              errorBuilder: (_, __, ___) => Text(grade.label,
-                  style: const TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.w900))),
-        if (recipe.gradeStamp != null && recipe.flareStamp != null)
-          const SizedBox(width: 8),
-        if (recipe.flareStamp case final flare?)
-          Image.asset(flareRankIcon(flare),
-              height: 22,
-              errorBuilder: (_, __, ___) => Text(flare,
-                  style: const TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.w900))),
-      ]));
+  Widget build(BuildContext context) => Row(
+          key: const ValueKey('edition-achievement-stamp'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (recipe.gradeStamp case final grade?)
+              EditionStamp(
+                  asset: gradeIcon(grade), height: 22, label: grade.label),
+            if (recipe.gradeStamp != null && recipe.flareStamp != null)
+              const SizedBox(width: 8),
+            if (recipe.flareStamp case final flare?)
+              EditionStamp(
+                  asset: flareRankIcon(flare), height: 22, label: flare),
+          ]);
 }
 
 class _ChartStamps extends StatelessWidget {
   const _ChartStamps({required this.recipe});
   final EditionRecipe recipe;
   @override
-  Widget build(BuildContext context) => _StampStock(
-      key: const ValueKey('edition-chart-stamp'),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (recipe.modeStamp case final mode?) ...[
-          Image.asset(
-              'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
-              height: 13,
-              errorBuilder: (_, __, ___) => Text(
-                  mode == 'singles' ? 'SINGLE' : 'DOUBLE',
-                  style: const TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.w900))),
-          if (recipe.difficultyStamp != null) const SizedBox(width: 8),
-        ],
-        if (recipe.difficultyStamp case final difficulty?)
-          DifficultyLabel(
-              difficulty: difficulty,
-              level: recipe.levelStamp,
-              levelSuffix: recipe.tierSuffix,
-              height: 15),
-      ]));
+  Widget build(BuildContext context) => Row(
+          key: const ValueKey('edition-chart-stamp'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (recipe.modeStamp case final mode?) ...[
+              EditionStamp(
+                  asset:
+                      'assets/icons/style_${mode == 'singles' ? 'single' : 'double'}.png',
+                  height: 13,
+                  label: mode == 'singles' ? 'SINGLE' : 'DOUBLE'),
+              if (recipe.difficultyStamp != null) const SizedBox(width: 8),
+            ],
+            if (recipe.difficultyStamp case final difficulty?)
+              DifficultyLabel(
+                  difficulty: difficulty,
+                  level: recipe.levelStamp,
+                  levelSuffix: recipe.tierSuffix,
+                  height: 15),
+          ]);
 }

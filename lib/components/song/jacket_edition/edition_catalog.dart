@@ -65,7 +65,6 @@ const editionCuts = {
   EditionCut.fine: (lines: 48, angle: .78, cross: true),
 };
 
-// Small printed stock behind native marks. No animated shadow/blur pass.
-const editionStampStock = Color(0xE6FFFFFF);
-const editionStampEdge = Color(0x99FFFFFF);
+// Logical pixels around each icon's silhouette, rather than a label panel.
+const editionStampRim = 1.2;
 const editionTiltRadians = .14;

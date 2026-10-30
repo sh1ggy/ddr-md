@@ -187,7 +187,6 @@ class SongDetails extends StatelessWidget {
                       // Both Hero endpoints use the same decoded image. Avoid
                       // swapping a thumbnail for a fading full-size image in
                       // the middle of the flight, including a tap before load.
-                      final navigator = Navigator.of(context);
                       // Freeze identity before image/database awaits.
                       final mode = songState.modes;
                       final index = songState.chosenDifficulty;
@@ -231,63 +230,20 @@ class SongDetails extends StatelessWidget {
                                 kInGameDifficultyNames[key]!)
                             : null,
                       );
-                      // The jacket flies up to full size over a darkening page,
-                      // a beat long (instant under reduced motion).
-                      final still = MediaQuery.of(context).disableAnimations;
-                      navigator.push(PageRouteBuilder(
-                          transitionDuration:
-                              still ? Duration.zero : FloorPop.beat,
-                          reverseTransitionDuration:
-                              still ? Duration.zero : FloorPop.eighth,
-                          opaque: false,
-                          barrierColor: Colors.black87,
-                          barrierDismissible: true,
-                          transitionsBuilder: (_, animation, __, child) =>
-                              FadeTransition(opacity: animation, child: child),
-                          pageBuilder: (BuildContext context, _, __) {
-                            return GestureDetector(
-                              onTap: () => Navigator.pop(context),
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: ConstrainedBox(
-                                    constraints:
-                                        const BoxConstraints(maxWidth: 640),
-                                    child: AspectRatio(
-                                      aspectRatio: 1,
-                                      // Only the jacket participates in the
-                                      // flight, not its full-screen centring.
-                                      child: Hero(
-                                        tag: "imgZoom",
-                                        createRectTween: _jacketRectTween,
-                                        transitionOnUserGestures: true,
-                                        // Keep material setup out of the Hero flight.
-                                        flightShuttleBuilder:
-                                            (_, __, ___, ____, _____) =>
-                                                _zoomArtwork(songInfo),
-                                        child: EditionViewer(
-                                          facts: facts,
-                                          options: (
-                                            borderId: options.borderId,
-                                            effects:
-                                                editionDevelopmentEnabled &&
-                                                    options.effects,
-                                            motion: options.motion,
-                                            modeStamp: options.modeStamp,
-                                            gradeStamp: options.gradeStamp,
-                                            difficultyStamp:
-                                                options.difficultyStamp,
-                                            tierSuffix: options.tierSuffix
-                                          ),
-                                          child: _zoomArtwork(songInfo),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }));
+                      await showEditionViewer(context,
+                          facts: facts,
+                          options: (
+                            borderId: options.borderId,
+                            effects:
+                                editionDevelopmentEnabled && options.effects,
+                            motion: options.motion,
+                            modeStamp: options.modeStamp,
+                            gradeStamp: options.gradeStamp,
+                            difficultyStamp: options.difficultyStamp,
+                            tierSuffix: options.tierSuffix
+                          ),
+                          heroTag: 'imgZoom',
+                          artwork: _zoomArtwork(songInfo));
                     },
                   ),
                   const SizedBox(width: 14),

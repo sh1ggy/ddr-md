@@ -5,6 +5,7 @@ import 'package:ddr_md/components/songlist/generated_jacket.dart';
 import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_motion.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_stamp.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -313,9 +314,12 @@ void main() {
         .map((w) => w.image)
         .whereType<AssetImage>()
         .map((a) => a.assetName);
-    expect(names, contains('assets/icons/rank_aaa.png'));
-    expect(names, contains('assets/icons/style_double.png'));
-    expect(names, contains('assets/icons/flare_ex.png'));
+    final stamps = tester
+        .widgetList<EditionStamp>(find.byType(EditionStamp))
+        .map((w) => w.asset);
+    expect(stamps, contains('assets/icons/rank_aaa.png'));
+    expect(stamps, contains('assets/icons/style_double.png'));
+    expect(stamps, contains('assets/icons/flare_ex.png'));
     expect(find.text('.'), findsNothing);
     expect(names, contains('assets/difficulty/level_challenge_8.png'));
     final label = tester.widget<DifficultyLabel>(find.byType(DifficultyLabel));

@@ -67,6 +67,52 @@ class EditionFixtureSpace {
     return index;
   }
 
+  List<int> get showcaseIndices {
+    final specimens = <(Grade?, int)>[
+      (null, 0),
+      for (final grade in [
+        Grade.e,
+        Grade.d,
+        Grade.c,
+        Grade.b,
+        Grade.a,
+        Grade.aa,
+        Grade.aaPlus
+      ])
+        (
+          grade,
+          grade == Grade.e
+              ? results.indexWhere((r) => r.lamp == ClearLamp.failed)
+              : 0
+        ),
+      for (final perfects in [10, 1, 9])
+        (
+          Grade.aaa,
+          results.indexWhere((r) =>
+              r.play?.completionLamp == ClearLamp.pfc &&
+              r.play?.perfect == perfects)
+        ),
+      (
+        Grade.aaa,
+        results.indexWhere((r) => r.play?.completionLamp == ClearLamp.mfc)
+      ),
+    ];
+    final indices = <int>[];
+    for (var i = 0; i < specimens.length; i++) {
+      final (grade, result) = specimens[i];
+      indices.add(indexOf([
+        ranges.indexWhere((r) => r.grade == grade),
+        result,
+        i == specimens.length - 1 ? flares.indexOf('EX') : 0,
+        versions.indexOf(FlareGroup.gold),
+        levels.indexOf(17),
+        difficulties.indexOf('challenge'),
+        0
+      ]));
+    }
+    return indices;
+  }
+
   EditionFacts factsAt(int index) {
     final a = address(index), range = ranges[a[0]], result = results[a[1]];
     final gradePlay = loadedScores[range.play?.id] ?? range.play;
@@ -341,6 +387,14 @@ class EditionFixtureStore {
     final indices = [
       for (var i = start; i < space.count && i < start + size; i++) i
     ];
+    return _read(indices);
+  }
+
+  Future<List<({int index, EditionFacts facts, String label})>> showcase() =>
+      _read(space.showcaseIndices);
+
+  Future<List<({int index, EditionFacts facts, String label})>> _read(
+      List<int> indices) async {
     final batch = db.batch();
     for (final i in indices) {
       batch.rawQuery(

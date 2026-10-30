@@ -7,7 +7,6 @@ import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_lab_page.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_browser.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_store.dart';
-import 'package:ddr_md/components/songlist/generated_jacket.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -60,10 +59,7 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                         '${_fixtures.count} combinations • isolated test database'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const EditionFixtureBrowser(
-                            artwork: GeneratedJacket(
-                                songName: 'edition-dev-fixture',
-                                title: 'EDITION LAB')))))),
+                        builder: (_) => const EditionFixtureBrowser())))),
             const Padding(
                 padding: EdgeInsets.all(12),
                 child: Text(

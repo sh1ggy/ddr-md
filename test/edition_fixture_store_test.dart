@@ -27,6 +27,25 @@ void main() {
         expect(await sentinel.query('scores'), isEmpty);
         final first = await store.page(0);
         final last = await store.page(store.space.count - 1);
+        final showcase = await store.showcase();
+        expect(showcase.length, 12);
+        expect(
+            showcase.map((f) => f.facts.grade).toSet(),
+            containsAll([
+              null,
+              Grade.e,
+              Grade.d,
+              Grade.c,
+              Grade.b,
+              Grade.a,
+              Grade.aa,
+              Grade.aaa
+            ]));
+        expect(
+            showcase.map((f) => f.facts.precision?.award).toSet(),
+            containsAll(
+                [PrecisionAward.pfc, PrecisionAward.sdp, PrecisionAward.mfc]));
+        expect(showcase.last.facts.flare, 'EX');
         expect(first.length, 12);
         expect(last.length, 1);
         expect(first.first.facts.grade, isNull);

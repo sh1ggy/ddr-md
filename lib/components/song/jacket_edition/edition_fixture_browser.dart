@@ -4,26 +4,35 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:ddr_md/components/song_json.dart';
+import 'edition_artwork_picker.dart';
+import 'edition_viewer.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
 import 'edition_fixture_store.dart';
 import 'edition_model.dart';
 import 'jacket_edition.dart';
 
+typedef EditionFixtureSelection = ({EditionFacts facts, SongInfo? song});
+
 typedef _Fixture = ({int index, EditionFacts facts, String label});
 
 class EditionFixtureBrowser extends StatefulWidget {
-  const EditionFixtureBrowser({super.key, required this.artwork});
-  final Widget artwork;
+  const EditionFixtureBrowser(
+      {super.key, this.song, this.returnSelection = false});
+  final SongInfo? song;
+  final bool returnSelection;
   @override
   State<EditionFixtureBrowser> createState() => _EditionFixtureBrowserState();
 }
 
 class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
+  late SongInfo? _song = widget.song;
   EditionFixtureStore? _store;
   Future<List<_Fixture>>? _page;
   Object? _error;
   int _start = 0;
+  bool _showcase = true;
   bool _validating = false;
   String? _validation;
   final _jump = TextEditingController();
@@ -42,7 +51,7 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
       }
       setState(() {
         _store = store;
-        _page = store.page(0);
+        _page = store.showcase();
       });
     } catch (e) {
       if (mounted) setState(() => _error = e);
@@ -53,11 +62,25 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
     final store = _store!;
     final next = start.clamp(0, store.space.count - 1);
     setState(() {
+      _showcase = false;
       _start = next;
       _jump.text = '$next';
       _page = store.page(next);
     });
   }
+
+  EditionFacts _onJacket(EditionFacts facts) => EditionFacts(
+          chart: (
+            song: _song?.name ?? 'neutral',
+            mode: facts.chart.mode,
+            difficulty: facts.chart.difficulty
+          ),
+          level: facts.level,
+          version: facts.version,
+          grade: facts.grade,
+          lamp: facts.lamp,
+          flare: facts.flare,
+          precision: facts.precision);
 
   Future<void> _validate() async {
     setState(() => _validating = true);
@@ -156,9 +179,24 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
                         child: Column(children: [
                           Text(
                               '${store.space.count} combinations • ${store.space.ranges.length} score boundaries • ${store.space.results.length} result/evidence cases'),
-                          const Text(
-                              'Isolated lab database • 12 static cards per page • tap a card to tune it'),
+                          Text(widget.returnSelection
+                              ? 'Isolated lab database • tap a card to tune it'
+                              : 'Isolated lab database • tap a card for full-size view'),
+                          EditionArtworkPicker(
+                              song: _song,
+                              onChanged: (song) =>
+                                  setState(() => _song = song)),
                           _axes(store.space),
+                          TextButton(
+                              onPressed: _showcase
+                                  ? null
+                                  : () => setState(() {
+                                        _showcase = true;
+                                        _page = store.showcase();
+                                      }),
+                              child: Text(_showcase
+                                  ? 'Score showcase'
+                                  : 'Show score showcase')),
                           Row(children: [
                             IconButton(
                                 tooltip: 'Previous page',
@@ -222,14 +260,30 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
                                   itemBuilder: (context, i) {
                                     final fixture = fixtures[i];
                                     return InkWell(
-                                        onTap: () => Navigator.of(context)
-                                            .pop(fixture.facts),
+                                        onTap: () {
+                                          final facts =
+                                              _onJacket(fixture.facts);
+                                          if (widget.returnSelection) {
+                                            Navigator.of(context)
+                                                .pop<EditionFixtureSelection>((
+                                              facts: facts,
+                                              song: _song
+                                            ));
+                                          } else {
+                                            showEditionViewer(context,
+                                                facts: facts,
+                                                options: defaultEditionOptions,
+                                                artwork: editionArtwork(_song),
+                                                refreshScores: false);
+                                          }
+                                        },
                                         child: Column(children: [
                                           Expanded(
                                               child: AspectRatio(
                                                   aspectRatio: 1,
                                                   child: JacketEdition(
-                                                      facts: fixture.facts,
+                                                      facts: _onJacket(
+                                                          fixture.facts),
                                                       options: (
                                                         borderId: 'gilded',
                                                         effects: true,
@@ -241,7 +295,8 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
                                                       ),
                                                       frozenLight:
                                                           const Offset(.35, .3),
-                                                      child: widget.artwork))),
+                                                      child: editionArtwork(
+                                                          _song)))),
                                           Text(
                                               '#${fixture.index} • ${fixture.label}',
                                               maxLines: 3,
