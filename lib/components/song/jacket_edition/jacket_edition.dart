@@ -37,11 +37,14 @@ class JacketEdition extends StatefulWidget {
       required this.facts,
       required this.child,
       this.options = defaultEditionOptions,
-      this.frozenLight});
+      this.frozenLight,
+      this.layers = editionAllLayers});
   final EditionFacts facts;
   final Widget child;
   final EditionOptions options;
   final Offset? frozenLight;
+  // Which of the card's layers to draw; the guide pulls them apart.
+  final Set<EditionLayer> layers;
   @override
   State<JacketEdition> createState() => _JacketEditionState();
 }
@@ -155,35 +158,41 @@ class _JacketEditionState extends State<JacketEdition>
                       fit: StackFit.expand,
                       clipBehavior: Clip.none,
                       children: [
-                    RepaintBoundary(
-                        child: CustomPaint(
-                            painter: EditionStaticPainter(staticGeometry))),
-                    Padding(
-                        padding: EdgeInsets.all(geometry.width),
-                        child: ClipRRect(
-                            borderRadius:
-                                BorderRadius.circular(geometry.inner.tlRadiusX),
-                            child: RepaintBoundary(
-                                key: const ValueKey('edition-art'),
-                                child: _recipe.negative
-                                    ? ColorFiltered(
-                                        colorFilter: editionNegative,
-                                        child: widget.child)
-                                    : widget.child))),
-                    IgnorePointer(
-                        child: RepaintBoundary(
-                            child: CustomPaint(
-                                painter: EditionStaticPainter(staticGeometry,
-                                    foreground: true)))),
+                    if (widget.layers.contains(EditionLayer.frame))
+                      RepaintBoundary(
+                          child: CustomPaint(
+                              painter: EditionStaticPainter(staticGeometry,
+                                  ring: !widget.layers
+                                      .contains(EditionLayer.art)))),
+                    if (widget.layers.contains(EditionLayer.art))
+                      Padding(
+                          padding: EdgeInsets.all(geometry.width),
+                          child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                  geometry.inner.tlRadiusX),
+                              child: RepaintBoundary(
+                                  key: const ValueKey('edition-art'),
+                                  child: _recipe.negative
+                                      ? ColorFiltered(
+                                          colorFilter: editionNegative,
+                                          child: widget.child)
+                                      : widget.child))),
+                    if (widget.layers.contains(EditionLayer.finish))
+                      IgnorePointer(
+                          child: RepaintBoundary(
+                              child: CustomPaint(
+                                  painter: EditionStaticPainter(staticGeometry,
+                                      foreground: true)))),
                     // Only this sibling listens to light. The decoded image and both
                     // display lists retain separate layers throughout a sweep.
                     IgnorePointer(
                         child: RepaintBoundary(
                             child: CustomPaint(
                                 painter: EditionLightPainter(
-                                    staticGeometry, _motion),
+                                    staticGeometry, _motion,
+                                    layers: widget.layers),
                                 foregroundPainter: EditionFlarePainter(
-                                    staticGeometry, _motion)))),
+                                    staticGeometry, _motion, widget.layers)))),
                     if (_recipe.gradeStamp != null ||
                         _recipe.flareStamp != null)
                       Positioned(

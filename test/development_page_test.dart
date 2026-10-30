@@ -71,7 +71,7 @@ void main() {
     await tester.tap(find.text('Development'));
     await tester.pumpAndSettle();
     expect(find.text('Seeded score combinations'), findsOneWidget);
-    await tester.tap(find.text('Jacket edition lab'));
+    await tester.tap(find.text('Frame timing lab'));
     await tester.pumpAndSettle();
     expect(find.byType(EditionLabPage), findsOneWidget);
     await tester.pageBack();

@@ -146,7 +146,9 @@ class _ViewerPageState extends State<_ViewerPage> {
                         builder: (context) => FractionallySizedBox(
                             heightFactor: .9,
                             child: EditionGuidePage(
-                                artwork: artwork, sheet: true)))),
+                                artwork: artwork,
+                                facts: widget.facts,
+                                sheet: true)))),
               ]))),
     ]);
   }

@@ -30,6 +30,13 @@ enum EditionCut {
 
 enum EditionBorder { gilded, engraved, bevel }
 
+/// A card's layers, back to front, each earned separately: the art (and
+/// what's done to it: negative, EX's polychrome), the grade's finish over
+/// it, the lamp's frame round it and the flare's aura beyond.
+enum EditionLayer { art, finish, frame, aura }
+
+const editionAllLayers = {...EditionLayer.values};
+
 typedef EditionChartKey = ({String song, String mode, String difficulty});
 typedef EditionOptions = ({
   String borderId,

@@ -225,28 +225,72 @@ class EditionGeometry {
 }
 
 class EditionStaticPainter extends CustomPainter {
-  EditionStaticPainter(this.geometry, {this.foreground = false});
+  EditionStaticPainter(this.geometry,
+      {this.foreground = false, this.ring = false});
   final EditionGeometry geometry;
   final bool foreground;
+  // The frame alone, without the art over its middle: only its ring.
+  final bool ring;
   @override
-  void paint(Canvas canvas, Size size) =>
-      canvas.drawPicture(foreground ? geometry.motif : geometry.frame);
+  void paint(Canvas canvas, Size size) {
+    if (ring) {
+      canvas.save();
+      canvas.clipPath(Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRRect(geometry.outer)
+        ..addRRect(geometry.inner));
+    }
+    canvas.drawPicture(foreground ? geometry.motif : geometry.frame);
+    if (ring) canvas.restore();
+  }
+
   @override
   bool shouldRepaint(EditionStaticPainter old) =>
-      old.geometry != geometry || old.foreground != foreground;
+      old.geometry != geometry ||
+      old.foreground != foreground ||
+      old.ring != ring;
 }
 
 class EditionLightPainter extends CustomPainter {
-  EditionLightPainter(this.geometry, this.motion) : super(repaint: motion);
+  EditionLightPainter(this.geometry, this.motion,
+      {this.layers = editionAllLayers})
+      : super(repaint: motion);
   final EditionGeometry geometry;
   final EditionMotion motion;
+  final Set<EditionLayer> layers;
   final Paint _paint = Paint();
   @override
   void paint(Canvas canvas, Size size) {
     final recipe = geometry.recipe;
-    final side = size.shortestSide;
     final at =
         Offset(motion.light.dx * size.width, motion.light.dy * size.height);
+    final rect = geometry.outer.outerRect;
+    if (layers.contains(EditionLayer.finish)) _finish(canvas, size, at);
+    if (layers.contains(EditionLayer.frame) &&
+        recipe.frame == EditionFrame.starlight) {
+      // A glint running round the rainbow frame.
+      _paint
+        ..color = Colors.white
+        ..shader = SweepGradient(colors: const [
+          Color(0x00FFFFFF),
+          Color(0xB3FFFFFF),
+          Color(0x00FFFFFF),
+          Color(0x00FFFFFF)
+        ], stops: const [
+          0,
+          .06,
+          .12,
+          1
+        ], transform: GradientRotation(motion.time * 1.6))
+            .createShader(rect);
+      canvas.drawDRRect(geometry.outer, geometry.inner, _paint);
+      _paint.shader = null;
+    }
+  }
+
+  void _finish(Canvas canvas, Size size, Offset at) {
+    final recipe = geometry.recipe;
+    final side = size.shortestSide;
     final rect = geometry.outer.outerRect;
     canvas.save();
     canvas.clipRRect(geometry.outer);
@@ -301,25 +345,6 @@ class EditionLightPainter extends CustomPainter {
       canvas.drawLine(p - Offset(0, d), p + Offset(0, d), _paint);
     }
     canvas.restore();
-    if (recipe.frame == EditionFrame.starlight) {
-      // A glint running round the rainbow frame.
-      _paint
-        ..color = Colors.white
-        ..shader = SweepGradient(colors: const [
-          Color(0x00FFFFFF),
-          Color(0xB3FFFFFF),
-          Color(0x00FFFFFF),
-          Color(0x00FFFFFF)
-        ], stops: const [
-          0,
-          .06,
-          .12,
-          1
-        ], transform: GradientRotation(motion.time * 1.6))
-            .createShader(rect);
-      canvas.drawDRRect(geometry.outer, geometry.inner, _paint);
-      _paint.shader = null;
-    }
   }
 
   @override
@@ -340,9 +365,13 @@ typedef EditionSpark = ({
 /// round the frame, VII–IX stars twinkle and EX's stars and halo are rainbow.
 /// Unblurred; without [motion] it holds its first frame.
 class EditionFlarePainter extends CustomPainter {
-  EditionFlarePainter(this.geometry, [this.motion]) : super(repaint: motion);
+  EditionFlarePainter(this.geometry,
+      [this.motion, this.layers = editionAllLayers])
+      : super(repaint: motion);
   final EditionGeometry geometry;
   final EditionMotion? motion;
+  // EX's polychrome belongs to the art; the halo and particles to the aura.
+  final Set<EditionLayer> layers;
   final Paint _paint = Paint();
 
   static final _star = () {
@@ -388,7 +417,7 @@ class EditionFlarePainter extends CustomPainter {
     // border; only the particles carry a hint of the rank's colour.
     final bright = Color.lerp(color, Colors.white, .6)!;
 
-    if (recipe.ex) {
+    if (recipe.ex && layers.contains(EditionLayer.art)) {
       // Polychrome: the art's own light and shade, recoloured by bands of
       // rainbow that drift with time and the light.
       final light = motion?.light ?? const Offset(.35, .3);
@@ -414,6 +443,7 @@ class EditionFlarePainter extends CustomPainter {
       canvas.restore();
     }
 
+    if (!layers.contains(EditionLayer.aura)) return;
     _paint
       ..style = PaintingStyle.stroke
       ..strokeWidth = side * editionHaloWidth;

@@ -46,15 +46,6 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
           children: [
             Card(
                 child: ListTile(
-                    leading: const Icon(Icons.style_outlined),
-                    title: const Text('Jacket edition lab'),
-                    subtitle: const Text(
-                        'Real jackets, material controls, native stamps and frame timings'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const EditionLabPage())))),
-            Card(
-                child: ListTile(
                     leading: const Icon(Icons.collections_bookmark_outlined),
                     title: const Text('Binder'),
                     subtitle: const Text('Your cards, filed by level'),
@@ -63,9 +54,10 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                         builder: (_) => const EditionBinderPage())))),
             Card(
                 child: ListTile(
-                    leading: const Icon(Icons.info_outline),
-                    title: const Text('How cards work'),
-                    subtitle: const Text('What earns each layer of a card'),
+                    leading: const Icon(Icons.layers_outlined),
+                    title: const Text('Card lab'),
+                    subtitle: const Text(
+                        'Each layer of a card and what earns it; try any result'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const EditionGuidePage())))),
@@ -78,6 +70,15 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const EditionFixtureBrowser())))),
+            Card(
+                child: ListTile(
+                    leading: const Icon(Icons.speed_outlined),
+                    title: const Text('Frame timing lab'),
+                    subtitle:
+                        const Text('Measure the card renderer\'s frame times'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const EditionLabPage())))),
             const Padding(
                 padding: EdgeInsets.all(12),
                 child: Text(

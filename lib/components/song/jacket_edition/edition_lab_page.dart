@@ -294,7 +294,7 @@ class _EditionLabPageState extends State<EditionLabPage> {
       'timings': _report
     });
     return Scaffold(
-        appBar: AppBar(title: const Text('Jacket edition lab'), actions: [
+        appBar: AppBar(title: const Text('Frame timing lab'), actions: [
           IconButton(
               tooltip: 'How cards work',
               icon: const Icon(Icons.info_outline),
