@@ -77,6 +77,7 @@ EditionRecipe resolveEdition(EditionFacts facts,
         ? facts.chart.mode
         : null,
     gradeStamp: options.gradeStamp ? facts.grade : null,
+    scoreStamp: options.gradeStamp ? facts.score : null,
     flareStamp: options.gradeStamp && flare >= 0 ? facts.flare : null,
     difficultyStamp: options.difficultyStamp ? difficulty : null,
     levelStamp: options.difficultyStamp && tier != null ? facts.level : null,

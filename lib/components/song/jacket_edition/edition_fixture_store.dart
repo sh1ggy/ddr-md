@@ -131,6 +131,7 @@ class EditionFixtureSpace {
                 ? null
                 : gradeForScore(gradePlay!.score!),
         flare: flares[a[2]],
+        score: range.grade == Grade.e ? null : gradePlay?.score,
         lamp: result.lamp,
         precision:
             precisionPlay == null ? null : precisionForPlay(precisionPlay));

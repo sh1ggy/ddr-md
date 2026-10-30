@@ -76,13 +76,21 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
         if (recipe.modeStamp != null || recipe.difficultyStamp != null)
           Positioned(
               left: geometry.width + 3,
-              right: geometry.width + 3,
+              right: geometry.width + size.width * editionScoreTabWidth,
               bottom: geometry.width + 3,
               child: IgnorePointer(
                   child: FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.bottomLeft,
                       child: EditionChartStamps(recipe: recipe)))),
+        if (recipe.scoreStamp case final score?)
+          Positioned(
+              right: geometry.width,
+              bottom: geometry.width,
+              height: size.height * editionScoreTabHeight * 1.4,
+              child: IgnorePointer(
+                  child: EditionScoreTab(
+                      score: score, corner: geometry.inner.brRadiusX))),
       ]));
     });
   }

@@ -252,6 +252,7 @@ class SongDetails extends StatelessWidget {
                                     ? ChartBests.precisionAt(songInfo.name,
                                         mode, kInGameDifficultyNames[key]!)
                                     : null,
+                                score: best?.score,
                                 levelTop: loaded &&
                                     key != null &&
                                     ChartBests.levelTop(songInfo.name, mode,
@@ -271,6 +272,10 @@ class SongDetails extends StatelessWidget {
                                   ),
                                   heroTag: 'imgZoom',
                                   artwork: _zoomArtwork(songInfo));
+                              // The viewer can turn card effects on or off.
+                              if (context.mounted) {
+                                (context as Element).markNeedsBuild();
+                              }
                             },
                           ),
                           const SizedBox(width: 14),

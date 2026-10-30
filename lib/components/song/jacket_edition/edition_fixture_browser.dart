@@ -80,6 +80,8 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
           grade: facts.grade,
           lamp: facts.lamp,
           flare: facts.flare,
+          score: facts.score,
+          levelTop: facts.levelTop,
           precision: facts.precision);
 
   Future<void> _validate() async {

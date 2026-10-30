@@ -59,6 +59,7 @@ class EditionFacts {
       this.flare,
       this.lamp,
       this.precision,
+      this.score,
       this.levelTop = false});
   final EditionChartKey chart;
   final int? level;
@@ -67,6 +68,7 @@ class EditionFacts {
   final String? flare;
   final ClearLamp? lamp;
   final PrecisionEvidence? precision;
+  final int? score;
   // The player's highest score of this chart's level.
   final bool levelTop;
 }
@@ -90,6 +92,7 @@ typedef EditionRecipe = ({
   bool effects,
   bool motion,
   Grade? gradeStamp,
+  int? scoreStamp,
   String? flareStamp,
   String? modeStamp,
   String? difficultyStamp,
@@ -121,6 +124,7 @@ extension EditionRecipeDetails on EditionRecipe {
         'effects': effects,
         'motion': motion,
         'gradeStamp': gradeStamp?.label,
+        'scoreStamp': scoreStamp,
         'flareStamp': flareStamp,
         'modeStamp': modeStamp,
         'difficultyStamp': difficultyStamp,

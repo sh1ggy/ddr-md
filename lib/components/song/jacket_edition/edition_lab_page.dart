@@ -77,6 +77,11 @@ class _EditionLabPageState extends State<EditionLabPage> {
           flare: _flare,
           version: _version,
           levelTop: _levelTop,
+          score: _grade == null
+              ? null
+              : _grade == Grade.aaa
+                  ? 999620
+                  : _grade!.minScore + 12340,
           precision: _seededEvidence != null &&
                   precision == null &&
                   _seededEvidence!.award == _precision
