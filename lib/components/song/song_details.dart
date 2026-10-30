@@ -5,6 +5,9 @@ library;
 
 import 'dart:ui' show ImageFilter;
 
+import 'package:ddr_md/components/song/jacket_edition.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_viewer.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_radar.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -12,12 +15,21 @@ import 'package:ddr_md/constants.dart' show canonicalVersion;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames, versionColor;
 import 'package:ddr_md/components/songlist/jacket_image.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/score_overview.dart' show flareGroup;
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+Widget _zoomArtwork(SongInfo song, {double radius = 22}) => ClipRRect(
+    borderRadius: BorderRadius.circular(radius),
+    child: SongArtwork(
+        songName: song.name,
+        title: song.title,
+        fullResolution: true,
+        fade: Duration.zero));
 
 // Interpolating square bounds directly keeps the art square on every frame;
 // the default Material corner arcs can temporarily stretch it in flight.
@@ -159,16 +171,8 @@ class SongDetails extends StatelessWidget {
                                 offset: const Offset(0, 12)),
                           ],
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(22),
-                          child: SizedBox.square(
-                              dimension: 96,
-                              child: SongArtwork(
-                                  songName: songInfo.name,
-                                  title: songInfo.title,
-                                  fullResolution: true,
-                                  fade: Duration.zero)),
-                        ),
+                        child: SizedBox.square(
+                            dimension: 96, child: _zoomArtwork(songInfo)),
                       ),
                     ),
                     // Zooming image onTap
@@ -176,60 +180,81 @@ class SongDetails extends StatelessWidget {
                       // Both Hero endpoints use the same decoded image. Avoid
                       // swapping a thumbnail for a fading full-size image in
                       // the middle of the flight, including a tap before load.
-                      final navigator = Navigator.of(context);
-                      await precacheImage(
-                          ContentStore.image(
-                              'assets/jackets/${songInfo.name}.png'),
-                          context,
-                          onError: (_, __) {});
+                      // Freeze identity before image/database awaits.
+                      final mode = songState.modes;
+                      final index = songState.chosenDifficulty;
+                      final levels = mode == Modes.singles
+                          ? songInfo.singles
+                          : songInfo.doubles;
+                      final key = _chosenDifficultyKey(levels, index);
+                      final level = levels.toJson()[key] as int?;
+                      final options = editionPreferences();
+                      final (_, loaded) = await (
+                        precacheImage(
+                            ContentStore.image(
+                                'assets/jackets/${songInfo.name}.png'),
+                            context,
+                            onError: (_, __) {}),
+                        // Without bests the jacket still opens, plain.
+                        editionDevelopmentEnabled && options.effects
+                            ? ChartBests.ensure(mode)
+                                .then((_) => true, onError: (_) => false)
+                            : Future.value(false),
+                      ).wait;
                       if (!context.mounted) return;
-                      // The jacket flies up to full size over a darkening page,
-                      // a beat long (instant under reduced motion).
-                      final still = MediaQuery.of(context).disableAnimations;
-                      navigator.push(PageRouteBuilder(
-                          transitionDuration:
-                              still ? Duration.zero : FloorPop.beat,
-                          reverseTransitionDuration:
-                              still ? Duration.zero : FloorPop.eighth,
-                          opaque: false,
-                          barrierColor: Colors.black87,
-                          barrierDismissible: true,
-                          transitionsBuilder: (_, animation, __, child) =>
-                              FadeTransition(opacity: animation, child: child),
-                          pageBuilder: (BuildContext context, _, __) {
-                            return GestureDetector(
-                              onTap: () => Navigator.pop(context),
-                              child: Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: ConstrainedBox(
-                                    constraints:
-                                        const BoxConstraints(maxWidth: 640),
-                                    child: AspectRatio(
-                                      aspectRatio: 1,
-                                      // Only the jacket participates in the
-                                      // flight, not its full-screen centring.
-                                      child: Hero(
-                                        tag: "imgZoom",
-                                        createRectTween: _jacketRectTween,
-                                        transitionOnUserGestures: true,
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(22),
-                                          child: SongArtwork(
-                                            songName: songInfo.name,
-                                            title: songInfo.title,
-                                            fullResolution: true,
-                                            fade: Duration.zero,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }));
+                      // The card's finish comes from the chart picked below.
+                      final best = loaded && key != null
+                          ? ChartBests.forChart(
+                              songInfo.name, mode, kInGameDifficultyNames[key]!)
+                          : null;
+                      final facts = EditionFacts(
+                        chart: (
+                          song: songInfo.name,
+                          mode: mode.name,
+                          difficulty: key ?? ''
+                        ),
+                        level: level,
+                        version: flareGroup(songInfo.version),
+                        grade: best?.grade,
+                        flare: best?.flare,
+                        lamp: best?.lamp,
+                        precision: loaded && key != null
+                            ? ChartBests.precisionAt(songInfo.name, mode,
+                                kInGameDifficultyNames[key]!)
+                            : null,
+                        score: best?.score,
+                        levelTop: loaded &&
+                            key != null &&
+                            ChartBests.levelTop(songInfo.name, mode,
+                                kInGameDifficultyNames[key]!),
+                      );
+                      await showEditionViewer(context,
+                          facts: facts,
+                          options: (
+                            borderId: options.borderId,
+                            effects:
+                                editionDevelopmentEnabled && options.effects,
+                            motion: options.motion,
+                            // The score card carries the chart's badges;
+                            // the card is its finish alone.
+                            modeStamp: false,
+                            gradeStamp: false,
+                            difficultyStamp: false,
+                            tierSuffix: false
+                          ),
+                          heroTag: 'imgZoom',
+                          artwork: _zoomArtwork(songInfo),
+                          // To this chart's pocket.
+                          onBinder: key == null
+                              ? null
+                              : () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                      builder: (_) => EditionBinderPage(
+                                          mode: mode,
+                                          level: level,
+                                          song: songInfo.name,
+                                          difficulty:
+                                              kInGameDifficultyNames[key]))));
                     },
                   ),
                   const SizedBox(width: 14),

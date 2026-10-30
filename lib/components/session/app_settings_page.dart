@@ -7,6 +7,7 @@ library;
 
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/settings/credits_page.dart';
+import 'package:ddr_md/components/settings/development_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
@@ -53,6 +54,7 @@ class AppSettingsPage extends StatelessWidget {
                     padding: clearOfBars(
                         context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
                     children: [
+                      if (developmentToolsEnabled) const DevelopmentToolsTile(),
                       const Card(child: _ContentTile()),
                       const Card(child: _CloudTile()),
                       const Card(child: _SyncDoublesTile()),

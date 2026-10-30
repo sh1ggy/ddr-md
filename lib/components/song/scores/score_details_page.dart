@@ -7,6 +7,8 @@
 /// place. List pages refresh when this route pops.
 library;
 
+import 'package:ddr_md/components/song/scores/completion_lamp_field.dart';
+
 import 'dart:io';
 
 import 'package:ddr_md/components/ocr/load_image.dart'
@@ -48,6 +50,7 @@ class ScoreDetailsPage extends StatefulWidget {
 class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
   late Score _score = widget.score;
   bool _editing = false;
+  ClearLamp? _editCompletionLamp;
   late final Future<File?> _imageFile = ScoreImages.resolve(_score.imagePath);
   final Map<String, TextEditingController> _controllers = {};
   // Working play date while editing; only load-image scores can change it.
@@ -89,6 +92,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
           _fieldText(key);
     }
     _editPlayedAt = DateTime.parse(_score.playedAt);
+    _editCompletionLamp = _score.completionLamp;
     setState(() => _editing = true);
   }
 
@@ -136,6 +140,7 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
       miss: _number('miss'),
       maxCombo: _number('maxCombo'),
       imagePath: _score.imagePath,
+      completionLamp: _editCompletionLamp,
     );
     await DatabaseProvider.updateScore(updated);
     if (!mounted) return;
@@ -268,6 +273,10 @@ class _ScoreDetailsPageState extends State<ScoreDetailsPage> {
                                 keyName: key,
                                 controller: _controllers[key]!,
                               ),
+                          CompletionLampField(
+                              value: _editCompletionLamp,
+                              onChanged: (v) =>
+                                  setState(() => _editCompletionLamp = v)),
                           if (_dateEditable) _buildEditDateRow(),
                         ],
                       ),

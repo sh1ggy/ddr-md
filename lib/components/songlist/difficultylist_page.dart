@@ -16,6 +16,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/settings/score_overview_page.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
 import 'package:ddr_md/components/songlist/best_rings.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
 import 'package:ddr_md/components/songlist/filter_tray.dart';
@@ -591,11 +592,19 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
               onTap: (level) => _toggleLevel(level, songState),
               spare: bests == null
                   ? null
-                  // The stats open on the hardest level picked.
+                  // The stats and the binder open on the hardest level
+                  // picked.
                   : BestRings(bests,
                       onStats: () => Navigator.of(context).push(
                           MaterialPageRoute(
                               builder: (_) => ScoreOverviewPage(
+                                  mode: songState.modes,
+                                  level: _filter.levels.isEmpty
+                                      ? null
+                                      : _filter.levels.reduce(max)))),
+                      onBinder: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => EditionBinderPage(
                                   mode: songState.modes,
                                   level: _filter.levels.isEmpty
                                       ? null

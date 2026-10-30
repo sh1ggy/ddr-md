@@ -5,10 +5,30 @@ import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:path/path.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier, visibleForTesting;
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 class DatabaseProvider {
+  // One invalidation path for local writes and sync imports. Derived bests
+  // reload lazily; a card never reads scores during rendering.
+  static final achievementsRevision = ValueNotifier(0);
+  static void invalidateAchievements() => achievementsRevision.value++;
+
+  @visibleForTesting
+  static Future<T> withTestDatabase<T>(
+      Database database, Future<T> Function() body) async {
+    final previous = _database;
+    _database = database;
+    invalidateAchievements();
+    try {
+      return await body();
+    } finally {
+      _database = previous;
+      invalidateAchievements();
+    }
+  }
+
   static Future<Database> get _instance async =>
       _database ??= await getDatabaseInstance();
   static Database? _database;
@@ -24,7 +44,7 @@ class DatabaseProvider {
   // `createdAt`) used only for display and sorting. `favorites` keeps its
   // integer key and its natural (songTitle, mode) uniqueness.
   static const String _scoresDdl =
-      'CREATE TABLE IF NOT EXISTS scores(id TEXT PRIMARY KEY, playedAt TEXT NOT NULL, source TEXT NOT NULL DEFAULT \'camera\', songTitle TEXT, mode TEXT NOT NULL, difficulty TEXT, username TEXT, flare TEXT, score INT, exScore INT, marvelous INT, perfect INT, great INT, good INT, miss INT, maxCombo INT, imagePath TEXT NOT NULL DEFAULT \'\')';
+      'CREATE TABLE IF NOT EXISTS scores(id TEXT PRIMARY KEY, playedAt TEXT NOT NULL, source TEXT NOT NULL DEFAULT \'camera\', songTitle TEXT, mode TEXT NOT NULL, difficulty TEXT, username TEXT, flare TEXT, score INT, exScore INT, marvelous INT, perfect INT, great INT, good INT, miss INT, maxCombo INT, completionLamp TEXT, imagePath TEXT NOT NULL DEFAULT \'\')';
   static const String _notesDdl =
       'CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, createdAt TEXT NOT NULL, contents TEXT, songTitle TEXT, mode TEXT NOT NULL)';
   static const String _favoritesDdl =
@@ -134,7 +154,7 @@ class DatabaseProvider {
       open(join(await getDatabasesPath(), _dbName));
 
   static Future<Database> open(String path) {
-    return openDatabase(path, version: 16, onCreate: (db, version) async {
+    return openDatabase(path, version: 17, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -162,6 +182,12 @@ class DatabaseProvider {
       if (oldVersion >= 6 && oldVersion < 14) await _addRecentPlayFailed(db);
       if (oldVersion < 15) await installSync(db);
       if (oldVersion >= 6 && oldVersion < 16) await _addRecentPlayOrder(db);
+      if (oldVersion >= 6 && oldVersion < 17) {
+        final columns = await db.rawQuery('PRAGMA table_info(scores)');
+        if (!columns.any((c) => c['name'] == 'completionLamp')) {
+          await db.execute('ALTER TABLE scores ADD COLUMN completionLamp TEXT');
+        }
+      }
     });
   }
 
@@ -199,8 +225,8 @@ class DatabaseProvider {
         .isNotEmpty) {
       uid += '#${const Uuid().v4()}';
     }
-    final id = await db.insert(
-        "cabinets", {'venueId': venue.id, 'name': name, 'uid': uid});
+    final id = await db
+        .insert("cabinets", {'venueId': venue.id, 'name': name, 'uid': uid});
     return Cabinet(id, venue.id, venue.name, name);
   }
 
@@ -435,6 +461,7 @@ class DatabaseProvider {
       }
       await batch.commit(noResult: true);
     });
+    invalidateAchievements();
   }
 
   // Every source's records for one song and mode.
@@ -474,6 +501,7 @@ class DatabaseProvider {
     final db = await _instance;
     await db
         .delete("score_records", where: "source = ?", whereArgs: [source.name]);
+    invalidateAchievements();
   }
 
   // Points every e-amusement score and recent play at [songFor]'s song for
@@ -505,6 +533,7 @@ class DatabaseProvider {
       }
       await batch.commit(noResult: true);
     });
+    if (changed > 0) invalidateAchievements();
     return changed;
   }
 
@@ -685,6 +714,7 @@ class DatabaseProvider {
       score.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    invalidateAchievements();
     return raw;
   }
 
@@ -693,7 +723,14 @@ class DatabaseProvider {
     final db = await _instance;
     var raw = await db.update("scores", score.toMap(),
         where: "id = ?", whereArgs: [score.id]);
+    invalidateAchievements();
     return raw;
+  }
+
+  static Future<void> deleteScore(String id) async {
+    final db = await _instance;
+    await db.delete('scores', where: 'id = ?', whereArgs: [id]);
+    invalidateAchievements();
   }
 
   // Get all scores from the database for a specific song and play mode
