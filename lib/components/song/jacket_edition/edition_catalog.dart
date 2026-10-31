@@ -6,8 +6,6 @@ library;
 import 'package:flutter/painting.dart';
 import 'edition_model.dart';
 
-/// Inclusive upper levels of the ten optical tiers. Invalid levels are neutral.
-const editionTierCeilings = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
 const editionBorders = {
   'gilded': EditionBorder.gilded,
   'engraved': EditionBorder.engraved,
@@ -15,14 +13,24 @@ const editionBorders = {
 };
 const editionFramePalettes = {
   EditionFrame.stock: [Color(0xFF181A24), Color(0xFF676473), Color(0xFF242632)],
+  EditionFrame.bronze: [
+    Color(0xFF4A2814),
+    Color(0xFFF2C394),
+    Color(0xFF9C5A2C)
+  ],
   EditionFrame.silver: [
     Color(0xFF454D5A),
     Color(0xFFEAF1FA),
     Color(0xFF8F9DAF)
   ],
-  EditionFrame.jade: [Color(0xFF1E4A2C), Color(0xFFC8F5CF), Color(0xFF4FA864)],
   EditionFrame.gold: [Color(0xFF694014), Color(0xFFFFE3A0), Color(0xFFC48822)],
-  EditionFrame.starlight: [
+  // Pearly white gold: PFC's gold, paler, with a pearl's pink-cream light.
+  EditionFrame.platinum: [
+    Color(0xFF7E5A22),
+    Color(0xFFFFF5DE),
+    Color(0xFFDDB86A)
+  ],
+  EditionFrame.rainbow: [
     Color(0xFF6E6F9E),
     Color(0xFFFFFFFF),
     Color(0xFFB8DDF6)
@@ -30,10 +38,11 @@ const editionFramePalettes = {
 };
 const editionFrameWidths = {
   EditionFrame.stock: .014,
-  EditionFrame.silver: .023,
-  EditionFrame.jade: .032,
+  EditionFrame.bronze: .023,
+  EditionFrame.silver: .030,
   EditionFrame.gold: .040,
-  EditionFrame.starlight: .045
+  EditionFrame.platinum: .043,
+  EditionFrame.rainbow: .045
 };
 const editionSpectrum = [
   Color(0x33FF78AB),
@@ -41,6 +50,14 @@ const editionSpectrum = [
   Color(0x3383EDBA),
   Color(0x3383CFFF),
   Color(0x33BB9FFF)
+];
+// SDP's pearl: the platinum frame's inlay and its sheen over the art.
+const editionPearl = [
+  Color(0x1FFFD6DE),
+  Color(0x1FFFEBB8),
+  Color(0x1FFFDFA0),
+  Color(0x1FF4E4F0),
+  Color(0x1FFFDCC4)
 ];
 const editionFinishAlpha = [0.0, .06, .10, .12, .14, .16];
 const editionGlintCount = 6;
@@ -64,12 +81,15 @@ const editionGoldFoil = [
   Color(0x40A8780F),
   Color(0x408A6512),
 ];
-// Flare aura: particles per rank within a band, EX's, the small card's, and
-// each halo ring's width, of the card's side.
-const editionSparksPerRank = 3;
+// Flare aura: stars at I, at IX and EX, on the small card; each halo ring's
+// width and the development gauge's distance out and width, of the card's
+// side.
+const editionMinSparks = 4;
 const editionMaxSparks = 16;
 const editionCompactSparks = 4;
 const editionHaloWidth = .008;
+const editionGaugeOffset = .05;
+const editionGaugeWidth = .028;
 // Flare EX's polychrome over the art, mirrored so its bands never seam.
 const editionPolychrome = [
   Color(0xFFFF4D6D),
@@ -94,7 +114,14 @@ const editionMaxMotifLines = 52;
 // deliberately no cross-chart cache or offscreen image allocation.
 const editionMaxSide = 640.0;
 
-/// Ten deliberate cuts: broad sheen through a dense faceted prism. The
+/// The tier's gems along the frame's foot, one lit per step: each gem's
+/// width and their spacing, of the card's side.
+const editionGemSize = .036;
+const editionGemGap = .048;
+const editionGem = [Color(0xFFF4FDFF), Color(0xFF8FD8FF), Color(0xFF2E6FA8)];
+
+/// Ten deliberate cuts, one per tier: broad sheen through a dense faceted
+/// prism; neutral without one. The
 /// renderer shares primitives; adding a cut changes data here, not branches.
 const editionCuts = {
   EditionCut.neutral: (lines: 8, angle: 0.0, cross: false),
@@ -109,6 +136,19 @@ const editionCuts = {
   EditionCut.brilliant: (lines: 42, angle: .40, cross: true),
   EditionCut.fine: (lines: 48, angle: .78, cross: true),
 };
+
+/// Each difficulty's corners, of the card's side: rounded by [size], or cut
+/// off at 45° [size] along each edge. Unknown, then beginner to challenge.
+/// [alternate] cuts only the top left and bottom right, rounding the others
+/// slightly.
+const editionCorners = [
+  (round: true, size: .065, alternate: false),
+  (round: true, size: .10, alternate: false),
+  (round: true, size: .05, alternate: false),
+  (round: false, size: .07, alternate: true),
+  (round: false, size: .05, alternate: false),
+  (round: false, size: .09, alternate: false),
+];
 
 // Logical pixels around each icon's silhouette, rather than a label panel.
 const editionStampRim = 1.8;

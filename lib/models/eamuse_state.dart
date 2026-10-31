@@ -8,7 +8,8 @@
 /// page that stops part way carries on from where it stopped next time. A tap
 /// while a sync runs, within [EamuseSync.cooldown] of the last one starting,
 /// or within [EamuseSync.backoff] of Konami refusing one, does nothing, and
-/// only charts whose best changed are written.
+/// only charts whose best changed are written, along with what each did to
+/// its card ([cardGains]).
 library;
 
 import 'dart:async';
@@ -16,6 +17,9 @@ import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/grades.dart';
+import 'package:ddr_md/models/card_gains.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -35,6 +39,8 @@ class EamuseSyncState extends ChangeNotifier {
   int charts = 0;
   // Charts the last sync added or changed.
   int? changed;
+  // Charts whose card the last sync collected or upgraded.
+  int? cards;
   String error = '';
   // What the running or last sync checked, and why.
   String note = '';
@@ -44,6 +50,8 @@ class EamuseSyncState extends ChangeNotifier {
   int revision = 0;
   EamuseSync? _sync;
   DateTime? _notBefore;
+  // Held off because Konami refused the last sync, not just the cooldown.
+  bool _refused = false;
   Timer? _wake;
 
   DateTime? get syncedAt =>
@@ -141,19 +149,37 @@ class EamuseSyncState extends ChangeNotifier {
 
   /// [renewed]: the session was just renewed, by signing in or by
   /// [_signInSilently], so a signed-out answer means it really has to be
-  /// signed into again.
-  Future<void> sync({bool renewed = false}) async {
+  /// signed into again. One for a session that just [ended] skips the
+  /// cooldown, but not the backoff after Konami refused one.
+  Future<void> sync({bool renewed = false, bool ended = false}) async {
     // The sync after a sign-in carries on the one that needed it.
-    if (status == EamuseStatus.syncing || upToDate || (waiting && !renewed)) {
+    if (status == EamuseStatus.syncing ||
+        (!ended && (upToDate || (waiting && !renewed))) ||
+        (ended && waiting && _refused)) {
       return;
     }
     _holdOff(EamuseSync.cooldown);
+    _refused = false;
     final stored = {
       for (final r
           in await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse))
         r.id: _comparable(r)
     };
     var changedNow = 0;
+    // The cards before the sync, which its records are held up against. The
+    // first sync reads every chart at once, so it collects none.
+    final syncStart = DateTime.now();
+    Map<Modes, Map<String, Map<String, ChartBest>>>? before;
+    if (stored.isNotEmpty) {
+      before = {};
+      for (final m in Modes.values) {
+        await ChartBests.ensure(m);
+        before[m] = ChartBests.bestsOf(m);
+      }
+    }
+    // Each chart's best as this sync left it, by chart.
+    final now = <String, ChartBest>{};
+    final carded = <String>{};
     final sync = _sync = EamuseSync(
       cookies: [
         for (final c in await CookieManager.instance()
@@ -168,7 +194,31 @@ class EamuseSyncState extends ChangeNotifier {
             if (!mapEquals(stored[r.id], _comparable(r))) r
         ];
         changedNow += fresh.length;
+        final gains = <CardGain>[];
+        for (final r in fresh) {
+          final song = r.song;
+          if (before == null || song == null) continue;
+          final key = '$song:${r.mode.name}:${r.difficulty}';
+          final old = now[key] ?? before[r.mode]?[song]?[r.difficulty];
+          final best = now[key] = mergeBest(old, (
+            score: r.score,
+            grade: Grade.values.where((g) => g.label == r.rank).firstOrNull,
+            lamp: r.clearLamp,
+            flare: r.flareRank.isEmpty ? null : r.flareRank,
+          ));
+          final had = cardGains(
+              song: song,
+              mode: r.mode,
+              difficulty: r.difficulty,
+              before: old,
+              after: best,
+              playedAt: r.playedAt ?? syncStart,
+              syncedAt: syncStart);
+          if (had.isNotEmpty) carded.add(key);
+          gains.addAll(had);
+        }
         await DatabaseProvider.saveScoreRecords(fresh);
+        await DatabaseProvider.saveCardGains(gains);
       },
     );
     status = EamuseStatus.syncing;
@@ -197,6 +247,9 @@ class EamuseSyncState extends ChangeNotifier {
               failed: p.failed,
             )
       ]);
+      // The plays are in before any chart is, for a session's wrap to show.
+      revision++;
+      notifyListeners();
       // Charts synced before the newest play was recorded have none, but
       // every play before that sync is in them.
       final lastPlay = Settings.getString(Settings.eamuseLastPlayKey);
@@ -210,6 +263,14 @@ class EamuseSyncState extends ChangeNotifier {
                   : eamuseTimeText(at);
       // Plays since an unfinished walk began may be on pages it already
       // read; if too many to list, it starts over.
+      // New plays since the last sync: Home offers the wrap of the session
+      // they were played in.
+      if (since != null &&
+          plays.any((p) => p.playedAt.compareTo(since) > 0) &&
+          Settings.getString(Settings.sessionWrapSinceKey).isEmpty) {
+        await Settings.setString(
+            Settings.sessionWrapSinceKey, eamuseTime(since).toIso8601String());
+      }
       final walk = _walk;
       final missed = walk == null
           ? null
@@ -241,10 +302,6 @@ class EamuseSyncState extends ChangeNotifier {
               'last sync',
       };
       notifyListeners();
-      if (plan is! EamuseNothingNew ||
-          Settings.getString(Settings.rivalCodeSpeedKey).isEmpty) {
-        await _syncProfile(sync);
-      }
       switch (plan) {
         case EamuseFullSync():
           final walkSince = resume
@@ -265,6 +322,12 @@ class EamuseSyncState extends ChangeNotifier {
         case EamuseNothingNew():
           break;
       }
+      // After the charts, which a session's wrap is waiting on.
+      if (!sync.cancelled &&
+          (plan is! EamuseNothingNew ||
+              Settings.getString(Settings.rivalCodeSpeedKey).isEmpty)) {
+        await _syncProfile(sync);
+      }
       if (!sync.cancelled) {
         await Settings.setString(
             Settings.eamuseSyncedAtKey, DateTime.now().toIso8601String());
@@ -284,6 +347,7 @@ class EamuseSyncState extends ChangeNotifier {
       error = 'e-amusement unavailable ($e), try again in '
           '${EamuseSync.backoff.inMinutes} min';
       _holdOff(EamuseSync.backoff);
+      _refused = true;
     } catch (e) {
       status = EamuseStatus.failed;
       error = 'Sync failed';
@@ -292,6 +356,7 @@ class EamuseSyncState extends ChangeNotifier {
     sync.close();
     _sync = null;
     changed = changedNow;
+    cards = carded.length;
     revision++;
     charts = await DatabaseProvider.countScoreRecords(ScoreRecordSource.eamuse);
     recentPlays = await DatabaseProvider.countRecentPlays();

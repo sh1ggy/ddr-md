@@ -19,10 +19,13 @@ EditionFacts facts(
         ClearLamp? lamp = ClearLamp.pfc,
         String? flare = 'EX',
         int? level = 16,
+        int? tier,
+        String difficulty = 'hard',
         PrecisionAward award = PrecisionAward.pfc}) =>
     EditionFacts(
-        chart: (song: 'test', mode: 'singles', difficulty: 'hard'),
+        chart: (song: 'test', mode: 'singles', difficulty: difficulty),
         level: level,
+        tier: tier,
         version: FlareGroup.gold,
         grade: grade,
         lamp: lamp,
@@ -88,14 +91,15 @@ void main() {
           grade == Grade.aaa ? EditionFinish.prism : EditionFinish.print);
     }
   });
-  test('tier boundaries, unknown versions and removed style IDs are neutral',
-      () {
-    for (var level = 1; level <= 20; level++) {
-      expect(editionTier(level), (level + 1) ~/ 2);
-    }
-    for (final level in [null, -1, 0, 21, 999]) {
-      expect(editionTier(level), null);
-    }
+  test('tier, not level, picks the cut; unknowns stay neutral', () {
+    expect(resolveEdition(facts(level: 19)).cut, EditionCut.neutral);
+    expect(
+        resolveEdition(const EditionFacts(
+                chart: (song: '?', mode: 'singles', difficulty: 'hard'),
+                level: 17,
+                tier: 9))
+            .cut,
+        EditionCut.fine);
     const noData =
         EditionFacts(chart: (song: '?', mode: 'doubles', difficulty: '?'));
     final recipe = resolveEdition(noData);
@@ -114,13 +118,13 @@ void main() {
         )).border,
         EditionBorder.gilded);
   });
-  test('EX keeps PFC gold, SDP refines gold, MFC takes precedence', () {
+  test('EX keeps PFC gold, SDP platinum, MFC takes precedence', () {
     expect(resolveEdition(facts()).frame, EditionFrame.gold);
-    expect(resolveEdition(facts(award: PrecisionAward.sdp)).secret, isTrue);
+    expect(resolveEdition(facts(award: PrecisionAward.sdp)).frame,
+        EditionFrame.platinum);
     final mfc =
         resolveEdition(facts(lamp: ClearLamp.mfc, award: PrecisionAward.sdp));
-    expect(mfc.frame, EditionFrame.starlight);
-    expect(mfc.secret, isFalse);
+    expect(mfc.frame, EditionFrame.rainbow);
     expect(mfc.ex, isTrue);
   });
   test('resolution matrix is bounded, comparable and stamp independent', () {
@@ -278,12 +282,12 @@ void main() {
       PrecisionAward.mfc
     ]) {
       for (final ex in [false, true]) {
-        for (final level in [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]) {
+        for (var tier = 0; tier < 10; tier++) {
           widgets.add(SizedBox.square(
               dimension: 64,
               child: JacketEdition(
                   facts: facts(
-                      award: award, flare: ex ? 'EX' : null, level: level),
+                      award: award, flare: ex ? 'EX' : null, tier: tier),
                   options: options(motion: false),
                   frozenLight: const Offset(.35, .3),
                   child: const ColoredBox(color: Colors.indigo))));
@@ -326,6 +330,7 @@ void main() {
             chart: (song: 'test', mode: 'doubles', difficulty: 'challenge'),
             grade: Grade.aaa,
             level: 17,
+            tier: 8,
             lamp: ClearLamp.pfc,
             flare: 'EX'),
         options: options(motion: false, stamps: true),

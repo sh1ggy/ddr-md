@@ -6,6 +6,7 @@ library;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:ddr_md/grades.dart' show kFlareCardColors, kFlareExColors;
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/material.dart';
 import 'edition_model.dart';
 import 'edition_catalog.dart';
@@ -17,9 +18,10 @@ class EditionGeometry {
   EditionGeometry(this.recipe, this.size, {this.compact = false}) {
     final side = size.shortestSide;
     width = side * editionFrameWidths[recipe.frame]!;
-    outer = RRect.fromRectAndRadius(
-        Offset.zero & size, Radius.circular(side * .065));
-    inner = outer.deflate(width);
+    outer = at(0);
+    inner = at(width);
+    innerRect = (Offset.zero & size).deflate(width);
+    ring = Path.combine(PathOperation.difference, outer, inner);
     glints = List.unmodifiable(List.generate(
         compact ? 0 : editionGlintCount,
         (i) => Offset(size.width * (.12 + (i * .173) % .77),
@@ -32,7 +34,11 @@ class EditionGeometry {
                 ? editionCompactSparks
                 : recipe.ex
                     ? editionMaxSparks
-                    : editionSparksPerRank * (recipe.flareIndex % 3 + 2),
+                    : (editionMinSparks +
+                            (editionMaxSparks - editionMinSparks) *
+                                recipe.flareIndex /
+                                8)
+                        .round(),
         (_) => (
               along: random.nextDouble(),
               phase: random.nextDouble(),
@@ -51,18 +57,55 @@ class EditionGeometry {
   final Size size;
   final bool compact;
   late final double width;
-  late final RRect outer, inner;
+  late final Path outer, inner, ring;
+  late final Rect innerRect;
+
+  /// The card's outline [inset] in from its edge (out, when negative), its
+  /// corners the difficulty's.
+  Path at(double inset) {
+    final side = size.shortestSide;
+    final r = (Offset.zero & size).deflate(inset);
+    final shape = editionCorners[recipe.difficultyShape];
+    // A rounded corner's radius shrinks by the inset; a cut's legs by less,
+    // so the cut stays parallel.
+    double leg(bool round, double at) =>
+        math.max(0, side * at - inset * (round ? 1 : 2 - math.sqrt2));
+    final corners = [
+      for (var i = 0; i < 4; i++)
+        shape.alternate && i.isOdd
+            ? (round: true, leg: leg(true, .015))
+            : (round: shape.round, leg: leg(shape.round, shape.size)),
+    ];
+    final path = Path()..moveTo(r.left + corners[0].leg, r.top);
+    void turn(int i, Offset to) => corners[i].round
+        ? path.arcToPoint(to, radius: Radius.circular(corners[i].leg))
+        : path.lineTo(to.dx, to.dy);
+    path.lineTo(r.right - corners[1].leg, r.top);
+    turn(1, Offset(r.right, r.top + corners[1].leg));
+    path.lineTo(r.right, r.bottom - corners[2].leg);
+    turn(2, Offset(r.right - corners[2].leg, r.bottom));
+    path.lineTo(r.left + corners[3].leg, r.bottom);
+    turn(3, Offset(r.left, r.bottom - corners[3].leg));
+    path.lineTo(r.left, r.top + corners[0].leg);
+    turn(0, Offset(r.left + corners[0].leg, r.top));
+    return path..close();
+  }
+
   late final ui.Picture frame, motif;
   late final List<Offset> glints;
   late final List<EditionSpark> sparks;
 
+  /// The flare gauge's track round the card, made on first use.
+  late final ui.PathMetric gauge =
+      at(-size.shortestSide * editionGaugeOffset).computeMetrics().first;
+
   void _recordFrame(Canvas canvas) {
     final palette = editionFramePalettes[recipe.frame]!;
-    final rect = outer.outerRect;
-    canvas.drawRRect(
+    final rect = Offset.zero & size;
+    canvas.drawPath(
         outer,
         Paint()
-          ..shader = (recipe.frame == EditionFrame.starlight
+          ..shader = (recipe.frame == EditionFrame.rainbow
                   ? const SweepGradient(colors: editionRainbowFrame)
                   : LinearGradient(
                       begin: Alignment.topLeft,
@@ -89,8 +132,8 @@ class EditionGeometry {
       (width * .38, .25),
       (width * .78, .65)
     ]) {
-      canvas.drawRRect(
-          outer.deflate(inset),
+      canvas.drawPath(
+          at(inset),
           line
             ..strokeWidth = math.max(.5, width * .065)
             ..color = palette[1].withValues(alpha: alpha));
@@ -109,56 +152,82 @@ class EditionGeometry {
       canvas.drawLine(Offset(x, size.height - width * .32),
           Offset(x - length, size.height - width * .68), engraving);
     }
-    // Difficulty owns corner geometry; no achievement seals or badges.
-    final cut = side * (.023 + recipe.difficultyShape * .003);
-    for (final corner in compact
-        ? <Offset>[]
-        : [
-            Offset(width, width),
-            Offset(size.width - width, width),
-            Offset(width, size.height - width),
-            Offset(size.width - width, size.height - width)
-          ]) {
-      canvas.drawCircle(corner, cut * .34, Paint()..color = palette[1]);
-      canvas.drawCircle(corner, cut * .18, Paint()..color = palette[0]);
+    final tier = recipe.tier;
+    if (tier != null && !compact) {
+      // The tier as gems set in the frame's foot, lit up to it.
+      final gem = side * editionGemSize, gap = side * editionGemGap;
+      for (var i = 0; i < 10; i++) {
+        // Centred on the frame's foot, overlapping the art when it's thin.
+        final c =
+            Offset(size.width / 2 + (i - 4.5) * gap, size.height - width / 2);
+        final stone = Path()
+          ..moveTo(c.dx, c.dy - gem * .6)
+          ..lineTo(c.dx + gem / 2, c.dy)
+          ..lineTo(c.dx, c.dy + gem * .6)
+          ..lineTo(c.dx - gem / 2, c.dy)
+          ..close();
+        canvas.drawPath(
+            stone,
+            Paint()
+              ..shader = i <= tier
+                  ? const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: editionGem)
+                      .createShader(stone.getBounds())
+                  : null
+              ..color = Color.lerp(palette[0], Colors.black, .4)!);
+        canvas.drawPath(
+            stone,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = math.max(.5, gem * .08)
+              ..color = palette[1].withValues(alpha: i <= tier ? .9 : .4));
+      }
     }
-    if (recipe.secret || recipe.ex) {
-      // Thin inlay preserves the gold substrate under EX.
-      canvas.drawRRect(
-          outer.deflate(width * (recipe.secret ? .52 : .12)),
+    final pearl = recipe.frame == EditionFrame.platinum;
+    if (pearl || recipe.ex) {
+      // Thin inlay preserves the metal substrate under EX.
+      canvas.drawPath(
+          at(width * (pearl ? .52 : .12)),
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = width * .15
-            ..shader = const SweepGradient(colors: editionSpectrum)
+            ..shader = SweepGradient(
+                    colors: pearl
+                        ? [
+                            for (final c in editionPearl)
+                              c.withValues(alpha: .9)
+                          ]
+                        : editionSpectrum)
                 .createShader(rect));
     }
   }
 
   void _recordMotif(Canvas canvas) {
     canvas.save();
-    canvas.clipRRect(inner);
+    canvas.clipPath(inner);
     final side = size.shortestSide;
     final finish = recipe.finish;
     final textured = finish.index >= EditionFinish.texturedHolo.index;
-    final premium = recipe.secret || recipe.frame == EditionFrame.starlight;
+    final pearl = recipe.frame == EditionFrame.platinum;
+    final premium = pearl || recipe.frame == EditionFrame.rainbow;
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = math.max(.45, side / 1100);
     if (recipe.failed) {
-      canvas.drawRect(
-          inner.outerRect, Paint()..color = const Color(0x22000000));
+      canvas.drawRect(innerRect, Paint()..color = const Color(0x22000000));
     }
     if (finish != EditionFinish.print || premium) {
       final cut = editionCuts[recipe.cut]!;
       final count = math.min(
           compact ? editionCompactMotifLines : editionMaxMotifLines, cut.lines);
-      paint.color =
-          (recipe.secret ? const Color(0xFFFFD575) : Colors.white).withValues(
-              alpha: premium
-                  ? .13
-                  : textured
-                      ? .075
-                      : .025);
+      paint.color = (pearl ? const Color(0xFFFFF4E2) : Colors.white).withValues(
+          alpha: premium
+              ? .13
+              : textured
+                  ? .075
+                  : .025);
       final shape = recipe.motif;
       final angle = cut.angle +
           (shape == EditionMotif.classic
@@ -183,12 +252,11 @@ class EditionGeometry {
       canvas.restore();
     }
     if (premium || finish == EditionFinish.prism) {
-      paint.color =
-          recipe.secret ? const Color(0x66FFE0A0) : const Color(0x44FFFFFF);
+      paint.color = pearl ? const Color(0x66FFF4E2) : const Color(0x44FFFFFF);
       for (var i = 0; i < (compact ? editionCompactGlints : 28); i++) {
         final p = Offset(size.width * (.08 + (i * .61803) % .84),
             size.height * (.08 + (i * .38197) % .84));
-        final d = side * (recipe.frame == EditionFrame.starlight ? .005 : .003);
+        final d = side * (recipe.frame == EditionFrame.rainbow ? .005 : .003);
         canvas.drawLine(p - Offset(d, 0), p + Offset(d, 0), paint);
         canvas.drawLine(p - Offset(0, d), p + Offset(0, d), paint);
       }
@@ -196,14 +264,14 @@ class EditionGeometry {
     // Complete static finish. This stays when motion is disabled.
     final strength = compact ? editionCompactFinishStrength : 1.0;
     final alpha = editionFinishAlpha[finish.index] * recipe.strength * strength;
-    if (alpha > 0 || recipe.secret) {
+    if (alpha > 0 || pearl) {
       canvas.drawRect(
-          inner.outerRect,
+          innerRect,
           Paint()
             ..shader = LinearGradient(
-                    colors: recipe.secret
+                    colors: pearl
                         ? [
-                            for (final color in editionSpectrum)
+                            for (final color in editionPearl)
                               color.withValues(alpha: color.a * strength)
                           ]
                         : [
@@ -213,7 +281,7 @@ class EditionGeometry {
                           ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight)
-                .createShader(inner.outerRect));
+                .createShader(innerRect));
     }
     canvas.restore();
   }
@@ -222,6 +290,16 @@ class EditionGeometry {
     frame.dispose();
     motif.dispose();
   }
+}
+
+/// Clips to [path], a card outline.
+class EditionClipper extends CustomClipper<Path> {
+  const EditionClipper(this.path);
+  final Path path;
+  @override
+  Path getClip(Size size) => path;
+  @override
+  bool shouldReclip(EditionClipper old) => old.path != path;
 }
 
 class EditionStaticPainter extends CustomPainter {
@@ -235,10 +313,7 @@ class EditionStaticPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (ring) {
       canvas.save();
-      canvas.clipPath(Path()
-        ..fillType = PathFillType.evenOdd
-        ..addRRect(geometry.outer)
-        ..addRRect(geometry.inner));
+      canvas.clipPath(geometry.ring);
     }
     canvas.drawPicture(foreground ? geometry.motif : geometry.frame);
     if (ring) canvas.restore();
@@ -264,10 +339,10 @@ class EditionLightPainter extends CustomPainter {
     final recipe = geometry.recipe;
     final at =
         Offset(motion.light.dx * size.width, motion.light.dy * size.height);
-    final rect = geometry.outer.outerRect;
+    final rect = Offset.zero & size;
     if (layers.contains(EditionLayer.finish)) _finish(canvas, size, at);
     if (layers.contains(EditionLayer.frame) &&
-        recipe.frame == EditionFrame.starlight) {
+        recipe.frame == EditionFrame.rainbow) {
       // A glint running round the rainbow frame.
       _paint
         ..color = Colors.white
@@ -283,7 +358,7 @@ class EditionLightPainter extends CustomPainter {
           1
         ], transform: GradientRotation(motion.time * 1.6))
             .createShader(rect);
-      canvas.drawDRRect(geometry.outer, geometry.inner, _paint);
+      canvas.drawPath(geometry.ring, _paint);
       _paint.shader = null;
     }
   }
@@ -291,9 +366,9 @@ class EditionLightPainter extends CustomPainter {
   void _finish(Canvas canvas, Size size, Offset at) {
     final recipe = geometry.recipe;
     final side = size.shortestSide;
-    final rect = geometry.outer.outerRect;
+    final rect = Offset.zero & size;
     canvas.save();
-    canvas.clipRRect(geometry.outer);
+    canvas.clipPath(geometry.outer);
     if (recipe.finish == EditionFinish.prism) {
       // AAA's gold foil, as on its badge, drifting with the light.
       final drift = (motion.light.dx + motion.light.dy) * side * .4;
@@ -308,31 +383,28 @@ class EditionLightPainter extends CustomPainter {
           TileMode.repeated);
       canvas.drawRect(rect, _paint);
     }
-    // The light sweeps only where a badge would shine: AAA, GFC, PFC and
-    // MFC frames, flare IX and EX.
+    // The light sweeps only where a badge would shine: AAA, GFC, PFC, SDP
+    // and MFC frames, flare IX and EX.
     final shines = recipe.finish == EditionFinish.prism ||
-        recipe.frame == EditionFrame.jade ||
-        recipe.frame == EditionFrame.gold ||
-        recipe.frame == EditionFrame.starlight ||
-        recipe.flareIndex >= 8 ||
-        recipe.secret;
+        recipe.frame.index >= EditionFrame.silver.index ||
+        recipe.flareIndex >= 8;
     if (!shines) {
       canvas.restore();
       return;
     }
     // Exactly one animated full-card gradient; no per-axis blend layers.
-    final spectrum = recipe.secret;
+    final pearl = recipe.frame == EditionFrame.platinum;
     _paint.shader = ui.Gradient.linear(
         at - Offset(side * .5, side * .18),
         at + Offset(side * .5, side * .18),
-        spectrum
-            ? editionSpectrum
+        pearl
+            ? editionPearl
             : [
                 Colors.transparent,
                 Colors.white.withValues(alpha: .22),
                 Colors.transparent
               ],
-        spectrum ? const [0, .25, .5, .75, 1] : const [0, .5, 1]);
+        pearl ? const [0, .25, .5, .75, 1] : const [0, .5, 1]);
     canvas.drawRect(rect, _paint);
     _paint.shader = null;
     // Six cheap unblurred glints, all positions precomputed.
@@ -361,9 +433,9 @@ typedef EditionSpark = ({
   double out
 });
 
-/// The flare's aura, outside the art: a halo round the card and particles
-/// on its edge, stronger up each band. I–III sparks rise, IV–VI motes run
-/// round the frame, VII–IX stars twinkle and EX's stars and halo are rainbow.
+/// The flare's aura, outside the art: a white halo round the card and stars
+/// twinkling on its edge, tinted by the rank. Both grow up the ranks; EX's
+/// stars and halo are rainbow. Development can show the flare gauge instead.
 /// Unblurred; without [motion] it holds its first frame.
 class EditionFlarePainter extends CustomPainter {
   EditionFlarePainter(this.geometry,
@@ -409,8 +481,7 @@ class EditionFlarePainter extends CustomPainter {
     if (recipe.flareIndex < 0) return;
     final side = size.shortestSide;
     final t = motion?.time ?? 0;
-    final band = recipe.ex ? 3 : recipe.flareIndex ~/ 3;
-    final rank = recipe.ex ? 1.0 : (recipe.flareIndex % 3 + 1) / 3;
+    final level = recipe.ex ? 1.0 : (recipe.flareIndex + 1) / 9;
     final color = recipe.ex
         ? kFlareExColors.first
         : kFlareCardColors[recipe.flareIndex].frame;
@@ -424,7 +495,7 @@ class EditionFlarePainter extends CustomPainter {
       final light = motion?.light ?? const Offset(.35, .3);
       final shift = (light.dx + light.dy) * side * .35 + t * side * .08;
       canvas.save();
-      canvas.clipRRect(geometry.inner);
+      canvas.clipPath(geometry.inner);
       _paint
         ..blendMode = BlendMode.color
         ..color = Colors.white.withValues(alpha: editionPolychromeAlpha)
@@ -437,7 +508,7 @@ class EditionFlarePainter extends CustomPainter {
                 i / (editionPolychrome.length - 1)
             ],
             TileMode.mirror);
-      canvas.drawRect(geometry.inner.outerRect, _paint);
+      canvas.drawRect(geometry.innerRect, _paint);
       _paint
         ..blendMode = BlendMode.srcOver
         ..shader = null;
@@ -445,6 +516,10 @@ class EditionFlarePainter extends CustomPainter {
     }
 
     if (!layers.contains(EditionLayer.aura)) return;
+    if (Settings.getInt(Settings.jacketFlareGaugeKey) == 1) {
+      _gauge(canvas, size, t, level);
+      return;
+    }
     _paint
       ..style = PaintingStyle.stroke
       ..strokeWidth = side * editionHaloWidth;
@@ -452,13 +527,12 @@ class EditionFlarePainter extends CustomPainter {
       _paint.shader = SweepGradient(
               colors: [...kFlareExColors, kFlareExColors.first],
               transform: GradientRotation(t * .9))
-          .createShader(geometry.outer.outerRect);
+          .createShader(Offset.zero & size);
     }
     for (var i = 0; i < 4; i++) {
       _paint.color = Colors.white.withValues(
-          alpha: const [.32, .16, .07, .03][i] * (.45 + rank * .55));
-      canvas.drawRRect(
-          geometry.outer.inflate(side * editionHaloWidth * (i + .5)), _paint);
+          alpha: const [.32, .16, .07, .03][i] * (.35 + level * .65));
+      canvas.drawPath(geometry.at(-side * editionHaloWidth * (i + .5)), _paint);
     }
     _paint
       ..shader = null
@@ -468,38 +542,79 @@ class EditionFlarePainter extends CustomPainter {
       final s = geometry.sparks[i];
       final f = (t / s.speed + s.phase) % 1;
       final dot = side * s.size;
-      final Offset at;
-      var alpha = 1.0;
-      switch (band) {
-        case 0:
-          // Up the sides, fading in and out.
-          final right = s.along > .5;
-          at = Offset(right ? size.width + s.out * side : -s.out * side,
-              size.height * (1 - f));
-          alpha = math.sin(f * math.pi);
-        case 1:
-          at = _edge(size, s.along + t / (s.speed * 6), s.out);
-          alpha = .9;
-        default:
-          at = _edge(size, s.along, s.out);
-          alpha = math.sin(f * math.pi);
-      }
+      final at = _edge(size, s.along, s.out);
+      final alpha = math.sin(f * math.pi);
       if (alpha <= .02) continue;
       _paint.color = (recipe.ex
               ? Color.lerp(
                   kFlareExColors[i % kFlareExColors.length], Colors.white, .3)!
               : bright)
           .withValues(alpha: alpha);
-      if (band < 2) {
-        canvas.drawCircle(at, dot, _paint);
-      } else {
-        canvas.save();
-        canvas.translate(at.dx, at.dy);
-        canvas.rotate(alpha * math.pi / 4);
-        canvas.scale(dot * 2.4 * alpha * (recipe.ex ? 1.3 : 1));
-        canvas.drawPath(_star, _paint);
-        canvas.restore();
-      }
+      canvas.save();
+      canvas.translate(at.dx, at.dy);
+      canvas.rotate(alpha * math.pi / 4);
+      canvas.scale(dot * 2.4 * alpha * (recipe.ex ? 1.3 : 1));
+      canvas.drawPath(_star, _paint);
+      canvas.restore();
+    }
+  }
+
+  // A track round the card with a tick each ninth, lit clockwise from the
+  // top's middle up to the rank; EX's is a turning rainbow.
+  void _gauge(Canvas canvas, Size size, double t, double level) {
+    final recipe = geometry.recipe;
+    final side = size.shortestSide;
+    final metric = geometry.gauge;
+    final length = metric.length;
+    final start = size.width / 2 - metric.getTangentForOffset(0)!.position.dx;
+    final width = side * editionGaugeWidth;
+    final pulse = .75 + .25 * math.sin(t * 3);
+    Path along(double from, double to) => to <= length
+        ? metric.extractPath(from, to)
+        : (metric.extractPath(from, length)
+          ..addPath(metric.extractPath(0, to - length), Offset.zero));
+    _paint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width
+      ..color = Colors.white.withValues(alpha: .08);
+    canvas.drawPath(along(0, length), _paint);
+    final lit = along(start, start + length * level);
+    final color = recipe.ex
+        ? Colors.white
+        : Color.lerp(
+            kFlareCardColors[recipe.flareIndex].frame, Colors.white, .15)!;
+    if (recipe.ex) {
+      _paint.shader = SweepGradient(
+              colors: [...kFlareExColors, kFlareExColors.first],
+              transform: GradientRotation(-t * 1.2))
+          .createShader(Offset.zero & size);
+    }
+    _paint
+      ..strokeWidth = width * 3.2
+      ..color = color.withValues(alpha: .12 * pulse);
+    canvas.drawPath(lit, _paint);
+    _paint
+      ..strokeWidth = width
+      ..color = color.withValues(alpha: .95);
+    canvas.drawPath(lit, _paint);
+    _paint
+      ..shader = null
+      ..strokeWidth = math.max(1, side * .008);
+    for (var k = 0; k < 9; k++) {
+      final tick =
+          metric.getTangentForOffset((start + length * k / 9) % length)!;
+      final out = Offset(tick.vector.dy, -tick.vector.dx) * width * .7;
+      _paint.color = k < (level * 9).round()
+          ? const Color(0xE60E0B1F)
+          : Colors.white.withValues(alpha: .25);
+      canvas.drawLine(tick.position - out, tick.position + out, _paint);
+    }
+    _paint.style = PaintingStyle.fill;
+    if (!recipe.ex) {
+      final head =
+          metric.getTangentForOffset((start + length * level) % length)!;
+      _paint.color = Colors.white.withValues(alpha: pulse);
+      canvas.drawCircle(head.position, width * .75, _paint);
     }
   }
 

@@ -16,9 +16,12 @@ class CompactJacketEdition extends StatefulWidget {
       {super.key,
       required this.facts,
       required this.options,
+      this.aura = true,
       required this.child});
   final EditionFacts facts;
   final EditionOptions options;
+  // The flare's flames round the card; the binder's pockets go without.
+  final bool aura;
   final Widget child;
   @override
   State<CompactJacketEdition> createState() => _CompactJacketEditionState();
@@ -52,17 +55,29 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
         CustomPaint(painter: EditionStaticPainter(geometry)),
         Padding(
             padding: EdgeInsets.all(geometry.width),
-            child: ClipRRect(
-                borderRadius: BorderRadius.circular(geometry.inner.tlRadiusX),
-                child: RepaintBoundary(
-                    child: recipe.negative
-                        ? ColorFiltered(
-                            colorFilter: editionNegative, child: widget.child)
-                        : widget.child))),
+            child: ClipPath(
+                clipper: EditionClipper(geometry.inner
+                    .shift(Offset(-geometry.width, -geometry.width))),
+                // Painted with the material over it, not apart: EX's
+                // polychrome recolours the art, and the two cached separately
+                // would wash the rainbow over a still card's art instead.
+                child: recipe.negative
+                    ? ColorFiltered(
+                        colorFilter: editionNegative, child: widget.child)
+                    : widget.child)),
         IgnorePointer(
             child: CustomPaint(
                 painter: EditionStaticPainter(geometry, foreground: true),
-                foregroundPainter: EditionFlarePainter(geometry))),
+                foregroundPainter: EditionFlarePainter(
+                    geometry,
+                    null,
+                    widget.aura
+                        ? editionAllLayers
+                        : const {
+                            EditionLayer.art,
+                            EditionLayer.finish,
+                            EditionLayer.frame
+                          }))),
         // Stickers at full size, scaled down to the card.
         if (recipe.gradeStamp != null || recipe.flareStamp != null)
           Positioned(
@@ -82,7 +97,11 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
               child: IgnorePointer(
                   child: EditionFooter(
                       recipe: recipe,
-                      corner: geometry.inner.blRadiusX,
+                      clip: geometry.inner.shift(Offset(
+                          -geometry.width,
+                          geometry.width +
+                              size.height * editionFooterHeight * 1.3 -
+                              size.height)),
                       shortStyle: true))),
       ]));
     });

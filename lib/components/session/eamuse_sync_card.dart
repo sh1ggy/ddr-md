@@ -41,6 +41,8 @@ class EamuseSyncCard extends StatelessWidget {
           '${state.charts} charts',
           if (state.changed != null)
             state.changed == 0 ? 'no changes' : '${state.changed} updated',
+          if (state.cards case final n? when n > 0)
+            '$n ${n == 1 ? 'card' : 'cards'} collected',
           formatDate(at),
         ].join(' · '),
       EamuseStatus.idle => 'Not synced yet',
@@ -200,8 +202,7 @@ class _SyncButton extends StatelessWidget {
                         ? 'Sync again shortly'
                         : 'Sync scores',
                 icon: Icon(state.upToDate ? Icons.check : Icons.sync),
-                onPressed:
-                    state.upToDate || state.waiting ? null : state.sync,
+                onPressed: state.upToDate || state.waiting ? null : state.sync,
               ),
       ]),
     );

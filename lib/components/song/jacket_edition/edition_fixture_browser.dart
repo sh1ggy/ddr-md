@@ -1,5 +1,5 @@
 /// Name: EditionFixtureBrowser
-/// Parent: EditionLabPage
+/// Parent: DevelopmentPage
 /// Description: Bounded pages of the seeded score/achievement cross product.
 library;
 
@@ -13,15 +13,11 @@ import 'edition_fixture_store.dart';
 import 'edition_model.dart';
 import 'jacket_edition.dart';
 
-typedef EditionFixtureSelection = ({EditionFacts facts, SongInfo? song});
-
 typedef _Fixture = ({int index, EditionFacts facts, String label});
 
 class EditionFixtureBrowser extends StatefulWidget {
-  const EditionFixtureBrowser(
-      {super.key, this.song, this.returnSelection = false});
+  const EditionFixtureBrowser({super.key, this.song});
   final SongInfo? song;
-  final bool returnSelection;
   @override
   State<EditionFixtureBrowser> createState() => _EditionFixtureBrowserState();
 }
@@ -81,7 +77,7 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
           lamp: facts.lamp,
           flare: facts.flare,
           score: facts.score,
-          levelTop: facts.levelTop,
+          hardestTop: facts.hardestTop,
           precision: facts.precision);
 
   Future<void> _validate() async {
@@ -181,9 +177,8 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
                         child: Column(children: [
                           Text(
                               '${store.space.count} combinations • ${store.space.ranges.length} score boundaries • ${store.space.results.length} result/evidence cases'),
-                          Text(widget.returnSelection
-                              ? 'Isolated lab database • tap a card to tune it'
-                              : 'Isolated lab database • tap a card for full-size view'),
+                          const Text(
+                              'Isolated lab database • tap a card for full-size view'),
                           EditionArtworkPicker(
                               song: _song,
                               onChanged: (song) =>
@@ -265,19 +260,11 @@ class _EditionFixtureBrowserState extends State<EditionFixtureBrowser> {
                                         onTap: () {
                                           final facts =
                                               _onJacket(fixture.facts);
-                                          if (widget.returnSelection) {
-                                            Navigator.of(context)
-                                                .pop<EditionFixtureSelection>((
+                                          showEditionViewer(context,
                                               facts: facts,
-                                              song: _song
-                                            ));
-                                          } else {
-                                            showEditionViewer(context,
-                                                facts: facts,
-                                                options: defaultEditionOptions,
-                                                artwork: editionArtwork(_song),
-                                                refreshScores: false);
-                                          }
+                                              options: defaultEditionOptions,
+                                              artwork: editionArtwork(_song),
+                                              refreshScores: false);
                                         },
                                         child: Column(children: [
                                           Expanded(

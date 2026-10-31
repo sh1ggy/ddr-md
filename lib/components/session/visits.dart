@@ -11,7 +11,9 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
+import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
@@ -31,6 +33,8 @@ typedef VisitData = ({
   Map<String, List<Credit>> credits,
   // The last credit played, which the next session starts like.
   Credit? lastCredit,
+  // Every card gain, oldest first; [gainsIn] picks a visit's.
+  List<CardGain> gains,
 });
 
 (int, int)? _loadedFor;
@@ -45,12 +49,13 @@ Future<VisitData> visitsFor(BuildContext context) {
   );
   if (key != _loadedFor) {
     _loadedFor = key;
-    _loaded = _load(context.read<SessionState>().session?.id);
+    _loaded = loadVisits(context.read<SessionState>().session?.id);
   }
   return _loaded!;
 }
 
-Future<VisitData> _load(String? activeId) async {
+/// Every visit and what goes with them, with [activeId] the running session.
+Future<VisitData> loadVisits(String? activeId) async {
   final plays = await DatabaseProvider.getRecentPlays();
   final sessions = await DatabaseProvider.getSessions();
   final visits = buildVisits(
@@ -68,6 +73,7 @@ Future<VisitData> _load(String? activeId) async {
       for (final s in sessions) s.id: await DatabaseProvider.getCredits(s.id),
     },
     lastCredit: await DatabaseProvider.getLatestCredit(),
+    gains: await DatabaseProvider.getCardGains(),
   );
 }
 
@@ -148,28 +154,48 @@ class LastSessionCard extends StatelessWidget {
             ],
           );
         }
-        return HomeCard(
+        final summary = data.model.summarize(visit.plays);
+        final gains = gainsIn(visit, data.gains);
+        final card = HomeCard(
           title: visit.session?.venue.name ?? 'Last session',
           icon: Icons.place,
           heading: visit.session == null ? _WhereHeading(visit) : null,
           onMore: () => context.push(_path(visit)),
           children: [
-            CardSubtitle(
-                '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
+            Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: VisitTags(visit)),
             SessionSummaryBody(
-              data.model.summarize(visit.plays),
+              summary,
               plays: visit.plays,
               timed: visit.session != null,
               timing: data.timing[visit.session?.id],
               credits: data.credits[visit.session?.id] ?? [],
+              gains: gains,
+              onCollected: () => showSessionWrap(context,
+                  visit: visit, summary: summary, gains: gains),
               onPlay: (p) => context.push(
                   '${_path(visit)}?play=${p.playedAt.millisecondsSinceEpoch}'),
             ),
-            const SizedBox(height: 8),
-            TopPlays(plays: visit.plays, bests: data.model.bests),
+            // Its cards stand for its best plays when it collected any.
+            if (gains.isEmpty) ...[
+              const SizedBox(height: 8),
+              TopPlays(plays: visit.plays, bests: data.model.bests),
+            ],
             _SessionsSection(others, model: data.model),
           ],
         );
+        if (!SessionWrapBanner.waiting(visit)) return card;
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SessionWrapBanner(
+                  key: ValueKey(visit.key),
+                  visit: visit,
+                  summary: summary,
+                  gains: gains),
+              card,
+            ]);
       },
     );
   }
@@ -300,8 +326,8 @@ class _VenueSheetState extends State<_VenueSheet> {
         children: [
           Text('Where was this?',
               style: Theme.of(context).textTheme.titleLarge),
-          CardSubtitle(
-              '${visitSpan(widget.visit.start, widget.visit.end)} · ${playCount(widget.visit.plays.length)}'),
+          const SizedBox(height: 6),
+          VisitTags(widget.visit),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -473,8 +499,8 @@ class _VisitTileState extends State<VisitTile> {
                 fontWeight: FontWeight.w600,
                 fontStyle: visit.session == null ? FontStyle.italic : null,
                 color: visit.session == null ? scheme.onSurfaceVariant : null)),
-        subtitle: Text('${visitSpan(visit.start, visit.end)} · '
-            '${visit.plays.isEmpty ? 'no synced plays' : playCount(visit.plays.length)}'),
+        subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4), child: VisitTags(visit)),
         trailing: gap == null
             ? null
             : Text(
@@ -646,8 +672,9 @@ class _VisitPageState extends State<VisitPage> {
                                     context.replace('/home/sessions/${s.id}'))
                             : null,
                         children: [
-                          CardSubtitle(
-                              '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
+                          Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: VisitTags(visit)),
                           if (visit.plays.isEmpty)
                             const Padding(
                               padding: EdgeInsets.symmetric(vertical: 6),
@@ -663,6 +690,11 @@ class _VisitPageState extends State<VisitPage> {
                               timing: timing,
                               detailed: true,
                               credits: credits,
+                              gains: gainsIn(visit, data.gains),
+                              onCollected: () => showSessionWrap(context,
+                                  visit: visit,
+                                  summary: data.model.summarize(visit.plays),
+                                  gains: gainsIn(visit, data.gains)),
                               onPlay: (p) => _jump(
                                   groups, p.playedAt.millisecondsSinceEpoch),
                             ),

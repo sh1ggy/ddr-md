@@ -10,6 +10,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 const kDisplayFont = 'Unbounded';
 const kTextFont = 'Inter';
@@ -186,6 +187,10 @@ ThemeData floorPopTheme(Brightness brightness) {
       // Clear, so a page's GlassHeader frosts the page behind it.
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
+      // A clear bar reads as dark to Flutter, which would put white status
+      // bar icons on the light theme's white pages.
+      systemOverlayStyle:
+          dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       elevation: 0,
       scrolledUnderElevation: 0,
       foregroundColor: text,

@@ -3,7 +3,7 @@
 /// Description: The player's cards as a binder, in the profile's play style:
 /// a cover for each level, highest first, with its charts' bests as the
 /// level list's rings and its best cards fanned out, then sheets of every
-/// chart at that level in title order, three across and as many rows as the
+/// chart at that level in title order, six across and as many rows as the
 /// screen holds. Jackets alone, like a binder's sleeves. A chart without a
 /// best is an empty pocket, its jacket a ghost, so the gaps show. Tapping a
 /// card opens it.
@@ -11,6 +11,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart' show PageDots;
+import 'package:ddr_md/components/session/session_wrap.dart' show ShockPainter;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/best_rings.dart';
@@ -21,6 +23,7 @@ import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'compact_jacket_edition.dart';
 import 'edition_model.dart';
@@ -50,7 +53,7 @@ class BinderDivider extends BinderPage {
   List<ChartBest?> get bests => [for (final p in pockets) p.best];
   int get collected => pockets.where((p) => p.card != null).length;
   int get total => pockets.length;
-  // The level's negative, its top score.
+  // The negative, when this is the hardest level played: its top score.
   final BinderPocket? top;
 }
 
@@ -87,7 +90,7 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
                 lamp: best.lamp,
                 score: best.score,
                 precision: ChartBests.precisionAt(song.name, mode, value),
-                levelTop: ChartBests.levelTop(song.name, mode, value)),
+                hardestTop: ChartBests.hardestTop(song.name, mode, value)),
       ));
     }
   }
@@ -100,7 +103,9 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
         return [
           BinderDivider(level,
               pockets: pockets,
-              top: pockets.where((p) => p.card?.levelTop ?? false).firstOrNull),
+              top: pockets
+                  .where((p) => p.card?.hardestTop ?? false)
+                  .firstOrNull),
           for (var i = 0; i < pockets.length; i += perSheet)
             BinderSheet(level,
                 pockets.sublist(i, (i + perSheet).clamp(0, pockets.length)),
@@ -110,8 +115,16 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
   ];
 }
 
+/// A chart's pocket, by song and in-game difficulty name.
+typedef BinderChart = ({String song, String difficulty});
+
 class EditionBinderPage extends StatefulWidget {
-  const EditionBinderPage({super.key, this.level, this.song, this.difficulty});
+  const EditionBinderPage(
+      {super.key,
+      this.level,
+      this.song,
+      this.difficulty,
+      this.arrivals = const {}});
 
   /// The level to open on, else the highest.
   final int? level;
@@ -119,11 +132,17 @@ class EditionBinderPage extends StatefulWidget {
   /// A chart to open on the sheet of, its pocket picked out.
   final String? song, difficulty;
 
+  /// Cards a session just collected or upgraded, each with what its pocket
+  /// held before (null when empty). They slot into their pockets as their
+  /// sheet comes up.
+  final Map<BinderChart, EditionFacts?> arrivals;
+
   @override
   State<EditionBinderPage> createState() => _EditionBinderPageState();
 }
 
-class _EditionBinderPageState extends State<EditionBinderPage> {
+class _EditionBinderPageState extends State<EditionBinderPage>
+    with SingleTickerProviderStateMixin {
   late Modes _mode = context.read<SongState>().modes;
   bool _ready = false;
   // Paginated for [_perSheet] pockets, which follows the screen's height.
@@ -135,6 +154,19 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   // its cover. Kept so repaginating stays put.
   ({int level, int start})? _at;
   // The chart opened on, until the style changes.
+  // Arrivals already in their pockets.
+  final _landed = <BinderChart>{};
+  // Turning to each sheet with arrivals in turn, until the player turns one.
+  bool _touring = true;
+  // A turn to a sheet further than the next: 0 to .5 the sheet in view
+  // shrinks away, .5 to 1 the new one grows in.
+  late final _zoom = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 380));
+  // Sheets' jackets decoding, by page, so a sheet the tour turns to comes up
+  // whole rather than fading its jackets in under the cards landing.
+  final _warmed = <int, Future<void>>{};
+  // With cards arriving, held back until the sheet it opens on is warm.
+  late bool _shown = widget.arrivals.isEmpty;
   late ({String song, String difficulty})? _focus =
       widget.song == null || widget.difficulty == null
           ? null
@@ -149,6 +181,7 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _zoom.dispose();
     super.dispose();
   }
 
@@ -166,7 +199,11 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
     final pages = binderPages(_mode, perSheet: perSheet);
     final at = _at, focus = _focus;
     var page = -1;
-    if (at == null && focus != null) {
+    if (at == null && widget.arrivals.isNotEmpty) {
+      page = pages.indexWhere(
+          (p) => p is BinderSheet && p.pockets.any((c) => _arriving(c)));
+    }
+    if (page < 0 && at == null && focus != null) {
       page = pages.indexWhere((p) =>
           p is BinderSheet &&
           p.pockets.any((c) =>
@@ -192,8 +229,86 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
     _controller = PageController(initialPage: page);
     _pages = pages;
     _perSheet = perSheet;
+    _warmed.clear();
     _settle(page);
+    if (widget.arrivals.isNotEmpty) _warmArrivals(page);
     return pages;
+  }
+
+  Future<void> _warm(int page) => _warmed[page] ??= switch (_pages![page]) {
+        final BinderSheet s => Future.wait([
+            for (final p in s.pockets)
+              precacheImage(SongArtwork.image(p.song.name), context,
+                  onError: (_, __) {})
+          ]),
+        _ => Future.value(),
+      };
+
+  // The sheet it opens on first, then each other sheet with arrivals ahead
+  // of the tour.
+  Future<void> _warmArrivals(int page) async {
+    final pages = _pages;
+    await _warm(page);
+    if (!mounted || _pages != pages) return;
+    if (!_shown) setState(() => _shown = true);
+    for (final (i, p) in pages!.indexed) {
+      if (!mounted || _pages != pages) return;
+      if (p is BinderSheet && p.pockets.any(_arriving)) await _warm(i);
+    }
+  }
+
+  static BinderChart _chart(BinderPocket p) =>
+      (song: p.song.name, difficulty: p.difficulty);
+
+  bool _arriving(BinderPocket p) =>
+      p.card != null &&
+      widget.arrivals.containsKey(_chart(p)) &&
+      !_landed.contains(_chart(p));
+
+  // Once a sheet's arrivals are in, on to the next sheet with any.
+  void _landedOn(Set<BinderChart> charts) {
+    setState(() => _landed.addAll(charts));
+    final pages = _pages!;
+    final next = pages.indexWhere(
+        (p) => p is BinderSheet && p.pockets.any((c) => _arriving(c)));
+    if (next < 0) {
+      HapticFeedback.mediumImpact();
+      return;
+    }
+    if (!_touring) return;
+    Future.wait([Future.delayed(FloorPop.eighth), _warm(next)]).then((_) {
+      if (!mounted || !_touring || !_controller.hasClients) return;
+      // Straight to the sheet: a quick turn to the one beside, else a zoom
+      // out of this one and into it rather than sweeping past the pages
+      // between.
+      if ((next - _page).abs() == 1) {
+        _controller.animateToPage(next,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic);
+      } else {
+        _zoomTo(next);
+      }
+    });
+  }
+
+  Future<void> _zoomTo(int page) async {
+    await _zoom.animateTo(.5, curve: Curves.easeInCubic);
+    if (!mounted || !_controller.hasClients) return;
+    _controller.jumpToPage(page);
+    await _zoom.animateTo(1, curve: Curves.easeOutCubic);
+    _zoom.value = 0;
+  }
+
+  Widget _zoomed(Widget child) {
+    // Built the same way at rest, so the pages under it are never rebuilt.
+    final v = _zoom.value;
+    final out = v < .5;
+    final t = v == 0 ? 0.0 : (out ? v / .5 : (v - .5) / .5);
+    return Opacity(
+        opacity: v == 0 || !out ? (v == 0 ? 1 : t) : 1 - t,
+        child: Transform.scale(
+            scale: v == 0 ? 1 : (out ? 1 - .08 * t : 1.06 - .06 * t),
+            child: child));
   }
 
   void _settle(int page) {
@@ -238,11 +353,14 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
 
   @override
   Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
     return Scaffold(
         appBar: AppBar(title: const Text('Binder')),
+        // No spinner flashing up as cards come in, just the sheet once it's
+        // ready.
         body: !_ready
-            ? const Center(child: CircularProgressIndicator())
+            ? widget.arrivals.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : null
             : SafeArea(
                 top: false,
                 child: LayoutBuilder(builder: (context, box) {
@@ -251,6 +369,7 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                   final grid = _grid(width - 32 - 2 * _kPad,
                       box.maxHeight - tabs - footer - 2 * margin - 2 * _kPad);
                   final pages = _paginate(grid.rows * _kColumns);
+                  if (!_shown) return const SizedBox.shrink();
                   final level = pages.isEmpty ? null : pages[_page].level;
                   final sheets = pages
                       .where((p) => p is BinderSheet && p.level == level)
@@ -279,49 +398,80 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                                               level: p.level,
                                               difficulty: 'EXPERT',
                                               height: 16),
+                                          // To the sheet a card is coming
+                                          // into, else the cover.
                                           onSelected: (_) =>
-                                              _controller.jumpToPage(i))),
+                                              _controller.jumpToPage(math.max(
+                                                  i,
+                                                  pages.indexWhere((s) =>
+                                                      s is BinderSheet &&
+                                                      s.level == p.level &&
+                                                      s.pockets
+                                                          .any(_arriving)))))),
                             ])),
                     Expanded(
-                        child: SizedBox(
-                            width: width,
-                            child: PageView.builder(
-                                key: ObjectKey(_controller),
-                                controller: _controller,
-                                itemCount: pages.length,
-                                onPageChanged: (i) =>
-                                    setState(() => _settle(i)),
-                                itemBuilder: (context, i) => Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: margin),
-                                    child: switch (pages[i]) {
-                                      final BinderDivider d =>
-                                        _Cover(divider: d, onOpen: _open),
-                                      final BinderSheet s => _Sheet(
-                                          sheet: s,
-                                          side: grid.side,
-                                          focus: _focus,
-                                          onOpen: _open),
-                                    })))),
+                        child: AnimatedBuilder(
+                            animation: _zoom,
+                            builder: (context, child) => _zoomed(child!),
+                            child: SizedBox(
+                                width: width,
+                                child: NotificationListener<
+                                        ScrollStartNotification>(
+                                    onNotification: (n) {
+                                      if (n.dragDetails != null) {
+                                        _touring = false;
+                                      }
+                                      return false;
+                                    },
+                                    child: PageView.builder(
+                                        key: ObjectKey(_controller),
+                                        // The sheets either side built ahead, so
+                                        // a turn doesn't wait on their cards.
+                                        allowImplicitScrolling: true,
+                                        controller: _controller,
+                                        itemCount: pages.length,
+                                        onPageChanged: (i) =>
+                                            setState(() => _settle(i)),
+                                        itemBuilder: (context, i) => Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: margin),
+                                            child: switch (pages[i]) {
+                                              final BinderDivider d => _Cover(
+                                                  divider: d, onOpen: _open),
+                                              final BinderSheet s => _Sheet(
+                                                  key: ValueKey(
+                                                      (s.level, s.start)),
+                                                  sheet: s,
+                                                  side: grid.side,
+                                                  showing: i == _page,
+                                                  focus: _focus,
+                                                  arrivals: {
+                                                    for (final c in s.pockets)
+                                                      if (_arriving(c))
+                                                        _chart(c):
+                                                            widget.arrivals[
+                                                                _chart(c)],
+                                                  },
+                                                  onLanded: _landedOn,
+                                                  onOpen: _open),
+                                            })))))),
                     SizedBox(
                         height: footer,
                         child: Center(
-                            child: sheet == 0
-                                ? null
-                                : Text('$sheet/$sheets',
-                                    style: FloorPop.readout(14,
-                                        color: pop.haze)))),
+                            // On the cover none are filled yet.
+                            child: PageDots(sheets, index: sheet - 1))),
                   ]);
                 })));
   }
 }
 
-const _kPageMaxWidth = 520.0, _kColumns = 3;
+const _kPageMaxWidth = 520.0, _kColumns = 6;
 // A sheet's padding and the gap between pockets.
 const _kPad = 10.0, _kGap = 8.0;
 
 // The rows of square pockets that fill a sheet's [width] by [height], at
-// least three, and their side: as wide as three across allow, shrunk a touch
+// least three, and their side: as wide as six across allow, shrunk a touch
 // where that leaves the last row short of the bottom.
 ({int rows, double side}) _grid(double width, double height) {
   final across = (width - (_kColumns - 1) * _kGap) / _kColumns;
@@ -391,9 +541,8 @@ class _Cover extends StatelessWidget {
                       Text(
                           top != null
                               ? 'Top card · ${top.song.title}'
-                              : 'Score ${ChartBests.levelTopMinCharts} '
-                                  'charts here and your top one turns '
-                                  'negative.',
+                              : 'Your top score at your hardest level '
+                                  'turns negative.',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 12, color: pop.haze)),
@@ -439,49 +588,264 @@ class _Fan extends StatelessWidget {
       });
 }
 
-class _Sheet extends StatelessWidget {
+class _Sheet extends StatefulWidget {
   const _Sheet(
-      {required this.sheet,
+      {super.key,
+      required this.sheet,
       required this.side,
       required this.onOpen,
-      this.focus});
+      this.showing = true,
+      this.focus,
+      this.arrivals = const {},
+      this.onLanded});
   final BinderSheet sheet;
   // A pocket's side, from [_grid].
   final double side;
   final ValueChanged<BinderPocket> onOpen;
+  // In view, not just built ahead: its arrivals wait for it.
+  final bool showing;
   final ({String song, String difficulty})? focus;
+  // Its cards still to slot in, with what their pockets held before.
+  final Map<BinderChart, EditionFacts?> arrivals;
+  final ValueChanged<Set<BinderChart>>? onLanded;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-      decoration: BoxDecoration(
-          color: FloorPop.of(context).riser,
-          borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-          padding: const EdgeInsets.all(_kPad),
-          child: Align(
-              alignment: Alignment.topCenter,
-              child: SizedBox(
-                  width: _kColumns * side + (_kColumns - 1) * _kGap,
-                  child: Wrap(spacing: _kGap, runSpacing: _kGap, children: [
-                    for (final pocket in sheet.pockets)
-                      SizedBox.square(
-                          dimension: side,
-                          child: _Pocket(
-                              pocket: pocket,
-                              onOpen: onOpen,
-                              focused: pocket.song.name == focus?.song &&
-                                  pocket.difficulty == focus?.difficulty)),
-                  ])))));
+  State<_Sheet> createState() => _SheetState();
+}
+
+// The sheet's arrivals drop in one after another, each over what its pocket
+// held, slamming into the pocket: the card squashes and bounces with a flash,
+// a ring bursts out and the sheet jolts, then the pocket glows.
+class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
+  // Kept until the parent takes the arrivals in, then cleared so the sheet
+  // carries on as it is rather than being built again.
+  late List<int> _order = [
+    for (final (i, p) in widget.sheet.pockets.indexed)
+      if (widget.arrivals
+          .containsKey((song: p.song.name, difficulty: p.difficulty)))
+        i
+  ];
+  late final AnimationController _clock;
+  int _in = 0;
+
+  // Each card falls for [_fall] ms, and the last one's landing plays out
+  // over [_tail] ms before the clock stops.
+  static const _lead = .15, _fall = 340, _tail = 450;
+  late final _ms = 500 + 420 * _order.length + _tail;
+
+  // Falling under gravity: picking up speed until it hits.
+  Interval _interval(int n) {
+    final step =
+        (1 - _lead - (_fall + _tail) / _ms) / math.max(1, _order.length - 1);
+    return Interval(_lead + n * step, _lead + n * step + _fall / _ms,
+        curve: Curves.easeInQuad);
+  }
+
+  // Milliseconds since arrival [n] landed, negative before.
+  double _since(int n) => (_clock.value - _interval(n).end) * _ms;
+
+  void _tick() {
+    final landed = [
+      for (var n = 0; n < _order.length; n++)
+        if (_clock.value >= _interval(n).end) n
+    ].length;
+    if (landed > _in) HapticFeedback.heavyImpact();
+    _in = landed;
+  }
+
+  // The sheet knocked down as each card hits, ringing out.
+  double _jolt() {
+    final since = [
+      for (var n = 0; n < _order.length; n++)
+        if (_since(n) >= 0) _since(n)
+    ].fold(double.infinity, math.min);
+    return since < 350
+        ? 5 * math.exp(-since / 70) * math.cos(since / 100 * math.pi)
+        : 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _clock =
+        AnimationController(vsync: this, duration: Duration(milliseconds: _ms))
+          ..addListener(_tick);
+    if (widget.showing) _start();
+  }
+
+  void _start() {
+    if (_order.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _clock.isAnimating || _clock.isCompleted) return;
+      if (MediaQuery.of(context).disableAnimations) _clock.value = 1;
+      _clock.forward().whenComplete(() {
+        if (mounted) widget.onLanded?.call(widget.arrivals.keys.toSet());
+      });
+    });
+  }
+
+  @override
+  void didUpdateWidget(_Sheet old) {
+    super.didUpdateWidget(old);
+    if (widget.arrivals.isEmpty) _order = const [];
+    if (widget.showing && !old.showing) _start();
+  }
+
+  @override
+  void dispose() {
+    _clock.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final side = widget.side;
+    final pockets = widget.sheet.pockets;
+    BinderChart chart(BinderPocket p) =>
+        (song: p.song.name, difficulty: p.difficulty);
+    // Each pocket keyed by its chart and built the same way whether its card
+    // is flying in or settled, so landing changes nothing on screen. The
+    // arrivals go last, to fly over the rest.
+    final arriving = {for (final (n, i) in _order.indexed) i: n};
+    Widget slot(int i) {
+      final pocket = pockets[i];
+      final n = arriving[i];
+      final before = widget.arrivals[chart(pocket)];
+      return Positioned(
+          key: ValueKey(chart(pocket)),
+          left: (i % _kColumns) * (side + _kGap),
+          top: (i ~/ _kColumns) * (side + _kGap),
+          width: side,
+          height: side,
+          child: Stack(clipBehavior: Clip.none, children: [
+            // What it held, under the card coming in.
+            if (n != null && before != null)
+              Positioned.fill(
+                  key: const ValueKey('before'),
+                  child: RepaintBoundary(
+                      child: _Pocket(pocket: (
+                    song: pocket.song,
+                    difficulty: pocket.difficulty,
+                    best: null,
+                    card: before
+                  ), onOpen: (_) {}, dimmed: true))),
+            Positioned.fill(
+                key: const ValueKey('card'),
+                child: AnimatedBuilder(
+                    animation: _clock,
+                    builder: (context, child) {
+                      var t = 1.0, since = double.infinity;
+                      if (n != null) {
+                        t = _interval(n).transform(_clock.value);
+                        since = _since(n);
+                      }
+                      final landing = since >= 0 && since < _tail;
+                      final glow = landing ? 1 - since / _tail : 0.0;
+                      // Squashed flat on the hit, then a damped bounce.
+                      final press = since < 0 || since > _tail
+                          ? 1.0
+                          : 1 -
+                              .07 * math.max(0, 1 - since / 90) +
+                              .045 *
+                                  math.exp(-since / 110) *
+                                  math.sin(since / 130 * math.pi).abs();
+                      final flash = since >= 0 && since < 250
+                          ? math.pow(1 - since / 250, 2).toDouble()
+                          : 0.0;
+                      // Dropped from above onto the sheet.
+                      final s = (1 + .9 * (1 - t)) * press;
+                      return Opacity(
+                          opacity: t <= 0 ? 0 : 1,
+                          child: Transform(
+                              alignment: Alignment.center,
+                              transform: Matrix4.translationValues(
+                                  0, -(1 - t) * 140, 0)
+                                ..rotateZ((1 - t) * .25)
+                                ..scaleByDouble(s, s, 1, 1),
+                              child: CustomPaint(
+                                  foregroundPainter: landing
+                                      ? ShockPainter(
+                                          since / _tail, FloorPop.volt)
+                                      : null,
+                                  child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          boxShadow: [
+                                            if (glow > 0)
+                                              BoxShadow(
+                                                  color: FloorPop.volt
+                                                      .withValues(alpha: glow),
+                                                  blurRadius: 18,
+                                                  spreadRadius:
+                                                      2 + 6 * (1 - glow)),
+                                          ]),
+                                      position: DecorationPosition.background,
+                                      child: Stack(children: [
+                                        child!,
+                                        if (flash > 0)
+                                          Positioned.fill(
+                                              child: IgnorePointer(
+                                                  child: DecoratedBox(
+                                                      decoration: BoxDecoration(
+                                                          color: Colors.white
+                                                              .withValues(
+                                                                  alpha: .6 *
+                                                                      flash),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(
+                                                                      8))))),
+                                      ])))));
+                    },
+                    child: RepaintBoundary(
+                        child: _Pocket(
+                            pocket: pocket,
+                            onOpen: widget.onOpen,
+                            focused: pocket.song.name == widget.focus?.song &&
+                                pocket.difficulty ==
+                                    widget.focus?.difficulty)))),
+          ]));
+    }
+
+    final rows = (pockets.length + _kColumns - 1) ~/ _kColumns;
+    // Hugging its pockets, so a level's last sheet ends where they do.
+    return Align(
+        alignment: Alignment.topCenter,
+        child: DecoratedBox(
+            decoration: BoxDecoration(
+                color: FloorPop.of(context).riser,
+                borderRadius: BorderRadius.circular(20)),
+            child: Padding(
+                padding: const EdgeInsets.all(_kPad),
+                child: SizedBox(
+                    width: _kColumns * side + (_kColumns - 1) * _kGap,
+                    height: math.max(0, rows * side + (rows - 1) * _kGap),
+                    child: AnimatedBuilder(
+                        animation: _clock,
+                        builder: (context, child) => Transform.translate(
+                            offset: Offset(0, _jolt()), child: child),
+                        child: Stack(clipBehavior: Clip.none, children: [
+                          for (var i = 0; i < pockets.length; i++)
+                            if (!arriving.containsKey(i)) slot(i),
+                          for (final i in _order) slot(i),
+                        ]))))));
+  }
 }
 
 // A sleeve: the card when collected, else the chart's jacket as a ghost.
 class _Pocket extends StatelessWidget {
   const _Pocket(
-      {required this.pocket, required this.onOpen, this.focused = false});
+      {required this.pocket,
+      required this.onOpen,
+      this.focused = false,
+      this.dimmed = false});
   final BinderPocket pocket;
   final ValueChanged<BinderPocket> onOpen;
   // Picked out, as the chart the binder was opened on.
   final bool focused;
+  // What a pocket held, under the card coming in to it.
+  final bool dimmed;
 
   static const _grey = ColorFilter.matrix([
     .2126, .7152, .0722, 0, 0, //
@@ -527,8 +891,10 @@ class _Pocket extends StatelessWidget {
                 difficultyStamp: false,
                 tierSuffix: false
               ),
+              aura: false,
               child: art));
     }
+    if (dimmed) return Opacity(opacity: .5, child: sleeve);
     if (!focused) return sleeve;
     return DecoratedBox(
         position: DecorationPosition.foreground,

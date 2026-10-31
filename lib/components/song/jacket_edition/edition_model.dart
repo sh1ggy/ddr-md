@@ -10,7 +10,7 @@ import 'package:ddr_md/models/version_group.dart';
 
 enum EditionFinish { print, satin, metallic, holo, texturedHolo, prism }
 
-enum EditionFrame { stock, silver, jade, gold, starlight }
+enum EditionFrame { stock, bronze, silver, gold, platinum, rainbow }
 
 enum EditionMotif { neutral, classic, white, gold }
 
@@ -61,23 +61,27 @@ class EditionFacts {
   const EditionFacts(
       {required this.chart,
       this.level,
+      this.tier,
       this.version,
       this.grade,
       this.flare,
       this.lamp,
       this.precision,
       this.score,
-      this.levelTop = false});
+      this.hardestTop = false});
   final EditionChartKey chart;
   final int? level;
+  // How hard the chart is within its level, easy 0 to hard 9, as 17.0–17.9.
+  // From community ratings, which aren't loaded yet.
+  final int? tier;
   final FlareGroup? version;
   final Grade? grade;
   final String? flare;
   final ClearLamp? lamp;
   final PrecisionEvidence? precision;
   final int? score;
-  // The player's highest score of this chart's level.
-  final bool levelTop;
+  // The player's highest score at the hardest level they play.
+  final bool hardestTop;
 }
 
 /// Value equality comes from records. No picture, image, database or ticker
@@ -92,7 +96,6 @@ typedef EditionRecipe = ({
   int difficultyShape,
   int flareIndex,
   bool ex,
-  bool secret,
   bool failed,
   bool negative,
   double strength,
@@ -124,7 +127,6 @@ extension EditionRecipeDetails on EditionRecipe {
         'difficultyShape': difficultyShape,
         'flareIndex': flareIndex,
         'ex': ex,
-        'secret': secret,
         'failed': failed,
         'negative': negative,
         'strength': strength,

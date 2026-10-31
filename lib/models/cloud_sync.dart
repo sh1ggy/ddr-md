@@ -57,16 +57,15 @@ const syncTables = [
   SyncTable('sessions', ['{r}.id'], refs: {'venueId': 'venues'}),
   SyncTable('credits', ['{r}.id'], refs: {'cabinetId': 'cabinets'}),
   SyncTable('timing_plays', ['{r}.id'], refs: {'cabinetId': 'cabinets'}),
-  SyncTable(
-      'sync_overrides',
-      [
-        '(SELECT uid FROM cabinets WHERE id = {r}.cabinetId)',
-        '{r}.side',
-        '{r}.song',
-        '{r}.mode',
-        '{r}.difficulty'
-      ],
-      refs: {'cabinetId': 'cabinets'}),
+  SyncTable('sync_overrides', [
+    '(SELECT uid FROM cabinets WHERE id = {r}.cabinetId)',
+    '{r}.side',
+    '{r}.song',
+    '{r}.mode',
+    '{r}.difficulty'
+  ], refs: {
+    'cabinetId': 'cabinets'
+  }),
   SyncTable('scores', ['{r}.id']),
   SyncTable('score_records', ['{r}.id']),
   SyncTable('recent_plays',
@@ -76,6 +75,7 @@ const syncTables = [
   SyncTable('parity_pins',
       ['{r}.song', '{r}.mode', '{r}.difficulty', '{r}.beat', '{r}.col']),
   SyncTable('snippets', ['{r}.id']),
+  SyncTable('card_gains', ['{r}.id']),
 ];
 
 const _now = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
@@ -109,18 +109,24 @@ Future<void> installSync(Database db) async {
   await db.execute(
       'CREATE TABLE sync_outbox(t TEXT NOT NULL, k TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(t, k))');
   await db.execute('CREATE TABLE sync_meta(k TEXT PRIMARY KEY, v TEXT)');
-  const live = "NOT EXISTS (SELECT 1 FROM sync_meta WHERE k = 'applying')";
   for (final t in syncTables) {
-    String note(String row) =>
-        "INSERT OR REPLACE INTO sync_outbox VALUES ('${t.name}', ${t.keyOf(row)}, $_now);";
-    await db.execute(
-        'CREATE TRIGGER sync_${t.name}_i AFTER INSERT ON ${t.name} WHEN $live BEGIN ${note('NEW')} END');
-    await db.execute(
-        'CREATE TRIGGER sync_${t.name}_u AFTER UPDATE ON ${t.name} WHEN $live BEGIN ${note('OLD')} ${note('NEW')} END');
-    await db.execute(
-        'CREATE TRIGGER sync_${t.name}_d AFTER DELETE ON ${t.name} WHEN $live BEGIN ${note('OLD')} END');
+    await addSyncTriggers(db, t);
   }
   await queueEverything(db);
+}
+
+/// Notes [t]'s inserts, updates and deletes in the outbox, for a table
+/// synced from the start or added to [syncTables] later.
+Future<void> addSyncTriggers(DatabaseExecutor db, SyncTable t) async {
+  const live = "NOT EXISTS (SELECT 1 FROM sync_meta WHERE k = 'applying')";
+  String note(String row) =>
+      "INSERT OR REPLACE INTO sync_outbox VALUES ('${t.name}', ${t.keyOf(row)}, $_now);";
+  await db.execute(
+      'CREATE TRIGGER IF NOT EXISTS sync_${t.name}_i AFTER INSERT ON ${t.name} WHEN $live BEGIN ${note('NEW')} END');
+  await db.execute(
+      'CREATE TRIGGER IF NOT EXISTS sync_${t.name}_u AFTER UPDATE ON ${t.name} WHEN $live BEGIN ${note('OLD')} ${note('NEW')} END');
+  await db.execute(
+      'CREATE TRIGGER IF NOT EXISTS sync_${t.name}_d AFTER DELETE ON ${t.name} WHEN $live BEGIN ${note('OLD')} END');
 }
 
 /// Puts every row in the outbox, for an account that starts out empty.
@@ -193,7 +199,8 @@ class HttpSyncServer implements SyncServer {
   Future<void> deleteAll() => _send('DELETE', 'v1/me');
 
   Future<Object?> _send(String method, String path, [Object? body]) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15);
     try {
       final url = base.resolve(path);
       final req = await client.openUrl(method, url);
@@ -266,8 +273,8 @@ class SyncEngine {
       final entries = outbox.where((e) => e['t'] == t.name).toList();
       if (entries.isEmpty) continue;
       final rows = {
-        for (final r in await db.rawQuery(
-            'SELECT ${t.keyOf('r')} AS _k, r.* FROM ${t.name} AS r'))
+        for (final r in await db
+            .rawQuery('SELECT ${t.keyOf('r')} AS _k, r.* FROM ${t.name} AS r'))
           r['_k']: r
       };
       for (final e in entries) {
@@ -499,8 +506,8 @@ class CloudSync {
   static Future<void> _sync() async {
     running.value = true;
     try {
-      final rival =
-          Settings.getString(Settings.rivalCodeSpeedKey).replaceAll(RegExp(r'\D'), '');
+      final rival = Settings.getString(Settings.rivalCodeSpeedKey)
+          .replaceAll(RegExp(r'\D'), '');
       final key = await _key();
       final pulled = await SyncEngine(
         await DatabaseProvider.db,
@@ -568,8 +575,7 @@ class CloudSync {
 
   static String _newKey() {
     final random = Random.secure();
-    return base64Url
-        .encode([for (var i = 0; i < 32; i++) random.nextInt(256)])
-        .replaceAll('=', '');
+    return base64Url.encode(
+        [for (var i = 0; i < 32; i++) random.nextInt(256)]).replaceAll('=', '');
   }
 }

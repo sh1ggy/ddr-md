@@ -19,7 +19,9 @@ import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/models/visit_model.dart';
 import 'package:ddr_md/router.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -144,24 +146,57 @@ String visitSpan(DateTime start, DateTime end) {
 
 String playCount(int n) => '$n ${n == 1 ? 'play' : 'plays'}';
 
-/// A muted line under a card's heading.
-class CardSubtitle extends StatelessWidget {
-  const CardSubtitle(this.text, {super.key});
+/// A visit's facts as tags: its venue when [venue], its day, times and plays.
+class VisitTags extends StatelessWidget {
+  const VisitTags(this.visit, {super.key, this.venue = false});
+  final Visit visit;
+  final bool venue;
 
+  @override
+  Widget build(BuildContext context) {
+    final [day, ...times] = visitSpan(visit.start, visit.end).split(' · ');
+    return Wrap(spacing: 6, runSpacing: 6, children: [
+      if (venue)
+        if (visit.session case final s?)
+          VisitTag(Icons.place_rounded, s.venue.name),
+      VisitTag(Icons.calendar_today_rounded, day),
+      for (final t in times) VisitTag(Icons.schedule_rounded, t),
+      VisitTag(
+          Icons.music_note_rounded,
+          visit.plays.isEmpty
+              ? 'no synced plays'
+              : playCount(visit.plays.length)),
+    ]);
+  }
+}
+
+/// One fact about a visit, as a pill with its icon.
+class VisitTag extends StatelessWidget {
+  const VisitTag(this.icon, this.text, {super.key});
+  final IconData icon;
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text(
-        text,
-        style: Theme.of(context)
-            .textTheme
-            .labelMedium
-            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-      ),
-    );
+    final pop = FloorPop.of(context);
+    return Container(
+        padding: const EdgeInsets.fromLTRB(7, 3, 9, 3),
+        decoration: BoxDecoration(
+            color: pop.riser,
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(color: pop.line)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 13, color: pop.voltText),
+          const SizedBox(width: 4),
+          Flexible(
+              child: Text(text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurface))),
+        ]));
   }
 }
 

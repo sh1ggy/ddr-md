@@ -1,5 +1,5 @@
 /// Name: JacketEdition
-/// Parent: SongDetails, EditionLabPage
+/// Parent: SongDetails, EditionViewer
 /// Description: Owns resolved materials, static resources and motion lifetime.
 library;
 
@@ -170,9 +170,9 @@ class _JacketEditionState extends State<JacketEdition>
                     if (widget.layers.contains(EditionLayer.art))
                       Padding(
                           padding: EdgeInsets.all(geometry.width),
-                          child: ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                  geometry.inner.tlRadiusX),
+                          child: ClipPath(
+                              clipper: EditionClipper(geometry.inner.shift(
+                                  Offset(-geometry.width, -geometry.width))),
                               child: RepaintBoundary(
                                   key: const ValueKey('edition-art'),
                                   child: _recipe.negative
@@ -215,7 +215,11 @@ class _JacketEditionState extends State<JacketEdition>
                           child: IgnorePointer(
                               child: EditionFooter(
                                   recipe: _recipe,
-                                  corner: geometry.inner.blRadiusX))),
+                                  clip: geometry.inner.shift(Offset(
+                                      -geometry.width,
+                                      geometry.width +
+                                          size.height * editionFooterHeight -
+                                          size.height))))),
                   ]))),
         ),
       );
@@ -271,11 +275,11 @@ class EditionFooter extends StatelessWidget {
   const EditionFooter(
       {super.key,
       required this.recipe,
-      required this.corner,
+      required this.clip,
       this.shortStyle = false});
   final EditionRecipe recipe;
-  // The art's corner radius, which the band's corners follow.
-  final double corner;
+  // The art's outline in the band's own space, which its corners follow.
+  final Path clip;
   // SINGLE or DOUBLE without STYLE, for the small card.
   final bool shortStyle;
 
@@ -314,10 +318,9 @@ class EditionFooter extends StatelessWidget {
                 textScaler: TextScaler.noScaling)
               ..layout())
             .width;
-        return ClipRRect(
+        return ClipPath(
             key: const ValueKey('edition-chart-stamp'),
-            borderRadius:
-                BorderRadius.vertical(bottom: Radius.circular(corner)),
+            clipper: EditionClipper(clip),
             child: ColoredBox(
                 color: const Color(0xB316122C),
                 child: Row(

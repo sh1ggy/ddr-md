@@ -43,7 +43,7 @@ class _EditionChartFactsState extends State<EditionChartFacts> {
         old.facts.lamp == widget.facts.lamp &&
         old.facts.flare == widget.facts.flare &&
         old.facts.precision == widget.facts.precision &&
-        old.facts.levelTop == widget.facts.levelTop &&
+        old.facts.hardestTop == widget.facts.hardestTop &&
         old.facts.score == widget.facts.score &&
         old.enabled == widget.enabled) {
       return;
@@ -73,7 +73,8 @@ class _EditionChartFactsState extends State<EditionChartFacts> {
           lamp: best?.lamp,
           precision: ChartBests.precisionAt(facts.chart.song, mode, difficulty),
           score: best?.score,
-          levelTop: ChartBests.levelTop(facts.chart.song, mode, difficulty)));
+          hardestTop:
+              ChartBests.hardestTop(facts.chart.song, mode, difficulty)));
     } catch (_) {
       // Keep the current material through a transient database error.
     }

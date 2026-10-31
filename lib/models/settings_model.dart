@@ -13,6 +13,10 @@ class Settings {
   static const jacketGradeOffKey = 'jacketEditionGradeOff';
   static const jacketDifficultyOffKey = 'jacketEditionDifficultyOff';
   static const jacketTierOffKey = 'jacketEditionTierOff';
+  // Development: the flare aura as a gauge round the card instead of flames.
+  static const jacketFlareGaugeKey = 'jacketEditionFlareGauge';
+  // Development: how the session wrap's cards land, a [PackLanding] index.
+  static const wrapLandingKey = 'sessionWrapLanding';
 
   static const String chosenReadSpeedKey = "chosenReadSpeed";
 
@@ -169,6 +173,11 @@ class Settings {
   // An unfinished walk of every music_data page, as JSON: the style and page
   // it carries on from, and the newest play it covers ('' = none).
   static const String eamuseWalkKey = "eamuseWalk";
+
+  // The newest play before a sync that brought new ones (ISO-8601, '' =
+  // none waiting): Home offers the wrap of a session played since, until
+  // it's opened or dismissed.
+  static const String sessionWrapSinceKey = "sessionWrapSince";
 
   // 1 = leave doubles charts out of e-amusement syncs.
   static const String eamuseSkipDoublesKey = "eamuseSkipDoubles";

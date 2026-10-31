@@ -1,5 +1,5 @@
 /// Name: EditionArtworkPicker
-/// Parent: EditionLabPage, EditionFixtureBrowser
+/// Parent: EditionGuidePage, EditionFixtureBrowser
 /// Description: Search all loaded songs without decoding an artwork gallery.
 library;
 
