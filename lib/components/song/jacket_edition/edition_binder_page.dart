@@ -53,7 +53,7 @@ class BinderDivider extends BinderPage {
   List<ChartBest?> get bests => [for (final p in pockets) p.best];
   int get collected => pockets.where((p) => p.card != null).length;
   int get total => pockets.length;
-  // The level's negative, its top score.
+  // The negative, when this is the hardest level played: its top score.
   final BinderPocket? top;
 }
 
@@ -90,7 +90,7 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
                 lamp: best.lamp,
                 score: best.score,
                 precision: ChartBests.precisionAt(song.name, mode, value),
-                levelTop: ChartBests.levelTop(song.name, mode, value)),
+                hardestTop: ChartBests.hardestTop(song.name, mode, value)),
       ));
     }
   }
@@ -103,7 +103,9 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
         return [
           BinderDivider(level,
               pockets: pockets,
-              top: pockets.where((p) => p.card?.levelTop ?? false).firstOrNull),
+              top: pockets
+                  .where((p) => p.card?.hardestTop ?? false)
+                  .firstOrNull),
           for (var i = 0; i < pockets.length; i += perSheet)
             BinderSheet(level,
                 pockets.sublist(i, (i + perSheet).clamp(0, pockets.length)),
@@ -483,9 +485,8 @@ class _Cover extends StatelessWidget {
                       Text(
                           top != null
                               ? 'Top card · ${top.song.title}'
-                              : 'Score ${ChartBests.levelTopMinCharts} '
-                                  'charts here and your top one turns '
-                                  'negative.',
+                              : 'Your top score at your hardest level '
+                                  'turns negative.',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 12, color: pop.haze)),

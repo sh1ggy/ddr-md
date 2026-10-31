@@ -15,7 +15,8 @@ import 'package:ddr_md/models/db_models.dart';
 /// [card] is the card itself, new; the rest are the layers it can gain.
 enum CardLayer { card, finish, frame, aura }
 
-/// The frame a lamp puts round a card, from none (0) to MFC's (4).
+/// The frame a lamp puts round a card, from none (0) to MFC's (4): FC's
+/// bronze, GFC's silver, PFC's gold, MFC's rainbow.
 int cardFrameTier(ClearLamp? lamp) => switch (lamp) {
       ClearLamp.mfc => 4,
       ClearLamp.pfc => 3,

@@ -33,7 +33,8 @@ class DifficultyLabel extends StatelessWidget {
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final int? level;
-  // Optional small raised optical-cut digit using the same native artwork.
+  // The chart's tier within its level, 17.0–17.9, as a small raised digit
+  // in the same native artwork.
   final int? levelSuffix;
   final double height;
 
@@ -108,7 +109,7 @@ class LevelNumber extends StatelessWidget {
     if (suffix == null) return numeral(level);
     final fractionalHeight = height * .62;
     return Semantics(
-        label: '$level, optical cut ${suffix! + 1}',
+        label: '$level.$suffix',
         child: ExcludeSemantics(
             child: Row(
                 mainAxisSize: MainAxisSize.min,

@@ -10,6 +10,7 @@ import 'dart:math' as math;
 
 import 'edition_artwork_picker.dart' show editionArtwork;
 import 'package:ddr_md/grades.dart';
+import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:flutter/material.dart';
 import 'edition_model.dart';
@@ -46,7 +47,7 @@ class _EditionGuidePageState extends State<EditionGuidePage>
       widget.facts == null ? ClearLamp.pfc : widget.facts!.lamp;
   late final String? _flare =
       widget.facts == null ? 'VIII' : widget.facts!.flare;
-  late final bool _top = widget.facts?.levelTop ?? false;
+  late final bool _top = widget.facts?.hardestTop ?? false;
   late final _spread = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 450), value: 1);
 
@@ -60,10 +61,12 @@ class _EditionGuidePageState extends State<EditionGuidePage>
       chart: widget.facts?.chart ??
           (song: 'guide', mode: 'singles', difficulty: 'hard'),
       level: widget.facts?.level ?? 14,
+      tier: widget.facts?.tier,
       grade: _grade,
       lamp: _lamp,
       flare: _flare,
-      levelTop: _top);
+      precision: widget.facts?.precision,
+      hardestTop: _top);
 
   Widget get _art => widget.artwork ?? editionArtwork(null);
 
@@ -88,12 +91,14 @@ class _EditionGuidePageState extends State<EditionGuidePage>
         'FRAME',
         'Clear lamp',
         switch (_lamp) {
+          _ when widget.facts?.precision?.award == PrecisionAward.sdp =>
+            'SDP · pearly platinum',
           null || ClearLamp.failed || ClearLamp.clear => 'Dark stock',
           ClearLamp.mfc => 'MFC · rainbow, with a glint',
           ClearLamp.pfc => 'PFC · gold, catching the light',
-          ClearLamp.gfc => 'GFC · green, with a sheen',
+          ClearLamp.gfc => 'GFC · silver, with a sheen',
           final l =>
-            '${l == ClearLamp.life4 ? 'LIFE4' : l.name.toUpperCase()} · silver',
+            '${l == ClearLamp.life4 ? 'LIFE4' : l.name.toUpperCase()} · bronze',
         }
       ),
       (
@@ -109,7 +114,7 @@ class _EditionGuidePageState extends State<EditionGuidePage>
         'ART',
         'Top score, EX',
         [
-          if (_top) 'Negative: your top score of its level',
+          if (_top) 'Negative: your top score at your hardest level',
           if (_flare == 'EX') 'Polychrome: flare EX',
           if (!_top && _flare != 'EX') 'The jacket as it is',
         ].join(' · ')

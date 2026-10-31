@@ -216,9 +216,9 @@ class SongDetails extends StatelessWidget {
                                         mode, kInGameDifficultyNames[key]!)
                                     : null,
                                 score: best?.score,
-                                levelTop: loaded &&
+                                hardestTop: loaded &&
                                     key != null &&
-                                    ChartBests.levelTop(songInfo.name, mode,
+                                    ChartBests.hardestTop(songInfo.name, mode,
                                         kInGameDifficultyNames[key]!),
                               );
                               await showEditionViewer(context,

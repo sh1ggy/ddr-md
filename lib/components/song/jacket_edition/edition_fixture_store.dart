@@ -124,6 +124,8 @@ class EditionFixtureSpace {
           difficulty: difficulties[a[5]]
         ),
         level: levels[a[4]],
+        // No ratings yet, so each fixture takes a tier from its index.
+        tier: levels[a[4]] == null ? null : index % 10,
         version: versions[a[3]],
         grade: range.grade == Grade.e
             ? Grade.e
@@ -280,9 +282,8 @@ class EditionFixtureSpace {
       for (var i = 0; i < total; i++) {
         final facts = space.factsAt(i);
         final recipe = resolveEdition(facts);
-        if (recipe.tier != editionTier(facts.level) ||
+        if (recipe.tier != facts.tier ||
             recipe.finish != finishFor(facts.grade) ||
-            (recipe.secret && recipe.frame != EditionFrame.gold) ||
             (recipe.ex != (facts.flare == 'EX'))) {
           throw StateError('Fixture $i failed resolution');
         }

@@ -52,8 +52,9 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
         CustomPaint(painter: EditionStaticPainter(geometry)),
         Padding(
             padding: EdgeInsets.all(geometry.width),
-            child: ClipRRect(
-                borderRadius: BorderRadius.circular(geometry.inner.tlRadiusX),
+            child: ClipPath(
+                clipper: EditionClipper(geometry.inner
+                    .shift(Offset(-geometry.width, -geometry.width))),
                 child: RepaintBoundary(
                     child: recipe.negative
                         ? ColorFiltered(
@@ -82,7 +83,11 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
               child: IgnorePointer(
                   child: EditionFooter(
                       recipe: recipe,
-                      corner: geometry.inner.blRadiusX,
+                      clip: geometry.inner.shift(Offset(
+                          -geometry.width,
+                          geometry.width +
+                              size.height * editionFooterHeight * 1.3 -
+                              size.height)),
                       shortStyle: true))),
       ]));
     });

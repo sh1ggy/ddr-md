@@ -1,5 +1,5 @@
 /// Name: EditionRules
-/// Parent: JacketEdition, EditionLabPage
+/// Parent: JacketEdition
 /// Description: Pure achievement/axis to material selection.
 library;
 
@@ -18,26 +18,19 @@ import 'edition_catalog.dart';
 EditionFinish finishFor(Grade? grade) =>
     grade == Grade.aaa ? EditionFinish.prism : EditionFinish.print;
 
-int? editionTier(int? level) {
-  if (level == null || level < 1 || level > editionTierCeilings.last) {
-    return null;
-  }
-  return editionTierCeilings.indexWhere((ceiling) => level <= ceiling) + 1;
-}
-
 EditionRecipe resolveEdition(EditionFacts facts,
     [EditionOptions options = defaultEditionOptions]) {
   final precision = facts.precision?.award;
   final lamp = facts.lamp;
-  // Frames run stock to starlight in the lamp's tiers.
-  final frame = EditionFrame.values[math.max(
-      cardFrameTier(lamp),
-      switch (precision) {
-        PrecisionAward.mfc => 4,
-        PrecisionAward.pfc || PrecisionAward.sdp => 3,
-        _ => 0,
-      })];
-  final tier = editionTier(facts.level);
+  // Frames run bronze (FC) to gold (PFC) in the lamp's tiers; SDP lifts
+  // PFC's to platinum and MFC's is rainbow.
+  final frame = lamp == ClearLamp.mfc || precision == PrecisionAward.mfc
+      ? EditionFrame.rainbow
+      : precision == PrecisionAward.sdp
+          ? EditionFrame.platinum
+          : EditionFrame.values[math.max(
+              cardFrameTier(lamp), precision == PrecisionAward.pfc ? 3 : 0)];
+  final tier = facts.tier;
   final difficulty = kInGameDifficultyNames[facts.chart.difficulty];
   final flare = kFlareRanks.indexOf(facts.flare ?? '');
   return (
@@ -49,7 +42,7 @@ EditionRecipe resolveEdition(EditionFacts facts,
       FlareGroup.gold => EditionMotif.gold,
       null => EditionMotif.neutral
     },
-    cut: tier == null ? EditionCut.neutral : EditionCut.values[tier],
+    cut: tier == null ? EditionCut.neutral : EditionCut.values[tier + 1],
     border: editionBorders[options.borderId] ?? EditionBorder.gilded,
     tier: tier,
     difficultyShape: difficulty == null
@@ -57,9 +50,8 @@ EditionRecipe resolveEdition(EditionFacts facts,
         : kInGameDifficultyNames.values.toList().indexOf(difficulty) + 1,
     flareIndex: flare,
     ex: facts.flare == 'EX',
-    secret: frame == EditionFrame.gold && precision == PrecisionAward.sdp,
     failed: lamp == ClearLamp.failed || facts.grade == Grade.e,
-    negative: facts.levelTop,
+    negative: facts.hardestTop,
     strength: facts.grade?.label.endsWith('-') == true
         ? .65
         : facts.grade?.label.endsWith('+') == true
@@ -75,11 +67,7 @@ EditionRecipe resolveEdition(EditionFacts facts,
     scoreStamp: options.gradeStamp ? facts.score : null,
     flareStamp: options.gradeStamp && flare >= 0 ? facts.flare : null,
     difficultyStamp: options.difficultyStamp ? difficulty : null,
-    levelStamp: options.difficultyStamp && tier != null ? facts.level : null,
-    // Ten cuts use single-digit display indices .0–.9; the optical tier
-    // itself remains 1–10 in the recipe/catalog.
-    tierSuffix: options.tierSuffix && options.difficultyStamp && tier != null
-        ? tier - 1
-        : null,
+    levelStamp: options.difficultyStamp ? facts.level : null,
+    tierSuffix: options.tierSuffix && options.difficultyStamp ? tier : null,
   );
 }

@@ -33,7 +33,7 @@ class ChartBests {
     int revision,
     Map<String, Map<String, ChartBest>> bests,
     Map<String, Map<String, PrecisionEvidence>> precision,
-    Set<(String, String)> levelTops
+    Set<(String, String)> hardestTops
   })>{};
   static final _loads = <Modes, Future<void>>{};
 
@@ -41,12 +41,13 @@ class ChartBests {
           String song, Modes mode, String difficulty) =>
       _cache[mode]?.precision[song]?[difficulty];
 
-  /// Whether this chart holds the player's highest score of its level, out
-  /// of at least [levelTopMinCharts] scored charts there. Ties all hold it.
-  static bool levelTop(String song, Modes mode, String difficulty) =>
-      _cache[mode]?.levelTops.contains((song, difficulty)) ?? false;
+  /// Whether this chart holds the player's highest score at the hardest
+  /// level they play: the highest with at least [hardestMinCharts] scored
+  /// charts. One per mode, unless tied.
+  static bool hardestTop(String song, Modes mode, String difficulty) =>
+      _cache[mode]?.hardestTops.contains((song, difficulty)) ?? false;
 
-  static const levelTopMinCharts = 3;
+  static const hardestMinCharts = 10;
 
   static ChartBest? forChart(String song, Modes mode, String difficulty) =>
       _cache[mode]?.bests[song]?[difficulty];
@@ -165,14 +166,14 @@ class ChartBests {
               );
       }
     }
+    final hardest = levels.keys
+        .where((level) => levels[level]!.charts >= hardestMinCharts)
+        .fold<int?>(null, (a, b) => a == null || b > a ? b : a);
     _cache[mode] = (
       revision: revision,
       bests: bests,
       precision: precision,
-      levelTops: {
-        for (final l in levels.values)
-          if (l.charts >= levelTopMinCharts) ...l.tops
-      }
+      hardestTops: {...?levels[hardest]?.tops}
     );
   }
 }

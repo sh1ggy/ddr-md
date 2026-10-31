@@ -68,12 +68,12 @@ void main() {
                       '${p.song.name}${p.card == null ? '?' : ''}'
                   ].join(' ')}',
               };
-          // Level 15 has one scored chart, too few for a negative; every
+          // No level has the ten scored charts a negative needs; every
           // level-5 chart is unplayed.
           expect(binderPages(Modes.singles).map(show), [
             '15: 1/1 top null',
             '15: d',
-            '14: 3/3 top b',
+            '14: 3/3 top null',
             '14: a b c',
             '5: 0/4 top null',
             '5: a? b? c? d?',
