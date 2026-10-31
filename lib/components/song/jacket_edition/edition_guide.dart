@@ -14,7 +14,6 @@ import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:flutter/material.dart';
 import 'edition_model.dart';
-import 'edition_rules.dart';
 import 'jacket_edition.dart';
 
 const _plain = (
@@ -72,7 +71,6 @@ class _EditionGuidePageState extends State<EditionGuidePage>
 
   // What each layer shows now, and what earns it.
   List<(EditionLayer, String, String, String)> _labels() {
-    final flare = resolveEdition(_facts, _plain).flareIndex;
     return [
       (
         EditionLayer.aura,
@@ -80,10 +78,8 @@ class _EditionGuidePageState extends State<EditionGuidePage>
         'Flare',
         switch (_flare) {
           null => 'None yet',
-          'EX' => 'EX · rainbow flames',
-          final f when flare < 3 => '$f · flames along the top',
-          final f when flare < 6 => '$f · flames down the sides',
-          final f => '$f · the card ablaze',
+          'EX' => 'EX · rainbow stars and halo',
+          final f => '$f · stars twinkle',
         }
       ),
       (

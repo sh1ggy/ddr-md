@@ -81,16 +81,13 @@ const editionGoldFoil = [
   Color(0x40A8780F),
   Color(0x408A6512),
 ];
-// Flare aura: points sampled round the edge, on the card and the small
-// card; the flames' height at I and at IX, and the development gauge's
-// distance out and width, of the card's side. Tongues round the edge, how
-// pointed their tips, and how far those on the sides bend up.
-const editionFlameSamples = 96;
-const editionCompactFlameSamples = 48;
-const editionFlameHeight = [.035, .14];
-const editionFlameTongues = 26.0;
-const editionFlameSharpness = 3.6;
-const editionFlameLean = .5;
+// Flare aura: stars at I, at IX and EX, on the small card; each halo ring's
+// width and the development gauge's distance out and width, of the card's
+// side.
+const editionMinSparks = 4;
+const editionMaxSparks = 16;
+const editionCompactSparks = 4;
+const editionHaloWidth = .008;
 const editionGaugeOffset = .05;
 const editionGaugeWidth = .028;
 // Flare EX's polychrome over the art, mirrored so its bands never seam.

@@ -26,26 +26,26 @@ class EditionGeometry {
         compact ? 0 : editionGlintCount,
         (i) => Offset(size.width * (.12 + (i * .173) % .77),
             size.height * (.15 + (i * .293) % .70))));
-    if (recipe.flareIndex >= 0) {
-      final metric = outer.computeMetrics().first;
-      final n = compact ? editionCompactFlameSamples : editionFlameSamples;
-      final ends = [
-        for (var i = 0; i < n; i++)
-          metric.getTangentForOffset(metric.length * i / n)!
-      ];
-      // The outline starts on the top edge, after the top left corner.
-      final top = (size.width / 2 - ends.first.position.dx) / metric.length;
-      edge = List.unmodifiable([
-        for (var i = 0; i < n; i++)
-          (
-            at: ends[i].position,
-            out: Offset(ends[i].vector.dy, -ends[i].vector.dx),
-            top: ((i / n - top + .5) % 1 - .5).abs(),
-          )
-      ]);
-    } else {
-      edge = const [];
-    }
+    final random = math.Random(recipe.flareIndex + 1);
+    sparks = List.unmodifiable(List.generate(
+        recipe.flareIndex < 0
+            ? 0
+            : compact
+                ? editionCompactSparks
+                : recipe.ex
+                    ? editionMaxSparks
+                    : (editionMinSparks +
+                            (editionMaxSparks - editionMinSparks) *
+                                recipe.flareIndex /
+                                8)
+                        .round(),
+        (_) => (
+              along: random.nextDouble(),
+              phase: random.nextDouble(),
+              speed: 1.6 + random.nextDouble() * 1.6,
+              size: .009 + random.nextDouble() * .009,
+              out: (random.nextDouble() - .3) * .05,
+            )));
     final back = ui.PictureRecorder();
     _recordFrame(Canvas(back));
     frame = back.endRecording();
@@ -93,7 +93,7 @@ class EditionGeometry {
 
   late final ui.Picture frame, motif;
   late final List<Offset> glints;
-  late final List<EditionEdge> edge;
+  late final List<EditionSpark> sparks;
 
   /// The flare gauge's track round the card, made on first use.
   late final ui.PathMetric gauge =
@@ -425,14 +425,17 @@ class EditionLightPainter extends CustomPainter {
       old.geometry != geometry || old.motion != motion;
 }
 
-/// A point on the card's edge, its outward normal, and how far round the
-/// edge it is from the top's middle (0 to .5).
-typedef EditionEdge = ({Offset at, Offset out, double top});
+typedef EditionSpark = ({
+  double along,
+  double phase,
+  double speed,
+  double size,
+  double out
+});
 
-/// The flare's aura, outside the art: flames in the rank's colour licking
-/// off the frame, white at the root. They rise higher and spread further
-/// round the card up the ranks, from the top edge at I to the whole card at
-/// IX; EX burns rainbow. Development can show the flare gauge instead.
+/// The flare's aura, outside the art: a white halo round the card and stars
+/// twinkling on its edge, tinted by the rank. Both grow up the ranks; EX's
+/// stars and halo are rainbow. Development can show the flare gauge instead.
 /// Unblurred; without [motion] it holds its first frame.
 class EditionFlarePainter extends CustomPainter {
   EditionFlarePainter(this.geometry,
@@ -440,9 +443,37 @@ class EditionFlarePainter extends CustomPainter {
       : super(repaint: motion);
   final EditionGeometry geometry;
   final EditionMotion? motion;
-  // EX's polychrome belongs to the art; the flames to the aura.
+  // EX's polychrome belongs to the art; the halo and particles to the aura.
   final Set<EditionLayer> layers;
   final Paint _paint = Paint();
+
+  static final _star = () {
+    final path = Path()..moveTo(0, -1);
+    for (final (x, y) in [
+      (.2, -.2),
+      (1.0, 0.0),
+      (.2, .2),
+      (0.0, 1.0),
+      (-.2, .2),
+      (-1.0, 0.0),
+      (-.2, -.2),
+    ]) {
+      path.lineTo(x, y);
+    }
+    return path..close();
+  }();
+
+  // A point [along] the card's edge, clockwise from the top left, pushed
+  // [out] of it.
+  static Offset _edge(Size size, double along, double out) {
+    final w = size.width, h = size.height;
+    final d = (along % 1) * 2 * (w + h);
+    final o = out * size.shortestSide;
+    if (d < w) return Offset(d, -o);
+    if (d < w + h) return Offset(w + o, d - w);
+    if (d < 2 * w + h) return Offset(w - (d - w - h), h + o);
+    return Offset(-o, h - (d - 2 * w - h));
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -450,6 +481,13 @@ class EditionFlarePainter extends CustomPainter {
     if (recipe.flareIndex < 0) return;
     final side = size.shortestSide;
     final t = motion?.time ?? 0;
+    final level = recipe.ex ? 1.0 : (recipe.flareIndex + 1) / 9;
+    final color = recipe.ex
+        ? kFlareExColors.first
+        : kFlareCardColors[recipe.flareIndex].frame;
+    // The halo stays white like foil so it never reads as a coloured
+    // border; only the particles carry a hint of the rank's colour.
+    final bright = Color.lerp(color, Colors.white, .6)!;
 
     if (recipe.ex && layers.contains(EditionLayer.art)) {
       // Polychrome: the art's own light and shade, recoloured by bands of
@@ -478,89 +516,47 @@ class EditionFlarePainter extends CustomPainter {
     }
 
     if (!layers.contains(EditionLayer.aura)) return;
-    final level = recipe.ex ? 1.0 : (recipe.flareIndex + 1) / 9;
     if (Settings.getInt(Settings.jacketFlareGaugeKey) == 1) {
       _gauge(canvas, size, t, level);
-    } else {
-      _flames(canvas, size, t, level);
+      return;
     }
-  }
-
-  void _flames(Canvas canvas, Size size, double t, double level) {
-    final recipe = geometry.recipe;
-    final side = size.shortestSide;
-    final edge = geometry.edge;
-    final reach = .25 + .75 * level;
-    final height = side *
-        (editionFlameHeight[0] +
-            (editionFlameHeight[1] - editionFlameHeight[0]) * level) *
-        (geometry.compact ? .6 : 1);
     _paint
-      ..style = PaintingStyle.fill
-      ..blendMode = BlendMode.plus;
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = side * editionHaloWidth;
     if (recipe.ex) {
-      final shift = t * side * .3;
-      _paint.shader = ui.Gradient.linear(
-          Offset(shift, 0),
-          Offset(shift + side, side),
-          kFlareExColors,
-          [
-            for (var i = 0; i < kFlareExColors.length; i++)
-              i / (kFlareExColors.length - 1)
-          ],
-          TileMode.mirror);
+      _paint.shader = SweepGradient(
+              colors: [...kFlareExColors, kFlareExColors.first],
+              transform: GradientRotation(t * .9))
+          .createShader(Offset.zero & size);
     }
-    final tips = List.filled(edge.length, Offset.zero);
-    // Outer tongues, then hotter and whiter ones inside them.
-    for (final (scale, alpha, white) in const [
-      (1.0, .38, 0.0),
-      (.66, .55, .35),
-      (.36, .85, .8),
-    ]) {
-      for (var i = 0; i < edge.length; i++) {
-        final e = edge[i];
-        final a = i / edge.length;
-        // Upward edges burn hardest; the fire spreads down from the top.
-        final up = math.max(0.0, .35 - e.out.dy * .8 - e.out.dx.abs() * .05);
-        final lit = ((reach * .62 - e.top) * 8).clamp(0.0, 1.0);
-        final flicker = math.pow(
-                    .5 +
-                        .5 *
-                            math.sin(a * editionFlameTongues +
-                                t * 7 +
-                                math.sin(a * 13 + t * 3) * 2),
-                    editionFlameSharpness) *
-                .75 +
-            .25 * (.5 + .5 * math.sin(a * 97 - t * 11));
-        final h =
-            height * scale * lit * (.35 + .65 * flicker) * (.55 + .45 * up);
-        // Tongues on the sides lean upward as they rise.
-        tips[i] = e.at +
-            e.out * h -
-            Offset(0, h * editionFlameLean * (1 - e.out.dy.abs()));
-      }
-      // Curved through the tips: each a control point, the midpoints between
-      // them on the outline.
-      final path = Path()..fillType = PathFillType.evenOdd;
-      var from = (tips.last + tips.first) / 2;
-      path.moveTo(from.dx, from.dy);
-      for (var i = 0; i < tips.length; i++) {
-        final to = (tips[i] + tips[(i + 1) % tips.length]) / 2;
-        path.quadraticBezierTo(tips[i].dx, tips[i].dy, to.dx, to.dy);
-      }
-      path
-        ..close()
-        ..addPath(geometry.outer, Offset.zero);
-      _paint.color = recipe.ex
-          ? Colors.white.withValues(alpha: alpha)
-          : Color.lerp(kFlareCardColors[recipe.flareIndex].frame, Colors.white,
-                  white)!
-              .withValues(alpha: alpha);
-      canvas.drawPath(path, _paint);
+    for (var i = 0; i < 4; i++) {
+      _paint.color = Colors.white.withValues(
+          alpha: const [.32, .16, .07, .03][i] * (.35 + level * .65));
+      canvas.drawPath(geometry.at(-side * editionHaloWidth * (i + .5)), _paint);
     }
     _paint
       ..shader = null
-      ..blendMode = BlendMode.srcOver;
+      ..style = PaintingStyle.fill;
+
+    for (var i = 0; i < geometry.sparks.length; i++) {
+      final s = geometry.sparks[i];
+      final f = (t / s.speed + s.phase) % 1;
+      final dot = side * s.size;
+      final at = _edge(size, s.along, s.out);
+      final alpha = math.sin(f * math.pi);
+      if (alpha <= .02) continue;
+      _paint.color = (recipe.ex
+              ? Color.lerp(
+                  kFlareExColors[i % kFlareExColors.length], Colors.white, .3)!
+              : bright)
+          .withValues(alpha: alpha);
+      canvas.save();
+      canvas.translate(at.dx, at.dy);
+      canvas.rotate(alpha * math.pi / 4);
+      canvas.scale(dot * 2.4 * alpha * (recipe.ex ? 1.3 : 1));
+      canvas.drawPath(_star, _paint);
+      canvas.restore();
+    }
   }
 
   // A track round the card with a tick each ninth, lit clockwise from the
