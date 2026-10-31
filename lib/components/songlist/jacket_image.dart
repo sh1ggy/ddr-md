@@ -44,7 +44,7 @@ class SongArtwork extends StatelessWidget {
   /// The jacket's image, for precaching what a page is about to show.
   static ImageProvider image(String songName, {bool fullResolution = false}) =>
       ContentStore.image(
-          'assets/${fullResolution ? 'jackets' : 'jackets-160'}/$songName.png');
+          'assets/${fullResolution ? 'jackets-webp' : 'jackets-160-webp'}/$songName.webp');
 
   Widget _fallback(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;

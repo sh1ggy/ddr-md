@@ -356,7 +356,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 caption: (
                   title: widget.title,
                   jacket: ContentStore.image(
-                      'assets/jackets/${snapshot.data!.name}.png'),
+                      'assets/jackets-webp/${snapshot.data!.name}.webp'),
                   mode: widget.mode,
                   difficulty: _pretty(widget.difficultyKey),
                   level: widget.difficultyLevel,

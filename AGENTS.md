@@ -17,6 +17,7 @@ flutter test test/parity_test.dart   # one test file
 flutter test --plain-name "substring of test name"   # one test
 
 bash scripts/generate_songlist.sh    # rebuild merged assets/songlist.json — run after ANY change under assets/songs/
+bash scripts/encode_jackets.sh       # PNG jackets → the WebP copies the app reads (needs cwebp) — run after changing assets/jackets*/
 flutter test tool/generate_patterns.dart  # rebuild assets/patterns/ + pattern_levels.json (~25 s) — run after changing assets/steps/, parity.dart or pattern_analysis.dart
 flutter test tool/content_manifest.dart   # hash content into assets/content_manifest.json, lay out build/content/ (CI runs this to publish)
 bash scripts/build_store.sh <ipa|appbundle>  # store builds: fetch the live content into assets/, build with CONTENT_URL
@@ -63,7 +64,7 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 ## Gotchas
 
 - `pubspec.yaml` asset entries carry load-bearing comments (noteskin is optional/gitignored; only one model triplet ships). Don't "clean them up" or blindly add `assets/models/` as a directory.
-- Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songs/`, `assets/steps/`, `assets/patterns/`, `assets/pattern_levels.json`, `assets/content_manifest.json`, `infra/*.tfstate`, `assets/songlist.json`, `assets/noteskin/`, `assets/difficulty/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive), `docs/arcade/`.
+- Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songs/`, `assets/steps/`, `assets/patterns/`, `assets/jackets-webp/`, `assets/jackets-160-webp/`, `assets/pattern_levels.json`, `assets/content_manifest.json`, `infra/*.tfstate`, `assets/songlist.json`, `assets/noteskin/`, `assets/difficulty/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive), `docs/arcade/`.
 - Session worktrees (`.claude/worktrees/`) need those gitignored directories from the main checkout; `.claude/settings.json` lists them for Claude Code to symlink. A worktree made without them (`ls assets/songs` fails) gets the same links by hand: `ln -s <main checkout>/<dir> <dir>` for each entry. Two more things a worktree needs to build: copy (don't link) `assets/songlist.json`, `assets/pattern_levels.json` and `assets/content_manifest.json`, and for iOS copy `native_opencv/ios/libs/` (a symlinked xcframework fails at link time with `Undefined symbol: _OrtGetApiBase`) then `pod install`. iOS simulators: the vendored OpenCV has no arm64-simulator slice, so the app only runs on an x86_64 (Rosetta) simulator below iOS 26, which means lowering `IPHONEOS_DEPLOYMENT_TARGET` locally; don't commit that.
 - Shell scripts here inline pure commands — don't extract fetch/copy/check helper functions.
 - `docs/` holds only how-tos the code relies on (noteskin assets, parity labelling, dancer form). Plans and design write-ups don't live in the repo.

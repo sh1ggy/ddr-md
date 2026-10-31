@@ -139,6 +139,8 @@ app.*.symbols
 
 # assets
 /assets/jackets-160
+/assets/jackets-160-webp
+/assets/jackets-webp
 /assets/jackets
 /assets/songs
 /assets/steps

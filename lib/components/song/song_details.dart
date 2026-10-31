@@ -185,7 +185,7 @@ class SongDetails extends StatelessWidget {
                               final (_, loaded) = await (
                                 precacheImage(
                                     ContentStore.image(
-                                        'assets/jackets/${songInfo.name}.png'),
+                                        'assets/jackets-webp/${songInfo.name}.webp'),
                                     context,
                                     onError: (_, __) {}),
                                 // Without bests the jacket still opens, plain.

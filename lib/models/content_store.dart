@@ -28,7 +28,7 @@ import 'package:flutter/services.dart';
 bool appReads(String path) =>
     const ['songlist.json', 'parity_patterns.json', 'pattern_levels.json']
         .contains(path) ||
-    const ['steps/', 'patterns/', 'jackets/', 'jackets-160/']
+    const ['steps/', 'patterns/', 'jackets-webp/', 'jackets-160-webp/']
         .any(path.startsWith);
 
 /// Content paths (relative to assets/) the engine version gates.

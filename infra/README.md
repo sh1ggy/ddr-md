@@ -123,10 +123,11 @@ jackets/<name>.png       full jacket
 jackets-160/<name>.png   list thumbnail
 ```
 
-CI derives everything else: the songlist, the song's pattern file, and the
-levels table its charts are ranked in. Existing songs' files don't change
-(ranks are computed on the device), so each install downloads about 900 KB:
-the songlist (567 KB compressed, replaced whole), both jackets (~260 KB), the
+CI derives everything else: the songlist, the song's pattern file, the
+levels table its charts are ranked in, and the WebP jackets the app reads
+(`jackets-webp/`, `jackets-160-webp/`; the PNGs still publish for older apps). Existing songs' files don't change
+(ranks are computed on the device), so each install downloads about 700 KB:
+the songlist (567 KB compressed, replaced whole), both WebP jackets (~60 KB), the
 levels table (58 KB), and ~10 KB of steps and patterns. `<name>` must match
 across all four files and never change afterwards.
 

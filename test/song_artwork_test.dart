@@ -199,7 +199,7 @@ class _JacketBundle extends CachingAssetBundle {
 
   @override
   Future<ByteData> load(String key) {
-    if (key.endsWith('/loaded-art-fixture.png')) return Future.value(png);
+    if (key.endsWith('/loaded-art-fixture.webp')) return Future.value(png);
     return rootBundle.load(key);
   }
 }

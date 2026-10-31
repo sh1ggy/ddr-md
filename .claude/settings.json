@@ -6,6 +6,8 @@
       "assets/patterns",
       "assets/jackets",
       "assets/jackets-160",
+      "assets/jackets-webp",
+      "assets/jackets-160-webp",
       "assets/noteskin",
       "assets/difficulty",
       "native_opencv/android/src/main/jniLibs",
