@@ -50,6 +50,8 @@ class EamuseSyncState extends ChangeNotifier {
   int revision = 0;
   EamuseSync? _sync;
   DateTime? _notBefore;
+  // Held off because Konami refused the last sync, not just the cooldown.
+  bool _refused = false;
   Timer? _wake;
 
   DateTime? get syncedAt =>
@@ -147,13 +149,17 @@ class EamuseSyncState extends ChangeNotifier {
 
   /// [renewed]: the session was just renewed, by signing in or by
   /// [_signInSilently], so a signed-out answer means it really has to be
-  /// signed into again.
-  Future<void> sync({bool renewed = false}) async {
+  /// signed into again. One for a session that just [ended] skips the
+  /// cooldown, but not the backoff after Konami refused one.
+  Future<void> sync({bool renewed = false, bool ended = false}) async {
     // The sync after a sign-in carries on the one that needed it.
-    if (status == EamuseStatus.syncing || upToDate || (waiting && !renewed)) {
+    if (status == EamuseStatus.syncing ||
+        (!ended && (upToDate || (waiting && !renewed))) ||
+        (ended && waiting && _refused)) {
       return;
     }
     _holdOff(EamuseSync.cooldown);
+    _refused = false;
     final stored = {
       for (final r
           in await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse))
@@ -241,6 +247,9 @@ class EamuseSyncState extends ChangeNotifier {
               failed: p.failed,
             )
       ]);
+      // The plays are in before any chart is, for a session's wrap to show.
+      revision++;
+      notifyListeners();
       // Charts synced before the newest play was recorded have none, but
       // every play before that sync is in them.
       final lastPlay = Settings.getString(Settings.eamuseLastPlayKey);
@@ -293,10 +302,6 @@ class EamuseSyncState extends ChangeNotifier {
               'last sync',
       };
       notifyListeners();
-      if (plan is! EamuseNothingNew ||
-          Settings.getString(Settings.rivalCodeSpeedKey).isEmpty) {
-        await _syncProfile(sync);
-      }
       switch (plan) {
         case EamuseFullSync():
           final walkSince = resume
@@ -317,6 +322,12 @@ class EamuseSyncState extends ChangeNotifier {
         case EamuseNothingNew():
           break;
       }
+      // After the charts, which a session's wrap is waiting on.
+      if (!sync.cancelled &&
+          (plan is! EamuseNothingNew ||
+              Settings.getString(Settings.rivalCodeSpeedKey).isEmpty)) {
+        await _syncProfile(sync);
+      }
       if (!sync.cancelled) {
         await Settings.setString(
             Settings.eamuseSyncedAtKey, DateTime.now().toIso8601String());
@@ -336,6 +347,7 @@ class EamuseSyncState extends ChangeNotifier {
       error = 'e-amusement unavailable ($e), try again in '
           '${EamuseSync.backoff.inMinutes} min';
       _holdOff(EamuseSync.backoff);
+      _refused = true;
     } catch (e) {
       status = EamuseStatus.failed;
       error = 'Sync failed';

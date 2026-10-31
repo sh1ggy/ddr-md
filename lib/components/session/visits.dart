@@ -162,8 +162,9 @@ class LastSessionCard extends StatelessWidget {
           heading: visit.session == null ? _WhereHeading(visit) : null,
           onMore: () => context.push(_path(visit)),
           children: [
-            CardSubtitle(
-                '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
+            Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: VisitTags(visit)),
             SessionSummaryBody(
               summary,
               plays: visit.plays,
@@ -325,8 +326,8 @@ class _VenueSheetState extends State<_VenueSheet> {
         children: [
           Text('Where was this?',
               style: Theme.of(context).textTheme.titleLarge),
-          CardSubtitle(
-              '${visitSpan(widget.visit.start, widget.visit.end)} · ${playCount(widget.visit.plays.length)}'),
+          const SizedBox(height: 6),
+          VisitTags(widget.visit),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -498,8 +499,8 @@ class _VisitTileState extends State<VisitTile> {
                 fontWeight: FontWeight.w600,
                 fontStyle: visit.session == null ? FontStyle.italic : null,
                 color: visit.session == null ? scheme.onSurfaceVariant : null)),
-        subtitle: Text('${visitSpan(visit.start, visit.end)} · '
-            '${visit.plays.isEmpty ? 'no synced plays' : playCount(visit.plays.length)}'),
+        subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4), child: VisitTags(visit)),
         trailing: gap == null
             ? null
             : Text(
@@ -671,8 +672,9 @@ class _VisitPageState extends State<VisitPage> {
                                     context.replace('/home/sessions/${s.id}'))
                             : null,
                         children: [
-                          CardSubtitle(
-                              '${visitSpan(visit.start, visit.end)} · ${playCount(visit.plays.length)}'),
+                          Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: VisitTags(visit)),
                           if (visit.plays.isEmpty)
                             const Padding(
                               padding: EdgeInsets.symmetric(vertical: 6),

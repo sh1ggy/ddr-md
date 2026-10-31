@@ -8,6 +8,7 @@ import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_browser.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_store.dart';
+import 'package:ddr_md/components/song_json.dart' show Modes;
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
 import 'package:ddr_md/models/card_gains.dart';
@@ -37,9 +38,12 @@ class DevelopmentToolsTile extends StatelessWidget {
       ));
 }
 
+const _previewCards = 12;
+
 /// Opens the wrap of the latest session with plays, its gains made up from
 /// its charts' bests in turn: a new card, AAA's foil, a frame one tier up and
-/// a flare one rank up, each where the best allows.
+/// a flare one rank up, each where the best allows. A dozen cards, topped
+/// up from the player's other bests when the session has fewer charts.
 Future<void> _previewWrap(BuildContext context) async {
   final data = await loadVisits(context.read<SessionState>().session?.id);
   final visit = data.visits
@@ -52,24 +56,41 @@ Future<void> _previewWrap(BuildContext context) async {
     return;
   }
   const lamps = [ClearLamp.clear, ClearLamp.fc, ClearLamp.gfc, ClearLamp.pfc];
-  final seen = <Object>{};
-  final gains = <CardGain>[];
+  // The session's charts, then the player's other bests in its first style,
+  // until there are a dozen.
+  final mode = visit.plays.last.mode;
+  await ChartBests.ensure(mode);
+  final charts = <(String, Modes, String), ChartBest>{};
   for (final p in visit.plays.reversed) {
     final song = p.song;
-    if (song == null || !seen.add((song, p.mode, p.difficulty))) continue;
+    if (song == null || charts.containsKey((song, p.mode, p.difficulty))) {
+      continue;
+    }
     await ChartBests.ensure(p.mode);
-    final best = ChartBests.forChart(song, p.mode, p.difficulty) ??
-        (score: p.score, grade: null, lamp: null, flare: null);
+    charts[(song, p.mode, p.difficulty)] =
+        ChartBests.forChart(song, p.mode, p.difficulty) ??
+            (score: p.score, grade: null, lamp: null, flare: null);
+  }
+  for (final MapEntry(key: song, value: bests)
+      in ChartBests.bestsOf(mode).entries) {
+    for (final MapEntry(key: difficulty, value: best) in bests.entries) {
+      if (charts.length >= _previewCards) break;
+      charts.putIfAbsent((song, mode, difficulty), () => best);
+    }
+  }
+  final gains = <CardGain>[];
+  for (final MapEntry(key: (song, mode, difficulty), value: best)
+      in charts.entries.take(_previewCards)) {
     CardGain gain(CardLayer layer, [String from = '', String to = '']) =>
         CardGain(
             song: song,
-            mode: p.mode,
-            difficulty: p.difficulty,
+            mode: mode,
+            difficulty: difficulty,
             layer: layer,
             from: from,
             to: to,
             best: best,
-            playedAt: p.playedAt,
+            playedAt: visit.plays.first.playedAt,
             syncedAt: DateTime.now());
     final tier = cardFrameTier(best.lamp);
     final flare = kFlareRanks.indexOf(best.flare ?? '');
@@ -82,7 +103,6 @@ Future<void> _previewWrap(BuildContext context) async {
         gain(CardLayer.aura, kFlareRanks[flare - 1], best.flare!),
       _ => gain(CardLayer.card),
     });
-    if (gains.length == 6) break;
   }
   if (!context.mounted) return;
   await showSessionWrap(context,

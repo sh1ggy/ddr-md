@@ -8,6 +8,7 @@ library;
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
+import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
@@ -544,7 +545,8 @@ class _LiveSessionCard extends StatelessWidget {
                 }
               },
             ),
-            OutlinedButton(onPressed: session.end, child: const Text('End')),
+            OutlinedButton(
+                onPressed: () => endSession(context), child: const Text('End')),
           ]),
           const SizedBox(height: 14),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [

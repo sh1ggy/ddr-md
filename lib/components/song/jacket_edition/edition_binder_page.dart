@@ -3,7 +3,7 @@
 /// Description: The player's cards as a binder, in the profile's play style:
 /// a cover for each level, highest first, with its charts' bests as the
 /// level list's rings and its best cards fanned out, then sheets of every
-/// chart at that level in title order, three across and as many rows as the
+/// chart at that level in title order, six across and as many rows as the
 /// screen holds. Jackets alone, like a binder's sleeves. A chart without a
 /// best is an empty pocket, its jacket a ghost, so the gaps show. Tapping a
 /// card opens it.
@@ -159,6 +159,8 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   // The chart opened on, until the style changes.
   // Arrivals already in their pockets.
   final _landed = <BinderChart>{};
+  // Turning to each sheet with arrivals in turn, until the player turns one.
+  bool _touring = true;
   late ({String song, String difficulty})? _focus =
       widget.song == null || widget.difficulty == null
           ? null
@@ -190,7 +192,11 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
     final pages = binderPages(_mode, perSheet: perSheet);
     final at = _at, focus = _focus;
     var page = -1;
-    if (at == null && focus != null) {
+    if (at == null && widget.arrivals.isNotEmpty) {
+      page = pages.indexWhere(
+          (p) => p is BinderSheet && p.pockets.any((c) => _arriving(c)));
+    }
+    if (page < 0 && at == null && focus != null) {
       page = pages.indexWhere((p) =>
           p is BinderSheet &&
           p.pockets.any((c) =>
@@ -227,6 +233,28 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
       p.card != null &&
       widget.arrivals.containsKey(_chart(p)) &&
       !_landed.contains(_chart(p));
+
+  // Once a sheet's arrivals are in, on to the next sheet with any.
+  void _landedOn(Set<BinderChart> charts) {
+    setState(() => _landed.addAll(charts));
+    final pages = _pages!;
+    final next = pages.indexWhere(
+        (p) => p is BinderSheet && p.pockets.any((c) => _arriving(c)));
+    if (next < 0) {
+      HapticFeedback.mediumImpact();
+      return;
+    }
+    if (!_touring) return;
+    Future.delayed(FloorPop.beat, () {
+      if (!mounted || !_touring || !_controller.hasClients) return;
+      if ((next - _page).abs() == 1) {
+        _controller.animateToPage(next,
+            duration: FloorPop.beat, curve: FloorPop.settle);
+      } else {
+        _controller.jumpToPage(next);
+      }
+    });
+  }
 
   void _settle(int page) {
     final p = _pages![page];
@@ -356,42 +384,50 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                     Expanded(
                         child: SizedBox(
                             width: width,
-                            child: PageView.builder(
-                                key: ObjectKey(_controller),
-                                controller: _controller,
-                                itemCount: pages.length,
-                                onPageChanged: (i) =>
-                                    setState(() => _settle(i)),
-                                itemBuilder: (context, i) => Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: margin),
-                                    child: switch (pages[i]) {
-                                      final BinderDivider d =>
-                                        _Cover(divider: d, onOpen: _open),
-                                      final BinderSheet s => _Sheet(
-                                          key: ValueKey((
-                                            s.level,
-                                            s.start,
-                                            _landed.length
-                                          )),
-                                          sheet: s,
-                                          side: grid.side,
-                                          focus: _focus,
-                                          arrivals: {
-                                            for (final c in s.pockets)
-                                              if (_arriving(c))
-                                                _chart(c):
-                                                    widget.arrivals[_chart(c)],
-                                          },
-                                          fresh: {
-                                            for (final MapEntry(:key, :value)
-                                                in widget.arrivals.entries)
-                                              if (value == null) key
-                                          },
-                                          onLanded: (charts) => setState(
-                                              () => _landed.addAll(charts)),
-                                          onOpen: _open),
-                                    })))),
+                            child: NotificationListener<
+                                    ScrollStartNotification>(
+                                onNotification: (n) {
+                                  if (n.dragDetails != null) _touring = false;
+                                  return false;
+                                },
+                                child: PageView.builder(
+                                    key: ObjectKey(_controller),
+                                    // The sheets either side built ahead, so
+                                    // a turn doesn't wait on their cards.
+                                    allowImplicitScrolling: true,
+                                    controller: _controller,
+                                    itemCount: pages.length,
+                                    onPageChanged: (i) =>
+                                        setState(() => _settle(i)),
+                                    itemBuilder: (context, i) => Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16, vertical: margin),
+                                        child: switch (pages[i]) {
+                                          final BinderDivider d =>
+                                            _Cover(divider: d, onOpen: _open),
+                                          final BinderSheet s => _Sheet(
+                                              key: ValueKey((s.level, s.start)),
+                                              sheet: s,
+                                              side: grid.side,
+                                              showing: i == _page,
+                                              focus: _focus,
+                                              arrivals: {
+                                                for (final c in s.pockets)
+                                                  if (_arriving(c))
+                                                    _chart(c): widget
+                                                        .arrivals[_chart(c)],
+                                              },
+                                              fresh: {
+                                                for (final MapEntry(
+                                                      :key,
+                                                      :value
+                                                    )
+                                                    in widget.arrivals.entries)
+                                                  if (value == null) key
+                                              },
+                                              onLanded: _landedOn,
+                                              onOpen: _open),
+                                        }))))),
                     if (widget.haul.isNotEmpty)
                       SizedBox(
                           height: haul,
@@ -410,12 +446,12 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   }
 }
 
-const _kPageMaxWidth = 520.0, _kColumns = 3;
+const _kPageMaxWidth = 520.0, _kColumns = 6;
 // A sheet's padding and the gap between pockets.
 const _kPad = 10.0, _kGap = 8.0;
 
 // The rows of square pockets that fill a sheet's [width] by [height], at
-// least three, and their side: as wide as three across allow, shrunk a touch
+// least three, and their side: as wide as six across allow, shrunk a touch
 // where that leaves the last row short of the bottom.
 ({int rows, double side}) _grid(double width, double height) {
   final across = (width - (_kColumns - 1) * _kGap) / _kColumns;
@@ -538,6 +574,7 @@ class _Sheet extends StatefulWidget {
       required this.sheet,
       required this.side,
       required this.onOpen,
+      this.showing = true,
       this.focus,
       this.arrivals = const {},
       this.fresh = const {},
@@ -546,6 +583,8 @@ class _Sheet extends StatefulWidget {
   // A pocket's side, from [_grid].
   final double side;
   final ValueChanged<BinderPocket> onOpen;
+  // In view, not just built ahead: its arrivals wait for it.
+  final bool showing;
   final ({String song, String difficulty})? focus;
   // Its cards still to slot in, with what their pockets held before.
   final Map<BinderChart, EditionFacts?> arrivals;
@@ -560,21 +599,22 @@ class _Sheet extends StatefulWidget {
 // The sheet's arrivals rise in from below one after another, each over what
 // its pocket held, the pocket glowing as it goes in.
 class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
-  late final List<int> _order = [
+  // Kept until the parent takes the arrivals in, then cleared so the sheet
+  // carries on as it is rather than being built again.
+  late List<int> _order = [
     for (final (i, p) in widget.sheet.pockets.indexed)
       if (widget.arrivals
           .containsKey((song: p.song.name, difficulty: p.difficulty)))
         i
   ];
-  late final _clock = AnimationController(
-      vsync: this, duration: Duration(milliseconds: 500 + 420 * _order.length))
-    ..addListener(_tick);
+  late final AnimationController _clock;
   int _in = 0;
 
-  static const _lead = .15, _flight = .35;
+  // The last card's glow fades out before the clock stops.
+  static const _lead = .15, _flight = .35, _fade = .12;
 
   Interval _interval(int n) {
-    final step = (1 - _lead - _flight) / math.max(1, _order.length - 1);
+    final step = (1 - _lead - _flight - _fade) / math.max(1, _order.length - 1);
     return Interval(_lead + n * step, _lead + n * step + _flight,
         curve: Curves.easeOutBack);
   }
@@ -584,21 +624,36 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
       for (var n = 0; n < _order.length; n++)
         if (_clock.value >= _interval(n).end) n
     ].length;
-    if (landed > _in) HapticFeedback.selectionClick();
+    if (landed > _in) HapticFeedback.lightImpact();
     _in = landed;
   }
 
   @override
   void initState() {
     super.initState();
+    _clock = AnimationController(
+        vsync: this,
+        duration: Duration(milliseconds: 500 + 420 * _order.length))
+      ..addListener(_tick);
+    if (widget.showing) _start();
+  }
+
+  void _start() {
     if (_order.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _clock.isAnimating || _clock.isCompleted) return;
       if (MediaQuery.of(context).disableAnimations) _clock.value = 1;
       _clock.forward().whenComplete(() {
         if (mounted) widget.onLanded?.call(widget.arrivals.keys.toSet());
       });
     });
+  }
+
+  @override
+  void didUpdateWidget(_Sheet old) {
+    super.didUpdateWidget(old);
+    if (widget.arrivals.isEmpty) _order = const [];
+    if (widget.showing && !old.showing) _start();
   }
 
   @override
@@ -613,6 +668,81 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
     final pockets = widget.sheet.pockets;
     BinderChart chart(BinderPocket p) =>
         (song: p.song.name, difficulty: p.difficulty);
+    // Each pocket keyed by its chart and built the same way whether its card
+    // is flying in or settled, so landing changes nothing on screen. The
+    // arrivals go last, to fly over the rest.
+    final arriving = {for (final (n, i) in _order.indexed) i: n};
+    Widget slot(int i) {
+      final pocket = pockets[i];
+      final n = arriving[i];
+      final before = widget.arrivals[chart(pocket)];
+      return Positioned(
+          key: ValueKey(chart(pocket)),
+          left: (i % _kColumns) * (side + _kGap),
+          top: (i ~/ _kColumns) * (side + _kGap),
+          width: side,
+          height: side,
+          child: Stack(clipBehavior: Clip.none, children: [
+            // What it held, under the card coming in.
+            if (n != null && before != null)
+              Positioned.fill(
+                  key: const ValueKey('before'),
+                  child: RepaintBoundary(
+                      child: _Pocket(pocket: (
+                    song: pocket.song,
+                    difficulty: pocket.difficulty,
+                    best: null,
+                    card: before
+                  ), onOpen: (_) {}, dimmed: true))),
+            Positioned.fill(
+                key: const ValueKey('card'),
+                child: AnimatedBuilder(
+                    animation: _clock,
+                    builder: (context, child) {
+                      var t = 1.0, glow = 0.0;
+                      if (n != null) {
+                        final interval = _interval(n);
+                        t = interval.transform(_clock.value);
+                        glow = _clock.value < interval.end
+                            ? 0.0
+                            : 1 -
+                                ((_clock.value - interval.end) / _fade)
+                                    .clamp(0.0, 1.0);
+                      }
+                      return Opacity(
+                          opacity: t <= 0 ? 0 : 1,
+                          child: Transform(
+                              alignment: Alignment.center,
+                              transform: Matrix4.translationValues(
+                                  0, (1 - t) * 420, 0)
+                                ..rotateZ((1 - t) * .3)
+                                ..scaleByDouble(
+                                    1 + .4 * (1 - t), 1 + .4 * (1 - t), 1, 1),
+                              child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: [
+                                        if (glow > 0)
+                                          BoxShadow(
+                                              color: FloorPop.volt
+                                                  .withValues(alpha: glow),
+                                              blurRadius: 18,
+                                              spreadRadius: 2 + 6 * (1 - glow)),
+                                      ]),
+                                  child: child)));
+                    },
+                    child: RepaintBoundary(
+                        child: _Pocket(
+                            pocket: pocket,
+                            onOpen: widget.onOpen,
+                            fresh: widget.fresh.contains(chart(pocket)),
+                            focused: pocket.song.name == widget.focus?.song &&
+                                pocket.difficulty ==
+                                    widget.focus?.difficulty)))),
+          ]));
+    }
+
+    final rows = (pockets.length + _kColumns - 1) ~/ _kColumns;
     return DecoratedBox(
         decoration: BoxDecoration(
             color: FloorPop.of(context).riser,
@@ -623,80 +753,11 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
                 alignment: Alignment.topCenter,
                 child: SizedBox(
                     width: _kColumns * side + (_kColumns - 1) * _kGap,
+                    height: math.max(0, rows * side + (rows - 1) * _kGap),
                     child: Stack(clipBehavior: Clip.none, children: [
-                      Wrap(spacing: _kGap, runSpacing: _kGap, children: [
-                        for (final pocket in pockets)
-                          SizedBox.square(
-                              dimension: side,
-                              child: widget.arrivals.containsKey(chart(pocket))
-                                  // What it held, until the card is in.
-                                  ? _Pocket(pocket: (
-                                      song: pocket.song,
-                                      difficulty: pocket.difficulty,
-                                      best: null,
-                                      card: widget.arrivals[chart(pocket)]
-                                    ), onOpen: (_) {}, dimmed: true)
-                                  : _Pocket(
-                                      pocket: pocket,
-                                      onOpen: widget.onOpen,
-                                      fresh:
-                                          widget.fresh.contains(chart(pocket)),
-                                      focused: pocket.song.name ==
-                                              widget.focus?.song &&
-                                          pocket.difficulty ==
-                                              widget.focus?.difficulty)),
-                      ]),
-                      for (final (n, i) in _order.indexed)
-                        AnimatedBuilder(
-                            animation: _clock,
-                            builder: (context, child) {
-                              final interval = _interval(n);
-                              final t = interval.transform(_clock.value);
-                              final glow = _clock.value < interval.end
-                                  ? 0.0
-                                  : 1 -
-                                      ((_clock.value - interval.end) / .12)
-                                          .clamp(0.0, 1.0);
-                              return Positioned(
-                                  left: (i % _kColumns) * (side + _kGap),
-                                  top: (i ~/ _kColumns) * (side + _kGap),
-                                  width: side,
-                                  height: side,
-                                  child: Opacity(
-                                      opacity: t <= 0 ? 0 : 1,
-                                      child: Transform.translate(
-                                          offset: Offset(0, (1 - t) * 420),
-                                          child: Transform.rotate(
-                                              angle: (1 - t) * .3,
-                                              child: Transform.scale(
-                                                  scale: 1 + .4 * (1 - t),
-                                                  child: DecoratedBox(
-                                                      decoration: BoxDecoration(
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(8),
-                                                          boxShadow: [
-                                                            if (glow > 0)
-                                                              BoxShadow(
-                                                                  color: FloorPop
-                                                                      .volt
-                                                                      .withValues(
-                                                                          alpha:
-                                                                              glow),
-                                                                  blurRadius:
-                                                                      18,
-                                                                  spreadRadius: 2 +
-                                                                      6 *
-                                                                          (1 -
-                                                                              glow)),
-                                                          ]),
-                                                      child: child))))));
-                            },
-                            child: _Pocket(
-                                pocket: pockets[i],
-                                onOpen: widget.onOpen,
-                                fresh:
-                                    widget.fresh.contains(chart(pockets[i])))),
+                      for (var i = 0; i < pockets.length; i++)
+                        if (!arriving.containsKey(i)) slot(i),
+                      for (final i in _order) slot(i),
                     ])))));
   }
 }

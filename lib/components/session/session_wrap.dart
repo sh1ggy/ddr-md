@@ -1,18 +1,21 @@
 /// Name: SessionWrap
-/// Parent: LastSessionCard, VisitPage
-/// Description: A session told once a sync lands its plays: how it went
-/// against your usual, then each card its plays collected or upgraded dealt
-/// one at a time beside what it was, then into the binder, where they slot
-/// into their pockets. Home offers it from a banner after a
-/// sync brings a session new plays; the session's Collected row opens it
-/// again.
+/// Parent: LastSessionCard, VisitPage, SessionPage
+/// Description: A session told once its plays are synced: how it went
+/// against your usual, then every card its plays collected or upgraded
+/// dealt at once like a pack, each opening on its own beside what it was,
+/// then into the binder, where they slot into their pockets sheet by sheet.
+/// Ending a session opens it straight away and syncs while it shows; Home
+/// offers it from a banner after a sync brings a session new plays, and the
+/// session's Collected row opens it again.
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
+import 'package:ddr_md/components/session/visits.dart' show loadVisits;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/jacket_edition/compact_jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
@@ -29,12 +32,15 @@ import 'package:ddr_md/helpers.dart'
 import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
+import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
 import 'package:ddr_md/models/visit_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 /// How far off your usual a set reads as great, or rough.
@@ -178,16 +184,51 @@ Future<void> showSessionWrap(BuildContext context,
         builder: (_) =>
             SessionWrapPage(visit: visit, summary: summary, gains: gains)));
 
+/// Ends the running session and, with e-amusement linked, opens its wrap at
+/// once, which collects the session's plays and cards while it shows.
+Future<void> endSession(BuildContext context) async {
+  final session = context.read<SessionState>();
+  final eamuse = context.read<EamuseSyncState>();
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final id = session.session!.id;
+  await session.end();
+  if (eamuse.charts == 0 || eamuse.status == EamuseStatus.signedOut) return;
+  await navigator.push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => SessionWrapPage.ended(sessionId: id)));
+}
+
+/// Completes the next time [listenable] notifies.
+Future<void> _heard(Listenable listenable) {
+  final heard = Completer<void>();
+  void once() {
+    listenable.removeListener(once);
+    heard.complete();
+  }
+
+  listenable.addListener(once);
+  return heard.future;
+}
+
 class SessionWrapPage extends StatefulWidget {
   const SessionWrapPage(
       {super.key,
-      required this.visit,
-      required this.summary,
-      required this.gains});
+      required Visit this.visit,
+      required SetSummary this.summary,
+      required this.gains})
+      : sessionId = null;
 
-  final Visit visit;
-  final SetSummary summary;
+  const SessionWrapPage.ended({super.key, required String this.sessionId})
+      : visit = null,
+        summary = null,
+        gains = const [];
+
+  final Visit? visit;
+  final SetSummary? summary;
   final List<CardGain> gains;
+
+  /// The session just ended, whose plays and cards a sync is collecting.
+  final String? sessionId;
 
   @override
   State<SessionWrapPage> createState() => _SessionWrapPageState();
@@ -195,24 +236,78 @@ class SessionWrapPage extends StatefulWidget {
 
 class _SessionWrapPageState extends State<SessionWrapPage>
     with TickerProviderStateMixin {
-  late final _cards = wrapCards(widget.gains);
+  late Visit? _visit = widget.visit;
+  late SetSummary? _summary = widget.summary;
+  late List<CardGain> _gains = widget.gains;
+  late List<WrapCard> _cards = wrapCards(widget.gains);
   // 0 how it went, 1 the cards; then the binder they go into.
   int _beat = 0;
-  int _card = 0;
+  late bool _collecting = widget.sessionId != null;
+  EamuseSyncState? _eamuse;
+  int? _revision;
+  // Bumped per load, so only the latest lands.
+  int _loads = 0;
   late final _spin =
       AnimationController(vsync: this, duration: const Duration(seconds: 14))
         ..repeat();
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.sessionId != null) _collect();
+  }
+
+  @override
   void dispose() {
+    _eamuse?.removeListener(_synced);
     _spin.dispose();
     super.dispose();
   }
 
+  Future<void> _collect() async {
+    final eamuse =
+        _eamuse = context.read<EamuseSyncState>()..addListener(_synced);
+    _revision = eamuse.revision;
+    // One already running may have read the plays before the session ended.
+    while (eamuse.status == EamuseStatus.syncing) {
+      await _heard(eamuse);
+    }
+    await eamuse.sync(ended: true);
+    await _load();
+    // Seen here, so Home doesn't offer it again.
+    await Settings.setString(Settings.sessionWrapSinceKey, '');
+    if (mounted) setState(() => _collecting = false);
+  }
+
+  // The plays land before the charts, so how it went shows while the cards
+  // are still coming.
+  void _synced() {
+    final revision = _eamuse!.revision;
+    if (revision != _revision) {
+      _revision = revision;
+      _load();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _load() async {
+    final load = ++_loads;
+    final data = await loadVisits(null);
+    final visit = data.visits
+        .where((v) => v.session?.id == widget.sessionId && v.plays.isNotEmpty)
+        .firstOrNull;
+    if (!mounted || load != _loads || visit == null) return;
+    final gains = gainsIn(visit, data.gains);
+    setState(() {
+      _visit = visit;
+      _summary = data.model.summarize(visit.plays);
+      _gains = gains;
+      _cards = wrapCards(gains);
+    });
+  }
+
   void _next() {
-    if (_beat == 1 && _card < _cards.length - 1) {
-      setState(() => _card++);
-    } else if (_beat == 0 && _cards.isEmpty) {
+    if (_beat == 0 && _cards.isEmpty) {
       Navigator.of(context).pop();
     } else if (_beat == 1) {
       _intoBinder();
@@ -247,7 +342,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
                     ): c.before,
                 },
                 haul: [
-                  for (final g in widget.gains)
+                  for (final g in _gains)
                     if (g.mode == mode) g
                 ]),
         transitionsBuilder: (_, a, __, child) =>
@@ -257,14 +352,27 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    final visit = widget.visit;
+    final visit = _visit;
+    final eamuse = _eamuse;
     final n = _cards.length;
     final action = switch (_beat) {
+      0 when _collecting => _summary == null
+          ? 'Collecting your plays'
+          : 'Collecting cards · ${((eamuse?.progress ?? 0) * 100).round()}%',
       0 when n == 0 => 'Done',
-      0 => 'Deal your ${n == 1 ? 'card' : '$n cards'}',
-      1 when _card < n - 1 => 'Next card',
-      _ => 'Into the binder',
+      // On to the cards, then the binder: an arrow alone.
+      _ => null,
     };
+    // Why a finished collection found nothing.
+    final missing = _collecting || visit != null
+        ? null
+        : switch (eamuse?.status) {
+            EamuseStatus.signedOut => 'Sign in to e-amusement on Home, then '
+                'sync to collect this session.',
+            EamuseStatus.failed => eamuse!.error,
+            _ => 'e-amusement hasn\'t listed these plays yet. Sync from Home '
+                'in a minute to collect them.',
+          };
     return Scaffold(
       backgroundColor: pop.stage,
       body: SafeArea(
@@ -278,25 +386,17 @@ class _SessionWrapPageState extends State<SessionWrapPage>
                     children: [
                       Text('SESSION WRAP',
                           style: pop.label.copyWith(color: pop.voltText)),
-                      const SizedBox(height: 2),
-                      Text(
-                          [
-                            if (visit.session case final s?) s.venue.name,
-                            visitSpan(visit.start, visit.end),
-                            playCount(visit.plays.length),
-                          ].join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, color: pop.haze)),
+                      const SizedBox(height: 6),
+                      visit == null
+                          ? const VisitTag(
+                              Icons.cloud_download_rounded, 'From e-amusement')
+                          : VisitTags(visit, venue: true),
                     ]),
               ),
-              if (_beat == 1)
-                TextButton(onPressed: _intoBinder, child: const Text('Skip'))
-              else
-                IconButton(
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close)),
+              IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close)),
             ]),
           ),
           Padding(
@@ -319,19 +419,20 @@ class _SessionWrapPageState extends State<SessionWrapPage>
               child: KeyedSubtree(
                 key: ValueKey(_beat),
                 child: switch (_beat) {
-                  0 => _Verdict(widget.summary, cards: n, spin: _spin),
-                  _ => _Deal(_cards, index: _card, spin: _spin),
+                  0 =>
+                    _Verdict(_summary, cards: n, spin: _spin, missing: missing),
+                  _ => _Pack(_cards, gains: _gains, spin: _spin),
                 },
               ),
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              VoltButton(
-                  onPressed: _next,
-                  child: Text(action, style: FloorPop.display(16))),
-            ]),
+            child: VoltButton(
+                onPressed: _beat == 0 && _collecting ? null : _next,
+                child: action == null
+                    ? const Icon(Icons.arrow_forward_rounded, size: 28)
+                    : Text(action, style: FloorPop.display(16))),
           ),
         ]),
       ),
@@ -339,16 +440,54 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   }
 }
 
-// Beat one: the gap from your usual, counting up inside a spinning ring.
+// Beat one: the gap from your usual, counting up inside a spinning ring; the
+// ring alone while the plays are still coming, or with why they never came.
 class _Verdict extends StatelessWidget {
-  const _Verdict(this.summary, {required this.cards, required this.spin});
-  final SetSummary summary;
+  const _Verdict(this.summary,
+      {required this.cards, required this.spin, this.missing});
+  final SetSummary? summary;
   final int cards;
   final Animation<double> spin;
+  final String? missing;
 
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
+    final summary = this.summary;
+    if (summary == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          SizedBox.square(
+            dimension: 250,
+            child: Stack(alignment: Alignment.center, children: [
+              RotationTransition(
+                  turns: spin,
+                  child: CustomPaint(
+                      size: const Size.square(250),
+                      painter: _RingPainter(pop.voltText))),
+              Container(
+                  width: 206,
+                  height: 206,
+                  decoration:
+                      BoxDecoration(color: pop.riser, shape: BoxShape.circle)),
+              Icon(missing == null ? Icons.style : Icons.hourglass_empty,
+                  size: 56, color: pop.haze),
+            ]),
+          ),
+          const SizedBox(height: 24),
+          Transform(
+              alignment: Alignment.center,
+              transform: FloorPop.titleLean,
+              child: Text(missing == null ? 'SESSION DONE' : 'NO PLAYS YET',
+                  style: FloorPop.display(30, color: pop.voltText))),
+          const SizedBox(height: 10),
+          Text(missing ?? 'Reading your plays from e-amusement',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: pop.haze)),
+        ]),
+      );
+    }
     final gap = summary.gap;
     final (headline, color) = switch (gap) {
       null => ('SESSION DONE', pop.voltText),
@@ -360,7 +499,6 @@ class _Verdict extends StatelessWidget {
         null,
         (b, l) =>
             b == null || l.average - l.usual > b.average - b.usual ? l : b);
-    final muted = TextStyle(fontSize: 15, color: pop.haze);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -378,6 +516,15 @@ class _Verdict extends StatelessWidget {
                 decoration:
                     BoxDecoration(color: pop.riser, shape: BoxShape.circle)),
             Column(mainAxisSize: MainAxisSize.min, children: [
+              if (gap != null)
+                Icon(
+                    gap >= _verdictGap
+                        ? Icons.trending_up_rounded
+                        : gap <= -_verdictGap
+                            ? Icons.trending_down_rounded
+                            : Icons.trending_flat_rounded,
+                    size: 30,
+                    color: color),
               if (gap == null)
                 Text('${summary.points.length}',
                     style: FloorPop.readout(56, color: color))
@@ -402,24 +549,92 @@ class _Verdict extends StatelessWidget {
             child: Text(headline,
                 textAlign: TextAlign.center,
                 style: FloorPop.display(30, color: color))),
-        const SizedBox(height: 10),
-        if (best != null && best.average > best.usual)
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Text('Best at ', style: muted),
-            LevelNumber(level: best.level, difficulty: 'EXPERT', height: 18),
-            Text(', ${formatScore((best.average - best.usual).round())} up',
-                style: muted),
-          ]),
-        const SizedBox(height: 4),
-        Text(
-            [
-              '${summary.upscores} ${summary.upscores == 1 ? 'upscore' : 'upscores'}',
-              if (cards > 0)
-                '$cards ${cards == 1 ? 'card' : 'cards'} collected',
-            ].join(' · '),
-            style: muted),
+        const SizedBox(height: 24),
+        // What went well, each in its own colour.
+        Row(spacing: 8, children: [
+          if (best != null && best.average > best.usual)
+            _VerdictTile(
+                label: 'BEST LEVEL',
+                color: pop.up,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  LevelNumber(
+                      level: best.level, difficulty: 'EXPERT', height: 20),
+                  const SizedBox(width: 6),
+                  Flexible(
+                      child: FittedBox(
+                          child: Text(
+                              '+${formatScore((best.average - best.usual).round())}',
+                              style: FloorPop.readout(20, color: pop.up)))),
+                ]))
+          else
+            _VerdictTile(
+                label: 'PLAYS',
+                color: pop.haze,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.music_note_rounded, size: 20, color: pop.haze),
+                  const SizedBox(width: 4),
+                  Text('${summary.points.length}',
+                      style: FloorPop.readout(20, color: pop.haze)),
+                ])),
+          _VerdictTile(
+              label: 'UPSCORES',
+              color: summary.upscores > 0 ? FloorPop.sun : pop.haze,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const UpscoreBadge(),
+                const SizedBox(width: 6),
+                Text('${summary.upscores}',
+                    style: FloorPop.readout(20,
+                        color: summary.upscores > 0 ? FloorPop.sun : pop.haze)),
+              ])),
+          _VerdictTile(
+              label: 'CARDS',
+              color: cards > 0 ? pop.voltText : pop.haze,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.style_rounded,
+                    size: 20, color: cards > 0 ? pop.voltText : pop.haze),
+                const SizedBox(width: 4),
+                Text('$cards',
+                    style: FloorPop.readout(20,
+                        color: cards > 0 ? pop.voltText : pop.haze)),
+              ])),
+        ]),
       ]),
     );
+  }
+}
+
+// One of the verdict's tiles: a tile washed in [color], its figure over a
+// small caps label.
+class _VerdictTile extends StatelessWidget {
+  const _VerdictTile(
+      {required this.label, required this.color, required this.child});
+  final String label;
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Expanded(
+        child: Container(
+            height: 70,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+                color:
+                    Color.alphaBlend(color.withValues(alpha: .12), pop.riser),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: color.withValues(alpha: .35))),
+            child:
+                Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              SizedBox(height: 24, child: FittedBox(child: child)),
+              const SizedBox(height: 6),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.4,
+                      color: color.withValues(alpha: .8))),
+            ])));
   }
 }
 
@@ -453,8 +668,275 @@ class _RingPainter extends CustomPainter {
   bool shouldRepaint(_RingPainter old) => old.color != color;
 }
 
-// Beat two: one card at a time, over rays in what it gained, beside what it
-// was.
+/// The light a card's gains throw: its new frame's, gold for AAA, white for a
+/// flare rank, else volt for a new card.
+Color _glow(WrapCard card) {
+  final layers = {for (final g in card.gains) g.layer};
+  return layers.contains(CardLayer.frame)
+      ? switch (card.best.lamp) {
+          ClearLamp.mfc => Colors.white,
+          ClearLamp.pfc => const Color(0xFFFFE3A0),
+          ClearLamp.gfc => const Color(0xFFEAF1FA),
+          _ => const Color(0xFFF2C394),
+        }
+      : layers.contains(CardLayer.finish)
+          ? const Color(0xFFFFE98A)
+          : layers.contains(CardLayer.aura)
+              ? Colors.white
+              : FloorPop.volt;
+}
+
+Object _heroTag(WrapCard card) => ('wrap', card.now.chart);
+
+// Beat two: the whole haul dealt face up at once, like a pack torn open, each
+// card flashing its glow as it lands. A card tapped opens on its own.
+class _Pack extends StatefulWidget {
+  const _Pack(this.cards, {required this.gains, required this.spin});
+  final List<WrapCard> cards;
+  final List<CardGain> gains;
+  final Animation<double> spin;
+
+  @override
+  State<_Pack> createState() => _PackState();
+}
+
+class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
+  late final _deal = AnimationController(
+      vsync: this,
+      duration: Duration(
+          milliseconds: math.min(2600, 500 + 120 * widget.cards.length)))
+    ..addListener(_tick);
+  int _landed = 0;
+
+  static const _gap = 10.0, _least = 72.0, _most = 180.0;
+
+  Interval _interval(int i) {
+    final n = widget.cards.length;
+    final flight = n == 1 ? 1.0 : .4;
+    final step = n == 1 ? 0.0 : (1 - flight) / (n - 1);
+    return Interval(i * step, i * step + flight, curve: Curves.easeOutBack);
+  }
+
+  void _tick() {
+    final landed = [
+      for (var i = 0; i < widget.cards.length; i++)
+        if (_deal.value >= _interval(i).end) i
+    ].length;
+    if (landed > _landed) HapticFeedback.lightImpact();
+    _landed = landed;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (MediaQuery.of(context).disableAnimations) _deal.value = 1;
+      _deal.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _deal.dispose();
+    super.dispose();
+  }
+
+  // The columns and side that show every card biggest, no smaller than
+  // [_least] (scrolling past what fits then) nor bigger than [_most].
+  ({int columns, double side}) _fit(Size box) {
+    final n = widget.cards.length;
+    var best = (columns: 1, side: 0.0);
+    for (var c = 1; c <= n; c++) {
+      final rows = (n / c).ceil();
+      final side = math.min((box.width - (c - 1) * _gap) / c,
+          (box.height - (rows - 1) * _gap) / rows);
+      if (side > best.side) best = (columns: c, side: side);
+    }
+    if (best.side >= _least) {
+      return (columns: best.columns, side: math.min(best.side, _most));
+    }
+    final columns = ((box.width + _gap) / (_least + _gap)).floor();
+    return (
+      columns: columns,
+      side: (box.width - (columns - 1) * _gap) / columns
+    );
+  }
+
+  void _open(int index) => Navigator.of(context).push(PageRouteBuilder(
+      opaque: false,
+      transitionDuration: FloorPop.beat,
+      reverseTransitionDuration: FloorPop.beat,
+      pageBuilder: (_, __, ___) =>
+          _CardPages(widget.cards, initial: index, spin: widget.spin),
+      transitionsBuilder: (_, a, __, child) =>
+          FadeTransition(opacity: a, child: child)));
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = widget.cards;
+    return Column(children: [
+      Expanded(
+        child: LayoutBuilder(builder: (context, box) {
+          final fit = _fit(Size(box.maxWidth - 32, box.maxHeight - 32));
+          final side = fit.side;
+          return Stack(alignment: Alignment.center, children: [
+            RotationTransition(
+                turns: widget.spin,
+                child: CustomPaint(
+                    size: Size.square(
+                        math.max(box.maxWidth, box.maxHeight) * 1.2),
+                    painter: _RaysPainter(FloorPop.volt))),
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: SizedBox(
+                  width: fit.columns * side + (fit.columns - 1) * _gap,
+                  child: Wrap(
+                      spacing: _gap,
+                      runSpacing: _gap,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (final (i, card) in cards.indexed)
+                          AnimatedBuilder(
+                            animation: _deal,
+                            builder: (context, child) {
+                              final interval = _interval(i);
+                              final t = interval.transform(_deal.value);
+                              // A flash as it lands, settling to a glow.
+                              final flash = _deal.value < interval.end
+                                  ? 0.0
+                                  : 1 -
+                                      ((_deal.value - interval.end) / .15)
+                                          .clamp(0.0, 1.0);
+                              final glow = _glow(card);
+                              return Opacity(
+                                opacity: t <= 0 ? 0 : 1,
+                                child: Transform.translate(
+                                  offset: Offset(0, (1 - t) * side * 1.6),
+                                  child: Transform.rotate(
+                                    angle: (1 - t) * (i.isEven ? -.3 : .3),
+                                    child: Transform.scale(
+                                      scale: .5 + .5 * t,
+                                      child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              boxShadow: [
+                                                if (t >= 1)
+                                                  BoxShadow(
+                                                      color: glow.withValues(
+                                                          alpha: .35 +
+                                                              .65 * flash),
+                                                      blurRadius:
+                                                          10 + 14 * flash,
+                                                      spreadRadius:
+                                                          1 + 5 * flash),
+                                              ]),
+                                          child: child),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                            child: _PackCard(card,
+                                side: side, onTap: () => _open(i)),
+                          ),
+                      ]),
+                ),
+              ),
+            ),
+          ]);
+        }),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: CardTally(widget.gains, height: 28),
+      ),
+    ]);
+  }
+}
+
+// A card in the pack, tagged NEW or UP.
+class _PackCard extends StatelessWidget {
+  const _PackCard(this.card, {required this.side, required this.onTap});
+  final WrapCard card;
+  final double side;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final fresh = card.before == null;
+    final ink = math.max(9.0, side * .09);
+    return Semantics(
+      button: true,
+      label: '${card.title} card, ${fresh ? 'new' : 'upgraded'}',
+      child: GestureDetector(
+        onTap: onTap,
+        child: SizedBox.square(
+          dimension: side,
+          child: Stack(clipBehavior: Clip.none, children: [
+            Positioned.fill(
+                child:
+                    Hero(tag: _heroTag(card), child: _compact(card, card.now))),
+            Positioned(
+              left: -4,
+              top: -6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                    color: fresh ? FloorPop.volt : pop.stage,
+                    border: Border.all(color: FloorPop.volt, width: 1.5),
+                    borderRadius: BorderRadius.circular(5)),
+                child: Text(fresh ? 'NEW' : 'UP',
+                    style: FloorPop.display(ink,
+                        color: fresh ? FloorPop.onVolt : pop.voltText)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// A card opened from the pack, with the rest a swipe either side.
+class _CardPages extends StatelessWidget {
+  const _CardPages(this.cards, {required this.initial, required this.spin});
+  final List<WrapCard> cards;
+  final int initial;
+  final Animation<double> spin;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: FloorPop.of(context).stage,
+        body: SafeArea(
+          child: Column(children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                    tooltip: 'Back to the pack',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close)),
+              ),
+            ),
+            Expanded(
+              child: PageView.builder(
+                  controller: PageController(initialPage: initial),
+                  itemCount: cards.length,
+                  itemBuilder: (context, i) =>
+                      _Deal(cards, index: i, spin: spin)),
+            ),
+            const SizedBox(height: 16),
+          ]),
+        ),
+      );
+}
+
+// One card on its own, over rays in what it gained, beside what it was.
 class _Deal extends StatelessWidget {
   const _Deal(this.cards, {required this.index, required this.spin});
   final List<WrapCard> cards;
@@ -466,23 +948,10 @@ class _Deal extends StatelessWidget {
     final pop = FloorPop.of(context);
     final card = cards[index];
     final fresh = card.before == null;
-    final layers = {for (final g in card.gains) g.layer};
-    final glow = layers.contains(CardLayer.frame)
-        ? switch (card.best.lamp) {
-            ClearLamp.mfc => Colors.white,
-            ClearLamp.pfc => const Color(0xFFFFE3A0),
-            ClearLamp.gfc => const Color(0xFFC8F5CF),
-            _ => const Color(0xFFEAF1FA),
-          }
-        : layers.contains(CardLayer.finish)
-            ? const Color(0xFFFFE98A)
-            : layers.contains(CardLayer.aura)
-                ? Colors.white
-                : FloorPop.volt;
     final difficulty = card.gains.first.difficulty;
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
         child: Row(children: [
           Transform(
             transform: FloorPop.lean,
@@ -510,26 +979,10 @@ class _Deal extends StatelessWidget {
                 turns: spin,
                 child: CustomPaint(
                     size: Size.square(side * 1.8),
-                    painter: _RaysPainter(glow))),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 650),
-              switchInCurve: FloorPop.step,
-              transitionBuilder: (child, a) => AnimatedBuilder(
-                animation: a,
-                child: child,
-                builder: (context, child) => Opacity(
-                  opacity: a.value.clamp(0, 1),
-                  child: Transform.translate(
-                    offset: Offset(0, (1 - a.value) * 140),
-                    child: Transform.rotate(
-                        angle: (1 - a.value) * -.25,
-                        child: Transform.scale(
-                            scale: .6 + .4 * a.value, child: child)),
-                  ),
-                ),
-              ),
+                    painter: _RaysPainter(_glow(card)))),
+            Hero(
+              tag: _heroTag(card),
               child: SizedBox.square(
-                key: ValueKey(index),
                 dimension: side,
                 child: Semantics(
                   label: '${card.title} card',
