@@ -1043,8 +1043,8 @@ class _PackCard extends StatelessWidget {
   }
 }
 
-// A card opened from the pack, floating over it on a panel, with the rest a
-// swipe either side, their edges peeking. Tapping the pack around it closes.
+// A card opened from the pack, floating over it, with the rest a swipe
+// either side. Tapping the pack around it closes.
 class _CardPages extends StatefulWidget {
   const _CardPages(this.cards, {required this.initial});
   final List<WrapCard> cards;
@@ -1066,46 +1066,53 @@ class _CardPagesState extends State<_CardPages> {
 
   @override
   Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
     void close() => Navigator.of(context).pop();
-    return Material(
-      type: MaterialType.transparency,
-      child: Stack(children: [
-        Positioned.fill(
-          child: GestureDetector(
-            onTap: close,
-            child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                child: ColoredBox(color: Colors.black.withValues(alpha: .55))),
+    // The card floats over the dimmed pack with no panel, which is dark
+    // whatever the theme, so its text is Night's.
+    return Theme(
+      data: floorPopTheme(Brightness.dark),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Stack(children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: close,
+              child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child:
+                      ColoredBox(color: Colors.black.withValues(alpha: .72))),
+            ),
           ),
-        ),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: PageView.builder(
-                controller: _pages,
-                itemCount: widget.cards.length,
-                itemBuilder: (context, i) => Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                            color: pop.stage,
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: const [
-                              BoxShadow(
-                                  color: Colors.black38,
-                                  blurRadius: 24,
-                                  offset: Offset(0, 8)),
-                            ]),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(24),
-                          child: _Deal(widget.cards, index: i, onClose: close),
-                        ),
-                      ),
-                    )),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: PageView.builder(
+                  controller: _pages,
+                  itemCount: widget.cards.length,
+                  itemBuilder: (context, i) => AnimatedBuilder(
+                      animation: _pages,
+                      builder: (context, child) {
+                        final page = _pages.position.haveDimensions
+                            ? _pages.page!
+                            : widget.initial.toDouble();
+                        final off = (page - i).abs();
+                        // Only the card in front shows and flies back to the
+                        // pack; the ones beside it would leave their headers
+                        // floating at the edges.
+                        return HeroMode(
+                            enabled: off < .5,
+                            child: Opacity(
+                                opacity: (1 - off).clamp(0.0, 1.0),
+                                child: child));
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: _Deal(widget.cards, index: i, onClose: close),
+                      ))),
+            ),
           ),
-        ),
-      ]),
+        ]),
+      ),
     );
   }
 }
@@ -1141,12 +1148,16 @@ class _Deal extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          Text('${index + 1} / ${cards.length}',
-              style: FloorPop.readout(18, color: pop.haze)),
           IconButton(
               tooltip: 'Back to the pack',
               onPressed: onClose,
-              icon: const Icon(Icons.close)),
+              icon: const Icon(Icons.close),
+              style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: .16),
+                  foregroundColor: Colors.white,
+                  fixedSize: const Size(44, 44),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)))),
         ]),
       ),
       Expanded(
@@ -1188,16 +1199,7 @@ class _Deal extends StatelessWidget {
         ]),
       ),
       const SizedBox(height: 14),
-      Row(mainAxisAlignment: MainAxisAlignment.center, spacing: 6, children: [
-        for (var i = 0; i < cards.length; i++)
-          AnimatedContainer(
-              duration: FloorPop.eighth,
-              width: i == index ? 18 : 8,
-              height: 8,
-              decoration: BoxDecoration(
-                  color: i <= index ? FloorPop.volt : pop.line,
-                  borderRadius: BorderRadius.circular(4))),
-      ]),
+      PageDots(cards.length, index: index),
       const SizedBox(height: 16),
     ]);
   }
@@ -1261,7 +1263,8 @@ class _Change extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: pop.riser, borderRadius: BorderRadius.circular(20)),
+          color: pop.riser.withValues(alpha: .5),
+          borderRadius: BorderRadius.circular(20)),
       child: Row(children: [
         Expanded(
           child: Wrap(

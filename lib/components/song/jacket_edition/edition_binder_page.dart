@@ -11,6 +11,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart' show PageDots;
 import 'package:ddr_md/components/session/session_wrap.dart' show ShockPainter;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -352,7 +353,6 @@ class _EditionBinderPageState extends State<EditionBinderPage>
 
   @override
   Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
     return Scaffold(
         appBar: AppBar(title: const Text('Binder')),
         // No spinner flashing up as cards come in, just the sheet once it's
@@ -459,11 +459,8 @@ class _EditionBinderPageState extends State<EditionBinderPage>
                     SizedBox(
                         height: footer,
                         child: Center(
-                            child: sheet == 0
-                                ? null
-                                : Text('$sheet/$sheets',
-                                    style: FloorPop.readout(14,
-                                        color: pop.haze)))),
+                            // On the cover none are filled yet.
+                            child: PageDots(sheets, index: sheet - 1))),
                   ]);
                 })));
   }

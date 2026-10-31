@@ -3,7 +3,7 @@
 /// ScoreOverviewPage
 /// Description: The small pieces Floor Pop is built from: the pad glyph,
 /// a leaning wrapper, the Volt button whose riser collapses on press, and a
-/// tab's leaning page title, and the pill tab strip.
+/// tab's leaning page title, the pill tab strip and page dots.
 library;
 
 import 'dart:async';
@@ -228,6 +228,33 @@ class HeaderButton extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// Where a swipe through [count] pages is: Volt up to the page at [index],
+/// which stretches.
+class PageDots extends StatelessWidget {
+  const PageDots(this.count, {super.key, required this.index});
+
+  final int count, index;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    // A long run shrinks to the width it has rather than overflow.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(mainAxisSize: MainAxisSize.min, spacing: 6, children: [
+        for (var i = 0; i < count; i++)
+          AnimatedContainer(
+              duration: FloorPop.eighth,
+              width: i == index ? 18 : 8,
+              height: 8,
+              decoration: BoxDecoration(
+                  color: i <= index ? FloorPop.volt : pop.line,
+                  borderRadius: BorderRadius.circular(4))),
+      ]),
+    );
+  }
 }
 
 /// [padding] plus the space the glass header takes at the top and the
