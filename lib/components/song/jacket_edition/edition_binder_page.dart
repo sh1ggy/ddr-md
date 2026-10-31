@@ -11,13 +11,12 @@ library;
 
 import 'dart:math' as math;
 
-import 'package:ddr_md/components/session/session_wrap.dart' show CardTally;
+import 'package:ddr_md/components/session/session_wrap.dart' show ShockPainter;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/best_rings.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
-import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
@@ -124,8 +123,7 @@ class EditionBinderPage extends StatefulWidget {
       this.level,
       this.song,
       this.difficulty,
-      this.arrivals = const {},
-      this.haul = const []});
+      this.arrivals = const {}});
 
   /// The level to open on, else the highest.
   final int? level;
@@ -138,14 +136,12 @@ class EditionBinderPage extends StatefulWidget {
   /// sheet comes up.
   final Map<BinderChart, EditionFacts?> arrivals;
 
-  /// What those cards gained, tallied under the sheets while they arrive.
-  final List<CardGain> haul;
-
   @override
   State<EditionBinderPage> createState() => _EditionBinderPageState();
 }
 
-class _EditionBinderPageState extends State<EditionBinderPage> {
+class _EditionBinderPageState extends State<EditionBinderPage>
+    with SingleTickerProviderStateMixin {
   late Modes _mode = context.read<SongState>().modes;
   bool _ready = false;
   // Paginated for [_perSheet] pockets, which follows the screen's height.
@@ -161,6 +157,10 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   final _landed = <BinderChart>{};
   // Turning to each sheet with arrivals in turn, until the player turns one.
   bool _touring = true;
+  // A turn to a sheet further than the next: 0 to .5 the sheet in view
+  // shrinks away, .5 to 1 the new one grows in.
+  late final _zoom = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 380));
   // Sheets' jackets decoding, by page, so a sheet the tour turns to comes up
   // whole rather than fading its jackets in under the cards landing.
   final _warmed = <int, Future<void>>{};
@@ -180,6 +180,7 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _zoom.dispose();
     super.dispose();
   }
 
@@ -274,15 +275,39 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
       return;
     }
     if (!_touring) return;
-    Future.wait([Future.delayed(FloorPop.beat), _warm(next)]).then((_) {
+    Future.wait([Future.delayed(FloorPop.eighth), _warm(next)]).then((_) {
       if (!mounted || !_touring || !_controller.hasClients) return;
+      // Straight to the sheet: a quick turn to the one beside, else a zoom
+      // out of this one and into it rather than sweeping past the pages
+      // between.
       if ((next - _page).abs() == 1) {
         _controller.animateToPage(next,
-            duration: FloorPop.beat, curve: FloorPop.settle);
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic);
       } else {
-        _controller.jumpToPage(next);
+        _zoomTo(next);
       }
     });
+  }
+
+  Future<void> _zoomTo(int page) async {
+    await _zoom.animateTo(.5, curve: Curves.easeInCubic);
+    if (!mounted || !_controller.hasClients) return;
+    _controller.jumpToPage(page);
+    await _zoom.animateTo(1, curve: Curves.easeOutCubic);
+    _zoom.value = 0;
+  }
+
+  Widget _zoomed(Widget child) {
+    // Built the same way at rest, so the pages under it are never rebuilt.
+    final v = _zoom.value;
+    final out = v < .5;
+    final t = v == 0 ? 0.0 : (out ? v / .5 : (v - .5) / .5);
+    return Opacity(
+        opacity: v == 0 || !out ? (v == 0 ? 1 : t) : 1 - t,
+        child: Transform.scale(
+            scale: v == 0 ? 1 : (out ? 1 - .08 * t : 1.06 - .06 * t),
+            child: child));
   }
 
   void _settle(int page) {
@@ -340,25 +365,11 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                 top: false,
                 child: LayoutBuilder(builder: (context, box) {
                   const tabs = 44.0, footer = 28.0, margin = 8.0;
-                  final haul = widget.haul.isEmpty ? 0.0 : 52.0;
                   final width = math.min(box.maxWidth, _kPageMaxWidth);
-                  final grid = _grid(
-                      width - 32 - 2 * _kPad,
-                      box.maxHeight -
-                          tabs -
-                          footer -
-                          haul -
-                          2 * margin -
-                          2 * _kPad);
+                  final grid = _grid(width - 32 - 2 * _kPad,
+                      box.maxHeight - tabs - footer - 2 * margin - 2 * _kPad);
                   final pages = _paginate(grid.rows * _kColumns);
                   if (!_shown) return const SizedBox.shrink();
-                  // Levels with cards still to slot in, marked on their tab.
-                  final waiting = {
-                    for (final p in pages)
-                      if (p is BinderSheet &&
-                          p.pockets.any((c) => _arriving(c)))
-                        p.level
-                  };
                   final level = pages.isEmpty ? null : pages[_page].level;
                   final sheets = pages
                       .where((p) => p is BinderSheet && p.level == level)
@@ -383,27 +394,10 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                                       child: ChoiceChip(
                                           showCheckmark: false,
                                           selected: p.level == level,
-                                          label: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                LevelNumber(
-                                                    level: p.level,
-                                                    difficulty: 'EXPERT',
-                                                    height: 16),
-                                                if (waiting.contains(p.level))
-                                                  Container(
-                                                      width: 7,
-                                                      height: 7,
-                                                      margin:
-                                                          const EdgeInsets.only(
-                                                              left: 5),
-                                                      decoration:
-                                                          const BoxDecoration(
-                                                              color:
-                                                                  FloorPop.volt,
-                                                              shape: BoxShape
-                                                                  .circle)),
-                                              ]),
+                                          label: LevelNumber(
+                                              level: p.level,
+                                              difficulty: 'EXPERT',
+                                              height: 16),
                                           // To the sheet a card is coming
                                           // into, else the cover.
                                           onSelected: (_) =>
@@ -416,57 +410,52 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                                                           .any(_arriving)))))),
                             ])),
                     Expanded(
-                        child: SizedBox(
-                            width: width,
-                            child: NotificationListener<
-                                    ScrollStartNotification>(
-                                onNotification: (n) {
-                                  if (n.dragDetails != null) _touring = false;
-                                  return false;
-                                },
-                                child: PageView.builder(
-                                    key: ObjectKey(_controller),
-                                    // The sheets either side built ahead, so
-                                    // a turn doesn't wait on their cards.
-                                    allowImplicitScrolling: true,
-                                    controller: _controller,
-                                    itemCount: pages.length,
-                                    onPageChanged: (i) =>
-                                        setState(() => _settle(i)),
-                                    itemBuilder: (context, i) => Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 16, vertical: margin),
-                                        child: switch (pages[i]) {
-                                          final BinderDivider d =>
-                                            _Cover(divider: d, onOpen: _open),
-                                          final BinderSheet s => _Sheet(
-                                              key: ValueKey((s.level, s.start)),
-                                              sheet: s,
-                                              side: grid.side,
-                                              showing: i == _page,
-                                              focus: _focus,
-                                              arrivals: {
-                                                for (final c in s.pockets)
-                                                  if (_arriving(c))
-                                                    _chart(c): widget
-                                                        .arrivals[_chart(c)],
-                                              },
-                                              fresh: {
-                                                for (final MapEntry(
-                                                      :key,
-                                                      :value
-                                                    )
-                                                    in widget.arrivals.entries)
-                                                  if (value == null) key
-                                              },
-                                              onLanded: _landedOn,
-                                              onOpen: _open),
-                                        }))))),
-                    if (widget.haul.isNotEmpty)
-                      SizedBox(
-                          height: haul,
-                          child: Center(
-                              child: CardTally(widget.haul, height: 30))),
+                        child: AnimatedBuilder(
+                            animation: _zoom,
+                            builder: (context, child) => _zoomed(child!),
+                            child: SizedBox(
+                                width: width,
+                                child: NotificationListener<
+                                        ScrollStartNotification>(
+                                    onNotification: (n) {
+                                      if (n.dragDetails != null) {
+                                        _touring = false;
+                                      }
+                                      return false;
+                                    },
+                                    child: PageView.builder(
+                                        key: ObjectKey(_controller),
+                                        // The sheets either side built ahead, so
+                                        // a turn doesn't wait on their cards.
+                                        allowImplicitScrolling: true,
+                                        controller: _controller,
+                                        itemCount: pages.length,
+                                        onPageChanged: (i) =>
+                                            setState(() => _settle(i)),
+                                        itemBuilder: (context, i) => Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 16,
+                                                vertical: margin),
+                                            child: switch (pages[i]) {
+                                              final BinderDivider d => _Cover(
+                                                  divider: d, onOpen: _open),
+                                              final BinderSheet s => _Sheet(
+                                                  key: ValueKey(
+                                                      (s.level, s.start)),
+                                                  sheet: s,
+                                                  side: grid.side,
+                                                  showing: i == _page,
+                                                  focus: _focus,
+                                                  arrivals: {
+                                                    for (final c in s.pockets)
+                                                      if (_arriving(c))
+                                                        _chart(c):
+                                                            widget.arrivals[
+                                                                _chart(c)],
+                                                  },
+                                                  onLanded: _landedOn,
+                                                  onOpen: _open),
+                                            })))))),
                     SizedBox(
                         height: footer,
                         child: Center(
@@ -611,7 +600,6 @@ class _Sheet extends StatefulWidget {
       this.showing = true,
       this.focus,
       this.arrivals = const {},
-      this.fresh = const {},
       this.onLanded});
   final BinderSheet sheet;
   // A pocket's side, from [_grid].
@@ -622,16 +610,15 @@ class _Sheet extends StatefulWidget {
   final ({String song, String difficulty})? focus;
   // Its cards still to slot in, with what their pockets held before.
   final Map<BinderChart, EditionFacts?> arrivals;
-  // Charts whose card is new, tagged once in.
-  final Set<BinderChart> fresh;
   final ValueChanged<Set<BinderChart>>? onLanded;
 
   @override
   State<_Sheet> createState() => _SheetState();
 }
 
-// The sheet's arrivals rise in from below one after another, each over what
-// its pocket held, the pocket glowing as it goes in.
+// The sheet's arrivals drop in one after another, each over what its pocket
+// held, slamming into the pocket: the card squashes and bounces with a flash,
+// a ring bursts out and the sheet jolts, then the pocket glows.
 class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
   // Kept until the parent takes the arrivals in, then cleared so the sheet
   // carries on as it is rather than being built again.
@@ -644,31 +631,48 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
   late final AnimationController _clock;
   int _in = 0;
 
-  // The last card's glow fades out before the clock stops.
-  static const _lead = .15, _flight = .35, _fade = .12;
+  // Each card falls for [_fall] ms, and the last one's landing plays out
+  // over [_tail] ms before the clock stops.
+  static const _lead = .15, _fall = 340, _tail = 450;
+  late final _ms = 500 + 420 * _order.length + _tail;
 
+  // Falling under gravity: picking up speed until it hits.
   Interval _interval(int n) {
-    final step = (1 - _lead - _flight - _fade) / math.max(1, _order.length - 1);
-    return Interval(_lead + n * step, _lead + n * step + _flight,
-        curve: Curves.easeOutBack);
+    final step =
+        (1 - _lead - (_fall + _tail) / _ms) / math.max(1, _order.length - 1);
+    return Interval(_lead + n * step, _lead + n * step + _fall / _ms,
+        curve: Curves.easeInQuad);
   }
+
+  // Milliseconds since arrival [n] landed, negative before.
+  double _since(int n) => (_clock.value - _interval(n).end) * _ms;
 
   void _tick() {
     final landed = [
       for (var n = 0; n < _order.length; n++)
         if (_clock.value >= _interval(n).end) n
     ].length;
-    if (landed > _in) HapticFeedback.lightImpact();
+    if (landed > _in) HapticFeedback.heavyImpact();
     _in = landed;
+  }
+
+  // The sheet knocked down as each card hits, ringing out.
+  double _jolt() {
+    final since = [
+      for (var n = 0; n < _order.length; n++)
+        if (_since(n) >= 0) _since(n)
+    ].fold(double.infinity, math.min);
+    return since < 350
+        ? 5 * math.exp(-since / 70) * math.cos(since / 100 * math.pi)
+        : 0;
   }
 
   @override
   void initState() {
     super.initState();
-    _clock = AnimationController(
-        vsync: this,
-        duration: Duration(milliseconds: 500 + 420 * _order.length))
-      ..addListener(_tick);
+    _clock =
+        AnimationController(vsync: this, duration: Duration(milliseconds: _ms))
+          ..addListener(_tick);
     if (widget.showing) _start();
   }
 
@@ -733,43 +737,74 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
                 child: AnimatedBuilder(
                     animation: _clock,
                     builder: (context, child) {
-                      var t = 1.0, glow = 0.0;
+                      var t = 1.0, since = double.infinity;
                       if (n != null) {
-                        final interval = _interval(n);
-                        t = interval.transform(_clock.value);
-                        glow = _clock.value < interval.end
-                            ? 0.0
-                            : 1 -
-                                ((_clock.value - interval.end) / _fade)
-                                    .clamp(0.0, 1.0);
+                        t = _interval(n).transform(_clock.value);
+                        since = _since(n);
                       }
+                      final landing = since >= 0 && since < _tail;
+                      final glow = landing ? 1 - since / _tail : 0.0;
+                      // Squashed flat on the hit, then a damped bounce.
+                      final press = since < 0 || since > _tail
+                          ? 1.0
+                          : 1 -
+                              .07 * math.max(0, 1 - since / 90) +
+                              .045 *
+                                  math.exp(-since / 110) *
+                                  math.sin(since / 130 * math.pi).abs();
+                      final flash = since >= 0 && since < 250
+                          ? math.pow(1 - since / 250, 2).toDouble()
+                          : 0.0;
+                      // Dropped from above onto the sheet.
+                      final s = (1 + .9 * (1 - t)) * press;
                       return Opacity(
                           opacity: t <= 0 ? 0 : 1,
                           child: Transform(
                               alignment: Alignment.center,
                               transform: Matrix4.translationValues(
-                                  0, (1 - t) * 420, 0)
-                                ..rotateZ((1 - t) * .3)
-                                ..scaleByDouble(
-                                    1 + .4 * (1 - t), 1 + .4 * (1 - t), 1, 1),
-                              child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(8),
-                                      boxShadow: [
-                                        if (glow > 0)
-                                          BoxShadow(
-                                              color: FloorPop.volt
-                                                  .withValues(alpha: glow),
-                                              blurRadius: 18,
-                                              spreadRadius: 2 + 6 * (1 - glow)),
-                                      ]),
-                                  child: child)));
+                                  0, -(1 - t) * 140, 0)
+                                ..rotateZ((1 - t) * .25)
+                                ..scaleByDouble(s, s, 1, 1),
+                              child: CustomPaint(
+                                  foregroundPainter: landing
+                                      ? ShockPainter(
+                                          since / _tail, FloorPop.volt)
+                                      : null,
+                                  child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          boxShadow: [
+                                            if (glow > 0)
+                                              BoxShadow(
+                                                  color: FloorPop.volt
+                                                      .withValues(alpha: glow),
+                                                  blurRadius: 18,
+                                                  spreadRadius:
+                                                      2 + 6 * (1 - glow)),
+                                          ]),
+                                      position: DecorationPosition.background,
+                                      child: Stack(children: [
+                                        child!,
+                                        if (flash > 0)
+                                          Positioned.fill(
+                                              child: IgnorePointer(
+                                                  child: DecoratedBox(
+                                                      decoration: BoxDecoration(
+                                                          color: Colors.white
+                                                              .withValues(
+                                                                  alpha: .6 *
+                                                                      flash),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(
+                                                                      8))))),
+                                      ])))));
                     },
                     child: RepaintBoundary(
                         child: _Pocket(
                             pocket: pocket,
                             onOpen: widget.onOpen,
-                            fresh: widget.fresh.contains(chart(pocket)),
                             focused: pocket.song.name == widget.focus?.song &&
                                 pocket.difficulty ==
                                     widget.focus?.difficulty)))),
@@ -777,22 +812,27 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
     }
 
     final rows = (pockets.length + _kColumns - 1) ~/ _kColumns;
-    return DecoratedBox(
-        decoration: BoxDecoration(
-            color: FloorPop.of(context).riser,
-            borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-            padding: const EdgeInsets.all(_kPad),
-            child: Align(
-                alignment: Alignment.topCenter,
+    // Hugging its pockets, so a level's last sheet ends where they do.
+    return Align(
+        alignment: Alignment.topCenter,
+        child: DecoratedBox(
+            decoration: BoxDecoration(
+                color: FloorPop.of(context).riser,
+                borderRadius: BorderRadius.circular(20)),
+            child: Padding(
+                padding: const EdgeInsets.all(_kPad),
                 child: SizedBox(
                     width: _kColumns * side + (_kColumns - 1) * _kGap,
                     height: math.max(0, rows * side + (rows - 1) * _kGap),
-                    child: Stack(clipBehavior: Clip.none, children: [
-                      for (var i = 0; i < pockets.length; i++)
-                        if (!arriving.containsKey(i)) slot(i),
-                      for (final i in _order) slot(i),
-                    ])))));
+                    child: AnimatedBuilder(
+                        animation: _clock,
+                        builder: (context, child) => Transform.translate(
+                            offset: Offset(0, _jolt()), child: child),
+                        child: Stack(clipBehavior: Clip.none, children: [
+                          for (var i = 0; i < pockets.length; i++)
+                            if (!arriving.containsKey(i)) slot(i),
+                          for (final i in _order) slot(i),
+                        ]))))));
   }
 }
 
@@ -802,16 +842,13 @@ class _Pocket extends StatelessWidget {
       {required this.pocket,
       required this.onOpen,
       this.focused = false,
-      this.dimmed = false,
-      this.fresh = false});
+      this.dimmed = false});
   final BinderPocket pocket;
   final ValueChanged<BinderPocket> onOpen;
   // Picked out, as the chart the binder was opened on.
   final bool focused;
   // What a pocket held, under the card coming in to it.
   final bool dimmed;
-  // A card just collected, tagged NEW.
-  final bool fresh;
 
   static const _grey = ColorFilter.matrix([
     .2126, .7152, .0722, 0, 0, //
@@ -861,21 +898,6 @@ class _Pocket extends StatelessWidget {
               child: art));
     }
     if (dimmed) return Opacity(opacity: .5, child: sleeve);
-    if (fresh) {
-      return Stack(clipBehavior: Clip.none, children: [
-        Positioned.fill(child: sleeve),
-        Positioned(
-            left: -4,
-            top: -6,
-            child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                    color: FloorPop.volt,
-                    borderRadius: BorderRadius.circular(5)),
-                child: Text('NEW',
-                    style: FloorPop.display(9, color: FloorPop.onVolt)))),
-      ]);
-    }
     if (!focused) return sleeve;
     return DecoratedBox(
         position: DecorationPosition.foreground,

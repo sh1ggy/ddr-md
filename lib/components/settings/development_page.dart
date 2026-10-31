@@ -198,7 +198,8 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                   trailing: DropdownButton<PackLanding>(
                       value: PackLanding.current,
                       onChanged: (v) async {
-                        await Settings.setInt(Settings.wrapLandingKey, v!.index);
+                        await Settings.setInt(
+                            Settings.wrapLandingKey, v!.index);
                         if (mounted) setState(() {});
                       },
                       items: [

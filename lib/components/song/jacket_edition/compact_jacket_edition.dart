@@ -58,11 +58,13 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
             child: ClipPath(
                 clipper: EditionClipper(geometry.inner
                     .shift(Offset(-geometry.width, -geometry.width))),
-                child: RepaintBoundary(
-                    child: recipe.negative
-                        ? ColorFiltered(
-                            colorFilter: editionNegative, child: widget.child)
-                        : widget.child))),
+                // Painted with the material over it, not apart: EX's
+                // polychrome recolours the art, and the two cached separately
+                // would wash the rainbow over a still card's art instead.
+                child: recipe.negative
+                    ? ColorFiltered(
+                        colorFilter: editionNegative, child: widget.child)
+                    : widget.child)),
         IgnorePointer(
             child: CustomPaint(
                 painter: EditionStaticPainter(geometry, foreground: true),

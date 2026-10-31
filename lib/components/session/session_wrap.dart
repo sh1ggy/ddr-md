@@ -331,23 +331,22 @@ class _SessionWrapPageState extends State<SessionWrapPage>
     }
     Navigator.of(context).pushReplacement(PageRouteBuilder(
         transitionDuration: FloorPop.beat,
-        pageBuilder: (_, __, ___) => EditionBinderPage(
-                level: cards.first.level,
-                song: cards.first.now.chart.song,
-                difficulty: cards.first.gains.first.difficulty,
-                arrivals: {
-                  for (final c in cards)
-                    (
-                      song: c.now.chart.song,
-                      difficulty: c.gains.first.difficulty
-                    ): c.before,
-                },
-                haul: [
-                  for (final g in _gains)
-                    if (g.mode == mode) g
-                ]),
-        transitionsBuilder: (_, a, __, child) =>
-            FadeTransition(opacity: a, child: child)));
+        pageBuilder: (_, __, ___) =>
+            EditionBinderPage(level: cards.first.level, arrivals: {
+              for (final c in cards)
+                (song: c.now.chart.song, difficulty: c.gains.first.difficulty):
+                    c.before,
+            }),
+        // Coming up out of the stage colour rather than faded itself, as a
+        // card's finish doesn't draw while it's faded.
+        transitionsBuilder: (context, a, __, child) =>
+            Stack(fit: StackFit.expand, children: [
+              child,
+              IgnorePointer(
+                  child: FadeTransition(
+                      opacity: ReverseAnimation(a),
+                      child: ColoredBox(color: FloorPop.of(context).stage))),
+            ])));
   }
 
   @override
@@ -417,12 +416,17 @@ class _SessionWrapPageState extends State<SessionWrapPage>
             child: AnimatedSwitcher(
               duration: FloorPop.beat,
               switchInCurve: FloorPop.settle,
+              // The outgoing beat fades; the incoming one comes in whole, as a card's
+              // finish doesn't draw while it's faded.
+              transitionBuilder: (child, a) => child.key == ValueKey(_beat)
+                  ? child
+                  : FadeTransition(opacity: a, child: child),
               child: KeyedSubtree(
                 key: ValueKey(_beat),
                 child: switch (_beat) {
                   0 =>
                     _Verdict(_summary, cards: n, spin: _spin, missing: missing),
-                  _ => _Pack(_cards, gains: _gains, spin: _spin),
+                  _ => _Pack(_cards, gains: _gains),
                 },
               ),
             ),
@@ -623,8 +627,7 @@ class _VerdictTile extends StatelessWidget {
             decoration: BoxDecoration(
                 color:
                     Color.alphaBlend(color.withValues(alpha: .12), pop.riser),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: color.withValues(alpha: .35))),
+                borderRadius: BorderRadius.circular(14)),
             child:
                 Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               SizedBox(height: 24, child: FittedBox(child: child)),
@@ -692,22 +695,26 @@ Object _heroTag(WrapCard card) => ('wrap', card.now.chart);
 // Beat two: the whole haul dealt face up at once, like a pack torn open, each
 // card flashing its glow as it lands. A card tapped opens on its own.
 class _Pack extends StatefulWidget {
-  const _Pack(this.cards, {required this.gains, required this.spin});
+  const _Pack(this.cards, {required this.gains});
   final List<WrapCard> cards;
   final List<CardGain> gains;
-  final Animation<double> spin;
 
   @override
   State<_Pack> createState() => _PackState();
 }
 
 class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
+  final _landing = PackLanding.current;
+  // The deal, then a tail for the last card's landing to play out.
+  static const _tail = 600;
+  late final _dealt = math.min(2600, 500 + 120 * widget.cards.length);
   late final _deal = AnimationController(
-      vsync: this,
-      duration: Duration(
-          milliseconds: math.min(2600, 500 + 120 * widget.cards.length)))
+      vsync: this, duration: Duration(milliseconds: _dealt + _tail))
     ..addListener(_tick);
   int _landed = 0;
+  // Each card's own subtree, kept whole as the layers round it come and go
+  // so its jacket never reloads.
+  late final _keys = [for (final _ in widget.cards) GlobalKey()];
 
   static const _gap = 10.0, _least = 72.0, _most = 180.0;
 
@@ -715,16 +722,132 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
     final n = widget.cards.length;
     final flight = n == 1 ? 1.0 : .4;
     final step = n == 1 ? 0.0 : (1 - flight) / (n - 1);
-    return Interval(i * step, i * step + flight, curve: Curves.easeOutBack);
+    final d = _dealt / (_dealt + _tail);
+    return Interval(i * step * d, (i * step + flight) * d,
+        curve: switch (_landing) {
+          PackLanding.slam => Curves.easeInCubic,
+          PackLanding.flip => Curves.easeOutCubic,
+          _ => Curves.easeOutBack,
+        });
   }
+
+  // Milliseconds since card [i] landed, negative before.
+  double _since(int i) => (_deal.value - _interval(i).end) * (_dealt + _tail);
 
   void _tick() {
     final landed = [
       for (var i = 0; i < widget.cards.length; i++)
         if (_deal.value >= _interval(i).end) i
     ].length;
-    if (landed > _landed) HapticFeedback.lightImpact();
+    if (landed > _landed) {
+      switch (_landing) {
+        case PackLanding.slam || PackLanding.flip:
+          HapticFeedback.heavyImpact();
+        case PackLanding.shockwave:
+          HapticFeedback.mediumImpact();
+        case PackLanding.rise:
+          HapticFeedback.lightImpact();
+      }
+    }
     _landed = landed;
+  }
+
+  // The pack jolts as each slammed card hits.
+  Offset _shake(double side) {
+    if (_landing != PackLanding.slam) return Offset.zero;
+    final since = [
+      for (var i = 0; i < widget.cards.length; i++)
+        if (_since(i) >= 0) _since(i)
+    ].fold(double.infinity, math.min);
+    if (since >= 260) return Offset.zero;
+    final amp = side * .035 * (1 - since / 260);
+    return Offset(
+        math.sin(since * .09) * amp, math.cos(since * .13) * amp * .6);
+  }
+
+  Widget _land(int i, WrapCard card, double side, Widget child) {
+    final t = _interval(i).transform(_deal.value);
+    final since = _since(i);
+    // 1 as it lands, gone 450ms on.
+    final hit = since < 0 ? 0.0 : 1 - (since / 450).clamp(0.0, 1.0);
+    final glow = _glow(card);
+    // A flash as it lands, settling to a glow.
+    final lit = DecoratedBox(
+        decoration:
+            BoxDecoration(borderRadius: BorderRadius.circular(8), boxShadow: [
+          if (t >= 1)
+            BoxShadow(
+                color: glow.withValues(alpha: .35 + .65 * hit),
+                blurRadius: 10 + 14 * hit,
+                spreadRadius: 1 + 5 * hit),
+        ]),
+        child: child);
+    if (t <= 0) return Opacity(opacity: 0, child: child);
+    switch (_landing) {
+      case PackLanding.rise:
+        return Transform.translate(
+            offset: Offset(0, (1 - t) * side * 1.6),
+            child: Transform.rotate(
+                angle: (1 - t) * (i.isEven ? -.3 : .3),
+                child: Transform.scale(scale: .5 + .5 * t, child: lit)));
+      case PackLanding.slam:
+        // Falls at the screen from above, then squashes on the hit.
+        final squash = since >= 0 && since < 220
+            ? math.sin(since / 220 * math.pi) * .12
+            : 0.0;
+        final s = 2.6 - 1.6 * t;
+        return Transform.scale(
+            scaleX: s * (1 + squash),
+            scaleY: s * (1 - squash),
+            child: Transform.rotate(
+                angle: (1 - t) * (i.isEven ? -.12 : .12), child: lit));
+      case PackLanding.flip:
+        // Dealt face down, turning over as it lands: it pops up on the
+        // reveal and settles, throwing a ring out in its glow.
+        final angle = (1 - t) * math.pi;
+        final pop = since < 0
+            ? 0.0
+            : .16 * math.exp(-since / 130) * math.sin(since / 150 * math.pi);
+        final scale = (.7 + .3 * t) * (1 + pop);
+        return Stack(clipBehavior: Clip.none, children: [
+          Transform.translate(
+              offset: Offset(0, -(1 - t) * side * .5),
+              child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, .0015)
+                    ..rotateY(angle)
+                    ..scaleByDouble(scale, scale, 1, 1),
+                  child: angle > math.pi / 2
+                      ? _CardBack(side)
+                      : CustomPaint(
+                          foregroundPainter: since >= 0 && since < 600
+                              ? ShockPainter(since / 600, glow)
+                              : null,
+                          child: Stack(children: [
+                            lit,
+                            Positioned.fill(
+                                child: IgnorePointer(
+                                    child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                                alpha: .8 * hit * hit),
+                                            borderRadius:
+                                                BorderRadius.circular(8))))),
+                          ])))),
+        ]);
+      case PackLanding.shockwave:
+        // Rises in, punches up on the hit and throws a ring out.
+        return Transform.translate(
+            offset: Offset(0, (1 - t) * side * 1.6),
+            child: Transform.scale(
+                scale: (.5 + .5 * t) * (1 + .1 * hit),
+                child: CustomPaint(
+                    foregroundPainter: since >= 0 && since < 600
+                        ? ShockPainter(since / 600, glow)
+                        : null,
+                    child: lit)));
+    }
   }
 
   @override
@@ -768,8 +891,7 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
       opaque: false,
       transitionDuration: FloorPop.beat,
       reverseTransitionDuration: FloorPop.beat,
-      pageBuilder: (_, __, ___) =>
-          _CardPages(widget.cards, initial: index, spin: widget.spin),
+      pageBuilder: (_, __, ___) => _CardPages(widget.cards, initial: index),
       transitionsBuilder: (_, a, __, child) =>
           FadeTransition(opacity: a, child: child)));
 
@@ -786,68 +908,32 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
           final fit = _fit(Size(box.maxWidth - 32, box.maxHeight - 32));
           final side = fit.side;
           return Stack(alignment: Alignment.center, children: [
-            RotationTransition(
-                turns: widget.spin,
-                child: CustomPaint(
-                    size: Size.square(
-                        math.max(box.maxWidth, box.maxHeight) * 1.2),
-                    painter: _RaysPainter(FloorPop.volt))),
             SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Center(
-                child: SizedBox(
-                  width: fit.columns * side + (fit.columns - 1) * _gap,
-                  child: Wrap(
-                      spacing: _gap,
-                      runSpacing: _gap,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        for (final (i, card) in cards.indexed)
-                          AnimatedBuilder(
-                            animation: _deal,
-                            builder: (context, child) {
-                              final interval = _interval(i);
-                              final t = interval.transform(_deal.value);
-                              // A flash as it lands, settling to a glow.
-                              final flash = _deal.value < interval.end
-                                  ? 0.0
-                                  : 1 -
-                                      ((_deal.value - interval.end) / .15)
-                                          .clamp(0.0, 1.0);
-                              final glow = _glow(card);
-                              return Opacity(
-                                opacity: t <= 0 ? 0 : 1,
-                                child: Transform.translate(
-                                  offset: Offset(0, (1 - t) * side * 1.6),
-                                  child: Transform.rotate(
-                                    angle: (1 - t) * (i.isEven ? -.3 : .3),
-                                    child: Transform.scale(
-                                      scale: .5 + .5 * t,
-                                      child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              boxShadow: [
-                                                if (t >= 1)
-                                                  BoxShadow(
-                                                      color: glow.withValues(
-                                                          alpha: .35 +
-                                                              .65 * flash),
-                                                      blurRadius:
-                                                          10 + 14 * flash,
-                                                      spreadRadius:
-                                                          1 + 5 * flash),
-                                              ]),
-                                          child: child),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                            child: _PackCard(card,
-                                side: side, onTap: () => _open(i)),
-                          ),
-                      ]),
+                child: AnimatedBuilder(
+                  animation: _deal,
+                  builder: (context, child) =>
+                      Transform.translate(offset: _shake(side), child: child),
+                  child: SizedBox(
+                    width: fit.columns * side + (fit.columns - 1) * _gap,
+                    child: Wrap(
+                        spacing: _gap,
+                        runSpacing: _gap,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          for (final (i, card) in cards.indexed)
+                            AnimatedBuilder(
+                              animation: _deal,
+                              builder: (context, child) =>
+                                  _land(i, card, side, child!),
+                              child: KeyedSubtree(
+                                  key: _keys[i],
+                                  child: _PackCard(card,
+                                      side: side, onTap: () => _open(i))),
+                            ),
+                        ]),
+                  ),
                 ),
               ),
             ),
@@ -856,6 +942,61 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
       ),
     ]);
   }
+}
+
+/// How a card in the pack lands, picked on the development page.
+enum PackLanding {
+  rise('Rise'),
+  slam('Slam'),
+  flip('Flip'),
+  shockwave('Shockwave');
+
+  const PackLanding(this.label);
+  final String label;
+
+  static PackLanding get current => values[
+      Settings.getInt(Settings.wrapLandingKey).clamp(0, values.length - 1)];
+}
+
+// A card dealt face down, before it turns over.
+class _CardBack extends StatelessWidget {
+  const _CardBack(this.side);
+  final double side;
+
+  @override
+  Widget build(BuildContext context) => Container(
+      width: side,
+      height: side,
+      decoration: BoxDecoration(
+          color: FloorPop.volt, borderRadius: BorderRadius.circular(8)),
+      child:
+          Icon(Icons.style_rounded, size: side * .4, color: FloorPop.onVolt));
+}
+
+/// A ring thrown out from a card as it lands, [t] 0 to 1 over its life.
+class ShockPainter extends CustomPainter {
+  ShockPainter(this.t, this.color);
+  final double t;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final r = Curves.easeOutCubic.transform(t);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromCenter(
+                center: size.center(Offset.zero),
+                width: size.width * (1 + .35 * r),
+                height: size.height * (1 + .35 * r)),
+            Radius.circular(8 + 10 * r)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5 * (1 - r) + .5
+          ..color = color.withValues(alpha: .7 * (1 - r)));
+  }
+
+  @override
+  bool shouldRepaint(ShockPainter old) => old.t != t || old.color != color;
 }
 
 // A card in the pack, tagged NEW or UP.
@@ -882,8 +1023,8 @@ class _PackCard extends StatelessWidget {
                 child:
                     Hero(tag: _heroTag(card), child: _compact(card, card.now))),
             Positioned(
-              left: -4,
-              top: -6,
+              left: 6,
+              top: 6,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
@@ -905,10 +1046,9 @@ class _PackCard extends StatelessWidget {
 // A card opened from the pack, floating over it on a panel, with the rest a
 // swipe either side, their edges peeking. Tapping the pack around it closes.
 class _CardPages extends StatefulWidget {
-  const _CardPages(this.cards, {required this.initial, required this.spin});
+  const _CardPages(this.cards, {required this.initial});
   final List<WrapCard> cards;
   final int initial;
-  final Animation<double> spin;
 
   @override
   State<_CardPages> createState() => _CardPagesState();
@@ -936,8 +1076,7 @@ class _CardPagesState extends State<_CardPages> {
             onTap: close,
             child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                child: ColoredBox(
-                    color: Colors.black.withValues(alpha: .55))),
+                child: ColoredBox(color: Colors.black.withValues(alpha: .55))),
           ),
         ),
         SafeArea(
@@ -960,8 +1099,7 @@ class _CardPagesState extends State<_CardPages> {
                             ]),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(24),
-                          child: _Deal(widget.cards,
-                              index: i, spin: widget.spin, onClose: close),
+                          child: _Deal(widget.cards, index: i, onClose: close),
                         ),
                       ),
                     )),
@@ -972,13 +1110,11 @@ class _CardPagesState extends State<_CardPages> {
   }
 }
 
-// One card on its own, over rays in what it gained, beside what it was.
+// One card on its own, beside what it was.
 class _Deal extends StatelessWidget {
-  const _Deal(this.cards,
-      {required this.index, required this.spin, required this.onClose});
+  const _Deal(this.cards, {required this.index, required this.onClose});
   final List<WrapCard> cards;
   final int index;
-  final Animation<double> spin;
   final VoidCallback onClose;
 
   @override
@@ -1017,11 +1153,6 @@ class _Deal extends StatelessWidget {
         child: LayoutBuilder(builder: (context, box) {
           final side = math.min(240.0, box.maxHeight - 40);
           return Stack(alignment: Alignment.center, children: [
-            RotationTransition(
-                turns: spin,
-                child: CustomPaint(
-                    size: Size.square(side * 1.8),
-                    painter: _RaysPainter(_glow(card)))),
             Hero(
               tag: _heroTag(card),
               child: SizedBox.square(
@@ -1152,36 +1283,6 @@ class _Change extends StatelessWidget {
       ]),
     );
   }
-}
-
-class _RaysPainter extends CustomPainter {
-  _RaysPainter(this.color);
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final r = size.width / 2;
-    final paint = Paint()
-      ..shader = RadialGradient(colors: [
-        color.withValues(alpha: .3),
-        color.withValues(alpha: 0),
-      ]).createShader(Rect.fromCircle(center: c, radius: r));
-    const rays = 20;
-    for (var i = 0; i < rays; i++) {
-      final a = i * 2 * math.pi / rays;
-      canvas.drawPath(
-          Path()
-            ..moveTo(c.dx, c.dy)
-            ..lineTo(c.dx + r * math.cos(a), c.dy + r * math.sin(a))
-            ..lineTo(c.dx + r * math.cos(a + .1), c.dy + r * math.sin(a + .1))
-            ..close(),
-          paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_RaysPainter old) => old.color != color;
 }
 
 /// A badge per kind of gain in [gains], with its count.
@@ -1329,57 +1430,53 @@ class _SessionWrapBannerState extends State<SessionWrapBanner> {
     return BeatIn(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-        child: Row(children: [
-          Expanded(
-            child: VoltButton(
-              height: 64,
-              radius: 20,
-              onPressed: () {
-                _clear();
-                showSessionWrap(context,
-                    visit: widget.visit,
-                    summary: widget.summary,
-                    gains: widget.gains);
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(children: [
-                  const Icon(Icons.style, size: 26),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('Session wrapped',
-                              style:
-                                  FloorPop.display(16, color: FloorPop.onVolt)),
-                          Text(
-                              [
-                                widget.visit.session!.venue.name,
-                                if (gap != null)
-                                  '${gap >= 0 ? '+' : '−'}${formatScore(gap.abs().round())}',
-                                if (cards > 0)
-                                  '$cards ${cards == 1 ? 'card' : 'cards'}',
-                              ].join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: FloorPop.onVolt)),
-                        ]),
-                  ),
-                  const Icon(Icons.chevron_right),
-                ]),
+        child: VoltButton(
+          height: 64,
+          radius: 20,
+          onPressed: () {
+            _clear();
+            showSessionWrap(context,
+                visit: widget.visit,
+                summary: widget.summary,
+                gains: widget.gains);
+          },
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 4),
+            child: Row(children: [
+              const Icon(Icons.style, size: 26),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Session wrapped',
+                          style: FloorPop.display(16, color: FloorPop.onVolt)),
+                      Text(
+                          [
+                            widget.visit.session!.venue.name,
+                            if (gap != null)
+                              '${gap >= 0 ? '+' : '−'}${formatScore(gap.abs().round())}',
+                            if (cards > 0)
+                              '$cards ${cards == 1 ? 'card' : 'cards'}',
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: FloorPop.onVolt)),
+                    ]),
               ),
-            ),
+              // Dismissed from inside the banner, the rest of it opening the wrap.
+              IconButton(
+                  tooltip: 'Dismiss',
+                  onPressed: _clear,
+                  color: FloorPop.onVolt,
+                  icon: const Icon(Icons.close)),
+            ]),
           ),
-          IconButton(
-              tooltip: 'Dismiss',
-              onPressed: _clear,
-              icon: const Icon(Icons.close)),
-        ]),
+        ),
       ),
     );
   }
