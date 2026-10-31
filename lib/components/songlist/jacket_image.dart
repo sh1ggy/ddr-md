@@ -41,10 +41,14 @@ class SongArtwork extends StatelessWidget {
   final bool fullResolution;
   final Duration fade;
 
-  @override
-  Widget build(BuildContext context) {
+  /// The jacket's image, for precaching what a page is about to show.
+  static ImageProvider image(String songName, {bool fullResolution = false}) =>
+      ContentStore.image(
+          'assets/${fullResolution ? 'jackets' : 'jackets-160'}/$songName.png');
+
+  Widget _fallback(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final fallback = Songs.contains(songName)
+    return Songs.contains(songName)
         ? ColoredBox(
             color: scheme.surfaceContainerLow,
             child: FractionallySizedBox(
@@ -54,28 +58,34 @@ class SongArtwork extends StatelessWidget {
                     child: Icon(Icons.music_note,
                         color: scheme.onSurfaceVariant))))
         : GeneratedJacket(songName: songName, title: title);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final still = MediaQuery.disableAnimationsOf(context);
+    // The fallback only while the jacket loads or when there's none: a jacket
+    // already decoded is built alone, which a binder sheet of them needs.
     return Semantics(
         image: true,
         label: title ?? songName,
         child: ExcludeSemantics(
-            child: Stack(fit: StackFit.expand, children: [
-          fallback,
-          Image(
-            image: ContentStore.image(
-                'assets/${fullResolution ? 'jackets' : 'jackets-160'}/$songName.png'),
-            fit: BoxFit.cover,
-            filterQuality:
-                fullResolution ? FilterQuality.medium : FilterQuality.low,
-            frameBuilder: (context, child, frame, synchronous) => synchronous
-                ? child
-                : AnimatedOpacity(
-                    opacity: frame == null ? 0 : 1,
-                    duration: still ? Duration.zero : fade,
-                    curve: Curves.easeOut,
-                    child: child),
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-          ),
-        ])));
+            child: SizedBox.expand(
+                child: Image(
+          image: image(songName, fullResolution: fullResolution),
+          fit: BoxFit.cover,
+          filterQuality:
+              fullResolution ? FilterQuality.medium : FilterQuality.low,
+          frameBuilder: (context, child, frame, synchronous) => synchronous
+              ? child
+              : Stack(fit: StackFit.expand, children: [
+                  _fallback(context),
+                  AnimatedOpacity(
+                      opacity: frame == null ? 0 : 1,
+                      duration: still ? Duration.zero : fade,
+                      curve: Curves.easeOut,
+                      child: child),
+                ]),
+          errorBuilder: (context, _, __) => _fallback(context),
+        ))));
   }
 }

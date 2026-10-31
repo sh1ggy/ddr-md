@@ -161,6 +161,11 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
   final _landed = <BinderChart>{};
   // Turning to each sheet with arrivals in turn, until the player turns one.
   bool _touring = true;
+  // Sheets' jackets decoding, by page, so a sheet the tour turns to comes up
+  // whole rather than fading its jackets in under the cards landing.
+  final _warmed = <int, Future<void>>{};
+  // With cards arriving, held back until the sheet it opens on is warm.
+  late bool _shown = widget.arrivals.isEmpty;
   late ({String song, String difficulty})? _focus =
       widget.song == null || widget.difficulty == null
           ? null
@@ -222,8 +227,32 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
     _controller = PageController(initialPage: page);
     _pages = pages;
     _perSheet = perSheet;
+    _warmed.clear();
     _settle(page);
+    if (widget.arrivals.isNotEmpty) _warmArrivals(page);
     return pages;
+  }
+
+  Future<void> _warm(int page) => _warmed[page] ??= switch (_pages![page]) {
+        final BinderSheet s => Future.wait([
+            for (final p in s.pockets)
+              precacheImage(SongArtwork.image(p.song.name), context,
+                  onError: (_, __) {})
+          ]),
+        _ => Future.value(),
+      };
+
+  // The sheet it opens on first, then each other sheet with arrivals ahead
+  // of the tour.
+  Future<void> _warmArrivals(int page) async {
+    final pages = _pages;
+    await _warm(page);
+    if (!mounted || _pages != pages) return;
+    if (!_shown) setState(() => _shown = true);
+    for (final (i, p) in pages!.indexed) {
+      if (!mounted || _pages != pages) return;
+      if (p is BinderSheet && p.pockets.any(_arriving)) await _warm(i);
+    }
   }
 
   static BinderChart _chart(BinderPocket p) =>
@@ -245,7 +274,7 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
       return;
     }
     if (!_touring) return;
-    Future.delayed(FloorPop.beat, () {
+    Future.wait([Future.delayed(FloorPop.beat), _warm(next)]).then((_) {
       if (!mounted || !_touring || !_controller.hasClients) return;
       if ((next - _page).abs() == 1) {
         _controller.animateToPage(next,
@@ -301,8 +330,12 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
     final pop = FloorPop.of(context);
     return Scaffold(
         appBar: AppBar(title: const Text('Binder')),
+        // No spinner flashing up as cards come in, just the sheet once it's
+        // ready.
         body: !_ready
-            ? const Center(child: CircularProgressIndicator())
+            ? widget.arrivals.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : null
             : SafeArea(
                 top: false,
                 child: LayoutBuilder(builder: (context, box) {
@@ -318,6 +351,7 @@ class _EditionBinderPageState extends State<EditionBinderPage> {
                           2 * margin -
                           2 * _kPad);
                   final pages = _paginate(grid.rows * _kColumns);
+                  if (!_shown) return const SizedBox.shrink();
                   // Levels with cards still to slot in, marked on their tab.
                   final waiting = {
                     for (final p in pages)
