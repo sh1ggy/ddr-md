@@ -58,6 +58,7 @@ class CardGain {
     required this.layer,
     this.from = '',
     this.to = '',
+    this.fromScore,
     required this.best,
     required this.playedAt,
     required this.syncedAt,
@@ -71,6 +72,9 @@ class CardGain {
   // What the layer showed before and shows now: a grade's label, a lamp's
   // name or a flare rank; '' for none and for a new card.
   final String from, to;
+  // The chart's best score before; null for a new card and gains recorded
+  // before it was kept.
+  final int? fromScore;
   // The chart's best once gained.
   final ChartBest best;
   final DateTime playedAt, syncedAt;
@@ -89,6 +93,7 @@ class CardGain {
         'layer': layer.name,
         'fromValue': from,
         'toValue': to,
+        'fromScore': fromScore,
         'score': best.score,
         'grade': best.grade?.label,
         'lamp': best.lamp?.name,
@@ -104,6 +109,7 @@ class CardGain {
         layer: CardLayer.values.byName(m['layer']),
         from: m['fromValue'],
         to: m['toValue'],
+        fromScore: m['fromScore'] as int?,
         best: (
           score: m['score'] as int?,
           grade: Grade.values.where((g) => g.label == m['grade']).firstOrNull,
@@ -132,6 +138,7 @@ List<CardGain> cardGains(
           layer: layer,
           from: from,
           to: to,
+          fromScore: layer == CardLayer.card ? null : before?.score,
           best: after,
           playedAt: playedAt,
           syncedAt: syncedAt);

@@ -42,7 +42,8 @@ const _previewCards = 12;
 
 /// Opens the wrap of the latest session with plays, its gains made up from
 /// its charts' bests in turn: a new card, AAA's foil, a frame one tier up and
-/// a flare one rank up, each where the best allows. A dozen cards, topped
+/// a flare one rank up, each where the best allows, from a few thousand
+/// points lower. A dozen cards, topped
 /// up from the player's other bests when the session has fewer charts.
 Future<void> _previewWrap(BuildContext context) async {
   final data = await loadVisits(context.read<SessionState>().session?.id);
@@ -89,6 +90,9 @@ Future<void> _previewWrap(BuildContext context) async {
             layer: layer,
             from: from,
             to: to,
+            fromScore: layer == CardLayer.card || best.score == null
+                ? null
+                : best.score! - 4210 * (1 + gains.length % 3),
             best: best,
             playedAt: visit.plays.first.playedAt,
             syncedAt: DateTime.now());

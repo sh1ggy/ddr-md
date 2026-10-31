@@ -11,6 +11,7 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
@@ -94,7 +95,7 @@ List<WrapCard> wrapCards(List<CardGain> gains) {
           before: fresh
               ? null
               : facts((
-                  score: best.score,
+                  score: had.first.fromScore ?? best.score,
                   grade: switch (from(CardLayer.finish)) {
                     null => best.grade,
                     final g =>
@@ -776,6 +777,10 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     final cards = widget.cards;
     return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+        child: CardTally(widget.gains, height: 28),
+      ),
       Expanded(
         child: LayoutBuilder(builder: (context, box) {
           final fit = _fit(Size(box.maxWidth - 32, box.maxHeight - 32));
@@ -849,10 +854,6 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
           ]);
         }),
       ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: CardTally(widget.gains, height: 28),
-      ),
     ]);
   }
 }
@@ -901,47 +902,84 @@ class _PackCard extends StatelessWidget {
   }
 }
 
-// A card opened from the pack, with the rest a swipe either side.
-class _CardPages extends StatelessWidget {
+// A card opened from the pack, floating over it on a panel, with the rest a
+// swipe either side, their edges peeking. Tapping the pack around it closes.
+class _CardPages extends StatefulWidget {
   const _CardPages(this.cards, {required this.initial, required this.spin});
   final List<WrapCard> cards;
   final int initial;
   final Animation<double> spin;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        backgroundColor: FloorPop.of(context).stage,
-        body: SafeArea(
-          child: Column(children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: IconButton(
-                    tooltip: 'Back to the pack',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close)),
-              ),
-            ),
-            Expanded(
-              child: PageView.builder(
-                  controller: PageController(initialPage: initial),
-                  itemCount: cards.length,
-                  itemBuilder: (context, i) =>
-                      _Deal(cards, index: i, spin: spin)),
-            ),
-            const SizedBox(height: 16),
-          ]),
+  State<_CardPages> createState() => _CardPagesState();
+}
+
+class _CardPagesState extends State<_CardPages> {
+  late final _pages =
+      PageController(initialPage: widget.initial, viewportFraction: .88);
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    void close() => Navigator.of(context).pop();
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(children: [
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: close,
+            child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: ColoredBox(
+                    color: Colors.black.withValues(alpha: .55))),
+          ),
         ),
-      );
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: PageView.builder(
+                controller: _pages,
+                itemCount: widget.cards.length,
+                itemBuilder: (context, i) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                            color: pop.stage,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: const [
+                              BoxShadow(
+                                  color: Colors.black38,
+                                  blurRadius: 24,
+                                  offset: Offset(0, 8)),
+                            ]),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: _Deal(widget.cards,
+                              index: i, spin: widget.spin, onClose: close),
+                        ),
+                      ),
+                    )),
+          ),
+        ),
+      ]),
+    );
+  }
 }
 
 // One card on its own, over rays in what it gained, beside what it was.
 class _Deal extends StatelessWidget {
-  const _Deal(this.cards, {required this.index, required this.spin});
+  const _Deal(this.cards,
+      {required this.index, required this.spin, required this.onClose});
   final List<WrapCard> cards;
   final int index;
   final Animation<double> spin;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -951,7 +989,7 @@ class _Deal extends StatelessWidget {
     final difficulty = card.gains.first.difficulty;
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+        padding: const EdgeInsets.fromLTRB(16, 8, 4, 0),
         child: Row(children: [
           Transform(
             transform: FloorPop.lean,
@@ -969,6 +1007,10 @@ class _Deal extends StatelessWidget {
           const Spacer(),
           Text('${index + 1} / ${cards.length}',
               style: FloorPop.readout(18, color: pop.haze)),
+          IconButton(
+              tooltip: 'Back to the pack',
+              onPressed: onClose,
+              icon: const Icon(Icons.close)),
         ]),
       ),
       Expanded(
@@ -1025,12 +1067,13 @@ class _Deal extends StatelessWidget {
                   color: i <= index ? FloorPop.volt : pop.line,
                   borderRadius: BorderRadius.circular(4))),
       ]),
+      const SizedBox(height: 16),
     ]);
   }
 }
 
-// What the card was (an empty pocket for a new one), and each gain from
-// what it showed to what it shows now; a new card shows what it came with.
+// Each gain from what the card showed to what it shows now, and its score
+// with how far it rose; a new card shows what it came with.
 class _Change extends StatelessWidget {
   const _Change(this.card);
   final WrapCard card;
@@ -1080,22 +1123,15 @@ class _Change extends StatelessWidget {
           ]),
       ];
     }
+    final rise = switch ((before?.score, best.score)) {
+      (final was?, final now?) when now > was => now - was,
+      _ => null,
+    };
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
           color: pop.riser, borderRadius: BorderRadius.circular(20)),
       child: Row(children: [
-        SizedBox.square(
-          dimension: 48,
-          child: before == null
-              ? DecoratedBox(
-                  decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: pop.line, width: 2)),
-                  child: Icon(Icons.add, color: pop.haze))
-              : _compact(card, before),
-        ),
-        const SizedBox(width: 12),
         Expanded(
           child: Wrap(
               spacing: 10,
@@ -1104,7 +1140,15 @@ class _Change extends StatelessWidget {
               children: changes),
         ),
         if (best.score case final s?)
-          Text(formatScore(s), style: FloorPop.readout(17)),
+          Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(formatScore(s), style: FloorPop.readout(17)),
+                if (rise != null)
+                  Text('+${formatScore(rise)}',
+                      style: FloorPop.readout(13, color: pop.voltText)),
+              ]),
       ]),
     );
   }

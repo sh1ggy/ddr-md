@@ -81,9 +81,10 @@ class DatabaseProvider {
   static const String _recentPlaysDdl =
       'CREATE TABLE IF NOT EXISTS recent_plays(konamiId TEXT NOT NULL, title TEXT NOT NULL, song TEXT, mode TEXT NOT NULL, difficulty TEXT NOT NULL, playedAt TEXT NOT NULL, score INT, PRIMARY KEY(konamiId, mode, difficulty, playedAt))';
 
-  // v18: what each sync did to the player's cards (see CardGain).
+  // v18: what each sync did to the player's cards (see CardGain); v19 adds
+  // the score before it.
   static const String _cardGainsDdl =
-      'CREATE TABLE IF NOT EXISTS card_gains(id TEXT PRIMARY KEY, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, layer TEXT NOT NULL, fromValue TEXT NOT NULL, toValue TEXT NOT NULL, score INT, grade TEXT, lamp TEXT, flare TEXT, playedAt TEXT NOT NULL, syncedAt TEXT NOT NULL)';
+      'CREATE TABLE IF NOT EXISTS card_gains(id TEXT PRIMARY KEY, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, layer TEXT NOT NULL, fromValue TEXT NOT NULL, toValue TEXT NOT NULL, score INT, grade TEXT, lamp TEXT, flare TEXT, playedAt TEXT NOT NULL, syncedAt TEXT NOT NULL, fromScore INT)';
 
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
@@ -110,6 +111,12 @@ class DatabaseProvider {
     if (columns.any((c) => c['name'] == 'syncOrder')) return;
     await db.execute(
         'ALTER TABLE recent_plays ADD COLUMN syncOrder INTEGER NOT NULL DEFAULT 0');
+  }
+
+  static Future<void> _addCardGainFromScore(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(card_gains)');
+    if (columns.any((c) => c['name'] == 'fromScore')) return;
+    await db.execute('ALTER TABLE card_gains ADD COLUMN fromScore INT');
   }
 
   static Future<void> _createScoreRecords(Database db) async {
@@ -160,7 +167,7 @@ class DatabaseProvider {
       open(join(await getDatabasesPath(), _dbName));
 
   static Future<Database> open(String path) {
-    return openDatabase(path, version: 18, onCreate: (db, version) async {
+    return openDatabase(path, version: 19, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -200,6 +207,7 @@ class DatabaseProvider {
         await addSyncTriggers(
             db, syncTables.firstWhere((t) => t.name == 'card_gains'));
       }
+      if (oldVersion >= 18 && oldVersion < 19) await _addCardGainFromScore(db);
     });
   }
 
