@@ -3169,14 +3169,8 @@ class _ChartScrollerState extends State<ChartScroller>
     // The shade's own scroller handles any content beyond this height.
     final bottomControlsHeight =
         154 + (_pattern != null ? 52 : 0) + (widget.editFooting ? 52 : 0);
-    final maxHeight = math.min(
-        media.size.height * 0.4,
-        math.max(
-            0.0,
-            media.size.height -
-                top -
-                media.padding.bottom -
-                bottomControlsHeight));
+    final maxHeight = math.max(0.0,
+        media.size.height - top - media.padding.bottom - bottomControlsHeight);
     return AnimatedPositioned(
       left: 0,
       right: 0,

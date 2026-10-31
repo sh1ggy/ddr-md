@@ -6,6 +6,7 @@
 /// preview, not while scrolling the song details.
 library;
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/notes/chart_models.dart';
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
@@ -449,70 +450,63 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
         backgroundColor: FloorPop.night.riser,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       )),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              FloorPop.night.ink.withValues(alpha: 0.94),
-              FloorPop.night.ink.withValues(alpha: 0.0),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: Icon(Icons.arrow_back, color: FloorPop.night.haze),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                const SizedBox(width: 48),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.title,
-                        textAlign: TextAlign.center,
-                        style: FloorPop.display(18, color: Colors.white),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (widget.feedLabel != null)
-                        Text(widget.feedLabel!,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12)),
-                      if (kInGameDifficultyColors
-                          .containsKey(_pretty(widget.difficultyKey)))
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: DifficultyLabel(
-                              difficulty: _pretty(widget.difficultyKey),
-                              level: widget.difficultyLevel,
-                              height: 16),
-                        )
-                      else
-                        Text(
-                          difficultyLabel,
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: diffColor,
-                              fontWeight: FontWeight.w900),
-                        ),
-                    ],
+      child: Stack(
+        children: [
+          const Positioned.fill(child: GlassHeader()),
+          SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.arrow_back, color: FloorPop.night.haze),
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                ),
-                // The pattern breakdown, balanced by an empty slot on the left
-                // when an action joins it.
-                if (widget.feedActive == null) patternsButton,
-                action,
-              ],
+                  const SizedBox(width: 48),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.title,
+                          textAlign: TextAlign.center,
+                          style: FloorPop.display(18, color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (widget.feedLabel != null)
+                          Text(widget.feedLabel!,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                        if (kInGameDifficultyColors
+                            .containsKey(_pretty(widget.difficultyKey)))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: DifficultyLabel(
+                                difficulty: _pretty(widget.difficultyKey),
+                                level: widget.difficultyLevel,
+                                height: 16),
+                          )
+                        else
+                          Text(
+                            difficultyLabel,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: diffColor,
+                                fontWeight: FontWeight.w900),
+                          ),
+                      ],
+                    ),
+                  ),
+                  // The pattern breakdown, balanced by an empty slot on the left
+                  // when an action joins it.
+                  if (widget.feedActive == null) patternsButton,
+                  action,
+                ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
