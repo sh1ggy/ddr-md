@@ -16,9 +16,12 @@ class CompactJacketEdition extends StatefulWidget {
       {super.key,
       required this.facts,
       required this.options,
+      this.aura = true,
       required this.child});
   final EditionFacts facts;
   final EditionOptions options;
+  // The flare's flames round the card; the binder's pockets go without.
+  final bool aura;
   final Widget child;
   @override
   State<CompactJacketEdition> createState() => _CompactJacketEditionState();
@@ -63,7 +66,16 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
         IgnorePointer(
             child: CustomPaint(
                 painter: EditionStaticPainter(geometry, foreground: true),
-                foregroundPainter: EditionFlarePainter(geometry))),
+                foregroundPainter: EditionFlarePainter(
+                    geometry,
+                    null,
+                    widget.aura
+                        ? editionAllLayers
+                        : const {
+                            EditionLayer.art,
+                            EditionLayer.finish,
+                            EditionLayer.frame
+                          }))),
         // Stickers at full size, scaled down to the card.
         if (recipe.gradeStamp != null || recipe.flareStamp != null)
           Positioned(

@@ -183,6 +183,28 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                       await Settings.setInt(key, v ? 0 : 1);
                       if (mounted) setState(() {});
                     }),
+              SwitchListTile(
+                  title: const Text('Flare gauge'),
+                  subtitle: const Text(
+                      'Show the flare aura as a gauge round the card instead of flames'),
+                  value: Settings.getInt(Settings.jacketFlareGaugeKey) == 1,
+                  onChanged: (v) async {
+                    await Settings.setInt(
+                        Settings.jacketFlareGaugeKey, v ? 1 : 0);
+                    if (mounted) setState(() {});
+                  }),
+              ListTile(
+                  title: const Text('Wrap card landing'),
+                  trailing: DropdownButton<PackLanding>(
+                      value: PackLanding.current,
+                      onChanged: (v) async {
+                        await Settings.setInt(Settings.wrapLandingKey, v!.index);
+                        if (mounted) setState(() {});
+                      },
+                      items: [
+                        for (final l in PackLanding.values)
+                          DropdownMenuItem(value: l, child: Text(l.label)),
+                      ])),
             ])),
           ]));
 }

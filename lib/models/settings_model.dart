@@ -13,6 +13,10 @@ class Settings {
   static const jacketGradeOffKey = 'jacketEditionGradeOff';
   static const jacketDifficultyOffKey = 'jacketEditionDifficultyOff';
   static const jacketTierOffKey = 'jacketEditionTierOff';
+  // Development: the flare aura as a gauge round the card instead of flames.
+  static const jacketFlareGaugeKey = 'jacketEditionFlareGauge';
+  // Development: how the session wrap's cards land, a [PackLanding] index.
+  static const wrapLandingKey = 'sessionWrapLanding';
 
   static const String chosenReadSpeedKey = "chosenReadSpeed";
 

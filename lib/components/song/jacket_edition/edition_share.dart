@@ -80,7 +80,7 @@ class _SharePreviewState extends State<_SharePreview> {
                   color: const Color(0xFF15131C),
                   child: Padding(
                       // Room for the flare's aura.
-                      padding: const EdgeInsets.fromLTRB(28, 28, 28, 18),
+                      padding: const EdgeInsets.fromLTRB(36, 48, 36, 18),
                       child: SizedBox(
                           width: 300,
                           child: Column(

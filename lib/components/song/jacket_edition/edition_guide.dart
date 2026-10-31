@@ -80,10 +80,10 @@ class _EditionGuidePageState extends State<EditionGuidePage>
         'Flare',
         switch (_flare) {
           null => 'None yet',
-          'EX' => 'EX · rainbow stars and halo',
-          final f when flare < 3 => '$f · sparks rise',
-          final f when flare < 6 => '$f · motes circle',
-          final f => '$f · stars twinkle',
+          'EX' => 'EX · rainbow flames',
+          final f when flare < 3 => '$f · flames along the top',
+          final f when flare < 6 => '$f · flames down the sides',
+          final f => '$f · the card ablaze',
         }
       ),
       (

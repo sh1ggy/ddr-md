@@ -857,6 +857,7 @@ class _Pocket extends StatelessWidget {
                 difficultyStamp: false,
                 tierSuffix: false
               ),
+              aura: false,
               child: art));
     }
     if (dimmed) return Opacity(opacity: .5, child: sleeve);
