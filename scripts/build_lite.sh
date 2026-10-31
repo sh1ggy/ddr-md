@@ -17,8 +17,8 @@ cp pubspec.yaml pubspec.yaml.orig
 trap 'mv pubspec.yaml.orig pubspec.yaml' EXIT
 
 sed -i '' \
-  -e '\|- assets/jackets-160/|d' \
-  -e '\|- assets/jackets/|d' \
+  -e '\|- assets/jackets-160-webp/|d' \
+  -e '\|- assets/jackets-webp/|d' \
   -e '\|- assets/songs/|d' \
   pubspec.yaml
 

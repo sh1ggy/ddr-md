@@ -33,6 +33,9 @@ const _dirs = {
   'patterns': '.json',
   'jackets': '.png',
   'jackets-160': '.png',
+  // Made from the PNGs by scripts/encode_jackets.sh.
+  'jackets-webp': '.webp',
+  'jackets-160-webp': '.webp',
 };
 
 /// SHA-256 of every key that signs a store build (Play Console → App

@@ -34,7 +34,7 @@ concurrency: publish-content
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -59,6 +59,10 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: bash scripts/generate_songlist.sh
+      # A different cwebp changes every jacket's hash and devices re-download
+      # them all, hence the pinned runner image above.
+      - run: sudo apt-get install -y webp
+      - run: bash scripts/encode_jackets.sh
       - run: flutter test tool/generate_patterns.dart
 
       # The live manifest is what the checks below compare against. Only a 404

@@ -63,7 +63,7 @@ class SongArtwork extends StatelessWidget {
           fallback,
           Image(
             image: ContentStore.image(
-                'assets/${fullResolution ? 'jackets' : 'jackets-160'}/$songName.png'),
+                'assets/${fullResolution ? 'jackets-webp' : 'jackets-160-webp'}/$songName.webp'),
             fit: BoxFit.cover,
             filterQuality:
                 fullResolution ? FilterQuality.medium : FilterQuality.low,
