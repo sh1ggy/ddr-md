@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
@@ -46,6 +47,7 @@ void main() async {
   await session.restore();
   final eamuse = EamuseSyncState();
   await eamuse.restore();
+  final circles = CircleState();
 
   // Wrapped app with providers
   runApp(MultiProvider(
@@ -53,6 +55,7 @@ void main() async {
       ChangeNotifierProvider(create: (context) => SongState()),
       ChangeNotifierProvider.value(value: session),
       ChangeNotifierProvider.value(value: eamuse),
+      ChangeNotifierProvider.value(value: circles),
     ],
     child: const App(),
   ));
@@ -66,8 +69,14 @@ void main() async {
   // Cloud sync, when on: now, and whenever the app is left or comes back.
   CloudSync.pulled.addListener(eamuse.reloadSaved);
   CloudSync.syncQuietly();
-  AppLifecycleListener(
-      onHide: CloudSync.syncQuietly, onResume: CloudSync.syncQuietly);
+  AppLifecycleListener(onHide: CloudSync.syncQuietly, onResume: () {
+    CloudSync.syncQuietly();
+    eamuse.resumed(session.credit);
+  });
+  // Each credit's plays sync once it ends, not only at the session's end.
+  session.onCreditEnded = eamuse.creditEnded;
+  // A broadcast ends with its session; the next one asks again.
+  session.onSessionEnded = () => circles.endBroadcast(keepChoice: true);
 }
 
 class App extends StatelessWidget {

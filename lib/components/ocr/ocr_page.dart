@@ -1,6 +1,6 @@
 /// Name: OcrPage
-/// Parent: Router
-/// Description: The Camera tab: the camera full bleed under a sheet that
+/// Parent: SongPage, SessionPage
+/// Description: The scan page, opened over the app: the camera full bleed under a sheet that
 /// reads a cabinet's results screen frame by frame, then, stopped, holds the
 /// readings to check and save as a score.
 library;
@@ -237,7 +237,7 @@ class _OcrPageState extends State<OcrPage>
     } catch (e) {
       debugPrint('Error initializing OCR session: $e');
       if (!mounted) return;
-      context.go('/songs');
+      context.pop();
     }
   }
 
@@ -366,6 +366,12 @@ class _OcrPageState extends State<OcrPage>
   Widget _buildTopBar(CameraState state) {
     final debugOn = _debugImageType == DebugImageType.on;
     return Row(children: [
+      _StageButton(
+        tooltip: 'Close',
+        icon: Icons.close_rounded,
+        onPressed: () => context.pop(),
+      ),
+      const SizedBox(width: 8),
       _StageButton(
         tooltip: 'Load image',
         icon: Icons.photo_library_outlined,

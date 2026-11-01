@@ -11,7 +11,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '26 October 2026';
+const privacyUpdated = '31 October 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
@@ -21,7 +21,8 @@ const privacySections = <(String, List<String>)>[
     [
       "DDR MD keeps everything on your device. There's no sign-in, no ads, "
           'no analytics and no tracking, and nothing you save or type leaves '
-          'your device unless you turn on Cloud Backup. Photos never do. It '
+          'your device unless you turn on Cloud Backup or start a circle. '
+          'Photos never do. It '
           'downloads song data, with nothing about you attached, and, only '
           'if you link your e-amusement account, your own scores from Konami.',
     ]
@@ -61,7 +62,8 @@ const privacySections = <(String, List<String>)>[
           'like a browser would, and DDR MD keeps any Konami renews during a '
           'sync. If the e-amusement session has lapsed, Sync reopens the '
           'sign-in page out of sight, which signs straight back in while '
-          'Konami still remembers you. When you tap Sync, and only then, DDR MD '
+          'Konami still remembers you. When you tap Sync, and during a session '
+          'once each credit has had time to end, DDR MD '
           'uses that cookie to read your DDR WORLD play data from '
           "Konami's e-amusement site: your recent plays first, then only the "
           'charts you played since the last sync (or, the first time, every '
@@ -92,6 +94,16 @@ const privacySections = <(String, List<String>)>[
           "DDR MD doesn't log them; to stop one network flooding the "
           "server, it counts each day's backups against a one-way "
           'fingerprint of the IP address, cleared the next day.',
+      '- Circles (optional, nothing is sent until you start one on the '
+          'Circle tab): the dancer name and DDR-CODE you give, your invite '
+          'code and how long it lasts, who is in your circle and whose '
+          "circles you are in are kept on DDR MD's circles server (hosted on "
+          'Cloudflare), so people in your circles see that name and code and '
+          'whether you are friends. Like Cloud '
+          'Backup there is no account, but the random key is a separate one, '
+          'kept the same way, and the server stores only a one-way fingerprint '
+          "of it. Cloudflare sees your IP address and the "
+          "time of each request; DDR MD doesn't log them.",
       "- Links: the GitHub, LinkedIn and PayPal buttons, and the links under "
           "Credits, open in your browser, where those sites' own privacy "
           'policies apply.',
@@ -100,8 +112,8 @@ const privacySections = <(String, List<String>)>[
   (
     'Permissions',
     [
-      "- Camera: to read your score from a cabinet's result screen, only "
-          'while the camera screen is open.',
+      "- Camera: to read your score from a cabinet's result screen, and to "
+          "scan a friend's circle QR code, only while that screen is open.",
       '- Photos: to read a result-screen screenshot you choose. DDR MD only '
           'sees the photo you pick.',
       '- Microphone: iOS lists this because of the audio engine behind the '
@@ -118,7 +130,10 @@ const privacySections = <(String, List<String>)>[
           'device, including scores and their photos. With Cloud Backup on, '
           'Delete cloud copy under Home → Settings removes everything on the '
           'sync server straight away and turns backup off. Deleting a row '
-          'on your device deletes it from the backup at the next sync. '
+          'on your device deletes it from the backup at the next sync. Leave '
+          'circles & delete, under the Circle tab\'s settings, removes your '
+          'name and code, your circle and your place in others\' from the circles '
+          'server straight away. '
           "Without Cloud Backup nothing is kept anywhere else, so there's "
           'nothing for me to delete on your behalf.',
     ]

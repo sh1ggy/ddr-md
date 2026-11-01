@@ -193,6 +193,11 @@ class Settings {
   // account key, and when the last sync finished (ISO-8601, '' = never).
   static const String cloudSyncOnKey = "cloudSyncOn";
   static const String cloudSyncKeyKey = "cloudSyncKey";
+  static const String circleKeyKey = "circleKey";
+  static const String circleStateKey = "circleState";
+  // Broadcast sessions to the circle (1) or not (0), as last chosen when
+  // starting a credit.
+  static const String circleBroadcastKey = "circleBroadcast";
   static const String cloudSyncedAtKey = "cloudSyncedAt";
 
   // Settings that follow the player to their other devices. Left out: the

@@ -354,7 +354,14 @@ class SessionState extends ChangeNotifier {
     await newCredit(cabinet, side);
   }
 
+  /// Called when starting a credit ends the one before it.
+  VoidCallback? onCreditEnded;
+
+  /// Called when the session ends or is discarded.
+  VoidCallback? onSessionEnded;
+
   Future<void> newCredit(Cabinet cabinet, PadSide side) async {
+    final ended = _credit != null;
     final credit = Credit(
       sessionId: _session!.id,
       number: (_credit?.number ?? 0) + 1,
@@ -365,6 +372,7 @@ class SessionState extends ChangeNotifier {
     await DatabaseProvider.saveCredit(credit);
     _credit = credit;
     changed();
+    if (ended) onCreditEnded?.call();
   }
 
   /// Saves [credit], new or changed, into its session, numbering the
@@ -396,6 +404,7 @@ class SessionState extends ChangeNotifier {
     _credit = null;
     Settings.setString(Settings.sessionIdKey, '');
     changed();
+    onSessionEnded?.call();
   }
 
   Future<void> end() async {
@@ -404,6 +413,7 @@ class SessionState extends ChangeNotifier {
     _credit = null;
     Settings.setString(Settings.sessionIdKey, '');
     changed();
+    onSessionEnded?.call();
   }
 
   void changed() {

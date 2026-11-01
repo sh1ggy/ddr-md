@@ -5,6 +5,8 @@
 /// in each; the gear opens Settings.
 library;
 
+import 'dart:async';
+
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
@@ -12,10 +14,12 @@ import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -134,6 +138,40 @@ class _CreditSheetState extends State<_CreditSheet> {
   List<Cabinet> _cabinets = [];
   Cabinet? _cabinet;
   late PadSide _side = widget.last?.side ?? context.read<SessionState>().side;
+  late bool _broadcast = CircleState.broadcasting;
+  // A credit starting now counts in like a workout set: 3, 2, 1, then go.
+  int? _count;
+  Timer? _countdown;
+
+  bool get _startsNow => widget.past == null;
+
+  @override
+  void dispose() {
+    _countdown?.cancel();
+    super.dispose();
+  }
+
+  /// Counts down to [_go]; tapped again mid-count, stops.
+  void _countIn() {
+    if (_countdown != null) {
+      _countdown!.cancel();
+      _countdown = null;
+      setState(() => _count = null);
+      return;
+    }
+    HapticFeedback.selectionClick();
+    setState(() => _count = 3);
+    _countdown = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (_count == 1) {
+        t.cancel();
+        HapticFeedback.heavyImpact();
+        _go();
+        return;
+      }
+      HapticFeedback.selectionClick();
+      setState(() => _count = _count! - 1);
+    });
+  }
 
   @override
   void initState() {
@@ -217,6 +255,7 @@ class _CreditSheetState extends State<_CreditSheet> {
 
   Future<void> _go() async {
     final session = context.read<SessionState>();
+    final circles = context.read<CircleState>();
     if (widget.newSession) {
       await session.start(_venue!, _cabinet!, _side);
     } else if (widget.past case final past?) {
@@ -231,6 +270,18 @@ class _CreditSheetState extends State<_CreditSheet> {
       ));
     } else {
       await session.newCredit(_cabinet!, _side);
+    }
+    // Sent in the background, so the credit starts on time.
+    if (_startsNow ||
+        (widget.editing?.id == session.credit?.id &&
+            CircleState.broadcasting)) {
+      final credit = session.credit!;
+      if (_startsNow && !_broadcast) {
+        circles.endBroadcast();
+      } else {
+        circles.broadcast(
+            session.session!.venue.name, credit.number, sideLabel(credit.side));
+      }
     }
     if (mounted) Navigator.pop(context);
   }
@@ -313,17 +364,51 @@ class _CreditSheetState extends State<_CreditSheet> {
             selected: {_side},
             onSelectionChanged: (s) => setState(() => _side = s.first),
           ),
+          // Only for a credit starting now, once the player's in circles.
+          if (_startsNow &&
+              CircleState.available &&
+              context.watch<CircleState>().id != null)
+            SwitchListTile(
+              contentPadding: const EdgeInsets.only(top: 8),
+              secondary: const Icon(Icons.podcasts),
+              title: const Text('Broadcast to my circle'),
+              subtitle: Text(_broadcast
+                  ? 'Your circle sees you live${_venue == null ? '' : ' at ${_venue!.name}'}'
+                  : 'Just you this time'),
+              value: _broadcast,
+              onChanged: _count != null
+                  ? null
+                  : (on) => setState(() => _broadcast = on),
+            ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _cabinet == null ? null : _go,
-            child: Text(widget.newSession
-                ? 'Start'
-                : widget.past != null
-                    ? widget.editing == null
-                        ? 'Log credit'
-                        : 'Save'
-                    : 'Start $title'),
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 52)),
+            onPressed: _cabinet == null
+                ? null
+                : _startsNow
+                    ? _countIn
+                    : _go,
+            child: _count != null
+                ? BeatSwap(
+                    child: Text('$_count',
+                        key: ValueKey(_count),
+                        style: FloorPop.readout(28,
+                            color: Theme.of(context).colorScheme.onPrimary)))
+                : Text(widget.newSession
+                    ? 'Start'
+                    : widget.past != null
+                        ? widget.editing == null
+                            ? 'Log credit'
+                            : 'Save'
+                        : 'Start $title'),
           ),
+          if (_count != null)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text('Tap to cancel',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+            ),
         ],
       ),
     );
@@ -486,7 +571,8 @@ class _ActiveSession extends StatelessWidget {
 }
 
 /// The running session, first on Home: where and since when, the credit in
-/// big type with its cab and side (tap to swap), and the next credit.
+/// big type with its cab and side and an edit for them, and a scan. The next
+/// credit starts from the dock.
 class _LiveSessionCard extends StatelessWidget {
   const _LiveSessionCard({required this.session, required this.plays});
 
@@ -522,16 +608,27 @@ class _LiveSessionCard extends StatelessWidget {
                   Row(children: [
                     const LivePulse(),
                     const SizedBox(width: 6),
-                    Text(
-                        'LIVE · SINCE ${formatTime12(session.session!.startedAt).toUpperCase()}',
+                    Text('LIVE',
                         style: pop.label.copyWith(color: pop.voltText)),
+                    const SizedBox(width: 10),
+                    Icon(Icons.schedule, size: 13, color: pop.haze),
+                    const SizedBox(width: 3),
+                    Text(formatTime12(session.session!.startedAt).toUpperCase(),
+                        style: pop.label.copyWith(color: pop.haze)),
                   ]),
                   const SizedBox(height: 4),
-                  Text(session.session!.venue.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: FloorPop.display(18, color: scheme.onSurface)
-                          .copyWith(fontWeight: FontWeight.w700)),
+                  Row(children: [
+                    Icon(Icons.place_outlined,
+                        size: 18, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(session.session!.venue.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: FloorPop.display(18, color: scheme.onSurface)
+                              .copyWith(fontWeight: FontWeight.w700)),
+                    ),
+                  ]),
                 ],
               ),
             ),
@@ -545,8 +642,10 @@ class _LiveSessionCard extends StatelessWidget {
                 }
               },
             ),
-            OutlinedButton(
-                onPressed: () => endSession(context), child: const Text('End')),
+            IconButton.outlined(
+                tooltip: 'End session',
+                icon: const Icon(Icons.stop_rounded),
+                onPressed: () => endSession(context)),
           ]),
           const SizedBox(height: 14),
           Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -560,41 +659,53 @@ class _LiveSessionCard extends StatelessWidget {
                         style: FloorPop.readout(38, color: scheme.onSurface)),
                   ),
                   const SizedBox(height: 6),
-                  // Tapping the credit starts the next one, for a side or cab
-                  // swap.
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => showNewCreditSheet(context),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _CreditPill(credit.cabinet.name.isEmpty
-                            ? 'Main cab'
-                            : credit.cabinet.name),
-                        _CreditPill(sideLabel(credit.side)),
-                        _CreditPill(plays == 1 ? '1 play' : '$plays plays'),
-                        Icon(Icons.swap_horiz, size: 18, color: pop.haze),
-                      ],
-                    ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _CreditPill(
+                          Icons.videogame_asset_outlined,
+                          credit.cabinet.name.isEmpty
+                              ? 'Main cab'
+                              : credit.cabinet.name),
+                      _CreditPill(Icons.person_outline, sideLabel(credit.side)),
+                      _CreditPill(Icons.music_note_outlined,
+                          plays == 1 ? '1 play' : '$plays plays'),
+                      // Fixes this credit's cab or side; the dock starts the
+                      // next.
+                      SizedBox.square(
+                        dimension: 30,
+                        child: IconButton.filledTonal(
+                          tooltip: 'Edit credit',
+                          padding: EdgeInsets.zero,
+                          iconSize: 16,
+                          onPressed: () => showEditCreditSheet(context,
+                              session: session.session!,
+                              credit: credit,
+                              startedAt: credit.startedAt),
+                          icon: const Icon(Icons.edit_outlined),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 12),
             SizedBox(
-              width: 112,
+              width: 100,
               child: VoltButton(
-                height: 72,
-                radius: 20,
-                onPressed: () => showNewCreditSheet(context),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.add, size: 26),
-                  Text('Credit ${credit.number + 1}',
-                      style: const TextStyle(
+                height: 56,
+                radius: 18,
+                tooltip: 'Scan a score',
+                onPressed: () => context.push('/scan'),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.document_scanner_outlined, size: 22),
+                  SizedBox(width: 6),
+                  Text('Scan',
+                      style: TextStyle(
                           fontFamily: kTextFont,
-                          fontSize: 13,
+                          fontSize: 14,
                           fontWeight: FontWeight.w700)),
                 ]),
               ),
@@ -608,19 +719,27 @@ class _LiveSessionCard extends StatelessWidget {
 
 /// One fact about the running credit as a small pill.
 class _CreditPill extends StatelessWidget {
-  const _CreditPill(this.text);
+  const _CreditPill(this.icon, this.text);
 
+  final IconData icon;
   final String text;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.fromLTRB(8, 5, 10, 5),
         decoration: BoxDecoration(
             color: FloorPop.of(context).riser,
             borderRadius: BorderRadius.circular(8)),
-        child: Text(text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 14, color: FloorPop.of(context).haze),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
+        ]),
       );
 }
