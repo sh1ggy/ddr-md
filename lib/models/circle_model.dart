@@ -211,10 +211,11 @@ class CircleState extends ChangeNotifier {
         );
       });
 
-  /// Joins the circle [code] opens; true once in.
-  Future<bool> join(String code) async =>
+  /// Joins the circle [code] opens, and with [back] lets its leader into
+  /// yours too, which makes you friends in one scan. True once in.
+  Future<bool> join(String code, {bool back = false}) async =>
       await _run(() async {
-        await _send('POST', 'v1/join', {'code': code});
+        await _send('POST', 'v1/join', {'code': code, 'back': back});
         return _send('GET', 'v1/me');
       }) !=
       null;

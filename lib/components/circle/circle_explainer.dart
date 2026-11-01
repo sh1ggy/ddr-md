@@ -1,10 +1,10 @@
 /// Name: CircleExplainer
 /// Parent: CirclePage
 /// Description: How circles work, drawn: two round dancers and their phones.
-/// You scan their QR and you cheer for them; they scan yours and they cheer
-/// for you; both ways round, you're friends. Shown once when a circle is
-/// started and from the Circle tab's info button; the last panel also fills
-/// the tab while nobody's in a circle yet.
+/// You scan their QR and you cheer for them; they cheer back (let in as you
+/// scan, or scanning yours); both ways round, you're friends. Shown once
+/// when a circle is started and from the Circle tab's info button; the last
+/// panel also fills the tab while nobody's in a circle yet.
 library;
 
 import 'dart:math' as math;
@@ -17,18 +17,18 @@ import 'package:flutter/material.dart';
 const _steps = [
   (
     CircleScene.youScan,
-    'You scan their QR',
+    'Scan their QR',
     "Now you cheer for them: you'll see when they're on the pad."
   ),
   (
     CircleScene.theyScan,
-    'They scan yours',
-    'Now they cheer for you too.',
+    'They cheer back',
+    'Let them cheer for you as you scan, or have them scan yours.',
   ),
   (
     CircleScene.friends,
     "You're friends",
-    'Both ways round, you cheer each other on.',
+    'Both ways round, you cheer each other on. One scan can do it.',
   ),
 ];
 

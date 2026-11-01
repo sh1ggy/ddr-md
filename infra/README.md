@@ -275,7 +275,8 @@ the Circle tab. Release builds point at the live server; others need
   player has one circle, joined by scanning its QR or typing the invite code
   under it (8 characters with no 0/O or 1/I, good for a day); whoever has
   it is in. Two players in each other's circles are
-  friends. A leader can take anyone out of their circle; they can come back
+  friends; joining can let the leader into the joiner's circle too, so one
+  scan makes friends. A leader can take anyone out of their circle; they can come back
   with a live code. Code lookups are capped per player per day so codes can't be guessed, and
   writes per day overall so the account is never billed.
 

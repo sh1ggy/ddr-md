@@ -18,7 +18,7 @@
 //   PUT    /v1/me    {name, ddrCode}  joins circles, or changes either
 //   POST   /v1/code                a new invite code; the old one stops
 //   GET    /v1/code/CODE          -> {person, members, friends}
-//   POST   /v1/join  {code}       -> {name}
+//   POST   /v1/join  {code, back}  -> {name}  back: let them into yours too
 //   DELETE /v1/circle/ID          takes them out of your circle
 //   DELETE /v1/following/ID       leaves their circle
 //   PUT    /v1/live  {venue, credit, side}  broadcasting, for LIVE_LIFE
@@ -94,7 +94,7 @@ async function route(request, db) {
   if (!me) return json({ error: "profile" }, 403);
   if (route === "POST code") return newCode(db, me);
   if (route === "GET code/") return lookup(db, me, arg);
-  if (route === "POST join") return join(db, me, body?.code);
+  if (route === "POST join") return join(db, me, body?.code, body?.back === true);
   if (route === "DELETE circle/") return takeOut(db, me, arg);
   if (route === "DELETE following/") return leave(db, me, arg);
   if (route === "PUT live") return goLive(db, me, body);
@@ -191,13 +191,18 @@ async function lookup(db, me, code) {
   return json({ person: person(leader), members: counts.members, friends: counts.friends ?? 0 });
 }
 
-async function join(db, me, code) {
+// [back]: the joiner lets the leader into their own circle too, so one scan
+// makes them friends. It only ever opens the joiner's circle, never the
+// leader's, so it needs nothing from the leader.
+async function join(db, me, code, back) {
   const { leader, error } = await byCode(db, me, code);
   if (error) return error;
-  await db
-    .prepare(`INSERT INTO members(leader, member, at) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING`)
-    .bind(leader.owner, me.owner, new Date().toISOString())
-    .run();
+  const insert = `INSERT INTO members(leader, member, at) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING`;
+  const now = new Date().toISOString();
+  await db.batch([
+    db.prepare(insert).bind(leader.owner, me.owner, now),
+    ...(back ? [db.prepare(insert).bind(me.owner, leader.owner, now)] : []),
+  ]);
   return json({ name: leader.name });
 }
 

@@ -69,6 +69,13 @@ assert.equal((await call("b", "POST", "/v1/join", { code })).status, 200);
 r = await call("a", "DELETE", `/v1/circle/${b}`);
 assert.equal(r.body.circle.length, 0);
 
+// One scan, both ways: joining with back lets the leader into yours too.
+await call("d", "PUT", "/v1/me", { name: "SABLE", ddrCode: "28816640" });
+await call("d", "POST", "/v1/join", { code, back: true });
+r = await call("d", "GET", "/v1/me");
+assert.equal(r.body.following.find((p) => p.name === "SHIGGY").friend, true);
+assert.equal(r.body.circle.find((p) => p.name === "SHIGGY").friend, true);
+
 // A broadcast shows on its player to their circle until it ends.
 await call("b", "POST", "/v1/join", { code });
 assert.equal((await call("a", "PUT", "/v1/live", { venue: "Round1", credit: 0, side: "1P" })).status, 400);

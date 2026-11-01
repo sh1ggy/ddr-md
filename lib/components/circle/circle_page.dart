@@ -197,8 +197,8 @@ class _Empty extends StatelessWidget {
                 color: Theme.of(context).colorScheme.onSurface)),
         const SizedBox(height: 8),
         Text(
-            "Scan a friend's QR and you cheer for them. They scan yours and "
-            "they cheer for you. Both ways round, you're friends.",
+            "Scan a friend's QR, or have them scan yours. One scan and you're "
+            'friends, cheering each other on.',
             textAlign: TextAlign.center,
             style: TextStyle(color: pop.haze, height: 1.45)),
         const SizedBox(height: 20),

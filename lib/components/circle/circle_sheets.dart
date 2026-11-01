@@ -63,8 +63,8 @@ class _InviteSheetState extends State<_InviteSheet> {
                     color: Theme.of(context).colorScheme.onSurface)),
             const SizedBox(height: 6),
             Text(
-                'Let them scan this so they cheer for you, then scan theirs '
-                "so you cheer for them. Both and you're friends.",
+                "Have them scan this, or scan theirs. One scan and you're "
+                'friends, cheering each other on.',
                 style: TextStyle(color: pop.haze, height: 1.4)),
             const SizedBox(height: 20),
             Center(
@@ -205,9 +205,12 @@ class _JoinCirclePageState extends State<JoinCirclePage> {
 
   // In their circle now: the page turns to the other half of the swap.
   bool _joined = false;
+  // Letting them into yours as you join: friends in one scan, unless unticked.
+  bool _back = true;
 
   Future<void> _join() async {
-    if (!await context.read<CircleState>().join(_code!) || !mounted) return;
+    final circle = context.read<CircleState>();
+    if (!await circle.join(_code!, back: _back) || !mounted) return;
     setState(() => _joined = true);
   }
 
@@ -323,6 +326,15 @@ class _JoinCirclePageState extends State<JoinCirclePage> {
                 "Joining means you cheer for ${preview.leader.name}. They'll "
                 'see your dancer name and DDR-CODE.',
                 style: TextStyle(color: pop.haze, height: 1.4)),
+            const SizedBox(height: 12),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _back,
+              onChanged: (on) => setState(() => _back = on!),
+              title: Text('Let ${preview.leader.name} cheer for me too'),
+              subtitle: const Text("Then you're friends straight away"),
+            ),
             if (circle.error.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -333,7 +345,8 @@ class _JoinCirclePageState extends State<JoinCirclePage> {
             const SizedBox(height: 20),
             VoltButton(
               onPressed: circle.loading ? null : _join,
-              child: const Text('Join circle', style: _bold),
+              child:
+                  Text(_back ? 'Become friends' : 'Join circle', style: _bold),
             ),
             TextButton(
               onPressed: () {
