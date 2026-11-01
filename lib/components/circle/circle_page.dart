@@ -3,18 +3,21 @@
 /// Description: The Circle tab, people grouped by how you're tied: friends
 /// (in each other's circles) as bubbles, then the latest finished session
 /// of each you follow to cheer, then the one-way ties, those you cheer for
-/// and those cheering you on. The header holds how it works, your invite QR
-/// and the settings. Before joining circles there's only your name and code
-/// from e-amusement, and the button that starts your circle.
+/// and those cheering you on. The header holds Invite and the settings.
+/// Before joining circles there's the idea, your name and code from
+/// e-amusement and the button that starts your circle; while nobody's in it
+/// yet, scanning and your QR wait at the bottom.
 library;
 
 import 'dart:async';
 
 import 'package:ddr_md/components/circle/circle_credit_card.dart';
-import 'package:ddr_md/components/circle/circle_explainer.dart';
+import 'package:ddr_md/components/circle/circle_art.dart';
 import 'package:ddr_md/components/circle/circle_person_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/session/eamuse_sync_card.dart'
+    show signInAndSync;
 import 'package:ddr_md/components/nav_bar.dart' show LivePulse;
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
@@ -93,6 +96,7 @@ class _CirclePageState extends State<CirclePage> {
         if (p.live == null)
           if (circle.lastSessionOf(p) case final s when s.isNotEmpty) s
     ]..sort((a, b) => b.first.at.compareTo(a.first.at));
+    final empty = friends.isEmpty && youCheer.isEmpty && cheeringYou.isEmpty;
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -100,21 +104,23 @@ class _CirclePageState extends State<CirclePage> {
         title: const PageTitle('Circle'),
         actions: [
           if (ready) ...[
-            HeaderButton(
-              icon: const Icon(Icons.info_outline),
-              tooltip: 'How circles work',
-              onPressed: () => showCircleExplainer(context),
-            ),
-            HeaderButton(
-              icon: const Icon(Icons.qr_code_2),
-              tooltip: 'Scan each other',
-              onPressed: () => showInviteSheet(context),
-            ),
+            // While it's empty the tab's own buttons invite.
+            if (!empty)
+              SizedBox(
+                width: 96,
+                child: VoltButton(
+                  height: 40,
+                  radius: 14,
+                  onPressed: () => showInviteSheet(context),
+                  child: const Text('Invite', style: _bold),
+                ),
+              ),
             HeaderButton(
               icon: const Icon(Icons.more_horiz),
               tooltip: 'Circle settings',
               onPressed: () => showCircleSettings(context),
             ),
+            const SizedBox(width: 8),
           ],
         ],
       ),
@@ -123,55 +129,133 @@ class _CirclePageState extends State<CirclePage> {
           : !ready
               ? _checking && circle.id == null
                   ? const Center(child: CircularProgressIndicator())
-                  : const CircleProfileForm()
-              : RefreshIndicator(
-                  edgeOffset: MediaQuery.paddingOf(context).top + 56,
-                  onRefresh: circle.refresh,
-                  child: ListView(
-                    padding: clearOfBars(
-                        context, const EdgeInsets.fromLTRB(16, 64, 16, 120)),
-                    children: [
-                      if (circle.error.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Text(circle.error,
-                              style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error)),
-                        ),
-                      if (friends.isEmpty &&
-                          youCheer.isEmpty &&
-                          cheeringYou.isEmpty)
-                        const _Empty()
-                      else ...[
-                        if (friends.isNotEmpty) ...[
-                          _Heading(CircleTie.friends, friends.length),
-                          _FriendBubbles(friends),
-                        ],
-                        if (latest.isNotEmpty) ...[
+                  : const _FirstRun()
+              : _WithActions(
+                  actions: empty
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                              Expanded(
+                                child: GhostButton(
+                                  height: 56,
+                                  onPressed: () => openJoinCircle(context),
+                                  icon: const Icon(Icons.qr_code_scanner,
+                                      size: 20),
+                                  child: const Text('Scan theirs'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: VoltButton(
+                                  onPressed: () => showInviteSheet(context),
+                                  child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.qr_code_2, size: 20),
+                                        SizedBox(width: 8),
+                                        Text('Show my QR', style: _bold),
+                                      ]),
+                                ),
+                              ),
+                            ])
+                      : null,
+                  child: RefreshIndicator(
+                    edgeOffset: MediaQuery.paddingOf(context).top + 56,
+                    onRefresh: circle.refresh,
+                    child: ListView(
+                      padding: clearOfBars(
+                          context, const EdgeInsets.fromLTRB(16, 64, 16, 120)),
+                      children: [
+                        if (circle.error.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(2, 26, 0, 10),
-                            child: Text('LATEST',
-                                style: FloorPop.of(context).label),
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(circle.error,
+                                style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.error)),
                           ),
-                          for (final s in latest)
-                            CircleSessionCard(s, header: true),
-                        ],
-                        if (youCheer.isNotEmpty) ...[
-                          _Heading(CircleTie.youCheer, youCheer.length),
-                          for (final p in youCheer)
-                            _PersonTile(p, CircleTie.youCheer),
-                        ],
-                        if (cheeringYou.isNotEmpty) ...[
-                          _Heading(CircleTie.cheeringYou, cheeringYou.length),
-                          for (final p in cheeringYou)
-                            _PersonTile(p, CircleTie.cheeringYou),
+                        if (empty)
+                          const _Hero(
+                              title: 'Scan each other',
+                              line: "Scan a friend's QR or have them scan "
+                                  "yours. One scan and you're friends.")
+                        else ...[
+                          if (friends.isNotEmpty) ...[
+                            _Heading(CircleTie.friends, friends.length),
+                            _FriendBubbles(friends),
+                          ],
+                          if (latest.isNotEmpty) ...[
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(2, 26, 0, 10),
+                              child: Text('LATEST',
+                                  style: FloorPop.of(context).label),
+                            ),
+                            for (final s in latest)
+                              CircleSessionCard(s, header: true),
+                          ],
+                          if (youCheer.isNotEmpty) ...[
+                            _Heading(CircleTie.youCheer, youCheer.length),
+                            for (final p in youCheer)
+                              _PersonTile(p, CircleTie.youCheer),
+                          ],
+                          if (cheeringYou.isNotEmpty) ...[
+                            _Heading(CircleTie.cheeringYou, cheeringYou.length),
+                            for (final p in cheeringYou)
+                              _PersonTile(p, CircleTie.cheeringYou),
+                          ],
                         ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
     );
   }
+}
+
+const _bold =
+    TextStyle(fontFamily: kTextFont, fontSize: 15, fontWeight: FontWeight.w700);
+
+/// [child] with [actions], when there are any, pinned above the tab bar
+/// where a thumb reaches them.
+class _WithActions extends StatelessWidget {
+  const _WithActions({required this.child, this.actions});
+  final Widget child;
+  final Widget? actions;
+
+  @override
+  Widget build(BuildContext context) => Stack(children: [
+        Positioned.fill(child: child),
+        if (actions != null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: MediaQuery.paddingOf(context).bottom + 12,
+            child: actions!,
+          ),
+      ]);
+}
+
+/// The drawing, a headline and one line: what the tab is for.
+class _Hero extends StatelessWidget {
+  const _Hero({required this.title, required this.line});
+  final String title, line;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Column(children: [
+          const CircleArt(CircleScene.friends),
+          const SizedBox(height: 12),
+          Text(title,
+              textAlign: TextAlign.center,
+              style: FloorPop.display(22,
+                  color: Theme.of(context).colorScheme.onSurface)),
+          const SizedBox(height: 8),
+          Text(line,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: FloorPop.of(context).haze, height: 1.45)),
+        ]),
+      );
 }
 
 class _Message extends StatelessWidget {
@@ -204,55 +288,6 @@ class _Heading extends StatelessWidget {
         Icon(tie.icon, size: 15, color: pop.voltText),
         const SizedBox(width: 6),
         Text('${tie.heading.toUpperCase()} · $count', style: pop.label),
-      ]),
-    );
-  }
-}
-
-/// No ties yet: the friends drawing, the idea, and the two ways in.
-class _Empty extends StatelessWidget {
-  const _Empty();
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const CircleArt(CircleScene.friends),
-        const SizedBox(height: 12),
-        Text('Scan each other',
-            textAlign: TextAlign.center,
-            style: FloorPop.display(20,
-                color: Theme.of(context).colorScheme.onSurface)),
-        const SizedBox(height: 8),
-        Text(
-            "Scan a friend's QR, or have them scan yours. One scan and you're "
-            'friends, cheering each other on.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: pop.haze, height: 1.45)),
-        const SizedBox(height: 20),
-        Row(children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => showInviteSheet(context),
-              icon: const Icon(Icons.qr_code_2),
-              label: const Text('Show my QR'),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => openJoinCircle(context),
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Scan theirs'),
-            ),
-          ),
-        ]),
-        TextButton(
-          onPressed: () => showCircleExplainer(context),
-          child: const Text('How it works'),
-        ),
       ]),
     );
   }
@@ -399,33 +434,127 @@ class _PersonTile extends StatelessWidget {
   }
 }
 
-/// Your dancer name and DDR-CODE, as others in circles see them: from
-/// e-amusement, never typed. First run shows it as the whole tab with the
-/// button that starts the circle; the settings sheet shows it read-only.
-class CircleProfileForm extends StatefulWidget {
-  const CircleProfileForm({super.key, this.first = true});
-
-  final bool first;
+/// Before a circle: the idea in a line, who you'll be to others (your
+/// dancer name and rival code from e-amusement, never typed) and one button,
+/// which syncs e-amusement first if it hasn't yet, then starts the circle
+/// and shows your QR, the next thing you'll want with a friend beside you.
+class _FirstRun extends StatelessWidget {
+  const _FirstRun();
 
   @override
-  State<CircleProfileForm> createState() => _CircleProfileFormState();
+  Widget build(BuildContext context) {
+    final circle = context.watch<CircleState>();
+    final sync = context.watch<EamuseSyncState>();
+    final pop = FloorPop.of(context);
+    final (name, code) = konamiIdentity();
+    final valid = CircleState.namePattern.hasMatch(name) && code.length == 8;
+    final syncing = sync.status == EamuseStatus.syncing;
+    return _WithActions(
+      actions: VoltButton(
+        onPressed: circle.loading || syncing
+            ? null
+            : valid
+                ? () async {
+                    if (await circle.claimKonamiProfile() && context.mounted) {
+                      showInviteSheet(context);
+                    }
+                  }
+                : () => signInAndSync(context),
+        child: Text(
+            syncing
+                ? 'Syncing ${(sync.progress * 100).round()}%'
+                : circle.loading
+                    ? 'Starting…'
+                    : valid
+                        ? 'Start my circle'
+                        : 'Sync e-amusement',
+            style: _bold),
+      ),
+      child: ListView(
+        padding:
+            clearOfBars(context, const EdgeInsets.fromLTRB(20, 64, 20, 120)),
+        children: [
+          const _Hero(
+              title: 'Cheer each other on',
+              line: "Scan a friend's QR and you're friends: see when they're "
+                  'on the pad and cheer their credits.'),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+                color: pop.stage,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: pop.line)),
+            child: valid
+                ? Row(children: [
+                    CircleBubble((
+                      id: code,
+                      name: name,
+                      ddrCode: code,
+                      friend: false,
+                      live: null
+                    ), size: 44),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 15)),
+                            Text('Rival code ${formatDdrCode(code)}',
+                                style: TextStyle(color: pop.haze)),
+                          ]),
+                    ),
+                    Icon(Icons.lock_outline, size: 18, color: pop.haze),
+                  ])
+                : Text(
+                    sync.status == EamuseStatus.failed
+                        ? sync.error
+                        : 'Sync e-amusement and friends see you by your '
+                            'dancer name and rival code.',
+                    style: TextStyle(color: pop.haze, height: 1.4)),
+          ),
+          const SizedBox(height: 10),
+          Text(
+              valid
+                  ? 'How friends see you, from e-amusement. Nothing else is '
+                      'shared unless you choose to.'
+                  : 'Nothing else is shared unless you choose to.',
+              style: TextStyle(color: pop.haze, fontSize: 12, height: 1.4)),
+          if (circle.error.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(circle.error,
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
-class _CircleProfileFormState extends State<CircleProfileForm> {
+/// The dancer name and digits-only rival code from the last e-amusement
+/// sync, as circles shows them.
+(String, String) konamiIdentity() => (
+      Settings.getString(Settings.eamuseNameKey).trim().toUpperCase(),
+      Settings.getString(Settings.rivalCodeSpeedKey)
+          .replaceAll(RegExp(r'\D'), ''),
+    );
+
+/// Your dancer name and DDR-CODE, as others in circles see them, read-only
+/// in the settings sheet: from e-amusement, never typed.
+class CircleProfileForm extends StatelessWidget {
+  const CircleProfileForm({super.key});
+
   @override
   Widget build(BuildContext context) {
     final circle = context.watch<CircleState>();
     // Profile values update after the next successful e-amusement sync.
     context.select<EamuseSyncState, int>((sync) => sync.revision);
     final pop = FloorPop.of(context);
-    final first = widget.first;
-    final name =
-        Settings.getString(Settings.eamuseNameKey).trim().toUpperCase();
-    final code = Settings.getString(Settings.rivalCodeSpeedKey)
-        .replaceAll(RegExp(r'\D'), '');
-    final valid = CircleState.namePattern.hasMatch(name) && code.length == 8;
+    final (name, code) = konamiIdentity();
     final hasProfile = name.isNotEmpty && code.length == 8;
-    final form = [
+    return Column(mainAxisSize: MainAxisSize.min, children: [
       _KonamiIdentity(label: 'Dancer name', value: name, available: hasProfile),
       const SizedBox(height: 8),
       _KonamiIdentity(
@@ -444,44 +573,7 @@ class _CircleProfileFormState extends State<CircleProfileForm> {
         Text(circle.error,
             style: TextStyle(color: Theme.of(context).colorScheme.error)),
       ],
-    ];
-    if (!first) {
-      return Column(mainAxisSize: MainAxisSize.min, children: form);
-    }
-    form.addAll([
-      const SizedBox(height: 16),
-      VoltButton(
-        onPressed: valid && !circle.loading
-            ? () async {
-                if (!await circle.claimKonamiProfile()) return;
-                // A circle just started: how it works, once.
-                if (context.mounted) showCircleExplainer(context);
-              }
-            : null,
-        child: Text(circle.loading ? 'Saving…' : 'Start my circle',
-            style: const TextStyle(
-                fontFamily: kTextFont,
-                fontSize: 15,
-                fontWeight: FontWeight.w700)),
-      ),
     ]);
-    return ListView(
-      padding: clearOfBars(context, const EdgeInsets.fromLTRB(20, 72, 20, 120)),
-      children: [
-        Text('Your cheer squad',
-            style: FloorPop.display(22,
-                color: Theme.of(context).colorScheme.onSurface)),
-        const SizedBox(height: 10),
-        Text(
-            'Friends scan your QR to join your circle, follow your sessions '
-            "and cheer you on. Scan theirs and you're friends.\n\n"
-            'Your dancer name and rival code come from your synced Konami '
-            'profile. Nothing else about you is shared unless you choose to.',
-            style: TextStyle(color: pop.haze, height: 1.45)),
-        const SizedBox(height: 24),
-        ...form,
-      ],
-    );
   }
 }
 

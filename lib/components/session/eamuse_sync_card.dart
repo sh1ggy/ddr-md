@@ -12,17 +12,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:provider/provider.dart';
 
+/// Syncs e-amusement, signing in on Konami's page first when signed out.
+Future<void> signInAndSync(BuildContext context) async {
+  final state = context.read<EamuseSyncState>();
+  if (state.status != EamuseStatus.signedOut) return state.sync();
+  // Over the whole app, tab bar included, sliding up like a system browser.
+  final signedIn = await Navigator.of(context, rootNavigator: true).push<bool>(
+      MaterialPageRoute(
+          fullscreenDialog: true, builder: (_) => const _EamuseSignInPage()));
+  if (signedIn == true) await state.sync(renewed: true);
+}
+
 class EamuseSyncCard extends StatelessWidget {
   const EamuseSyncCard({super.key});
-
-  Future<void> _signInAndSync(BuildContext context) async {
-    final state = context.read<EamuseSyncState>();
-    // Over the whole app, tab bar included, sliding up like a system browser.
-    final signedIn = await Navigator.of(context, rootNavigator: true)
-        .push<bool>(MaterialPageRoute(
-            fullscreenDialog: true, builder: (_) => const _EamuseSignInPage()));
-    if (signedIn == true) state.sync(renewed: true);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +32,7 @@ class EamuseSyncCard extends StatelessWidget {
     final theme = Theme.of(context);
     final syncing = state.status == EamuseStatus.syncing;
     if (state.status == EamuseStatus.signedOut) {
-      return _SignedOutRow(onSignIn: () => _signInAndSync(context));
+      return _SignedOutRow(onSignIn: () => signInAndSync(context));
     }
     final at = state.syncedAt;
     final status = switch (state.status) {
