@@ -309,11 +309,13 @@ made-up players join it, leave or take you out of theirs. Pull to refresh on the
 Circle tab to see each land. Add a scenario to `scenarios` in
 scenario.mjs for each new circle feature.
 
-To preview cheers on your Home card, start a session with **Broadcast to my
+To preview incoming cheer toasts, start a session with **Broadcast to my
 circle** enabled, then run `node infra/circles/dev/scenario.mjs cheered`.
 It uses the broadcast's session id and posts a sample credit if needed, so
-no arcade sync is required. The live card checks once a minute; switching
-to Circle and back refreshes it too. Broadcast and Show my location are
+no arcade sync is required. While you broadcast, incoming cheers are checked
+every 30 seconds while the app is in the foreground and appear as brief toasts.
+Existing cheers are not replayed on startup. Repeating the scenario changes
+the preset cheers so you can test another arrival. Broadcast and Show my location are
 chosen once for the session; location is off by default.
 
 The Circles Worker and D1 database are deployed and recorded in the main

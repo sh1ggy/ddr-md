@@ -84,7 +84,7 @@ typedef CircleCredit = ({
   int credit,
   DateTime at,
   List<CirclePlay> plays,
-  List<({String name, Cheer cheer})> cheers,
+  List<({String? id, String name, Cheer cheer})> cheers,
   Cheer? mine,
 });
 
@@ -139,6 +139,7 @@ class CircleState extends ChangeNotifier {
 
   /// Your own shared credits, newest first, with their cheers.
   List<CircleCredit> yours = const [];
+  int feedRevision = 0;
   bool loading = false;
   String error = '';
 
@@ -289,13 +290,18 @@ class CircleState extends ChangeNotifier {
               cheers: [
                 for (final x in (c['cheers'] as List? ?? const []).cast<Map>())
                   if (Cheer.of(x['preset']) case final cheer?)
-                    (name: x['name'] as String, cheer: cheer)
+                    (
+                      id: x['id'] as String?,
+                      name: x['name'] as String,
+                      cheer: cheer
+                    )
               ],
               mine: Cheer.of(c['mine']),
             )
         ];
     feed = credits(m?['credits']);
     yours = credits(m?['yours']);
+    feedRevision++;
   }
 
   /// Cheers [credit] with [cheer], or takes yours back with null. Shown at
@@ -315,8 +321,8 @@ class CircleState extends ChangeNotifier {
             plays: c.plays,
             cheers: [
               for (final x in c.cheers)
-                if (x.name != name) x,
-              if (cheer != null) (name: name, cheer: cheer),
+                if (x.id != id && (x.id != null || x.name != name)) x,
+              if (cheer != null) (id: id, name: name, cheer: cheer),
             ],
             mine: cheer,
           )

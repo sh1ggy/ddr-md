@@ -125,8 +125,12 @@ const scenarios = {
     }
     for (const [name, preset] of [["MIKA", "legend"], ["REXX", "clean"], ["TOFU", "lets_go"]]) {
       await joinYours(name);
+      // Repeating the scenario still produces new arrivals, rather than
+      // resending the same three cheers the app has already shown.
+      const next = yours.cheers.some((c) => c.name === name && c.preset === preset)
+        ? ({legend: "lets_go", clean: "stamina", lets_go: "legend"})[preset] : preset;
       await as((await player(name)).key, "PUT", "/v1/cheer",
-        { by: me.id, session: yours.session, credit: yours.credit, preset });
+        { by: me.id, session: yours.session, credit: yours.credit, preset: next });
     }
   },
   "end: MIKA and JUN.K end their sessions": async () => {

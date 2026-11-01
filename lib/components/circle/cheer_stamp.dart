@@ -1,8 +1,8 @@
 /// Name: CheerStamp
-/// Parent: CircleCreditCard, CheerSheet, CheersStrip
+/// Parent: CircleCreditCard, CheerSheet, CheerNotifications
 /// Description: How a cheer looks: a tilted stamp in the cheer's own colour
 /// and icon, with who gave it; one that's just arrived pops in. Also the
-/// pom-pom that marks cheering, and the confetti a sent cheer bursts into.
+/// outlined action icon that marks cheering, and the confetti a sent cheer bursts into.
 library;
 
 import 'dart:math' as math;
@@ -101,38 +101,86 @@ class CheerStamp extends StatelessWidget {
   }
 }
 
-/// A pom-pom: strands fanning out of a centre, in Volt and Coral.
-class PomPom extends StatelessWidget {
-  const PomPom({super.key, this.size = 20});
+/// Outlined applause, matching the app's other Material action icons.
+class CheerIcon extends StatelessWidget {
+  const CheerIcon({super.key, this.size = 20});
   final double size;
-
   @override
   Widget build(BuildContext context) =>
-      CustomPaint(size: Size.square(size), painter: const _PomPomPainter());
+      Icon(Icons.celebration_outlined, size: size);
 }
 
-class _PomPomPainter extends CustomPainter {
-  const _PomPomPainter();
+/// A note from a player: their avatar sits below its attached speech bubble.
+class CheerNote extends StatelessWidget {
+  const CheerNote(this.cheer,
+      {super.key, required this.name, this.personId, this.onTap});
+  final Cheer cheer;
+  final String name;
+  final String? personId;
+  final VoidCallback? onTap;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final r = size.width / 2;
-    final strand = Paint()
-      ..strokeWidth = size.width * 0.09
-      ..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 14; i++) {
-      final a = i * 2 * math.pi / 14;
-      strand.color = i.isEven ? FloorPop.coral : FloorPop.sun;
-      final reach = r * (i % 3 == 0 ? 0.95 : 0.8);
-      canvas.drawLine(c + Offset(math.cos(a), math.sin(a)) * r * 0.25,
-          c + Offset(math.cos(a), math.sin(a)) * reach, strand);
-    }
-    canvas.drawCircle(c, r * 0.24, Paint()..color = FloorPop.onVolt);
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final colours = [
+      FloorPop.coral,
+      FloorPop.padBlue,
+      FloorPop.sun,
+      FloorPop.grape
+    ];
+    final colour = colours[
+        (personId ?? name).codeUnits.fold(0, (a, b) => a + b) % colours.length];
+    return Semantics(
+      button: onTap != null,
+      label:
+          '$name: ${cheer.label}${onTap == null ? '' : '. Tap to change your cheer'}',
+      child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.all(5),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                      color: pop.riser,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                          color: cheer.color.withValues(alpha: 0.65))),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(cheer.icon, color: cheer.color, size: 15),
+                    const SizedBox(width: 4),
+                    Text(cheer.label,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurface))
+                  ])),
+              Transform.translate(
+                  offset: const Offset(-10, -2),
+                  child: Transform.rotate(
+                      angle: math.pi / 4,
+                      child: Container(width: 8, height: 8, color: pop.riser))),
+              CircleAvatar(
+                  radius: 19,
+                  backgroundColor: colour,
+                  child: Text(name.isEmpty ? '?' : name.substring(0, 1),
+                      style: FloorPop.display(15,
+                          color: colour == FloorPop.padBlue ||
+                                  colour == FloorPop.grape
+                              ? Colors.white
+                              : FloorPop.onVolt))),
+              const SizedBox(height: 4),
+              Text(name,
+                  style: TextStyle(
+                      color: pop.haze,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
+            ]),
+          )),
+    );
   }
-
-  @override
-  bool shouldRepaint(_PomPomPainter old) => false;
 }
 
 /// Confetti bursting from [at] (global) in [cheer]'s colours, once, over

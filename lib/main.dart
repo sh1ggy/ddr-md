@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/circle/cheer_notifications.dart';
 import 'package:ddr_md/models/circle_credits.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
@@ -107,7 +108,7 @@ class App extends StatelessWidget {
         value: Theme.of(context).brightness == Brightness.dark
             ? SystemUiOverlayStyle.light
             : SystemUiOverlayStyle.dark,
-        child: child!,
+        child: CheerNotifications(child: child!),
       ),
     );
   }

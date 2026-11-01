@@ -42,10 +42,13 @@ Future<void> showCheerSheet(BuildContext button, CircleCredit credit) {
           });
           return;
         }
+        // The initial Cheer button disappears once your note is attached;
+        // use the still-mounted sheet's overlay for the success effect.
+        if (cheer != null) {
+          HapticFeedback.mediumImpact();
+          if (from != null) burstConfetti(sheet, from, cheer);
+        }
         Navigator.pop(sheet);
-        if (cheer == null) return;
-        HapticFeedback.mediumImpact();
-        if (from != null && button.mounted) burstConfetti(button, from, cheer);
       }
 
       return SafeArea(
@@ -54,7 +57,7 @@ Future<void> showCheerSheet(BuildContext button, CircleCredit credit) {
           child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const PomPom(size: 34),
+                const CheerIcon(size: 34),
                 const SizedBox(height: 8),
                 Text('Cheer ${credit.by!.name}',
                     style: FloorPop.display(20,

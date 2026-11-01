@@ -382,7 +382,7 @@ async function feed(db, me) {
       .bind(me.owner, since),
     db
       .prepare(
-        `SELECT ch.owner, ch.session, ch.credit, ch.preset, ch.cheerer = ?1 AS mine, p.name
+        `SELECT ch.owner, ch.session, ch.credit, ch.preset, ch.cheerer = ?1 AS mine, p.name, p.id
          FROM cheers ch JOIN profiles p ON p.owner = ch.cheerer
          WHERE (ch.owner = ?1 OR ch.owner IN (SELECT leader FROM members WHERE member = ?1)) AND ch.at > ?2
          ORDER BY ch.at DESC LIMIT 2000`,
@@ -400,7 +400,7 @@ async function feed(db, me) {
         credit: c.credit,
         at: c.at,
         plays: JSON.parse(c.plays),
-        cheers: on.map((x) => ({ name: x.name, preset: x.preset })),
+        cheers: on.map((x) => ({ id: x.id, name: x.name, preset: x.preset })),
         mine: on.find((x) => x.mine === 1)?.preset ?? null,
       };
     }),
@@ -409,7 +409,7 @@ async function feed(db, me) {
       credit: c.credit,
       at: c.at,
       plays: JSON.parse(c.plays),
-      cheers: cheersOf(me.owner, c.session, c.credit).map((x) => ({ name: x.name, preset: x.preset })),
+      cheers: cheersOf(me.owner, c.session, c.credit).map((x) => ({ id: x.id, name: x.name, preset: x.preset })),
     })),
   });
 }

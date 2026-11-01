@@ -112,7 +112,7 @@ assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: "clean" }
 assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: "legend" })).status, 204);
 assert.equal((await call("b", "GET", "/v1/feed")).body.credits[0].mine, "legend");
 r = await call("a", "GET", "/v1/feed");
-assert.deepEqual(r.body.yours[0].cheers, [{ name: "MIKA", preset: "legend" }]);
+assert.deepEqual(r.body.yours[0].cheers, [{ id: b, name: "MIKA", preset: "legend" }]);
 assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: null })).status, 204);
 assert.equal((await call("a", "GET", "/v1/feed")).body.yours[0].cheers.length, 0);
 // Someone outside the circle sees none of it.

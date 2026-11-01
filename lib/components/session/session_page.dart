@@ -7,7 +7,6 @@ library;
 
 import 'dart:async';
 
-import 'package:ddr_md/components/circle/cheers_strip.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
@@ -734,7 +733,6 @@ class _LiveSessionCard extends StatelessWidget {
                     ),
                   ),
                 ]),
-                CheersStrip(sessionId: session.session!.id),
               ],
             ),
           ),

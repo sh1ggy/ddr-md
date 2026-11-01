@@ -1,5 +1,5 @@
 /// Name: CircleCreditCard
-/// Parent: CirclePersonPage, CheersStrip
+/// Parent: CirclePersonPage
 /// Description: A shared credit: its songs with jacket, difficulty, score,
 /// new bests and fails, the cheers on it as stamps, and, for someone
 /// else's, the pom-pom Cheer button that opens the cheer sheet.
@@ -14,6 +14,7 @@ import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class CircleCreditCard extends StatelessWidget {
   const CircleCreditCard(this.credit, {super.key});
@@ -44,10 +45,21 @@ class CircleCreditCard extends StatelessWidget {
         if (credit.cheers.isNotEmpty) ...[
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            for (final c in credit.cheers) CheerStamp(c.cheer, name: c.name),
+            for (final c in credit.cheers)
+              Builder(
+                  builder: (note) => CheerNote(c.cheer,
+                      name: c.name,
+                      personId: c.id,
+                      onTap: credit.by != null &&
+                              (c.id == context.read<CircleState>().id ||
+                                  (c.id == null &&
+                                      c.name ==
+                                          context.read<CircleState>().name))
+                          ? () => showCheerSheet(note, credit)
+                          : null)),
           ]),
         ],
-        if (credit.by != null) ...[
+        if (credit.by != null && credit.mine == null) ...[
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
@@ -60,8 +72,8 @@ class CircleCreditCard extends StatelessWidget {
                         ? FloorPop.onVolt
                         : scheme.onSurface),
                 onPressed: () => showCheerSheet(button, credit),
-                icon: const PomPom(size: 18),
-                label: Text(credit.mine == null ? 'Cheer' : 'Change cheer'),
+                icon: const CheerIcon(size: 18),
+                label: const Text('Cheer'),
               ),
             ),
           ),

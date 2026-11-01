@@ -6,7 +6,6 @@
 /// preview, not while scrolling the song details.
 library;
 
-import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/notes/chart_models.dart';
 import 'package:ddr_md/components/song/notes/chart_scroller.dart';
@@ -452,7 +451,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
       )),
       child: Stack(
         children: [
-          const Positioned.fill(child: GlassHeader()),
+          // Keep the chart visible through the preview controls.
           SafeArea(
             bottom: false,
             child: Padding(
