@@ -372,12 +372,22 @@ class CircleState extends ChangeNotifier {
     }
   }
 
-  /// Joins circles as [dancer] with [code], or changes either. True when
-  /// the server took them.
-  Future<bool> claim(String dancer, String code) async =>
-      await _run(
-          () => _send('PUT', 'v1/me', {'name': dancer, 'ddrCode': code})) !=
-      null;
+  /// Joins circles or updates the visible identity from the last synced
+  /// Konami profile. These values are never user-entered.
+  Future<bool> claimKonamiProfile() async {
+    final dancer =
+        Settings.getString(Settings.eamuseNameKey).trim().toUpperCase();
+    final code = Settings.getString(Settings.rivalCodeSpeedKey)
+        .replaceAll(RegExp(r'\D'), '');
+    if (!namePattern.hasMatch(dancer) || code.length != 8) {
+      error = 'Sync e-amusement to load your dancer name and rival code';
+      notifyListeners();
+      return false;
+    }
+    return await _run(
+            () => _send('PUT', 'v1/me', {'name': dancer, 'ddrCode': code})) !=
+        null;
+  }
 
   /// A new invite code, good for a day; the old one stops working.
   Future<void> newCode() => _run(() => _send('POST', 'v1/code'));

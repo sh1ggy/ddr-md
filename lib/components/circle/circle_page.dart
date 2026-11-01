@@ -16,6 +16,7 @@ import 'package:ddr_md/components/circle/circle_sheets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart' show LivePulse;
 import 'package:ddr_md/models/circle_model.dart';
+import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
@@ -404,67 +405,41 @@ class CircleProfileForm extends StatefulWidget {
 }
 
 class _CircleProfileFormState extends State<CircleProfileForm> {
-  late final _name = TextEditingController();
-  late final _code = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    final circle = context.read<CircleState>();
-    _name.text = circle.name.isNotEmpty
-        ? circle.name
-        : Settings.getString(Settings.eamuseNameKey).toUpperCase();
-    _code.text = formatDdrCode(circle.ddrCode.isNotEmpty
-        ? circle.ddrCode
-        : Settings.getString(Settings.rivalCodeSpeedKey)
-            .replaceAll(RegExp(r'\D'), ''));
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _code.dispose();
-    super.dispose();
-  }
-
-  String get _digits => _code.text.replaceAll(RegExp(r'\D'), '');
-
   @override
   Widget build(BuildContext context) {
     final circle = context.watch<CircleState>();
+    // Profile values update after the next successful e-amusement sync.
+    context.select<EamuseSyncState, int>((sync) => sync.revision);
     final pop = FloorPop.of(context);
     final first = widget.onSaved == null;
-    final valid = CircleState.namePattern.hasMatch(_name.text.trim()) &&
-        _digits.length == 8;
+    final name =
+        Settings.getString(Settings.eamuseNameKey).trim().toUpperCase();
+    final code = Settings.getString(Settings.rivalCodeSpeedKey)
+        .replaceAll(RegExp(r'\D'), '');
+    final valid = CircleState.namePattern.hasMatch(name) && code.length == 8;
+    final hasProfile = name.isNotEmpty && code.length == 8;
     final form = [
-      TextField(
-        controller: _name,
-        autocorrect: false,
-        maxLength: 8,
-        textCapitalization: TextCapitalization.characters,
-        decoration: const InputDecoration(labelText: 'Dancer name'),
-        onChanged: (text) {
-          final upper = text.toUpperCase();
-          if (upper != text) _name.value = _name.value.copyWith(text: upper);
-          setState(() {});
-        },
-      ),
+      _KonamiIdentity(label: 'Dancer name', value: name, available: hasProfile),
       const SizedBox(height: 8),
-      TextField(
-        controller: _code,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-          labelText: 'DDR-CODE',
-          hintText: '1234-5678',
-          errorText: circle.error.isEmpty ? null : circle.error,
-        ),
-        onChanged: (_) => setState(() {}),
-      ),
+      _KonamiIdentity(
+          label: 'Rival code',
+          value: code.length == 8 ? formatDdrCode(code) : '',
+          available: hasProfile),
+      if (!hasProfile) ...[
+        const SizedBox(height: 8),
+        Text('Sync e-amusement from Home to load your Konami profile.',
+            style: TextStyle(color: pop.haze, height: 1.4)),
+      ],
+      if (circle.error.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(circle.error,
+            style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      ],
       const SizedBox(height: 16),
       VoltButton(
         onPressed: valid && !circle.loading
             ? () async {
-                if (!await circle.claim(_name.text.trim(), _digits)) return;
+                if (!await circle.claimKonamiProfile()) return;
                 widget.onSaved?.call();
                 // A circle just started: how it works, once.
                 if (first && context.mounted) showCircleExplainer(context);
@@ -475,7 +450,7 @@ class _CircleProfileFormState extends State<CircleProfileForm> {
                 ? 'Saving…'
                 : first
                     ? 'Start my circle'
-                    : 'Save',
+                    : 'Update from Konami',
             style: const TextStyle(
                 fontFamily: kTextFont,
                 fontSize: 15,
@@ -495,12 +470,37 @@ class _CircleProfileFormState extends State<CircleProfileForm> {
         Text(
             'Friends scan your QR to join your circle, follow your sessions '
             "and cheer you on. Scan theirs and you're friends.\n\n"
-            'They see you by your dancer name and DDR-CODE. Nothing else '
-            'about you is shared unless you choose to.',
+            'Your dancer name and rival code come from your synced Konami '
+            'profile. Nothing else about you is shared unless you choose to.',
             style: TextStyle(color: pop.haze, height: 1.45)),
         const SizedBox(height: 24),
         ...form,
       ],
     );
   }
+}
+
+/// A read-only value supplied by the player's latest e-amusement profile.
+class _KonamiIdentity extends StatelessWidget {
+  const _KonamiIdentity(
+      {required this.label, required this.value, required this.available});
+
+  final String label;
+  final String value;
+  final bool available;
+
+  @override
+  Widget build(BuildContext context) => InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: const Icon(Icons.lock_outline, size: 18),
+        ),
+        child: Text(
+          available ? value : 'Not synced',
+          style: TextStyle(
+              color: available
+                  ? Theme.of(context).colorScheme.onSurface
+                  : FloorPop.of(context).haze),
+        ),
+      );
 }

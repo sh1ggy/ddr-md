@@ -110,7 +110,8 @@ class CheerIcon extends StatelessWidget {
       Icon(Icons.celebration_outlined, size: size);
 }
 
-/// A note from a player: their avatar sits below its attached speech bubble.
+/// A note from a player: a bold pill above their avatar. Every note occupies
+/// the same slot, so changing the cheer cannot move this or nearby avatars.
 class CheerNote extends StatelessWidget {
   const CheerNote(this.cheer,
       {super.key, required this.name, this.personId, this.onTap});
@@ -137,48 +138,50 @@ class CheerNote extends StatelessWidget {
       child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(18),
-          child: Padding(
-            padding: const EdgeInsets.all(5),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                      color: pop.riser,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                          color: cheer.color.withValues(alpha: 0.65))),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(cheer.icon, color: cheer.color, size: 15),
-                    const SizedBox(width: 4),
-                    Text(cheer.label,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurface))
-                  ])),
-              Transform.translate(
-                  offset: const Offset(-10, -2),
-                  child: Transform.rotate(
-                      angle: math.pi / 4,
-                      child: Container(width: 8, height: 8, color: pop.riser))),
-              CircleAvatar(
-                  radius: 19,
-                  backgroundColor: colour,
-                  child: Text(name.isEmpty ? '?' : name.substring(0, 1),
-                      style: FloorPop.display(15,
-                          color: colour == FloorPop.padBlue ||
-                                  colour == FloorPop.grape
-                              ? Colors.white
-                              : FloorPop.onVolt))),
-              const SizedBox(height: 4),
-              Text(name,
-                  style: TextStyle(
-                      color: pop.haze,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600)),
-            ]),
-          )),
+          child: SizedBox(
+              width: 120,
+              child: Padding(
+                padding: const EdgeInsets.all(5),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                      width: double.infinity,
+                      height: 34,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                          color: cheer.color,
+                          borderRadius: BorderRadius.circular(14)),
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(cheer.icon, color: cheer.ink, size: 15),
+                            const SizedBox(width: 4),
+                            Text(cheer.label,
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                    color: cheer.ink))
+                          ]))),
+                  const SizedBox(height: 6),
+                  CircleAvatar(
+                      radius: 19,
+                      backgroundColor: colour,
+                      child: Text(name.isEmpty ? '?' : name.substring(0, 1),
+                          style: FloorPop.display(15,
+                              color: colour == FloorPop.padBlue ||
+                                      colour == FloorPop.grape
+                                  ? Colors.white
+                                  : FloorPop.onVolt))),
+                  const SizedBox(height: 4),
+                  Text(name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: pop.haze,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                ]),
+              ))),
     );
   }
 }
