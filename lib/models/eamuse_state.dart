@@ -24,6 +24,7 @@ import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse.dart';
+import 'package:ddr_md/models/session_model.dart' show Credit;
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/foundation.dart';
@@ -49,6 +50,8 @@ class EamuseSyncState extends ChangeNotifier {
   // Bumped when a sync ends, so views of what it saved reload.
   int revision = 0;
   EamuseSync? _sync;
+  // Stopped while renewing the sign-in, before there's a sync to cancel.
+  bool _stopped = false;
   DateTime? _notBefore;
   // Held off because Konami refused the last sync, not just the cooldown.
   bool _refused = false;
@@ -104,6 +107,43 @@ class EamuseSyncState extends ChangeNotifier {
   bool get waiting =>
       _notBefore != null && DateTime.now().isBefore(_notBefore!);
 
+  /// After a credit ends, when its plays are looked for: once they've had
+  /// time to reach e-amusement, and again if they hadn't yet.
+  static const creditSyncDelays = [
+    Duration(seconds: 90),
+    Duration(minutes: 4)
+  ];
+
+  /// Long enough for a credit to be over, for one the player didn't end by
+  /// starting the next.
+  static const creditLength = Duration(minutes: 8);
+  Timer? _creditSync;
+
+  /// A credit just ended: its plays are synced as soon as they're up, once
+  /// the player has synced at all.
+  void creditEnded() {
+    if (syncedAt == null) return;
+    _creditSync?.cancel();
+    final before = Settings.getString(Settings.eamuseLastPlayKey);
+    void attempt(int i) => _creditSync = Timer(creditSyncDelays[i], () async {
+          await sync();
+          if (i + 1 < creditSyncDelays.length &&
+              Settings.getString(Settings.eamuseLastPlayKey) == before) {
+            attempt(i + 1);
+          }
+        });
+    attempt(0);
+  }
+
+  /// Back in the app during [credit]: once it's had time to end, its plays
+  /// are synced unless a sync since already has.
+  void resumed(Credit? credit) {
+    final at = syncedAt;
+    if (credit == null || at == null) return;
+    final over = credit.startedAt.add(creditLength);
+    if (DateTime.now().isAfter(over) && at.isBefore(over)) sync();
+  }
+
   void _holdOff(Duration wait) {
     _notBefore = DateTime.now().add(wait);
     _wake?.cancel();
@@ -118,6 +158,7 @@ class EamuseSyncState extends ChangeNotifier {
   void dispose() {
     ContentStore.revision.removeListener(relink);
     _wake?.cancel();
+    _creditSync?.cancel();
     super.dispose();
   }
 
@@ -158,6 +199,7 @@ class EamuseSyncState extends ChangeNotifier {
         (ended && waiting && _refused)) {
       return;
     }
+    _stopped = false;
     _holdOff(EamuseSync.cooldown);
     _refused = false;
     final stored = {
@@ -353,6 +395,11 @@ class EamuseSyncState extends ChangeNotifier {
       error = 'Sync failed';
       debugPrint('e-amusement sync failed: $e');
     }
+    // Stopping drops the request in flight, which fails however it fails.
+    if (sync.cancelled) {
+      status = EamuseStatus.idle;
+      error = '';
+    }
     sync.close();
     _sync = null;
     changed = changedNow;
@@ -366,6 +413,7 @@ class EamuseSyncState extends ChangeNotifier {
       progress = 0;
       notifyListeners();
       final signedIn = await _signInSilently();
+      if (_stopped) return;
       status = signedIn ? EamuseStatus.idle : EamuseStatus.signedOut;
       notifyListeners();
       if (signedIn) await this.sync(renewed: true);
@@ -447,7 +495,16 @@ class EamuseSyncState extends ChangeNotifier {
     }
   }
 
-  void stop() => _sync?.cancelled = true;
+  void stop() {
+    // Nor do the syncs queued after a credit.
+    _creditSync?.cancel();
+    if (_sync case final sync?) return sync.cancel();
+    if (status != EamuseStatus.syncing) return;
+    // Renewing the sign-in: it finishes unseen and no sync follows.
+    _stopped = true;
+    status = EamuseStatus.idle;
+    notifyListeners();
+  }
 
   Future<void> signOut() async {
     await CookieManager.instance().deleteAllCookies();

@@ -12,6 +12,7 @@
 /// first error. Only the score, grade, lamp and flare of each chart are kept.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -38,6 +39,9 @@ Uri eamuseProfileUrl([String host = kEamuseHost]) =>
     Uri.parse('$host${kEamusePlayDataPath}index.html');
 
 class EamuseSignedOut implements Exception {}
+
+/// The player stopped the sync.
+class EamuseCancelled implements Exception {}
 
 /// Konami answered with something other than a play data page: an error,
 /// maintenance, or a block. The sync stops and does not retry.
@@ -368,6 +372,7 @@ class EamuseSync {
   final Future<void> Function(List<ScoreRecord>) save;
   final String host;
   bool cancelled = false;
+  final _stopped = Completer<void>();
   // Shared, so stopping and restarting a sync doesn't skip the gap.
   static DateTime? _lastRequest;
   final _random = Random();
@@ -414,8 +419,11 @@ class EamuseSync {
       final wait = gap +
           Duration(milliseconds: _random.nextInt(1000)) -
           DateTime.now().difference(_lastRequest!);
-      if (wait > Duration.zero) await Future.delayed(wait);
+      if (wait > Duration.zero) {
+        await Future.any([Future.delayed(wait), _stopped.future]);
+      }
     }
+    if (cancelled) throw EamuseCancelled();
     _lastRequest = DateTime.now();
     final client = _client ??= HttpClient()
       ..connectionTimeout = const Duration(seconds: 20);
@@ -434,6 +442,14 @@ class EamuseSync {
   }
 
   void close() => _client?.close();
+
+  /// Stops at once: the wait for the next request ends and the one in flight
+  /// is dropped, both throwing out of the sync.
+  void cancel() {
+    cancelled = true;
+    if (!_stopped.isCompleted) _stopped.complete();
+    _client?.close(force: true);
+  }
 
   Future<void> _keep(HttpClientResponse response) async {
     final List<Cookie> set;
