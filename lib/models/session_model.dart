@@ -8,6 +8,7 @@ import 'dart:math';
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/session_goal.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -48,15 +49,27 @@ class PlaySession {
   final Venue venue;
   final DateTime startedAt;
   final DateTime? endedAt;
+  final SessionGoal? goal;
+  // When a sync first took the goal to its target, so that's marked once.
+  final DateTime? goalHitAt;
 
-  const PlaySession(this.id, this.venue, this.startedAt, this.endedAt);
+  const PlaySession(this.id, this.venue, this.startedAt, this.endedAt,
+      {this.goal, this.goalHitAt});
 
   factory PlaySession.fromMap(Map<String, dynamic> m) => PlaySession(
         m['id'] as String,
         Venue(m['venueId'] as int, m['venueName'] as String),
         DateTime.parse(m['startedAt'] as String),
         m['endedAt'] == null ? null : DateTime.parse(m['endedAt'] as String),
+        goal: SessionGoal.fromJson(m['goal'] as String?),
+        goalHitAt: m['goalHitAt'] == null
+            ? null
+            : DateTime.parse(m['goalHitAt'] as String),
       );
+
+  PlaySession withGoal(SessionGoal? goal, DateTime? goalHitAt) =>
+      PlaySession(id, venue, startedAt, endedAt,
+          goal: goal, goalHitAt: goalHitAt);
 }
 
 /// One credit in a session: the cabinet and side it was played on.
@@ -347,8 +360,9 @@ class SessionState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> start(Venue venue, Cabinet cabinet, PadSide side) async {
-    _session = await DatabaseProvider.startSession(venue);
+  Future<void> start(Venue venue, Cabinet cabinet, PadSide side,
+      {SessionGoal? goal}) async {
+    _session = await DatabaseProvider.startSession(venue, goal: goal);
     Settings.setString(Settings.sessionIdKey, _session!.id);
     _credit = null;
     await newCredit(cabinet, side);
@@ -414,6 +428,22 @@ class SessionState extends ChangeNotifier {
     Settings.setString(Settings.sessionIdKey, '');
     changed();
     onSessionEnded?.call();
+  }
+
+  /// Sets or clears the running session's goal; a new one is unmarked, so
+  /// reaching it is marked afresh.
+  Future<void> setGoal(SessionGoal? goal) async {
+    await DatabaseProvider.setSessionGoal(_session!.id, goal);
+    _session = _session!.withGoal(goal, null);
+    changed();
+  }
+
+  /// Marks the running session's goal reached.
+  Future<void> goalHit() async {
+    final at = DateTime.now();
+    await DatabaseProvider.setSessionGoalHit(_session!.id, at);
+    _session = _session!.withGoal(_session!.goal, at);
+    notifyListeners();
   }
 
   void changed() {

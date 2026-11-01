@@ -15,7 +15,6 @@ import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/db_models.dart';
-import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
@@ -61,13 +60,18 @@ class DevelopmentToolsTile extends StatelessWidget {
 
 const _previewCards = 12;
 
+/// Home's wrap banner held up for testing: it stays on its session's real
+/// wrap, however often it's opened.
+final wrapBannerPreview =
+    ValueNotifier(Settings.getInt(Settings.wrapBannerPreviewKey) == 1);
+
 /// Opens the wrap of the latest session with plays, cheers from a made-up
 /// circle on its credits, and its gains made up from
 /// its charts' bests in turn: a new card, AAA's foil, a frame one tier up and
 /// a flare one rank up, each where the best allows, from a few thousand
 /// points lower. A dozen cards, topped
 /// up from the player's other bests when the session has fewer charts.
-Future<void> _previewWrap(BuildContext context) async {
+Future<void> previewSessionWrap(BuildContext context) async {
   final data = await loadVisits(context.read<SessionState>().session?.id);
   final visit = data.visits
       .where((v) => v.session != null && v.plays.isNotEmpty)
@@ -180,23 +184,21 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                     subtitle: const Text(
                         'Your last session with made-up cheers and card gains, nothing saved'),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _previewWrap(context))),
+                    onTap: () => previewSessionWrap(context))),
             Card(
-                child: ListTile(
-                    leading: const Icon(Icons.flag_outlined),
-                    title: const Text('Session wrap banner'),
-                    subtitle: const Text(
-                        'Show Home\'s banner for your last session, as after a sync'),
-                    onTap: () async {
-                      await Settings.setString(Settings.sessionWrapSinceKey,
-                          DateTime.utc(2000).toIso8601String());
-                      if (!context.mounted) return;
-                      // Home rereads its sessions, as after a sync.
-                      await context.read<EamuseSyncState>().reloadSaved();
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('Banner on: go to Home')));
-                    })),
+                child: ValueListenableBuilder(
+                    valueListenable: wrapBannerPreview,
+                    builder: (context, on, _) => SwitchListTile(
+                        secondary: const Icon(Icons.flag_outlined),
+                        title: const Text('Session wrap banner'),
+                        subtitle: const Text(
+                            'Keep Home\'s banner up on your last session\'s real wrap'),
+                        value: on,
+                        onChanged: (v) async {
+                          await Settings.setInt(
+                              Settings.wrapBannerPreviewKey, v ? 1 : 0);
+                          wrapBannerPreview.value = v;
+                        }))),
             Card(
                 child: ListTile(
                     leading: const Icon(Icons.storage_outlined),

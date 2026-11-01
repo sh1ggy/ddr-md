@@ -9,13 +9,16 @@ import 'dart:async';
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart';
+import 'package:ddr_md/components/session/count_in.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
+import 'package:ddr_md/components/session/goal_card.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/session_goal.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/theme.dart';
@@ -139,6 +142,7 @@ class _CreditSheetState extends State<_CreditSheet> {
   List<Cabinet> _cabinets = [];
   Cabinet? _cabinet;
   late PadSide _side = widget.last?.side ?? context.read<SessionState>().side;
+  SessionGoal? _goal;
   late bool _broadcast = widget.newSession
       ? Settings.getInt(Settings.circleLiveDefaultKey) == 1
       : CircleState.broadcasting;
@@ -146,38 +150,17 @@ class _CreditSheetState extends State<_CreditSheet> {
           ? Settings.circleLocationDefaultKey
           : Settings.circleShowLocationKey) ==
       1;
-  // A credit starting now counts in like a workout set: 3, 2, 1, then go.
-  int? _count;
-  Timer? _countdown;
 
   bool get _startsNow => widget.past == null;
 
   @override
   void dispose() {
-    _countdown?.cancel();
     super.dispose();
   }
 
-  /// Counts down to [_go]; tapped again mid-count, stops.
-  void _countIn() {
-    if (_countdown != null) {
-      _countdown!.cancel();
-      _countdown = null;
-      setState(() => _count = null);
-      return;
-    }
-    HapticFeedback.selectionClick();
-    setState(() => _count = 3);
-    _countdown = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (_count == 1) {
-        t.cancel();
-        HapticFeedback.heavyImpact();
-        _go();
-        return;
-      }
-      HapticFeedback.selectionClick();
-      setState(() => _count = _count! - 1);
-    });
+  /// Counts in over the whole screen, then starts the session.
+  Future<void> _countIn() async {
+    if (await showCountIn(context) && mounted) await _go();
   }
 
   @override
@@ -264,7 +247,7 @@ class _CreditSheetState extends State<_CreditSheet> {
     final session = context.read<SessionState>();
     final circles = context.read<CircleState>();
     if (widget.newSession) {
-      await session.start(_venue!, _cabinet!, _side);
+      await session.start(_venue!, _cabinet!, _side, goal: _goal);
     } else if (widget.past case final past?) {
       final e = widget.editing;
       await session.saveCredit(Credit(
@@ -375,6 +358,23 @@ class _CreditSheetState extends State<_CreditSheet> {
             selected: {_side},
             onSelectionChanged: (s) => setState(() => _side = s.first),
           ),
+          if (widget.newSession)
+            ListTile(
+              contentPadding: const EdgeInsets.only(top: 8),
+              leading: Icon(_goal?.kind.icon ?? Icons.flag_outlined,
+                  color: _goal?.kind.color),
+              title: Text(_goal?.title ?? 'Set a goal'),
+              subtitle: _goal == null
+                  ? const Text('What are you here to work on?')
+                  : Text(_goal!.target == null
+                      ? 'Open-ended'
+                      : 'Target: ${_goal!.target}'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                final picked = await showGoalSheet(context, _goal);
+                if (picked != null) setState(() => _goal = picked.$1);
+              },
+            ),
           if (widget.newSession && CircleState.available)
             Column(children: [
               SwitchListTile(
@@ -387,10 +387,9 @@ class _CreditSheetState extends State<_CreditSheet> {
                         ? 'Friends can see your credits and cheer you on'
                         : 'Just you this time'),
                 value: context.watch<CircleState>().id != null && _broadcast,
-                onChanged:
-                    _count != null || context.read<CircleState>().id == null
-                        ? null
-                        : (on) => setState(() => _broadcast = on),
+                onChanged: context.read<CircleState>().id == null
+                    ? null
+                    : (on) => setState(() => _broadcast = on),
               ),
               if (_broadcast && context.read<CircleState>().id != null)
                 SwitchListTile(
@@ -403,9 +402,7 @@ class _CreditSheetState extends State<_CreditSheet> {
                       ? (_venue?.name ?? 'Your selected venue')
                       : 'Your venue stays private'),
                   value: _showLocation,
-                  onChanged: _count != null
-                      ? null
-                      : (on) => setState(() => _showLocation = on),
+                  onChanged: (on) => setState(() => _showLocation = on),
                 ),
             ]),
           const SizedBox(height: 16),
@@ -413,30 +410,17 @@ class _CreditSheetState extends State<_CreditSheet> {
             style: FilledButton.styleFrom(minimumSize: const Size(0, 52)),
             onPressed: _cabinet == null
                 ? null
-                : _startsNow
+                : widget.newSession
                     ? _countIn
                     : _go,
-            child: _count != null
-                ? BeatSwap(
-                    child: Text('$_count',
-                        key: ValueKey(_count),
-                        style: FloorPop.readout(28,
-                            color: Theme.of(context).colorScheme.onPrimary)))
-                : Text(widget.newSession
-                    ? 'Start'
-                    : widget.past != null
-                        ? widget.editing == null
-                            ? 'Log credit'
-                            : 'Save'
-                        : 'Start $title'),
+            child: Text(widget.newSession
+                ? 'Start'
+                : widget.past != null
+                    ? widget.editing == null
+                        ? 'Log credit'
+                        : 'Save'
+                    : 'Start $title'),
           ),
-          if (_count != null)
-            const Padding(
-              padding: EdgeInsets.only(top: 6),
-              child: Text('Tap to cancel',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey)),
-            ),
         ],
       ),
     );
@@ -538,6 +522,7 @@ class _ActiveSessionState extends State<_ActiveSession> {
           padding: clearOfBars(context, const EdgeInsets.only(bottom: 12)),
           children: [
             BeatIn(child: _LiveSessionCard(session: session)),
+            const BeatIn(index: 1, child: LiveGoalCard()),
             ...header,
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),

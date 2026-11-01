@@ -54,19 +54,18 @@ class Visit {
 }
 
 /// The [gains] [visit]'s plays made: each on one of its charts, set at one
-/// of its plays.
-List<CardGain> gainsIn(Visit visit, List<CardGain> gains) {
-  int second(DateTime t) => t.millisecondsSinceEpoch ~/ 1000;
-  final played = {
-    for (final p in visit.plays)
-      (p.song, p.mode, p.difficulty, second(p.playedAt))
-  };
-  return [
-    for (final g in gains)
-      if (played.contains((g.song, g.mode, g.difficulty, second(g.playedAt))))
-        g
-  ];
-}
+/// of its plays. A gain's time is its score record's, a few seconds off the
+/// play's in the recent list, and a chart takes minutes to play, so any play
+/// of the chart within a minute is the one.
+List<CardGain> gainsIn(Visit visit, List<CardGain> gains) => [
+      for (final g in gains)
+        if (visit.plays.any((p) =>
+            p.song == g.song &&
+            p.mode == g.mode &&
+            p.difficulty == g.difficulty &&
+            p.playedAt.difference(g.playedAt).inSeconds.abs() <= 60))
+          g
+    ];
 
 /// Every visit, newest first, from [plays] and [sessions] (both newest
 /// first). Plays reach e-amusement a little after their credit, so a session

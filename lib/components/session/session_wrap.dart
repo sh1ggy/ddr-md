@@ -16,6 +16,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/components/circle/cheer_stamp.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/session/goal_card.dart';
+import 'package:ddr_md/components/settings/development_page.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
 import 'package:ddr_md/components/session/visits.dart' show loadVisits;
@@ -37,6 +39,7 @@ import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
+import 'package:ddr_md/models/session_goal.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
@@ -339,12 +342,26 @@ class _SessionWrapPageState extends State<SessionWrapPage>
         .firstOrNull;
     if (!mounted || load != _loads || visit == null) return;
     final gains = gainsIn(visit, data.gains);
+    // For an upscore goal, which plays set a best.
+    if (visit.session?.goal case final goal?) {
+      await ChartBests.ensure(goal.mode);
+    }
+    if (!mounted || load != _loads) return;
     setState(() {
       _visit = visit;
       _summary = data.model.summarize(visit.plays);
       _gains = gains;
       _cards = wrapCards(gains);
     });
+  }
+
+  /// How the session's goal went, once its plays are in.
+  GoalProgress? _goalProgress() {
+    final visit = _visit;
+    final goal = visit?.session?.goal;
+    if (visit == null || goal == null) return null;
+    return goalProgressNow(goal, visit.plays, _gains,
+        (song, mode, difficulty) => chartOf(song, mode, difficulty).level);
   }
 
   void _next() {
@@ -471,8 +488,11 @@ class _SessionWrapPageState extends State<SessionWrapPage>
               child: KeyedSubtree(
                 key: ValueKey(_beat),
                 child: switch (beat) {
-                  _Beat.verdict =>
-                    _Verdict(_summary, cards: n, spin: _spin, missing: missing),
+                  _Beat.verdict => _Verdict(_summary,
+                      cards: n,
+                      spin: _spin,
+                      missing: missing,
+                      goal: _goalProgress()),
                   _Beat.circle => _ShowedUp(_cheered(circle)),
                   _Beat.pack => _Pack(_cards, gains: _gains),
                 },
@@ -481,11 +501,23 @@ class _SessionWrapPageState extends State<SessionWrapPage>
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: VoltButton(
-                onPressed: _beat == 0 && _collecting ? null : _next,
-                child: action == null
-                    ? const Icon(Icons.arrow_forward_rounded, size: 28)
-                    : Text(action, style: FloorPop.display(16))),
+            child: Row(children: [
+              if (_beat > 0) ...[
+                IconButton.filledTonal(
+                    tooltip: 'Back',
+                    iconSize: 24,
+                    onPressed: () => setState(() => _beat--),
+                    icon: const Icon(Icons.arrow_back_rounded)),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: VoltButton(
+                    onPressed: _beat == 0 && _collecting ? null : _next,
+                    child: action == null
+                        ? const Icon(Icons.arrow_forward_rounded, size: 28)
+                        : Text(action, style: FloorPop.display(16))),
+              ),
+            ]),
           ),
         ]),
       ),
@@ -532,8 +564,8 @@ class _ShowedUpState extends State<_ShowedUp> {
             .cheer;
         if (box != null && box.attached) {
           if (i > 0) HapticFeedback.lightImpact();
-          burstConfetti(
-              context, box.localToGlobal(box.size.center(Offset.zero)), cheer);
+          burstConfetti(context,
+              box.localToGlobal(box.size.center(Offset.zero)), cheer.color);
         }
         await Future.delayed(const Duration(milliseconds: 220));
       }
@@ -630,11 +662,12 @@ class _ShowedUpState extends State<_ShowedUp> {
 // ring alone while the plays are still coming, or with why they never came.
 class _Verdict extends StatelessWidget {
   const _Verdict(this.summary,
-      {required this.cards, required this.spin, this.missing});
+      {required this.cards, required this.spin, this.missing, this.goal});
   final SetSummary? summary;
   final int cards;
   final Animation<double> spin;
   final String? missing;
+  final GoalProgress? goal;
 
   @override
   Widget build(BuildContext context) {
@@ -685,20 +718,22 @@ class _Verdict extends StatelessWidget {
         null,
         (b, l) =>
             b == null || l.average - l.usual > b.average - b.usual ? l : b);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    const ring = 270.0;
+    return Center(
+        child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         SizedBox.square(
-          dimension: 250,
+          dimension: ring,
           child: Stack(alignment: Alignment.center, children: [
             RotationTransition(
                 turns: spin,
                 child: CustomPaint(
-                    size: const Size.square(250),
+                    size: const Size.square(ring),
                     painter: _RingPainter(color))),
             Container(
-                width: 206,
-                height: 206,
+                width: ring - 44,
+                height: ring - 44,
                 decoration:
                     BoxDecoration(color: pop.riser, shape: BoxShape.circle)),
             Column(mainAxisSize: MainAxisSize.min, children: [
@@ -719,16 +754,22 @@ class _Verdict extends StatelessWidget {
                     tween: Tween(begin: 0, end: gap),
                     duration: const Duration(milliseconds: 1400),
                     curve: Curves.easeOutCubic,
-                    builder: (context, v, _) => Text(
-                        '${v >= 0 ? '+' : '−'}${formatScore(v.abs().round())}',
-                        style: FloorPop.readout(52, color: color))),
-              const SizedBox(height: 4),
+                    // One line, shrinking to fit inside the disc.
+                    builder: (context, v, _) => SizedBox(
+                        width: ring - 84,
+                        child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                                '${v >= 0 ? '+' : '−'}${formatScore(v.abs().round())}',
+                                maxLines: 1,
+                                style: FloorPop.readout(52, color: color))))),
+              const SizedBox(height: 8),
               Text(gap == null ? 'plays' : 'vs your usual',
                   style: TextStyle(fontSize: 13, color: pop.haze)),
             ]),
           ]),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 32),
         Transform(
             alignment: Alignment.center,
             transform: FloorPop.titleLean,
@@ -742,6 +783,7 @@ class _Verdict extends StatelessWidget {
             _VerdictTile(
                 label: 'BEST LEVEL',
                 color: pop.up,
+                fill: FloorPop.night.up,
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   LevelNumber(
                       level: best.level, difficulty: 'EXPERT', height: 20),
@@ -764,17 +806,20 @@ class _Verdict extends StatelessWidget {
                 ])),
           _VerdictTile(
               label: 'UPSCORES',
-              color: summary.upscores > 0 ? FloorPop.sun : pop.haze,
+              color: summary.upscores > 0 ? pop.sunText : pop.haze,
+              fill: summary.upscores > 0 ? FloorPop.sun : pop.haze,
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const UpscoreBadge(),
+                UpscoreBadge(
+                    color: summary.upscores > 0 ? pop.sunText : pop.haze),
                 const SizedBox(width: 6),
                 Text('${summary.upscores}',
                     style: FloorPop.readout(20,
-                        color: summary.upscores > 0 ? FloorPop.sun : pop.haze)),
+                        color: summary.upscores > 0 ? pop.sunText : pop.haze)),
               ])),
           _VerdictTile(
               label: 'CARDS',
               color: cards > 0 ? pop.voltText : pop.haze,
+              fill: cards > 0 ? FloorPop.volt : pop.haze,
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.style_rounded,
                     size: 20, color: cards > 0 ? pop.voltText : pop.haze),
@@ -784,8 +829,25 @@ class _Verdict extends StatelessWidget {
                         color: cards > 0 ? pop.voltText : pop.haze)),
               ])),
         ]),
+        if (goal case final goal?) ...[
+          const SizedBox(height: 30),
+          GoalCard(
+            goal: goal.goal,
+            count: goal.count,
+            stamp: goal.reached
+                ? 'GOAL HIT'
+                : goal.goal.target == null
+                    ? null
+                    : '${goal.goal.target! - goal.count} TO GO',
+            footer: Text(goalSummary(goal),
+                style: TextStyle(
+                    color: goal.goal.kind.ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
       ]),
-    );
+    ));
   }
 }
 
@@ -793,9 +855,15 @@ class _Verdict extends StatelessWidget {
 // small caps label.
 class _VerdictTile extends StatelessWidget {
   const _VerdictTile(
-      {required this.label, required this.color, required this.child});
+      {required this.label,
+      required this.color,
+      this.fill,
+      required this.child});
   final String label;
+  // Its text, and the bright colour its fill is tinted with (the text's
+  // unless given; Day's text colours are too dark to tint with).
   final Color color;
+  final Color? fill;
   final Widget child;
 
   @override
@@ -806,8 +874,8 @@ class _VerdictTile extends StatelessWidget {
             height: 70,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-                color:
-                    Color.alphaBlend(color.withValues(alpha: .12), pop.riser),
+                color: Color.alphaBlend(
+                    (fill ?? color).withValues(alpha: .16), pop.riser),
                 borderRadius: BorderRadius.circular(14)),
             child:
                 Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -906,8 +974,7 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
     final d = _dealt / (_dealt + _tail);
     return Interval(i * step * d, (i * step + flight) * d,
         curve: switch (_landing) {
-          PackLanding.slam => Curves.easeInCubic,
-          PackLanding.flip => Curves.easeOutCubic,
+          PackLanding.slam || PackLanding.flip => Curves.easeInCubic,
           _ => Curves.easeOutBack,
         });
   }
@@ -935,11 +1002,19 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
 
   // The pack jolts as each slammed card hits.
   Offset _shake(double side) {
-    if (_landing != PackLanding.slam) return Offset.zero;
+    if (_landing != PackLanding.slam && _landing != PackLanding.flip) {
+      return Offset.zero;
+    }
     final since = [
       for (var i = 0; i < widget.cards.length; i++)
         if (_since(i) >= 0) _since(i)
     ].fold(double.infinity, math.min);
+    // Flip's sheet knocks down once and springs back, no rattle.
+    if (_landing == PackLanding.flip) {
+      return since >= 140
+          ? Offset.zero
+          : Offset(0, side * .012 * math.sin(since / 140 * math.pi));
+    }
     if (since >= 260) return Offset.zero;
     final amp = side * .035 * (1 - since / 260);
     return Offset(
@@ -963,7 +1038,11 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
                 spreadRadius: 1 + 5 * hit),
         ]),
         child: child);
-    if (t <= 0) return Opacity(opacity: 0, child: child);
+    if (t <= 0) {
+      return _landing == PackLanding.flip
+          ? _CardBack(side)
+          : Opacity(opacity: 0, child: child);
+    }
     switch (_landing) {
       case PackLanding.rise:
         return Transform.translate(
@@ -983,39 +1062,38 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
             child: Transform.rotate(
                 angle: (1 - t) * (i.isEven ? -.12 : .12), child: lit));
       case PackLanding.flip:
-        // Dealt face down, turning over as it lands: it pops up on the
-        // reveal and settles, throwing a ring out in its glow.
+        // Laid out face down from the start, each turning over in place in
+        // turn: it swells once on the reveal, throwing a ring out in its
+        // glow, then sits still.
         final angle = (1 - t) * math.pi;
-        final pop = since < 0
+        final pop = since < 0 || since >= 220
             ? 0.0
-            : .16 * math.exp(-since / 130) * math.sin(since / 150 * math.pi);
-        final scale = (.7 + .3 * t) * (1 + pop);
+            : .08 * math.sin(since / 220 * math.pi);
+        final scale = 1 + pop;
         return Stack(clipBehavior: Clip.none, children: [
-          Transform.translate(
-              offset: Offset(0, -(1 - t) * side * .5),
-              child: Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()
-                    ..setEntry(3, 2, .0015)
-                    ..rotateY(angle)
-                    ..scaleByDouble(scale, scale, 1, 1),
-                  child: angle > math.pi / 2
-                      ? _CardBack(side)
-                      : CustomPaint(
-                          foregroundPainter: since >= 0 && since < 600
-                              ? ShockPainter(since / 600, glow)
-                              : null,
-                          child: Stack(children: [
-                            lit,
-                            Positioned.fill(
-                                child: IgnorePointer(
-                                    child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                            color: Colors.white.withValues(
-                                                alpha: .8 * hit * hit),
-                                            borderRadius:
-                                                BorderRadius.circular(8))))),
-                          ])))),
+          Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, .0015)
+                ..rotateY(angle)
+                ..scaleByDouble(scale, scale, 1, 1),
+              child: angle > math.pi / 2
+                  ? _CardBack(side)
+                  : CustomPaint(
+                      foregroundPainter: since >= 0 && since < 600
+                          ? ShockPainter(since / 600, glow)
+                          : null,
+                      child: Stack(children: [
+                        lit,
+                        Positioned.fill(
+                            child: IgnorePointer(
+                                child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                        color: Colors.white
+                                            .withValues(alpha: .8 * hit * hit),
+                                        borderRadius:
+                                            BorderRadius.circular(8))))),
+                      ]))),
         ]);
       case PackLanding.shockwave:
         // Rises in, punches up on the hit and throws a ring out.
@@ -1126,10 +1204,11 @@ class _PackState extends State<_Pack> with SingleTickerProviderStateMixin {
 }
 
 /// How a card in the pack lands, picked on the development page.
+// The first is the default.
 enum PackLanding {
+  flip('Flip'),
   rise('Rise'),
   slam('Slam'),
-  flip('Flip'),
   shockwave('Shockwave');
 
   const PackLanding(this.label);
@@ -1579,11 +1658,15 @@ class SessionWrapBanner extends StatefulWidget {
       {super.key,
       required this.visit,
       required this.summary,
-      required this.gains});
+      required this.gains,
+      this.preview = false});
 
   final Visit visit;
   final SetSummary summary;
   final List<CardGain> gains;
+
+  /// Held up from Development: it stays, however often it's opened.
+  final bool preview;
 
   /// Whether a sync left [visit] new plays to wrap.
   static bool waiting(Visit visit) {
@@ -1602,6 +1685,11 @@ class _SessionWrapBannerState extends State<SessionWrapBanner> {
   bool _gone = false;
 
   Future<void> _clear() async {
+    if (widget.preview) {
+      await Settings.setInt(Settings.wrapBannerPreviewKey, 0);
+      wrapBannerPreview.value = false;
+      return;
+    }
     setState(() => _gone = true);
     await Settings.setString(Settings.sessionWrapSinceKey, '');
   }
@@ -1618,7 +1706,7 @@ class _SessionWrapBannerState extends State<SessionWrapBanner> {
           height: 64,
           radius: 20,
           onPressed: () {
-            _clear();
+            if (!widget.preview) _clear();
             showSessionWrap(context,
                 visit: widget.visit,
                 summary: widget.summary,
@@ -1638,7 +1726,8 @@ class _SessionWrapBannerState extends State<SessionWrapBanner> {
                           style: FloorPop.display(16, color: FloorPop.onVolt)),
                       Text(
                           [
-                            widget.visit.session!.venue.name,
+                            // A set no session covers, held up from Development.
+                            widget.visit.session?.venue.name ?? 'Last set',
                             if (gap != null)
                               '${gap >= 0 ? '+' : '−'}${formatScore(gap.abs().round())}',
                             if (cards > 0)

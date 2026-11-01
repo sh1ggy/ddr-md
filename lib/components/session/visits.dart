@@ -8,15 +8,19 @@
 library;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/session/goal_card.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
+import 'package:ddr_md/components/settings/development_page.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/models/card_gains.dart';
+import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
+import 'package:ddr_md/models/session_goal.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
 import 'package:ddr_md/theme.dart';
@@ -35,6 +39,8 @@ typedef VisitData = ({
   Credit? lastCredit,
   // Every card gain, oldest first; [gainsIn] picks a visit's.
   List<CardGain> gains,
+  // How each session's goal went, by session id.
+  Map<String, GoalProgress> goals,
 });
 
 (int, int)? _loadedFor;
@@ -61,6 +67,13 @@ Future<VisitData> loadVisits(String? activeId) async {
   final visits = buildVisits(
       plays, sessions, await DatabaseProvider.getLastCredits(),
       activeId: activeId);
+  final gains = await DatabaseProvider.getCardGains();
+  for (final m in {
+    for (final s in sessions)
+      if (s.goal != null) s.goal!.mode
+  }) {
+    await ChartBests.ensure(m);
+  }
   return (
     visits: visits,
     model: ScoreModel(
@@ -73,8 +86,32 @@ Future<VisitData> loadVisits(String? activeId) async {
       for (final s in sessions) s.id: await DatabaseProvider.getCredits(s.id),
     },
     lastCredit: await DatabaseProvider.getLatestCredit(),
-    gains: await DatabaseProvider.getCardGains(),
+    gains: gains,
+    goals: {
+      for (final v in visits)
+        if (v.session?.goal case final goal?)
+          v.session!.id: goalProgressNow(
+              goal,
+              v.plays,
+              gainsIn(v, gains),
+              (song, mode, difficulty) =>
+                  chartOf(song, mode, difficulty).level),
+    },
   );
+}
+
+/// Of the last ten finished sessions with a goal to reach, how many reached
+/// it; null when none had one.
+({int hit, int of})? goalRecord(VisitData data, String? activeId) {
+  final told = [
+    for (final v in data.visits)
+      if (v.session != null && v.session!.id != activeId)
+        if (data.goals[v.session!.id] case final p?)
+          if (p.goal.target != null) p
+  ].take(10).toList();
+  return told.isEmpty
+      ? null
+      : (hit: told.where((p) => p.reached).length, of: told.length);
 }
 
 /// Each session's timing plays, after storing the chart they were really
@@ -127,7 +164,7 @@ class LastSessionCard extends StatelessWidget {
                       ? () => context.push('/home/sessions')
                       : null,
                   children: [
-                    _SessionsSection(others, model: data.model, header: false)
+                    _SessionsSection(others, data: data, header: false)
                   ],
                 );
         }
@@ -150,7 +187,7 @@ class LastSessionCard extends StatelessWidget {
                     child: const Text('Load'),
                   ),
               ]),
-              _SessionsSection(others, model: data.model),
+              _SessionsSection(others, data: data),
             ],
           );
         }
@@ -182,20 +219,25 @@ class LastSessionCard extends StatelessWidget {
               const SizedBox(height: 8),
               TopPlays(plays: visit.plays, bests: data.model.bests),
             ],
-            _SessionsSection(others, model: data.model),
+            _SessionsSection(others, data: data),
           ],
         );
-        if (!SessionWrapBanner.waiting(visit)) return card;
-        return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SessionWrapBanner(
-                  key: ValueKey(visit.key),
-                  visit: visit,
-                  summary: summary,
-                  gains: gains),
-              card,
-            ]);
+        return ValueListenableBuilder(
+            valueListenable: wrapBannerPreview,
+            builder: (context, preview, _) =>
+                !preview && !SessionWrapBanner.waiting(visit)
+                    ? card
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                            SessionWrapBanner(
+                                key: ValueKey((visit.key, preview)),
+                                visit: visit,
+                                summary: summary,
+                                gains: gains,
+                                preview: preview),
+                            card,
+                          ]));
       },
     );
   }
@@ -204,11 +246,10 @@ class LastSessionCard extends StatelessWidget {
 /// The latest few of [visits] as tiles, under a divider and the Past
 /// sessions heading unless [header] is off (the card then carries both).
 class _SessionsSection extends StatelessWidget {
-  const _SessionsSection(this.visits,
-      {required this.model, this.header = true});
+  const _SessionsSection(this.visits, {required this.data, this.header = true});
 
   final List<Visit> visits;
-  final ScoreModel model;
+  final VisitData data;
   final bool header;
 
   static const shown = 3;
@@ -236,6 +277,9 @@ class _SessionsSection extends StatelessWidget {
                       CardHeading('Past sessions', icon: Icons.place_outlined),
                 ),
               ),
+              if (goalRecord(data, context.read<SessionState>().session?.id)
+                  case final r?)
+                GoalRecord(r),
               if (visits.length > shown)
                 TextButton(
                     onPressed: () => context.push('/home/sessions'),
@@ -243,7 +287,8 @@ class _SessionsSection extends StatelessWidget {
             ]),
           ),
         ],
-        for (final v in visits.take(shown)) VisitTile(v, model: model),
+        for (final v in visits.take(shown))
+          VisitTile(v, model: data.model, goal: data.goals[v.session?.id]),
       ],
     );
   }
@@ -451,10 +496,11 @@ Future<void> _delete(BuildContext context, Visit v) async {
 /// A session in a rounded tile: venue, when, plays and how they went against
 /// usual. Tap for its page; swipe one with a venue to delete it.
 class VisitTile extends StatefulWidget {
-  const VisitTile(this.visit, {super.key, required this.model});
+  const VisitTile(this.visit, {super.key, required this.model, this.goal});
 
   final Visit visit;
   final ScoreModel model;
+  final GoalProgress? goal;
 
   @override
   State<VisitTile> createState() => _VisitTileState();
@@ -492,16 +538,20 @@ class _VisitTileState extends State<VisitTile> {
                 color: visit.session == null ? scheme.onSurfaceVariant : null)),
         subtitle: Padding(
             padding: const EdgeInsets.only(top: 4), child: VisitTags(visit)),
-        trailing: gap == null
+        trailing: gap == null && widget.goal == null
             ? null
-            : Text(
-                '${gap >= 0 ? '+' : '−'}${(gap.abs() / 1000).toStringAsFixed(1)}k',
-                style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: gap >= 0
-                        ? FloorPop.of(context).up
-                        : FloorPop.of(context).down,
-                    fontFeatures: const [FontFeature.tabularFigures()])),
+            : Row(mainAxisSize: MainAxisSize.min, spacing: 10, children: [
+                if (widget.goal case final g?) GoalMark(g),
+                if (gap != null)
+                  Text(
+                      '${gap >= 0 ? '+' : '−'}${(gap.abs() / 1000).toStringAsFixed(1)}k',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: gap >= 0
+                              ? FloorPop.of(context).up
+                              : FloorPop.of(context).down,
+                          fontFeatures: const [FontFeature.tabularFigures()])),
+              ]),
       ),
     );
     return Padding(
@@ -552,8 +602,18 @@ class SessionsPage extends StatelessWidget {
                   subtitle: const Text('Your progress over weeks'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/home/trends')),
+              if (data == null
+                      ? null
+                      : goalRecord(
+                          data, context.read<SessionState>().session?.id)
+                  case final r?)
+                ListTile(
+                    leading: const Icon(Icons.flag_outlined),
+                    title: Text('Goals hit: ${r.hit} of the last ${r.of}'),
+                    subtitle: const Text('Sessions with a number to reach')),
               for (final v in data?.visits ?? <Visit>[])
-                VisitTile(v, model: data!.model),
+                VisitTile(v,
+                    model: data!.model, goal: data.goals[v.session?.id]),
             ],
           );
         },

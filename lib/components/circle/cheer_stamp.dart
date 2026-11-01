@@ -191,23 +191,23 @@ class CheerNote extends StatelessWidget {
   }
 }
 
-/// Confetti bursting from [at] (global) in [cheer]'s colours, once, over
-/// everything; it removes itself.
-void burstConfetti(BuildContext context, Offset at, Cheer cheer) {
+/// Confetti bursting from [at] (global) in [colour] and the stage's own,
+/// once, over everything; it removes itself.
+void burstConfetti(BuildContext context, Offset at, Color colour) {
   if (MediaQuery.disableAnimationsOf(context)) return;
   final overlay = Overlay.of(context, rootOverlay: true);
   late final OverlayEntry entry;
   entry = OverlayEntry(
       builder: (_) =>
-          _Confetti(at: at, cheer: cheer, onDone: () => entry.remove()));
+          _Confetti(at: at, colour: colour, onDone: () => entry.remove()));
   overlay.insert(entry);
 }
 
 class _Confetti extends StatefulWidget {
   const _Confetti(
-      {required this.at, required this.cheer, required this.onDone});
+      {required this.at, required this.colour, required this.onDone});
   final Offset at;
-  final Cheer cheer;
+  final Color colour;
   final VoidCallback onDone;
 
   @override
@@ -224,7 +224,7 @@ class _ConfettiState extends State<_Confetti>
   late final _pieces = () {
     final random = math.Random();
     final colours = [
-      widget.cheer.color,
+      widget.colour,
       FloorPop.volt,
       FloorPop.coral,
       FloorPop.sun,

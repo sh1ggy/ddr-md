@@ -613,9 +613,11 @@ class _Sheet extends StatefulWidget {
   State<_Sheet> createState() => _SheetState();
 }
 
-// The sheet's arrivals drop in one after another, each over what its pocket
-// held, slamming into the pocket: the card squashes and bounces with a flash,
-// a ring bursts out and the sheet jolts, then the pocket glows.
+// The sheet's arrivals come in one after another. A new card drops into its
+// empty pocket and slams: it squashes and bounces with a flash, a volt ring
+// bursts out and the sheet jolts. An upgrade lifts the card already there and
+// flips it over to what it is now, a sun ring rippling out with no jolt. Then
+// the pocket glows.
 class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
   // Kept until the parent takes the arrivals in, then cleared so the sheet
   // carries on as it is rather than being built again.
@@ -633,31 +635,44 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
   static const _lead = .15, _fall = 340, _tail = 450;
   late final _ms = 500 + 420 * _order.length + _tail;
 
-  // Falling under gravity: picking up speed until it hits.
+  // Whether arrival [n] upgrades a card its pocket already held.
+  bool _upgrade(int n) {
+    final p = widget.sheet.pockets[_order[n]];
+    return widget.arrivals[(song: p.song.name, difficulty: p.difficulty)] !=
+        null;
+  }
+
+  // A new card falls under gravity, picking up speed until it hits; an
+  // upgrade turns over smoothly.
   Interval _interval(int n) {
     final step =
         (1 - _lead - (_fall + _tail) / _ms) / math.max(1, _order.length - 1);
     return Interval(_lead + n * step, _lead + n * step + _fall / _ms,
-        curve: Curves.easeInQuad);
+        curve: _upgrade(n) ? Curves.easeInOutCubic : Curves.easeInQuad);
   }
 
   // Milliseconds since arrival [n] landed, negative before.
   double _since(int n) => (_clock.value - _interval(n).end) * _ms;
 
   void _tick() {
-    final landed = [
-      for (var n = 0; n < _order.length; n++)
-        if (_clock.value >= _interval(n).end) n
-    ].length;
-    if (landed > _in) HapticFeedback.heavyImpact();
+    var landed = 0;
+    for (var n = 0; n < _order.length; n++) {
+      if (_clock.value < _interval(n).end) continue;
+      if (n >= _in) {
+        _upgrade(n)
+            ? HapticFeedback.mediumImpact()
+            : HapticFeedback.heavyImpact();
+      }
+      landed++;
+    }
     _in = landed;
   }
 
-  // The sheet knocked down as each card hits, ringing out.
+  // The sheet knocked down as each new card hits, ringing out.
   double _jolt() {
     final since = [
       for (var n = 0; n < _order.length; n++)
-        if (_since(n) >= 0) _since(n)
+        if (!_upgrade(n) && _since(n) >= 0) _since(n)
     ].fold(double.infinity, math.min);
     return since < 350
         ? 5 * math.exp(-since / 70) * math.cos(since / 100 * math.pi)
@@ -711,6 +726,18 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
       final pocket = pockets[i];
       final n = arriving[i];
       final before = widget.arrivals[chart(pocket)];
+      final upgrade = n != null && before != null;
+      // What it held, the face an upgrade turns over from.
+      final was = upgrade
+          ? RepaintBoundary(
+              child: _Pocket(pocket: (
+              song: pocket.song,
+              difficulty: pocket.difficulty,
+              best: null,
+              card: before
+            ), onOpen: (_) {}))
+          : null;
+      final color = upgrade ? FloorPop.sun : FloorPop.volt;
       return Positioned(
           key: ValueKey(chart(pocket)),
           left: (i % _kColumns) * (side + _kGap),
@@ -718,17 +745,6 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
           width: side,
           height: side,
           child: Stack(clipBehavior: Clip.none, children: [
-            // What it held, under the card coming in.
-            if (n != null && before != null)
-              Positioned.fill(
-                  key: const ValueKey('before'),
-                  child: RepaintBoundary(
-                      child: _Pocket(pocket: (
-                    song: pocket.song,
-                    difficulty: pocket.difficulty,
-                    best: null,
-                    card: before
-                  ), onOpen: (_) {}, dimmed: true))),
             Positioned.fill(
                 key: const ValueKey('card'),
                 child: AnimatedBuilder(
@@ -741,31 +757,48 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
                       }
                       final landing = since >= 0 && since < _tail;
                       final glow = landing ? 1 - since / _tail : 0.0;
-                      // Squashed flat on the hit, then a damped bounce.
+                      // Squashed flat on the hit, then a damped bounce; an
+                      // upgrade only settles back down.
                       final press = since < 0 || since > _tail
                           ? 1.0
-                          : 1 -
-                              .07 * math.max(0, 1 - since / 90) +
-                              .045 *
-                                  math.exp(-since / 110) *
-                                  math.sin(since / 130 * math.pi).abs();
+                          : upgrade
+                              ? 1 - .03 * math.max(0, 1 - since / 120)
+                              : 1 -
+                                  .07 * math.max(0, 1 - since / 90) +
+                                  .045 *
+                                      math.exp(-since / 110) *
+                                      math.sin(since / 130 * math.pi).abs();
                       final flash = since >= 0 && since < 250
                           ? math.pow(1 - since / 250, 2).toDouble()
                           : 0.0;
-                      // Dropped from above onto the sheet.
-                      final s = (1 + .9 * (1 - t)) * press;
+                      // A new card dropped from above onto the sheet; an
+                      // upgrade lifted and turned over in its pocket, the old
+                      // face showing until it's edge on.
+                      final Matrix4 transform;
+                      var showWas = false;
+                      if (upgrade) {
+                        final angle = t * math.pi;
+                        showWas = angle < math.pi / 2;
+                        final s = (1 + .18 * math.sin(angle)) * press;
+                        transform = Matrix4.identity()
+                          ..setEntry(3, 2, .0015)
+                          ..rotateY(showWas ? angle : angle - math.pi)
+                          ..scaleByDouble(s, s, 1, 1);
+                      } else {
+                        final s = (1 + .9 * (1 - t)) * press;
+                        transform =
+                            Matrix4.translationValues(0, -(1 - t) * 140, 0)
+                              ..rotateZ((1 - t) * .25)
+                              ..scaleByDouble(s, s, 1, 1);
+                      }
                       return Opacity(
-                          opacity: t <= 0 ? 0 : 1,
+                          opacity: t <= 0 && !upgrade ? 0 : 1,
                           child: Transform(
                               alignment: Alignment.center,
-                              transform: Matrix4.translationValues(
-                                  0, -(1 - t) * 140, 0)
-                                ..rotateZ((1 - t) * .25)
-                                ..scaleByDouble(s, s, 1, 1),
+                              transform: transform,
                               child: CustomPaint(
                                   foregroundPainter: landing
-                                      ? ShockPainter(
-                                          since / _tail, FloorPop.volt)
+                                      ? ShockPainter(since / _tail, color)
                                       : null,
                                   child: DecoratedBox(
                                       decoration: BoxDecoration(
@@ -774,7 +807,7 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
                                           boxShadow: [
                                             if (glow > 0)
                                               BoxShadow(
-                                                  color: FloorPop.volt
+                                                  color: color
                                                       .withValues(alpha: glow),
                                                   blurRadius: 18,
                                                   spreadRadius:
@@ -782,7 +815,12 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
                                           ]),
                                       position: DecorationPosition.background,
                                       child: Stack(children: [
-                                        child!,
+                                        // Kept built under the old face, so
+                                        // its jacket is up when it turns.
+                                        Opacity(
+                                            opacity: showWas ? 0 : 1,
+                                            child: child!),
+                                        if (showWas) was!,
                                         if (flash > 0)
                                           Positioned.fill(
                                               child: IgnorePointer(
@@ -838,14 +876,11 @@ class _Pocket extends StatelessWidget {
   const _Pocket(
       {required this.pocket,
       required this.onOpen,
-      this.focused = false,
-      this.dimmed = false});
+      this.focused = false});
   final BinderPocket pocket;
   final ValueChanged<BinderPocket> onOpen;
   // Picked out, as the chart the binder was opened on.
   final bool focused;
-  // What a pocket held, under the card coming in to it.
-  final bool dimmed;
 
   static const _grey = ColorFilter.matrix([
     .2126, .7152, .0722, 0, 0, //
@@ -894,7 +929,6 @@ class _Pocket extends StatelessWidget {
               aura: false,
               child: art));
     }
-    if (dimmed) return Opacity(opacity: .5, child: sleeve);
     if (!focused) return sleeve;
     return DecoratedBox(
         position: DecorationPosition.foreground,

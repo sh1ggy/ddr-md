@@ -1,5 +1,6 @@
 import 'package:ddr_md/components/session/session_summary.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
@@ -28,6 +29,20 @@ RecentPlay play(String id, int hoursAgo, int score) => RecentPlay(
     score: score);
 
 void main() {
+  test('a gain joins its play though its record is a few seconds later', () {
+    final p = play('a', 0, 900000);
+    CardGain gain(int seconds) => CardGain(
+        song: 'a',
+        mode: Modes.singles,
+        difficulty: 'EXPERT',
+        layer: CardLayer.card,
+        best: (score: 900000, grade: null, lamp: null, flare: null),
+        playedAt: p.playedAt.add(Duration(seconds: seconds)),
+        syncedAt: t);
+    final visit = Visit(session: null, plays: [p], start: t, end: t);
+    expect(gainsIn(visit, [gain(2), gain(600)]).length, 1);
+  });
+
   test('a set is averaged against its charts, blended with their models', () {
     ScoreRecord best(String id, int score) => ScoreRecord(
         id: 'eamuse:$id:singles:EXPERT',

@@ -48,7 +48,7 @@ Future<void> showCheerSheet(BuildContext button, CircleCredit credit,
         // use the still-mounted sheet's overlay for the success effect.
         if (cheer != null) {
           HapticFeedback.mediumImpact();
-          if (from != null) burstConfetti(sheet, from, cheer);
+          if (from != null) burstConfetti(sheet, from, cheer.color);
         }
         Navigator.pop(sheet);
       }
