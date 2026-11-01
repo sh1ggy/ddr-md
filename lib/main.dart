@@ -84,6 +84,7 @@ void main() async {
   eamuse.addListener(() {
     if (session.session case final s?) broadcastSession = s.id;
     final now = eamuse.status == EamuseStatus.syncing;
+    if (syncing && !now) circles.followKonamiProfile();
     if (syncing && !now && CircleState.broadcasting) {
       if (broadcastSession case final id?) shareSessionCredits(circles, id);
     }

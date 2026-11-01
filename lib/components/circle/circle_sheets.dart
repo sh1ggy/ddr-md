@@ -3,8 +3,8 @@
 /// Description: The Circle tab's sheets and pages: your invite QR with its
 /// code written under it (copy, share, a new one; each lasts a day), joining
 /// by scanning someone's QR or typing their code, leaving someone's circle or
-/// taking them out of yours, and your name and DDR-CODE with the way to
-/// delete it all.
+/// taking them out of yours, and the settings: your name and DDR-CODE, what
+/// new sessions share, and the way to delete it all.
 library;
 
 import 'package:ddr_md/components/circle/circle_explainer.dart';
@@ -12,6 +12,7 @@ import 'package:ddr_md/components/circle/circle_page.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/session_page.dart' show confirmDelete;
 import 'package:ddr_md/models/circle_model.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -472,8 +473,8 @@ Future<void> showPersonSheet(
   );
 }
 
-/// Your dancer name and DDR-CODE, and deleting everything circles holds
-/// about you.
+/// Your dancer name and DDR-CODE, what a new session shares by default,
+/// and deleting everything circles holds about you.
 Future<void> showCircleSettings(BuildContext context) {
   final circle = context.read<CircleState>();
   return showModalBottomSheet(
@@ -481,35 +482,79 @@ Future<void> showCircleSettings(BuildContext context) {
     isScrollControlled: true,
     useRootNavigator: true,
     showDragHandle: true,
-    builder: (sheet) => Padding(
-      padding: EdgeInsets.fromLTRB(
-          20, 0, 20, MediaQuery.viewInsetsOf(sheet).bottom + 16),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            CircleProfileForm(onSaved: () => Navigator.pop(sheet)),
-            const SizedBox(height: 16),
-            TextButton(
-              style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(sheet).colorScheme.error),
-              onPressed: () async {
-                if (await confirmDelete(
-                    sheet,
-                    'Leave circles and delete?',
-                    "Your profile, your circle and every circle you're in "
-                        'are deleted from the server. People in your circle '
-                        'lose you.')) {
-                  await circle.deleteAll();
-                  if (sheet.mounted) Navigator.pop(sheet);
-                }
-              },
-              child: const Text('Leave circles & delete'),
-            ),
-          ],
+    builder: (sheet) => StatefulBuilder(builder: (sheet, setState) {
+      final pop = FloorPop.of(sheet);
+      Widget toggle(
+              String key, IconData icon, String title, String on, String off) =>
+          SwitchListTile(
+            secondary: Icon(icon),
+            title: Text(title),
+            subtitle: Text(Settings.getInt(key) == 1 ? on : off),
+            value: Settings.getInt(key) == 1,
+            onChanged: (v) async {
+              await Settings.setInt(key, v ? 1 : 0);
+              setState(() {});
+            },
+          );
+      return SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const CircleProfileForm(first: false),
+              const SizedBox(height: 20),
+              Text('NEW SESSIONS SHARE', style: pop.label),
+              const SizedBox(height: 4),
+              Text(
+                  'What the start sheet begins with. You can still change '
+                  'it for each session.',
+                  style: TextStyle(color: pop.haze, fontSize: 12)),
+              const SizedBox(height: 8),
+              Material(
+                color: pop.stage,
+                clipBehavior: Clip.antiAlias,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                    side: BorderSide(color: pop.line)),
+                child: Column(children: [
+                  toggle(
+                      Settings.circleLiveDefaultKey,
+                      Icons.podcasts,
+                      'Live sessions',
+                      'Your circle sees your credits and cheers them',
+                      'Off unless you turn it on'),
+                  Divider(height: 1, color: pop.line),
+                  toggle(
+                      Settings.circleLocationDefaultKey,
+                      Icons.location_on_outlined,
+                      'Where you play',
+                      'Your venue shows while you\'re live',
+                      'Your venue stays private'),
+                ]),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(sheet).colorScheme.error),
+                onPressed: () async {
+                  if (await confirmDelete(
+                      sheet,
+                      'Leave circles and delete?',
+                      "Your profile, your circle and every circle you're in "
+                          'are deleted from the server. People in your circle '
+                          'lose you.')) {
+                    await circle.deleteAll();
+                    if (sheet.mounted) Navigator.pop(sheet);
+                  }
+                },
+                child: const Text('Leave circles & delete'),
+              ),
+            ],
+          ),
         ),
-      ),
-    ),
+      );
+    }),
   );
 }

@@ -13,8 +13,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-/// [button] is the Cheer button the confetti bursts from.
-Future<void> showCheerSheet(BuildContext button, CircleCredit credit) {
+/// [button] is the Cheer button the confetti bursts from. [summary] says
+/// what's cheered when it's more than [credit] alone, as for a session.
+Future<void> showCheerSheet(BuildContext button, CircleCredit credit,
+    {String? summary}) {
   final circle = button.read<CircleState>();
   final box = button.findRenderObject() as RenderBox?;
   final from = box?.localToGlobal(box.size.center(Offset.zero));
@@ -64,9 +66,10 @@ Future<void> showCheerSheet(BuildContext button, CircleCredit credit) {
                         color: Theme.of(sheet).colorScheme.onSurface)),
                 const SizedBox(height: 4),
                 Text(
-                    'Credit ${credit.credit} · '
-                    '${credit.plays.length} songs'
-                    '${credit.plays.any((p) => p.best && !p.failed) ? ' · new best!' : ''}',
+                    summary ??
+                        'Credit ${credit.credit} · '
+                            '${credit.plays.length} songs'
+                            '${credit.plays.any((p) => p.best && !p.failed) ? ' · new best!' : ''}',
                     style: TextStyle(color: pop.haze)),
                 const SizedBox(height: 20),
                 GridView.count(

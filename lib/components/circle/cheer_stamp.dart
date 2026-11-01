@@ -110,6 +110,21 @@ class CheerIcon extends StatelessWidget {
       Icon(Icons.celebration_outlined, size: size);
 }
 
+/// A player's avatar colour, from [key] (their id, else their name); never
+/// Volt, which on the Circle tab means live.
+Color avatarColour(String key) => const [
+      FloorPop.coral,
+      FloorPop.padBlue,
+      FloorPop.sun,
+      FloorPop.grape
+    ][key.codeUnits.fold(0, (a, b) => a + b) % 4];
+
+/// The letter on [colour]: white on the dark ones.
+Color avatarInk(Color colour) =>
+    colour == FloorPop.padBlue || colour == FloorPop.grape
+        ? Colors.white
+        : FloorPop.onVolt;
+
 /// A note from a player: a bold pill above their avatar. Every note occupies
 /// the same slot, so changing the cheer cannot move this or nearby avatars.
 class CheerNote extends StatelessWidget {
@@ -123,14 +138,7 @@ class CheerNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    final colours = [
-      FloorPop.coral,
-      FloorPop.padBlue,
-      FloorPop.sun,
-      FloorPop.grape
-    ];
-    final colour = colours[
-        (personId ?? name).codeUnits.fold(0, (a, b) => a + b) % colours.length];
+    final colour = avatarColour(personId ?? name);
     return Semantics(
       button: onTap != null,
       label:
@@ -167,11 +175,8 @@ class CheerNote extends StatelessWidget {
                       radius: 19,
                       backgroundColor: colour,
                       child: Text(name.isEmpty ? '?' : name.substring(0, 1),
-                          style: FloorPop.display(15,
-                              color: colour == FloorPop.padBlue ||
-                                      colour == FloorPop.grape
-                                  ? Colors.white
-                                  : FloorPop.onVolt))),
+                          style:
+                              FloorPop.display(15, color: avatarInk(colour)))),
                   const SizedBox(height: 4),
                   Text(name,
                       maxLines: 1,

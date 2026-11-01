@@ -30,9 +30,15 @@ final _devKey = !kReleaseMode &&
     ? const String.fromEnvironment('CIRCLES_KEY')
     : '';
 
-/// A session someone is broadcasting to their circle: where, and the
-/// credit they're on.
-typedef CircleLive = ({String venue, int credit, String side, DateTime? at});
+/// A session someone is broadcasting to their circle: where, the credit
+/// they're on, and the [session] its shared credits carry.
+typedef CircleLive = ({
+  String venue,
+  int credit,
+  String side,
+  String? session,
+  DateTime? at
+});
 
 /// Someone in your circle, or whose circle you're in. [id] tells apart two
 /// who gave the same DDR-CODE. [live] only on whose circle you're in.
@@ -149,6 +155,24 @@ class CircleState extends ChangeNotifier {
           if (c.by?.id == person.id) c
       ];
 
+  /// The credits of the session [person] is broadcasting, newest first.
+  List<CircleCredit> liveCreditsOf(CirclePerson person) => [
+        for (final c in creditsOf(person))
+          if (c.session == person.live?.session) c
+      ];
+
+  /// The credits of [person]'s latest session that's over, newest first.
+  List<CircleCredit> lastSessionOf(CirclePerson person) {
+    final done = [
+      for (final c in creditsOf(person))
+        if (person.live == null || c.session != person.live!.session) c
+    ];
+    return [
+      for (final c in done)
+        if (c.session == done.firstOrNull?.session) c
+    ];
+  }
+
   bool get codeLive =>
       code != null && codeUntil != null && codeUntil!.isAfter(DateTime.now());
 
@@ -162,6 +186,7 @@ class CircleState extends ChangeNotifier {
               venue: l['venue'] as String,
               credit: l['credit'] as int,
               side: l['side'] as String,
+              session: l['session'] as String?,
               at: DateTime.tryParse(l['at'] as String? ?? ''),
             ),
           _ => null,
@@ -372,8 +397,26 @@ class CircleState extends ChangeNotifier {
     }
   }
 
-  /// Joins circles or updates the visible identity from the last synced
-  /// Konami profile. These values are never user-entered.
+  /// After an e-amusement sync: a changed dancer name or code goes to the
+  /// circle too, as the identity always follows the Konami profile.
+  Future<void> followKonamiProfile() async {
+    if (!available || id == null) return;
+    final dancer =
+        Settings.getString(Settings.eamuseNameKey).trim().toUpperCase();
+    final code = Settings.getString(Settings.rivalCodeSpeedKey)
+        .replaceAll(RegExp(r'\D'), '');
+    if (!namePattern.hasMatch(dancer) || code.length != 8) return;
+    if (dancer == name && code == ddrCode) return;
+    try {
+      await _send('PUT', 'v1/me', {'name': dancer, 'ddrCode': code});
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Circles: profile not updated: $e');
+    }
+  }
+
+  /// Joins circles with the identity from the last synced Konami profile.
+  /// These values are never user-entered.
   Future<bool> claimKonamiProfile() async {
     final dancer =
         Settings.getString(Settings.eamuseNameKey).trim().toUpperCase();

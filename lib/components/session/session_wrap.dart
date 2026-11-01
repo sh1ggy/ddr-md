@@ -1,7 +1,8 @@
 /// Name: SessionWrap
 /// Parent: LastSessionCard, VisitPage, SessionPage
 /// Description: A session told once its plays are synced: how it went
-/// against your usual, then every card its plays collected or upgraded
+/// against your usual, who in your circle cheered it when it was broadcast,
+/// then every card its plays collected or upgraded
 /// dealt at once like a pack, each opening on its own beside what it was,
 /// then into the binder, where they slot into their pockets sheet by sheet.
 /// Ending a session opens it straight away and syncs while it shows; Home
@@ -13,6 +14,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:ddr_md/components/circle/cheer_stamp.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
@@ -32,6 +34,7 @@ import 'package:ddr_md/helpers.dart'
     show formatScore, kFlareRanks, kInGameDifficultyNames;
 import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
+import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
@@ -175,15 +178,17 @@ Widget _compact(WrapCard card, EditionFacts facts) => CompactJacketEdition(
     ),
     child: SongArtwork(songName: card.now.chart.song, title: card.title));
 
-/// Opens the wrap of [visit], whose plays made [gains].
+/// Opens the wrap of [visit], whose plays made [gains]. [cheered] stands in
+/// for the circle's cheers, for a preview.
 Future<void> showSessionWrap(BuildContext context,
         {required Visit visit,
         required SetSummary summary,
-        required List<CardGain> gains}) =>
+        required List<CardGain> gains,
+        List<CircleCredit>? cheered}) =>
     Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) =>
-            SessionWrapPage(visit: visit, summary: summary, gains: gains)));
+        builder: (_) => SessionWrapPage(
+            visit: visit, summary: summary, gains: gains, cheered: cheered)));
 
 /// Ends the running session and, with e-amusement linked, opens its wrap at
 /// once, which collects the session's plays and cards while it shows.
@@ -216,17 +221,20 @@ class SessionWrapPage extends StatefulWidget {
       {super.key,
       required Visit this.visit,
       required SetSummary this.summary,
-      required this.gains})
+      required this.gains,
+      this.cheered})
       : sessionId = null;
 
   const SessionWrapPage.ended({super.key, required String this.sessionId})
       : visit = null,
         summary = null,
-        gains = const [];
+        gains = const [],
+        cheered = null;
 
   final Visit? visit;
   final SetSummary? summary;
   final List<CardGain> gains;
+  final List<CircleCredit>? cheered;
 
   /// The session just ended, whose plays and cards a sync is collecting.
   final String? sessionId;
@@ -241,8 +249,11 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   late SetSummary? _summary = widget.summary;
   late List<CardGain> _gains = widget.gains;
   late List<WrapCard> _cards = wrapCards(widget.gains);
-  // 0 how it went, 1 the cards; then the binder they go into.
+  // Into [_beats]; after the cards, the binder they go into.
   int _beat = 0;
+  // The beats as they stood on leaving the first, so cheers landing later
+  // don't shift the one on screen.
+  List<_Beat>? _shown;
   late bool _collecting = widget.sessionId != null;
   EamuseSyncState? _eamuse;
   int? _revision;
@@ -256,7 +267,28 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   void initState() {
     super.initState();
     if (widget.sessionId != null) _collect();
+    // The latest cheers on this session.
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => context.read<CircleState>().poll());
   }
+
+  String? get _sessionId => widget.sessionId ?? _visit?.session?.id;
+
+  /// Your shared credits of this session that were cheered, oldest first.
+  List<CircleCredit> _cheered(CircleState circle) =>
+      widget.cheered ??
+      [
+        for (final c in circle.yours.reversed)
+          if (c.session == _sessionId && c.cheers.isNotEmpty) c
+      ];
+
+  List<_Beat> _beats(CircleState circle) =>
+      _shown ??
+      [
+        _Beat.verdict,
+        if (_cheered(circle).isNotEmpty) _Beat.circle,
+        if (_cards.isNotEmpty) _Beat.pack,
+      ];
 
   @override
   void dispose() {
@@ -308,12 +340,16 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   }
 
   void _next() {
-    if (_beat == 0 && _cards.isEmpty) {
-      Navigator.of(context).pop();
-    } else if (_beat == 1) {
+    final beats = _beats(context.read<CircleState>());
+    if (_beat < beats.length - 1) {
+      setState(() {
+        _shown = beats;
+        _beat++;
+      });
+    } else if (beats[_beat] == _Beat.pack) {
       _intoBinder();
     } else {
-      setState(() => _beat++);
+      Navigator.of(context).pop();
     }
   }
 
@@ -355,12 +391,15 @@ class _SessionWrapPageState extends State<SessionWrapPage>
     final visit = _visit;
     final eamuse = _eamuse;
     final n = _cards.length;
+    final circle = context.watch<CircleState>();
+    final beats = _beats(circle);
+    final beat = beats[_beat];
     final action = switch (_beat) {
       0 when _collecting => _summary == null
           ? 'Collecting your plays'
           : 'Collecting cards · ${((eamuse?.progress ?? 0) * 100).round()}%',
-      0 when n == 0 => 'Done',
-      // On to the cards, then the binder: an arrow alone.
+      // On to the next beat, or the binder after the cards: an arrow alone.
+      _ when _beat == beats.length - 1 && beat != _Beat.pack => 'Done',
       _ => null,
     };
     // Why a finished collection found nothing.
@@ -402,7 +441,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: Row(spacing: 6, children: [
-              for (var i = 0; i < (n == 0 ? 1 : 3); i++)
+              for (var i = 0; i < beats.length + (n == 0 ? 0 : 1); i++)
                 Expanded(
                     child: AnimatedContainer(
                         duration: FloorPop.eighth,
@@ -423,10 +462,11 @@ class _SessionWrapPageState extends State<SessionWrapPage>
                   : FadeTransition(opacity: a, child: child),
               child: KeyedSubtree(
                 key: ValueKey(_beat),
-                child: switch (_beat) {
-                  0 =>
+                child: switch (beat) {
+                  _Beat.verdict =>
                     _Verdict(_summary, cards: n, spin: _spin, missing: missing),
-                  _ => _Pack(_cards, gains: _gains),
+                  _Beat.circle => _ShowedUp(_cheered(circle)),
+                  _Beat.pack => _Pack(_cards, gains: _gains),
                 },
               ),
             ),
@@ -441,6 +481,139 @@ class _SessionWrapPageState extends State<SessionWrapPage>
           ),
         ]),
       ),
+    );
+  }
+}
+
+enum _Beat { verdict, circle, pack }
+
+// The circle's beat: everyone who cheered the broadcast, each cheer a card
+// in its own colour slapped on at its own lean, with the credit it was for.
+// Confetti bursts from each friend's first card in turn, so more friends
+// throw more of it.
+class _ShowedUp extends StatefulWidget {
+  const _ShowedUp(this.credits);
+  final List<CircleCredit> credits;
+
+  @override
+  State<_ShowedUp> createState() => _ShowedUpState();
+}
+
+class _ShowedUpState extends State<_ShowedUp> {
+  late final _cheers = [
+    for (final c in widget.credits)
+      for (final x in c.cheers) (credit: c.credit, cheer: x)
+  ];
+  // Each friend's first card, where their confetti comes from.
+  final _firsts = <String, GlobalKey>{};
+
+  @override
+  void initState() {
+    super.initState();
+    for (final c in _cheers) {
+      _firsts.putIfAbsent(c.cheer.id ?? c.cheer.name, GlobalKey.new);
+    }
+    // Once the beat has settled in.
+    Future.delayed(FloorPop.beat, () async {
+      for (final (i, key) in _firsts.values.indexed) {
+        if (!mounted) return;
+        final box = key.currentContext?.findRenderObject() as RenderBox?;
+        final cheer = _cheers
+            .firstWhere((c) => _firsts[c.cheer.id ?? c.cheer.name] == key)
+            .cheer
+            .cheer;
+        if (box != null && box.attached) {
+          if (i > 0) HapticFeedback.lightImpact();
+          burstConfetti(
+              context, box.localToGlobal(box.size.center(Offset.zero)), cheer);
+        }
+        await Future.delayed(const Duration(milliseconds: 220));
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seen = <String>{};
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 16),
+      children: [
+        Transform(
+            transform: FloorPop.titleLean,
+            child: Text('Your circle\nshowed up',
+                style: FloorPop.display(28,
+                    color: Theme.of(context).colorScheme.onSurface))),
+        const SizedBox(height: 20),
+        for (final (i, (:credit, :cheer)) in _cheers.indexed)
+          Align(
+            alignment: i.isEven ? Alignment.centerLeft : Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Transform.rotate(
+                key: seen.add(cheer.id ?? cheer.name)
+                    ? _firsts[cheer.id ?? cheer.name]
+                    : null,
+                angle: cheer.cheer.tilt,
+                child: Container(
+                  width: 250,
+                  padding: const EdgeInsets.fromLTRB(14, 12, 16, 12),
+                  decoration: BoxDecoration(
+                    color: cheer.cheer.color,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                          color: cheer.cheer.color.withValues(alpha: 0.4),
+                          blurRadius: 18,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: Row(children: [
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                          color: cheer.cheer.ink, shape: BoxShape.circle),
+                      child: CircleAvatar(
+                          radius: 20,
+                          backgroundColor: avatarColour(cheer.id ?? cheer.name),
+                          child: Text(
+                              cheer.name.isEmpty
+                                  ? '?'
+                                  : cheer.name.substring(0, 1),
+                              style: FloorPop.display(16,
+                                  color: avatarInk(
+                                      avatarColour(cheer.id ?? cheer.name))))),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('${cheer.name} · credit $credit',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color:
+                                        cheer.cheer.ink.withValues(alpha: 0.75),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700)),
+                            Row(children: [
+                              Icon(cheer.cheer.icon,
+                                  size: 18, color: cheer.cheer.ink),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(cheer.cheer.label,
+                                    style: FloorPop.display(18,
+                                        color: cheer.cheer.ink)),
+                              ),
+                            ]),
+                          ]),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

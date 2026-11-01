@@ -13,6 +13,7 @@ import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
 import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
+import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
@@ -40,7 +41,8 @@ class DevelopmentToolsTile extends StatelessWidget {
 
 const _previewCards = 12;
 
-/// Opens the wrap of the latest session with plays, its gains made up from
+/// Opens the wrap of the latest session with plays, cheers from a made-up
+/// circle on its credits, and its gains made up from
 /// its charts' bests in turn: a new card, AAA's foil, a frame one tier up and
 /// a flare one rank up, each where the best allows, from a few thousand
 /// points lower. A dozen cards, topped
@@ -108,9 +110,33 @@ Future<void> _previewWrap(BuildContext context) async {
       _ => gain(CardLayer.card),
     });
   }
+  // A circle that cheered three credits, a friend or two each.
+  const cheerers = ['MIKA', 'REXX', 'TOFU', 'JUN.K'];
+  final cheered = [
+    for (var c = 1; c <= 3; c++)
+      (
+        by: null,
+        session: visit.session!.id,
+        credit: c,
+        at: visit.plays.first.playedAt,
+        plays: const <CirclePlay>[],
+        cheers: [
+          for (var i = 0; i < 1 + c % 2; i++)
+            (
+              id: null,
+              name: cheerers[(c + i) % cheerers.length],
+              cheer: Cheer.values[(c * 2 + i) % Cheer.values.length],
+            )
+        ],
+        mine: null,
+      )
+  ];
   if (!context.mounted) return;
   await showSessionWrap(context,
-      visit: visit, summary: data.model.summarize(visit.plays), gains: gains);
+      visit: visit,
+      summary: data.model.summarize(visit.plays),
+      gains: gains,
+      cheered: cheered);
 }
 
 class DevelopmentPage extends StatefulWidget {
@@ -132,7 +158,7 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                     leading: const Icon(Icons.style_outlined),
                     title: const Text('Session wrap preview'),
                     subtitle: const Text(
-                        'Your last session with made-up card gains, nothing saved'),
+                        'Your last session with made-up cheers and card gains, nothing saved'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => _previewWrap(context))),
             Card(

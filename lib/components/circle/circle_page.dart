@@ -1,15 +1,16 @@
 /// Name: CirclePage
 /// Parent: Router
 /// Description: The Circle tab, people grouped by how you're tied: friends
-/// (in each other's circles) as bubbles, then the one-way ties, those you
-/// cheer for and those cheering you on, each with what makes it two-way.
-/// The header holds your invite QR, scanning someone's, and your name and
-/// DDR-CODE. Before joining circles there's only the form for your name and
-/// code, filled from e-amusement when linked.
+/// (in each other's circles) as bubbles, then the latest finished session
+/// of each you follow to cheer, then the one-way ties, those you cheer for
+/// and those cheering you on. The header holds how it works, your invite QR
+/// and the settings. Before joining circles there's only your name and code
+/// from e-amusement, and the button that starts your circle.
 library;
 
 import 'dart:async';
 
+import 'package:ddr_md/components/circle/circle_credit_card.dart';
 import 'package:ddr_md/components/circle/circle_explainer.dart';
 import 'package:ddr_md/components/circle/circle_person_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
@@ -86,6 +87,12 @@ class _CirclePageState extends State<CirclePage> {
       for (final p in circle.circle)
         if (!p.friend) p
     ];
+    // Sessions that are over, the latest first; a live one is on its page.
+    final latest = [
+      for (final p in following)
+        if (p.live == null)
+          if (circle.lastSessionOf(p) case final s when s.isNotEmpty) s
+    ]..sort((a, b) => b.first.at.compareTo(a.first.at));
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -109,7 +116,6 @@ class _CirclePageState extends State<CirclePage> {
               onPressed: () => showCircleSettings(context),
             ),
           ],
-          const SizedBox(width: 12),
         ],
       ),
       body: !CircleState.available
@@ -140,6 +146,15 @@ class _CirclePageState extends State<CirclePage> {
                         if (friends.isNotEmpty) ...[
                           _Heading(CircleTie.friends, friends.length),
                           _FriendBubbles(friends),
+                        ],
+                        if (latest.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(2, 26, 0, 10),
+                            child: Text('LATEST',
+                                style: FloorPop.of(context).label),
+                          ),
+                          for (final s in latest)
+                            CircleSessionCard(s, header: true),
                         ],
                         if (youCheer.isNotEmpty) ...[
                           _Heading(CircleTie.youCheer, youCheer.length),
@@ -350,7 +365,7 @@ class _LiveTag extends StatelessWidget {
       );
 }
 
-/// A one-way tie, with the step that would make it two-way.
+/// A one-way tie: who, and where they're playing when live.
 class _PersonTile extends StatelessWidget {
   const _PersonTile(this.person, this.tie);
   final CirclePerson person;
@@ -359,7 +374,6 @@ class _PersonTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    final youCheer = tie == CircleTie.youCheer;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
@@ -378,27 +392,20 @@ class _PersonTile extends StatelessWidget {
             null => Text(formatDdrCode(person.ddrCode)),
           },
           onTap: () => openPersonPage(context, person, tie),
-          trailing: TextButton.icon(
-            onPressed: () =>
-                youCheer ? showInviteSheet(context) : openJoinCircle(context),
-            icon: Icon(youCheer ? Icons.qr_code_2 : Icons.qr_code_scanner,
-                size: 18),
-            label: Text(youCheer ? 'Show your QR' : 'Scan theirs'),
-          ),
+          trailing: Icon(Icons.chevron_right, color: pop.haze),
         ),
       ),
     );
   }
 }
 
-/// Your dancer name and DDR-CODE, as others in circles see them: filled
-/// from e-amusement when it's linked. First run shows it as the whole tab;
-/// the settings sheet reuses it to change either.
+/// Your dancer name and DDR-CODE, as others in circles see them: from
+/// e-amusement, never typed. First run shows it as the whole tab with the
+/// button that starts the circle; the settings sheet shows it read-only.
 class CircleProfileForm extends StatefulWidget {
-  const CircleProfileForm({super.key, this.onSaved});
+  const CircleProfileForm({super.key, this.first = true});
 
-  /// After a later save; first run has the tab rebuild instead.
-  final VoidCallback? onSaved;
+  final bool first;
 
   @override
   State<CircleProfileForm> createState() => _CircleProfileFormState();
@@ -411,7 +418,7 @@ class _CircleProfileFormState extends State<CircleProfileForm> {
     // Profile values update after the next successful e-amusement sync.
     context.select<EamuseSyncState, int>((sync) => sync.revision);
     final pop = FloorPop.of(context);
-    final first = widget.onSaved == null;
+    final first = widget.first;
     final name =
         Settings.getString(Settings.eamuseNameKey).trim().toUpperCase();
     final code = Settings.getString(Settings.rivalCodeSpeedKey)
@@ -425,41 +432,39 @@ class _CircleProfileFormState extends State<CircleProfileForm> {
           label: 'Rival code',
           value: code.length == 8 ? formatDdrCode(code) : '',
           available: hasProfile),
-      if (!hasProfile) ...[
-        const SizedBox(height: 8),
-        Text('Sync e-amusement from Home to load your Konami profile.',
-            style: TextStyle(color: pop.haze, height: 1.4)),
-      ],
+      const SizedBox(height: 8),
+      Text(
+          hasProfile
+              ? 'From your e-amusement profile, and kept in step with it at '
+                  'each sync.'
+              : 'Sync e-amusement from Home to load your Konami profile.',
+          style: TextStyle(color: pop.haze, height: 1.4)),
       if (circle.error.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text(circle.error,
             style: TextStyle(color: Theme.of(context).colorScheme.error)),
       ],
+    ];
+    if (!first) {
+      return Column(mainAxisSize: MainAxisSize.min, children: form);
+    }
+    form.addAll([
       const SizedBox(height: 16),
       VoltButton(
         onPressed: valid && !circle.loading
             ? () async {
                 if (!await circle.claimKonamiProfile()) return;
-                widget.onSaved?.call();
                 // A circle just started: how it works, once.
-                if (first && context.mounted) showCircleExplainer(context);
+                if (context.mounted) showCircleExplainer(context);
               }
             : null,
-        child: Text(
-            circle.loading
-                ? 'Saving…'
-                : first
-                    ? 'Start my circle'
-                    : 'Update from Konami',
+        child: Text(circle.loading ? 'Saving…' : 'Start my circle',
             style: const TextStyle(
                 fontFamily: kTextFont,
                 fontSize: 15,
                 fontWeight: FontWeight.w700)),
       ),
-    ];
-    if (!first) {
-      return Column(mainAxisSize: MainAxisSize.min, children: form);
-    }
+    ]);
     return ListView(
       padding: clearOfBars(context, const EdgeInsets.fromLTRB(20, 72, 20, 120)),
       children: [

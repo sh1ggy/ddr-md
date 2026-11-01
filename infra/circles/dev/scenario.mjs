@@ -99,15 +99,15 @@ const scenarios = {
     }
   },
   "live: MIKA starts a session (credit 1) and JUN.K is on credit 3": async () => {
-    await as((await player("MIKA")).key, "PUT", "/v1/live", { venue: "Round1 Chicago", credit: 1, side: "1P" });
-    await as((await player("JUN.K")).key, "PUT", "/v1/live", { venue: "Garden City", credit: 3, side: "2P" });
+    await as((await player("MIKA")).key, "PUT", "/v1/live", { venue: "Round1 Chicago", credit: 1, side: "1P", session: "mika-tonight" });
+    await as((await player("JUN.K")).key, "PUT", "/v1/live", { venue: "Garden City", credit: 3, side: "2P", session: "junk-tonight" });
   },
   "credit: MIKA's credit syncs (songs and scores) and she starts the next": async () => {
     const mika = await player("MIKA");
     const live = (await as(YOU, "GET", "/v1/me")).following.find((p) => p.name === "MIKA")?.live;
     const credit = live?.credit ?? 1;
     await as(mika.key, "PUT", "/v1/credit", { session: "mika-tonight", credit, plays: someSongs(credit) });
-    await as(mika.key, "PUT", "/v1/live", { venue: "Round1 Chicago", credit: credit + 1, side: "1P" });
+    await as(mika.key, "PUT", "/v1/live", { venue: "Round1 Chicago", credit: credit + 1, side: "1P", session: "mika-tonight" });
   },
   "cheered: MIKA, REXX and TOFU cheer your latest credit (broadcast a session to see it on your live card)": async () => {
     const me = await you();
@@ -132,6 +132,15 @@ const scenarios = {
       await as((await player(name)).key, "PUT", "/v1/cheer",
         { by: me.id, session: yours.session, credit: yours.credit, preset: next });
     }
+  },
+  "wrapped: you're in REXX's circle and REXX finishes a three-credit session, which MIKA cheered": async () => {
+    const rexx = await joinTheirs("REXX");
+    for (const credit of [1, 2, 3]) {
+      await as(rexx.key, "PUT", "/v1/credit", { session: "rexx-thursday", credit, plays: someSongs(credit + 3) });
+    }
+    const mika = await player("MIKA");
+    await as(mika.key, "POST", "/v1/join", { code: (await as(rexx.key, "POST", "/v1/code")).code });
+    await as(mika.key, "PUT", "/v1/cheer", { by: rexx.id, session: "rexx-thursday", credit: 2, preset: "stamina" });
   },
   "end: MIKA and JUN.K end their sessions": async () => {
     for (const name of ["MIKA", "JUN.K"]) await as((await player(name)).key, "DELETE", "/v1/live");

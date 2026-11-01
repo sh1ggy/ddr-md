@@ -139,9 +139,13 @@ class _CreditSheetState extends State<_CreditSheet> {
   List<Cabinet> _cabinets = [];
   Cabinet? _cabinet;
   late PadSide _side = widget.last?.side ?? context.read<SessionState>().side;
-  late bool _broadcast = CircleState.broadcasting;
-  late bool _showLocation = !widget.newSession &&
-      Settings.getInt(Settings.circleShowLocationKey) == 1;
+  late bool _broadcast = widget.newSession
+      ? Settings.getInt(Settings.circleLiveDefaultKey) == 1
+      : CircleState.broadcasting;
+  late bool _showLocation = Settings.getInt(widget.newSession
+          ? Settings.circleLocationDefaultKey
+          : Settings.circleShowLocationKey) ==
+      1;
   // A credit starting now counts in like a workout set: 3, 2, 1, then go.
   int? _count;
   Timer? _countdown;

@@ -195,10 +195,13 @@ class Settings {
   static const String cloudSyncKeyKey = "cloudSyncKey";
   static const String circleKeyKey = "circleKey";
   static const String circleStateKey = "circleState";
-  // Broadcast sessions to the circle (1) or not (0), as last chosen when
-  // starting a credit.
+  // The running session is broadcast to the circle (1) or not (0).
   static const String circleBroadcastKey = "circleBroadcast";
   static const String circleShowLocationKey = "circleShowLocation";
+  // What a new session starts with, from the Circle tab's settings: going
+  // live to the circle (1) or not (0), and with the venue (1) or without.
+  static const String circleLiveDefaultKey = "circleLiveDefault";
+  static const String circleLocationDefaultKey = "circleLocationDefault";
   static const String cloudSyncedAtKey = "cloudSyncedAt";
 
   // Settings that follow the player to their other devices. Left out: the
@@ -247,6 +250,8 @@ class Settings {
     eamuseNameKey,
     eamusePlayCountKey,
     eamuseProfileLastPlayKey,
+    circleLiveDefaultKey,
+    circleLocationDefaultKey,
   };
 
   static Map<String, Object> syncedPrefs() => {

@@ -16,7 +16,7 @@
 //   GET    /v1/me                 -> {id, name, ddrCode, code, codeUntil, live?,
 //                                     circle: [person], following: [person]}
 //                                     person = {id, name, ddrCode, friend,
-//                                       live?: {venue, credit, side, at}}
+//                                       live?: {venue, credit, side, session, at}}
 //   PUT    /v1/me    {name, ddrCode}  joins circles, or changes either
 //   POST   /v1/code                a new invite code; the old one stops
 //   GET    /v1/code/CODE          -> {person, members, friends}
@@ -172,7 +172,7 @@ const person = (r) => ({
   name: r.name,
   ddrCode: r.ddrCode,
   friend: r.friend === 1,
-  ...(r.venue == null ? {} : { live: { venue: r.venue, credit: r.credit, side: r.side, at: r.at } }),
+  ...(r.venue == null ? {} : { live: { venue: r.venue, credit: r.credit, side: r.side, session: r.session ?? null, at: r.at } }),
 });
 
 async function state(db, me) {
@@ -185,7 +185,7 @@ async function state(db, me) {
       .bind(me.owner),
     db
       .prepare(
-        `SELECT p.id, p.name, p.ddrCode, ${FRIEND} AS friend, l.venue, l.credit, l.side, l.at
+        `SELECT p.id, p.name, p.ddrCode, ${FRIEND} AS friend, l.venue, l.credit, l.side, l.session, l.at
          FROM members m JOIN profiles p ON p.owner = m.leader
          LEFT JOIN live l ON l.owner = m.leader AND l.until > ?2
          WHERE m.member = ?1 ORDER BY m.at`,

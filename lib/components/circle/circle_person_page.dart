@@ -1,9 +1,9 @@
 /// Name: CirclePersonPage
 /// Parent: CirclePage
 /// Description: Someone from your circles: who they are and how you're tied,
-/// where they're playing when live, and the credits they've shared in the
-/// last two days to cheer. Refreshes every half minute while it's open.
-/// Leaving or taking out is in the corner.
+/// where they're playing and each credit of it to cheer while they're
+/// live, otherwise their last session in brief, cheered as one. Refreshes
+/// every half minute while it's open. Leaving or taking out is in the corner.
 library;
 
 import 'dart:async';
@@ -58,7 +58,11 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
             .where((p) => p.id == widget.person.id)
             .firstOrNull ??
         widget.person;
-    final credits = circle.creditsOf(person);
+    // Credit by credit while they're playing; once it's over, the session
+    // in brief.
+    final live = person.live != null;
+    final credits =
+        live ? circle.liveCreditsOf(person) : circle.lastSessionOf(person);
     final seesThem = widget.tie != CircleTie.cheeringYou;
     return Scaffold(
       appBar: AppBar(actions: [
@@ -67,7 +71,6 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
           tooltip: 'Circle options',
           onPressed: () => showPersonSheet(context, person, widget.tie),
         ),
-        const SizedBox(width: 12),
       ]),
       body: RefreshIndicator(
         onRefresh: circle.poll,
@@ -146,16 +149,17 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
                   'to see them.',
                   action: ('Scan theirs', () => openJoinCircle(context)))
             else if (credits.isEmpty)
-              _Note(person.live == null
+              _Note(!live
                   ? "Nothing shared in the last two days. When ${person.name} "
-                      'broadcasts a session, each credit shows here as it '
-                      'syncs, for you to cheer.'
+                      'goes live, each credit shows here as it syncs, for '
+                      'you to cheer.'
                   : 'Their credits show here as they sync, for you to cheer.')
-            else ...[
+            else if (live) ...[
               Text('CREDITS', style: pop.label),
               const SizedBox(height: 10),
               for (final c in credits) CircleCreditCard(c),
-            ],
+            ] else
+              CircleSessionCard(credits),
           ],
         ),
       ),

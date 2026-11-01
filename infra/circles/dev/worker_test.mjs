@@ -89,7 +89,7 @@ assert.equal((await call("a", "PUT", "/v1/live", { venue: "Round1", credit: 2, s
 // Only the broadcaster sees their session id.
 assert.equal((await call("a", "GET", "/v1/me")).body.live.session, "s-1");
 r = await call("b", "GET", "/v1/me");
-assert.deepEqual({ ...r.body.following[0].live, at: null }, { venue: "Round1", credit: 2, side: "2P", at: null });
+assert.deepEqual({ ...r.body.following[0].live, at: null }, { venue: "Round1", credit: 2, side: "2P", session: "s-1", at: null });
 assert.equal((await call("a", "DELETE", "/v1/live")).status, 204);
 assert.equal((await call("b", "GET", "/v1/me")).body.following[0].live, undefined);
 
