@@ -3,10 +3,11 @@
 /// Description: The Circle tab, people grouped by how you're tied: friends
 /// (in each other's circles) as bubbles, then the latest finished session
 /// of each you follow to cheer, then the one-way ties, those you cheer for
-/// and those cheering you on. The header holds Invite and the settings.
+/// and those cheering you on. The header holds Invite and the settings;
+/// scanning sits above the tab bar.
 /// Before joining circles there's the idea, your name and code from
 /// e-amusement and the button that starts your circle; while nobody's in it
-/// yet, scanning and your QR wait at the bottom.
+/// yet, scanning and your QR wait together at the bottom.
 library;
 
 import 'dart:async';
@@ -15,6 +16,7 @@ import 'package:ddr_md/components/circle/circle_credit_card.dart';
 import 'package:ddr_md/components/circle/circle_art.dart';
 import 'package:ddr_md/components/circle/circle_person_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
+import 'package:ddr_md/components/circle/circle_widgets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart'
     show signInAndSync;
@@ -158,7 +160,8 @@ class _CirclePageState extends State<CirclePage> {
                                 ),
                               ),
                             ])
-                      : null,
+                      : CircleScanButton(
+                          onPressed: () => openJoinCircle(context)),
                   child: RefreshIndicator(
                     edgeOffset: MediaQuery.paddingOf(context).top + 56,
                     onRefresh: circle.refresh,
@@ -424,7 +427,12 @@ class _PersonTile extends StatelessWidget {
           subtitle: switch (person.live) {
             final live? => Text('LIVE · ${_liveLine(live)}',
                 style: TextStyle(color: pop.voltText)),
-            null => Text(formatDdrCode(person.ddrCode)),
+            null => Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: DdrCodeBadge(person.ddrCode),
+                )),
           },
           onTap: () => openPersonPage(context, person, tie),
           trailing: Icon(Icons.chevron_right, color: pop.haze),
@@ -502,8 +510,8 @@ class _FirstRun extends StatelessWidget {
                             Text(name,
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w700, fontSize: 15)),
-                            Text('Rival code ${formatDdrCode(code)}',
-                                style: TextStyle(color: pop.haze)),
+                            const SizedBox(height: 6),
+                            DdrCodeBadge(code),
                           ]),
                     ),
                     Icon(Icons.lock_outline, size: 18, color: pop.haze),
@@ -557,17 +565,14 @@ class CircleProfileForm extends StatelessWidget {
     return Column(mainAxisSize: MainAxisSize.min, children: [
       _KonamiIdentity(label: 'Dancer name', value: name, available: hasProfile),
       const SizedBox(height: 8),
-      _KonamiIdentity(
-          label: 'Rival code',
-          value: code.length == 8 ? formatDdrCode(code) : '',
-          available: hasProfile),
-      const SizedBox(height: 8),
-      Text(
-          hasProfile
-              ? 'From your e-amusement profile, and kept in step with it at '
-                  'each sync.'
-              : 'Sync e-amusement from Home to load your Konami profile.',
-          style: TextStyle(color: pop.haze, height: 1.4)),
+      if (hasProfile)
+        Align(alignment: Alignment.centerLeft, child: DdrCodeBadge(code))
+      else ...[
+        const _KonamiIdentity(label: 'Rival code', value: '', available: false),
+        const SizedBox(height: 8),
+        Text('Sync e-amusement from Home to load your Konami profile.',
+            style: TextStyle(color: pop.haze, height: 1.4)),
+      ],
       if (circle.error.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text(circle.error,

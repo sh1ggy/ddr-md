@@ -6,6 +6,7 @@ import worker, { actors, apiFor, tick } from "./worker.js";
 import { d1 } from "../dev/d1.mjs";
 
 const DB = d1();
+const DATA_KEY = "00".repeat(32);
 const originalNow = Date.now;
 let now = originalNow();
 Date.now = () => now;
@@ -15,7 +16,7 @@ const strangerKey = randomBytes(32).toString("base64url");
 let mutations = 0;
 const send = async (request) => {
   if (request.method !== "GET") mutations++;
-  return circles.fetch(request, { DB });
+  return circles.fetch(request, { DB, DATA_KEY });
 };
 async function personal(method, path, body, key = personalKey) {
   const response = await send(new Request(`https://x${path}`, {
@@ -51,6 +52,18 @@ try {
   assert.equal(rexxFeed.yours.filter((c) => c.session === rexx.live.session).length, 3);
   assert.ok(rexxFeed.yours.some((c) => c.plays.some((p) => p.failed)));
   assert.ok(rexxFeed.yours.some((c) => c.plays.some((p) => p.best)));
+  // The app selects live credits using the session on the friend's profile.
+  // Checking only REXX's own feed misses a broadcast without that session.
+  const visibleRexx = me.following.find((p) => p.name === "REXX");
+  assert.equal(visibleRexx.live.session, rexx.live.session);
+  const visibleCredits = (await personal("GET", "/v1/feed")).credits
+    .filter((c) => c.by.id === visibleRexx.id && c.session === visibleRexx.live.session);
+  assert.equal(visibleCredits.length, 3, "REXX's live credits must be visible to the target");
+  assert.equal(visibleCredits.flatMap((c) => c.plays).length, 9);
+  for (const c of visibleCredits) {
+    assert.deepEqual(c.plays.map((p) => p.song), ["MAX 300", "Healing-D-Vision", "CHAOS"]);
+    assert.ok(c.plays.every((p) => Number.isInteger(p.score)));
+  }
   const before = mutations;
   await tick(env, { now, send });
   assert.equal(mutations, before, "unchanged ticks must not mutate anything");

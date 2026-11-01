@@ -11,6 +11,7 @@ import 'dart:async';
 import 'package:ddr_md/components/circle/circle_credit_card.dart';
 import 'package:ddr_md/components/circle/circle_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
+import 'package:ddr_md/components/circle/circle_widgets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart' show LivePulse;
 import 'package:ddr_md/models/circle_model.dart';
@@ -72,35 +73,40 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
           onPressed: () => showPersonSheet(context, person, widget.tie),
         ),
       ]),
+      bottomNavigationBar: !seesThem
+          ? SafeArea(
+              minimum: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: CircleScanButton(
+                label: 'Scan ${person.name}’s QR',
+                onPressed: () => openJoinCircle(context),
+              ),
+            )
+          : null,
       body: RefreshIndicator(
         onRefresh: circle.poll,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
           children: [
-            Row(children: [
+            Column(children: [
               CircleBubble(person, size: 72),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(person.name,
-                          style: FloorPop.display(24,
-                              color: Theme.of(context).colorScheme.onSurface)),
-                      Text('DDR-CODE ${formatDdrCode(person.ddrCode)}',
-                          style: TextStyle(color: pop.haze)),
-                      const SizedBox(height: 4),
-                      Row(children: [
-                        Icon(widget.tie.icon, size: 14, color: pop.voltText),
-                        const SizedBox(width: 6),
-                        Text(widget.tie.heading,
-                            style: TextStyle(
-                                color: pop.voltText,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600)),
-                      ]),
-                    ]),
-              ),
+              const SizedBox(height: 12),
+              Text(person.name,
+                  textAlign: TextAlign.center,
+                  style: FloorPop.display(24,
+                      color: Theme.of(context).colorScheme.onSurface)),
+              const SizedBox(height: 8),
+              DdrCodeBadge(person.ddrCode),
+              const SizedBox(height: 8),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(widget.tie.icon, size: 14, color: pop.voltText),
+                const SizedBox(width: 6),
+                Text(widget.tie.heading,
+                    style: TextStyle(
+                        color: pop.voltText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ]),
             ]),
             if (person.live case final live?) ...[
               const SizedBox(height: 16),
@@ -142,18 +148,22 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
               ),
             ],
             const SizedBox(height: 20),
-            if (!seesThem)
-              _Note(
-                  "${person.name} cheers for you, but you're not in their "
-                  "circle, so their sessions don't show here. Scan their QR "
-                  'to see them.',
-                  action: ('Scan theirs', () => openJoinCircle(context)))
-            else if (credits.isEmpty)
-              _Note(!live
-                  ? "Nothing shared in the last two days. When ${person.name} "
-                      'goes live, each credit shows here as it syncs, for '
-                      'you to cheer.'
-                  : 'Their credits show here as they sync, for you to cheer.')
+            if (!seesThem || credits.isEmpty)
+              CircleStory(
+                person: person,
+                you: (
+                  id: circle.id ?? 'you',
+                  name: circle.name,
+                  ddrCode: circle.ddrCode,
+                  friend: false,
+                  live: null,
+                ),
+                kind: !seesThem
+                    ? CircleStoryKind.cheeringYou
+                    : live
+                        ? CircleStoryKind.awaitingSync
+                        : CircleStoryKind.quiet,
+              )
             else if (live) ...[
               Text('CREDITS', style: pop.label),
               const SizedBox(height: 10),
@@ -165,22 +175,4 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
       ),
     );
   }
-}
-
-class _Note extends StatelessWidget {
-  const _Note(this.text, {this.action});
-  final String text;
-  final (String, VoidCallback)? action;
-
-  @override
-  Widget build(BuildContext context) =>
-      Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(text,
-            style: TextStyle(color: FloorPop.of(context).haze, height: 1.45)),
-        if (action case (final label, final onTap))
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: OutlinedButton(onPressed: onTap, child: Text(label)),
-          ),
-      ]);
 }

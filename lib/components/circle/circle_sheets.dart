@@ -9,6 +9,7 @@ library;
 
 import 'package:ddr_md/components/circle/circle_art.dart';
 import 'package:ddr_md/components/circle/circle_page.dart';
+import 'package:ddr_md/components/circle/circle_widgets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/session_page.dart' show confirmDelete;
 import 'package:ddr_md/models/circle_model.dart';
@@ -366,8 +367,7 @@ class _JoinCirclePageState extends State<JoinCirclePage> {
                   const SizedBox(height: 12),
                   Center(child: CircleBubble(preview.leader, size: 96)),
                   const SizedBox(height: 18),
-                  Text('DDR-CODE ${formatDdrCode(preview.leader.ddrCode)}',
-                      textAlign: TextAlign.center, style: pop.label),
+                  Center(child: DdrCodeBadge(preview.leader.ddrCode)),
                   const SizedBox(height: 6),
                   Text("Join ${preview.leader.name}'s circle",
                       textAlign: TextAlign.center,
@@ -566,15 +566,22 @@ Future<void> showPersonSheet(
         Text(person.name,
             style: FloorPop.display(18,
                 color: Theme.of(sheet).colorScheme.onSurface)),
-        Text('DDR-CODE ${formatDdrCode(person.ddrCode)}',
-            style: TextStyle(color: FloorPop.of(sheet).haze)),
+        const SizedBox(height: 6),
+        DdrCodeBadge(person.ddrCode),
         const SizedBox(height: 4),
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(tie.icon, size: 14, color: FloorPop.of(sheet).voltText),
-          const SizedBox(width: 6),
-          Text(tie.description,
-              style: TextStyle(color: FloorPop.of(sheet).haze, fontSize: 12)),
-        ]),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(tie.icon, size: 14, color: FloorPop.of(sheet).voltText),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(tie.description,
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(color: FloorPop.of(sheet).haze, fontSize: 12)),
+            ),
+          ]),
+        ),
         const SizedBox(height: 12),
         if (tie != CircleTie.cheeringYou)
           ListTile(
