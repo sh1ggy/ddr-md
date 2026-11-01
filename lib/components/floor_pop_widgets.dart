@@ -174,6 +174,38 @@ class _VoltButtonState extends State<VoltButton> {
   }
 }
 
+/// A secondary action beside a [VoltButton]: filled on the riser, no edge.
+class GhostButton extends StatelessWidget {
+  const GhostButton(
+      {super.key,
+      required this.onPressed,
+      required this.child,
+      this.icon,
+      this.height = 46});
+
+  final VoidCallback? onPressed;
+  final Widget child;
+  final Widget? icon;
+  // A VoltButton's height, to sit level beside one.
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = FilledButton.styleFrom(
+      backgroundColor: FloorPop.of(context).riser,
+      foregroundColor: Theme.of(context).colorScheme.onSurface,
+      minimumSize: Size(44, height),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      textStyle: const TextStyle(
+          fontFamily: kTextFont, fontWeight: FontWeight.w600, fontSize: 14),
+    );
+    return icon == null
+        ? FilledButton(style: style, onPressed: onPressed, child: child)
+        : FilledButton.icon(
+            style: style, onPressed: onPressed, icon: icon!, label: child);
+  }
+}
+
 /// A tab's title: Unbounded caps on the title lean.
 class PageTitle extends StatelessWidget {
   const PageTitle(this.text, {super.key, this.trailing});

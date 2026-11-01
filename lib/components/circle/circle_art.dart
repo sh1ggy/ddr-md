@@ -1,116 +1,17 @@
-/// Name: CircleExplainer
+/// Name: CircleArt
 /// Parent: CirclePage
-/// Description: How circles work, drawn: two round dancers and their phones.
-/// You scan their QR and you cheer for them; they cheer back (let in as you
-/// scan, or scanning yours); both ways round, you're friends. Shown once
-/// when a circle is started and from the Circle tab's info button; the last
-/// panel also fills the tab while nobody's in a circle yet.
+/// Description: Circles drawn: two round dancers and their phones. You scan
+/// their QR, they scan yours, or both ways round and you're friends. Heads
+/// the Circle tab's first run and empty state, and the page after joining.
 library;
 
 import 'dart:math' as math;
 
-import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 
-/// The three steps, each a drawing, a heading and a line.
-const _steps = [
-  (
-    CircleScene.youScan,
-    'Scan their QR',
-    "Now you cheer for them: you'll see when they're on the pad."
-  ),
-  (
-    CircleScene.theyScan,
-    'They cheer back',
-    'Let them cheer for you as you scan, or have them scan yours.',
-  ),
-  (
-    CircleScene.friends,
-    "You're friends",
-    'Both ways round, you cheer each other on. One scan can do it.',
-  ),
-];
-
 /// Which step of scanning each other a [CircleArt] draws.
 enum CircleScene { youScan, theyScan, friends }
-
-Future<void> showCircleExplainer(BuildContext context) => showModalBottomSheet(
-      context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => const _ExplainerSheet(),
-    );
-
-class _ExplainerSheet extends StatefulWidget {
-  const _ExplainerSheet();
-
-  @override
-  State<_ExplainerSheet> createState() => _ExplainerSheetState();
-}
-
-class _ExplainerSheetState extends State<_ExplainerSheet> {
-  final _pages = PageController();
-  int _page = 0;
-
-  @override
-  void dispose() {
-    _pages.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    final last = _page == _steps.length - 1;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          SizedBox(
-            height: 300,
-            child: PageView(
-              controller: _pages,
-              onPageChanged: (i) => setState(() => _page = i),
-              children: [
-                for (final (scene, title, line) in _steps)
-                  Column(children: [
-                    Expanded(child: CircleArt(scene)),
-                    const SizedBox(height: 12),
-                    Text(title,
-                        style: FloorPop.display(20,
-                            color: Theme.of(context).colorScheme.onSurface)),
-                    const SizedBox(height: 6),
-                    Text(line,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: pop.haze, height: 1.4)),
-                  ]),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          PageDots(_steps.length, index: _page),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: VoltButton(
-              onPressed: () => last
-                  ? Navigator.pop(context)
-                  : _pages.nextPage(
-                      duration: FloorPop.beat, curve: FloorPop.settle),
-              child: Text(last ? 'Got it' : 'Next',
-                  style: const TextStyle(
-                      fontFamily: kTextFont,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-}
 
 /// Two dancers, you in Pad Blue on the left and them in Coral on the
 /// right, bobbing on the beat through one [scene].
