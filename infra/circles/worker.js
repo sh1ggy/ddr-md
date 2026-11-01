@@ -9,7 +9,9 @@
 // from the key. Each player has one circle, joined with its invite code,
 // which lasts a day; whoever has it is in. Two players in each other's
 // circles are friends. A player can broadcast their session at the arcade
-// to their circle, which sees it on them until it ends or lapses.
+// to their circle, which sees it on them until it ends or lapses, and each
+// credit's songs as it syncs. Their circle can cheer each credit, one preset
+// each, and everyone in it sees the cheers. Credits and cheers last two days.
 //
 //   GET    /v1/me                 -> {id, name, ddrCode, code, codeUntil,
 //                                     circle: [person], following: [person]}
@@ -23,6 +25,13 @@
 //   DELETE /v1/following/ID       leaves their circle
 //   PUT    /v1/live  {venue, credit, side}  broadcasting, for LIVE_LIFE
 //   DELETE /v1/live               broadcast over
+//   PUT    /v1/credit {session, credit, plays: [play]}  a synced credit
+//                                     play = {song, mode, difficulty, score, failed, best}
+//   GET    /v1/feed               -> {credits: [{by: person, session, credit, at,
+//                                       plays, cheers: [cheer], mine}],
+//                                     yours: [{session, credit, at, plays, cheers}]}
+//                                     cheer = {name, preset}; mine = your preset
+//   PUT    /v1/cheer {by, session, credit, preset}  preset null takes it back
 //   DELETE /v1/me                 everything of this player's goes
 
 const SCHEMA = [
@@ -31,6 +40,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS members_member ON members(member)`,
   `CREATE TABLE IF NOT EXISTS days(day TEXT PRIMARY KEY, writes INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS live(owner TEXT PRIMARY KEY, venue TEXT NOT NULL, credit INTEGER NOT NULL, side TEXT NOT NULL, at TEXT NOT NULL, until TEXT NOT NULL) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS credits(owner TEXT NOT NULL, session TEXT NOT NULL, credit INTEGER NOT NULL, at TEXT NOT NULL, plays TEXT NOT NULL, PRIMARY KEY(owner, session, credit)) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS cheers(owner TEXT NOT NULL, session TEXT NOT NULL, credit INTEGER NOT NULL, cheerer TEXT NOT NULL, preset TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(owner, session, credit, cheerer)) WITHOUT ROWID`,
 ];
 
 // A dancer name as the cabinet allows it.
@@ -50,6 +61,12 @@ const DAY_WRITES = 50000;
 // never got to end.
 const LIVE_LIFE = 2 * 3600000;
 const VENUE = 40;
+// How long a credit and its cheers stay up.
+const FEED_LIFE = 2 * 86400000;
+// The cheers the app offers; nothing else is taken, so there's no free text
+// to moderate.
+const PRESETS = ["lets_go", "clean", "stamina", "so_close", "rest_up", "legend"];
+const SESSION = /^[A-Za-z0-9-]{1,64}$/;
 
 let ready;
 
@@ -99,6 +116,9 @@ async function route(request, db) {
   if (route === "DELETE following/") return leave(db, me, arg);
   if (route === "PUT live") return goLive(db, me, body);
   if (route === "DELETE live") return endLive(db, me);
+  if (route === "PUT credit") return postCredit(db, me, body);
+  if (route === "GET feed") return feed(db, me);
+  if (route === "PUT cheer") return cheer(db, me, body);
   return json({ error: "not found" }, 404);
 }
 
@@ -245,8 +265,124 @@ async function endLive(db, me) {
   return new Response(null, { status: 204 });
 }
 
+// A play as the feed shows it, or null for anything else.
+function playOf(p) {
+  const play = {
+    song: String(p?.song ?? "").slice(0, 120),
+    mode: p?.mode,
+    difficulty: p?.difficulty,
+    score: p?.score ?? null,
+    failed: p?.failed === true,
+    best: p?.best === true,
+  };
+  const ok =
+    play.song &&
+    ["singles", "doubles"].includes(play.mode) &&
+    /^[A-Z]{1,12}$/.test(play.difficulty ?? "") &&
+    (play.score === null || (Number.isInteger(play.score) && play.score >= 0 && play.score <= 1000000));
+  return ok ? play : null;
+}
+
+async function postCredit(db, me, body) {
+  const credit = Number(body?.credit);
+  const plays = Array.isArray(body?.plays) ? body.plays.slice(0, 6).map(playOf) : [];
+  if (!SESSION.test(body?.session ?? "") || !Number.isInteger(credit) || credit < 1 ||
+      plays.length === 0 || plays.includes(null)) {
+    return json({ error: "credit" }, 400);
+  }
+  const now = Date.now();
+  const old = new Date(now - FEED_LIFE).toISOString();
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO credits(owner, session, credit, at, plays) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(owner, session, credit) DO UPDATE SET plays = ?5`,
+      )
+      .bind(me.owner, body.session, credit, new Date(now).toISOString(), JSON.stringify(plays)),
+    // Their own old credits and cheers go as new ones come.
+    db.prepare(`DELETE FROM credits WHERE owner = ? AND at < ?`).bind(me.owner, old),
+    db.prepare(`DELETE FROM cheers WHERE owner = ? AND at < ?`).bind(me.owner, old),
+  ]);
+  return new Response(null, { status: 204 });
+}
+
+async function feed(db, me) {
+  const since = new Date(Date.now() - FEED_LIFE).toISOString();
+  const [theirs, yours, cheers] = await db.batch([
+    db
+      .prepare(
+        `SELECT c.owner, c.session, c.credit, c.at, c.plays, p.id, p.name, p.ddrCode, ${FRIEND} AS friend
+         FROM members m JOIN credits c ON c.owner = m.leader JOIN profiles p ON p.owner = m.leader
+         WHERE m.member = ?1 AND c.at > ?2 ORDER BY c.at DESC LIMIT 50`,
+      )
+      .bind(me.owner, since),
+    db
+      .prepare(`SELECT session, credit, at, plays FROM credits WHERE owner = ? AND at > ? ORDER BY at DESC LIMIT 20`)
+      .bind(me.owner, since),
+    db
+      .prepare(
+        `SELECT ch.owner, ch.session, ch.credit, ch.preset, ch.cheerer = ?1 AS mine, p.name
+         FROM cheers ch JOIN profiles p ON p.owner = ch.cheerer
+         WHERE (ch.owner = ?1 OR ch.owner IN (SELECT leader FROM members WHERE member = ?1)) AND ch.at > ?2
+         ORDER BY ch.at`,
+      )
+      .bind(me.owner, since),
+  ]);
+  const cheersOf = (owner, session, credit) =>
+    cheers.results.filter((c) => c.owner === owner && c.session === session && c.credit === credit);
+  return json({
+    credits: theirs.results.map((c) => {
+      const on = cheersOf(c.owner, c.session, c.credit);
+      return {
+        by: person(c),
+        session: c.session,
+        credit: c.credit,
+        at: c.at,
+        plays: JSON.parse(c.plays),
+        cheers: on.map((x) => ({ name: x.name, preset: x.preset })),
+        mine: on.find((x) => x.mine === 1)?.preset ?? null,
+      };
+    }),
+    yours: yours.results.map((c) => ({
+      session: c.session,
+      credit: c.credit,
+      at: c.at,
+      plays: JSON.parse(c.plays),
+      cheers: cheersOf(me.owner, c.session, c.credit).map((x) => ({ name: x.name, preset: x.preset })),
+    })),
+  });
+}
+
+async function cheer(db, me, body) {
+  const preset = body?.preset ?? null;
+  if (preset !== null && !PRESETS.includes(preset)) return json({ error: "preset" }, 400);
+  // Only someone in their circle cheers a credit they've posted.
+  const credit = await db
+    .prepare(
+      `SELECT c.owner FROM credits c JOIN profiles p ON p.owner = c.owner
+       JOIN members m ON m.leader = c.owner AND m.member = ?1
+       WHERE p.id = ?2 AND c.session = ?3 AND c.credit = ?4`,
+    )
+    .bind(me.owner, String(body?.by ?? ""), String(body?.session ?? ""), Number(body?.credit))
+    .first();
+  if (!credit) return json({ error: "credit" }, 404);
+  const key = [credit.owner, body.session, Number(body.credit), me.owner];
+  await (preset === null
+    ? db.prepare(`DELETE FROM cheers WHERE owner = ?1 AND session = ?2 AND credit = ?3 AND cheerer = ?4`).bind(...key)
+    : db
+        .prepare(
+          `INSERT INTO cheers(owner, session, credit, cheerer, preset, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+           ON CONFLICT DO UPDATE SET preset = ?5, at = ?6`,
+        )
+        .bind(...key, preset, new Date().toISOString())
+  ).run();
+  return new Response(null, { status: 204 });
+}
+
 async function remove(db, owner) {
   await db.batch([
+    db.prepare(`DELETE FROM credits WHERE owner = ?`).bind(owner),
+    db.prepare(`DELETE FROM cheers WHERE owner = ?1 OR cheerer = ?1`).bind(owner),
     db.prepare(`DELETE FROM live WHERE owner = ?`).bind(owner),
     db.prepare(`DELETE FROM members WHERE leader = ?1 OR member = ?1`).bind(owner),
     db.prepare(`DELETE FROM profiles WHERE owner = ?`).bind(owner),

@@ -11,7 +11,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '31 October 2026';
+const privacyUpdated = '1 November 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
@@ -99,7 +99,15 @@ const privacySections = <(String, List<String>)>[
           'code and how long it lasts, who is in your circle and whose '
           "circles you are in are kept on DDR MD's circles server (hosted on "
           'Cloudflare), so people in your circles see that name and code and '
-          'whether you are friends. Like Cloud '
+          'whether you are friends. If you broadcast a session (a switch '
+          'when you start one), the circles you lead also see that you are '
+          'playing, the venue name you gave it, your credit and pad side, '
+          'and each credit\'s songs, scores, fails and new bests once '
+          'e-amusement syncs them. They can cheer a credit with one of a '
+          'few set cheers, which everyone in your circle sees with their '
+          'name. A broadcast ends with its session (or two hours after its '
+          'last credit), and credits and cheers are deleted after two days. '
+          'Like Cloud '
           'Backup there is no account, but the random key is a separate one, '
           'kept the same way, and the server stores only a one-way fingerprint '
           "of it. Cloudflare sees your IP address and the "

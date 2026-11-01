@@ -4,6 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/models/circle_credits.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
@@ -73,6 +74,18 @@ void main() async {
       onHide: CloudSync.syncQuietly, onResume: CloudSync.syncQuietly);
   // A broadcast ends with its session; the next one asks again.
   session.onSessionEnded = () => circles.endBroadcast(keepChoice: true);
+  // While broadcasting, each sync shares the session's credits with the
+  // circle, the last one included once the session's ended.
+  String? broadcastSession;
+  var syncing = false;
+  eamuse.addListener(() {
+    if (session.session case final s?) broadcastSession = s.id;
+    final now = eamuse.status == EamuseStatus.syncing;
+    if (syncing && !now && CircleState.broadcasting) {
+      if (broadcastSession case final id?) shareSessionCredits(circles, id);
+    }
+    syncing = now;
+  });
 }
 
 class App extends StatelessWidget {

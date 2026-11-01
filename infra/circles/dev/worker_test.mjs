@@ -85,7 +85,31 @@ assert.deepEqual({ ...r.body.following[0].live, at: null }, { venue: "Round1", c
 assert.equal((await call("a", "DELETE", "/v1/live")).status, 204);
 assert.equal((await call("b", "GET", "/v1/me")).body.following[0].live, undefined);
 
+// A credit shows to its circle, who can cheer it once each; the poster sees
+// the cheers on their own.
+const play = { song: "MAX 300", mode: "singles", difficulty: "EXPERT", score: 912540, failed: false, best: true };
+assert.equal((await call("a", "PUT", "/v1/credit", { session: "s-1", credit: 1, plays: [] })).status, 400);
+assert.equal((await call("a", "PUT", "/v1/credit", { session: "s-1", credit: 1, plays: [{ ...play, mode: "x" }] })).status, 400);
+assert.equal((await call("a", "PUT", "/v1/credit", { session: "s-1", credit: 1, plays: [play] })).status, 204);
+r = await call("b", "GET", "/v1/feed");
+assert.equal(r.body.credits.length, 1);
+assert.deepEqual(r.body.credits[0].plays, [play]);
+assert.equal(r.body.credits[0].mine, null);
+const target = { by: a, session: "s-1", credit: 1 };
 await call("c", "PUT", "/v1/me", { name: "GUESSER", ddrCode: "11112222" });
+assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: "shout" })).status, 400);
+assert.equal((await call("c", "PUT", "/v1/cheer", { ...target, preset: "clean" })).status, 404);
+assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, credit: 2, preset: "clean" })).status, 404);
+assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: "clean" })).status, 204);
+assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: "legend" })).status, 204);
+assert.equal((await call("b", "GET", "/v1/feed")).body.credits[0].mine, "legend");
+r = await call("a", "GET", "/v1/feed");
+assert.deepEqual(r.body.yours[0].cheers, [{ name: "MIKA", preset: "legend" }]);
+assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: null })).status, 204);
+assert.equal((await call("a", "GET", "/v1/feed")).body.yours[0].cheers.length, 0);
+// Someone outside the circle sees none of it.
+assert.equal((await call("c", "GET", "/v1/feed")).body.credits.length, 0);
+
 for (let i = 0; i < 30; i++) await call("c", "GET", "/v1/code/AAAAAAAA");
 assert.equal((await call("c", "GET", `/v1/code/${code}`)).status, 429);
 

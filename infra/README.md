@@ -279,6 +279,14 @@ the Circle tab. Release builds point at the live server; others need
   scan makes friends. A leader can take anyone out of their circle; they can come back
   with a live code. Code lookups are capped per player per day so codes can't be guessed, and
   writes per day overall so the account is never billed.
+- **Live sessions and cheers.** A broadcast session shows on its player
+  (venue, credit, side) until it ends or lapses after two hours. After each
+  e-amusement sync during one, the app shares the session's credits (songs,
+  scores, fails, new bests), and the circle can cheer each with one of a few
+  preset cheers (no free text, nothing to moderate). Credits and cheers
+  last two days. The app polls only while it shows live people or your own
+  broadcast: once a minute on the Circle tab and the live card, every half
+  minute on someone's page.
 
 ### Trying it locally
 

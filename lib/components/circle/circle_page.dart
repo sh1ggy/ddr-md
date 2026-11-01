@@ -8,7 +8,10 @@
 /// code, filled from e-amusement when linked.
 library;
 
+import 'dart:async';
+
 import 'package:ddr_md/components/circle/circle_explainer.dart';
+import 'package:ddr_md/components/circle/circle_person_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart' show LivePulse;
@@ -30,10 +33,12 @@ class _CirclePageState extends State<CirclePage> {
   // (made with this key elsewhere) though none is kept here.
   bool _checking = CircleState.available;
   late final AppLifecycleListener _lifecycle;
+  late final Timer _poll;
 
   @override
   void dispose() {
     _lifecycle.dispose();
+    _poll.cancel();
     super.dispose();
   }
 
@@ -43,7 +48,16 @@ class _CirclePageState extends State<CirclePage> {
     final circle = context.read<CircleState>();
     // Back in the app, what changed meanwhile (someone joining) shows.
     _lifecycle = AppLifecycleListener(onResume: () {
-      if (circle.id != null) circle.refresh();
+      if (circle.id != null) circle.poll();
+    });
+    // Someone you follow on the pad: their credits and credit number keep
+    // up while this tab's on screen, not while another tab is.
+    _poll = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted &&
+          TickerMode.valuesOf(context).enabled &&
+          circle.following.any((p) => p.live != null)) {
+        circle.poll();
+      }
     });
     if (!_checking) return;
     WidgetsBinding.instance
@@ -272,7 +286,7 @@ class _FriendBubbles extends StatelessWidget {
           for (final p in friends)
             InkWell(
               borderRadius: BorderRadius.circular(16),
-              onTap: () => showPersonSheet(context, p, CircleTie.friends),
+              onTap: () => openPersonPage(context, p, CircleTie.friends),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -362,7 +376,7 @@ class _PersonTile extends StatelessWidget {
                 style: TextStyle(color: pop.voltText)),
             null => Text(formatDdrCode(person.ddrCode)),
           },
-          onTap: () => showPersonSheet(context, person, tie),
+          onTap: () => openPersonPage(context, person, tie),
           trailing: TextButton.icon(
             onPressed: () =>
                 youCheer ? showInviteSheet(context) : openJoinCircle(context),

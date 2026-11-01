@@ -61,6 +61,20 @@ async function joinTheirs(name) {
   return p;
 }
 
+// Three or four plays for a credit, a different set each [credit].
+const songs = [
+  ["MAX 300", "EXPERT"], ["PARANOiA Revolution", "DIFFICULT"], ["Healing-D-Vision", "EXPERT"],
+  ["Lesson by DJ", "EXPERT"], ["Valkyrie dimension", "DIFFICULT"], ["CHAOS", "EXPERT"],
+  ["Pluto Relinquish", "DIFFICULT"],
+];
+function someSongs(credit) {
+  return Array.from({ length: 3 + (credit % 2) }, (_, i) => {
+    const [song, difficulty] = songs[(credit * 3 + i) % songs.length];
+    const score = 850000 + ((credit * 7919 + i * 104729) % 149990);
+    return { song, mode: "singles", difficulty, score, failed: i === 2 && credit % 3 === 0, best: i === 0 };
+  });
+}
+
 const scenarios = {
   "seed: a circle to look at: MIKA a friend, REXX and TOFU in yours, you in JUN.K's": async () => {
     await joinYours("MIKA");
@@ -83,10 +97,25 @@ const scenarios = {
     await as((await player("MIKA")).key, "PUT", "/v1/live", { venue: "Round1 Chicago", credit: 1, side: "1P" });
     await as((await player("JUN.K")).key, "PUT", "/v1/live", { venue: "Garden City", credit: 3, side: "2P" });
   },
-  "credit: MIKA moves on to their next credit": async () => {
-    const mika = (await as(YOU, "GET", "/v1/me")).following.find((p) => p.name === "MIKA");
-    const credit = (mika?.live?.credit ?? 0) + 1;
-    await as((await player("MIKA")).key, "PUT", "/v1/live", { venue: "Round1 Chicago", credit, side: "1P" });
+  "credit: MIKA's credit syncs (songs and scores) and she starts the next": async () => {
+    const mika = await player("MIKA");
+    const live = (await as(YOU, "GET", "/v1/me")).following.find((p) => p.name === "MIKA")?.live;
+    const credit = live?.credit ?? 1;
+    await as(mika.key, "PUT", "/v1/credit", { session: "mika-tonight", credit, plays: someSongs(credit) });
+    await as(mika.key, "PUT", "/v1/live", { venue: "Round1 Chicago", credit: credit + 1, side: "1P" });
+  },
+  "cheered: MIKA, REXX and TOFU cheer your latest credit": async () => {
+    const me = await you();
+    let yours = (await as(YOU, "GET", "/v1/feed")).yours[0];
+    // Nothing posted from the app yet: a credit of yours to cheer.
+    if (!yours) {
+      await as(YOU, "PUT", "/v1/credit", { session: "dev-session", credit: 1, plays: someSongs(1) });
+      yours = (await as(YOU, "GET", "/v1/feed")).yours[0];
+    }
+    for (const [name, preset] of [["MIKA", "legend"], ["REXX", "clean"], ["TOFU", "lets_go"]]) {
+      await as((await player(name)).key, "PUT", "/v1/cheer",
+        { by: me.id, session: yours.session, credit: yours.credit, preset });
+    }
   },
   "end: MIKA and JUN.K end their sessions": async () => {
     for (const name of ["MIKA", "JUN.K"]) await as((await player(name)).key, "DELETE", "/v1/live");
@@ -112,4 +141,10 @@ const me = await as(YOU, "GET", "/v1/me");
 console.log(`${run[0]}\n`);
 console.log(`you: ${me.name ?? "(no profile)"} · code ${me.code ?? "none"}`);
 console.log(`  your circle: ${me.circle?.map((p) => p.name + (p.friend ? " (friend)" : "")).join(", ") || "nobody"}`);
+if (me.id) {
+  const feed = await as(YOU, "GET", "/v1/feed");
+  const cheers = (c) => (c.cheers.length ? ` · ${c.cheers.map((x) => `${x.name} ${x.preset}`).join(", ")}` : "");
+  for (const c of feed.credits.slice(0, 3)) console.log(`  feed:        ${c.by.name} credit ${c.credit}, ${c.plays.length} songs${cheers(c)}`);
+  for (const c of feed.yours.slice(0, 3)) console.log(`  your credit: ${c.credit}, ${c.plays.length} songs${cheers(c)}`);
+}
 console.log(`  you're in:   ${me.following?.map((p) => p.name + (p.friend ? " (friend)" : "") + (p.live ? ` (live, credit ${p.live.credit})` : "")).join(", ") || "nobody's"}`);

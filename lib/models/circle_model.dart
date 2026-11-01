@@ -3,7 +3,8 @@
 /// Description: The player's circle, through the Worker in infra/circles: the
 /// DDR dancer name and DDR-CODE others know them by, the invite code (a day
 /// long) that lets people into their circle, who's in it, and whose circles
-/// they're in, and who of them is at the arcade right now. Two players in
+/// they're in, and who of them is at the arcade right now, with the credits
+/// they share as each syncs and the preset cheers on them. Two players in
 /// each other's circles are friends. There's no
 /// sign-in: the account is its own [DeviceKey], apart from the backup's. The
 /// last answer is kept so the tab shows something offline.
@@ -42,6 +43,47 @@ typedef CirclePerson = ({
 
 /// A circle an invite code opens, before joining it.
 typedef CirclePreview = ({CirclePerson leader, int members, int friends});
+
+/// The cheers on offer: presets only, so there's no free text to moderate.
+/// [id] is what the server takes.
+enum Cheer {
+  letsGo('lets_go', "LET'S GO"),
+  clean('clean', 'CLEAN!'),
+  stamina('stamina', 'STAMINA'),
+  soClose('so_close', 'SO CLOSE'),
+  restUp('rest_up', 'REST UP'),
+  legend('legend', 'LEGEND');
+
+  const Cheer(this.id, this.label);
+  final String id;
+  final String label;
+
+  static Cheer? of(Object? id) =>
+      Cheer.values.where((c) => c.id == id).firstOrNull;
+}
+
+/// One song of a shared credit, as e-amusement synced it. [best]: it set
+/// the chart's best.
+typedef CirclePlay = ({
+  String song,
+  String mode,
+  String difficulty,
+  int? score,
+  bool failed,
+  bool best
+});
+
+/// A credit someone shared as it synced, and the cheers on it. [by] is null
+/// for your own; [mine] is the cheer you gave it.
+typedef CircleCredit = ({
+  CirclePerson? by,
+  String session,
+  int credit,
+  DateTime at,
+  List<CirclePlay> plays,
+  List<({String name, Cheer cheer})> cheers,
+  Cheer? mine,
+});
 
 /// What the server said no to, worded for the player.
 class CircleException implements Exception {
@@ -88,8 +130,20 @@ class CircleState extends ChangeNotifier {
   DateTime? codeUntil;
   List<CirclePerson> circle = const [];
   List<CirclePerson> following = const [];
+
+  /// Credits shared by those whose circles you're in, newest first.
+  List<CircleCredit> feed = const [];
+
+  /// Your own shared credits, newest first, with their cheers.
+  List<CircleCredit> yours = const [];
   bool loading = false;
   String error = '';
+
+  /// [person]'s shared credits, newest first.
+  List<CircleCredit> creditsOf(CirclePerson person) => [
+        for (final c in feed)
+          if (c.by?.id == person.id) c
+      ];
 
   bool get codeLive =>
       code != null && codeUntil != null && codeUntil!.isAfter(DateTime.now());
@@ -190,7 +244,122 @@ class CircleState extends ChangeNotifier {
     }
   }
 
-  Future<void> refresh() => _run(() => _send('GET', 'v1/me'));
+  Future<void> refresh() => _run(() async {
+        await _send('GET', 'v1/me');
+        await _loadFeed();
+      });
+
+  /// [refresh] without showing it: for polling while someone's live. A
+  /// failure waits for the next one.
+  Future<void> poll() async {
+    if (!available || id == null) return;
+    try {
+      await _send('GET', 'v1/me');
+      await _loadFeed();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Circles: poll failed: $e');
+    }
+  }
+
+  Future<void> _loadFeed() async {
+    if (id == null) return;
+    final m = await _send('GET', 'v1/feed');
+    List<CircleCredit> credits(Object? list) => [
+          for (final c in (list as List? ?? const []).cast<Map>())
+            (
+              by: c['by'] == null ? null : _person(c['by'] as Map),
+              session: c['session'] as String,
+              credit: c['credit'] as int,
+              at: DateTime.tryParse(c['at'] as String? ?? '') ?? DateTime.now(),
+              plays: [
+                for (final p in (c['plays'] as List).cast<Map>())
+                  (
+                    song: p['song'] as String,
+                    mode: p['mode'] as String,
+                    difficulty: p['difficulty'] as String,
+                    score: p['score'] as int?,
+                    failed: p['failed'] == true,
+                    best: p['best'] == true,
+                  )
+              ],
+              cheers: [
+                for (final x in (c['cheers'] as List? ?? const []).cast<Map>())
+                  if (Cheer.of(x['preset']) case final cheer?)
+                    (name: x['name'] as String, cheer: cheer)
+              ],
+              mine: Cheer.of(c['mine']),
+            )
+        ];
+    feed = credits(m?['credits']);
+    yours = credits(m?['yours']);
+  }
+
+  /// Cheers [credit] with [cheer], or takes yours back with null. Shown at
+  /// once; a failure puts it back.
+  Future<void> cheerFor(CircleCredit credit, Cheer? cheer) async {
+    final before = feed;
+    feed = [
+      for (final c in feed)
+        if (c.by?.id == credit.by?.id &&
+            c.session == credit.session &&
+            c.credit == credit.credit)
+          (
+            by: c.by,
+            session: c.session,
+            credit: c.credit,
+            at: c.at,
+            plays: c.plays,
+            cheers: [
+              for (final x in c.cheers)
+                if (x.name != name) x,
+              if (cheer != null) (name: name, cheer: cheer),
+            ],
+            mine: cheer,
+          )
+        else
+          c
+    ];
+    notifyListeners();
+    try {
+      await _send('PUT', 'v1/cheer', {
+        'by': credit.by!.id,
+        'session': credit.session,
+        'credit': credit.credit,
+        'preset': cheer?.id,
+      });
+    } catch (e) {
+      debugPrint('Circles: cheer not sent: $e');
+      feed = before;
+      notifyListeners();
+    }
+  }
+
+  /// Shares one synced credit of [session] with your circle; sending the
+  /// same songs again changes nothing. Quietly, from the arcade.
+  Future<void> shareCredit(
+      String session, int credit, List<CirclePlay> plays) async {
+    if (!available || id == null || plays.isEmpty) return;
+    try {
+      await _send('PUT', 'v1/credit', {
+        'session': session,
+        'credit': credit,
+        'plays': [
+          for (final p in plays)
+            {
+              'song': p.song,
+              'mode': p.mode,
+              'difficulty': p.difficulty,
+              'score': p.score,
+              'failed': p.failed,
+              'best': p.best,
+            }
+        ],
+      });
+    } catch (e) {
+      debugPrint('Circles: credit not shared: $e');
+    }
+  }
 
   /// Joins circles as [dancer] with [code], or changes either. True when
   /// the server took them.
