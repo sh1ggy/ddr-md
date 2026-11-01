@@ -458,6 +458,11 @@ class _GoalSheetState extends State<_GoalSheet> {
                 TextButton(
                     onPressed: () => Navigator.pop(context, (null,)),
                     child: const Text('No goal')),
+              IconButton(
+                tooltip: 'Close',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
             ]),
             const SizedBox(height: 14),
             GridView.count(
