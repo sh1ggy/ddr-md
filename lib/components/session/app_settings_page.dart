@@ -1,8 +1,9 @@
 /// Name: AppSettingsPage
 /// Parent: SessionPage
 /// Description: Settings, opened from Home's gear: check for song updates,
-/// turn on cloud backup, choose whether e-amusement syncs doubles, read the
-/// privacy notes and credits, and the app version with links.
+/// turn on cloud backup, choose when e-amusement syncs and whether it reads
+/// doubles, sign out of it, read the privacy notes and credits, and the app
+/// version with links.
 library;
 
 import 'package:ddr_md/components/session/recent_plays.dart';
@@ -17,6 +18,7 @@ import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -54,10 +56,10 @@ class AppSettingsPage extends StatelessWidget {
                     padding: clearOfBars(
                         context, const EdgeInsets.fromLTRB(8, 8, 8, 72)),
                     children: [
-                      if (developmentToolsEnabled) const DevelopmentToolsTile(),
+                      const DevelopmentToolsTile(),
                       const Card(child: _ContentTile()),
                       const Card(child: _CloudTile()),
-                      const Card(child: _SyncDoublesTile()),
+                      const Card(child: _EamuseTiles()),
                       Card(
                         child: ListTile(
                           leading: const Icon(Icons.privacy_tip_outlined),
@@ -149,27 +151,71 @@ class AppSettingsPage extends StatelessWidget {
   }
 }
 
-class _SyncDoublesTile extends StatefulWidget {
-  const _SyncDoublesTile();
+/// When e-amusement syncs on its own and what it reads, and signing out.
+class _EamuseTiles extends StatefulWidget {
+  const _EamuseTiles();
 
   @override
-  State<_SyncDoublesTile> createState() => _SyncDoublesTileState();
+  State<_EamuseTiles> createState() => _EamuseTilesState();
 }
 
-class _SyncDoublesTileState extends State<_SyncDoublesTile> {
+class _EamuseTilesState extends State<_EamuseTiles> {
   @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
-      secondary: const Icon(Icons.people_outline),
-      title: const Text("Sync Doubles",
-          style: TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: const Text("Include doubles in e-amusement syncs"),
-      value: EamuseSyncState.syncDoubles,
-      onChanged: (on) async {
-        await EamuseSyncState.setSyncDoubles(on);
-        if (mounted) setState(() {});
-      },
+    final state = context.watch<EamuseSyncState>();
+    return Column(children: [
+      SwitchListTile(
+        secondary: const Icon(Icons.cloud_sync_outlined),
+        title: const Text("Sync Each Credit",
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: const Text(
+            "Collect plays as each credit ends, not just at the session's end"),
+        value: EamuseSyncState.syncEachCredit,
+        onChanged: (on) async {
+          await EamuseSyncState.setSyncEachCredit(on);
+          if (mounted) setState(() {});
+        },
+      ),
+      SwitchListTile(
+        secondary: const Icon(Icons.people_outline),
+        title: const Text("Sync Doubles",
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: const Text("Include doubles in e-amusement syncs"),
+        value: EamuseSyncState.syncDoubles,
+        onChanged: (on) async {
+          await EamuseSyncState.setSyncDoubles(on);
+          if (mounted) setState(() {});
+        },
+      ),
+      if (state.status != EamuseStatus.signedOut)
+        ListTile(
+          leading: const Icon(Icons.logout),
+          title: const Text("Sign Out of e-amusement",
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text("Your synced scores stay on this device"),
+          enabled: state.status != EamuseStatus.syncing,
+          onTap: () => _confirmSignOut(state),
+        ),
+    ]);
+  }
+
+  Future<void> _confirmSignOut(EamuseSyncState state) async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign out of e-amusement?'),
+        content: const Text('Your synced scores stay on this device.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Sign out')),
+        ],
+      ),
     );
+    if (yes == true) await state.signOut();
   }
 }
 

@@ -182,6 +182,12 @@ class Settings {
   // 1 = leave doubles charts out of e-amusement syncs.
   static const String eamuseSkipDoublesKey = "eamuseSkipDoubles";
 
+  // 1 = the development tools are unlocked in a release build.
+  static const String developmentToolsKey = "developmentTools";
+
+  // 1 = sync each credit's plays as it ends, not only at the session's end.
+  static const String eamuseSyncEachCreditKey = "eamuseSyncEachCredit";
+
   // The e-amusement player status, from the play data index: dancer name,
   // total plays and last play (Japan-time text, as above). The rival code is
   // kept under [rivalCodeSpeedKey].

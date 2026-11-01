@@ -24,7 +24,6 @@ import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse.dart';
-import 'package:ddr_md/models/session_model.dart' show Credit;
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/foundation.dart';
@@ -109,20 +108,20 @@ class EamuseSyncState extends ChangeNotifier {
 
   /// After a credit ends, when its plays are looked for: once they've had
   /// time to reach e-amusement, and again if they hadn't yet.
-  static const creditSyncDelays = [
-    Duration(seconds: 90),
-    Duration(minutes: 4)
-  ];
+  static const creditSyncDelays = [Duration(seconds: 90), Duration(minutes: 4)];
 
-  /// Long enough for a credit to be over, for one the player didn't end by
-  /// starting the next.
-  static const creditLength = Duration(minutes: 8);
   Timer? _creditSync;
 
-  /// A credit just ended: its plays are synced as soon as they're up, once
-  /// the player has synced at all.
+  static bool get syncEachCredit =>
+      Settings.getInt(Settings.eamuseSyncEachCreditKey) == 1;
+
+  static Future<void> setSyncEachCredit(bool on) =>
+      Settings.setInt(Settings.eamuseSyncEachCreditKey, on ? 1 : 0);
+
+  /// A credit just ended: with [syncEachCredit] on, its plays are synced as
+  /// soon as they're up, once the player has synced at all.
   void creditEnded() {
-    if (syncedAt == null) return;
+    if (!syncEachCredit || syncedAt == null) return;
     _creditSync?.cancel();
     final before = Settings.getString(Settings.eamuseLastPlayKey);
     void attempt(int i) => _creditSync = Timer(creditSyncDelays[i], () async {
@@ -133,15 +132,6 @@ class EamuseSyncState extends ChangeNotifier {
           }
         });
     attempt(0);
-  }
-
-  /// Back in the app during [credit]: once it's had time to end, its plays
-  /// are synced unless a sync since already has.
-  void resumed(Credit? credit) {
-    final at = syncedAt;
-    if (credit == null || at == null) return;
-    final over = credit.startedAt.add(creditLength);
-    if (DateTime.now().isAfter(over) && at.isBefore(over)) sync();
   }
 
   void _holdOff(Duration wait) {

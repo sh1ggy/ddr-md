@@ -73,6 +73,8 @@ void main() async {
   CloudSync.syncQuietly();
   AppLifecycleListener(
       onHide: CloudSync.syncQuietly, onResume: CloudSync.syncQuietly);
+  // Each credit's plays sync once the next credit starts, when that's on.
+  session.onCreditEnded = eamuse.creditEnded;
   // A broadcast ends with its session; the next one asks again.
   session.onSessionEnded = () => circles.endBroadcast(keepChoice: true);
   // While broadcasting, each sync shares the session's credits with the

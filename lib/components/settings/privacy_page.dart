@@ -62,8 +62,9 @@ const privacySections = <(String, List<String>)>[
           'like a browser would, and DDR MD keeps any Konami renews during a '
           'sync. If the e-amusement session has lapsed, Sync reopens the '
           'sign-in page out of sight, which signs straight back in while '
-          'Konami still remembers you. When you tap Sync, and when you end a '
-          'session, DDR MD '
+          'Konami still remembers you. When you tap Sync, when you end a '
+          'session, and after each credit if you turn that on in Settings, '
+          'DDR MD '
           'uses that cookie to read your DDR WORLD play data from '
           "Konami's e-amusement site: your recent plays first, then only the "
           'charts you played since the last sync (or, the first time, every '

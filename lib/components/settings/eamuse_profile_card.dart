@@ -8,6 +8,8 @@ library;
 import 'dart:math';
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/settings/development_page.dart'
+    show toggleDevelopmentTools;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/grades.dart' show flareClassColor, flareClassIcon;
 import 'package:ddr_md/models/database.dart';
@@ -33,6 +35,36 @@ Future<String?> _flareClass() async {
       .map((m) => flareSkill(records, Songs.list, m).total)
       .reduce(max);
   return flareClass(total).name;
+}
+
+/// Four quick taps on the flare rank unlock the development tools, or lock
+/// them again.
+class _FlareTaps extends StatefulWidget {
+  const _FlareTaps({required this.child});
+  final Widget child;
+
+  @override
+  State<_FlareTaps> createState() => _FlareTapsState();
+}
+
+class _FlareTapsState extends State<_FlareTaps> {
+  int _taps = 0;
+  DateTime _last = DateTime(0);
+
+  void _tap() {
+    final now = DateTime.now();
+    _taps = now.difference(_last) < const Duration(milliseconds: 600)
+        ? _taps + 1
+        : 1;
+    _last = now;
+    if (_taps < 4) return;
+    _taps = 0;
+    toggleDevelopmentTools(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+      behavior: HitTestBehavior.opaque, onTap: _tap, child: widget.child);
 }
 
 class EamuseProfileCard extends StatelessWidget {
@@ -102,10 +134,12 @@ class EamuseProfileCard extends StatelessWidget {
                       ? Transform.rotate(
                           angle: -0.07,
                           child: const PadGlyph(size: 48, lit: true))
-                      : Tooltip(
-                          message: 'Flare rank',
-                          child: Image.asset(flareClassIcon(cls),
-                              width: 64, filterQuality: FilterQuality.medium),
+                      : _FlareTaps(
+                          child: Tooltip(
+                            message: 'Flare rank',
+                            child: Image.asset(flareClassIcon(cls),
+                                width: 64, filterQuality: FilterQuality.medium),
+                          ),
                         ),
                   const SizedBox(width: 14),
                   Expanded(

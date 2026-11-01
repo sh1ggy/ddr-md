@@ -22,21 +22,41 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Always reachable in debug and profile builds; absent from release UI.
-const developmentToolsEnabled = !kReleaseMode;
+/// Always reachable in debug and profile builds; in a release, once four
+/// quick taps on Profile's flare rank unlock them.
+final developmentToolsEnabled = ValueNotifier(
+    !kReleaseMode || Settings.getInt(Settings.developmentToolsKey) == 1);
 
+/// Unlocks the development tools in a release, or locks them again.
+Future<void> toggleDevelopmentTools(BuildContext context) async {
+  final on = Settings.getInt(Settings.developmentToolsKey) != 1;
+  await Settings.setInt(Settings.developmentToolsKey, on ? 1 : 0);
+  developmentToolsEnabled.value = !kReleaseMode || on;
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            on ? 'Development tools unlocked' : 'Development tools locked')));
+  }
+}
+
+/// A way into [DevelopmentPage], while [developmentToolsEnabled].
 class DevelopmentToolsTile extends StatelessWidget {
   const DevelopmentToolsTile({super.key});
   @override
-  Widget build(BuildContext context) => Card(
-          child: ListTile(
-        leading: const Icon(Icons.developer_mode),
-        title: const Text('Development'),
-        subtitle: const Text('Session wrap, seeded scores and card effects'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const DevelopmentPage())),
-      ));
+  Widget build(BuildContext context) => ValueListenableBuilder(
+      valueListenable: developmentToolsEnabled,
+      builder: (context, on, _) => !on
+          ? const SizedBox.shrink()
+          : Card(
+              child: ListTile(
+              leading: const Icon(Icons.developer_mode),
+              title: const Text('Development'),
+              subtitle:
+                  const Text('Session wrap, seeded scores and card effects'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DevelopmentPage())),
+            )));
 }
 
 const _previewCards = 12;

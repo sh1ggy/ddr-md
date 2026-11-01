@@ -259,6 +259,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   int? _revision;
   // Bumped per load, so only the latest lands.
   int _loads = 0;
+  Future<void>? _loading;
   late final _spin =
       AnimationController(vsync: this, duration: const Duration(seconds: 14))
         ..repeat();
@@ -306,7 +307,13 @@ class _SessionWrapPageState extends State<SessionWrapPage>
       await _heard(eamuse);
     }
     await eamuse.sync(ended: true);
-    await _load();
+    _load();
+    // A load started since (a cloud sync pulling, say) drops this one, so
+    // collecting is over only once the latest has landed.
+    Future<void>? landed;
+    while (landed != _loading) {
+      await (landed = _loading);
+    }
     // Seen here, so Home doesn't offer it again.
     await Settings.setString(Settings.sessionWrapSinceKey, '');
     if (mounted) setState(() => _collecting = false);
@@ -323,8 +330,9 @@ class _SessionWrapPageState extends State<SessionWrapPage>
     if (mounted) setState(() {});
   }
 
-  Future<void> _load() async {
-    final load = ++_loads;
+  Future<void> _load() => _loading = _read(++_loads);
+
+  Future<void> _read(int load) async {
     final data = await loadVisits(null);
     final visit = data.visits
         .where((v) => v.session?.id == widget.sessionId && v.plays.isNotEmpty)

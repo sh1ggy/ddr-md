@@ -1,8 +1,9 @@
 /// Name: EamuseSyncCard
 /// Parent: SessionPage
-/// Description: Home's e-amusement row: sync status, a round sync button
-/// ringed by the running sync's progress from [EamuseSyncState], and sign
-/// out. Signs in on Konami's own page first when needed.
+/// Description: Home's e-amusement row: when it last synced and when it
+/// syncs on its own, with one button to sync now (or stop, or sign in on
+/// Konami's own page first) and a bar along the bottom while it runs.
+/// Signing out and the auto-sync choice live in Settings.
 library;
 
 import 'package:ddr_md/helpers.dart';
@@ -28,185 +29,101 @@ class EamuseSyncCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<EamuseSyncState>();
     final theme = Theme.of(context);
-    final syncing = state.status == EamuseStatus.syncing;
-    if (state.status == EamuseStatus.signedOut) {
-      return _SignedOutRow(onSignIn: () => _signInAndSync(context));
-    }
-    final at = state.syncedAt;
-    final status = switch (state.status) {
-      EamuseStatus.syncing => 'Syncing ${(state.progress * 100).round()}%',
-      EamuseStatus.signedOut => 'Signed out',
-      EamuseStatus.failed => state.error,
-      EamuseStatus.idle when at != null => [
-          '${state.charts} charts',
-          if (state.changed != null)
-            state.changed == 0 ? 'no changes' : '${state.changed} updated',
-          if (state.cards case final n? when n > 0)
-            '$n ${n == 1 ? 'card' : 'cards'} collected',
-          formatDate(at),
-        ].join(' · '),
-      EamuseStatus.idle => 'Not synced yet',
-    };
     final scheme = theme.colorScheme;
-    return _AccountRow(
-      lines: [
-        Text(status,
-            style: theme.textTheme.bodySmall?.copyWith(
-                color: state.status == EamuseStatus.failed
-                    ? scheme.error
-                    : scheme.onSurfaceVariant)),
-        if (state.note.isNotEmpty)
-          Text(state.note,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant)),
-      ],
-      trailing: [
-        IconButton(
-          tooltip: 'Sign out',
-          icon: const Icon(Icons.logout, size: 20),
-          color: scheme.onSurfaceVariant,
-          onPressed: syncing ? null : () => _confirmSignOut(context, state),
+    final at = state.syncedAt;
+    final (status, detail) = switch (state.status) {
+      EamuseStatus.signedOut => (
+          'Not signed in',
+          'Sign in to collect your plays and cards'
         ),
-        const SizedBox(width: 4),
-        _SyncButton(state),
-      ],
-    );
-  }
-
-  Future<void> _confirmSignOut(
-      BuildContext context, EamuseSyncState state) async {
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sign out of e-amusement?'),
-        content: const Text('Your synced scores stay on this device.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Sign out')),
-        ],
-      ),
-    );
-    if (yes == true) await state.signOut();
-  }
-}
-
-/// The card signed out, with a sign-in button.
-class _SignedOutRow extends StatelessWidget {
-  const _SignedOutRow({required this.onSignIn});
-
-  final VoidCallback onSignIn;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return _AccountRow(
-      lines: [
-        Text('Not signed in',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant)),
-      ],
-      trailing: [
-        // Same round button in the same place as sync once signed in.
-        SizedBox.square(
-          dimension: 48,
-          child: Center(
-            child: IconButton.filled(
-              tooltip: 'Sign in',
-              icon: const Icon(Icons.login),
-              onPressed: onSignIn,
-            ),
-          ),
+      EamuseStatus.syncing => (
+          'Syncing · ${(state.progress * 100).round()}%',
+          state.note
         ),
-      ],
-    );
-  }
-}
-
-/// The card's one row: the icon, the title over its status lines, then
-/// actions.
-class _AccountRow extends StatelessWidget {
-  const _AccountRow({required this.lines, required this.trailing});
-
-  final List<Widget> lines;
-  final List<Widget> trailing;
-
-  @override
-  Widget build(BuildContext context) {
+      EamuseStatus.failed => (state.error, _auto),
+      EamuseStatus.idle when at == null => ('Not synced yet', _auto),
+      EamuseStatus.idle => (
+          [
+            'Synced ${formatAgo(at!)}',
+            if (state.changed case final n? when n > 0) '$n updated',
+            if (state.cards case final n? when n > 0)
+              '$n ${n == 1 ? 'card' : 'cards'}',
+          ].join(' · '),
+          _auto
+        ),
+    };
+    final button = switch (state.status) {
+      EamuseStatus.signedOut => FilledButton(
+          onPressed: () => _signInAndSync(context),
+          child: const Text('Sign in')),
+      EamuseStatus.syncing =>
+        TextButton(onPressed: state.stop, child: const Text('Stop')),
+      EamuseStatus.failed => FilledButton.tonal(
+          onPressed: state.waiting ? null : state.sync,
+          child: const Text('Retry')),
+      _ when state.upToDate => FilledButton.tonalIcon(
+          onPressed: null,
+          icon: const Icon(Icons.check, size: 18),
+          label: const Text('Synced')),
+      _ => FilledButton.tonalIcon(
+          onPressed: state.waiting ? null : state.sync,
+          icon: const Icon(Icons.sync, size: 18),
+          label: const Text('Sync')),
+    };
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-        child: Row(children: [
-          // Centred on the title and status together.
-          Icon(Icons.cloud_sync_outlined,
-              size: 20, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('e-amusement',
-                    style:
-                        TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                ...lines,
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          ...trailing,
-        ]),
-      ),
-    );
-  }
-}
-
-/// A round sync button. While syncing, a ring around it fills to the
-/// progress and it stops the sync.
-class _SyncButton extends StatelessWidget {
-  const _SyncButton(this.state);
-
-  final EamuseSyncState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final syncing = state.status == EamuseStatus.syncing;
-    return SizedBox.square(
-      dimension: 48,
-      child: Stack(alignment: Alignment.center, children: [
-        if (syncing)
-          SizedBox.square(
-            dimension: 48,
-            child: CircularProgressIndicator(
-              value: state.progress,
-              strokeWidth: 3,
-              backgroundColor:
-                  Theme.of(context).colorScheme.surfaceContainerHighest,
-            ),
-          ),
-        syncing
-            ? IconButton.filledTonal(
-                tooltip: 'Stop syncing',
-                icon: const Icon(Icons.stop),
-                onPressed: state.stop,
-              )
-            : IconButton.filled(
-                tooltip: state.upToDate
-                    ? 'Up to date'
-                    : state.waiting
-                        ? 'Sync again shortly'
-                        : 'Sync scores',
-                icon: Icon(state.upToDate ? Icons.check : Icons.sync),
-                onPressed: state.upToDate || state.waiting ? null : state.sync,
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          child: Row(children: [
+            Icon(Icons.cloud_sync_outlined, color: scheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('e-amusement',
+                      style:
+                          TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                  Text(status,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                          color: state.status == EamuseStatus.failed
+                              ? scheme.error
+                              : null)),
+                  if (detail.isNotEmpty)
+                    Text(detail,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant)),
+                ],
               ),
+            ),
+            const SizedBox(width: 8),
+            button,
+          ]),
+        ),
+        // The running sync along the card's foot; the same height idle, so
+        // the card doesn't jump.
+        SizedBox(
+          height: 3,
+          child: state.status == EamuseStatus.syncing
+              ? LinearProgressIndicator(
+                  value: state.progress == 0 ? null : state.progress,
+                  minHeight: 3)
+              : null,
+        ),
       ]),
     );
   }
+
+  /// When it syncs without being asked.
+  static String get _auto => EamuseSyncState.syncEachCredit
+      ? 'Also syncs after each credit and when a session ends'
+      : 'Also syncs when you end a session';
 }
 
 /// Konami's sign-in page in an in-app browser: the page's title over its
