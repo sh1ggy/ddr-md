@@ -1,14 +1,15 @@
 /// Name: CheersStrip
 /// Parent: LiveSessionCard
 /// Description: Under your live card while you broadcast: your latest shared
-/// credit of [sessionId] and the cheers it's had, or that it's waiting for
-/// some. Checks for new cheers every minute while it's on screen, so
-/// polling only happens during a broadcast session.
+/// credit of [sessionId] and the cheers it's had as stamps, new ones
+/// popping in, or that it's waiting for some. Checks for new cheers every
+/// minute while it's on screen, so polling only happens during a broadcast
+/// session.
 library;
 
 import 'dart:async';
 
-import 'package:ddr_md/components/circle/circle_credit_card.dart';
+import 'package:ddr_md/components/circle/cheer_stamp.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +25,8 @@ class CheersStrip extends StatefulWidget {
 
 class _CheersStripState extends State<CheersStrip> {
   late final Timer _poll;
+  // Cheers already shown, so only new arrivals pop in.
+  final _seen = <String>{};
 
   @override
   void initState() {
@@ -55,7 +58,7 @@ class _CheersStripState extends State<CheersStrip> {
       padding: const EdgeInsets.only(top: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.campaign_outlined, size: 16, color: pop.voltText),
+          const PomPom(size: 16),
           const SizedBox(width: 6),
           Text(
               latest == null
@@ -66,8 +69,12 @@ class _CheersStripState extends State<CheersStrip> {
         ]),
         if (latest != null && latest.cheers.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Wrap(spacing: 6, runSpacing: 6, children: [
-            for (final c in latest.cheers) CheerChip(c.name, c.cheer),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final c in latest.cheers)
+              CheerStamp(c.cheer,
+                  key: ValueKey('${latest.credit}:${c.name}:${c.cheer.id}'),
+                  name: c.name,
+                  pop: _seen.add('${latest.credit}:${c.name}:${c.cheer.id}')),
           ]),
         ],
       ]),

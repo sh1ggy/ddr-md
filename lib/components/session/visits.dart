@@ -390,16 +390,7 @@ class StartSessionCard extends StatelessWidget {
                 height: 62,
                 radius: 20,
                 tooltip: last == null ? 'Start session' : null,
-                onPressed: () async {
-                  if (last == null) {
-                    await showStartSessionSheet(context);
-                    return;
-                  }
-                  await context.read<SessionState>().start(
-                      Venue(last.cabinet.venueId, last.cabinet.venueName),
-                      last.cabinet,
-                      last.side);
-                },
+                onPressed: () => showStartSessionSheet(context, last: last),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                   child: Row(children: [

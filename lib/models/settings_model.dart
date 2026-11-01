@@ -198,6 +198,7 @@ class Settings {
   // Broadcast sessions to the circle (1) or not (0), as last chosen when
   // starting a credit.
   static const String circleBroadcastKey = "circleBroadcast";
+  static const String circleShowLocationKey = "circleShowLocation";
   static const String cloudSyncedAtKey = "cloudSyncedAt";
 
   // Settings that follow the player to their other devices. Left out: the

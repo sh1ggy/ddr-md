@@ -13,7 +13,7 @@
 // credit's songs as it syncs. Their circle can cheer each credit, one preset
 // each, and everyone in it sees the cheers. Credits and cheers last two days.
 //
-//   GET    /v1/me                 -> {id, name, ddrCode, code, codeUntil,
+//   GET    /v1/me                 -> {id, name, ddrCode, code, codeUntil, live?,
 //                                     circle: [person], following: [person]}
 //                                     person = {id, name, ddrCode, friend,
 //                                       live?: {venue, credit, side, at}}
@@ -23,7 +23,7 @@
 //   POST   /v1/join  {code, back}  -> {name}  back: let them into yours too
 //   DELETE /v1/circle/ID          takes them out of your circle
 //   DELETE /v1/following/ID       leaves their circle
-//   PUT    /v1/live  {venue, credit, side}  broadcasting, for LIVE_LIFE
+//   PUT    /v1/live  {venue, credit, side, session?}  broadcasting, for LIVE_LIFE
 //   DELETE /v1/live               broadcast over
 //   PUT    /v1/credit {session, credit, plays: [play]}  a synced credit
 //                                     play = {song, mode, difficulty, score, failed, best}
@@ -39,9 +39,11 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS members(leader TEXT NOT NULL, member TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(leader, member)) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS members_member ON members(member)`,
   `CREATE TABLE IF NOT EXISTS days(day TEXT PRIMARY KEY, writes INTEGER NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS live(owner TEXT PRIMARY KEY, venue TEXT NOT NULL, credit INTEGER NOT NULL, side TEXT NOT NULL, at TEXT NOT NULL, until TEXT NOT NULL) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS live(owner TEXT PRIMARY KEY, venue TEXT NOT NULL, credit INTEGER NOT NULL, side TEXT NOT NULL, session TEXT, at TEXT NOT NULL, until TEXT NOT NULL) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS credits(owner TEXT NOT NULL, session TEXT NOT NULL, credit INTEGER NOT NULL, at TEXT NOT NULL, plays TEXT NOT NULL, PRIMARY KEY(owner, session, credit)) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS credits_at ON credits(owner, at)`,
   `CREATE TABLE IF NOT EXISTS cheers(owner TEXT NOT NULL, session TEXT NOT NULL, credit INTEGER NOT NULL, cheerer TEXT NOT NULL, preset TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(owner, session, credit, cheerer)) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS cheers_at ON cheers(owner, at)`,
 ];
 
 // A dancer name as the cabinet allows it.
@@ -54,9 +56,13 @@ const CODE = /^[A-HJ-NP-Z2-9]{8}$/;
 const DAY_LOOKUPS = 30;
 // How long an invite code works: long enough for a night at the arcade.
 const CODE_LIFE = 86400000;
-// Writes per UTC day, everyone together: well inside the free plan's D1
-// allowance, so the account is never billed for circles.
-const DAY_WRITES = 50000;
+// Conservative daily mutation budget. This limits database work, not
+// Cloudflare billing; platform quotas still apply.
+const DAY_WRITES = 40000;
+const WRITE_RESERVATION = 20;
+const MAX_BODY = 8192;
+const MAX_MEMBERS = 100;
+const MAX_CREDITS = 100;
 // A broadcast lapses this long after its last credit, for a session the app
 // never got to end.
 const LIVE_LIFE = 2 * 3600000;
@@ -73,9 +79,43 @@ let ready;
 export default {
   async fetch(request, env) {
     try {
-      ready ??= env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
+      // Reject malformed auth/routes and throttle before touching D1.
+      const auth = request.headers.get('Authorization') ?? '';
+      if (!/^Bearer [A-Za-z0-9_-]{43}$/.test(auth)) return json({error: 'key'}, 401);
+      const url = new URL(request.url);
+      const allowed = /^(GET \/v1\/(me|feed|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer)|POST \/v1\/(code|join)|DELETE \/v1\/(me|live|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
+      if (!allowed.test(`${request.method} ${url.pathname}`)) return json({error: 'not found'}, 404);
+      if (!env.REQUEST_RATE && request.cf) return json({error: 'unavailable'}, 503);
+      const ip = request.headers.get('CF-Connecting-IP') ?? 'local';
+      if (env.NETWORK_RATE && !(await env.NETWORK_RATE.limit({key: ip})).success) return json({error: 'rate limit'}, 429);
+      const owner = await sha256(auth.slice(7));
+      if (env.REQUEST_RATE && !(await env.REQUEST_RATE.limit({key: owner})).success) return json({error: 'rate limit'}, 429);
+      if ((url.pathname.startsWith('/v1/code/') || url.pathname === '/v1/join') &&
+          env.INVITE_RATE && !(await env.INVITE_RATE.limit({key: ip})).success) return json({error: 'rate limit'}, 429);
+      let body = null;
+      if (['PUT', 'POST'].includes(request.method) && request.body) {
+        const reader = request.body.getReader();
+        const chunks = [];
+        let size = 0;
+        for (;;) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > MAX_BODY) { await reader.cancel(); return json({error: 'body too large'}, 413); }
+          chunks.push(value);
+        }
+        const data = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
+        if (size) {
+          try { body = JSON.parse(new TextDecoder().decode(data)); }
+          catch { return json({error: 'json'}, 400); }
+          if (!body || typeof body !== 'object' || Array.isArray(body)) return json({error: 'json'}, 400);
+        }
+      }
+      ready ??= initialise(env.DB);
       await ready;
-      return await route(request, env.DB);
+      return await route(request, env.DB, owner, body);
     } catch (e) {
       ready = undefined;
       console.error(e);
@@ -84,24 +124,26 @@ export default {
   },
 };
 
-async function route(request, db) {
-  const key = (request.headers.get("Authorization") ?? "").replace(/^Bearer /, "");
-  if (!/^[A-Za-z0-9_-]{43}$/.test(key)) return json({ error: "key" }, 401);
-  const owner = await sha256(key);
+// Additive upgrade for databases made before broadcasts carried a session.
+async function initialise(db) {
+  await db.batch(SCHEMA.map((s) => db.prepare(s)));
+  const columns = await db.prepare("PRAGMA table_info(live)").all();
+  if (!columns.results.some((column) => column.name === "session")) {
+    await db.prepare("ALTER TABLE live ADD COLUMN session TEXT").run();
+  }
+}
+
+async function route(request, db, owner, body) {
   const { pathname } = new URL(request.url);
-  const [, version, what, arg] = pathname.split("/").map(decodeURIComponent);
-  if (version !== "v1") return json({ error: "not found" }, 404);
-  const body = request.method === "GET" || request.method === "DELETE"
-    ? null
-    : await request.json().catch(() => null);
+  const [, version, what, arg] = pathname.split('/');
   const route = `${request.method} ${what}${arg === undefined ? "" : "/"}`;
-  if (request.method !== "GET") {
+  if (request.method !== "GET" || what === "code") {
     const day = new Date().toISOString().slice(0, 10);
     const used = await db
-      .prepare(`INSERT INTO days(day, writes) VALUES (?1, 1) ON CONFLICT(day) DO UPDATE SET writes = writes + 1 RETURNING writes`)
-      .bind(day)
+      .prepare(`INSERT INTO days(day, writes) VALUES (?1, ?2) ON CONFLICT(day) DO UPDATE SET writes = writes + ?2 WHERE writes + ?2 <= ?3 RETURNING writes`)
+      .bind(day, WRITE_RESERVATION, DAY_WRITES)
       .first();
-    if (used.writes > DAY_WRITES) return json({ error: "daily limit" }, 429);
+    if (!used) return json({ error: "daily limit" }, 429);
   }
   if (route === "PUT me") return claim(db, owner, body);
   if (route === "DELETE me") return remove(db, owner);
@@ -134,7 +176,7 @@ const person = (r) => ({
 });
 
 async function state(db, me) {
-  const [circle, following] = await db.batch([
+  const [circle, following, live] = await db.batch([
     db
       .prepare(
         `SELECT p.id, p.name, p.ddrCode, ${FRIEND} AS friend
@@ -149,6 +191,9 @@ async function state(db, me) {
          WHERE m.member = ?1 ORDER BY m.at`,
       )
       .bind(me.owner, new Date().toISOString()),
+    db
+      .prepare(`SELECT venue, credit, side, session, at FROM live WHERE owner = ? AND until > ?`)
+      .bind(me.owner, new Date().toISOString()),
   ]);
   return json({
     id: me.id,
@@ -156,6 +201,8 @@ async function state(db, me) {
     ddrCode: me.ddrCode,
     code: me.code,
     codeUntil: me.codeUntil,
+    // Your own broadcast, session included, which only you see.
+    live: live.results[0] ?? null,
     circle: circle.results.map(person),
     following: following.results.map(person),
   });
@@ -188,9 +235,11 @@ async function newCode(db, me) {
 // The circle a live code opens, after this player's daily allowance.
 async function byCode(db, me, code) {
   const day = new Date().toISOString().slice(0, 10);
-  const used = me.day === day ? me.lookups : 0;
-  if (used >= DAY_LOOKUPS) return { error: json({ error: "daily limit" }, 429) };
-  await db.prepare(`UPDATE profiles SET day = ?1, lookups = ?2 WHERE owner = ?3`).bind(day, used + 1, me.owner).run();
+  const counted = await db.prepare(`UPDATE profiles SET day = ?1,
+    lookups = CASE WHEN day = ?1 THEN lookups + 1 ELSE 1 END
+    WHERE owner = ?2 AND (day != ?1 OR lookups < ?3) RETURNING lookups`)
+    .bind(day, me.owner, DAY_LOOKUPS).first();
+  if (!counted) return {error: json({error: 'daily limit'}, 429)};
   code = String(code ?? "").toUpperCase().replaceAll(/[^A-Z0-9]/g, "");
   if (!CODE.test(code)) return { error: json({ error: "code" }, 404) };
   const leader = await db
@@ -217,12 +266,17 @@ async function lookup(db, me, code) {
 async function join(db, me, code, back) {
   const { leader, error } = await byCode(db, me, code);
   if (error) return error;
-  const insert = `INSERT INTO members(leader, member, at) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING`;
+  const insert = `INSERT INTO members(leader, member, at) SELECT ?1, ?2, ?3
+    WHERE (SELECT count(*) FROM members WHERE leader = ?1) < ${MAX_MEMBERS}
+      AND (SELECT count(*) FROM members WHERE member = ?2) < ${MAX_MEMBERS}
+    ON CONFLICT DO NOTHING`;
   const now = new Date().toISOString();
   await db.batch([
     db.prepare(insert).bind(leader.owner, me.owner, now),
     ...(back ? [db.prepare(insert).bind(me.owner, leader.owner, now)] : []),
   ]);
+  const joined = await db.prepare(`SELECT 1 FROM members WHERE leader = ? AND member = ?`).bind(leader.owner, me.owner).first();
+  if (!joined) return json({error: 'circle full'}, 409);
   return json({ name: leader.name });
 }
 
@@ -246,16 +300,20 @@ async function goLive(db, me, body) {
   const venue = String(body?.venue ?? "").trim().slice(0, VENUE);
   const credit = Number(body?.credit);
   const side = body?.side;
-  if (!venue || !Number.isInteger(credit) || credit < 1 || !["1P", "2P"].includes(side)) {
+  // The app's session id, which its shared credits carry, so a broadcast's
+  // credits can be told from another session's.
+  const session = body?.session == null ? null : String(body.session);
+  if (!Number.isInteger(credit) || credit < 1 || credit > 500 || !["1P", "2P"].includes(side) ||
+      (session !== null && !SESSION.test(session))) {
     return json({ error: "live" }, 400);
   }
   const now = Date.now();
   await db
     .prepare(
-      `INSERT INTO live(owner, venue, credit, side, at, until) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-       ON CONFLICT(owner) DO UPDATE SET venue = ?2, credit = ?3, side = ?4, until = ?6`,
+      `INSERT INTO live(owner, venue, credit, side, session, at, until) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+       ON CONFLICT(owner) DO UPDATE SET venue = ?2, credit = ?3, side = ?4, session = ?5, until = ?7`,
     )
-    .bind(me.owner, venue, credit, side, new Date(now).toISOString(), new Date(now + LIVE_LIFE).toISOString())
+    .bind(me.owner, venue, credit, side, session, new Date(now).toISOString(), new Date(now + LIVE_LIFE).toISOString())
     .run();
   return new Response(null, { status: 204 });
 }
@@ -285,24 +343,27 @@ function playOf(p) {
 
 async function postCredit(db, me, body) {
   const credit = Number(body?.credit);
-  const plays = Array.isArray(body?.plays) ? body.plays.slice(0, 6).map(playOf) : [];
-  if (!SESSION.test(body?.session ?? "") || !Number.isInteger(credit) || credit < 1 ||
+  const plays = Array.isArray(body?.plays) && body.plays.length <= 6 ? body.plays.map(playOf) : [];
+  if (!SESSION.test(body?.session ?? "") || !Number.isInteger(credit) || credit < 1 || credit > 500 ||
       plays.length === 0 || plays.includes(null)) {
     return json({ error: "credit" }, 400);
   }
   const now = Date.now();
   const old = new Date(now - FEED_LIFE).toISOString();
-  await db.batch([
+  const posted = await db.batch([
     db
       .prepare(
-        `INSERT INTO credits(owner, session, credit, at, plays) VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT(owner, session, credit) DO UPDATE SET plays = ?5`,
+        `INSERT INTO credits(owner, session, credit, at, plays) SELECT ?1, ?2, ?3, ?4, ?5
+         WHERE (SELECT count(*) FROM credits WHERE owner = ?1 AND at > ?6) < ${MAX_CREDITS}
+           OR EXISTS(SELECT 1 FROM credits WHERE owner = ?1 AND session = ?2 AND credit = ?3)
+         ON CONFLICT(owner, session, credit) DO UPDATE SET plays = ?5 RETURNING credit`,
       )
-      .bind(me.owner, body.session, credit, new Date(now).toISOString(), JSON.stringify(plays)),
+      .bind(me.owner, body.session, credit, new Date(now).toISOString(), JSON.stringify(plays), old),
     // Their own old credits and cheers go as new ones come.
     db.prepare(`DELETE FROM credits WHERE owner = ? AND at < ?`).bind(me.owner, old),
     db.prepare(`DELETE FROM cheers WHERE owner = ? AND at < ?`).bind(me.owner, old),
   ]);
+  if (!posted[0].results.length) return json({error: 'credit limit'}, 429);
   return new Response(null, { status: 204 });
 }
 
@@ -324,7 +385,7 @@ async function feed(db, me) {
         `SELECT ch.owner, ch.session, ch.credit, ch.preset, ch.cheerer = ?1 AS mine, p.name
          FROM cheers ch JOIN profiles p ON p.owner = ch.cheerer
          WHERE (ch.owner = ?1 OR ch.owner IN (SELECT leader FROM members WHERE member = ?1)) AND ch.at > ?2
-         ORDER BY ch.at`,
+         ORDER BY ch.at DESC LIMIT 2000`,
       )
       .bind(me.owner, since),
   ]);
@@ -361,9 +422,9 @@ async function cheer(db, me, body) {
     .prepare(
       `SELECT c.owner FROM credits c JOIN profiles p ON p.owner = c.owner
        JOIN members m ON m.leader = c.owner AND m.member = ?1
-       WHERE p.id = ?2 AND c.session = ?3 AND c.credit = ?4`,
+       WHERE p.id = ?2 AND c.session = ?3 AND c.credit = ?4 AND c.at > ?5`,
     )
-    .bind(me.owner, String(body?.by ?? ""), String(body?.session ?? ""), Number(body?.credit))
+    .bind(me.owner, String(body?.by ?? ""), String(body?.session ?? ""), Number(body?.credit), new Date(Date.now() - FEED_LIFE).toISOString())
     .first();
   if (!credit) return json({ error: "credit" }, 404);
   const key = [credit.owner, body.session, Number(body.credit), me.owner];
@@ -396,5 +457,8 @@ async function sha256(text) {
 }
 
 function json(body, status = 200) {
-  return Response.json(body, { status });
+  return Response.json(body, {status, headers: {
+    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+    ...(status === 429 ? {'Retry-After': '60'} : {}),
+  }});
 }

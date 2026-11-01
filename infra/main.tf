@@ -154,10 +154,30 @@ resource "cloudflare_workers_script" "circles" {
   content_sha256     = filesha256("${path.module}/circles/worker.js")
   main_module        = "worker.js"
   compatibility_date = "2026-10-01"
+  observability = {
+    enabled = true
+    logs    = { enabled = true, invocation_logs = true }
+    traces  = { enabled = true }
+  }
   bindings = [{
     type = "d1"
     name = "DB"
     id   = cloudflare_d1_database.circles.id
+    }, {
+    type         = "ratelimit"
+    name         = "REQUEST_RATE"
+    namespace_id = "71001"
+    simple       = { limit = 120, period = 60 }
+    }, {
+    type         = "ratelimit"
+    name         = "NETWORK_RATE"
+    namespace_id = "71002"
+    simple       = { limit = 600, period = 60 }
+    }, {
+    type         = "ratelimit"
+    name         = "INVITE_RATE"
+    namespace_id = "71003"
+    simple       = { limit = 30, period = 60 }
   }]
 }
 

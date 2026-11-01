@@ -7,6 +7,11 @@
 import { YOU, keyOf } from "./d1.mjs";
 
 const URL = process.env.CIRCLES_URL ?? "http://localhost:8787";
+if (!["localhost", "127.0.0.1", "[::1]"].includes(new globalThis.URL(URL).hostname) &&
+    !process.argv.includes("--allow-remote-fixtures")) {
+  console.error("Scenarios use public fixture keys. Run against localhost; --allow-remote-fixtures is only for disposable test data.");
+  process.exit(1);
+}
 
 async function as(who, method, path, body) {
   const res = await fetch(URL + path, {
@@ -104,15 +109,22 @@ const scenarios = {
     await as(mika.key, "PUT", "/v1/credit", { session: "mika-tonight", credit, plays: someSongs(credit) });
     await as(mika.key, "PUT", "/v1/live", { venue: "Round1 Chicago", credit: credit + 1, side: "1P" });
   },
-  "cheered: MIKA, REXX and TOFU cheer your latest credit": async () => {
+  "cheered: MIKA, REXX and TOFU cheer your latest credit (broadcast a session to see it on your live card)": async () => {
     const me = await you();
-    let yours = (await as(YOU, "GET", "/v1/feed")).yours[0];
-    // Nothing posted from the app yet: a credit of yours to cheer.
+    // Your broadcast session's credits are what the live card shows; with
+    // none synced yet, one stands in as if e-amusement had.
+    const session = me.live?.session;
+    if (!session) {
+      console.error("Start or update a session with Broadcast to circle on, then rerun cheered. No sample was posted.");
+      process.exit(1);
+    }
+    let yours = (await as(YOU, "GET", "/v1/feed")).yours.find((c) => c.session === session);
     if (!yours) {
-      await as(YOU, "PUT", "/v1/credit", { session: "dev-session", credit: 1, plays: someSongs(1) });
-      yours = (await as(YOU, "GET", "/v1/feed")).yours[0];
+      await as(YOU, "PUT", "/v1/credit", { session, credit: 1, plays: someSongs(1) });
+      yours = (await as(YOU, "GET", "/v1/feed")).yours.find((c) => c.session === session);
     }
     for (const [name, preset] of [["MIKA", "legend"], ["REXX", "clean"], ["TOFU", "lets_go"]]) {
+      await joinYours(name);
       await as((await player(name)).key, "PUT", "/v1/cheer",
         { by: me.id, session: yours.session, credit: yours.credit, preset });
     }

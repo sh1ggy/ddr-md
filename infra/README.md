@@ -262,8 +262,9 @@ project with a D1 binding named `DB`, then run the app with
 
 Players following and cheering each other, at
 `https://circles.ddr-md.workers.dev`. Off until a player starts a circle on
-the Circle tab. Release builds point at the live server; others need
-`--dart-define=CIRCLES_URL=…` (the `circles_url` output) or don't offer it.
+the Circle tab. All builds default to the deployed server. Use
+`--dart-define=CIRCLES_URL=http://localhost:8787` for local scenarios, or an
+explicitly empty CIRCLES_URL to disable it.
 
 - **Its own key.** Like cloud sync there's no sign-in, but the key is a
   separate one, so deleting a backup never loses a circle.
@@ -278,7 +279,8 @@ the Circle tab. Release builds point at the live server; others need
   friends; joining can let the leader into the joiner's circle too, so one
   scan makes friends. A leader can take anyone out of their circle; they can come back
   with a live code. Code lookups are capped per player per day so codes can't be guessed, and
-  writes per day overall so the account is never billed.
+  a daily mutation budget to bound database work. These are abuse controls,
+  not a guaranteed spending cap.
 - **Live sessions and cheers.** A broadcast session shows on its player
   (venue, credit, side) until it ends or lapses after two hours. After each
   e-amusement sync during one, the app shares the session's credits (songs,
@@ -301,8 +303,31 @@ node infra/circles/dev/scenario.mjs               # lists the scenarios
 node infra/circles/dev/scenario.mjs seed          # e.g. a circle to look at
 ```
 
-`CIRCLES_KEY` (debug builds only) fixes the app's key to the one
+`CIRCLES_KEY` (debug localhost builds only) fixes the app's key to the one
 scenario.mjs calls "you", so a scenario can set up your circle or have
 made-up players join it, leave or take you out of theirs. Pull to refresh on the
 Circle tab to see each land. Add a scenario to `scenarios` in
 scenario.mjs for each new circle feature.
+
+To preview cheers on your Home card, start a session with **Broadcast to my
+circle** enabled, then run `node infra/circles/dev/scenario.mjs cheered`.
+It uses the broadcast's session id and posts a sample credit if needed, so
+no arcade sync is required. The live card checks once a minute; switching
+to Circle and back refreshes it too. Broadcast and Show my location are
+chosen once for the session; location is off by default.
+
+The Circles Worker and D1 database are deployed and recorded in the main
+checkout's Terraform state. The cf OAuth login can deploy; Terraform's
+account-token data sources require the bootstrap API token described above.
+
+Circles rejects malformed routes and auth before querying D1, streams JSON
+up to 8 KiB, limits each circle and player to 100 memberships, and bounds
+credits and feed results. Production rate bindings throttle requests per
+key (120/min), per network (600/min), and invite lookups/joins per network
+(30/min), before database work. Limits are approximate and per Cloudflare
+location; the daily D1 mutation reservation is separate and atomic. These
+controls reduce abuse, but cannot guarantee availability or a spending cap
+on a paid account. No subscription or paid-plan upgrade is performed here.
+Public fixture keys are accepted by the app only for localhost testing;
+remote scenario execution requires explicit --allow-remote-fixtures and
+must contain only disposable fake data.

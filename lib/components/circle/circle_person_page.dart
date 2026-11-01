@@ -102,20 +102,39 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
             if (person.live case final live?) ...[
               const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                      color: FloorPop.volt.withValues(alpha: 0.55), width: 2),
-                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: pop
+                    .stripes(
+                        color: pop.stage, radius: BorderRadius.circular(18))
+                    .copyWith(
+                      border: Border.all(
+                          color: FloorPop.volt.withValues(alpha: 0.55)),
+                    ),
                 child: Row(children: [
                   const LivePulse(),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
+                  Text('LIVE', style: pop.label.copyWith(color: pop.voltText)),
+                  const SizedBox(width: 10),
+                  Text('C${live.credit}',
+                      style: FloorPop.readout(21,
+                          color: Theme.of(context).colorScheme.onSurface)),
+                  const SizedBox(width: 10),
+                  Icon(
+                      live.venue.isEmpty
+                          ? Icons.location_off_outlined
+                          : Icons.place_outlined,
+                      size: 16,
+                      color: pop.haze),
+                  const SizedBox(width: 4),
                   Expanded(
-                    child: Text(
-                        'On the pad · credit ${live.credit} · ${live.venue}',
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                  ),
+                      child: Text(
+                          live.venue.isEmpty ? 'Location hidden' : live.venue,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600))),
+                  const SizedBox(width: 8),
+                  Text(live.side, style: pop.label.copyWith(color: pop.haze)),
                 ]),
               ),
             ],

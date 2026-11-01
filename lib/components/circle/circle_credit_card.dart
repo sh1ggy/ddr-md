@@ -1,10 +1,12 @@
 /// Name: CircleCreditCard
 /// Parent: CirclePersonPage, CheersStrip
 /// Description: A shared credit: its songs with jacket, difficulty, score,
-/// new bests and fails, the cheers on it, and, for someone else's, the row
-/// of preset cheers to give it (tap again to take yours back).
+/// new bests and fails, the cheers on it as stamps, and, for someone
+/// else's, the pom-pom Cheer button that opens the cheer sheet.
 library;
 
+import 'package:ddr_md/components/circle/cheer_sheet.dart';
+import 'package:ddr_md/components/circle/cheer_stamp.dart';
 import 'package:ddr_md/components/session/recent_plays.dart' show chartOf;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -12,7 +14,6 @@ import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 class CircleCreditCard extends StatelessWidget {
   const CircleCreditCard(this.credit, {super.key});
@@ -41,14 +42,29 @@ class CircleCreditCard extends StatelessWidget {
         const SizedBox(height: 6),
         for (final p in credit.plays) _PlayRow(p),
         if (credit.cheers.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Wrap(spacing: 6, runSpacing: 6, children: [
-            for (final c in credit.cheers) CheerChip(c.name, c.cheer),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final c in credit.cheers) CheerStamp(c.cheer, name: c.name),
           ]),
         ],
         if (credit.by != null) ...[
-          const SizedBox(height: 10),
-          _CheerPicker(credit),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Builder(
+              builder: (button) => FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor:
+                        credit.mine == null ? FloorPop.volt : pop.riser,
+                    foregroundColor: credit.mine == null
+                        ? FloorPop.onVolt
+                        : scheme.onSurface),
+                onPressed: () => showCheerSheet(button, credit),
+                icon: const PomPom(size: 18),
+                label: Text(credit.mine == null ? 'Cheer' : 'Change cheer'),
+              ),
+            ),
+          ),
         ],
       ]),
     );
@@ -129,63 +145,4 @@ class _PlayRow extends StatelessWidget {
 
   static String _score(int s) =>
       s.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+$)'), (_) => ',');
-}
-
-/// A cheer someone gave: their name and the preset.
-class CheerChip extends StatelessWidget {
-  const CheerChip(this.name, this.cheer, {super.key});
-  final String name;
-  final Cheer cheer;
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-      decoration: BoxDecoration(
-          color: pop.riser, borderRadius: BorderRadius.circular(999)),
-      child: Text.rich(TextSpan(children: [
-        TextSpan(
-            text: '$name ', style: TextStyle(color: pop.haze, fontSize: 12)),
-        TextSpan(
-            text: cheer.label,
-            style: FloorPop.display(11,
-                color: Theme.of(context).colorScheme.onSurface)),
-      ])),
-    );
-  }
-}
-
-/// The presets for someone else's credit, yours lit.
-class _CheerPicker extends StatelessWidget {
-  const _CheerPicker(this.credit);
-  final CircleCredit credit;
-
-  @override
-  Widget build(BuildContext context) {
-    final circle = context.read<CircleState>();
-    final pop = FloorPop.of(context);
-    return Wrap(spacing: 6, runSpacing: 6, children: [
-      for (final cheer in Cheer.values)
-        Material(
-          color: credit.mine == cheer ? FloorPop.volt : Colors.transparent,
-          shape: StadiumBorder(
-              side: BorderSide(
-                  color: credit.mine == cheer ? FloorPop.volt : pop.line)),
-          child: InkWell(
-            customBorder: const StadiumBorder(),
-            onTap: () =>
-                circle.cheerFor(credit, credit.mine == cheer ? null : cheer),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 7, 12, 7),
-              child: Text(cheer.label,
-                  style: FloorPop.display(11,
-                      color: credit.mine == cheer
-                          ? FloorPop.onVolt
-                          : Theme.of(context).colorScheme.onSurface)),
-            ),
-          ),
-        ),
-    ]);
-  }
 }

@@ -17,15 +17,18 @@ import 'package:ddr_md/models/device_key.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
 
-/// Release builds default to the live server; debug/profile to off unless
-/// given --dart-define=CIRCLES_URL=… (terraform output circles_url, or
-/// infra/circles/dev/server.mjs).
+/// The deployed service in every build. Override CIRCLES_URL for the local
+/// dev server; an explicitly empty value disables Circles.
 const kCirclesUrl = String.fromEnvironment('CIRCLES_URL',
-    defaultValue: kReleaseMode ? 'https://circles.ddr-md.workers.dev' : '');
+    defaultValue: 'https://circles.ddr-md.workers.dev');
 
 /// A debug build's fixed key, so infra/circles/dev/scenario.mjs can act as
 /// this player. Ignored in release builds.
-const _devKey = kReleaseMode ? '' : String.fromEnvironment('CIRCLES_KEY');
+final _devKey = !kReleaseMode &&
+        ['localhost', '127.0.0.1', '::1']
+            .contains(Uri.tryParse(kCirclesUrl)?.host)
+    ? const String.fromEnvironment('CIRCLES_KEY')
+    : '';
 
 /// A session someone is broadcasting to their circle: where, and the
 /// credit they're on.
@@ -297,7 +300,7 @@ class CircleState extends ChangeNotifier {
 
   /// Cheers [credit] with [cheer], or takes yours back with null. Shown at
   /// once; a failure puts it back.
-  Future<void> cheerFor(CircleCredit credit, Cheer? cheer) async {
+  Future<bool> cheerFor(CircleCredit credit, Cheer? cheer) async {
     final before = feed;
     feed = [
       for (final c in feed)
@@ -328,10 +331,12 @@ class CircleState extends ChangeNotifier {
         'credit': credit.credit,
         'preset': cheer?.id,
       });
+      return true;
     } catch (e) {
       debugPrint('Circles: cheer not sent: $e');
       feed = before;
       notifyListeners();
+      return false;
     }
   }
 
@@ -396,6 +401,10 @@ class CircleState extends ChangeNotifier {
   Future<void> leave(CirclePerson p) =>
       _run(() => _send('DELETE', 'v1/following/${p.id}'));
 
+  /// The running session's id, sent with a broadcast so the credits it
+  /// shares are known to be this session's. Kept by main.
+  String? session;
+
   /// Whether a credit starting now goes out to the circle, as last chosen.
   static bool get broadcasting =>
       Settings.getInt(Settings.circleBroadcastKey) == 1;
@@ -407,8 +416,13 @@ class CircleState extends ChangeNotifier {
     if (!available || id == null) return;
     await Settings.setInt(Settings.circleBroadcastKey, 1);
     try {
-      await _send(
-          'PUT', 'v1/live', {'venue': venue, 'credit': credit, 'side': side});
+      await _send('PUT', 'v1/live', {
+        'venue':
+            Settings.getInt(Settings.circleShowLocationKey) == 1 ? venue : '',
+        'credit': credit,
+        'side': side,
+        if (session != null) 'session': session,
+      });
     } catch (e) {
       debugPrint('Circles: broadcast not sent: $e');
     }

@@ -78,6 +78,8 @@ void main() async {
   // circle, the last one included once the session's ended.
   String? broadcastSession;
   var syncing = false;
+  session.addListener(() => circles.session = session.session?.id);
+  circles.session = session.session?.id;
   eamuse.addListener(() {
     if (session.session case final s?) broadcastSession = s.id;
     final now = eamuse.status == EamuseStatus.syncing;

@@ -6,6 +6,11 @@ import worker from "../worker.js";
 import { d1, keyOf } from "./d1.mjs";
 
 const DB = d1();
+// An existing installation upgrades without losing its broadcasts.
+await DB.prepare(`CREATE TABLE live(owner TEXT PRIMARY KEY, venue TEXT NOT NULL,
+  credit INTEGER NOT NULL, side TEXT NOT NULL, at TEXT NOT NULL, until TEXT NOT NULL)
+  WITHOUT ROWID`).run();
+await DB.prepare(`INSERT INTO live VALUES ('legacy', 'Arcade', 1, '1P', 'now', 'later')`).run();
 async function call(who, method, path, body) {
   const res = await worker.fetch(
     new Request(`https://x${path}`, {
@@ -21,6 +26,7 @@ async function call(who, method, path, body) {
 
 let r = await call("a", "GET", "/v1/me");
 assert.equal(r.body.id, null);
+assert.equal((await DB.prepare("SELECT venue FROM live WHERE owner = 'legacy'").first()).venue, "Arcade");
 assert.equal((await call("a", "POST", "/v1/code", {})).status, 403);
 assert.equal((await call("a", "PUT", "/v1/me", { name: "TOO LONG NAME", ddrCode: "12345678" })).status, 400);
 assert.equal((await call("a", "PUT", "/v1/me", { name: "SHIGGY", ddrCode: "1234" })).status, 400);
@@ -79,7 +85,9 @@ assert.equal(r.body.circle.find((p) => p.name === "SHIGGY").friend, true);
 // A broadcast shows on its player to their circle until it ends.
 await call("b", "POST", "/v1/join", { code });
 assert.equal((await call("a", "PUT", "/v1/live", { venue: "Round1", credit: 0, side: "1P" })).status, 400);
-assert.equal((await call("a", "PUT", "/v1/live", { venue: "Round1", credit: 2, side: "2P" })).status, 204);
+assert.equal((await call("a", "PUT", "/v1/live", { venue: "Round1", credit: 2, side: "2P", session: "s-1" })).status, 204);
+// Only the broadcaster sees their session id.
+assert.equal((await call("a", "GET", "/v1/me")).body.live.session, "s-1");
 r = await call("b", "GET", "/v1/me");
 assert.deepEqual({ ...r.body.following[0].live, at: null }, { venue: "Round1", credit: 2, side: "2P", at: null });
 assert.equal((await call("a", "DELETE", "/v1/live")).status, 204);
@@ -117,4 +125,28 @@ assert.equal((await call("a", "DELETE", "/v1/me")).status, 204);
 assert.equal((await call("a", "GET", "/v1/me")).body.id, null);
 assert.equal((await call("a", "GET", "/nope")).status, 404);
 assert.equal((await worker.fetch(new Request("https://x/v1/me"), { DB })).status, 401);
+// Limits reject abuse before database work, including chunked bodies with
+// no Content-Length. Private JSON responses cannot be cached.
+const auth = {Authorization: `Bearer ${keyOf("a")}`};
+const oversized = await worker.fetch(new Request("https://x/v1/me", {
+  method: "PUT", headers: auth, body: JSON.stringify({name: "X".repeat(9000)})
+}), {DB});
+assert.equal(oversized.status, 413);
+assert.equal(oversized.headers.get("Cache-Control"), "no-store");
+assert.equal((await worker.fetch(new Request("https://x/v1/me", {
+  method: "PUT", headers: auth, body: "[]"
+}), {DB})).status, 400);
+assert.equal((await worker.fetch(new Request("https://x/v1/me", {headers: auth}), {
+  DB: {prepare() {throw new Error("must not touch D1");}},
+  REQUEST_RATE: {async limit() {return {success: false};}}
+})).status, 429);
+assert.equal((await worker.fetch(new Request("https://x/v1/me", {headers: auth}), {
+  DB: {prepare() {throw new Error("must not touch D1");}},
+  NETWORK_RATE: {async limit() {return {success: false};}}
+})).status, 429);
+assert.equal((await call("b", "GET", "/v1/feed/trailing")).status, 404);
+const day = new Date().toISOString().slice(0, 10);
+await DB.prepare("INSERT INTO days(day,writes) VALUES (?,40000) ON CONFLICT(day) DO UPDATE SET writes=40000").bind(day).run();
+assert.equal((await call("b", "POST", "/v1/code")).status, 429);
+assert.equal((await DB.prepare("SELECT writes FROM days WHERE day=?").bind(day).first()).writes, 40000);
 console.log("circles worker: all checks passed");
