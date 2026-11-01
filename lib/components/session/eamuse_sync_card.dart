@@ -1,8 +1,8 @@
 /// Name: EamuseSyncCard
 /// Parent: SessionPage
-/// Description: Home's e-amusement row: when it last synced and when it
-/// syncs on its own, with one button to sync now (or stop, or sign in on
-/// Konami's own page first) and a bar along the bottom while it runs.
+/// Description: Home's e-amusement row: when it last synced, with one button
+/// to sync now (or stop, or sign in on Konami's own page first) and a bar
+/// along the bottom while it runs.
 /// Signing out and the auto-sync choice live in Settings.
 library;
 
@@ -32,16 +32,13 @@ class EamuseSyncCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     final at = state.syncedAt;
     final (status, detail) = switch (state.status) {
-      EamuseStatus.signedOut => (
-          'Not signed in',
-          'Sign in to collect your plays and cards'
-        ),
+      EamuseStatus.signedOut => ('Not signed in', ''),
       EamuseStatus.syncing => (
           'Syncing · ${(state.progress * 100).round()}%',
           state.note
         ),
-      EamuseStatus.failed => (state.error, _auto),
-      EamuseStatus.idle when at == null => ('Not synced yet', _auto),
+      EamuseStatus.failed => (state.error, ''),
+      EamuseStatus.idle when at == null => ('Not synced yet', ''),
       EamuseStatus.idle => (
           [
             'Synced ${formatAgo(at!)}',
@@ -49,7 +46,7 @@ class EamuseSyncCard extends StatelessWidget {
             if (state.cards case final n? when n > 0)
               '$n ${n == 1 ? 'card' : 'cards'}',
           ].join(' · '),
-          _auto
+          ''
         ),
     };
     final button = switch (state.status) {
@@ -59,14 +56,10 @@ class EamuseSyncCard extends StatelessWidget {
       EamuseStatus.syncing =>
         TextButton(onPressed: state.stop, child: const Text('Stop')),
       EamuseStatus.failed => FilledButton.tonal(
-          onPressed: state.waiting ? null : state.sync,
+          onPressed: state.refused ? null : () => state.sync(asked: true),
           child: const Text('Retry')),
-      _ when state.upToDate => FilledButton.tonalIcon(
-          onPressed: null,
-          icon: const Icon(Icons.check, size: 18),
-          label: const Text('Synced')),
       _ => FilledButton.tonalIcon(
-          onPressed: state.waiting ? null : state.sync,
+          onPressed: state.refused ? null : () => state.sync(asked: true),
           icon: const Icon(Icons.sync, size: 18),
           label: const Text('Sync')),
     };
@@ -119,11 +112,6 @@ class EamuseSyncCard extends StatelessWidget {
       ]),
     );
   }
-
-  /// When it syncs without being asked.
-  static String get _auto => EamuseSyncState.syncEachCredit
-      ? 'Also syncs after each credit and when a session ends'
-      : 'Also syncs when you end a session';
 }
 
 /// Konami's sign-in page in an in-app browser: the page's title over its

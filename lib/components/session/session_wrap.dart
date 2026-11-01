@@ -306,7 +306,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
     while (eamuse.status == EamuseStatus.syncing) {
       await _heard(eamuse);
     }
-    await eamuse.sync(ended: true);
+    await eamuse.sync(asked: true);
     _load();
     // A load started since (a cloud sync pulling, say) drops this one, so
     // collecting is over only once the latest has landed.
