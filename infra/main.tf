@@ -136,3 +136,33 @@ resource "cloudflare_workers_script_subdomain" "sync" {
   script_name = cloudflare_workers_script.sync.script_name
   enabled     = true
 }
+
+# Circles: its own Worker and D1 database, apart from cloud sync, since this
+# server reads what it stores to decide who may see whom.
+resource "cloudflare_d1_database" "circles" {
+  account_id = var.cloudflare_account_id
+  name       = var.circles_database
+  read_replication = {
+    mode = "disabled"
+  }
+}
+
+resource "cloudflare_workers_script" "circles" {
+  account_id         = var.cloudflare_account_id
+  script_name        = var.circles_worker
+  content_file       = "${path.module}/circles/worker.js"
+  content_sha256     = filesha256("${path.module}/circles/worker.js")
+  main_module        = "worker.js"
+  compatibility_date = "2026-10-01"
+  bindings = [{
+    type = "d1"
+    name = "DB"
+    id   = cloudflare_d1_database.circles.id
+  }]
+}
+
+resource "cloudflare_workers_script_subdomain" "circles" {
+  account_id  = var.cloudflare_account_id
+  script_name = cloudflare_workers_script.circles.script_name
+  enabled     = true
+}

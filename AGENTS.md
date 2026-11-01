@@ -23,6 +23,7 @@ flutter test tool/content_manifest.dart   # hash content into assets/content_man
 bash scripts/build_store.sh <ipa|appbundle>  # store builds: fetch the live content into assets/, build with CONTENT_URL
 bash scripts/fetch_content.sh && flutter run --release  # release on a device: same live content, updates on
 bash scripts/build_lite.sh [apk --release]  # build without jackets/per-song JSONs (~430 MB smaller)
+node infra/circles/dev/worker_test.mjs   # circles Worker end to end; server.mjs + scenario.mjs drive the app (infra/README.md "Circles")
 bash scripts/init.sh                 # Android only: download OpenCV + ONNX Runtime into native_opencv/.../jniLibs/ (gitignored; rerun after clean checkout)
 cd ios && pod install                # iOS native deps (vendored opencv2 + onnxruntime frameworks)
 ```

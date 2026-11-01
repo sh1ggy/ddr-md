@@ -38,6 +38,8 @@ DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
 | Terraform state | `infra/terraform.tfstate`, local, gitignored | you |
 | Sync Worker `sync` (code in [sync/worker.js](sync/worker.js)) at `sync.<workers_subdomain>.workers.dev`, and its D1 database `ddr-md-sync` | Cloudflare | Terraform |
 | Players' synced data | that D1 database | the app (see [Cloud Sync](#cloud-sync)) |
+| Circles Worker `circles` (code in [circles/worker.js](circles/worker.js)) at `circles.<workers_subdomain>.workers.dev`, and its D1 database `ddr-md-circles` | Cloudflare | Terraform |
+| Players' circles | that D1 database | the app (see [Circles](#circles)) |
 
 ## Reproducible from scratch?
 
@@ -255,3 +257,43 @@ from under released apps.
 Try it locally: put [sync/worker.js](sync/worker.js) behind a `cf dev`
 project with a D1 binding named `DB`, then run the app with
 `--dart-define=SYNC_URL=http://localhost:<port>`.
+
+## Circles
+
+Players following and cheering each other, at
+`https://circles.ddr-md.workers.dev`. Off until a player starts a circle on
+the Circle tab. Release builds point at the live server; others need
+`--dart-define=CIRCLES_URL=…` (the `circles_url` output) or don't offer it.
+
+- **Its own key.** Like cloud sync there's no sign-in, but the key is a
+  separate one, so deleting a backup never loses a circle.
+- **Known by dancer name and DDR-CODE**, filled from e-amusement when it's
+  linked. Nobody checks them, and DDR-CODEs show on the cabinet, so a code
+  isn't unique here: people are told apart by an opaque id derived from the
+  key.
+- **The server reads rows**, unlike sync: it checks who may see whom. A
+  player has one circle, joined by scanning its QR or typing the invite code
+  under it (8 characters with no 0/O or 1/I, good for a day); whoever has
+  it is in. Two players in each other's circles are
+  friends. A leader can take anyone out of their circle; they can come back
+  with a live code. Code lookups are capped per player per day so codes can't be guessed, and
+  writes per day overall so the account is never billed.
+
+### Trying it locally
+
+[circles/dev/](circles/dev/) runs the Worker on Node's SQLite, no Cloudflare
+needed (Node 22+):
+
+```bash
+node infra/circles/dev/worker_test.mjs            # the Worker end to end
+node infra/circles/dev/server.mjs --fresh         # http://localhost:8787
+flutter run -d macos --dart-define=DB_NAME=timing-preview.db --dart-define=CIRCLES_URL=http://localhost:8787 --dart-define=CIRCLES_KEY=dev-you____________________________________
+node infra/circles/dev/scenario.mjs               # lists the scenarios
+node infra/circles/dev/scenario.mjs seed          # e.g. a circle to look at
+```
+
+`CIRCLES_KEY` (debug builds only) fixes the app's key to the one
+scenario.mjs calls "you", so a scenario can set up your circle or have
+made-up players join it, leave or take you out of theirs. Pull to refresh on the
+Circle tab to see each land. Add a scenario to `scenarios` in
+scenario.mjs for each new circle feature.
