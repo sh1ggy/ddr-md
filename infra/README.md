@@ -40,11 +40,13 @@ DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
 | Players' synced data | that D1 database | the app (see [Cloud Sync](#cloud-sync)) |
 | Circles Worker `circles` (code in [circles/worker.js](circles/worker.js)) at `circles.<workers_subdomain>.workers.dev`, and its D1 database `ddr-md-circles` | Cloudflare | Terraform |
 | Players' circles | that D1 database | the app (see [Circles](#circles)) |
+| Optional `circles-uat` Worker (code/config in [circles/uat/](circles/uat/)) | Cloudflare, using the existing Circles API | `cf deploy` (see [production test people](#persistent-production-test-people)) |
 
 ## Reproducible from scratch?
 
-Everything in the cloud, yes: `terraform apply` recreates all of it. Not
-covered by Terraform:
+The core content, sync and Circles services, yes: `terraform apply` recreates
+them. The optional production test Worker is recreated with `cf deploy` as
+described below. Not covered by Terraform:
 
 - **Bootstrap credentials.** A Cloudflare token with *Account › Cloudflare
   Pages › Edit*, *Account › Account API Tokens › Edit*, *Account › Workers
@@ -333,3 +335,51 @@ on a paid account. No subscription or paid-plan upgrade is performed here.
 Public fixture keys are accepted by the app only for localhost testing;
 remote scenario execution requires explicit --allow-remote-fixtures and
 must contain only disposable fake data.
+
+### Persistent production test people
+
+The reusable `circles-uat` Worker in [circles/uat/](circles/uat/) maintains
+three private test profiles for one explicitly configured Circles profile
+id. It uses the normal production API and existing database: no additional
+database, queue or storage service. This optional Worker and its minute cron
+are managed with `cf` and `cloudflare.config.ts`, separately from Terraform.
+Extend this Worker for future automated Circles scenarios.
+
+- **MIKA** follows the target and cheers each shared credit while live.
+  After a session ends (or its broadcast expires), the final credit gets
+  LEGEND, matching the app's existing session cheer behaviour. A 15-second
+  grace period lets the app establish its notification baseline. Broadcasts
+  without shared credits have nothing to cheer yet.
+- **REXX** is a mutual friend, always live at UAT Arcade with three sample
+  credits (including a fail and a new best). The sample session rolls daily;
+  its live status is renewed hourly before the two-hour expiry.
+- **TOFU** is a mutual friend with no broadcast or shared credits.
+
+These are real test profiles visible through normal Circles permissions;
+MIKA's cheers are visible to anyone who can see the target's shared credits.
+Only the configured profile id is targeted, never a dancer name or DDR-CODE.
+The scheduled Worker has no database binding or real player's key. It never
+reattaches removed profiles. Removing MIKA from the target's circle stops all
+automated activity; removing REXX stops its sample activity.
+
+From `infra/circles/uat/` (Node 22.18+ and a Cloudflare login):
+
+```bash
+npm ci
+node worker_test.mjs
+node manage.mjs setup <target-profile-id>
+cf deploy --secrets-file .secrets.json
+node manage.mjs status
+node manage.mjs tick                 # run the same scenario immediately
+node manage.mjs reset                # disable automation, delete only the three test profiles
+```
+
+Setup reads the existing Circles database id/account from the local
+Terraform state, checks the target profile, creates three profiles with
+cryptographically random private keys and attaches their memberships. The
+keys are saved with owner-only permissions in gitignored `.secrets.json`
+and deployed as the Worker's `UAT_CONFIG` secret. Repeating setup for the
+same target reuses those identities; reset is required to change targets.
+Keep that file to manage or remove the profiles later. Cron changes can
+take up to 15 minutes to propagate. Missing `UAT_CONFIG` disables the job;
+there is no public HTTP control endpoint or workers.dev route.
