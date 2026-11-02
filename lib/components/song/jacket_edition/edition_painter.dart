@@ -209,7 +209,7 @@ class EditionGeometry {
     canvas.clipPath(inner);
     final side = size.shortestSide;
     final finish = recipe.finish;
-    final textured = finish.index >= EditionFinish.texturedHolo.index;
+    final textured = finish == EditionFinish.prism;
     final pearl = recipe.frame == EditionFrame.platinum;
     final premium = pearl || recipe.frame == EditionFrame.rainbow;
     final paint = Paint()
@@ -261,24 +261,35 @@ class EditionGeometry {
         canvas.drawLine(p - Offset(0, d), p + Offset(0, d), paint);
       }
     }
-    // Complete static finish. This stays when motion is disabled.
-    final strength = compact ? editionCompactFinishStrength : 1.0;
-    final alpha = editionFinishAlpha[finish.index] * recipe.strength * strength;
-    if (alpha > 0 || pearl) {
+    // The material is recorded in full even without an animation ticker.
+    final strength =
+        (compact ? editionCompactFinishStrength : 1.0) * recipe.strength;
+    final alpha = editionFinishAlpha[finish.index] * strength;
+    if (alpha > 0) {
+      final metal =
+          finish == EditionFinish.metallic || finish == EditionFinish.prism;
+      final colors = metal
+          ? [
+              for (final c in finish == EditionFinish.prism
+                  ? editionGoldFoil
+                  : editionSilverFoil)
+                c.withValues(alpha: alpha)
+            ]
+          : [
+              Colors.transparent,
+              Colors.white.withValues(alpha: alpha),
+              Colors.transparent
+            ];
       canvas.drawRect(
           innerRect,
           Paint()
             ..shader = LinearGradient(
-                    colors: pearl
-                        ? [
-                            for (final color in editionPearl)
-                              color.withValues(alpha: color.a * strength)
-                          ]
-                        : [
-                            Colors.transparent,
-                            Colors.white.withValues(alpha: alpha),
-                            Colors.transparent
-                          ],
+                    colors: colors,
+                    stops: metal
+                        ? null
+                        : finish == EditionFinish.satin
+                            ? const [0, .5, 1]
+                            : const [.32, .45, .58],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight)
                 .createShader(innerRect));
@@ -369,23 +380,8 @@ class EditionLightPainter extends CustomPainter {
     final rect = Offset.zero & size;
     canvas.save();
     canvas.clipPath(geometry.outer);
-    if (recipe.finish == EditionFinish.prism) {
-      // AAA's gold foil, as on its badge, drifting with the light.
-      final drift = (motion.light.dx + motion.light.dy) * side * .4;
-      _paint.shader = ui.Gradient.linear(
-          Offset(drift, 0),
-          Offset(drift + side * .45, side * .3),
-          editionGoldFoil,
-          [
-            for (var i = 0; i < editionGoldFoil.length; i++)
-              i / (editionGoldFoil.length - 1)
-          ],
-          TileMode.repeated);
-      canvas.drawRect(rect, _paint);
-    }
-    // The light sweeps only where a badge would shine: AAA, GFC, PFC, SDP
-    // and MFC frames, flare IX and EX.
-    final shines = recipe.finish == EditionFinish.prism ||
+    // A moving reflection complements the complete static material.
+    final shines = recipe.finish != EditionFinish.print ||
         recipe.frame.index >= EditionFrame.silver.index ||
         recipe.flareIndex >= 8;
     if (!shines) {
@@ -401,14 +397,24 @@ class EditionLightPainter extends CustomPainter {
             ? editionPearl
             : [
                 Colors.transparent,
-                Colors.white.withValues(alpha: .22),
+                Colors.white.withValues(
+                    alpha: switch (recipe.finish) {
+                          EditionFinish.satin => .06,
+                          EditionFinish.gloss => .16,
+                          _ => .22,
+                        } *
+                        recipe.strength),
                 Colors.transparent
               ],
         pearl ? const [0, .25, .5, .75, 1] : const [0, .5, 1]);
     canvas.drawRect(rect, _paint);
     _paint.shader = null;
     // Six cheap unblurred glints, all positions precomputed.
-    for (var i = 0; i < geometry.glints.length; i++) {
+    for (var i = 0;
+        i < geometry.glints.length &&
+            (recipe.finish == EditionFinish.prism ||
+                recipe.frame.index >= EditionFrame.silver.index);
+        i++) {
       final p = geometry.glints[i];
       final near = (1 - (p - at).distance / (side * .6)).clamp(0.0, 1.0);
       if (near <= 0) continue;

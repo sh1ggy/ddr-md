@@ -8,7 +8,7 @@ import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/version_group.dart';
 
-enum EditionFinish { print, satin, metallic, holo, texturedHolo, prism }
+enum EditionFinish { print, satin, gloss, metallic, prism }
 
 enum EditionFrame { stock, bronze, silver, gold, platinum, rainbow }
 

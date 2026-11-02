@@ -85,10 +85,19 @@ class MissingDifficultyBundle extends CachingAssetBundle {
 }
 
 void main() {
-  test('only AAA is foiled, as on its badge', () {
+  test('grade families progress from matte to gold foil', () {
     for (final grade in Grade.values) {
-      expect(finishFor(grade),
-          grade == Grade.aaa ? EditionFinish.prism : EditionFinish.print);
+      expect(
+          finishFor(grade),
+          grade == Grade.aaa
+              ? EditionFinish.prism
+              : grade.label.startsWith('AA')
+                  ? EditionFinish.metallic
+                  : grade.label.startsWith('A')
+                      ? EditionFinish.gloss
+                      : grade.label.startsWith('B')
+                          ? EditionFinish.satin
+                          : EditionFinish.print);
     }
   });
   test('tier, not level, picks the cut; unknowns stay neutral', () {
@@ -274,6 +283,61 @@ void main() {
     await tester.pump();
     expect(tester.binding.transientCallbackCount, 0);
   });
+  testWidgets('material ladder stays visible in compact and expanded cards',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final cards = <Widget>[];
+    for (final compact in [true, false]) {
+      for (final grade in [Grade.c, Grade.b, Grade.a, Grade.aa, Grade.aaa]) {
+        final f = EditionFacts(
+            chart: (song: 'Pulse', mode: 'singles', difficulty: 'hard'),
+            grade: grade);
+        const art = DecoratedBox(
+            decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                  Color(0xFF102644),
+                  Color(0xFF197C94),
+                  Color(0xFFE26272),
+                  Color(0xFF102644)
+                ])),
+            child: Center(
+                child: Icon(Icons.album, size: 72, color: Colors.white)));
+        cards.add(SizedBox(
+            width: 160,
+            height: 200,
+            child: Column(children: [
+              Text('${grade.label} · ${compact ? 'binder' : 'expanded'}',
+                  style: const TextStyle(fontSize: 12)),
+              SizedBox.square(
+                  dimension: 136,
+                  child: compact
+                      ? CompactJacketEdition(
+                          facts: f,
+                          options: options(motion: false),
+                          aura: false,
+                          child: art)
+                      : JacketEdition(
+                          facts: f,
+                          options: options(motion: false),
+                          frozenLight: const Offset(.35, .3),
+                          child: art))
+            ])));
+      }
+    }
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: RepaintBoundary(
+                key: const ValueKey('materials'),
+                child: Wrap(children: cards)))));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await expectLater(find.byKey(const ValueKey('materials')),
+        matchesGoldenFile('goldens/jacket_material_ladder.png'));
+  });
   testWidgets('frozen premium render matrix', (tester) async {
     final widgets = <Widget>[];
     for (final award in [
@@ -286,8 +350,8 @@ void main() {
           widgets.add(SizedBox.square(
               dimension: 64,
               child: JacketEdition(
-                  facts: facts(
-                      award: award, flare: ex ? 'EX' : null, tier: tier),
+                  facts:
+                      facts(award: award, flare: ex ? 'EX' : null, tier: tier),
                   options: options(motion: false),
                   frozenLight: const Offset(.35, .3),
                   child: const ColoredBox(color: Colors.indigo))));
