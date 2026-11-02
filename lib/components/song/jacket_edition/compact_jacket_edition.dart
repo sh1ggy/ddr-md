@@ -5,8 +5,6 @@
 library;
 
 import 'package:flutter/widgets.dart';
-import 'package:ddr_md/components/song/scores/score_card.dart'
-    show clearLampIcon;
 import 'edition_catalog.dart';
 import 'edition_model.dart';
 import 'edition_rules.dart';
@@ -20,8 +18,6 @@ class CompactJacketEdition extends StatefulWidget {
       required this.options,
       this.aura = true,
       this.flareStamp = false,
-      this.gradeStamp = false,
-      this.lampStamp = false,
       required this.child});
   final EditionFacts facts;
   final EditionOptions options;
@@ -29,8 +25,6 @@ class CompactJacketEdition extends StatefulWidget {
   final bool aura;
   // Show flare independently of the grade and score stamps in the binder.
   final bool flareStamp;
-  final bool gradeStamp;
-  final bool lampStamp;
   final Widget child;
   @override
   State<CompactJacketEdition> createState() => _CompactJacketEditionState();
@@ -52,10 +46,6 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
         (widget.flareStamp && recipe.flareIndex >= 0
             ? widget.facts.flare
             : null);
-    final gradeStamp =
-        recipe.gradeStamp ?? (widget.gradeStamp ? widget.facts.grade : null);
-    final lampStamp =
-        recipe.lampStamp ?? (widget.lampStamp ? widget.facts.lamp : null);
     return LayoutBuilder(builder: (context, constraints) {
       final size = constraints.biggest;
       if (!size.isFinite || size.isEmpty) return widget.child;
@@ -96,9 +86,7 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
                             EditionLayer.frame
                           }))),
         // Stickers at full size, scaled down to the card.
-        if (gradeStamp != null ||
-            flareStamp != null ||
-            clearLampIcon(lampStamp) != null)
+        if (recipe.gradeStamp != null || flareStamp != null)
           Positioned(
               left: geometry.width + 3,
               right: geometry.width + 3,
@@ -107,10 +95,7 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
                   child: SizedBox(
                       height: size.height * .22,
                       child: EditionAchievementStamps(
-                          recipe: recipe,
-                          flareStamp: flareStamp,
-                          gradeStamp: gradeStamp,
-                          lampStamp: lampStamp)))),
+                          recipe: recipe, flareStamp: flareStamp)))),
         if (EditionFooter.shows(recipe))
           Positioned(
               left: geometry.width,

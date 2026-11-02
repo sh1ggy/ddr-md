@@ -4,10 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
-import 'package:ddr_md/components/song/scores/score_card.dart'
-    show clearLampIcon;
-import 'package:ddr_md/models/db_models.dart' show ClearLamp;
-import 'package:ddr_md/grades.dart' show Grade, gradeIcon, flareRankIcon;
+import 'package:ddr_md/grades.dart' show gradeIcon, flareRankIcon;
 import 'package:ddr_md/helpers.dart' show formatScore;
 import 'package:ddr_md/theme.dart' show FloorPop;
 import 'package:ddr_md/models/settings_model.dart';
@@ -102,8 +99,7 @@ class _JacketEditionState extends State<JacketEdition>
             (route.secondaryAnimation == null ||
                 route.secondaryAnimation!.status == AnimationStatus.dismissed));
     _motion.configure(
-        _recipe.effects &&
-            _recipe.motion &&
+        _recipe.animated &&
             _foreground &&
             visible &&
             TickerMode.valuesOf(context).enabled &&
@@ -142,105 +138,104 @@ class _JacketEditionState extends State<JacketEdition>
         geometry = _geometry = EditionGeometry(_recipe, size);
       }
       final staticGeometry = geometry;
-      return AnimatedBuilder(
-          animation: _motion,
-          builder: (context, child) => Transform(
-              key: const ValueKey('edition-tilt'),
-              alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, .0012)
-                ..rotateX(-_motion.tilt.dy * editionTiltRadians)
-                ..rotateY(_motion.tilt.dx * editionTiltRadians),
-              child: child),
-          child: RepaintBoundary(
-              child: Stack(
-                  fit: StackFit.expand,
-                  clipBehavior: Clip.none,
-                  children: [
-                if (widget.layers.contains(EditionLayer.frame))
-                  RepaintBoundary(
-                      child: CustomPaint(
-                          painter: EditionStaticPainter(staticGeometry,
-                              ring:
-                                  !widget.layers.contains(EditionLayer.art)))),
-                if (widget.layers.contains(EditionLayer.art))
-                  Padding(
-                      padding: EdgeInsets.all(geometry.width),
-                      child: ClipPath(
-                          clipper: EditionClipper(geometry.inner
-                              .shift(Offset(-geometry.width, -geometry.width))),
-                          child: RepaintBoundary(
-                              key: const ValueKey('edition-art'),
-                              child: _recipe.negative
-                                  ? ColorFiltered(
-                                      colorFilter: editionNegative,
-                                      child: widget.child)
-                                  : widget.child))),
-                if (widget.layers.contains(EditionLayer.finish))
-                  IgnorePointer(
-                      child: RepaintBoundary(
+      return MouseRegion(
+        onHover: (e) => _motion.point(e.localPosition, size),
+        onExit: (_) => _motion.release(),
+        child: Listener(
+          onPointerDown: (e) => _motion.point(e.localPosition, size),
+          onPointerMove: (e) => _motion.point(e.localPosition, size),
+          onPointerCancel: (_) => _motion.release(),
+          onPointerUp: (_) => _motion.release(),
+          child: AnimatedBuilder(
+              animation: _motion,
+              builder: (context, child) => Transform(
+                  key: const ValueKey('edition-tilt'),
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, .0012)
+                    ..rotateX(-_motion.tilt.dy * editionTiltRadians)
+                    ..rotateY(_motion.tilt.dx * editionTiltRadians),
+                  child: child),
+              child: RepaintBoundary(
+                  child: Stack(
+                      fit: StackFit.expand,
+                      clipBehavior: Clip.none,
+                      children: [
+                    if (widget.layers.contains(EditionLayer.frame))
+                      RepaintBoundary(
                           child: CustomPaint(
                               painter: EditionStaticPainter(staticGeometry,
-                                  foreground: true)))),
-                // Only this sibling listens to light. The decoded image and both
-                // display lists retain separate layers throughout a sweep.
-                IgnorePointer(
-                    child: RepaintBoundary(
-                        child: CustomPaint(
-                            painter: EditionLightPainter(
-                                staticGeometry, _motion, layers: widget.layers),
-                            foregroundPainter: EditionFlarePainter(
-                                staticGeometry, _motion, widget.layers)))),
-                if (_recipe.gradeStamp != null ||
-                    _recipe.flareStamp != null ||
-                    clearLampIcon(_recipe.lampStamp) != null)
-                  Positioned(
-                      left: geometry.width + 8,
-                      right: geometry.width + 8,
-                      top: geometry.width + 8,
-                      child: IgnorePointer(
+                                  ring: !widget.layers
+                                      .contains(EditionLayer.art)))),
+                    if (widget.layers.contains(EditionLayer.art))
+                      Padding(
+                          padding: EdgeInsets.all(geometry.width),
+                          child: ClipPath(
+                              clipper: EditionClipper(geometry.inner.shift(
+                                  Offset(-geometry.width, -geometry.width))),
+                              child: RepaintBoundary(
+                                  key: const ValueKey('edition-art'),
+                                  child: _recipe.negative
+                                      ? ColorFiltered(
+                                          colorFilter: editionNegative,
+                                          child: widget.child)
+                                      : widget.child))),
+                    if (widget.layers.contains(EditionLayer.finish))
+                      IgnorePointer(
                           child: RepaintBoundary(
-                              child: EditionAchievementStamps(
+                              child: CustomPaint(
+                                  painter: EditionStaticPainter(staticGeometry,
+                                      foreground: true)))),
+                    // Only this sibling listens to light. The decoded image and both
+                    // display lists retain separate layers throughout a sweep.
+                    IgnorePointer(
+                        child: RepaintBoundary(
+                            child: CustomPaint(
+                                painter: EditionLightPainter(
+                                    staticGeometry, _motion,
+                                    layers: widget.layers),
+                                foregroundPainter: EditionFlarePainter(
+                                    staticGeometry, _motion, widget.layers)))),
+                    if (_recipe.gradeStamp != null ||
+                        _recipe.flareStamp != null)
+                      Positioned(
+                          left: geometry.width + 8,
+                          right: geometry.width + 8,
+                          top: geometry.width + 8,
+                          child: IgnorePointer(
+                              child: RepaintBoundary(
+                                  child: EditionAchievementStamps(
+                                      recipe: _recipe, motion: _motion)))),
+                    if (EditionFooter.shows(_recipe))
+                      Positioned(
+                          left: geometry.width,
+                          right: geometry.width,
+                          bottom: geometry.width,
+                          height: size.height * editionFooterHeight,
+                          child: IgnorePointer(
+                              child: EditionFooter(
                                   recipe: _recipe,
-                                  motion: _motion,
-                                  height: size.shortestSide * .105)))),
-                if (EditionFooter.shows(_recipe))
-                  Positioned(
-                      left: geometry.width,
-                      right: geometry.width,
-                      bottom: geometry.width,
-                      height: size.height * editionFooterHeight,
-                      child: IgnorePointer(
-                          child: EditionFooter(
-                              recipe: _recipe,
-                              clip: geometry.inner.shift(Offset(
-                                  -geometry.width,
-                                  geometry.width +
-                                      size.height * editionFooterHeight -
-                                      size.height))))),
-              ])));
+                                  clip: geometry.inner.shift(Offset(
+                                      -geometry.width,
+                                      geometry.width +
+                                          size.height * editionFooterHeight -
+                                          size.height))))),
+                  ]))),
+        ),
+      );
     });
   }
 }
 
-/// The flare at top left, clear lamp in the middle and grade at top right,
+/// The flare in the card's top left corner and the grade in its top right,
 /// across the width it's given.
 class EditionAchievementStamps extends StatelessWidget {
   const EditionAchievementStamps(
-      {super.key,
-      required this.recipe,
-      this.motion,
-      this.flareStamp,
-      this.gradeStamp,
-      this.lampStamp,
-      this.height = 22});
+      {super.key, required this.recipe, this.motion, this.flareStamp});
   final EditionRecipe recipe;
   final EditionMotion? motion;
-  // Compact cards can show achievement stickers without a score footer.
+  // Compact cards can show flare without the recipe's grade/score stamps.
   final String? flareStamp;
-  final Grade? gradeStamp;
-  final ClearLamp? lampStamp;
-  final double height;
   @override
   Widget build(BuildContext context) => Row(
           key: const ValueKey('edition-achievement-stamp'),
@@ -255,27 +250,12 @@ class EditionAchievementStamps extends StatelessWidget {
                       child: EditionStamp(
                           key: const ValueKey('edition-flare-stamp'),
                           asset: flareRankIcon(flare),
-                          height: height,
+                          height: 22,
                           label: flare,
                           motion: motion))),
             if ((flareStamp ?? recipe.flareStamp) == null)
               const SizedBox.shrink(),
-            if (clearLampIcon(lampStamp ?? recipe.lampStamp)
-                case final lampArt?)
-              Flexible(
-                  child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: EditionStamp(
-                          key: const ValueKey('edition-lamp-stamp'),
-                          asset: lampArt,
-                          height: height,
-                          label: (lampStamp ?? recipe.lampStamp)!
-                              .name
-                              .toUpperCase(),
-                          motion: motion))),
-            if ((gradeStamp ?? recipe.gradeStamp) == null)
-              const SizedBox.shrink(),
-            if ((gradeStamp ?? recipe.gradeStamp) case final grade?)
+            if (recipe.gradeStamp case final grade?)
               Flexible(
                   child: FittedBox(
                       fit: BoxFit.scaleDown,
@@ -283,7 +263,7 @@ class EditionAchievementStamps extends StatelessWidget {
                       child: EditionStamp(
                           key: const ValueKey('edition-grade-stamp'),
                           asset: gradeIcon(grade),
-                          height: height,
+                          height: 22,
                           label: grade.label,
                           motion: motion))),
           ]);

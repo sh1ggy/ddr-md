@@ -8,7 +8,6 @@ class Settings {
   // Appearance follows the player; reduced motion remains a device preference.
   static const jacketBorderKey = 'jacketEditionBorder';
   static const jacketEffectsOffKey = 'jacketEditionEffectsOff';
-  static const jacketViewerStampsOffKey = 'jacketViewerStampsOff';
   static const jacketMotionOffKey = 'jacketEditionMotionOff';
   static const jacketModeOffKey = 'jacketEditionModeOff';
   static const jacketGradeOffKey = 'jacketEditionGradeOff';
@@ -218,7 +217,6 @@ class Settings {
   static const syncedKeys = {
     jacketBorderKey,
     jacketEffectsOffKey,
-    jacketViewerStampsOffKey,
     jacketModeOffKey,
     jacketGradeOffKey,
     jacketDifficultyOffKey,

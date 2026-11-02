@@ -31,7 +31,7 @@ void main() {
     await tester.runAsync(() async {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
-      SharedPreferences.setMockInitialValues({Settings.jacketMotionOffKey: 1});
+      SharedPreferences.setMockInitialValues({});
       await Settings.init();
       final db = await DatabaseProvider.open(inMemoryDatabasePath);
       final originalSongs = Songs.list;
@@ -98,8 +98,8 @@ void main() {
           var card = await zoom();
           expect(card.facts.grade, Grade.b);
           expect(card.facts.flare, 'I');
-          // The expanded card carries the same achievement stickers as sharing.
-          expect(resolveEdition(card.facts, card.options).gradeStamp, Grade.b);
+          // The score card carries the badges; the zoomed card is its finish.
+          expect(resolveEdition(card.facts, card.options).gradeStamp, isNull);
           await close();
           state.setChosenDifficulty(1);
           await tester.pump();
