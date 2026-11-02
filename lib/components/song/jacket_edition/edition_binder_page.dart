@@ -523,51 +523,78 @@ class _Cover extends StatelessWidget {
             decoration: pop.stripes(radius: BorderRadius.circular(20)),
             child: Padding(
                 padding: const EdgeInsets.all(18),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('LEVEL', style: caps),
-                              const SizedBox(height: 6),
-                              LevelNumber(
-                                  level: divider.level,
-                                  difficulty: 'EXPERT',
-                                  height: 76),
-                            ]),
+                child:
+                    CustomMultiChildLayout(delegate: _CoverLayout(), children: [
+                  LayoutId(
+                      id: _CoverPart.head,
+                      child: Row(children: [
+                        LevelNumber(
+                            level: divider.level,
+                            difficulty: 'EXPERT',
+                            height: 76),
                         const Spacer(),
                         // The level list's rings, tapped open the same way.
                         BestRings(divider.bests, size: 84, track: pop.ink),
-                      ]),
-                      Expanded(
-                          child: fan.isEmpty
-                              ? Center(
-                                  child: Text('No cards here yet',
-                                      style: TextStyle(color: pop.haze)))
-                              : _Fan(pockets: fan, onOpen: onOpen)),
-                      Text(
-                          top != null
-                              ? 'Top card · ${top.song.title}'
-                              : 'Your top score at your hardest level '
-                                  'turns negative.',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: pop.haze)),
-                      const SizedBox(height: 10),
-                      Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
+                      ])),
+                  LayoutId(
+                      id: _CoverPart.fan,
+                      child: fan.isEmpty
+                          ? Center(
+                              child: Text('No cards here yet',
+                                  style: TextStyle(color: pop.haze)))
+                          : _Fan(pockets: fan, onOpen: onOpen)),
+                  LayoutId(
+                      id: _CoverPart.foot,
+                      child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('${divider.collected}/${divider.total}',
-                                style: FloorPop.readout(24,
-                                    color: scheme.onSurface)),
-                            const SizedBox(width: 8),
-                            Text('COLLECTED', style: caps),
-                          ]),
-                    ]))));
+                            if (top != null) ...[
+                              Text('Top card · ${top.song.title}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      TextStyle(fontSize: 12, color: pop.haze)),
+                              const SizedBox(height: 10),
+                            ],
+                            Row(
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  Text('${divider.collected}/${divider.total}',
+                                      style: FloorPop.readout(24,
+                                          color: scheme.onSurface)),
+                                  const SizedBox(width: 8),
+                                  Text('COLLECTED', style: caps),
+                                ]),
+                          ])),
+                ]))));
   }
+}
+
+enum _CoverPart { head, fan, foot }
+
+// The head at the top and the foot at the bottom, the fan between them
+// centred on the cover: as much room above as below, whichever is taller.
+class _CoverLayout extends MultiChildLayoutDelegate {
+  @override
+  void performLayout(Size size) {
+    // Unbounded down, as in a column.
+    final loose = BoxConstraints(maxWidth: size.width);
+    final head = layoutChild(_CoverPart.head, loose);
+    final foot = layoutChild(_CoverPart.foot, loose);
+    positionChild(_CoverPart.head, Offset.zero);
+    positionChild(_CoverPart.foot, Offset(0, size.height - foot.height));
+    final edge = math.max(head.height, foot.height);
+    layoutChild(
+        _CoverPart.fan,
+        BoxConstraints.tight(
+            Size(size.width, math.max(0, size.height - 2 * edge))));
+    positionChild(_CoverPart.fan, Offset(0, edge));
+  }
+
+  @override
+  bool shouldRelayout(_CoverLayout old) => false;
 }
 
 // Cards fanned from their foot, the first in front and upright.
@@ -578,7 +605,8 @@ class _Fan extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        final side = math.min(box.maxHeight - 32, box.maxWidth * .52);
+        final side =
+            math.max(0.0, math.min(box.maxHeight - 32, box.maxWidth * .52));
         Widget card(BinderPocket pocket, double turn, double shift) =>
             Transform.translate(
                 offset: Offset(shift * side, 0),
