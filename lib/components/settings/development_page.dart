@@ -7,7 +7,7 @@ import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_browser.dart';
-import 'package:ddr_md/components/song/jacket_edition/edition_fixture_store.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_guide.dart';
 import 'package:ddr_md/components/song_json.dart' show Modes;
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
@@ -170,7 +170,6 @@ class DevelopmentPage extends StatefulWidget {
 }
 
 class _DevelopmentPageState extends State<DevelopmentPage> {
-  final _fixtures = EditionFixtureSpace();
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: const Text('Development')),
@@ -201,13 +200,27 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                         }))),
             Card(
                 child: ListTile(
-                    leading: const Icon(Icons.storage_outlined),
-                    title: const Text('Seeded score combinations'),
-                    subtitle: Text(
-                        '${_fixtures.count} combinations • isolated test database'),
+                    leading: const Icon(Icons.layers_outlined),
+                    title: const Text('Card effects lab'),
+                    subtitle: const Text(
+                        'Choose a jacket and edit each infographic layer'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const EditionFixtureBrowser())))),
+                        builder: (_) =>
+                            const EditionGuidePage(editable: true))))),
+            Card(
+                child: ExpansionTile(
+                    leading: const Icon(Icons.bug_report_outlined),
+                    title: const Text('Card renderer tests'),
+                    children: [
+                  ListTile(
+                      title: const Text('Seeded score combinations'),
+                      subtitle: const Text(
+                          'Isolated test database and exhaustive validation'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const EditionFixtureBrowser()))),
+                ])),
             const Padding(
                 padding: EdgeInsets.all(12),
                 child: Text(
