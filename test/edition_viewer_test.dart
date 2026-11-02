@@ -25,11 +25,17 @@ void main() {
         home: Builder(
             builder: (context) => TextButton(
                 onPressed: () => showEditionViewer(context,
-                    facts: const EditionFacts(chart: (
-                      song: 'test',
-                      mode: 'singles',
-                      difficulty: 'hard'
-                    ), level: 16, grade: Grade.aa, flare: 'IX', score: 900000),
+                    facts: const EditionFacts(
+                        chart: (
+                          song: 'test',
+                          mode: 'singles',
+                          difficulty: 'hard'
+                        ),
+                        level: 16,
+                        lamp: ClearLamp.pfc,
+                        grade: Grade.aa,
+                        flare: 'IX',
+                        score: 900000),
                     options: (
                       borderId: 'gilded',
                       effects: true,
@@ -46,6 +52,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('edition-grade-stamp')), findsOneWidget);
     expect(find.byKey(const ValueKey('edition-flare-stamp')), findsOneWidget);
+    expect(find.byKey(const ValueKey('edition-lamp-stamp')), findsOneWidget);
     expect(find.byType(EditionFooter), findsOneWidget);
     await tester.tap(find.byTooltip('Turn card stamps off'));
     await tester.pumpAndSettle();

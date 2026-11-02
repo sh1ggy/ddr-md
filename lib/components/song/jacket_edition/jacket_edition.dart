@@ -4,6 +4,9 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/song/scores/score_card.dart'
+    show clearLampIcon;
+import 'package:ddr_md/models/db_models.dart' show ClearLamp;
 import 'package:ddr_md/grades.dart' show Grade, gradeIcon, flareRankIcon;
 import 'package:ddr_md/helpers.dart' show formatScore;
 import 'package:ddr_md/theme.dart' show FloorPop;
@@ -188,7 +191,9 @@ class _JacketEditionState extends State<JacketEdition>
                                 staticGeometry, _motion, layers: widget.layers),
                             foregroundPainter: EditionFlarePainter(
                                 staticGeometry, _motion, widget.layers)))),
-                if (_recipe.gradeStamp != null || _recipe.flareStamp != null)
+                if (_recipe.gradeStamp != null ||
+                    _recipe.flareStamp != null ||
+                    clearLampIcon(_recipe.lampStamp) != null)
                   Positioned(
                       left: geometry.width + 8,
                       right: geometry.width + 8,
@@ -218,7 +223,7 @@ class _JacketEditionState extends State<JacketEdition>
   }
 }
 
-/// The flare in the card's top left corner and the grade in its top right,
+/// The flare at top left, clear lamp in the middle and grade at top right,
 /// across the width it's given.
 class EditionAchievementStamps extends StatelessWidget {
   const EditionAchievementStamps(
@@ -227,12 +232,14 @@ class EditionAchievementStamps extends StatelessWidget {
       this.motion,
       this.flareStamp,
       this.gradeStamp,
+      this.lampStamp,
       this.height = 22});
   final EditionRecipe recipe;
   final EditionMotion? motion;
   // Compact cards can show achievement stickers without a score footer.
   final String? flareStamp;
   final Grade? gradeStamp;
+  final ClearLamp? lampStamp;
   final double height;
   @override
   Widget build(BuildContext context) => Row(
@@ -252,6 +259,21 @@ class EditionAchievementStamps extends StatelessWidget {
                           label: flare,
                           motion: motion))),
             if ((flareStamp ?? recipe.flareStamp) == null)
+              const SizedBox.shrink(),
+            if (clearLampIcon(lampStamp ?? recipe.lampStamp)
+                case final lampArt?)
+              Flexible(
+                  child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: EditionStamp(
+                          key: const ValueKey('edition-lamp-stamp'),
+                          asset: lampArt,
+                          height: height,
+                          label: (lampStamp ?? recipe.lampStamp)!
+                              .name
+                              .toUpperCase(),
+                          motion: motion))),
+            if ((gradeStamp ?? recipe.gradeStamp) == null)
               const SizedBox.shrink(),
             if ((gradeStamp ?? recipe.gradeStamp) case final grade?)
               Flexible(

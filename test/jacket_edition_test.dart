@@ -393,6 +393,24 @@ void main() {
       expect(stamp.height, 22);
     }
   });
+  testWidgets('clear lamps have stickers; failed and unknown have none',
+      (tester) async {
+    for (final lamp in <ClearLamp?>[...ClearLamp.values, null]) {
+      await tester.pumpWidget(host(JacketEdition(
+          facts: facts(lamp: lamp),
+          options: options(motion: false, stamps: true),
+          child: const ColoredBox(color: Colors.indigo))));
+      await tester.pumpAndSettle();
+      final sticker = find.byKey(const ValueKey('edition-lamp-stamp'));
+      if (lamp == null || lamp == ClearLamp.failed) {
+        expect(sticker, findsNothing);
+      } else {
+        expect(sticker, findsOneWidget);
+        expect(tester.widget<EditionStamp>(sticker).label,
+            lamp.name.toUpperCase());
+      }
+    }
+  });
   testWidgets('drag and hover leave the card flat', (tester) async {
     Widget viewer() => JacketEdition(
         facts: facts(),
