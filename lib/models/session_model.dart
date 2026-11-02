@@ -136,7 +136,7 @@ class TimingPlay {
   late final (double, double) _untruncated = untruncate(averageMs, variationMs);
 
   /// Where the player's steps were centred and how widely they spread,
-  /// counting the ones too far off to land on a note: see [untruncate].
+  /// estimating the excluded Boo and missed timings: see [untruncate].
   double get trueAverageMs => _untruncated.$1;
   double get trueVariationMs => _untruncated.$2;
 
@@ -198,8 +198,9 @@ class PlayerSync {
 double songOffsetMs(SongInfo songInfo, Chart chart) =>
     -(songInfo.displaySyncFor(chart)?.biasMs ?? 0);
 
-/// A step further than this from every note doesn't touch one.
-const kJudgeWindowMs = 160.0;
+/// Result timing statistics include MARVELOUS through GOOD (±124 ms).
+/// Boos can hit a note out to ±160 ms, but do not enter these statistics.
+const kTimingStatsWindowMs = 124.0;
 
 // Complementary error function, fractional error under 1.2e-7 everywhere,
 // so tail probabilities stay accurate far out.
@@ -220,8 +221,8 @@ double _erfc(double x) {
 // Mean and standard deviation of a normal(mu, sigma) seen only inside the
 // judgement window; null once almost none of it lands there.
 (double, double)? _windowed(double mu, double sigma) {
-  final a = (-kJudgeWindowMs - mu) / sigma;
-  final b = (kJudgeWindowMs - mu) / sigma;
+  final a = (-kTimingStatsWindowMs - mu) / sigma;
+  final b = (kTimingStatsWindowMs - mu) / sigma;
   // Φ(b) − Φ(a), from whichever tail keeps its precision.
   final mass = a > 0
       ? 0.5 * (_erfc(a / sqrt2) - _erfc(b / sqrt2))
@@ -235,17 +236,19 @@ double _erfc(double x) {
 }
 
 /// The result screen's timing average and variation only count steps that
-/// landed on a note, cutting off the tail beyond [kJudgeWindowMs]. Far off
-/// the beat that pulls both towards zero (a true 128 ms SLOW ± 45 reads
-/// 110 ± 33), so this finds the normal spread whose in-window part shows
+/// received MARVELOUS through GOOD; variation is their population standard
+/// deviation. Excluding Boos and misses cuts off the tail beyond
+/// [kTimingStatsWindowMs]. Far off the beat that pulls both towards zero
+/// (a true 110 ms SLOW ± 35 reads about 90.3 ± 23.7), so this finds the
+/// normal spread whose in-window part shows
 /// [averageMs] ± [variationMs]. Near the beat the cut-off tail is negligible
 /// and they come back as is. Right at the window's edge a reading fits
 /// spreads centred anywhere past it, so the centre stops at the edge; the
 /// wide spread that comes with it leaves such a play little weight.
 (double, double) untruncate(double averageMs, double variationMs) {
   final m = averageMs, s = max(variationMs, 1.0);
-  if ((kJudgeWindowMs - m.abs()) / s > 6) return (averageMs, variationMs);
-  if (m.abs() >= kJudgeWindowMs) return (averageMs, variationMs);
+  if ((kTimingStatsWindowMs - m.abs()) / s > 6) return (averageMs, variationMs);
+  if (m.abs() >= kTimingStatsWindowMs) return (averageMs, variationMs);
   // Newton on (mu, log sigma), starting from what was shown.
   var mu = m, ls = log(s);
   double? miss(double mu, double ls) {
@@ -281,7 +284,7 @@ double _erfc(double x) {
     ls -= step * dls;
     err = next;
   }
-  return (mu.clamp(-kJudgeWindowMs, kJudgeWindowMs), exp(ls));
+  return (mu.clamp(-kTimingStatsWindowMs, kTimingStatsWindowMs), exp(ls));
 }
 
 /// Inverse-variance mean of the plays' corrections: a tight play counts for
