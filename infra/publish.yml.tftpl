@@ -11,6 +11,9 @@ on:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     uses: sh1ggy/ddr-md/.github/workflows/publish-content.yml@${ref}
