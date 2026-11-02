@@ -5,8 +5,11 @@
 library;
 
 import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
-import 'package:ddr_md/components/song/jacket_edition/edition_stamp.dart';
 import 'package:ddr_md/components/song/jacket_edition/jacket_edition.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_viewer.dart';
+import 'package:ddr_md/components/song/jacket_edition/compact_jacket_edition.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_model.dart';
+import 'package:flutter/gestures.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
@@ -84,18 +87,63 @@ void main() {
               value: state,
               child: MaterialApp(
                   theme: floorPopTheme(Brightness.dark),
-                  home: const EditionBinderPage(level: 14))));
-          await Future<void>.delayed(const Duration(milliseconds: 80));
+                  home: Builder(
+                      builder: (context) => Scaffold(
+                          body: TextButton(
+                              onPressed: () => showEditionViewer(context,
+                                  facts: const EditionFacts(chart: (
+                                    song: 'a',
+                                    mode: 'singles',
+                                    difficulty: 'hard'
+                                  )),
+                                  options: defaultEditionOptions,
+                                  artwork:
+                                      const ColoredBox(color: Colors.indigo),
+                                  from: const Rect.fromLTWH(20, 20, 100, 100),
+                                  refreshScores: false,
+                                  onBinder: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                          builder: (_) =>
+                                              const EditionBinderPage(level: 14)))),
+                              child: const Text('Open jacket')))))));
+          final mouse =
+              await tester.createGesture(kind: PointerDeviceKind.mouse);
+          await mouse.addPointer(location: const Offset(30, 30));
+          await tester.tap(find.text('Open jacket'));
           await tester.pump();
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(
+              tester.getCenter(find.byType(JacketEdition)),
+              (tester.view.physicalSize / tester.view.devicePixelRatio)
+                  .center(Offset.zero));
+          await tester.tap(find.widgetWithText(TextButton, 'Binder'));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 500));
+          for (var frame = 0; frame < 12; frame++) {
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+            await tester.pump(const Duration(milliseconds: 100));
+          }
           expect(tester.takeException(), isNull);
           expect(find.text('3/3'), findsOneWidget);
           expect(find.bySemanticsLabel('Singles'), findsOneWidget);
-          final stamp = tester.widget<EditionStamp>(
-              find.byKey(const ValueKey('edition-flare-stamp')));
-          expect(stamp.asset, 'assets/icons/flare_9.png');
+          expect(
+              find.byKey(const ValueKey('edition-flare-stamp')), findsNothing);
           expect(
               find.byKey(const ValueKey('edition-grade-stamp')), findsNothing);
           expect(find.byType(EditionFooter), findsNothing);
+          // Open a collected card after the jacket-to-binder handoff.
+          await tester
+              .tap(find.byType(CompactJacketEdition).hitTestable().last);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(find.widgetWithText(TextButton, 'Guide'), findsOneWidget);
+          await mouse.moveTo(const Offset(400, 300));
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+          await tester.tapAt(const Offset(30, 30));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 500));
+          await mouse.removePointer();
           state.setMode(Modes.doubles);
           await Future<void>.delayed(const Duration(milliseconds: 80));
           await tester.pump();

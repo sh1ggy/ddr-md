@@ -816,8 +816,8 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
                                           boxShadow: [
                                             if (glow > 0)
                                               BoxShadow(
-                                                  color: color
-                                                      .withValues(alpha: glow),
+                                                  color: color.withValues(
+                                                      alpha: glow),
                                                   blurRadius: 18,
                                                   spreadRadius:
                                                       2 + 6 * (1 - glow)),
@@ -883,9 +883,7 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
 // A sleeve: the card when collected, else the chart's jacket as a ghost.
 class _Pocket extends StatelessWidget {
   const _Pocket(
-      {required this.pocket,
-      required this.onOpen,
-      this.focused = false});
+      {required this.pocket, required this.onOpen, this.focused = false});
   final BinderPocket pocket;
   final ValueChanged<BinderPocket> onOpen;
   // Picked out, as the chart the binder was opened on.
@@ -936,15 +934,51 @@ class _Pocket extends StatelessWidget {
                 tierSuffix: false
               ),
               aura: false,
-              flareStamp: true,
               child: art));
     }
     if (!focused) return sleeve;
-    return DecoratedBox(
-        position: DecorationPosition.foreground,
-        decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: FloorPop.volt, width: 2.5)),
-        child: sleeve);
+    return _ArrivingJacket(child: sleeve);
   }
+}
+
+// Draw attention to the card reached from the viewer, then let it settle.
+class _ArrivingJacket extends StatefulWidget {
+  const _ArrivingJacket({required this.child});
+  final Widget child;
+
+  @override
+  State<_ArrivingJacket> createState() => _ArrivingJacketState();
+}
+
+class _ArrivingJacketState extends State<_ArrivingJacket>
+    with SingleTickerProviderStateMixin {
+  late final _bounce = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 1800));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _bounce.value = 1;
+    } else if (!_bounce.isAnimating && _bounce.value == 0) {
+      _bounce.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _bounce.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+      animation: _bounce,
+      child: widget.child,
+      builder: (context, child) {
+        final t = _bounce.value;
+        // Three diminishing hops, ending exactly in the sleeve.
+        final lift = math.sin(t * math.pi * 3).abs() * (1 - t) * 18;
+        return Transform.translate(offset: Offset(0, -lift), child: child);
+      });
 }

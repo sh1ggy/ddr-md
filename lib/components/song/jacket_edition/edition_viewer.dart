@@ -26,7 +26,7 @@ Future<void> showEditionViewer(
   VoidCallback? onBinder,
 }) async {
   final still = MediaQuery.disableAnimationsOf(context);
-  await Navigator.of(context).push<void>(PageRouteBuilder(
+  final route = PageRouteBuilder<bool>(
       transitionDuration: still ? Duration.zero : FloorPop.beat,
       reverseTransitionDuration: still ? Duration.zero : FloorPop.eighth,
       opaque: false,
@@ -42,7 +42,15 @@ Future<void> showEditionViewer(
           artwork: artwork,
           from: from,
           refreshScores: refreshScores,
-          onBinder: onBinder)));
+          onBinder:
+              onBinder == null ? null : () => Navigator.of(context).pop(true)));
+  final openBinder = await Navigator.of(context).push<bool>(route);
+  if (openBinder == true) {
+    // Finish removing the card's overlay and hover regions before opening
+    // another route with its own layout-driven cards.
+    await route.completed;
+    if (context.mounted) onBinder?.call();
+  }
 }
 
 class _ViewerPage extends StatefulWidget {
@@ -90,88 +98,144 @@ class _ViewerPageState extends State<_ViewerPage> {
     final from = widget.from;
     final animation = ModalRoute.of(context)!.animation!;
     return Stack(children: [
-      GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: from == null
-              ? Center(
-                  child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 640),
-                          child: AspectRatio(aspectRatio: 1, child: card))))
-              // One card throughout, flown from the jacket to the middle and
-              // back, with nothing crossfaded or swapped on the way.
-              : LayoutBuilder(builder: (context, box) {
-                  final side = math.min(
-                      640.0, math.min(box.maxWidth, box.maxHeight) - 48);
-                  final to = Rect.fromCenter(
-                      center: box.biggest.center(Offset.zero),
-                      width: side,
-                      height: side);
-                  final curve = CurvedAnimation(
-                      parent: animation, curve: Curves.fastOutSlowIn);
-                  return AnimatedBuilder(
-                      animation: curve,
-                      builder: (context, child) => Stack(children: [
-                            // Laid out once at full size and scaled, so the
-                            // card's layers are drawn once, not per frame.
-                            Positioned.fromRect(
-                                rect: Rect.lerp(from, to, curve.value)!,
-                                child: FittedBox(
-                                    child: SizedBox.fromSize(
-                                        size: to.size, child: child)))
-                          ]),
-                      child: card);
-                })),
+      Positioned.fill(
+        child: GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: from == null
+                ? Center(
+                    child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 640),
+                            child: AspectRatio(aspectRatio: 1, child: card))))
+                // One card throughout, flown from the jacket to the middle and
+                // back, with nothing crossfaded or swapped on the way.
+                : LayoutBuilder(builder: (context, box) {
+                    final side = math.min(
+                        640.0, math.min(box.maxWidth, box.maxHeight) - 48);
+                    final to = Rect.fromCenter(
+                        center: box.biggest.center(Offset.zero),
+                        width: side,
+                        height: side);
+                    final curve = animation
+                        .drive(CurveTween(curve: Curves.fastOutSlowIn));
+                    return AnimatedBuilder(
+                        animation: curve,
+                        builder: (context, child) =>
+                            Stack(clipBehavior: Clip.none, children: [
+                              // Laid out once at full size and scaled, so the
+                              // card's layers are drawn once, not per frame.
+                              Positioned.fromRect(
+                                  rect: Rect.lerp(from, to, curve.value)!,
+                                  child: FittedBox(
+                                      child: SizedBox.fromSize(
+                                          size: to.size, child: child)))
+                            ]),
+                        child: card);
+                  })),
+      ),
       FadeTransition(
         opacity: animation,
         child: SafeArea(
+            minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Align(
-                alignment: Alignment.topRight,
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (widget.onBinder case final onBinder?)
-                    IconButton(
-                        tooltip: 'Open in binder',
-                        color: Colors.white,
-                        icon: const Icon(Icons.collections_bookmark_outlined),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          onBinder();
-                        }),
-                  IconButton(
-                      tooltip: 'Share card',
-                      color: Colors.white,
-                      icon: const Icon(Icons.ios_share),
-                      onPressed: () => showEditionShare(context,
-                          facts: widget.facts, artwork: artwork)),
-                  IconButton(
-                      tooltip: _options.effects
-                          ? 'Turn card effects off'
-                          : 'Turn card effects on',
-                      color: Colors.white,
-                      isSelected: _options.effects,
-                      icon: const Icon(Icons.auto_awesome_outlined),
-                      selectedIcon: const Icon(Icons.auto_awesome),
-                      onPressed: _toggleEffects),
-                  IconButton(
-                      tooltip: 'How cards work',
-                      color: Colors.white,
-                      icon: const Icon(Icons.info_outline),
-                      // A sheet over the card, not a page: a page would take
-                      // the card and the song page beneath out of view, and a
-                      // hover tooltip moving with them breaks the frame.
-                      onPressed: () => showModalBottomSheet<void>(
-                          context: context,
-                          isScrollControlled: true,
-                          useSafeArea: true,
-                          showDragHandle: true,
-                          builder: (context) => EditionGuidePage(
-                              artwork: artwork,
-                              facts: widget.facts,
-                              sheet: true))),
-                ]))),
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                    padding: const EdgeInsets.only(bottom: 48),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 360),
+                      child: Material(
+                        color: Theme.of(context).colorScheme.surfaceContainer,
+                        elevation: 8,
+                        shadowColor: Colors.black54,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            side: BorderSide(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant)),
+                        clipBehavior: Clip.antiAlias,
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Row(children: [
+                            if (widget.onBinder case final onBinder?)
+                              _ViewerAction(
+                                  label: 'Binder',
+                                  icon: Icons.collections_bookmark_outlined,
+                                  onPressed: onBinder),
+                            _ViewerAction(
+                                label: 'Share',
+                                icon: Icons.ios_share,
+                                onPressed: () => showEditionShare(context,
+                                    facts: widget.facts, artwork: artwork)),
+                            _ViewerAction(
+                                label: 'Effects',
+                                toggled: _options.effects,
+                                icon: _options.effects
+                                    ? Icons.auto_awesome
+                                    : Icons.auto_awesome_outlined,
+                                onPressed: _toggleEffects),
+                            _ViewerAction(
+                                label: 'Guide',
+                                icon: Icons.info_outline,
+                                // A sheet over the card, not a page: a page would take
+                                // the card and the song page beneath out of view, and a
+                                // hover region moving with them breaks the frame.
+                                onPressed: () => showModalBottomSheet<void>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    useSafeArea: true,
+                                    showDragHandle: true,
+                                    builder: (context) => EditionGuidePage(
+                                        artwork: artwork,
+                                        facts: widget.facts,
+                                        sheet: true))),
+                          ]),
+                        ),
+                      ),
+                    )))),
       )
     ]);
+  }
+}
+
+class _ViewerAction extends StatelessWidget {
+  const _ViewerAction({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.toggled,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final bool? toggled;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final active = toggled == true;
+    return Expanded(
+        child: Semantics(
+            toggled: toggled,
+            child: TextButton(
+                style: TextButton.styleFrom(
+                    foregroundColor: active ? scheme.primary : scheme.onSurface,
+                    backgroundColor:
+                        active ? scheme.primary.withValues(alpha: .12) : null,
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18))),
+                onPressed: onPressed,
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(icon, size: 24),
+                  const SizedBox(height: 6),
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                ]))));
   }
 }
 
