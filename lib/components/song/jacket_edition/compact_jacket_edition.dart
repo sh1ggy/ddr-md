@@ -4,6 +4,7 @@
 /// input controller.
 library;
 
+import 'package:ddr_md/grades.dart' show kFlareCardColors, kFlareExColors;
 import 'package:flutter/widgets.dart';
 import 'edition_catalog.dart';
 import 'edition_model.dart';
@@ -18,6 +19,7 @@ class CompactJacketEdition extends StatefulWidget {
       required this.options,
       this.aura = true,
       this.flareStamp = false,
+      this.flareChip = false,
       required this.child});
   final EditionFacts facts;
   final EditionOptions options;
@@ -25,6 +27,9 @@ class CompactJacketEdition extends StatefulWidget {
   final bool aura;
   // Show flare independently of the grade and score stamps in the binder.
   final bool flareStamp;
+  // The flare as a chip folded over the art's top left corner, in its song
+  // select card's colour, for the binder's pockets.
+  final bool flareChip;
   final Widget child;
   @override
   State<CompactJacketEdition> createState() => _CompactJacketEditionState();
@@ -85,6 +90,23 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
                             EditionLayer.finish,
                             EditionLayer.frame
                           }))),
+        // Over the finish, so the foil and EX's polychrome don't wash it out.
+        if (widget.flareChip && recipe.flareIndex >= 0)
+          Padding(
+              padding: EdgeInsets.all(geometry.width),
+              child: IgnorePointer(
+                  child: ClipPath(
+                      clipper: EditionClipper(geometry.inner
+                          .shift(Offset(-geometry.width, -geometry.width))),
+                      child: Align(
+                          alignment: Alignment.topLeft,
+                          child: SizedBox.square(
+                              dimension: size.shortestSide * .24,
+                              child: CustomPaint(
+                                  painter: _FlareChip(recipe.ex
+                                      ? null
+                                      : kFlareCardColors[recipe.flareIndex]
+                                          .frame))))))),
         // Stickers at full size, scaled down to the card.
         if (recipe.gradeStamp != null || flareStamp != null)
           Positioned(
@@ -114,4 +136,42 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
       ]));
     });
   }
+}
+
+// A corner triangle in [color], or EX's rainbow when null, its fold edged
+// light then dark so it holds against any art.
+class _FlareChip extends CustomPainter {
+  _FlareChip(this.color);
+  final Color? color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..lineTo(size.width, 0)
+      ..lineTo(0, size.height)
+      ..close();
+    final fill = Paint();
+    if (color case final color?) {
+      fill.color = color;
+    } else {
+      fill.shader = const LinearGradient(colors: kFlareExColors)
+          .createShader(Offset.zero & size);
+    }
+    canvas.drawPath(path, fill);
+    canvas.drawLine(
+        Offset(size.width + 1.5, 0),
+        Offset(0, size.height + 1.5),
+        Paint()
+          ..color = const Color(0xB3000000)
+          ..strokeWidth = 1.5);
+    canvas.drawLine(
+        Offset(size.width, 0),
+        Offset(0, size.height),
+        Paint()
+          ..color = const Color(0xE6FFFFFF)
+          ..strokeWidth = 1.5);
+  }
+
+  @override
+  bool shouldRepaint(_FlareChip old) => old.color != color;
 }
