@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 import 'package:flutter/gestures.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/components/songlist/generated_jacket.dart';
@@ -202,7 +204,7 @@ void main() {
     expect(tester.binding.transientCallbackCount, 0);
   });
   testWidgets(
-      'reduced motion, ticker mode, options, frozen and updated facts stop ticking',
+      'visibility and motion controls stop ticking; unearned cards can still tilt',
       (tester) async {
     Widget viewer(EditionFacts f, {bool motion = true, Offset? frozen}) =>
         JacketEdition(
@@ -233,7 +235,8 @@ void main() {
     await tester.pumpWidget(host(viewer(facts(
         grade: null, lamp: null, flare: null, award: PrecisionAward.unknown))));
     await tester.pump();
-    expect(tester.binding.transientCallbackCount, 0);
+    expect(tester.binding.transientCallbackCount, greaterThan(0));
+    await tester.pumpWidget(const SizedBox());
   });
   testWidgets('route covering, dismissal and app lifecycle stop animation',
       (tester) async {
@@ -286,8 +289,8 @@ void main() {
           widgets.add(SizedBox.square(
               dimension: 64,
               child: JacketEdition(
-                  facts: facts(
-                      award: award, flare: ex ? 'EX' : null, tier: tier),
+                  facts:
+                      facts(award: award, flare: ex ? 'EX' : null, tier: tier),
                   options: options(motion: false),
                   frozenLight: const Offset(.35, .3),
                   child: const ColoredBox(color: Colors.indigo))));
@@ -362,8 +365,35 @@ void main() {
             .dy));
     expect(find.textContaining('TIER'), findsNothing);
   });
-  testWidgets('hover tilts the retained card; reduced motion keeps it flat',
+  testWidgets(
+      'full-card stickers scale with the card, compact stickers stay small',
       (tester) async {
+    for (final side in [300.0, 600.0]) {
+      await tester.pumpWidget(MaterialApp(
+          home: Center(
+              child: SizedBox.square(
+                  dimension: side,
+                  child: JacketEdition(
+                      facts: facts(),
+                      options: options(motion: false, stamps: true),
+                      child: const ColoredBox(color: Colors.indigo))))));
+      await tester.pumpAndSettle();
+      for (final stamp
+          in tester.widgetList<EditionStamp>(find.byType(EditionStamp))) {
+        expect(stamp.height, closeTo(side * .105, .001));
+      }
+    }
+    await tester.pumpWidget(host(CompactJacketEdition(
+        facts: facts(),
+        options: options(motion: false, stamps: true),
+        child: const ColoredBox(color: Colors.indigo))));
+    await tester.pumpAndSettle();
+    for (final stamp
+        in tester.widgetList<EditionStamp>(find.byType(EditionStamp))) {
+      expect(stamp.height, 22);
+    }
+  });
+  testWidgets('drag and hover leave the card flat', (tester) async {
     Widget viewer() => JacketEdition(
         facts: facts(),
         options: options(),
@@ -381,23 +411,56 @@ void main() {
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
-    expect(transform().transform.entry(0, 2).abs(), greaterThan(.01));
+    expect(transform().transform.entry(0, 2), 0);
+    await tester.drag(find.byType(JacketEdition), const Offset(80, 40));
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(transform().transform.entry(0, 2), 0);
     await tester.pumpWidget(host(viewer(), reduced: true));
     await tester.pump();
     expect(transform().transform.entry(0, 2), 0);
     await mouse.removePointer();
   });
-  test('motion coalesces pointer events to one vsync', () {
-    const provider = TestVSync();
-    final motion = EditionMotion(provider);
+  testWidgets('gyro coalesces samples, bounds tilt and stops when disabled',
+      (tester) async {
+    final events = StreamController<GyroscopeEvent>.broadcast(sync: true);
+    final motion = EditionMotion(const TestVSync(), gyroscope: events.stream);
     var notifications = 0;
     motion.addListener(() => notifications++);
     motion.configure(true);
-    for (var i = 0; i < 100; i++) {
-      motion.point(Offset(i.toDouble(), i.toDouble()), const Size(100, 100));
+    final start = DateTime(2026);
+    events.add(GyroscopeEvent(1, 1, 0, start));
+    for (var i = 1; i <= 100; i++) {
+      events.add(
+          GyroscopeEvent(1, 1, 0, start.add(Duration(milliseconds: i * 10))));
     }
     expect(notifications, 0);
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(motion.tilt.dx, greaterThan(.5));
+    expect(motion.tilt.dx, lessThanOrEqualTo(1));
+    expect(motion.tilt.dy, greaterThan(.5));
+    // Returning the phone to its starting angle also returns the card,
+    // even after exceeding the displayed tilt limit.
+    for (var i = 1; i <= 100; i++) {
+      events.add(GyroscopeEvent(
+          -1, -1, 0, start.add(Duration(milliseconds: 1000 + i * 10))));
+    }
+    for (var i = 0; i < 35; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(motion.tilt.distance, lessThan(.001));
     motion.configure(false);
+    expect(events.hasListener, isFalse);
+    expect(motion.tilt, Offset.zero);
+    motion.configure(true);
+    events.add(GyroscopeEvent(0, 0, 0, start));
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(motion.tilt, Offset.zero);
+    events.addError(StateError('sensor unavailable'));
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(motion.tilt, Offset.zero);
     motion.dispose();
+    await events.close();
   });
 }

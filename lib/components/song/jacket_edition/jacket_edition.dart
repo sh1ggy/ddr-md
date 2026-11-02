@@ -99,7 +99,8 @@ class _JacketEditionState extends State<JacketEdition>
             (route.secondaryAnimation == null ||
                 route.secondaryAnimation!.status == AnimationStatus.dismissed));
     _motion.configure(
-        _recipe.animated &&
+        _recipe.effects &&
+            _recipe.motion &&
             _foreground &&
             visible &&
             TickerMode.valuesOf(context).enabled &&
@@ -138,91 +139,81 @@ class _JacketEditionState extends State<JacketEdition>
         geometry = _geometry = EditionGeometry(_recipe, size);
       }
       final staticGeometry = geometry;
-      return MouseRegion(
-        onHover: (e) => _motion.point(e.localPosition, size),
-        onExit: (_) => _motion.release(),
-        child: Listener(
-          onPointerDown: (e) => _motion.point(e.localPosition, size),
-          onPointerMove: (e) => _motion.point(e.localPosition, size),
-          onPointerCancel: (_) => _motion.release(),
-          onPointerUp: (_) => _motion.release(),
-          child: AnimatedBuilder(
-              animation: _motion,
-              builder: (context, child) => Transform(
-                  key: const ValueKey('edition-tilt'),
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()
-                    ..setEntry(3, 2, .0012)
-                    ..rotateX(-_motion.tilt.dy * editionTiltRadians)
-                    ..rotateY(_motion.tilt.dx * editionTiltRadians),
-                  child: child),
-              child: RepaintBoundary(
-                  child: Stack(
-                      fit: StackFit.expand,
-                      clipBehavior: Clip.none,
-                      children: [
-                    if (widget.layers.contains(EditionLayer.frame))
-                      RepaintBoundary(
+      return AnimatedBuilder(
+          animation: _motion,
+          builder: (context, child) => Transform(
+              key: const ValueKey('edition-tilt'),
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, .0012)
+                ..rotateX(-_motion.tilt.dy * editionTiltRadians)
+                ..rotateY(_motion.tilt.dx * editionTiltRadians),
+              child: child),
+          child: RepaintBoundary(
+              child: Stack(
+                  fit: StackFit.expand,
+                  clipBehavior: Clip.none,
+                  children: [
+                if (widget.layers.contains(EditionLayer.frame))
+                  RepaintBoundary(
+                      child: CustomPaint(
+                          painter: EditionStaticPainter(staticGeometry,
+                              ring:
+                                  !widget.layers.contains(EditionLayer.art)))),
+                if (widget.layers.contains(EditionLayer.art))
+                  Padding(
+                      padding: EdgeInsets.all(geometry.width),
+                      child: ClipPath(
+                          clipper: EditionClipper(geometry.inner
+                              .shift(Offset(-geometry.width, -geometry.width))),
+                          child: RepaintBoundary(
+                              key: const ValueKey('edition-art'),
+                              child: _recipe.negative
+                                  ? ColorFiltered(
+                                      colorFilter: editionNegative,
+                                      child: widget.child)
+                                  : widget.child))),
+                if (widget.layers.contains(EditionLayer.finish))
+                  IgnorePointer(
+                      child: RepaintBoundary(
                           child: CustomPaint(
                               painter: EditionStaticPainter(staticGeometry,
-                                  ring: !widget.layers
-                                      .contains(EditionLayer.art)))),
-                    if (widget.layers.contains(EditionLayer.art))
-                      Padding(
-                          padding: EdgeInsets.all(geometry.width),
-                          child: ClipPath(
-                              clipper: EditionClipper(geometry.inner.shift(
-                                  Offset(-geometry.width, -geometry.width))),
-                              child: RepaintBoundary(
-                                  key: const ValueKey('edition-art'),
-                                  child: _recipe.negative
-                                      ? ColorFiltered(
-                                          colorFilter: editionNegative,
-                                          child: widget.child)
-                                      : widget.child))),
-                    if (widget.layers.contains(EditionLayer.finish))
-                      IgnorePointer(
+                                  foreground: true)))),
+                // Only this sibling listens to light. The decoded image and both
+                // display lists retain separate layers throughout a sweep.
+                IgnorePointer(
+                    child: RepaintBoundary(
+                        child: CustomPaint(
+                            painter: EditionLightPainter(
+                                staticGeometry, _motion, layers: widget.layers),
+                            foregroundPainter: EditionFlarePainter(
+                                staticGeometry, _motion, widget.layers)))),
+                if (_recipe.gradeStamp != null || _recipe.flareStamp != null)
+                  Positioned(
+                      left: geometry.width + 8,
+                      right: geometry.width + 8,
+                      top: geometry.width + 8,
+                      child: IgnorePointer(
                           child: RepaintBoundary(
-                              child: CustomPaint(
-                                  painter: EditionStaticPainter(staticGeometry,
-                                      foreground: true)))),
-                    // Only this sibling listens to light. The decoded image and both
-                    // display lists retain separate layers throughout a sweep.
-                    IgnorePointer(
-                        child: RepaintBoundary(
-                            child: CustomPaint(
-                                painter: EditionLightPainter(
-                                    staticGeometry, _motion,
-                                    layers: widget.layers),
-                                foregroundPainter: EditionFlarePainter(
-                                    staticGeometry, _motion, widget.layers)))),
-                    if (_recipe.gradeStamp != null ||
-                        _recipe.flareStamp != null)
-                      Positioned(
-                          left: geometry.width + 8,
-                          right: geometry.width + 8,
-                          top: geometry.width + 8,
-                          child: IgnorePointer(
-                              child: RepaintBoundary(
-                                  child: EditionAchievementStamps(
-                                      recipe: _recipe, motion: _motion)))),
-                    if (EditionFooter.shows(_recipe))
-                      Positioned(
-                          left: geometry.width,
-                          right: geometry.width,
-                          bottom: geometry.width,
-                          height: size.height * editionFooterHeight,
-                          child: IgnorePointer(
-                              child: EditionFooter(
+                              child: EditionAchievementStamps(
                                   recipe: _recipe,
-                                  clip: geometry.inner.shift(Offset(
-                                      -geometry.width,
-                                      geometry.width +
-                                          size.height * editionFooterHeight -
-                                          size.height))))),
-                  ]))),
-        ),
-      );
+                                  motion: _motion,
+                                  height: size.shortestSide * .105)))),
+                if (EditionFooter.shows(_recipe))
+                  Positioned(
+                      left: geometry.width,
+                      right: geometry.width,
+                      bottom: geometry.width,
+                      height: size.height * editionFooterHeight,
+                      child: IgnorePointer(
+                          child: EditionFooter(
+                              recipe: _recipe,
+                              clip: geometry.inner.shift(Offset(
+                                  -geometry.width,
+                                  geometry.width +
+                                      size.height * editionFooterHeight -
+                                      size.height))))),
+              ])));
     });
   }
 }
@@ -235,12 +226,14 @@ class EditionAchievementStamps extends StatelessWidget {
       required this.recipe,
       this.motion,
       this.flareStamp,
-      this.gradeStamp});
+      this.gradeStamp,
+      this.height = 22});
   final EditionRecipe recipe;
   final EditionMotion? motion;
   // Compact cards can show achievement stickers without a score footer.
   final String? flareStamp;
   final Grade? gradeStamp;
+  final double height;
   @override
   Widget build(BuildContext context) => Row(
           key: const ValueKey('edition-achievement-stamp'),
@@ -255,7 +248,7 @@ class EditionAchievementStamps extends StatelessWidget {
                       child: EditionStamp(
                           key: const ValueKey('edition-flare-stamp'),
                           asset: flareRankIcon(flare),
-                          height: 22,
+                          height: height,
                           label: flare,
                           motion: motion))),
             if ((flareStamp ?? recipe.flareStamp) == null)
@@ -268,7 +261,7 @@ class EditionAchievementStamps extends StatelessWidget {
                       child: EditionStamp(
                           key: const ValueKey('edition-grade-stamp'),
                           asset: gradeIcon(grade),
-                          height: 22,
+                          height: height,
                           label: grade.label,
                           motion: motion))),
           ]);
