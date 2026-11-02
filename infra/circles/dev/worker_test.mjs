@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import worker from "../worker.js";
 import { d1, keyOf } from "./d1.mjs";
 
+const DATA_KEY = "00".repeat(32);
 const DB = d1();
 // An existing installation upgrades without losing its broadcasts.
 await DB.prepare(`CREATE TABLE live(owner TEXT PRIMARY KEY, venue TEXT NOT NULL,
@@ -18,7 +19,7 @@ async function call(who, method, path, body) {
       headers: { Authorization: `Bearer ${keyOf(who)}`, "content-type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     }),
-    { DB },
+    { DB, DATA_KEY },
   );
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null };
@@ -41,7 +42,7 @@ assert.notEqual(a, b);
 
 r = await call("a", "POST", "/v1/code");
 assert.ok(Date.parse(r.body.codeUntil) - Date.now() <= 86400000);
-const code = r.body.code;
+let code = r.body.code;
 assert.match(code, /^[A-HJ-NP-Z2-9]{8}$/);
 r = await call("b", "GET", `/v1/code/${code.slice(0, 4)}-${code.slice(4).toLowerCase()}`);
 assert.deepEqual(r.body, {
@@ -70,10 +71,14 @@ r = await call("a", "GET", "/v1/me");
 assert.equal(r.body.circle.length, 0);
 assert.equal(r.body.following[0].friend, false);
 
-// Taken out, they can come back in with a live code.
+// Leaving is voluntary; removal separately revokes access.
 assert.equal((await call("b", "POST", "/v1/join", { code })).status, 200);
 r = await call("a", "DELETE", `/v1/circle/${b}`);
 assert.equal(r.body.circle.length, 0);
+
+assert.equal((await call("b", "POST", "/v1/join", { code })).status, 404);
+code = (await call("a", "POST", "/v1/code")).body.code;
+assert.equal((await call("b", "POST", "/v1/join", { code })).status, 409);
 
 // One scan, both ways: joining with back lets the leader into yours too.
 await call("d", "PUT", "/v1/me", { name: "SABLE", ddrCode: "28816640" });
@@ -83,15 +88,16 @@ assert.equal(r.body.following.find((p) => p.name === "SHIGGY").friend, true);
 assert.equal(r.body.circle.find((p) => p.name === "SHIGGY").friend, true);
 
 // A broadcast shows on its player to their circle until it ends.
-await call("b", "POST", "/v1/join", { code });
+await call("e", "PUT", "/v1/me", {name:"MIKA",ddrCode:"12345678"});
+await call("e", "POST", "/v1/join", { code });
 assert.equal((await call("a", "PUT", "/v1/live", { venue: "Round1", credit: 0, side: "1P" })).status, 400);
 assert.equal((await call("a", "PUT", "/v1/live", { venue: "Round1", credit: 2, side: "2P", session: "s-1" })).status, 204);
 // Only the broadcaster sees their session id.
 assert.equal((await call("a", "GET", "/v1/me")).body.live.session, "s-1");
-r = await call("b", "GET", "/v1/me");
+r = await call("e", "GET", "/v1/me");
 assert.deepEqual({ ...r.body.following[0].live, at: null }, { venue: "Round1", credit: 2, side: "2P", session: "s-1", at: null });
 assert.equal((await call("a", "DELETE", "/v1/live")).status, 204);
-assert.equal((await call("b", "GET", "/v1/me")).body.following[0].live, undefined);
+assert.equal((await call("e", "GET", "/v1/me")).body.following[0].live, undefined);
 
 // A credit shows to its circle, who can cheer it once each; the poster sees
 // the cheers on their own.
@@ -99,21 +105,21 @@ const play = { song: "MAX 300", mode: "singles", difficulty: "EXPERT", score: 91
 assert.equal((await call("a", "PUT", "/v1/credit", { session: "s-1", credit: 1, plays: [] })).status, 400);
 assert.equal((await call("a", "PUT", "/v1/credit", { session: "s-1", credit: 1, plays: [{ ...play, mode: "x" }] })).status, 400);
 assert.equal((await call("a", "PUT", "/v1/credit", { session: "s-1", credit: 1, plays: [play] })).status, 204);
-r = await call("b", "GET", "/v1/feed");
+r = await call("e", "GET", "/v1/feed");
 assert.equal(r.body.credits.length, 1);
 assert.deepEqual(r.body.credits[0].plays, [play]);
 assert.equal(r.body.credits[0].mine, null);
 const target = { by: a, session: "s-1", credit: 1 };
 await call("c", "PUT", "/v1/me", { name: "GUESSER", ddrCode: "11112222" });
-assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: "shout" })).status, 400);
+assert.equal((await call("e", "PUT", "/v1/cheer", { ...target, preset: "shout" })).status, 400);
 assert.equal((await call("c", "PUT", "/v1/cheer", { ...target, preset: "clean" })).status, 404);
-assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, credit: 2, preset: "clean" })).status, 404);
-assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: "clean" })).status, 204);
-assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: "legend" })).status, 204);
-assert.equal((await call("b", "GET", "/v1/feed")).body.credits[0].mine, "legend");
+assert.equal((await call("e", "PUT", "/v1/cheer", { ...target, credit: 2, preset: "clean" })).status, 404);
+assert.equal((await call("e", "PUT", "/v1/cheer", { ...target, preset: "clean" })).status, 204);
+assert.equal((await call("e", "PUT", "/v1/cheer", { ...target, preset: "legend" })).status, 204);
+assert.equal((await call("e", "GET", "/v1/feed")).body.credits[0].mine, "legend");
 r = await call("a", "GET", "/v1/feed");
-assert.deepEqual(r.body.yours[0].cheers, [{ id: b, name: "MIKA", preset: "legend" }]);
-assert.equal((await call("b", "PUT", "/v1/cheer", { ...target, preset: null })).status, 204);
+assert.deepEqual(r.body.yours[0].cheers, [{ id: (await call("e","GET","/v1/me")).body.id, name: "MIKA", preset: "legend" }]);
+assert.equal((await call("e", "PUT", "/v1/cheer", { ...target, preset: null })).status, 204);
 assert.equal((await call("a", "GET", "/v1/feed")).body.yours[0].cheers.length, 0);
 // Someone outside the circle sees none of it.
 assert.equal((await call("c", "GET", "/v1/feed")).body.credits.length, 0);
@@ -124,18 +130,18 @@ assert.equal((await call("c", "GET", `/v1/code/${code}`)).status, 429);
 assert.equal((await call("a", "DELETE", "/v1/me")).status, 204);
 assert.equal((await call("a", "GET", "/v1/me")).body.id, null);
 assert.equal((await call("a", "GET", "/nope")).status, 404);
-assert.equal((await worker.fetch(new Request("https://x/v1/me"), { DB })).status, 401);
+assert.equal((await worker.fetch(new Request("https://x/v1/me"), { DB, DATA_KEY })).status, 401);
 // Limits reject abuse before database work, including chunked bodies with
 // no Content-Length. Private JSON responses cannot be cached.
 const auth = {Authorization: `Bearer ${keyOf("a")}`};
 const oversized = await worker.fetch(new Request("https://x/v1/me", {
   method: "PUT", headers: auth, body: JSON.stringify({name: "X".repeat(9000)})
-}), {DB});
+}), {DB, DATA_KEY});
 assert.equal(oversized.status, 413);
 assert.equal(oversized.headers.get("Cache-Control"), "no-store");
 assert.equal((await worker.fetch(new Request("https://x/v1/me", {
   method: "PUT", headers: auth, body: "[]"
-}), {DB})).status, 400);
+}), {DB, DATA_KEY})).status, 400);
 assert.equal((await worker.fetch(new Request("https://x/v1/me", {headers: auth}), {
   DB: {prepare() {throw new Error("must not touch D1");}},
   REQUEST_RATE: {async limit() {return {success: false};}}
@@ -147,6 +153,5 @@ assert.equal((await worker.fetch(new Request("https://x/v1/me", {headers: auth})
 assert.equal((await call("b", "GET", "/v1/feed/trailing")).status, 404);
 const day = new Date().toISOString().slice(0, 10);
 await DB.prepare("INSERT INTO days(day,writes) VALUES (?,40000) ON CONFLICT(day) DO UPDATE SET writes=40000").bind(day).run();
-assert.equal((await call("b", "POST", "/v1/code")).status, 429);
-assert.equal((await DB.prepare("SELECT writes FROM days WHERE day=?").bind(day).first()).writes, 40000);
+assert.equal((await call("e", "POST", "/v1/code")).status, 200);
 console.log("circles worker: all checks passed");

@@ -212,18 +212,12 @@ or is caught before it ships. The ones that need you are marked.
 - The content repo is ~675 MB of plain git. GitHub starts warning near 1 GB;
   past that, prune jacket history or move jackets to Git LFS.
 - Pages serves the content publicly; the content repo is what's private.
-- Sync costs nothing: the account is on the Workers Free plan, where going
-  over a limit fails requests (until 00:00 UTC) instead of billing. The
-  Worker also stops accepting writes at 80,000 D1 rows a day across all
-  players (`DAY_WRITES`), under the free 100,000 and far under what Workers
-  Paid includes, so even an upgraded account wouldn't be billed for sync.
-  Each pushed row costs two (row + revision index), so that's ~40,000 rows
-  a day; a heavy player's first backup is ~2,200, and a launch day with
-  many first backups fills it. Refused pushes stay in the apps' outboxes
-  and go up on a later day, nothing lost. Each player is also capped at
-  20,000 rows a day (`DAY_ROWS`), and each IP address at 30,000 however
-  many keys it makes (`NETWORK_ROWS`, counted against a one-way
-  fingerprint cleared daily), so one script can't spend the day's budget.
+- Sync atomically enforces 20,000 rows/player/day and 30,000/network/day.
+  Empty uploads do not create accounts. New account creation is limited to
+  200/day independently of established accounts; there is no shared mutation
+  kill switch. Request limits aggregate IPv6 addresses by /64. These controls
+  do not guarantee availability or a spending cap: requests still invoke a
+  Worker, and distributed abuse can exhaust free platform quotas.
 
 ## Cloud Sync
 
@@ -241,7 +235,11 @@ from under released apps.
   the key lives in the Keychain (synced by iCloud Keychain), and on every
   platform in preferences (Android's backup restores it on a new phone).
   The DDR-CODE, when known, is stored as a label only.
-- **The server never reads rows.** Each is opaque JSON under (table, key);
+- **Encrypted storage.** The server does not interpret app rows. It encrypts
+  their payloads and original keys with AES-256-GCM and indexes row keys with
+  HMAC-SHA-256, using a Worker secret outside D1. The optional DDR-CODE label
+  is encrypted too. This is server-side encryption, not end-to-end encryption.
+  The API still returns the original JSON to the authenticated owner;
   every accepted write gets a per-user revision, and a device pulls
   everything after its cursor. The latest edit to a row wins: an older
   write keeps the stored data but still takes a new revision, so the
@@ -257,7 +255,8 @@ from under released apps.
   triggers in a migration; the server needs no change.
 
 Try it locally: put [sync/worker.js](sync/worker.js) behind a `cf dev`
-project with a D1 binding named `DB`, then run the app with
+project with a D1 binding named `DB`, a 64-character hex `DATA_KEY` secret,
+and the request/safety rate bindings in `main.tf`, then run the app with
 `--dart-define=SYNC_URL=http://localhost:<port>`.
 
 ## Circles
@@ -279,16 +278,20 @@ explicitly empty CIRCLES_URL to disable it.
   under it (8 characters with no 0/O or 1/I, good for a day); whoever has
   it is in. Two players in each other's circles are
   friends; joining can let the leader into the joiner's circle too, so one
-  scan makes friends. A leader can take anyone out of their circle; they can come back
-  with a live code. Code lookups are capped per player per day so codes can't be guessed, and
-  a daily mutation budget to bound database work. These are abuse controls,
-  not a guaranteed spending cap.
+  scan makes friends. Removing a player revokes the current invite and blocks
+  that identity from rejoining, including after code rotation. The owner can
+  still be impersonated by a different self-asserted identity; only share
+  invites with trusted people. Code lookups are capped per player per day,
+  and mutations at 600/player/day. New profiles have a separate 200/day
+  admission limit. These are abuse controls, not a guaranteed spending cap.
 - **Live sessions and cheers.** A broadcast session shows on its player
   (venue, credit, side) until it ends or lapses after two hours. After each
   e-amusement sync during one, the app shares the session's credits (songs,
   scores, fails, new bests), and the circle can cheer each with one of a few
   preset cheers (no free text, nothing to moderate). Credits and cheers
-  last two days. The app polls only while it shows live people or your own
+  disappear from feeds after two days; scheduled cleanup deletes expired
+  credits/cheers and live broadcasts in bounded batches every five minutes,
+  including for inactive players. The app polls only while it shows live people or your own
   broadcast: once a minute on the Circle tab and the live card, every half
   minute on someone's page.
 
@@ -324,14 +327,65 @@ The Circles Worker and D1 database are deployed and recorded in the main
 checkout's Terraform state. The cf OAuth login can deploy; Terraform's
 account-token data sources require the bootstrap API token described above.
 
-Circles rejects malformed routes and auth before querying D1, streams JSON
-up to 8 KiB, limits each circle and player to 100 memberships, and bounds
-credits and feed results. Production rate bindings throttle requests per
-key (120/min), per network (600/min), and invite lookups/joins per network
-(30/min), before database work. Limits are approximate and per Cloudflare
-location; the daily D1 mutation reservation is separate and atomic. These
-controls reduce abuse, but cannot guarantee availability or a spending cap
-on a paid account. No subscription or paid-plan upgrade is performed here.
+### Security checks and deployment
+
+Run `node infra/security_test.mjs`,
+`node infra/circles/dev/worker_test.mjs`, and
+`node infra/circles/uat/worker_test.mjs` for offline security/behavior checks;
+`flutter test test/cloud_sync_test.dart test/cloud_sync_http_test.dart` checks
+client convergence and large Unicode upload splitting. Validate Terraform
+with `terraform -chdir=infra validate`. Use the cached cf/Miniflare runtime
+for workerd checks before a deployment. These checks do not constitute a
+production load test or proof of DDoS immunity.
+
+`data_crypto.js` is an additional module for both Terraform Worker uploads.
+Both Workers require distinct, stable `DATA_KEY` secrets (32 random bytes as
+64 hex characters) and `MAINTENANCE_KEY` secrets. Keep them outside Terraform
+state; `keep_bindings = ["secret_text"]` preserves secrets on Terraform
+uploads. Back up encryption keys securely. Never generate a replacement data
+key over an existing encrypted database: old data needs its original key.
+A code rollback must retain encrypted-row support and the same key.
+
+Sync accepts at most 8 MiB per upload. New clients split uploads at 512 KiB.
+Every private response has `no-store`. The request bindings are 120/key/min,
+600/network/min, and, for Circles, 30 invite operations/network/min. All
+DELETE requests instead use `SAFETY_RATE` (30/key/min), preserving deletion
+and revocation when mutation/network allowances are exhausted. Missing rate
+bindings fail closed in production. Sync daily counters, revisions and writes
+commit or roll back together. Daily shared counters are telemetry only.
+
+Circles stores live venue names encrypted. New app versions use
+`POST /v1/code/lookup`; the legacy invite GET route stays compatible.
+Automatic invocation logs are disabled and logs/traces are not persisted,
+since legacy URLs contain invite capabilities. Only allowlisted operational
+event names/counts are logged. Use platform request/error metrics and the
+account's unexpected-spend notification for operations. The $1 account budget
+notification is managed separately through `cf alerting`, not the pinned
+Terraform provider (which lacks its filter); it is an alert, not a cap.
+
+Both Workers expose a maintenance endpoint restricted to `MAINTENANCE_KEY`:
+`POST /internal/maintenance`. It performs bounded legacy encryption and
+retention cleanup, and returns counts only. On Circles, the administrative
+`X-Revoke-Invites: 1` header also revokes existing invite codes; scheduled
+cleanup does not revoke unexpired codes. Run maintenance until no legacy
+rows remain after deploying encryption support. Older D1 recovery snapshots
+can contain plaintext until Cloudflare's recovery retention expires.
+
+Terraform configures five-minute maintenance schedules, explicitly disables
+version preview URLs, and prevents destruction of either D1 database while
+its lifecycle guard is present. Deploy matching code, helper module and
+bindings together. The production workers.dev URLs remain enabled for
+released apps. No paid plan is enabled here; an owned zone is needed for
+hostname WAF rules before Worker invocation. Work through a compatible
+hostname migration before disabling workers.dev.
+
+The November security deployment used cached cf OAuth because the bootstrap
+API token in the local tfvars was invalid. Terraform source is updated and
+validated, but a full Terraform refresh/apply still needs a valid bootstrap
+token. The private `_private/security-deploy/` directory holds the deployment
+configuration, secret files and evidence; its encryption-key backup is under
+`_private/backups/`, never in git. Preserve those keys when restoring infra.
+
 Public fixture keys are accepted by the app only for localhost testing;
 remote scenario execution requires explicit --allow-remote-fixtures and
 must contain only disposable fake data.

@@ -1,3 +1,5 @@
+import { dataCrypto, networkOf, secretMatches } from "../data_crypto.js";
+
 // Circles: players following and cheering each other (see infra/README.md
 // "Circles").
 //
@@ -38,12 +40,23 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS profiles(owner TEXT PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ddrCode TEXT NOT NULL, code TEXT UNIQUE, codeUntil TEXT, createdAt TEXT NOT NULL, day TEXT NOT NULL DEFAULT '', lookups INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS members(leader TEXT NOT NULL, member TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(leader, member)) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS members_member ON members(member)`,
+  `CREATE TABLE IF NOT EXISTS blocked(leader TEXT NOT NULL, member TEXT NOT NULL, PRIMARY KEY(leader,member)) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS blocked_member ON blocked(member)`,
+  `CREATE TABLE IF NOT EXISTS admissions(day TEXT PRIMARY KEY, accounts INTEGER NOT NULL CHECK(accounts <= 200))`,
+  `CREATE TRIGGER IF NOT EXISTS circle_enrollment BEFORE INSERT ON profiles WHEN NOT EXISTS(SELECT 1 FROM profiles WHERE owner=NEW.owner) BEGIN INSERT INTO admissions(day,accounts) VALUES(substr(NEW.createdAt,1,10),1) ON CONFLICT(day) DO UPDATE SET accounts=accounts+1; END`,
+  `CREATE TABLE IF NOT EXISTS usage(day TEXT NOT NULL, owner TEXT NOT NULL, mutations INTEGER NOT NULL CHECK(mutations <= 600), PRIMARY KEY(day,owner)) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS usage_owner ON usage(owner)`,
   `CREATE TABLE IF NOT EXISTS days(day TEXT PRIMARY KEY, writes INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS live(owner TEXT PRIMARY KEY, venue TEXT NOT NULL, credit INTEGER NOT NULL, side TEXT NOT NULL, session TEXT, at TEXT NOT NULL, until TEXT NOT NULL) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS credits(owner TEXT NOT NULL, session TEXT NOT NULL, credit INTEGER NOT NULL, at TEXT NOT NULL, plays TEXT NOT NULL, PRIMARY KEY(owner, session, credit)) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS credits_at ON credits(owner, at)`,
   `CREATE TABLE IF NOT EXISTS cheers(owner TEXT NOT NULL, session TEXT NOT NULL, credit INTEGER NOT NULL, cheerer TEXT NOT NULL, preset TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(owner, session, credit, cheerer)) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS cheers_at ON cheers(owner, at)`,
+  `CREATE INDEX IF NOT EXISTS live_until ON live(until)`,
+  `CREATE INDEX IF NOT EXISTS live_legacy ON live(owner) WHERE substr(venue,1,8) != 'sealed1:'`,
+  `CREATE INDEX IF NOT EXISTS credits_expiry ON credits(at)`,
+  `CREATE INDEX IF NOT EXISTS cheers_expiry ON cheers(at)`,
+  `CREATE INDEX IF NOT EXISTS cheers_cheerer ON cheers(cheerer)`,
 ];
 
 // A dancer name as the cabinet allows it.
@@ -56,10 +69,7 @@ const CODE = /^[A-HJ-NP-Z2-9]{8}$/;
 const DAY_LOOKUPS = 30;
 // How long an invite code works: long enough for a night at the arcade.
 const CODE_LIFE = 86400000;
-// Conservative daily mutation budget. This limits database work, not
-// Cloudflare billing; platform quotas still apply.
-const DAY_WRITES = 40000;
-const WRITE_RESERVATION = 20;
+// Mutations are bounded per player; there is no shared daily kill switch.
 const MAX_BODY = 8192;
 const MAX_MEMBERS = 100;
 const MAX_CREDITS = 100;
@@ -79,17 +89,27 @@ let ready;
 export default {
   async fetch(request, env) {
     try {
+      if (request.method === "POST" && new URL(request.url).pathname === "/internal/maintenance") {
+        if (!env.MAINTENANCE_KEY || !(await secretMatches(request.headers.get("Authorization"), `Bearer ${env.MAINTENANCE_KEY}`))) return json({error: "key"}, 401);
+        ready ??= initialise(env.DB);
+        await ready;
+        return json(await maintain(env.DB, await dataCrypto(env.DATA_KEY), request.headers.get("X-Revoke-Invites") === "1"));
+      }
       // Reject malformed auth/routes and throttle before touching D1.
       const auth = request.headers.get('Authorization') ?? '';
       if (!/^Bearer [A-Za-z0-9_-]{43}$/.test(auth)) return json({error: 'key'}, 401);
       const url = new URL(request.url);
-      const allowed = /^(GET \/v1\/(me|feed|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer)|POST \/v1\/(code|join)|DELETE \/v1\/(me|live|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
+      const allowed = /^(GET \/v1\/(me|feed|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer)|POST \/v1\/(code|join|code\/lookup)|DELETE \/v1\/(me|live|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
       if (!allowed.test(`${request.method} ${url.pathname}`)) return json({error: 'not found'}, 404);
-      if (!env.REQUEST_RATE && request.cf) return json({error: 'unavailable'}, 503);
-      const ip = request.headers.get('CF-Connecting-IP') ?? 'local';
-      if (env.NETWORK_RATE && !(await env.NETWORK_RATE.limit({key: ip})).success) return json({error: 'rate limit'}, 429);
+      if (request.cf && (!env.REQUEST_RATE || !env.NETWORK_RATE || !env.INVITE_RATE || !env.SAFETY_RATE)) {
+        return json({error: 'unavailable'}, 503);
+      }
+      const ip = networkOf(request.headers.get('CF-Connecting-IP') ?? 'local');
+      const safety = request.method === 'DELETE';
+      if (!safety && env.NETWORK_RATE && !(await env.NETWORK_RATE.limit({key: ip})).success) return json({error: 'rate limit'}, 429);
       const owner = await sha256(auth.slice(7));
-      if (env.REQUEST_RATE && !(await env.REQUEST_RATE.limit({key: owner})).success) return json({error: 'rate limit'}, 429);
+      if (!safety && env.REQUEST_RATE && !(await env.REQUEST_RATE.limit({key: owner})).success) return json({error: 'rate limit'}, 429);
+      if (safety && env.SAFETY_RATE && !(await env.SAFETY_RATE.limit({key: owner})).success) return json({error: 'rate limit'}, 429);
       if ((url.pathname.startsWith('/v1/code/') || url.pathname === '/v1/join') &&
           env.INVITE_RATE && !(await env.INVITE_RATE.limit({key: ip})).success) return json({error: 'rate limit'}, 429);
       let body = null;
@@ -113,14 +133,21 @@ export default {
           if (!body || typeof body !== 'object' || Array.isArray(body)) return json({error: 'json'}, 400);
         }
       }
+      const vault = await dataCrypto(env.DATA_KEY);
       ready ??= initialise(env.DB);
       await ready;
-      return await route(request, env.DB, owner, body);
+      return await route(request, env.DB, owner, body, vault);
     } catch (e) {
       ready = undefined;
-      console.error(e);
+      if (/CHECK constraint failed.*(mutations|accounts)|circle quota/.test(String(e?.message))) return json({error: "daily limit"}, 429);
+      console.error(JSON.stringify({event: "circles_error"}));
       return json({ error: "server" }, 500);
     }
+  },
+  async scheduled(event, env) {
+    ready ??= initialise(env.DB);
+    await ready;
+    console.log(JSON.stringify({event: "circles_maintenance", ...await maintain(env.DB, await dataCrypto(env.DATA_KEY))}));
   },
 };
 
@@ -133,30 +160,32 @@ async function initialise(db) {
   }
 }
 
-async function route(request, db, owner, body) {
+async function route(request, db, owner, body, vault) {
   const { pathname } = new URL(request.url);
   const [, version, what, arg] = pathname.split('/');
   const route = `${request.method} ${what}${arg === undefined ? "" : "/"}`;
-  if (request.method !== "GET" || what === "code") {
-    const day = new Date().toISOString().slice(0, 10);
-    const used = await db
-      .prepare(`INSERT INTO days(day, writes) VALUES (?1, ?2) ON CONFLICT(day) DO UPDATE SET writes = writes + ?2 WHERE writes + ?2 <= ?3 RETURNING writes`)
-      .bind(day, WRITE_RESERVATION, DAY_WRITES)
-      .first();
-    if (!used) return json({ error: "daily limit" }, 429);
-  }
-  if (route === "PUT me") return claim(db, owner, body);
   if (route === "DELETE me") return remove(db, owner);
-  // Everything else needs a profile first.
   const me = await db.prepare(`SELECT * FROM profiles WHERE owner = ?`).bind(owner).first();
-  if (route === "GET me") return me ? state(db, me) : json({ id: null });
-  if (!me) return json({ error: "profile" }, 403);
-  if (route === "POST code") return newCode(db, me);
+  if (route === "GET me") return me ? state(db,me,vault) : json({id:null});
+  if (!me && route !== "PUT me") return json({error:"profile"},403);
+  // Deletion and revocation have a separate request limiter and do not
+  // depend on mutation allowances. Invalid bodies spend no allowance.
+  if (request.method !== "GET" && request.method !== "DELETE") {
+    const invalid = validate(route, body);
+    if (invalid) return json({error: invalid},400);
+    const day = new Date().toISOString().slice(0,10);
+    if (me) await db.prepare(`INSERT INTO usage(day,owner,mutations) VALUES (?1,?2,1)
+      ON CONFLICT(day,owner) DO UPDATE SET mutations=mutations+1`).bind(day,owner).run();
+  }
+  if (route === "PUT me") return claim(db, owner, body, vault);
+
+  if (route === "POST code") return newCode(db, me, vault);
+  if (route === "POST code/") return lookup(db, me, body?.code);
   if (route === "GET code/") return lookup(db, me, arg);
   if (route === "POST join") return join(db, me, body?.code, body?.back === true);
-  if (route === "DELETE circle/") return takeOut(db, me, arg);
-  if (route === "DELETE following/") return leave(db, me, arg);
-  if (route === "PUT live") return goLive(db, me, body);
+  if (route === "DELETE circle/") return takeOut(db, me, arg, vault);
+  if (route === "DELETE following/") return leave(db, me, arg, vault);
+  if (route === "PUT live") return goLive(db, me, body, vault);
   if (route === "DELETE live") return endLive(db, me);
   if (route === "PUT credit") return postCredit(db, me, body);
   if (route === "GET feed") return feed(db, me);
@@ -175,7 +204,7 @@ const person = (r) => ({
   ...(r.venue == null ? {} : { live: { venue: r.venue, credit: r.credit, side: r.side, session: r.session ?? null, at: r.at } }),
 });
 
-async function state(db, me) {
+async function state(db, me, vault) {
   const [circle, following, live] = await db.batch([
     db
       .prepare(
@@ -185,7 +214,7 @@ async function state(db, me) {
       .bind(me.owner),
     db
       .prepare(
-        `SELECT p.id, p.name, p.ddrCode, ${FRIEND} AS friend, l.venue, l.credit, l.side, l.session, l.at
+        `SELECT p.id, p.name, p.ddrCode, ${FRIEND} AS friend, l.venue, l.credit, l.side, l.session, l.at, m.leader AS liveOwner
          FROM members m JOIN profiles p ON p.owner = m.leader
          LEFT JOIN live l ON l.owner = m.leader AND l.until > ?2
          WHERE m.member = ?1 ORDER BY m.at`,
@@ -201,14 +230,14 @@ async function state(db, me) {
     ddrCode: me.ddrCode,
     code: me.code,
     codeUntil: me.codeUntil,
-    // Your own broadcast, session included, which only you see.
-    live: live.results[0] ?? null,
+    // Your own broadcast, including its session.
+    live: live.results[0] ? {...live.results[0],venue: await vault.open(live.results[0].venue,`live:${me.owner}`)} : null,
     circle: circle.results.map(person),
-    following: following.results.map(person),
+    following: await Promise.all(following.results.map(async (r) => person(r.venue == null ? r : {...r,venue: await vault.open(r.venue,`live:${r.liveOwner}`)}))),
   });
 }
 
-async function claim(db, owner, body) {
+async function claim(db, owner, body, vault) {
   const name = String(body?.name ?? "").trim().toUpperCase();
   const ddrCode = String(body?.ddrCode ?? "").replaceAll(/\D/g, "");
   if (!NAME.test(name)) return json({ error: "name" }, 400);
@@ -221,15 +250,15 @@ async function claim(db, owner, body) {
     )
     .bind(owner, id, name, ddrCode, new Date().toISOString())
     .run();
-  return state(db, await db.prepare(`SELECT * FROM profiles WHERE owner = ?`).bind(owner).first());
+  return state(db, await db.prepare(`SELECT * FROM profiles WHERE owner = ?`).bind(owner).first(), vault);
 }
 
-async function newCode(db, me) {
+async function newCode(db, me, vault) {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
   const code = [...bytes].map((b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
   const until = new Date(Date.now() + CODE_LIFE).toISOString();
   await db.prepare(`UPDATE profiles SET code = ?1, codeUntil = ?2 WHERE owner = ?3`).bind(code, until, me.owner).run();
-  return state(db, { ...me, code, codeUntil: until });
+  return state(db, { ...me, code, codeUntil: until }, vault);
 }
 
 // The circle a live code opens, after this player's daily allowance.
@@ -269,34 +298,38 @@ async function join(db, me, code, back) {
   const insert = `INSERT INTO members(leader, member, at) SELECT ?1, ?2, ?3
     WHERE (SELECT count(*) FROM members WHERE leader = ?1) < ${MAX_MEMBERS}
       AND (SELECT count(*) FROM members WHERE member = ?2) < ${MAX_MEMBERS}
+      AND NOT EXISTS(SELECT 1 FROM blocked WHERE leader=?1 AND member=?2)
+      AND (?4 IS NULL OR EXISTS(SELECT 1 FROM profiles WHERE owner=?1 AND code=?4 AND codeUntil>?3))
+      AND (?4 IS NOT NULL OR EXISTS(SELECT 1 FROM members WHERE leader=?2 AND member=?1))
     ON CONFLICT DO NOTHING`;
   const now = new Date().toISOString();
   await db.batch([
-    db.prepare(insert).bind(leader.owner, me.owner, now),
-    ...(back ? [db.prepare(insert).bind(me.owner, leader.owner, now)] : []),
+    db.prepare(insert).bind(leader.owner, me.owner, now, leader.code),
+    ...(back ? [db.prepare(insert).bind(me.owner, leader.owner, now, null)] : []),
   ]);
   const joined = await db.prepare(`SELECT 1 FROM members WHERE leader = ? AND member = ?`).bind(leader.owner, me.owner).first();
   if (!joined) return json({error: 'circle full'}, 409);
   return json({ name: leader.name });
 }
 
-async function takeOut(db, me, id) {
-  await db
-    .prepare(`DELETE FROM members WHERE leader = ?1 AND member = (SELECT owner FROM profiles WHERE id = ?2)`)
-    .bind(me.owner, id)
-    .run();
-  return state(db, me);
+async function takeOut(db, me, id, vault) {
+  await db.batch([
+    db.prepare(`INSERT INTO blocked(leader,member) SELECT ?1,owner FROM profiles WHERE id=?2 ON CONFLICT DO NOTHING`).bind(me.owner,id),
+    db.prepare(`DELETE FROM members WHERE leader=?1 AND member=(SELECT owner FROM profiles WHERE id=?2)`).bind(me.owner,id),
+    db.prepare(`UPDATE profiles SET code=NULL,codeUntil=NULL WHERE owner=?`).bind(me.owner),
+  ]);
+  return state(db,{...me,code:null,codeUntil:null},vault);
 }
 
-async function leave(db, me, id) {
+async function leave(db, me, id, vault) {
   await db
     .prepare(`DELETE FROM members WHERE member = ?1 AND leader = (SELECT owner FROM profiles WHERE id = ?2)`)
     .bind(me.owner, id)
     .run();
-  return state(db, me);
+  return state(db, me, vault);
 }
 
-async function goLive(db, me, body) {
+async function goLive(db, me, body, vault) {
   const venue = String(body?.venue ?? "").trim().slice(0, VENUE);
   const credit = Number(body?.credit);
   const side = body?.side;
@@ -313,14 +346,14 @@ async function goLive(db, me, body) {
       `INSERT INTO live(owner, venue, credit, side, session, at, until) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
        ON CONFLICT(owner) DO UPDATE SET venue = ?2, credit = ?3, side = ?4, session = ?5, until = ?7`,
     )
-    .bind(me.owner, venue, credit, side, session, new Date(now).toISOString(), new Date(now + LIVE_LIFE).toISOString())
+    .bind(me.owner, await vault.seal(venue,`live:${me.owner}`), credit, side, session, new Date(now).toISOString(), new Date(now + LIVE_LIFE).toISOString())
     .run();
-  return new Response(null, { status: 204 });
+  return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
 }
 
 async function endLive(db, me) {
   await db.prepare(`DELETE FROM live WHERE owner = ?`).bind(me.owner).run();
-  return new Response(null, { status: 204 });
+  return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
 }
 
 // A play as the feed shows it, or null for anything else.
@@ -364,7 +397,7 @@ async function postCredit(db, me, body) {
     db.prepare(`DELETE FROM cheers WHERE owner = ? AND at < ?`).bind(me.owner, old),
   ]);
   if (!posted[0].results.length) return json({error: 'credit limit'}, 429);
-  return new Response(null, { status: 204 });
+  return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
 }
 
 async function feed(db, me) {
@@ -437,7 +470,7 @@ async function cheer(db, me, body) {
         )
         .bind(...key, preset, new Date().toISOString())
   ).run();
-  return new Response(null, { status: 204 });
+  return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
 }
 
 async function remove(db, owner) {
@@ -446,9 +479,11 @@ async function remove(db, owner) {
     db.prepare(`DELETE FROM cheers WHERE owner = ?1 OR cheerer = ?1`).bind(owner),
     db.prepare(`DELETE FROM live WHERE owner = ?`).bind(owner),
     db.prepare(`DELETE FROM members WHERE leader = ?1 OR member = ?1`).bind(owner),
+    db.prepare(`DELETE FROM blocked WHERE leader=?`).bind(owner),
+    db.prepare(`DELETE FROM usage WHERE owner=?`).bind(owner),
     db.prepare(`DELETE FROM profiles WHERE owner = ?`).bind(owner),
   ]);
-  return new Response(null, { status: 204 });
+  return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
 }
 
 async function sha256(text) {
@@ -461,4 +496,40 @@ function json(body, status = 200) {
     'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
     ...(status === 429 ? {'Retry-After': '60'} : {}),
   }});
+}
+
+function validate(route, body) {
+  if (route === "PUT me") {
+    if (!NAME.test(String(body?.name ?? "").trim().toUpperCase())) return "name";
+    if (!DDR_CODE.test(String(body?.ddrCode ?? "").replaceAll(/\D/g,""))) return "ddrCode";
+  }
+  if (route === "PUT live") {
+    if (!Number.isInteger(Number(body?.credit)) || Number(body.credit)<1 || Number(body.credit)>500 || !["1P","2P"].includes(body?.side) ||
+        (body?.session != null && !SESSION.test(String(body.session)))) return "live";
+  }
+  if (route === "PUT credit") {
+    if (!SESSION.test(body?.session ?? "") || !Number.isInteger(Number(body?.credit)) || Number(body.credit)<1 || Number(body.credit)>500 ||
+        !Array.isArray(body?.plays) || !body.plays.length || body.plays.length>6 || body.plays.map(playOf).includes(null)) return "credit";
+  }
+  if (route === "PUT cheer" && body?.preset != null && !PRESETS.includes(body.preset)) return "preset";
+  return null;
+}
+
+async function maintain(db,vault,revokeInvites=false) {
+  const now=new Date().toISOString(), old=new Date(Date.now()-FEED_LIFE).toISOString(), day=now.slice(0,10);
+  const {results:live}=await db.prepare(`SELECT owner,venue FROM live WHERE until>? AND substr(venue,1,8) != 'sealed1:' LIMIT 100`).bind(now).all();
+  const updates=await Promise.all(live.map(async r=>db.prepare(`UPDATE live SET venue=? WHERE owner=? AND venue=?`)
+    .bind(await vault.seal(r.venue,`live:${r.owner}`),r.owner,r.venue)));
+  const results=await db.batch([
+    ...updates,
+    ...(revokeInvites ? [db.prepare(`UPDATE profiles SET code=NULL,codeUntil=NULL WHERE code IS NOT NULL`)] : []),
+    db.prepare(`DELETE FROM live WHERE owner IN(SELECT owner FROM live WHERE until<=? LIMIT 1000)`).bind(now),
+    db.prepare(`DELETE FROM credits WHERE (owner,session,credit) IN(SELECT owner,session,credit FROM credits WHERE at<=? LIMIT 1000)`).bind(old),
+    db.prepare(`DELETE FROM cheers WHERE (owner,session,credit,cheerer) IN(SELECT owner,session,credit,cheerer FROM cheers WHERE at<=? LIMIT 1000)`).bind(old),
+    db.prepare(`UPDATE profiles SET code=NULL,codeUntil=NULL WHERE owner IN(SELECT owner FROM profiles WHERE codeUntil<=? AND code IS NOT NULL LIMIT 1000)`).bind(now),
+    db.prepare(`DELETE FROM usage WHERE day<?`).bind(day),
+    db.prepare(`DELETE FROM admissions WHERE day<?`).bind(day),
+    db.prepare(`DELETE FROM days WHERE day<?`).bind(day),
+  ]);
+  return {encrypted:live.length,maintenance:true};
 }

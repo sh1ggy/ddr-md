@@ -91,10 +91,13 @@ const privacySections = <(String, List<String>)>[
           'Google backup on a new phone). The server stores a one-way '
           'fingerprint of that key, never the key itself, and your rival '
           'code if DDR MD has one, so a backup can be recognised as yours. '
+          'Backup rows and cabinet identifiers are encrypted in the database '
+          'with a key kept separately by the server. The server decrypts them '
+          'for your devices; this is not end-to-end encryption. '
           'Cloudflare sees your IP address and the time of each request. '
           "DDR MD doesn't log them; to stop one network flooding the "
           "server, it counts each day's backups against a one-way "
-          'fingerprint of the IP address, cleared the next day.',
+          'fingerprint of the IP address, removed by scheduled cleanup after the day ends.',
       '- Circles (optional, nothing is sent until you start one on the '
           'Circle tab): the dancer name and DDR-CODE you give, your invite '
           'code and how long it lasts, who is in your circle and whose '
@@ -108,7 +111,9 @@ const privacySections = <(String, List<String>)>[
           'e-amusement syncs them. They can cheer a credit with one of a '
           'few set cheers, which everyone in your circle sees with their '
           'name. A broadcast ends with its session (or two hours after its '
-          'last credit), and credits and cheers are deleted after two days. '
+          'last credit). Credits and cheers disappear from feeds after two days. '
+          'Expired broadcasts, credits and cheers are removed by periodic cleanup; '
+          'Cloudflare recovery copies may remain longer. '
           'Like Cloud '
           'Backup there is no account, but the random key is a separate one, '
           'kept the same way, and the server stores only a one-way fingerprint '
@@ -143,7 +148,8 @@ const privacySections = <(String, List<String>)>[
           'on your device deletes it from the backup at the next sync. Leave '
           'circles & delete, under the Circle tab\'s settings, removes your '
           'name and code, your circle and your place in others\' from the circles '
-          'server straight away. '
+          'server straight away. Blocks set by other players can retain a '
+          'random profile fingerprint to prevent the same profile rejoining. '
           "Without Cloud Backup nothing is kept anywhere else, so there's "
           'nothing for me to delete on your behalf.',
     ]

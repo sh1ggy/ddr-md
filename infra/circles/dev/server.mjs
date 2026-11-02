@@ -28,10 +28,10 @@ http
         headers: req.headers,
         body: chunks.length ? Buffer.concat(chunks) : undefined,
       }),
-      { DB },
+      { DB, DATA_KEY: "00".repeat(32) },
     );
     res.writeHead(answer.status, Object.fromEntries(answer.headers));
     res.end(Buffer.from(await answer.arrayBuffer()));
     console.log(req.method, req.url, answer.status);
   })
-  .listen(8787, () => console.log(`circles on http://localhost:8787 (${path})`));
+  .listen(8787, "127.0.0.1", () => console.log(`circles on http://localhost:8787 (${path})`));

@@ -115,6 +115,9 @@ resource "cloudflare_d1_database" "sync" {
   read_replication = {
     mode = "disabled"
   }
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "cloudflare_workers_script" "sync" {
@@ -122,19 +125,48 @@ resource "cloudflare_workers_script" "sync" {
   script_name        = var.sync_worker
   content_file       = "${path.module}/sync/worker.js"
   content_sha256     = filesha256("${path.module}/sync/worker.js")
-  main_module        = "worker.js"
+  main_module        = "sync/worker.js"
   compatibility_date = "2026-10-01"
+  observability = {
+    enabled = true
+    logs    = { enabled = true, invocation_logs = false, persist = false }
+    traces  = { enabled = false, persist = false }
+  }
+  # Private fields are encrypted with secrets managed by cf, outside state.
+  keep_bindings = ["secret_text"]
+  files = {
+    "data_crypto.js" = {
+      content_base64 = filebase64("${path.module}/data_crypto.js")
+      content_type   = "application/javascript+module"
+    }
+  }
   bindings = [{
     type = "d1"
     name = "DB"
     id   = cloudflare_d1_database.sync.id
+    }, {
+    type         = "ratelimit"
+    name         = "REQUEST_RATE"
+    namespace_id = "72001"
+    simple       = { limit = 120, period = 60 }
+    }, {
+    type         = "ratelimit"
+    name         = "NETWORK_RATE"
+    namespace_id = "72002"
+    simple       = { limit = 600, period = 60 }
+    }, {
+    type         = "ratelimit"
+    name         = "SAFETY_RATE"
+    namespace_id = "72003"
+    simple       = { limit = 30, period = 60 }
   }]
 }
 
 resource "cloudflare_workers_script_subdomain" "sync" {
-  account_id  = var.cloudflare_account_id
-  script_name = cloudflare_workers_script.sync.script_name
-  enabled     = true
+  account_id       = var.cloudflare_account_id
+  script_name      = cloudflare_workers_script.sync.script_name
+  enabled          = true
+  previews_enabled = false
 }
 
 # Circles: its own Worker and D1 database, apart from cloud sync, since this
@@ -145,6 +177,9 @@ resource "cloudflare_d1_database" "circles" {
   read_replication = {
     mode = "disabled"
   }
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "cloudflare_workers_script" "circles" {
@@ -152,12 +187,20 @@ resource "cloudflare_workers_script" "circles" {
   script_name        = var.circles_worker
   content_file       = "${path.module}/circles/worker.js"
   content_sha256     = filesha256("${path.module}/circles/worker.js")
-  main_module        = "worker.js"
+  main_module        = "circles/worker.js"
   compatibility_date = "2026-10-01"
   observability = {
     enabled = true
-    logs    = { enabled = true, invocation_logs = true }
-    traces  = { enabled = true }
+    logs    = { enabled = true, invocation_logs = false, persist = false }
+    traces  = { enabled = false, persist = false }
+  }
+  # Private fields are encrypted with secrets managed by cf, outside state.
+  keep_bindings = ["secret_text"]
+  files = {
+    "data_crypto.js" = {
+      content_base64 = filebase64("${path.module}/data_crypto.js")
+      content_type   = "application/javascript+module"
+    }
   }
   bindings = [{
     type = "d1"
@@ -178,11 +221,29 @@ resource "cloudflare_workers_script" "circles" {
     name         = "INVITE_RATE"
     namespace_id = "71003"
     simple       = { limit = 30, period = 60 }
+    }, {
+    type         = "ratelimit"
+    name         = "SAFETY_RATE"
+    namespace_id = "71004"
+    simple       = { limit = 30, period = 60 }
   }]
 }
 
 resource "cloudflare_workers_script_subdomain" "circles" {
+  account_id       = var.cloudflare_account_id
+  script_name      = cloudflare_workers_script.circles.script_name
+  enabled          = true
+  previews_enabled = false
+}
+
+# Cleanup and legacy encryption also run when a player never returns.
+resource "cloudflare_workers_cron_trigger" "sync" {
+  account_id  = var.cloudflare_account_id
+  script_name = cloudflare_workers_script.sync.script_name
+  schedules   = [{ cron = "*/5 * * * *" }]
+}
+resource "cloudflare_workers_cron_trigger" "circles" {
   account_id  = var.cloudflare_account_id
   script_name = cloudflare_workers_script.circles.script_name
-  enabled     = true
+  schedules   = [{ cron = "*/5 * * * *" }]
 }

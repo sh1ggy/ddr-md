@@ -165,6 +165,24 @@ class HttpSyncServer implements SyncServer {
   @override
   Future<({int rev, List<int> lost})> push(List<SyncChange> changes,
       {String? ddrCode}) async {
+    // Bound upload bytes as well as row count. Large Unicode batches can
+    // exceed a server's byte cap despite each row fitting its character cap.
+    final payload = {
+      'ddrCode': ddrCode,
+      'changes': [
+        for (final c in changes) {'t': c.t, 'k': c.k, 'u': c.u, 'd': c.d}
+      ]
+    };
+    if (changes.length > 1 &&
+        utf8.encode(json.encode(payload)).length > 512 * 1024) {
+      final half = changes.length ~/ 2;
+      final first = await push(changes.sublist(0, half), ddrCode: ddrCode);
+      final second = await push(changes.sublist(half), ddrCode: ddrCode);
+      return (
+        rev: second.rev,
+        lost: [...first.lost, for (final i in second.lost) i + half]
+      );
+    }
     final body = await _send('POST', 'v1/push', {
       'ddrCode': ddrCode,
       'changes': [

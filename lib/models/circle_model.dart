@@ -436,7 +436,7 @@ class CircleState extends ChangeNotifier {
   Future<void> newCode() => _run(() => _send('POST', 'v1/code'));
 
   Future<CirclePreview?> preview(String code) => _run(() async {
-        final m = (await _send('GET', 'v1/code/${Uri.encodeComponent(code)}'))!;
+        final m = (await _send('POST', 'v1/code/lookup', {'code': code}))!;
         return (
           leader: _person(m['person'] as Map),
           members: m['members'] as int,
@@ -453,7 +453,7 @@ class CircleState extends ChangeNotifier {
       }) !=
       null;
 
-  /// Takes [p] out of your circle; a live code lets them back in.
+  /// Revokes [p] from your circle and invalidates its current invite.
   Future<void> remove(CirclePerson p) =>
       _run(() => _send('DELETE', 'v1/circle/${p.id}'));
 

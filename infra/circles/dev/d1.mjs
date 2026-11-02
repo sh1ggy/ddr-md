@@ -12,9 +12,11 @@ export function d1(path = ":memory:") {
     bind(...args) {
       return new Statement(this.query, args);
     }
-    async all() {
-      return { results: sql.prepare(this.query).all(...this.args) };
+    execute() {
+      const results = sql.prepare(this.query).all(...this.args);
+      return {results,meta:{changes:sql.prepare("SELECT changes() AS n").get().n}};
     }
+    async all() { return this.execute(); }
     async first() {
       return (await this.all()).results[0] ?? null;
     }
@@ -25,9 +27,15 @@ export function d1(path = ":memory:") {
   return {
     prepare: (query) => new Statement(query),
     batch: async (statements) => {
-      const results = [];
-      for (const s of statements) results.push(await s.all());
-      return results;
+      sql.exec("BEGIN");
+      try {
+        const results = statements.map((s) => s.execute());
+        sql.exec("COMMIT");
+        return results;
+      } catch (error) {
+        sql.exec("ROLLBACK");
+        throw error;
+      }
     },
   };
 }
