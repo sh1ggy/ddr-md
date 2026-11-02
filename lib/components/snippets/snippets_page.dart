@@ -24,6 +24,7 @@ import 'package:ddr_md/models/pattern_model.dart';
 import 'package:ddr_md/models/parity_profile.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/theme.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -344,11 +345,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
                                 fontWeight: FontWeight.w700, fontSize: 15)),
                         const SizedBox(height: 3),
                         Row(children: [
-                          Text(s.mode == Modes.singles ? 'SP' : 'DP',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: pop.haze)),
+                          PlayStyleIcon(mode: s.mode),
                           const SizedBox(width: 6),
                           if (name != null &&
                               kInGameDifficultyColors.containsKey(name))

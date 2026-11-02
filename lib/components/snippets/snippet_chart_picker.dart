@@ -12,6 +12,7 @@ import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -127,8 +128,14 @@ class _DifficultySheetState extends State<_DifficultySheet> {
             const SizedBox(height: 12),
             SegmentedButton<Modes>(
               segments: const [
-                ButtonSegment(value: Modes.singles, label: Text('SP')),
-                ButtonSegment(value: Modes.doubles, label: Text('DP')),
+                ButtonSegment(
+                    value: Modes.singles,
+                    label: PlayStyleIcon(
+                        mode: Modes.singles, compact: false, height: 15)),
+                ButtonSegment(
+                    value: Modes.doubles,
+                    label: PlayStyleIcon(
+                        mode: Modes.doubles, compact: false, height: 15)),
               ],
               selected: {_mode},
               onSelectionChanged: (s) => setState(() => _mode = s.first),

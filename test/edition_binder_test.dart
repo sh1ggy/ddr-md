@@ -33,7 +33,7 @@ void main() {
             'title': name,
             'version': 'DDR WORLD',
             'sp': {'easy': 5, 'hard': hard},
-            'dp': <String, dynamic>{}
+            'dp': {'hard': hard}
           });
       Songs.list = [song('a', 14), song('b', 14), song('c', 14), song('d', 15)];
       final state = SongState();
@@ -87,6 +87,13 @@ void main() {
           await tester.pump();
           expect(tester.takeException(), isNull);
           expect(find.text('3/3'), findsOneWidget);
+          expect(find.bySemanticsLabel('Singles'), findsOneWidget);
+          state.setMode(Modes.doubles);
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+          await tester.pump();
+          expect(find.bySemanticsLabel('Doubles'), findsOneWidget);
+          expect(find.bySemanticsLabel('Singles'), findsNothing);
+
           await tester.pumpWidget(const SizedBox());
         });
       } finally {

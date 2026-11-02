@@ -8,6 +8,7 @@ import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 
 /// A song choice, or one specific chart when [difficulty] is supplied.
@@ -164,8 +165,6 @@ class _SongSearchSheetState<T> extends State<SongSearchSheet<T>> {
                         itemBuilder: (context, index) {
                           final (:option, :similarity) = results[index];
                           final song = option.song;
-                          final mode =
-                              option.mode == Modes.singles ? 'SP' : 'DP';
                           final levels = option.mode == Modes.singles
                               ? song.singles
                               : song.doubles;
@@ -194,7 +193,7 @@ class _SongSearchSheetState<T> extends State<SongSearchSheet<T>> {
                                   runSpacing: 4,
                                   crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
-                                    Text(mode),
+                                    PlayStyleIcon(mode: option.mode),
                                     if (option.difficulty
                                         case final difficulty?)
                                       Semantics(

@@ -23,6 +23,7 @@ import 'package:ddr_md/models/visit_model.dart';
 import 'package:ddr_md/router.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -302,9 +303,7 @@ class _PlayCard extends StatelessWidget {
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
                           child: Row(children: [
-                            Text(play.mode == Modes.singles ? 'SP' : 'DP',
-                                style: muted.copyWith(
-                                    fontWeight: FontWeight.w700)),
+                            PlayStyleIcon(mode: play.mode),
                             const SizedBox(width: 6),
                             DifficultyLabel(
                                 difficulty: play.difficulty,

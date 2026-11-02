@@ -22,6 +22,7 @@ import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
 import 'package:ddr_md/theme.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -354,7 +355,15 @@ class _EditionBinderPageState extends State<EditionBinderPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: const Text('Binder')),
+        appBar: AppBar(
+          title: const Text('Binder'),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 20),
+              child: Center(child: PlayStyleIcon(mode: _mode, height: 18)),
+            ),
+          ],
+        ),
         // No spinner flashing up as cards come in, just the sheet once it's
         // ready.
         body: !_ready

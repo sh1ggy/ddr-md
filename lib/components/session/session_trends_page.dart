@@ -16,6 +16,7 @@ import 'package:ddr_md/models/session_trends.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/helpers.dart' show formatScore;
 import 'package:fl_chart/fl_chart.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 
 class SessionTrendsPage extends StatelessWidget {
@@ -132,7 +133,20 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         const SizedBox(height: 12),
         Row(children: [
           Expanded(
-              child: Text(labels.isEmpty ? 'All plays' : labels.join(' · '),
+              child: Text.rich(
+                  TextSpan(children: [
+                    if (_filter.mode != null) ...[
+                      WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: PlayStyleIcon(mode: _filter.mode!)),
+                      if (labels.length > 1) const TextSpan(text: ' · '),
+                    ],
+                    TextSpan(
+                        text: labels.isEmpty
+                            ? 'All plays'
+                            : (_filter.mode == null ? labels : labels.skip(1))
+                                .join(' · ')),
+                  ]),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: pop.haze))),
@@ -397,7 +411,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                     children: [
                       Text(
                           score
-                              ? 'The headline and bars show actual average cleared scores. Song choice affects those averages. Relative performance compares the same level and mode across periods, even on different songs, with equal weight per shared level. SP and DP stay separate. A good set meets or beats earlier averages at its levels. Unknown levels are left out of comparisons.'
+                              ? 'The headline and bars show actual average cleared scores. Song choice affects those averages. Relative performance compares the same level and mode across periods, even on different songs, with equal weight per shared level. Singles and doubles stay separate. A good set meets or beats earlier averages at its levels. Unknown levels are left out of comparisons.'
                               : 'Daily average timing variation in ms; lower is more consistent. Period comparisons use the same level and mode across periods, even on different songs. Only logged timing counts. Good sets use cleared scores against earlier averages at the same levels.',
                           style: TextStyle(fontSize: 11, color: pop.haze))
                     ],
@@ -440,8 +454,18 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
             style: TextStyle(
                 color: colour, fontSize: 13, fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        Text(
-            '${summary.levels.length} matching $label · ${summary.levels.map((l) => l.label).join(', ')}',
+        Text.rich(
+            TextSpan(children: [
+              TextSpan(text: '${summary.levels.length} matching $label · '),
+              for (var i = 0; i < summary.levels.length; i++) ...[
+                if (i > 0) const TextSpan(text: ', '),
+                WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: PlayStyleIcon(
+                        mode: summary.levels[i].group.mode, height: 10)),
+                TextSpan(text: ' ${summary.levels[i].group.level}'),
+              ],
+            ]),
             style: TextStyle(fontSize: 10, color: pop.haze)),
         const SizedBox(height: 4),
         Text(
@@ -649,7 +673,8 @@ List<String> _filterLabels(
       cabinets.values.where((c) => c.venueId == filter.venueId).firstOrNull;
   final cabinet = cabinets[filter.cabinetId];
   return [
-    if (filter.mode != null) filter.mode == Modes.singles ? 'SP' : 'DP',
+    if (filter.mode != null)
+      filter.mode == Modes.singles ? 'Singles' : 'Doubles',
     if (chart == null && filter.level != null) 'Level ${filter.level}',
     if (chart != null) '${chart.play.title} (${chart.play.difficulty})',
     if (venue != null) venue.venueName,
@@ -779,7 +804,12 @@ class _TrendFiltersSheetState extends State<_TrendFiltersSheet> {
               PillTabs<Modes?>(
                 tabHeight: 48,
                 values: const [null, Modes.singles, Modes.doubles],
-                tabs: const [Text('All modes'), Text('SP'), Text('DP')],
+                tabs: const [
+                  Text('All modes'),
+                  PlayStyleIcon(
+                      mode: Modes.singles, compact: false, height: 15),
+                  PlayStyleIcon(mode: Modes.doubles, compact: false, height: 15)
+                ],
                 selected: _mode,
                 onChanged: (mode) => setState(() {
                   _mode = mode;
@@ -829,9 +859,13 @@ class _TrendFiltersSheetState extends State<_TrendFiltersSheet> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(chart?.play.title ?? 'All charts'),
-                subtitle: Text(chart == null
-                    ? 'Track a specific chart'
-                    : '${chart.play.mode == Modes.singles ? 'SP' : 'DP'} · ${chart.play.difficulty}'),
+                subtitle: chart == null
+                    ? const Text('Track a specific chart')
+                    : Row(children: [
+                        PlayStyleIcon(mode: chart.play.mode),
+                        const SizedBox(width: 6),
+                        Text(chart.play.difficulty)
+                      ]),
                 trailing: const Icon(Icons.search_rounded),
                 onTap: _pickChart,
               ),

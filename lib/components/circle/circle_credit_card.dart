@@ -16,6 +16,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/theme.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -217,11 +218,7 @@ class _PlayRow extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 2),
             Row(children: [
-              Text(mode == Modes.singles ? 'SP' : 'DP',
-                  style: TextStyle(
-                      color: pop.haze,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700)),
+              PlayStyleIcon(mode: mode),
               const SizedBox(width: 6),
               DifficultyLabel(
                   difficulty: play.difficulty,
