@@ -231,16 +231,18 @@ class _JacketEditionState extends State<JacketEdition>
 /// across the width it's given.
 class EditionAchievementStamps extends StatelessWidget {
   const EditionAchievementStamps(
-      {super.key, required this.recipe, this.motion});
+      {super.key, required this.recipe, this.motion, this.flareStamp});
   final EditionRecipe recipe;
   final EditionMotion? motion;
+  // Compact cards can show flare without the recipe's grade/score stamps.
+  final String? flareStamp;
   @override
   Widget build(BuildContext context) => Row(
           key: const ValueKey('edition-achievement-stamp'),
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            if (recipe.flareStamp case final flare?)
+            if ((flareStamp ?? recipe.flareStamp) case final flare?)
               Flexible(
                   child: FittedBox(
                       fit: BoxFit.scaleDown,
@@ -251,7 +253,8 @@ class EditionAchievementStamps extends StatelessWidget {
                           height: 22,
                           label: flare,
                           motion: motion))),
-            if (recipe.flareStamp == null) const SizedBox.shrink(),
+            if ((flareStamp ?? recipe.flareStamp) == null)
+              const SizedBox.shrink(),
             if (recipe.gradeStamp case final grade?)
               Flexible(
                   child: FittedBox(

@@ -936,6 +936,7 @@ class _Pocket extends StatelessWidget {
                 tierSuffix: false
               ),
               aura: false,
+              flareStamp: true,
               child: art));
     }
     if (!focused) return sleeve;

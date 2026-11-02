@@ -5,6 +5,8 @@
 library;
 
 import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_stamp.dart';
+import 'package:ddr_md/components/song/jacket_edition/jacket_edition.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
@@ -56,7 +58,7 @@ void main() {
                   score: score,
                   rank: 'AA',
                   clearLamp: ClearLamp.clear,
-                  flareRank: '',
+                  flareRank: name == 'a' ? 'IX' : '',
                   updatedAt: DateTime(2026)),
           ]);
           await ChartBests.ensure(Modes.singles);
@@ -88,6 +90,12 @@ void main() {
           expect(tester.takeException(), isNull);
           expect(find.text('3/3'), findsOneWidget);
           expect(find.bySemanticsLabel('Singles'), findsOneWidget);
+          final stamp = tester.widget<EditionStamp>(
+              find.byKey(const ValueKey('edition-flare-stamp')));
+          expect(stamp.asset, 'assets/icons/flare_9.png');
+          expect(
+              find.byKey(const ValueKey('edition-grade-stamp')), findsNothing);
+          expect(find.byType(EditionFooter), findsNothing);
           state.setMode(Modes.doubles);
           await Future<void>.delayed(const Duration(milliseconds: 80));
           await tester.pump();
