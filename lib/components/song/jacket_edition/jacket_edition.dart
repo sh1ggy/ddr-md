@@ -4,7 +4,7 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
-import 'package:ddr_md/grades.dart' show gradeIcon, flareRankIcon;
+import 'package:ddr_md/grades.dart' show Grade, gradeIcon, flareRankIcon;
 import 'package:ddr_md/helpers.dart' show formatScore;
 import 'package:ddr_md/theme.dart' show FloorPop;
 import 'package:ddr_md/models/settings_model.dart';
@@ -231,11 +231,16 @@ class _JacketEditionState extends State<JacketEdition>
 /// across the width it's given.
 class EditionAchievementStamps extends StatelessWidget {
   const EditionAchievementStamps(
-      {super.key, required this.recipe, this.motion, this.flareStamp});
+      {super.key,
+      required this.recipe,
+      this.motion,
+      this.flareStamp,
+      this.gradeStamp});
   final EditionRecipe recipe;
   final EditionMotion? motion;
-  // Compact cards can show flare without the recipe's grade/score stamps.
+  // Compact cards can show achievement stickers without a score footer.
   final String? flareStamp;
+  final Grade? gradeStamp;
   @override
   Widget build(BuildContext context) => Row(
           key: const ValueKey('edition-achievement-stamp'),
@@ -255,7 +260,7 @@ class EditionAchievementStamps extends StatelessWidget {
                           motion: motion))),
             if ((flareStamp ?? recipe.flareStamp) == null)
               const SizedBox.shrink(),
-            if (recipe.gradeStamp case final grade?)
+            if ((gradeStamp ?? recipe.gradeStamp) case final grade?)
               Flexible(
                   child: FittedBox(
                       fit: BoxFit.scaleDown,

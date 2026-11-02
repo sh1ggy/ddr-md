@@ -65,7 +65,26 @@ class _ViewerPage extends StatefulWidget {
 }
 
 class _ViewerPageState extends State<_ViewerPage> {
-  late var _options = widget.options;
+  late bool _stamps = Settings.getInt(Settings.jacketViewerStampsOffKey) == 0;
+  late var _options = _viewerOptions(widget.options);
+
+  EditionOptions _viewerOptions(EditionOptions options) => (
+        borderId: options.borderId,
+        effects: options.effects,
+        motion: options.motion,
+        modeStamp: _stamps,
+        gradeStamp: _stamps,
+        difficultyStamp: _stamps,
+        tierSuffix: _stamps,
+      );
+
+  Future<void> _toggleStamps() async {
+    setState(() {
+      _stamps = !_stamps;
+      _options = _viewerOptions(_options);
+    });
+    await Settings.setInt(Settings.jacketViewerStampsOffKey, _stamps ? 0 : 1);
+  }
 
   Future<void> _toggleEffects() async {
     final effects = !_options.effects;
@@ -144,6 +163,15 @@ class _ViewerPageState extends State<_ViewerPage> {
                       icon: const Icon(Icons.ios_share),
                       onPressed: () => showEditionShare(context,
                           facts: widget.facts, artwork: artwork)),
+                  IconButton(
+                      tooltip: _stamps
+                          ? 'Turn card stamps off'
+                          : 'Turn card stamps on',
+                      color: Colors.white,
+                      isSelected: _stamps,
+                      icon: const Icon(Icons.sell_outlined),
+                      selectedIcon: const Icon(Icons.sell),
+                      onPressed: _toggleStamps),
                   IconButton(
                       tooltip: _options.effects
                           ? 'Turn card effects off'

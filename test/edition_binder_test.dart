@@ -93,8 +93,8 @@ void main() {
           final stamp = tester.widget<EditionStamp>(
               find.byKey(const ValueKey('edition-flare-stamp')));
           expect(stamp.asset, 'assets/icons/flare_9.png');
-          expect(
-              find.byKey(const ValueKey('edition-grade-stamp')), findsNothing);
+          expect(find.byKey(const ValueKey('edition-grade-stamp')),
+              findsNWidgets(3));
           expect(find.byType(EditionFooter), findsNothing);
           state.setMode(Modes.doubles);
           await Future<void>.delayed(const Duration(milliseconds: 80));
