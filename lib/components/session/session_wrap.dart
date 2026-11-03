@@ -816,18 +816,17 @@ class _Verdict extends StatelessWidget {
                     style: FloorPop.readout(20,
                         color: summary.upscores > 0 ? pop.sunText : pop.haze)),
               ])),
-          _VerdictTile(
-              label: 'CARDS',
-              color: cards > 0 ? pop.voltText : pop.haze,
-              fill: cards > 0 ? FloorPop.volt : pop.haze,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.style_rounded,
-                    size: 20, color: cards > 0 ? pop.voltText : pop.haze),
-                const SizedBox(width: 4),
-                Text('$cards',
-                    style: FloorPop.readout(20,
-                        color: cards > 0 ? pop.voltText : pop.haze)),
-              ])),
+          if (cards > 0)
+            _VerdictTile(
+                label: 'CARDS',
+                color: pop.voltText,
+                fill: FloorPop.volt,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.style_rounded, size: 20, color: pop.voltText),
+                  const SizedBox(width: 4),
+                  Text('$cards',
+                      style: FloorPop.readout(20, color: pop.voltText)),
+                ])),
         ]),
         if (goal case final goal?) ...[
           const SizedBox(height: 30),
