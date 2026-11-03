@@ -3,6 +3,8 @@
 /// Description: Rendering out the song item itself.
 library;
 
+import 'package:ddr_md/components/song/scoring_tier_label.dart';
+
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/models/pattern_model.dart';
@@ -116,7 +118,7 @@ class _SongListItemState extends State<SongListItem> {
     // Fixed height so every row is the same size; a song without a
     // transliteration centres its title and levels instead of leaving a gap.
     final titleBlock = SizedBox(
-      height: 54,
+      height: scoped ? 72 : 54,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -148,6 +150,16 @@ class _SongListItemState extends State<SongListItem> {
                   ? widget.songInfo.singles
                   : widget.songInfo.doubles,
               highlightIndex: widget.difficultyIndex),
+          if (scoped) ...[
+            const SizedBox(height: 4),
+            ScoringTierLabel(
+                song: widget.songInfo,
+                mode: mode,
+                index: widget.difficultyIndex!,
+                compact: true,
+                showMissing:
+                    context.read<SongState>().sortType == SortType.calculated),
+          ],
         ],
       ),
     );

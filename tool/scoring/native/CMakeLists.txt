@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.16)
+project(scoring_rhythm LANGUAGES CXX)
+add_library(minacalc SHARED API.cpp MinaCalc/MinaCalc.cpp)
+target_compile_features(minacalc PRIVATE cxx_std_17)
+target_compile_options(minacalc PRIVATE -O2 -fno-fast-math -ffp-contract=off)

@@ -150,6 +150,8 @@ class Settings {
 
   // The songlist's sort: a SortType index, and 1 for descending.
   static const String songlistSortKey = "songlistSort";
+  // Device-local: older apps cannot decode the calculated sort enum index.
+  static const String songlistCalculatedSortKey = "songlistCalculatedSort";
   static const String songlistSortDescKey = "songlistSortDesc";
 
   static const String rivalCodeSpeedKey = "rivalCode";

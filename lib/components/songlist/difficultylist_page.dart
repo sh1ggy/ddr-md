@@ -117,6 +117,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         nameBucket: _filter.nameBucket,
         favouritesOnly: _filter.favouritesOnly,
         categories: _filter.categories,
+        scoringBands: _filter.scoringBands,
       ),
       songState,
     );
@@ -130,6 +131,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         nameBucket: _filter.nameBucket,
         favouritesOnly: !_filter.favouritesOnly,
         categories: _filter.categories,
+        scoringBands: _filter.scoringBands,
       ),
       songState,
     );
@@ -145,6 +147,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         nameBucket: _filter.nameBucket,
         favouritesOnly: _filter.favouritesOnly,
         categories: _filter.categories,
+        scoringBands: _filter.scoringBands,
       ),
       songState,
     );
@@ -158,6 +161,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         nameBucket: bucket,
         favouritesOnly: _filter.favouritesOnly,
         categories: _filter.categories,
+        scoringBands: _filter.scoringBands,
       ),
       songState,
     );
@@ -173,6 +177,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
         nameBucket: _filter.nameBucket,
         favouritesOnly: _filter.favouritesOnly,
         categories: categories,
+        scoringBands: _filter.scoringBands,
       ),
       songState,
     );
@@ -263,10 +268,15 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
 
       final types =
           (mode == Modes.singles ? song.singles : song.doubles).availableTypes;
-      final keep = _filter.categories.isEmpty
+      final keep = _filter.categories.isEmpty && _filter.scoringBands.isEmpty
           ? null
-          : (int index) => _filter.categories.contains(chartCategory(
-              song.name, mode, types[index], patterns[song.name]));
+          : (int index) =>
+              (_filter.categories.isEmpty ||
+                  _filter.categories.contains(chartCategory(
+                      song.name, mode, types[index], patterns[song.name]))) &&
+              (_filter.scoringBands.isEmpty ||
+                  _filter.scoringBands
+                      .contains(scoringBandFor(song, mode, index)));
       if (sortType.isChartScoped) {
         songItems.addAll(chartItemsFor(song, mode,
             isFav: isFav, levels: _filter.levels, keep: keep));
@@ -278,7 +288,10 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
     }
 
     final int sign = descending ? -1 : 1;
-    if (sortType == SortType.level) {
+    if (sortType == SortType.calculated) {
+      songItems.sort(
+          (a, b) => compareCalculatedItems(a, b, mode, descending: descending));
+    } else if (sortType == SortType.level) {
       // Level lives here rather than in compareSongInfo because it needs the
       // mode to know which chart set to read.
       songItems.sort((a, b) {
@@ -618,6 +631,34 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             ],
           );
 
+        case SongFilterAxis.scoring:
+          return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                    'Calculated scoring difficulty within each official level folder.'),
+                const SizedBox(height: 8),
+                FilterTray(options: [
+                  for (final band in ScoringBand.values)
+                    FilterOption(
+                      label: band.label,
+                      selected: _filter.scoringBands.contains(band),
+                      onTap: () {
+                        final next = Set<ScoringBand>.of(_filter.scoringBands);
+                        if (!next.remove(band)) next.add(band);
+                        _applyFilter(
+                            SongFilter(
+                                levels: _filter.levels,
+                                versionBuckets: _filter.versionBuckets,
+                                nameBucket: _filter.nameBucket,
+                                favouritesOnly: _filter.favouritesOnly,
+                                categories: _filter.categories,
+                                scoringBands: next),
+                            songState);
+                      },
+                    )
+                ]),
+              ]);
         case SongFilterAxis.name:
           return FilterTray(
             options: <FilterOption>[
@@ -717,6 +758,18 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                         active: _activeFilterPanel == SongFilterAxis.pattern,
                         onPressed: () =>
                             toggleFilterPanel(SongFilterAxis.pattern),
+                      ),
+                      const SizedBox(width: 8),
+                      topButton(
+                        label: 'Calculated',
+                        value: _filter.scoringBands.isEmpty
+                            ? 'All'
+                            : _filter.scoringBands
+                                .map((b) => b.label)
+                                .join(', '),
+                        active: _activeFilterPanel == SongFilterAxis.scoring,
+                        onPressed: () =>
+                            toggleFilterPanel(SongFilterAxis.scoring),
                       ),
                     ],
                   ),

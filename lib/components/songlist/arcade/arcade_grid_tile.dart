@@ -6,6 +6,8 @@
 /// so the tile carries no selection state of its own.
 library;
 
+import 'package:ddr_md/components/song/scoring_tier_label.dart';
+
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -28,7 +30,7 @@ const double kArcadeTileGap = 3;
 // below it. Fixed so every tile in a row lines up; the grid adds both to the
 // square jacket to size the cell.
 const double kArcadeTitleHeight = 33;
-const double kArcadeCaptionHeight = 19;
+const double kArcadeCaptionHeight = 34;
 
 class ArcadeGridTile extends StatelessWidget {
   const ArcadeGridTile({
@@ -111,7 +113,19 @@ class ArcadeGridTile extends StatelessWidget {
       height: kArcadeCaptionHeight,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(3, 2, 3, 3),
-        child: _statStrip(context),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: _statStrip(context)),
+          if (item.isChartScoped)
+            FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: ScoringTierLabel(
+                    song: item.songInfo,
+                    mode: mode,
+                    index: item.difficultyIndex!,
+                    compact: true,
+                    showMissing: true)),
+        ]),
       ),
     );
   }

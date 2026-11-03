@@ -16,6 +16,7 @@ const List<SortType> _kSortCycle = <SortType>[
   SortType.version,
   SortType.title,
   SortType.level,
+  SortType.calculated,
   SortType.bpm,
   SortType.score,
   SortType.flare,
@@ -24,10 +25,11 @@ const List<SortType> _kSortCycle = <SortType>[
 
 /// The key after [sortType] in the cycle, skipping the bests sorts unless
 /// [bests].
-SortType nextSortType(SortType sortType, {bool bests = false}) {
+SortType nextSortType(SortType sortType,
+    {bool bests = false, bool calculated = true}) {
   final cycle = [
     for (final s in _kSortCycle)
-      if (bests || !s.isBest) s
+      if ((bests || !s.isBest) && (s != SortType.calculated || calculated)) s
   ];
   return cycle[(cycle.indexOf(sortType) + 1) % cycle.length];
 }
@@ -40,6 +42,8 @@ String sortLabel(SortType sortType) {
       return 'Title';
     case SortType.level:
       return 'Level';
+    case SortType.calculated:
+      return 'Calculated';
     case SortType.bpm:
       return 'BPM';
     case SortType.score:
@@ -64,7 +68,9 @@ class SortMenuButton extends StatelessWidget {
     // The favourites list has no bests, so it sorts a bests sort as the
     // default.
     final SortType sortType =
-        songState.sortType.isBest ? SortType.version : songState.sortType;
+        (songState.sortType.isBest || songState.sortType == SortType.calculated)
+            ? SortType.version
+            : songState.sortType;
     final String label = sortLabel(sortType);
 
     return Row(
@@ -72,7 +78,7 @@ class SortMenuButton extends StatelessWidget {
       children: <Widget>[
         TextButton(
           onPressed: () {
-            songState.setSortType(nextSortType(sortType));
+            songState.setSortType(nextSortType(sortType, calculated: false));
             onSorted?.call();
           },
           child: Text(label),

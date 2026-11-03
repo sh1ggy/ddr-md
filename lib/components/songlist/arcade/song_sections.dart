@@ -181,6 +181,7 @@ class SongFilter {
     this.nameBucket,
     this.favouritesOnly = false,
     this.categories = const <ChartCategory>{},
+    this.scoringBands = const <ScoringBand>{},
   });
 
   final Set<int> levels;
@@ -192,13 +193,15 @@ class SongFilter {
   // Per chart rather than per song, so the page applies it with the
   // categories it has loaded.
   final Set<ChartCategory> categories;
+  final Set<ScoringBand> scoringBands;
 
   bool get isEmpty =>
       levels.isEmpty &&
       versionBuckets.isEmpty &&
       nameBucket == null &&
       !favouritesOnly &&
-      categories.isEmpty;
+      categories.isEmpty &&
+      scoringBands.isEmpty;
 
   /// Whether [song] passes every axis. [isFav] comes from the caller because
   /// favourite state lives in the database, not on [SongInfo].
@@ -214,7 +217,29 @@ class SongFilter {
   }
 }
 
-enum SongFilterAxis { name, version, pattern }
+enum SongFilterAxis { name, version, pattern, scoring }
+
+/// Coarse parts of the calculated tier range within each official folder.
+enum ScoringBand {
+  lower('Lower'),
+  middle('Middle'),
+  upper('Upper'),
+  unavailable('Unrated');
+
+  const ScoringBand(this.label);
+  final String label;
+}
+
+ScoringBand scoringBandFor(SongInfo song, Modes mode, int index) {
+  final tier = song.scoringTierFor(mode, index)?.tier;
+  if (tier == null) return ScoringBand.unavailable;
+  final fraction = (tier * 100).round() % 100;
+  return fraction < 35
+      ? ScoringBand.lower
+      : fraction < 70
+          ? ScoringBand.middle
+          : ScoringBand.upper;
+}
 
 /// One folder of the arcade grid: a banner label plus the songs under it.
 class ArcadeSection {
@@ -239,6 +264,23 @@ List<ArcadeSection> groupSongItems(
   bool descending = false,
 }) {
   if (items.isEmpty) return const <ArcadeSection>[];
+  if (sortType == SortType.calculated) {
+    final levels = <int, List<SongItem>>{};
+    for (final item in items) {
+      (levels[levelForItem(item, mode)] ??= []).add(item);
+    }
+    final keys = levels.keys.toList()
+      ..sort((a, b) => descending ? b.compareTo(a) : a.compareTo(b));
+    return [
+      for (final key in keys)
+        ArcadeSection(
+          label: key > constants.maxDifficulty ? 'NO CHART' : 'LEVEL $key',
+          items: levels[key]!
+            ..sort((a, b) =>
+                compareCalculatedItems(a, b, mode, descending: descending)),
+        )
+    ];
+  }
   if (sortType.isBest) return _groupBests(items, sortType, mode, descending);
   final List<ArcadeSection> sections = _groupAscending(items, sortType, mode);
   if (!descending) return sections;
@@ -258,6 +300,7 @@ List<ArcadeSection> _groupAscending(
   Modes mode,
 ) {
   switch (sortType) {
+    case SortType.calculated:
     case SortType.level:
       final Map<int, List<SongItem>> byLevel = <int, List<SongItem>>{};
       for (final item in items) {
@@ -379,4 +422,26 @@ List<ArcadeSection> _groupBests(
 List<SongItem> _byTitle(List<SongItem> items) {
   items.sort((a, b) => compareSongInfo(a.songInfo, b.songInfo, SortType.title));
   return items;
+}
+
+/// Folder first, then calculated tier, with missing ratings last in either
+/// direction. Title and chart index make ties deterministic.
+int compareCalculatedItems(SongItem a, SongItem b, Modes mode,
+    {bool descending = false}) {
+  final sign = descending ? -1 : 1;
+  final folder = sign * levelForItem(a, mode).compareTo(levelForItem(b, mode));
+  if (folder != 0) return folder;
+  double? rating(SongItem item) => item.difficultyIndex == null
+      ? null
+      : item.songInfo.scoringTierFor(mode, item.difficultyIndex!)?.tier;
+  final x = rating(a), y = rating(b);
+  if (x != y) {
+    if (x == null) return 1;
+    if (y == null) return -1;
+    return sign * x.compareTo(y);
+  }
+  final title = compareSongInfo(a.songInfo, b.songInfo, SortType.title);
+  return title != 0
+      ? title
+      : (a.difficultyIndex ?? -1).compareTo(b.difficultyIndex ?? -1);
 }

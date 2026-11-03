@@ -63,6 +63,8 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      - name: Validate scoring fingerprints
+        run: python3 tool/scoring/validate_content.py --songs assets/songs --steps assets/steps
       - run: bash scripts/generate_songlist.sh
       # A different cwebp changes every jacket's hash and devices re-download
       # them all, hence the pinned runner image above.
@@ -137,6 +139,17 @@ jobs:
               if changed:
                   problems.append(f"counts changed for {len(changed)} songs whose charts didn't "
                                   f"(e.g. {changed[:3]}): bump kPatternEngineVersion")
+
+          # Compare the preceding songlist as well as checking each new fingerprint.
+          if 'songlist.json' in old:
+              before = json.load(urllib.request.urlopen(urllib.request.Request(
+                  f"{os.environ['CONTENT_URL']}/objects/{old['songlist.json']}.json",
+                  headers={"User-Agent": "ddr-md-publish-check"})))
+              with open('previous_songlist.json', 'w') as f:
+                  json.dump(before, f)
+              sys.path.insert(0, 'tool/scoring')
+              from validate_content import validate
+              problems.extend(validate('assets/songs', 'assets/steps', 'previous_songlist.json')['problems'])
 
           print(f"{len(songs)} songs, {len(gone)} removed, engine {new['engine']} (live {live.get('engine')})")
           for p in problems:

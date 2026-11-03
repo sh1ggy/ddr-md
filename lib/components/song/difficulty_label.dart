@@ -77,10 +77,14 @@ class LevelNumber extends StatelessWidget {
     this.height = kLevelHeight,
     this.dimmed = false,
     this.suffix,
+    this.decimalHundredths,
   });
 
   final int level;
   final int? suffix;
+
+  /// Precise scoring fraction, separate from the legacy material suffix.
+  final int? decimalHundredths;
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final double height;
@@ -106,6 +110,22 @@ class LevelNumber extends StatelessWidget {
                   outline: Colors.white)));
     }
 
+    if (decimalHundredths case final fraction?) {
+      final digits = fraction.toString().padLeft(2, '0');
+      return Semantics(
+        label: '$level.$digits',
+        child: ExcludeSemantics(
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+          numeral(level),
+          _CabinetText('.',
+              difficulty: difficulty,
+              height: height,
+              fill: Colors.black,
+              outline: Colors.white),
+          for (final digit in digits.split('')) numeral(int.parse(digit)),
+        ])),
+      );
+    }
     if (suffix == null) return numeral(level);
     final fractionalHeight = height * .62;
     return Semantics(

@@ -25,8 +25,7 @@ class SongState extends ChangeNotifier {
     _mode = Settings.getInt(Settings.playModeKey) == Modes.doubles.index
         ? Modes.doubles
         : Modes.singles;
-    final sort = Settings.getInt(Settings.songlistSortKey);
-    _sortType = sort == 0 ? SortType.version : SortType.values[sort - 1];
+    _sortType = _storedSort();
     _sortDescending = Settings.getInt(Settings.songlistSortDescKey) == 1;
     notifyListeners();
   }
@@ -40,10 +39,19 @@ class SongState extends ChangeNotifier {
       : Modes.singles;
   Modes get modes => _mode;
 
-  // Stored as index+1 so an unset 0 falls back to the cabinet's release order.
-  SortType _sortType = Settings.getInt(Settings.songlistSortKey) == 0
-      ? SortType.version
-      : SortType.values[Settings.getInt(Settings.songlistSortKey) - 1];
+  // Keep the new sort local while legacy sort preferences continue syncing.
+  // Older apps decode the shared integer using their shorter enum.
+  static SortType _storedSort() {
+    if (Settings.getInt(Settings.songlistCalculatedSortKey) == 1) {
+      return SortType.calculated;
+    }
+    final stored = Settings.getInt(Settings.songlistSortKey);
+    return stored > 0 && stored <= SortType.lamp.index + 1
+        ? SortType.values[stored - 1]
+        : SortType.version;
+  }
+
+  SortType _sortType = _storedSort();
   // A bests sort reads as the default while bests are hidden, and comes back
   // when they're shown.
   SortType get sortType =>
@@ -71,7 +79,11 @@ class SongState extends ChangeNotifier {
 
   void setSortType(SortType newSortType) {
     _sortType = newSortType;
-    Settings.setInt(Settings.songlistSortKey, newSortType.index + 1);
+    Settings.setInt(Settings.songlistCalculatedSortKey,
+        newSortType == SortType.calculated ? 1 : 0);
+    if (newSortType != SortType.calculated) {
+      Settings.setInt(Settings.songlistSortKey, newSortType.index + 1);
+    }
     notifyListeners();
   }
 

@@ -3,6 +3,8 @@
 /// Description: Widgets that display base song information.
 library;
 
+import 'package:ddr_md/components/song/scoring_tier_label.dart';
+
 import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/components/song/jacket_edition.dart';
@@ -312,6 +314,15 @@ class SongDetails extends StatelessWidget {
               // Every song has per-difficulty radar data, so the difficulty is
               // always selectable.
               SongDifficultyPicker(difficulty: difficulty),
+              if (songInfo.scoringTierFor(
+                      songState.modes, songState.chosenDifficulty) !=
+                  null) ...[
+                const SizedBox(height: 8),
+                ScoringTierLabel(
+                    song: songInfo,
+                    mode: songState.modes,
+                    index: songState.chosenDifficulty),
+              ],
             ],
           ),
         ),
