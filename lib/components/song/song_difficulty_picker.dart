@@ -17,9 +17,12 @@ class SongDifficultyPicker extends StatelessWidget {
   const SongDifficultyPicker({
     super.key,
     required this.difficulty,
+    this.song,
   });
 
   final Difficulty difficulty;
+  // Whose scoring tier the chosen tile carries on its numeral.
+  final SongInfo? song;
 
   @override
   Widget build(BuildContext context) {
@@ -80,10 +83,18 @@ class SongDifficultyPicker extends StatelessWidget {
                     child: Stack(children: [
                       Center(
                         child: Upright(
-                          child: LevelNumber(
-                              level: chart.level,
-                              difficulty: chart.name,
-                              height: 24),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: LevelNumber(
+                                level: chart.level,
+                                difficulty: chart.name,
+                                decimalHundredths: i == chosen
+                                    ? song
+                                        ?.scoringTierFor(songState.modes, i)
+                                        ?.hundredths
+                                    : null,
+                                height: 24),
+                          ),
                         ),
                       ),
                       if (i != chosen)

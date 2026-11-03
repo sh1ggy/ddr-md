@@ -3,8 +3,6 @@
 /// Description: Rendering out the song item itself.
 library;
 
-import 'package:ddr_md/components/song/scoring_tier_label.dart';
-
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/models/pattern_model.dart';
@@ -112,16 +110,6 @@ class _SongListItemState extends State<SongListItem> {
                     letterSpacing: 0.5,
                     color: group.color(
                         Theme.of(context).brightness == Brightness.dark))),
-          if (scoped &&
-              widget.songInfo.scoringTierFor(mode, widget.difficultyIndex!) !=
-                  null) ...[
-            const SizedBox(width: 6),
-            ScoringTierLabel(
-                song: widget.songInfo,
-                mode: mode,
-                index: widget.difficultyIndex!,
-                compact: true),
-          ],
         ]),
       ],
     );
@@ -159,7 +147,12 @@ class _SongListItemState extends State<SongListItem> {
               difficulty: mode == Modes.singles
                   ? widget.songInfo.singles
                   : widget.songInfo.doubles,
-              highlightIndex: widget.difficultyIndex),
+              highlightIndex: widget.difficultyIndex,
+              highlightTier: scoped
+                  ? widget.songInfo
+                      .scoringTierFor(mode, widget.difficultyIndex!)
+                      ?.hundredths
+                  : null),
         ],
       ),
     );

@@ -494,6 +494,12 @@ class Difficulty {
   }
 }
 
+/// A tier's hundredths as its shortest exact decimal digits: 90 → "9",
+/// 85 → "85", 5 → "05", 0 → "0".
+String decimalDigits(int hundredths) => hundredths % 10 == 0
+    ? '${hundredths ~/ 10}'
+    : hundredths.toString().padLeft(2, '0');
+
 /// Optional chart-content predictions, independent of player achievements.
 class ScoringTiers {
   const ScoringTiers(
@@ -543,7 +549,10 @@ class ScoringTier {
   final double tier;
   final double position;
   final String inputHash;
-  String get label => tier.toStringAsFixed(2);
+  // Hundredths past the level, e.g. 90 for 14.90.
+  int get hundredths => (tier * 100).round() % 100;
+  // Shortest exact decimal, e.g. 14.9, 14.85.
+  String get label => '${tier.floor()}.${decimalDigits(hundredths)}';
 
   static ScoringTier? tryParse(dynamic value) {
     if (value is! Map ||
