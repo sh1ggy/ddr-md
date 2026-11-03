@@ -491,8 +491,8 @@ const _kPad = 10.0, _kGap = 8.0;
   );
 }
 
-// A level's cover: its number and rings across the top, its best cards
-// fanned in the middle with the negative in front, and the count below.
+// A level's cover: its number across the top, its best cards fanned in the
+// middle with the negative in front, and its tiers and count below.
 class _Cover extends StatelessWidget {
   const _Cover({required this.divider, required this.onOpen});
   final BinderDivider divider;
@@ -523,78 +523,44 @@ class _Cover extends StatelessWidget {
             decoration: pop.stripes(radius: BorderRadius.circular(20)),
             child: Padding(
                 padding: const EdgeInsets.all(18),
-                child:
-                    CustomMultiChildLayout(delegate: _CoverLayout(), children: [
-                  LayoutId(
-                      id: _CoverPart.head,
-                      child: Row(children: [
-                        LevelNumber(
-                            level: divider.level,
-                            difficulty: 'EXPERT',
-                            height: 76),
-                        const Spacer(),
-                        // The level list's rings, tapped open the same way.
-                        BestRings(divider.bests, size: 84, track: pop.ink),
-                      ])),
-                  LayoutId(
-                      id: _CoverPart.fan,
-                      child: fan.isEmpty
-                          ? Center(
-                              child: Text('No cards here yet',
-                                  style: TextStyle(color: pop.haze)))
-                          : _Fan(pockets: fan, onOpen: onOpen)),
-                  LayoutId(
-                      id: _CoverPart.foot,
-                      child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      LevelNumber(
+                          level: divider.level,
+                          difficulty: 'EXPERT',
+                          height: 76),
+                      // The fan and the tiers split the cover evenly,
+                      // always, so paging from level to level nothing moves;
+                      // tiers past their share scroll.
+                      Expanded(
+                          child: fan.isEmpty
+                              ? Center(
+                                  child: Text('No cards here yet',
+                                      style: TextStyle(color: pop.haze)))
+                              : _Fan(pockets: fan, onOpen: onOpen)),
+                      // What the level list's rings count, laid out.
+                      Expanded(
+                          child: SingleChildScrollView(
+                              child: BestTiers(divider.bests, columns: 4))),
+                      const SizedBox(height: 14),
+                      Text(top == null ? '' : 'Top card · ${top.song.title}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: pop.haze)),
+                      const SizedBox(height: 10),
+                      Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
                           children: [
-                            if (top != null) ...[
-                              Text('Top card · ${top.song.title}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style:
-                                      TextStyle(fontSize: 12, color: pop.haze)),
-                              const SizedBox(height: 10),
-                            ],
-                            Row(
-                                crossAxisAlignment: CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
-                                children: [
-                                  Text('${divider.collected}/${divider.total}',
-                                      style: FloorPop.readout(24,
-                                          color: scheme.onSurface)),
-                                  const SizedBox(width: 8),
-                                  Text('COLLECTED', style: caps),
-                                ]),
-                          ])),
-                ]))));
+                            Text('${divider.collected}/${divider.total}',
+                                style: FloorPop.readout(24,
+                                    color: scheme.onSurface)),
+                            const SizedBox(width: 8),
+                            Text('COLLECTED', style: caps),
+                          ]),
+                    ]))));
   }
-}
-
-enum _CoverPart { head, fan, foot }
-
-// The head at the top and the foot at the bottom, the fan between them
-// centred on the cover: as much room above as below, whichever is taller.
-class _CoverLayout extends MultiChildLayoutDelegate {
-  @override
-  void performLayout(Size size) {
-    // Unbounded down, as in a column.
-    final loose = BoxConstraints(maxWidth: size.width);
-    final head = layoutChild(_CoverPart.head, loose);
-    final foot = layoutChild(_CoverPart.foot, loose);
-    positionChild(_CoverPart.head, Offset.zero);
-    positionChild(_CoverPart.foot, Offset(0, size.height - foot.height));
-    final edge = math.max(head.height, foot.height);
-    layoutChild(
-        _CoverPart.fan,
-        BoxConstraints.tight(
-            Size(size.width, math.max(0, size.height - 2 * edge))));
-    positionChild(_CoverPart.fan, Offset(0, edge));
-  }
-
-  @override
-  bool shouldRelayout(_CoverLayout old) => false;
 }
 
 // Cards fanned from their foot, the first in front and upright.
@@ -962,7 +928,6 @@ class _Pocket extends StatelessWidget {
                 tierSuffix: false
               ),
               aura: false,
-              flareChip: true,
               child: art));
     }
     if (!focused) return sleeve;

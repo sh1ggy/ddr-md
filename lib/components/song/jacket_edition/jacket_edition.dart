@@ -4,7 +4,8 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
-import 'package:ddr_md/grades.dart' show gradeIcon, flareRankIcon;
+import 'package:ddr_md/grades.dart'
+    show gradeIcon, flareRankIcon, kFlareCardColors, kFlareExColors;
 import 'package:ddr_md/helpers.dart' show formatScore;
 import 'package:ddr_md/theme.dart' show FloorPop;
 import 'package:ddr_md/models/settings_model.dart';
@@ -196,6 +197,9 @@ class _JacketEditionState extends State<JacketEdition>
                                     layers: widget.layers),
                                 foregroundPainter: EditionFlarePainter(
                                     staticGeometry, _motion, widget.layers)))),
+                    // Flare without its sticker: the chip in the art's corner.
+                    if (_recipe.flareStamp == null && _recipe.flareIndex >= 0)
+                      EditionFlareChip(geometry: geometry, side: .16),
                     if (_recipe.gradeStamp != null ||
                         _recipe.flareStamp != null)
                       Positioned(
@@ -412,4 +416,72 @@ class _Style extends StatelessWidget {
                 child: Transform.translate(
                     offset: Offset(-crop.$1 * unit, 0), child: image))));
   }
+}
+
+/// The flare as a chip folded over the art's top left corner, [side] of the
+/// card's, in its song select card's colour or EX's rainbow. Over the finish,
+/// so the foil and EX's polychrome don't wash it out.
+class EditionFlareChip extends StatelessWidget {
+  const EditionFlareChip(
+      {super.key, required this.geometry, required this.side});
+  final EditionGeometry geometry;
+  final double side;
+
+  @override
+  Widget build(BuildContext context) {
+    final recipe = geometry.recipe;
+    return Padding(
+        padding: EdgeInsets.all(geometry.width),
+        child: IgnorePointer(
+            child: ClipPath(
+                clipper: EditionClipper(geometry.inner
+                    .shift(Offset(-geometry.width, -geometry.width))),
+                child: Align(
+                    alignment: Alignment.topLeft,
+                    child: SizedBox.square(
+                        dimension: geometry.size.shortestSide * side,
+                        child: CustomPaint(
+                            painter: _FlareChipPainter(recipe.ex
+                                ? null
+                                : kFlareCardColors[recipe.flareIndex]
+                                    .frame)))))));
+  }
+}
+
+// A corner triangle in [color], or EX's rainbow when null, its fold edged
+// light then dark so it holds against any art.
+class _FlareChipPainter extends CustomPainter {
+  _FlareChipPainter(this.color);
+  final Color? color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..lineTo(size.width, 0)
+      ..lineTo(0, size.height)
+      ..close();
+    final fill = Paint();
+    if (color case final color?) {
+      fill.color = color;
+    } else {
+      fill.shader = const LinearGradient(colors: kFlareExColors)
+          .createShader(Offset.zero & size);
+    }
+    canvas.drawPath(path, fill);
+    canvas.drawLine(
+        Offset(size.width + 1.5, 0),
+        Offset(0, size.height + 1.5),
+        Paint()
+          ..color = const Color(0xB3000000)
+          ..strokeWidth = 1.5);
+    canvas.drawLine(
+        Offset(size.width, 0),
+        Offset(0, size.height),
+        Paint()
+          ..color = const Color(0xE6FFFFFF)
+          ..strokeWidth = 1.5);
+  }
+
+  @override
+  bool shouldRepaint(_FlareChipPainter old) => old.color != color;
 }

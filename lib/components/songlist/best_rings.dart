@@ -224,46 +224,6 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
     // The card's ground, so the unplayed reads against it.
     final track = pop.stage;
 
-    // Every kind in one three-column grid of tiles, badge on the left and
-    // count on the right, so the columns line up from section to section.
-    const gap = 6.0;
-    Widget section(
-            String title, String none, List<_Tier> tiers, double aspect) =>
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                    color: pop.haze)),
-            const SizedBox(height: 6),
-            LayoutBuilder(
-              builder: (context, box) =>
-                  Wrap(spacing: gap, runSpacing: gap, children: [
-                for (final t in tiers)
-                  ArtTile(t.art,
-                      aspect: aspect,
-                      ink: 12,
-                      width: (box.maxWidth - 2 * gap) / 3,
-                      height: 30,
-                      label: Text(none,
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.5,
-                              color: pop.haze)),
-                      trailing: Text('${t.count}',
-                          style: FloorPop.readout(14).copyWith(
-                              fontFeatures: const [
-                                FontFeature.tabularFigures()
-                              ]))),
-              ]),
-            ),
-          ],
-        );
-
     final card = ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 360),
       child: Material(
@@ -288,18 +248,8 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const SizedBox(height: 18),
-                      for (final (i, (title, aspect)) in const [
-                        ('GRADE', kGradeAspect),
-                        ('CLEAR LAMP', kLampAspect),
-                        ('FLARE', kFlareAspect),
-                      ].indexed)
-                        if (rings[i].isNotEmpty) ...[
-                          _rise(
-                              i,
-                              section(
-                                  title, _kNoneLabels[i], rings[i], aspect)),
-                          const SizedBox(height: 14),
-                        ],
+                      BestTiers(widget.bests, rise: _rise),
+                      const SizedBox(height: 14),
                       if (widget.onStats != null || widget.onBinder != null)
                         _rise(
                             3,
@@ -405,6 +355,76 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
             ),
           ),
         ]));
+  }
+}
+
+/// The rings' tiers counted out: grade, clear lamp and flare, each a grid
+/// of [columns] tiles across, badge on the left and count on the right, so
+/// the columns line up from section to section. [rise] wraps the [i]th
+/// section, for an entrance.
+class BestTiers extends StatelessWidget {
+  const BestTiers(this.bests, {super.key, this.columns = 3, this.rise});
+  final List<ChartBest?> bests;
+  final int columns;
+  final Widget Function(int i, Widget section)? rise;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final rings = _rings(bests);
+    const gap = 6.0;
+    Widget section(
+            String title, String none, List<_Tier> tiers, double aspect) =>
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                    color: pop.haze)),
+            const SizedBox(height: 6),
+            LayoutBuilder(
+              builder: (context, box) =>
+                  Wrap(spacing: gap, runSpacing: gap, children: [
+                for (final t in tiers)
+                  ArtTile(t.art,
+                      aspect: aspect,
+                      ink: 12,
+                      width: (box.maxWidth - (columns - 1) * gap) / columns,
+                      height: 30,
+                      label: Text(none,
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: pop.haze)),
+                      trailing: Text('${t.count}',
+                          style: FloorPop.readout(14).copyWith(
+                              fontFeatures: const [
+                                FontFeature.tabularFigures()
+                              ]))),
+              ]),
+            ),
+          ],
+        );
+    return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, (title, aspect)) in const [
+            ('GRADE', kGradeAspect),
+            ('CLEAR LAMP', kLampAspect),
+            ('FLARE', kFlareAspect),
+          ].indexed)
+            if (rings[i].isNotEmpty) ...[
+              if (rings.take(i).any((r) => r.isNotEmpty))
+                const SizedBox(height: 14),
+              (rise ?? (_, s) => s)(
+                  i, section(title, _kNoneLabels[i], rings[i], aspect)),
+            ],
+        ]);
   }
 }
 
