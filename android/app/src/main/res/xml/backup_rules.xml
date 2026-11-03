@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reproducible downloads and bundled OCR copies only. User data keeps the
+     default backup policy, including app_flutter/scores and shared preferences. -->
+<full-backup-content>
+    <exclude domain="file" path="content" />
+    <exclude domain="root" path="app_flutter/models" />
+    <exclude domain="root" path="app_flutter/templates" />
+</full-backup-content>
