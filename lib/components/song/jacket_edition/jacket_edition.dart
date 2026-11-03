@@ -199,7 +199,12 @@ class _JacketEditionState extends State<JacketEdition>
                                     staticGeometry, _motion, widget.layers)))),
                     // Flare without its sticker: the chip in the art's corner.
                     if (_recipe.flareStamp == null && _recipe.flareIndex >= 0)
-                      EditionFlareChip(geometry: geometry, side: .16),
+                      EditionFlareChip(
+                          geometry: geometry,
+                          side: .16,
+                          lift: EditionFooter.shows(_recipe)
+                              ? size.height * editionFooterHeight
+                              : 0),
                     if (_recipe.gradeStamp != null ||
                         _recipe.flareStamp != null)
                       Positioned(
@@ -418,14 +423,16 @@ class _Style extends StatelessWidget {
   }
 }
 
-/// The flare as a chip folded over the art's top left corner, [side] of the
-/// card's, in its song select card's colour or EX's rainbow. Over the finish,
-/// so the foil and EX's polychrome don't wash it out.
+/// The flare as a chip folded over the art's bottom right corner, [side] of
+/// the card's, in its song select card's colour or EX's rainbow; [lift] up
+/// off the foot, to clear a footer band. Over the finish, so the foil and
+/// EX's polychrome don't wash it out.
 class EditionFlareChip extends StatelessWidget {
   const EditionFlareChip(
-      {super.key, required this.geometry, required this.side});
+      {super.key, required this.geometry, required this.side, this.lift = 0});
   final EditionGeometry geometry;
   final double side;
+  final double lift;
 
   @override
   Widget build(BuildContext context) {
@@ -437,14 +444,16 @@ class EditionFlareChip extends StatelessWidget {
                 clipper: EditionClipper(geometry.inner
                     .shift(Offset(-geometry.width, -geometry.width))),
                 child: Align(
-                    alignment: Alignment.topLeft,
-                    child: SizedBox.square(
-                        dimension: geometry.size.shortestSide * side,
-                        child: CustomPaint(
-                            painter: _FlareChipPainter(recipe.ex
-                                ? null
-                                : kFlareCardColors[recipe.flareIndex]
-                                    .frame)))))));
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                        padding: EdgeInsets.only(bottom: lift),
+                        child: SizedBox.square(
+                            dimension: geometry.size.shortestSide * side,
+                            child: CustomPaint(
+                                painter: _FlareChipPainter(recipe.ex
+                                    ? null
+                                    : kFlareCardColors[recipe.flareIndex]
+                                        .frame))))))));
   }
 }
 
@@ -457,7 +466,8 @@ class _FlareChipPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final path = Path()
-      ..lineTo(size.width, 0)
+      ..moveTo(size.width, 0)
+      ..lineTo(size.width, size.height)
       ..lineTo(0, size.height)
       ..close();
     final fill = Paint();
@@ -469,8 +479,8 @@ class _FlareChipPainter extends CustomPainter {
     }
     canvas.drawPath(path, fill);
     canvas.drawLine(
-        Offset(size.width + 1.5, 0),
-        Offset(0, size.height + 1.5),
+        Offset(size.width - 1.5, 0),
+        Offset(0, size.height - 1.5),
         Paint()
           ..color = const Color(0xB3000000)
           ..strokeWidth = 1.5);

@@ -1559,31 +1559,30 @@ class CardTally extends StatelessWidget {
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final ink = height * .42;
+    // Statistics' tiles: the badge and its count in one, sized to fit both.
+    final count = TextStyle(
+        fontSize: height * .46,
+        height: 1,
+        fontWeight: FontWeight.w700,
+        fontFeatures: const [FontFeature.tabularFigures()]);
     return Wrap(
-        spacing: 10,
+        spacing: 6,
         runSpacing: 6,
         alignment: alignment,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           for (final t in _tally(gains))
-            Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: [
-              if (t.art == null)
-                Container(
-                  height: height * .8,
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      color: FloorPop.volt,
-                      borderRadius: BorderRadius.circular(6)),
-                  child: Text('NEW',
-                      style: FloorPop.display(ink, color: FloorPop.onVolt)),
-                )
-              else
-                ArtBadge(t.art, aspect: t.aspect, ink: ink, height: height),
-              Text('×${t.count}',
-                  style: FloorPop.readout(height * .5,
-                      color: Theme.of(context).colorScheme.onSurface)),
-            ]),
+            ArtTile(t.art,
+                aspect: t.aspect,
+                ink: ink,
+                width: (t.art == null ? ink * 2.6 : ink * t.aspect) +
+                    16 +
+                    '${t.count}'.length * count.fontSize! * .62,
+                height: height,
+                color: pop.voltText,
+                label: Text('NEW',
+                    style: FloorPop.display(ink, color: pop.voltText)),
+                trailing: Text('${t.count}', style: count)),
           if (gains.isEmpty)
             Text('No cards', style: TextStyle(color: pop.haze)),
         ]);

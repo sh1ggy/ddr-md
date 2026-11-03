@@ -87,7 +87,12 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
                           }))),
         // Flare without its sticker: the chip in the art's corner.
         if (flareStamp == null && recipe.flareIndex >= 0)
-          EditionFlareChip(geometry: geometry, side: .24),
+          EditionFlareChip(
+              geometry: geometry,
+              side: .24,
+              lift: EditionFooter.shows(recipe)
+                  ? size.height * editionFooterHeight * 1.3
+                  : 0),
         // Stickers at full size, scaled down to the card.
         if (recipe.gradeStamp != null || flareStamp != null)
           Positioned(
