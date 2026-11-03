@@ -1,19 +1,19 @@
 /// Name: CirclePersonPage
 /// Parent: CirclePage
-/// Description: Someone from your circles: who they are and how you're tied,
-/// where they're playing and each credit of it to cheer while they're
-/// live, otherwise their last session in brief, cheered as one. Refreshes
-/// every half minute while it's open. Leaving or taking out is in the corner.
+/// Description: A friend's identity, showcase and previous session. Their
+/// current live session opens separately, leaving this profile consistent
+/// whether they're playing or away. Circle options sit in the corner.
 library;
 
 import 'dart:async';
 
+import 'package:ddr_md/components/circle/showcase_page.dart';
 import 'package:ddr_md/components/circle/circle_credit_card.dart';
 import 'package:ddr_md/components/circle/circle_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
 import 'package:ddr_md/components/circle/circle_widgets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
-import 'package:ddr_md/components/nav_bar.dart' show LivePulse;
+import 'package:ddr_md/components/circle/circle_live_page.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
@@ -59,11 +59,9 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
             .where((p) => p.id == widget.person.id)
             .firstOrNull ??
         widget.person;
-    // Credit by credit while they're playing; once it's over, the session
-    // in brief.
+    // The profile keeps the previous session even during a new broadcast.
     final live = person.live != null;
-    final credits =
-        live ? circle.liveCreditsOf(person) : circle.lastSessionOf(person);
+    final credits = circle.lastSessionOf(person);
     final seesThem = widget.tie != CircleTie.cheeringYou;
     return Scaffold(
       appBar: AppBar(actions: [
@@ -108,47 +106,25 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
                         fontWeight: FontWeight.w600)),
               ]),
             ]),
-            if (person.live case final live?) ...[
+            if (seesThem && live)
+              TextButton.icon(
+                  icon: const Icon(Icons.sensors),
+                  label: const Text('View live session'),
+                  onPressed: () =>
+                      openLivePersonPage(context, person, widget.tie)),
+            if (seesThem) ...[
               const SizedBox(height: 16),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: pop
-                    .stripes(
-                        color: pop.stage, radius: BorderRadius.circular(18))
-                    .copyWith(
-                      border: Border.all(
-                          color: FloorPop.volt.withValues(alpha: 0.55)),
-                    ),
-                child: Row(children: [
-                  const LivePulse(),
-                  const SizedBox(width: 6),
-                  Text('LIVE', style: pop.label.copyWith(color: pop.voltText)),
-                  const SizedBox(width: 10),
-                  Text('C${live.credit}',
-                      style: FloorPop.readout(21,
-                          color: Theme.of(context).colorScheme.onSurface)),
-                  const SizedBox(width: 10),
-                  Icon(
-                      live.venue.isEmpty
-                          ? Icons.location_off_outlined
-                          : Icons.place_outlined,
-                      size: 16,
-                      color: pop.haze),
-                  const SizedBox(width: 4),
-                  Expanded(
-                      child: Text(
-                          live.venue.isEmpty ? 'Location hidden' : live.venue,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600))),
-                  const SizedBox(width: 8),
-                  Text(live.side, style: pop.label.copyWith(color: pop.haze)),
-                ]),
-              ),
+              CircleShowcase(person: person, revision: circle.feedRevision),
+            ],
+            if (seesThem) ...[
+              const SizedBox(height: 28),
+              Divider(color: pop.line),
+              const SizedBox(height: 12),
+              Text('LAST SESSION', style: pop.label),
+              const SizedBox(height: 10),
             ],
             const SizedBox(height: 20),
-            if (!seesThem || credits.isEmpty)
+            if (!seesThem)
               CircleStory(
                 person: person,
                 you: (
@@ -160,15 +136,12 @@ class _CirclePersonPageState extends State<CirclePersonPage> {
                 ),
                 kind: !seesThem
                     ? CircleStoryKind.cheeringYou
-                    : live
-                        ? CircleStoryKind.awaitingSync
-                        : CircleStoryKind.quiet,
+                    : CircleStoryKind.quiet,
               )
-            else if (live) ...[
-              Text('CREDITS', style: pop.label),
-              const SizedBox(height: 10),
-              for (final c in credits) CircleCreditCard(c),
-            ] else
+            else if (credits.isEmpty)
+              Text('No previous session shared in the last two days.',
+                  style: TextStyle(color: pop.haze))
+            else
               CircleSessionCard(credits),
           ],
         ),

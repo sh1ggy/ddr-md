@@ -285,9 +285,23 @@ class LivePulse extends StatefulWidget {
 
 class _LivePulseState extends State<LivePulse>
     with SingleTickerProviderStateMixin {
-  late final _controller =
-      AnimationController(vsync: this, duration: FloorPop.beat * 2)
-        ..repeat(reverse: true);
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: FloorPop.beat * 2);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
+  }
 
   @override
   void dispose() {

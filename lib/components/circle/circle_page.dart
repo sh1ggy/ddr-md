@@ -12,9 +12,11 @@ library;
 
 import 'dart:async';
 
+import 'package:ddr_md/components/circle/showcase_page.dart';
 import 'package:ddr_md/components/circle/circle_credit_card.dart';
 import 'package:ddr_md/components/circle/circle_art.dart';
 import 'package:ddr_md/components/circle/circle_person_page.dart';
+import 'package:ddr_md/components/circle/circle_live_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
 import 'package:ddr_md/components/circle/circle_widgets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -106,6 +108,18 @@ class _CirclePageState extends State<CirclePage> {
         title: const PageTitle('Circle'),
         actions: [
           if (ready) ...[
+            HeaderButton(
+                icon: const Icon(Icons.style),
+                tooltip: 'Your showcase',
+                onPressed: () => Navigator.of(context, rootNavigator: true)
+                    .push(MaterialPageRoute(
+                        builder: (_) => ShowcasePage(person: (
+                              id: circle.id!,
+                              name: circle.name,
+                              ddrCode: circle.ddrCode,
+                              friend: false,
+                              live: null
+                            ))))),
             // While it's empty the tab's own buttons invite.
             if (!empty)
               SizedBox(
@@ -183,6 +197,16 @@ class _CirclePageState extends State<CirclePage> {
                               line: "Scan a friend's QR or have them scan "
                                   "yours. One scan and you're friends.")
                         else ...[
+                          if (following.any((p) => p.live != null)) ...[
+                            Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(2, 12, 0, 10),
+                                child: Text('LIVE NOW',
+                                    style: FloorPop.of(context).label)),
+                            for (final p
+                                in following.where((p) => p.live != null))
+                              _LivePersonTile(p),
+                          ],
                           if (friends.isNotEmpty) ...[
                             _Heading(CircleTie.friends, friends.length),
                             _FriendBubbles(friends),
@@ -344,12 +368,7 @@ class _FriendBubbles extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Stack(clipBehavior: Clip.none, children: [
-                    CircleBubble(p, size: 64),
-                    if (p.live != null)
-                      const Positioned(
-                          left: 0, right: 0, bottom: -6, child: _LiveTag()),
-                  ]),
+                  CircleBubble(p, size: 64),
                   const SizedBox(height: 10),
                   SizedBox(
                     width: 72,
@@ -360,17 +379,6 @@ class _FriendBubbles extends StatelessWidget {
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
-                  if (p.live case final live?)
-                    SizedBox(
-                      width: 72,
-                      child: Text(_liveLine(live),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: FloorPop.of(context).voltText)),
-                    ),
                 ]),
               ),
             ),
@@ -382,25 +390,35 @@ class _FriendBubbles extends StatelessWidget {
 String _liveLine(CircleLive live) =>
     [if (live.credit > 0) 'C${live.credit}', live.venue].join(' · ');
 
-/// Volt LIVE over a bubble whose player is on the pad.
-class _LiveTag extends StatelessWidget {
-  const _LiveTag();
-
+/// A live broadcast has its own entry point; friend rows always open profiles.
+class _LivePersonTile extends StatelessWidget {
+  const _LivePersonTile(this.person);
+  final CirclePerson person;
   @override
-  Widget build(BuildContext context) => Center(
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(5, 2, 7, 2),
-          decoration: BoxDecoration(
-              color: FloorPop.volt, borderRadius: BorderRadius.circular(6)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const LivePulse(color: FloorPop.onVolt),
-            const SizedBox(width: 4),
-            Text('LIVE',
-                style: FloorPop.readout(10, color: FloorPop.onVolt)
-                    .copyWith(letterSpacing: 0.8)),
-          ]),
-        ),
-      );
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Material(
+            color: pop.stage,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(color: pop.voltText.withValues(alpha: .5))),
+            child: ListTile(
+                leading: CircleBubble(person, size: 40),
+                title: Text(person.name,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(_liveLine(person.live!),
+                    style: TextStyle(color: pop.voltText)),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const LivePulse(),
+                  const SizedBox(width: 6),
+                  Text('LIVE', style: pop.label.copyWith(color: pop.voltText)),
+                  const Icon(Icons.chevron_right)
+                ]),
+                onTap: () => openLivePersonPage(context, person,
+                    person.friend ? CircleTie.friends : CircleTie.youCheer))));
+  }
 }
 
 /// A one-way tie: who, and where they're playing when live.
@@ -424,16 +442,11 @@ class _PersonTile extends StatelessWidget {
           leading: CircleBubble(person, size: 40),
           title: Text(person.name,
               style: const TextStyle(fontWeight: FontWeight.w700)),
-          subtitle: switch (person.live) {
-            final live? => Text('LIVE · ${_liveLine(live)}',
-                style: TextStyle(color: pop.voltText)),
-            null => Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
+          subtitle: Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: DdrCodeBadge(person.ddrCode),
-                )),
-          },
+                  child: DdrCodeBadge(person.ddrCode))),
           onTap: () => openPersonPage(context, person, tie),
           trailing: Icon(Icons.chevron_right, color: pop.haze),
         ),

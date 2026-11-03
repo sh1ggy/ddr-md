@@ -295,6 +295,35 @@ explicitly empty CIRCLES_URL to disable it.
   broadcast: once a minute on the Circle tab and the live card, every half
   minute on someone's page.
 
+Showcases are three ordered, nullable card snapshots with optional captions
+(up to 40 characters). The Circle header opens your preview and editor; people
+whose circles you follow show their showcase and previous session from their
+friend row, including while they are live. The separate **LIVE NOW** entries
+open the current session's credits without a showcase. The picker
+uses local chart bests in both SP and DP. Publishing takes a snapshot rather
+than changing a card silently after later syncs. Snapshots are encrypted at
+rest and remain until replaced or the account is deleted, independently of
+the two-day feed. Only the owner and members of their circle can read them;
+only members can cheer. Leaving or removal revokes access and removes that
+membership's card cheers. The tables are created additively by the existing
+Worker initialisation; deploy the updated Circles Worker before using a build
+with Showcase enabled against the live service. App publishing and Worker
+deployment are separate steps.
+
+- `GET /v1/showcase/:id` returns `{cards: [card|null, card|null, card|null]}`.
+- `PUT /v1/showcase` accepts `{cards}` and replaces your showcase atomically.
+  A card has `id`, `song` (content ID), `mode` (`singles`/`doubles`),
+  `difficulty`, `score`, `grade`, `lamp`, `flare`, `caption` and nullable
+  ISO `playedAt`. Grade/lamp/flare may be empty. Reading adds `cheers` and
+  `cheered` for the caller. Each chart appears at most once.
+- `PUT /v1/showcase-cheer` accepts `{by, card, cheered}`; repeating the same
+  boolean is idempotent. Cheers follow card IDs when slots are reordered.
+
+The friend profile always uses the latest completed session, excluding the
+active broadcast. Live pages use only the current broadcast's session ID and
+show an ended state when it stops; they never switch to a profile or previous
+session implicitly. Both pages can link to the other explicitly.
+
 ### Trying it locally
 
 [circles/dev/](circles/dev/) runs the Worker on Node's SQLite, no Cloudflare
@@ -302,10 +331,13 @@ needed (Node 22+):
 
 ```bash
 node infra/circles/dev/worker_test.mjs            # the Worker end to end
+node infra/circles/dev/showcase_test.mjs          # showcase API checks
 node infra/circles/dev/server.mjs --fresh         # http://localhost:8787
 flutter run -d macos --dart-define=DB_NAME=timing-preview.db --dart-define=CIRCLES_URL=http://localhost:8787 --dart-define=CIRCLES_KEY=dev-you____________________________________
 node infra/circles/dev/scenario.mjs               # lists the scenarios
 node infra/circles/dev/scenario.mjs seed          # e.g. a circle to look at
+node infra/circles/dev/scenario.mjs showcase      # showcases and a card cheer
+flutter test test/showcase_test.dart              # picker and profile/live routes
 ```
 
 `CIRCLES_KEY` (debug localhost builds only) fixes the app's key to the one

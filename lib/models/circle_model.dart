@@ -13,6 +13,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:ddr_md/models/showcase.dart';
 import 'package:ddr_md/models/device_key.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
@@ -234,6 +235,7 @@ class CircleState extends ChangeNotifier {
           'ddrCode' => 'A DDR-CODE is 8 digits',
           'code' => "That code doesn't open a circle",
           'daily limit' => 'Too many tries today, try again tomorrow',
+          'showcase' => 'That showcase is unavailable. Refresh and try again.',
           _ => 'Circles are unavailable (HTTP ${res.statusCode})',
         });
       }
@@ -430,6 +432,33 @@ class CircleState extends ChangeNotifier {
     return await _run(
             () => _send('PUT', 'v1/me', {'name': dancer, 'ddrCode': code})) !=
         null;
+  }
+
+  /// Reads a showcase afresh so revoking a membership also revokes access.
+  Future<List<ShowcaseCard?>> loadShowcase(String person) async {
+    final m = await _send('GET', 'v1/showcase/$person');
+    return _showcaseCards(m!);
+  }
+
+  static List<ShowcaseCard?> _showcaseCards(Map m) => [
+        for (final c in m['cards'] as List)
+          c == null ? null : ShowcaseCard.fromJson(c as Map)
+      ];
+
+  Future<bool> saveShowcase(List<ShowcaseCard?> cards) async =>
+      await _run(() => _send('PUT', 'v1/showcase', {
+            'cards': [for (final c in cards) c?.toJson()],
+          })) !=
+      null;
+
+  Future<List<ShowcaseCard?>> cheerShowcase(
+      String person, ShowcaseCard card) async {
+    final m = await _send('PUT', 'v1/showcase-cheer', {
+      'by': person,
+      'card': card.id,
+      'cheered': !card.cheered,
+    });
+    return _showcaseCards(m!);
   }
 
   /// A new invite code, good for a day; the old one stops working.
