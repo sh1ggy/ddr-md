@@ -416,10 +416,11 @@ class EamuseSync {
 
   Future<String> _get(Uri url) async {
     if (_lastRequest != null) {
-      final wait = gap +
-          Duration(milliseconds: _random.nextInt(1000)) -
-          DateTime.now().difference(_lastRequest!);
-      if (wait > Duration.zero) {
+      final notBefore = _lastRequest!
+          .add(gap + Duration(milliseconds: _random.nextInt(1000)));
+      while (!cancelled) {
+        final wait = notBefore.difference(DateTime.now());
+        if (wait <= Duration.zero) break;
         await Future.any([Future.delayed(wait), _stopped.future]);
       }
     }
@@ -431,6 +432,9 @@ class EamuseSync {
     request.followRedirects = false;
     request.headers.set(HttpHeaders.cookieHeader, cookies);
     final response = await request.close();
+    // Include connection and response latency in the pause before another
+    // request, including the first request on a cold connection.
+    _lastRequest = DateTime.now();
     final body = await response.transform(utf8.decoder).join();
     await _keep(response);
     // A redirect from a play data page goes to the login page.
