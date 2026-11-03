@@ -32,8 +32,7 @@ import 'package:ddr_md/components/song/scores/score_card.dart'
     show clearLampIcon;
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/grades.dart';
-import 'package:ddr_md/helpers.dart'
-    show formatScore, kFlareRanks, kInGameDifficultyNames;
+import 'package:ddr_md/helpers.dart' show formatScore, kInGameDifficultyNames;
 import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/circle_model.dart';
@@ -120,41 +119,6 @@ List<WrapCard> wrapCards(List<CardGain> gains) {
           level: c.level,
         );
       }(),
-  ];
-}
-
-typedef _Tally = ({String? art, double aspect, int count});
-
-/// Each kind of gain with how many: new cards first, then AAA, lamps and
-/// flare ranks, best first.
-List<_Tally> _tally(List<CardGain> gains) {
-  final counts = <String?, ({double aspect, int count})>{};
-  void add(String? art, double aspect) =>
-      counts[art] = (aspect: aspect, count: (counts[art]?.count ?? 0) + 1);
-  final sorted = [...gains]..sort((a, b) {
-      if (a.layer != b.layer) return a.layer.index - b.layer.index;
-      return switch (a.layer) {
-        CardLayer.frame => ClearLamp.values.byName(b.to).index -
-            ClearLamp.values.byName(a.to).index,
-        CardLayer.aura => kFlareRanks.indexOf(b.to) - kFlareRanks.indexOf(a.to),
-        _ => 0,
-      };
-    });
-  for (final g in sorted) {
-    switch (g.layer) {
-      case CardLayer.card:
-        add(null, 0);
-      case CardLayer.finish:
-        add(gradeIcon(Grade.aaa), kGradeAspect);
-      case CardLayer.frame:
-        add(clearLampIcon(ClearLamp.values.byName(g.to)), kLampAspect);
-      case CardLayer.aura:
-        add(flareRankIcon(g.to), kFlareAspect);
-    }
-  }
-  return [
-    for (final MapEntry(:key, :value) in counts.entries)
-      (art: key, aspect: value.aspect, count: value.count)
   ];
 }
 
@@ -1547,7 +1511,8 @@ class _Change extends StatelessWidget {
   }
 }
 
-/// A badge per kind of gain in [gains], with its count.
+/// How many of [gains]' cards are new and how many upgraded; the cards
+/// themselves show what each gained.
 class CardTally extends StatelessWidget {
   const CardTally(this.gains,
       {super.key, this.height = 26, this.alignment = WrapAlignment.center});
@@ -1559,7 +1524,9 @@ class CardTally extends StatelessWidget {
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final ink = height * .42;
-    // Statistics' tiles: the badge and its count in one, sized to fit both.
+    final cards = wrapCards(gains);
+    final fresh = cards.where((c) => c.before == null).length;
+    // Statistics' tiles: the label and its count in one, sized to fit both.
     final count = TextStyle(
         fontSize: height * .46,
         height: 1,
@@ -1571,18 +1538,31 @@ class CardTally extends StatelessWidget {
         alignment: alignment,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          for (final t in _tally(gains))
-            ArtTile(t.art,
-                aspect: t.aspect,
-                ink: ink,
-                width: (t.art == null ? ink * 2.6 : ink * t.aspect) +
-                    16 +
-                    '${t.count}'.length * count.fontSize! * .62,
-                height: height,
-                color: pop.voltText,
-                label: Text('NEW',
-                    style: FloorPop.display(ink, color: pop.voltText)),
-                trailing: Text('${t.count}', style: count)),
+          for (final (label, n) in [
+            ('NEW', fresh),
+            ('UP', cards.length - fresh),
+          ])
+            if (n > 0)
+              () {
+                final style = FloorPop.display(ink, color: pop.voltText);
+                double wide(String text, TextStyle style) => (TextPainter(
+                        text: TextSpan(text: text, style: style),
+                        textDirection: TextDirection.ltr)
+                      ..layout())
+                    .width;
+                // The tile gives its label two thirds of the row, so the
+                // label sets the width; the count only widens it past that.
+                final inner = math.max(wide(label, style) * 1.5,
+                    wide(label, style) + 4 + wide('$n', count));
+                return ArtTile(null,
+                    aspect: 0,
+                    ink: ink,
+                    width: inner + 14,
+                    height: height,
+                    color: pop.voltText,
+                    label: Text(label, style: style),
+                    trailing: Text('$n', style: count));
+              }(),
           if (gains.isEmpty)
             Text('No cards', style: TextStyle(color: pop.haze)),
         ]);
@@ -1590,7 +1570,7 @@ class CardTally extends StatelessWidget {
 }
 
 /// A session's cards as one of its summary's tiles: a few of them stacked,
-/// how many, and a badge for each kind of gain. Tapped, it opens the wrap.
+/// how many, and how many are new or upgraded. Tapped, it opens the wrap.
 class CollectedTile extends StatelessWidget {
   const CollectedTile(this.gains, {super.key, this.onTap});
   final List<CardGain> gains;
