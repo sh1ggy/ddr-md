@@ -30,7 +30,7 @@ const double kArcadeTileGap = 3;
 // below it. Fixed so every tile in a row lines up; the grid adds both to the
 // square jacket to size the cell.
 const double kArcadeTitleHeight = 33;
-const double kArcadeCaptionHeight = 34;
+const double kArcadeCaptionHeight = 19;
 
 class ArcadeGridTile extends StatelessWidget {
   const ArcadeGridTile({
@@ -113,19 +113,7 @@ class ArcadeGridTile extends StatelessWidget {
       height: kArcadeCaptionHeight,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(3, 2, 3, 3),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: _statStrip(context)),
-          if (item.isChartScoped)
-            FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: ScoringTierLabel(
-                    song: item.songInfo,
-                    mode: mode,
-                    index: item.difficultyIndex!,
-                    compact: true,
-                    showMissing: true)),
-        ]),
+        child: _statStrip(context),
       ),
     );
   }
@@ -293,6 +281,16 @@ class ArcadeGridTile extends StatelessWidget {
           child: _statText(
               _chart.bpmRange, Theme.of(context).colorScheme.onSurfaceVariant),
         ),
+        if (item.isChartScoped &&
+            item.songInfo.scoringTierFor(mode, item.difficultyIndex!) !=
+                null) ...[
+          const SizedBox(width: 4),
+          ScoringTierLabel(
+              song: item.songInfo,
+              mode: mode,
+              index: item.difficultyIndex!,
+              compact: true),
+        ],
         const SizedBox(width: 4),
         SongSyncStatus(
           sync: item.songInfo.displaySyncFor(_chart),

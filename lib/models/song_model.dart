@@ -17,6 +17,11 @@ import 'package:flutter/services.dart';
 
 class SongState extends ChangeNotifier {
   SongState() {
+    // Carry the first test build's calculated sort into the existing Level sort.
+    if (Settings.getInt(Settings.songlistCalculatedSortKey) == 1) {
+      Settings.setInt(Settings.songlistSortKey, SortType.level.index + 1);
+      Settings.setInt(Settings.songlistCalculatedSortKey, 0);
+    }
     CloudSync.pulled.addListener(_reloadSettings);
   }
 
@@ -39,11 +44,10 @@ class SongState extends ChangeNotifier {
       : Modes.singles;
   Modes get modes => _mode;
 
-  // Keep the new sort local while legacy sort preferences continue syncing.
-  // Older apps decode the shared integer using their shorter enum.
+  // Accept existing sort preferences and migrate the initial test build.
   static SortType _storedSort() {
     if (Settings.getInt(Settings.songlistCalculatedSortKey) == 1) {
-      return SortType.calculated;
+      return SortType.level;
     }
     final stored = Settings.getInt(Settings.songlistSortKey);
     return stored > 0 && stored <= SortType.lamp.index + 1
@@ -79,11 +83,7 @@ class SongState extends ChangeNotifier {
 
   void setSortType(SortType newSortType) {
     _sortType = newSortType;
-    Settings.setInt(Settings.songlistCalculatedSortKey,
-        newSortType == SortType.calculated ? 1 : 0);
-    if (newSortType != SortType.calculated) {
-      Settings.setInt(Settings.songlistSortKey, newSortType.index + 1);
-    }
+    Settings.setInt(Settings.songlistSortKey, newSortType.index + 1);
     notifyListeners();
   }
 

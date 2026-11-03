@@ -311,7 +311,6 @@ int compareSongInfo(SongInfo a, SongInfo b, SortType sortType,
     {bool descending = false}) {
   final int sign = descending ? -1 : 1;
   switch (sortType) {
-    case SortType.calculated:
     case SortType.level:
     case SortType.score:
     case SortType.flare:

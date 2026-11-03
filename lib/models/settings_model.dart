@@ -150,7 +150,7 @@ class Settings {
 
   // The songlist's sort: a SortType index, and 1 for descending.
   static const String songlistSortKey = "songlistSort";
-  // Device-local: older apps cannot decode the calculated sort enum index.
+  // Migration key for the first tier test build; now uses the Level sort.
   static const String songlistCalculatedSortKey = "songlistCalculatedSort";
   static const String songlistSortDescKey = "songlistSortDesc";
 

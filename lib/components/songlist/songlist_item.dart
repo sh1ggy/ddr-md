@@ -103,22 +103,32 @@ class _SongListItemState extends State<SongListItem> {
       children: [
         Text(widget.songInfo.charts[0].bpmRange),
         _syncAdjust(context),
-        // The song's flare group, what the cabinet sorts folders and flare
-        // skill by.
-        if (flareGroup(canonicalVersion(widget.songInfo.version))
-            case final group?)
-          Text(group.label,
-              style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                  color: group
-                      .color(Theme.of(context).brightness == Brightness.dark))),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          if (flareGroup(canonicalVersion(widget.songInfo.version))
+              case final group?)
+            Text(group.label,
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    color: group.color(
+                        Theme.of(context).brightness == Brightness.dark))),
+          if (scoped &&
+              widget.songInfo.scoringTierFor(mode, widget.difficultyIndex!) !=
+                  null) ...[
+            const SizedBox(width: 6),
+            ScoringTierLabel(
+                song: widget.songInfo,
+                mode: mode,
+                index: widget.difficultyIndex!,
+                compact: true),
+          ],
+        ]),
       ],
     );
     // Fixed height so every row is the same size; a song without a
     // transliteration centres its title and levels instead of leaving a gap.
     final titleBlock = SizedBox(
-      height: scoped ? 72 : 54,
+      height: 54,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,16 +160,6 @@ class _SongListItemState extends State<SongListItem> {
                   ? widget.songInfo.singles
                   : widget.songInfo.doubles,
               highlightIndex: widget.difficultyIndex),
-          if (scoped) ...[
-            const SizedBox(height: 4),
-            ScoringTierLabel(
-                song: widget.songInfo,
-                mode: mode,
-                index: widget.difficultyIndex!,
-                compact: true,
-                showMissing:
-                    context.read<SongState>().sortType == SortType.calculated),
-          ],
         ],
       ),
     );

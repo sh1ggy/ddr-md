@@ -289,6 +289,13 @@ class SongDetails extends StatelessWidget {
               const SizedBox(height: 12),
               // The song at a glance, one row of pills under its title.
               Wrap(spacing: 6, runSpacing: 6, children: [
+                if (songInfo.scoringTierFor(
+                        songState.modes, songState.chosenDifficulty) !=
+                    null)
+                  ScoringTierLabel(
+                      song: songInfo,
+                      mode: songState.modes,
+                      index: songState.chosenDifficulty),
                 if (chart != null)
                   _Badge(
                     value: '${chart.dominantBpm}',
@@ -314,15 +321,6 @@ class SongDetails extends StatelessWidget {
               // Every song has per-difficulty radar data, so the difficulty is
               // always selectable.
               SongDifficultyPicker(difficulty: difficulty),
-              if (songInfo.scoringTierFor(
-                      songState.modes, songState.chosenDifficulty) !=
-                  null) ...[
-                const SizedBox(height: 8),
-                ScoringTierLabel(
-                    song: songInfo,
-                    mode: songState.modes,
-                    index: songState.chosenDifficulty),
-              ],
             ],
           ),
         ),
