@@ -6,7 +6,6 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
-import 'package:ddr_md/components/song/scoring_tier_label.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
@@ -92,24 +91,23 @@ void main() {
       () {
     final song = SongInfo.fromJson(fixture());
     expect(song.scoringTierFor(Modes.singles, 0), isNull);
-    expect(song.scoringTierFor(Modes.singles, 1)?.label, '14.90');
-    expect(song.scoringTierFor(Modes.singles, 99)?.label, '14.90');
+    expect(song.scoringTierFor(Modes.singles, 1)?.label, '14.9');
+    expect(song.scoringTierFor(Modes.singles, 99)?.label, '14.9');
     expect(song.scoringTierFor(Modes.doubles, 0), isNull);
     expect(
         SongInfo.fromJson(song.toJson())
             .scoringTierFor(Modes.singles, 1)
             ?.label,
-        '14.90');
+        '14.9');
     song.singles.hard = 15;
     expect(song.scoringTierFor(Modes.singles, 1), isNull);
   });
 
-  testWidgets(
-      'decimal lettering preserves .05 and .90 without optional artwork',
+  testWidgets('a tier rides on its level numeral without optional artwork',
       (tester) async {
     final semantics = tester.ensureSemantics();
 
-    for (final tier in [14.05, 14.90, 19.90]) {
+    for (final (tier, text) in [(14.05, '.05'), (14.90, '.9'), (19.90, '.9')]) {
       final data = fixture(tier: tier);
       (data['sp'] as Map)['hard'] = tier.floor();
       final song = SongInfo.fromJson(data);
@@ -118,23 +116,21 @@ void main() {
           child: MaterialApp(
               theme: floorPopTheme(Brightness.dark),
               home: Scaffold(
-                  body: ScoringTierLabel(
-                      song: song, mode: Modes.singles, index: 1)))));
+                  body: LevelRow(
+                      levels: song.singles,
+                      highlightIndex: 1,
+                      highlightTier: song
+                          .scoringTierFor(Modes.singles, 1)
+                          ?.hundredths)))));
       await tester.pumpAndSettle();
-      expect(find.text('Calculated'), findsNothing);
-      expect(find.text(tier.toStringAsFixed(2)), findsOneWidget);
-      expect(
-          find.bySemanticsLabel(RegExp(RegExp.escape(tier.toStringAsFixed(2)))),
-          findsOneWidget);
-      expect(
-          tester.widget<LevelNumber>(find.byType(LevelNumber)).suffix, isNull);
+      expect(find.text(text), findsOneWidget);
+      expect(find.bySemanticsLabel('${tier.floor()}$text'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }
     semantics.dispose();
   });
 
-  test(
-      'Level sort orders tiers within official folders, missing ratings last',
+  test('Level sort orders tiers within official folders, missing ratings last',
       () {
     SongItem item(String name, double? tier, {int level = 14}) {
       final data = fixture(tier: tier ?? 14.0)..['name'] = name;
@@ -208,7 +204,7 @@ void main() {
         await ContentUpdater.check(support, base: 'https://x/', fetch: fetch),
         isTrue);
     await ContentStore.init(support, bundle: bundle);
-    expect(await label(), '14.90');
+    expect(await label(), '14.9');
     served['latest.json'] = jsonEncode({'id': 'old'});
     expect(
         await ContentUpdater.check(support, base: 'https://x/', fetch: fetch),

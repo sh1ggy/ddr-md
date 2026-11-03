@@ -6,8 +6,6 @@
 /// so the tile carries no selection state of its own.
 library;
 
-import 'package:ddr_md/components/song/scoring_tier_label.dart';
-
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -266,7 +264,12 @@ class ArcadeGridTile extends StatelessWidget {
           height: kSongListLevelHeight,
           // Fixed columns don't fit all five on a narrow tile.
           packed: true,
-          highlightIndex: item.isChartScoped ? item.difficultyIndex : null),
+          highlightIndex: item.isChartScoped ? item.difficultyIndex : null,
+          highlightTier: item.isChartScoped
+              ? item.songInfo
+                  .scoringTierFor(mode, item.difficultyIndex!)
+                  ?.hundredths
+              : null),
     );
   }
 
@@ -281,16 +284,6 @@ class ArcadeGridTile extends StatelessWidget {
           child: _statText(
               _chart.bpmRange, Theme.of(context).colorScheme.onSurfaceVariant),
         ),
-        if (item.isChartScoped &&
-            item.songInfo.scoringTierFor(mode, item.difficultyIndex!) !=
-                null) ...[
-          const SizedBox(width: 4),
-          ScoringTierLabel(
-              song: item.songInfo,
-              mode: mode,
-              index: item.difficultyIndex!,
-              compact: true),
-        ],
         const SizedBox(width: 4),
         SongSyncStatus(
           sync: item.songInfo.displaySyncFor(_chart),

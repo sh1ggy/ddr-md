@@ -11,12 +11,15 @@ class SongDifficulty extends StatelessWidget {
     super.key,
     required this.difficulty,
     this.highlightIndex,
+    this.highlightTier,
   });
 
   final Difficulty difficulty;
   // Index into availableTypes of the chart to pick out. The others stay
   // legible but recede, so the strip still reads as the song's spread.
   final int? highlightIndex;
+  // The highlighted chart's scoring tier hundredths.
+  final int? highlightTier;
 
   @override
   Widget build(BuildContext context) => Align(
@@ -24,6 +27,7 @@ class SongDifficulty extends StatelessWidget {
         child: LevelRow(
             levels: difficulty,
             highlightIndex: highlightIndex,
+            highlightTier: highlightTier,
             height: kSongListLevelHeight),
       );
 }

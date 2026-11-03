@@ -12,7 +12,8 @@ import 'dart:convert';
 
 import 'package:ddr_md/theme.dart';
 
-import 'package:ddr_md/components/song_json.dart' show Difficulty;
+import 'package:ddr_md/components/song_json.dart'
+    show Difficulty, decimalDigits;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames;
 import 'package:flutter/material.dart';
@@ -112,14 +113,24 @@ class LevelNumber extends StatelessWidget {
                   outline: Colors.white)));
     }
 
+    // The scoring tier rides on the numeral as a raised Volt decimal.
     if (decimalHundredths case final fraction?) {
-      final digits = fraction.toString().padLeft(2, '0');
+      final digits = decimalDigits(fraction);
+      final pop = Theme.of(context).extension<FloorPop>();
       return Semantics(
         label: '$level.$digits',
         child: ExcludeSemantics(
-            child: Text('$level.$digits',
-                style: FloorPop.readout(height,
-                    color: Theme.of(context).colorScheme.onSurface))),
+            child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              numeral(level),
+              Text('.$digits',
+                  style: FloorPop.readout(height * .62,
+                      color: (pop?.voltText ??
+                              Theme.of(context).colorScheme.primary)
+                          .withValues(alpha: dimmed ? .35 : 1))),
+            ])),
       );
     }
     if (suffix == null) return numeral(level);
@@ -147,11 +158,14 @@ class LevelRow extends StatelessWidget {
       {super.key,
       required this.levels,
       this.highlightIndex,
+      this.highlightTier,
       this.height = kLevelHeight,
       this.packed = false});
 
   final Difficulty levels;
   final int? highlightIndex;
+  // The highlighted chart's scoring tier hundredths, drawn on its numeral.
+  final int? highlightTier;
   final double height;
   // Charted levels sit side by side with an even gap instead of in fixed
   // columns, for spaces too narrow for all five slots.
@@ -175,12 +189,27 @@ class LevelRow extends StatelessWidget {
             level: level,
             difficulty: kInGameDifficultyNames[key]!,
             height: height,
+            decimalHundredths: i == highlightIndex ? highlightTier : null,
             dimmed: highlightIndex != null && i != highlightIndex);
       }
       if (packed) {
         if (level == null) continue;
         if (cells.isNotEmpty) cells.add(SizedBox(width: height * 0.25));
         cells.add(child);
+        continue;
+      }
+      // A slot carrying a decimal widens by a fixed amount, so the same
+      // chart lines up on every row whatever its digits.
+      if (level != null &&
+          highlightTier != null &&
+          charted - 1 == highlightIndex) {
+        cells.add(ConstrainedBox(
+            constraints: BoxConstraints(
+                minWidth: slot + height * 1.3, maxHeight: height),
+            child: Align(
+                alignment: Alignment.centerLeft,
+                widthFactor: 1,
+                child: child)));
         continue;
       }
       cells.add(SizedBox(
