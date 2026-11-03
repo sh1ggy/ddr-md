@@ -95,7 +95,7 @@ jobs:
       #   notes and footing edits);
       # - counts can't change for a chart whose steps didn't, unless
       #   kPatternEngineVersion was bumped (else older apps take patterns that
-      #   disagree with their own chart preview).
+      #   disagree with their own chart preview). New fields don't count.
       - name: Check the content before it ships
         env:
           CONTENT_URL: ${{ inputs.content-url }}
@@ -132,7 +132,8 @@ jobs:
                       f"{os.environ['CONTENT_URL']}/objects/{old[path]}.json",
                       headers={"User-Agent": "ddr-md-publish-check"})))
                   after = json.load(open(f"assets/{path}"))
-                  strip = lambda song: {m: {d: {k: v for k, v in c.items() if k != "level"}
+                  strip = lambda song: {m: {d: {k: v for k, v in c.items()
+                                                if k != "level" and k in before.get(m, {}).get(d, {})}
                                             for d, c in song.get(m, {}).items()} for m in ("sp", "dp")}
                   if strip(before) != strip(after):
                       changed.append(name)
