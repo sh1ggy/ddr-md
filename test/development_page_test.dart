@@ -9,6 +9,8 @@ void main() {
         const MaterialApp(home: Scaffold(body: DevelopmentToolsTile())));
     await tester.tap(find.text('Development'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Card renderer tests'));
+    await tester.pumpAndSettle();
     expect(find.text('Seeded score combinations'), findsOneWidget);
     expect(find.text('Frame timing lab'), findsNothing);
     await tester.pageBack();
