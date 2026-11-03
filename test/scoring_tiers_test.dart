@@ -16,6 +16,8 @@ import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/components/songlist/sort_menu_button.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -49,23 +51,20 @@ class MissingDifficultyArt extends CachingAssetBundle {
 }
 
 void main() {
-  test(
-      'calculated sort persists locally without sending an unknown index to older apps',
+  test('the initial calculated preference migrates to the existing Level sort',
       () async {
-    SharedPreferences.setMockInitialValues(
-        {Settings.songlistSortKey: SortType.title.index + 1});
+    SharedPreferences.setMockInitialValues({
+      Settings.songlistSortKey: SortType.title.index + 1,
+      Settings.songlistCalculatedSortKey: 1,
+    });
     await Settings.init();
     final state = SongState();
     addTearDown(state.dispose);
-    state.setSortType(SortType.calculated);
-    expect(Settings.getInt(Settings.songlistSortKey), SortType.title.index + 1);
-    expect(Settings.syncedKeys,
-        isNot(contains(Settings.songlistCalculatedSortKey)));
-    final restored = SongState();
-    addTearDown(restored.dispose);
-    expect(restored.sortType, SortType.calculated);
-    restored.setSortType(SortType.level);
+    expect(state.sortType, SortType.level);
+    expect(Settings.getInt(Settings.songlistSortKey), SortType.level.index + 1);
     expect(Settings.getInt(Settings.songlistCalculatedSortKey), 0);
+    expect(nextSortType(SortType.level), SortType.bpm);
+    expect(sortLabel(SortType.level), 'Level');
   });
 
   test('old, unsupported and malformed scoring fields are optional', () {
@@ -117,11 +116,13 @@ void main() {
       await tester.pumpWidget(DefaultAssetBundle(
           bundle: MissingDifficultyArt(),
           child: MaterialApp(
+              theme: floorPopTheme(Brightness.dark),
               home: Scaffold(
                   body: ScoringTierLabel(
                       song: song, mode: Modes.singles, index: 1)))));
       await tester.pumpAndSettle();
-      expect(find.text('Calculated '), findsOneWidget);
+      expect(find.text('Calculated'), findsNothing);
+      expect(find.text(tier.toStringAsFixed(2)), findsOneWidget);
       expect(
           find.bySemanticsLabel(RegExp(RegExp.escape(tier.toStringAsFixed(2)))),
           findsOneWidget);
@@ -133,7 +134,7 @@ void main() {
   });
 
   test(
-      'calculated sort keeps official folders and missing ratings last both ways',
+      'Level sort orders tiers within official folders, missing ratings last',
       () {
     SongItem item(String name, double? tier, {int level = 14}) {
       final data = fixture(tier: tier ?? 14.0)..['name'] = name;
@@ -154,23 +155,15 @@ void main() {
       item('next', 15.0, level: 15)
     ];
     for (final descending in [false, true]) {
-      final sections = groupSongItems(rows, SortType.calculated, Modes.singles,
+      final sections = groupSongItems(rows, SortType.level, Modes.singles,
           descending: descending);
       final folder = sections.singleWhere((s) => s.label == 'LEVEL 14');
       expect(folder.items.last.songInfo.name, 'missing');
       expect(folder.items.first.songInfo.name, descending ? 'high' : 'low');
       expect(sections.first.label, descending ? 'LEVEL 15' : 'LEVEL 14');
     }
-    expect(scoringBandFor(rows[0].songInfo, Modes.singles, 1),
-        ScoringBand.unavailable);
-    expect(
-        scoringBandFor(rows[1].songInfo, Modes.singles, 1), ScoringBand.upper);
-    expect(
-        scoringBandFor(rows[2].songInfo, Modes.singles, 1), ScoringBand.lower);
-    expect(
-        const SongFilter(scoringBands: {ScoringBand.upper}).isEmpty, isFalse);
-    expect(SortType.calculated.isBest, isFalse);
-    expect(SortType.calculated.isChartScoped, isTrue);
+    expect(SortType.level.isBest, isFalse);
+    expect(SortType.level.isChartScoped, isTrue);
   });
 
   test('bundled scoring tier updates over OTA and rolls back', () async {

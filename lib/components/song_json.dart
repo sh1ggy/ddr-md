@@ -437,13 +437,12 @@ enum SortType {
   bpm,
   score,
   flare,
-  lamp,
-  calculated;
+  lamp;
 
   bool get isBest => this == score || this == flare || this == lamp;
 
   /// Rows stand for one chart each, not a song.
-  bool get isChartScoped => this == level || this == calculated || isBest;
+  bool get isChartScoped => this == level || isBest;
 }
 
 class Difficulty {

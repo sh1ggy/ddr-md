@@ -10,6 +10,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:ddr_md/theme.dart';
+
 import 'package:ddr_md/components/song_json.dart' show Difficulty;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames;
@@ -115,15 +117,9 @@ class LevelNumber extends StatelessWidget {
       return Semantics(
         label: '$level.$digits',
         child: ExcludeSemantics(
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-          numeral(level),
-          _CabinetText('.',
-              difficulty: difficulty,
-              height: height,
-              fill: Colors.black,
-              outline: Colors.white),
-          for (final digit in digits.split('')) numeral(int.parse(digit)),
-        ])),
+            child: Text('$level.$digits',
+                style: FloorPop.readout(height,
+                    color: Theme.of(context).colorScheme.onSurface))),
       );
     }
     if (suffix == null) return numeral(level);

@@ -119,9 +119,7 @@ class _FavoriteListPageState extends State<FavoriteListPage> {
                               favSongs.sort((a, b) => compareSongInfo(
                                   a,
                                   b,
-                                  (songState.sortType.isBest ||
-                                          songState.sortType ==
-                                              SortType.calculated)
+                                  songState.sortType.isBest
                                       ? SortType.version
                                       : songState.sortType,
                                   descending: songState.sortDescending));
