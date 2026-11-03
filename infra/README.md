@@ -295,29 +295,27 @@ explicitly empty CIRCLES_URL to disable it.
   broadcast: once a minute on the Circle tab and the live card, every half
   minute on someone's page.
 
-Showcases are three ordered, nullable card snapshots with optional captions
-(up to 40 characters). The Circle header opens your preview and editor; people
-whose circles you follow show their showcase and previous session from their
-friend row, including while they are live. The separate **LIVE NOW** entries
-open the current session's credits without a showcase. The picker
-uses local chart bests in both SP and DP. Publishing takes a snapshot rather
-than changing a card silently after later syncs. Snapshots are encrypted at
-rest and remain until replaced or the account is deleted, independently of
-the two-day feed. Only the owner and members of their circle can read them;
-only members can cheer. Leaving or removal revokes access and removes that
-membership's card cheers. The tables are created additively by the existing
-Worker initialisation; deploy the updated Circles Worker before using a build
-with Showcase enabled against the live service. App publishing and Worker
-deployment are separate steps.
+Showcases are three ordered, nullable card snapshots. Cards fill the profile
+area and carry their own score, grade, lamp and flare artwork; selecting one
+only brings it forward. There are no captions, pagination dots, selected-card
+information panels or showcase reactions. The Circle header opens your preview
+and editor; friend rows show the showcase and previous session, including while
+the friend is live. Separate **LIVE NOW** entries open current credits.
+
+The picker uses local chart bests in SP and DP, with Hardest / Lamp / Recent
+sorts and slot swapping or clearing. Publishing takes a snapshot rather than
+changing a card after later syncs. Snapshots are encrypted at rest and remain
+until replaced or the account is deleted, independently of the two-day feed.
+Only the owner and members of their circle can read them. The table is created
+additively by Worker initialisation; deploy the updated Circles Worker before
+using a build with these routes against the live service.
 
 - `GET /v1/showcase/:id` returns `{cards: [card|null, card|null, card|null]}`.
-- `PUT /v1/showcase` accepts `{cards}` and replaces your showcase atomically.
+- `PUT /v1/showcase` accepts `{cards}` and replaces your three snapshots.
   A card has `id`, `song` (content ID), `mode` (`singles`/`doubles`),
-  `difficulty`, `score`, `grade`, `lamp`, `flare`, `caption` and nullable
-  ISO `playedAt`. Grade/lamp/flare may be empty. Reading adds `cheers` and
-  `cheered` for the caller. Each chart appears at most once.
-- `PUT /v1/showcase-cheer` accepts `{by, card, cheered}`; repeating the same
-  boolean is idempotent. Cheers follow card IDs when slots are reordered.
+  `difficulty`, `score`, `grade`, `lamp`, `flare` and nullable ISO `playedAt`.
+  Grade/lamp/flare may be empty; each chart appears at most once. Legacy
+  caption/reaction fields are ignored on write and omitted on read.
 
 The friend profile always uses the latest completed session, excluding the
 active broadcast. Live pages use only the current broadcast's session ID and
@@ -336,7 +334,7 @@ node infra/circles/dev/server.mjs --fresh         # http://localhost:8787
 flutter run -d macos --dart-define=DB_NAME=timing-preview.db --dart-define=CIRCLES_URL=http://localhost:8787 --dart-define=CIRCLES_KEY=dev-you____________________________________
 node infra/circles/dev/scenario.mjs               # lists the scenarios
 node infra/circles/dev/scenario.mjs seed          # e.g. a circle to look at
-node infra/circles/dev/scenario.mjs showcase      # showcases and a card cheer
+node infra/circles/dev/scenario.mjs showcase      # showcase fixtures
 flutter test test/showcase_test.dart              # picker and profile/live routes
 ```
 

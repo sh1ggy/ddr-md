@@ -35,14 +35,11 @@ import { dataCrypto, networkOf, secretMatches } from "../data_crypto.js";
 //                                     cheer = {name, preset}; mine = your preset
 //   PUT    /v1/cheer {by, session, credit, preset}  preset null takes it back
 //   GET    /v1/showcase/ID         -> {cards: [card|null, card|null, card|null]}
-//   PUT    /v1/showcase {cards}    replaces your three snapshots (caption <=40)
-//   PUT    /v1/showcase-cheer {by, card, cheered}  idempotent toggle
+//   PUT    /v1/showcase {cards}    replaces your three snapshots
 //   DELETE /v1/me                 everything of this player's goes
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS showcases(owner TEXT PRIMARY KEY, cards TEXT NOT NULL) WITHOUT ROWID`,
-  `CREATE TABLE IF NOT EXISTS showcase_cheers(owner TEXT NOT NULL, card TEXT NOT NULL, cheerer TEXT NOT NULL, PRIMARY KEY(owner,card,cheerer)) WITHOUT ROWID`,
-  `CREATE INDEX IF NOT EXISTS showcase_cheerer ON showcase_cheers(cheerer)`,
   `CREATE TABLE IF NOT EXISTS profiles(owner TEXT PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ddrCode TEXT NOT NULL, code TEXT UNIQUE, codeUntil TEXT, createdAt TEXT NOT NULL, day TEXT NOT NULL DEFAULT '', lookups INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS members(leader TEXT NOT NULL, member TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(leader, member)) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS members_member ON members(member)`,
@@ -105,7 +102,7 @@ export default {
       const auth = request.headers.get('Authorization') ?? '';
       if (!/^Bearer [A-Za-z0-9_-]{43}$/.test(auth)) return json({error: 'key'}, 401);
       const url = new URL(request.url);
-      const allowed = /^(GET \/v1\/(me|feed|showcase\/[a-f0-9]{16}|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer|showcase|showcase-cheer)|POST \/v1\/(code|join|code\/lookup)|DELETE \/v1\/(me|live|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
+      const allowed = /^(GET \/v1\/(me|feed|showcase\/[a-f0-9]{16}|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer|showcase)|POST \/v1\/(code|join|code\/lookup)|DELETE \/v1\/(me|live|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
       if (!allowed.test(`${request.method} ${url.pathname}`)) return json({error: 'not found'}, 404);
       if (request.cf && (!env.REQUEST_RATE || !env.NETWORK_RATE || !env.INVITE_RATE || !env.SAFETY_RATE)) {
         return json({error: 'unavailable'}, 503);
@@ -186,25 +183,10 @@ async function route(request, db, owner, body, vault) {
   if (route === "GET showcase/") return showcase(db, me, arg, vault);
   if (route === "PUT showcase") {
     const cards = body.cards.map(c => c === null ? null : Object.fromEntries(
-      ['id','song','mode','difficulty','score','grade','lamp','flare','caption','playedAt'].map(k => [k,c[k]])));
-    await db.batch([
-      db.prepare(`INSERT INTO showcases(owner,cards) VALUES (?,?) ON CONFLICT(owner) DO UPDATE SET cards=excluded.cards`)
-        .bind(owner, await vault.seal(JSON.stringify(cards), `showcase:${owner}`)),
-      db.prepare(`DELETE FROM showcase_cheers WHERE owner=? AND card NOT IN (SELECT value FROM json_each(?))`)
-        .bind(owner, JSON.stringify(cards.filter(Boolean).map(c => c.id))),
-    ]);
+      ['id','song','mode','difficulty','score','grade','lamp','flare','playedAt'].map(k => [k,c[k]])));
+    await db.prepare(`INSERT INTO showcases(owner,cards) VALUES (?,?) ON CONFLICT(owner) DO UPDATE SET cards=excluded.cards`)
+        .bind(owner, await vault.seal(JSON.stringify(cards), `showcase:${owner}`)).run();
     return showcase(db, me, me.id, vault);
-  }
-  if (route === "PUT showcase-cheer") {
-    const target = await db.prepare(`SELECT p.owner,s.cards FROM profiles p JOIN showcases s ON s.owner=p.owner
-      JOIN members m ON m.leader=p.owner AND m.member=? WHERE p.id=?`).bind(owner,body.by).first();
-    if (!target) return json({error:'showcase'},404);
-    const cards = JSON.parse(await vault.open(target.cards, `showcase:${target.owner}`));
-    if (!cards.some(c => c?.id === body.card)) return json({error:'showcase'},404);
-    await (body.cheered
-      ? db.prepare(`INSERT INTO showcase_cheers(owner,card,cheerer) SELECT ?1,?2,?3 WHERE EXISTS(SELECT 1 FROM members WHERE leader=?1 AND member=?3) AND EXISTS(SELECT 1 FROM showcases WHERE owner=?1 AND cards=?4) ON CONFLICT DO NOTHING`).bind(target.owner,body.card,owner,target.cards)
-      : db.prepare(`DELETE FROM showcase_cheers WHERE owner=? AND card=? AND cheerer=?`).bind(target.owner,body.card,owner)).run();
-    return showcase(db,me,body.by,vault);
   }
   if (route === "PUT me") return claim(db, owner, body, vault);
 
@@ -343,7 +325,6 @@ async function join(db, me, code, back) {
 
 async function takeOut(db, me, id, vault) {
   await db.batch([
-    db.prepare(`DELETE FROM showcase_cheers WHERE owner=?1 AND cheerer=(SELECT owner FROM profiles WHERE id=?2)`).bind(me.owner,id),
     db.prepare(`INSERT INTO blocked(leader,member) SELECT ?1,owner FROM profiles WHERE id=?2 ON CONFLICT DO NOTHING`).bind(me.owner,id),
     db.prepare(`DELETE FROM members WHERE leader=?1 AND member=(SELECT owner FROM profiles WHERE id=?2)`).bind(me.owner,id),
     db.prepare(`UPDATE profiles SET code=NULL,codeUntil=NULL WHERE owner=?`).bind(me.owner),
@@ -353,7 +334,6 @@ async function takeOut(db, me, id, vault) {
 
 async function leave(db, me, id, vault) {
   await db.batch([
-    db.prepare(`DELETE FROM showcase_cheers WHERE cheerer=?1 AND owner=(SELECT owner FROM profiles WHERE id=?2)`).bind(me.owner,id),
     db.prepare(`DELETE FROM members WHERE member=?1 AND leader=(SELECT owner FROM profiles WHERE id=?2)`).bind(me.owner,id),
   ]);
   return state(db, me, vault);
@@ -506,7 +486,6 @@ async function cheer(db, me, body) {
 async function remove(db, owner) {
   await db.batch([
     db.prepare(`DELETE FROM showcases WHERE owner=?`).bind(owner),
-    db.prepare(`DELETE FROM showcase_cheers WHERE owner=?1 OR cheerer=?1`).bind(owner),
     db.prepare(`DELETE FROM credits WHERE owner = ?`).bind(owner),
     db.prepare(`DELETE FROM cheers WHERE owner = ?1 OR cheerer = ?1`).bind(owner),
     db.prepare(`DELETE FROM live WHERE owner = ?`).bind(owner),
@@ -540,7 +519,6 @@ function validate(route, body) {
           typeof c.song !== 'string' || !c.song.length || c.song.length > 200 ||
           !['singles','doubles'].includes(c.mode) || !['BEGINNER','BASIC','DIFFICULT','EXPERT','CHALLENGE'].includes(c.difficulty) ||
           !Number.isInteger(c.score) || c.score < 0 || c.score > 1000000 ||
-          typeof c.caption !== 'string' || [...c.caption].length > 40 ||
           !['','AAA','AA+','AA','AA-','A+','A','A-','B+','B','B-','C+','C','C-','D+','D','E'].includes(c.grade) ||
           !['','failed','clear','life4','fc','gfc','pfc','mfc'].includes(c.lamp) ||
           !['','I','II','III','IV','V','VI','VII','VIII','IX','EX'].includes(c.flare) ||
@@ -551,7 +529,6 @@ function validate(route, body) {
       ids.add(c.id);
     }
   }
-  if (route === 'PUT showcase-cheer' && (!/^[a-f0-9]{16}$/.test(body?.by ?? '') || typeof body?.card !== 'string' || body.card.length > 250 || typeof body.cheered !== 'boolean')) return 'showcase';
   if (route === "PUT me") {
     if (!NAME.test(String(body?.name ?? "").trim().toUpperCase())) return "name";
     if (!DDR_CODE.test(String(body?.ddrCode ?? "").replaceAll(/\D/g,""))) return "ddrCode";
@@ -594,7 +571,7 @@ async function showcase(db, me, id, vault) {
     WHERE p.id=?1 AND (p.owner=?2 OR EXISTS(SELECT 1 FROM members WHERE leader=p.owner AND member=?2))`).bind(id,me.owner).first();
   if (!target) return json({error:'showcase'},404);
   const cards = target.cards ? JSON.parse(await vault.open(target.cards, `showcase:${target.owner}`)) : [null,null,null];
-  const cheers = await db.prepare(`SELECT card,count(*) AS count,max(cheerer=?2) AS mine FROM showcase_cheers
-    WHERE owner=?1 AND cheerer IN(SELECT member FROM members WHERE leader=?1) GROUP BY card`).bind(target.owner,me.owner).all();
-  return json({cards:cards.map(c => c === null ? null : {...c, cheers:cheers.results.find(x=>x.card===c.id)?.count ?? 0, cheered:cheers.results.some(x=>x.card===c.id && x.mine===1)})});
+  // Project legacy snapshots too: removed captions and reactions never leave the API.
+  return json({cards:cards.map(c => c === null ? null : Object.fromEntries(
+    ['id','song','mode','difficulty','score','grade','lamp','flare','playedAt'].map(k => [k,c[k]])))});
 }

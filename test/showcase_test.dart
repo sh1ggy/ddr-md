@@ -1,6 +1,6 @@
 /// Name: Showcase tests
 /// Parent: ShowcasePage
-/// Description: Published cards, selection, caption edits and failed saves.
+/// Description: Published cards, card-only selection, slot swaps and failed saves.
 library;
 
 import 'package:ddr_md/components/circle/showcase_page.dart';
@@ -28,15 +28,13 @@ const first = ShowcaseCard(
     song: 'first',
     mode: Modes.singles,
     difficulty: 'EXPERT',
-    best: (score: 990000, grade: Grade.aaa, lamp: ClearLamp.pfc, flare: 'IX'),
-    caption: 'First milestone');
+    best: (score: 990000, grade: Grade.aaa, lamp: ClearLamp.pfc, flare: 'IX'));
 const second = ShowcaseCard(
     id: 'second',
     song: 'second',
     mode: Modes.doubles,
     difficulty: 'CHALLENGE',
-    best: (score: 900000, grade: Grade.aa, lamp: ClearLamp.clear, flare: null),
-    caption: 'Stamina arc');
+    best: (score: 900000, grade: Grade.aa, lamp: ClearLamp.clear, flare: null));
 
 class _Circle extends CircleState {
   List<ShowcaseCard?> cards = [first, second, null];
@@ -136,46 +134,45 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  test('snapshot round trip retains chart identity, caption and score layers',
-      () {
-    final card = ShowcaseCard.fromJson(
-        {...first.toJson(), 'cheers': 3, 'cheered': true});
+  test('snapshot ignores legacy captions and reactions', () {
+    final card = ShowcaseCard.fromJson({
+      ...first.toJson(),
+      'caption': 'Legacy subtitle',
+      'cheers': 3,
+      'cheered': true
+    });
     expect(card.toJson(), first.toJson());
-    expect(card.best, first.best);
-    expect(card.withCaption('New caption').id, first.id);
-    expect(card.cheers, 3);
-    expect(card.cheered, isTrue);
+    expect(card.toJson().keys, isNot(contains('caption')));
+    expect(card.toJson().keys, isNot(contains('cheers')));
   });
-  testWidgets(
-      'fan switches card details and cheers the selected chart on a narrow screen',
+  testWidgets('cards fill the viewer without details, captions or actions',
       (tester) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    ShowcaseCard? cheered;
     await tester.pumpWidget(MaterialApp(
         theme: floorPopTheme(Brightness.dark),
         builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(disableAnimations: true),
             child: child!),
-        home: Scaffold(
-            body: SingleChildScrollView(
-                child: ShowcaseDisplay(
-                    cards: const [first, second, null],
-                    onCheer: (c) => cheered = c)))));
+        home: const Scaffold(
+            body: ShowcaseDisplay(cards: [first, second, null]))));
     await tester.pumpAndSettle();
-    expect(find.text('“First milestone”'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('showcase-slot-1')));
+    final firstSlot = find.byKey(const ValueKey('showcase-slot-0'));
+    final secondSlot = find.byKey(const ValueKey('showcase-slot-1'));
+    expect(tester.getSize(firstSlot).width, greaterThan(230));
+    final rect = tester.getRect(secondSlot);
+    await tester.tapAt(Offset(rect.left + 15, rect.center.dy));
     await tester.pumpAndSettle();
-    expect(find.text('“Stamina arc”'), findsOneWidget);
-    await tester.ensureVisible(find.text('Cheer this card'));
-    await tester.tap(find.text('Cheer this card'));
-    expect(cheered?.id, 'second');
+    expect(tester.widget<Semantics>(secondSlot).properties.selected, isTrue);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byType(TextButton), findsNothing);
+    expect(find.byType(FilledButton), findsNothing);
+    expect(find.text('SHOWCASE'), findsNothing);
     expect(tester.takeException(), isNull);
   });
-  testWidgets(
-      'picker preserves slot captions, clears a slot, and retries failed saves',
+  testWidgets('picker swaps cards, clears a slot, and retries failed saves',
       (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -251,20 +248,18 @@ void main() {
             .ensureVisible(find.byKey(const ValueKey('showcase-slot-2')));
         await tester.pumpAndSettle();
         await tester.pumpAndSettle();
-        await tester.enterText(find.byType(TextField), 'My milestone');
-        await tester.pump();
-        FocusManager.instance.primaryFocus?.unfocus();
-        await tester.pumpAndSettle();
+        expect(find.byType(TextField), findsNothing);
         await tester
             .ensureVisible(find.byKey(const ValueKey('showcase-slot-1')));
-        await tester.tap(find.byKey(const ValueKey('showcase-slot-1')));
+        final secondSlot =
+            tester.getRect(find.byKey(const ValueKey('showcase-slot-1')));
+        await tester.tapAt(Offset(secondSlot.right - 15, secondSlot.center.dy));
         await tester.pumpAndSettle();
-        expect(find.widgetWithText(TextField, 'Stamina arc'), findsOneWidget);
         await tester.tap(find.byTooltip('Take this card out'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Show my circle'));
         await tester.pumpAndSettle();
-        expect(circle.saved![2]!.caption, 'My milestone');
+        expect(circle.saved![2]!.song, 'first');
         expect(circle.saved![0]!.song, 'third');
         expect(circle.saved![1], isNull);
         expect(find.text('Try saving again'), findsOneWidget);

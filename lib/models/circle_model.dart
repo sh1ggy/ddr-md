@@ -451,16 +451,6 @@ class CircleState extends ChangeNotifier {
           })) !=
       null;
 
-  Future<List<ShowcaseCard?>> cheerShowcase(
-      String person, ShowcaseCard card) async {
-    final m = await _send('PUT', 'v1/showcase-cheer', {
-      'by': person,
-      'card': card.id,
-      'cheered': !card.cheered,
-    });
-    return _showcaseCards(m!);
-  }
-
   /// A new invite code, good for a day; the old one stops working.
   Future<void> newCode() => _run(() => _send('POST', 'v1/code'));
 

@@ -12,7 +12,6 @@ import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/compact_jacket_edition.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart' show formatScore;
 import 'package:ddr_md/models/chart_bests.dart';
@@ -20,10 +19,8 @@ import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/showcase.dart';
 import 'package:ddr_md/models/song_model.dart';
-import 'package:ddr_md/router.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 class ShowcasePage extends StatelessWidget {
@@ -36,7 +33,7 @@ class ShowcasePage extends StatelessWidget {
     final credits = own ? circle.yours : circle.lastSessionOf(person);
     final pop = FloorPop.of(context);
     return Scaffold(
-        appBar: AppBar(title: const Text('Showcase')),
+        appBar: AppBar(),
         body: RefreshIndicator(
             onRefresh: circle.refresh,
             child: ListView(
@@ -92,7 +89,6 @@ class CircleShowcase extends StatefulWidget {
 class _CircleShowcaseState extends State<CircleShowcase> {
   List<ShowcaseCard?>? _cards;
   String? _error;
-  bool _cheering = false;
   int _request = 0;
   @override
   void initState() {
@@ -135,65 +131,36 @@ class _CircleShowcaseState extends State<CircleShowcase> {
     final circle = context.watch<CircleState>();
     final own = circle.id == widget.person.id;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Expanded(child: Text('SHOWCASE', style: FloorPop.of(context).label)),
-        if (own)
-          TextButton.icon(
-              icon: const Icon(Icons.edit, size: 16),
-              label: const Text('Edit'),
-              onPressed: () async {
-                await Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => const ShowcasePickerPage()));
-                if (mounted) {
-                  await _load();
-                }
-              })
-      ]),
       if (_error != null) ...[
         Text(_error!),
         TextButton(onPressed: _load, child: const Text('Try again'))
       ] else if (_cards == null)
         const Center(child: CircularProgressIndicator())
       else
-        ShowcaseDisplay(
-            cards: _cards!,
-            cheering: _cheering,
-            onCheer: own
-                ? null
-                : (card) async {
-                    if (_cheering) return;
-                    setState(() => _cheering = true);
-                    final request = ++_request;
-                    try {
-                      final cards =
-                          await circle.cheerShowcase(widget.person.id, card);
-                      if (mounted && request == _request) {
-                        setState(() => _cards = cards);
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(e.toString())));
-                      }
+        Stack(children: [
+          ShowcaseDisplay(cards: _cards!),
+          if (own)
+            Positioned(
+                top: 0,
+                right: 0,
+                child: IconButton(
+                    tooltip: 'Edit cards',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () async {
+                      await Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const ShowcasePickerPage()));
                       if (mounted) {
                         await _load();
                       }
-                    } finally {
-                      if (mounted) {
-                        setState(() => _cheering = false);
-                      }
-                    }
-                  }),
+                    })),
+        ]),
     ]);
   }
 }
 
 class ShowcaseDisplay extends StatefulWidget {
-  const ShowcaseDisplay(
-      {super.key, required this.cards, this.onCheer, this.cheering = false});
+  const ShowcaseDisplay({super.key, required this.cards});
   final List<ShowcaseCard?> cards;
-  final ValueChanged<ShowcaseCard>? onCheer;
-  final bool cheering;
   @override
   State<ShowcaseDisplay> createState() => _ShowcaseDisplayState();
 }
@@ -206,96 +173,13 @@ class _ShowcaseDisplayState extends State<ShowcaseDisplay> {
     if (cards.isEmpty) {
       return const Padding(
           padding: EdgeInsets.symmetric(vertical: 40),
-          child: Text('No showcase cards yet', textAlign: TextAlign.center));
+          child: Text('No cards yet', textAlign: TextAlign.center));
     }
     _active = _active.clamp(0, cards.length - 1);
-    final card = cards[_active];
-    return Column(children: [
-      _CardFan(
-          cards: cards,
-          active: _active,
-          onPick: (i) => setState(() => _active = i)),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        for (var i = 0; i < cards.length; i++)
-          Container(
-              width: i == _active ? 18 : 8,
-              height: 8,
-              margin: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                  color:
-                      i == _active ? FloorPop.volt : FloorPop.of(context).riser,
-                  borderRadius: BorderRadius.circular(4)))
-      ]),
-      const SizedBox(height: 16),
-      _CardDetails(card),
-      if (widget.onCheer != null) ...[
-        const SizedBox(height: 16),
-        FilledButton.icon(
-            onPressed: widget.cheering ? null : () => widget.onCheer!(card),
-            icon: Icon(card.cheered ? Icons.favorite : Icons.favorite_border),
-            label: Text(
-                '${card.cheered ? 'Cheered' : 'Cheer this card'}${card.cheers > 0 ? ' · ${card.cheers}' : ''}'))
-      ],
-      TextButton(
-          onPressed: chartOf(card.song, card.mode, card.difficulty).song == null
-              ? null
-              : () {
-                  final chart = chartOf(card.song, card.mode, card.difficulty);
-                  context.read<SongState>().setMode(card.mode);
-                  context.push(songPath(chart.song!,
-                      difficulty: chart.index < 0 ? 0 : chart.index));
-                },
-          child: const Text('Open the chart')),
-    ]);
-  }
-}
-
-class _CardDetails extends StatelessWidget {
-  const _CardDetails(this.card);
-  final ShowcaseCard card;
-  @override
-  Widget build(BuildContext context) {
-    final chart = chartOf(card.song, card.mode, card.difficulty);
-    final pop = FloorPop.of(context);
-    return Column(children: [
-      Text(chart.song?.title ?? card.song,
-          textAlign: TextAlign.center, style: FloorPop.display(19)),
-      const SizedBox(height: 8),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text(card.mode == Modes.singles ? 'SP' : 'DP'),
-        const SizedBox(width: 8),
-        DifficultyLabel(difficulty: card.difficulty, level: chart.level)
-      ]),
-      const SizedBox(height: 12),
-      Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-              color: pop.stage, borderRadius: BorderRadius.circular(20)),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  Text(formatScore(card.best.score ?? 0),
-                      style: FloorPop.readout(22)),
-                  ChartBestBadges(card.best, ink: 18, height: 24)
-                ]),
-            if (card.caption.isNotEmpty)
-              Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text('“${card.caption}”',
-                      style: const TextStyle(fontWeight: FontWeight.w600))),
-            if (card.playedAt case final at?)
-              Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Text(
-                      'Earned ${at.toLocal().toString().split(' ').first}',
-                      style: TextStyle(color: pop.haze, fontSize: 12))),
-          ]))
-    ]);
+    return _CardFan(
+        cards: cards,
+        active: _active,
+        onPick: (i) => setState(() => _active = i));
   }
 }
 
@@ -328,84 +212,122 @@ class _CardFan extends StatelessWidget {
       {required this.cards,
       required this.active,
       required this.onPick,
-      this.editor = false});
+      this.editor = false,
+      this.onClear});
   final List<ShowcaseCard?> cards;
   final int active;
   final ValueChanged<int> onPick;
   final bool editor;
+  final VoidCallback? onClear;
   @override
-  Widget build(BuildContext context) => SizedBox(
-      height: editor ? 180 : 232,
-      child: LayoutBuilder(builder: (context, box) {
-        final size = (box.maxWidth * (editor ? .29 : .4))
-            .clamp(70.0, editor ? 112.0 : 150.0);
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        final height = box.maxWidth * (editor ? .86 : 1.04);
+        final size = box.maxWidth * (editor ? .62 : .78);
         final others = [
           for (var i = 0; i < cards.length; i++)
             if (i != active) i
         ];
-        return Stack(clipBehavior: Clip.none, children: [
-          Positioned.fill(
-              child: IgnorePointer(
-                  child: DecoratedBox(
-                      decoration: BoxDecoration(
-                          gradient: RadialGradient(colors: [
-            FloorPop.volt.withValues(alpha: editor ? .08 : .14),
-            Colors.transparent
-          ], radius: .65))))),
-          for (final i in [...others, active])
-            if (i < cards.length)
-              Builder(builder: (context) {
-                final on = i == active;
-                final side = editor
-                    ? i - 1
-                    : on
+        return SizedBox(
+            height: height,
+            child: Stack(clipBehavior: Clip.none, children: [
+              Positioned.fill(
+                  child: IgnorePointer(
+                      child: DecoratedBox(
+                          decoration: BoxDecoration(
+                              gradient: RadialGradient(colors: [
+                FloorPop.volt.withValues(alpha: editor ? .08 : .14),
+                Colors.transparent
+              ], radius: .65))))),
+              for (final i in [...others, active])
+                if (i < cards.length)
+                  Builder(builder: (context) {
+                    final on = i == active;
+                    final side = on
                         ? 0
                         : others.indexOf(i) == 0
                             ? -1
                             : 1;
-                final card = cards[i];
-                return AnimatedPositioned(
-                    key: ValueKey(i),
-                    duration: const Duration(milliseconds: 200),
-                    left: (box.maxWidth - size) / 2 +
-                        side * size * (editor ? 1.05 : .74),
-                    top: (editor ? 30 : 38) + (on ? 0 : 16),
-                    width: size,
-                    height: size,
-                    child: Transform.rotate(
-                        angle: side * .12,
-                        child: Transform.scale(
-                            scale: on ? 1.06 : .88,
-                            child: Semantics(
-                                key: ValueKey('showcase-slot-$i'),
-                                button: true,
-                                selected: on,
-                                label:
-                                    'Card ${i + 1}: ${card?.song ?? 'empty'}',
-                                child: GestureDetector(
-                                    onTap: () => onPick(i),
-                                    child: Container(
-                                        padding: const EdgeInsets.all(3),
-                                        decoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                            border: on && editor
-                                                ? Border.all(
-                                                    color: FloorPop.volt,
-                                                    width: 2)
-                                                : null),
-                                        child: card == null
-                                            ? DecoratedBox(
-                                                decoration: BoxDecoration(
-                                                    color:
-                                                        FloorPop.of(context).stage,
-                                                    borderRadius: BorderRadius.circular(10),
-                                                    border: Border.all(color: FloorPop.of(context).haze)),
-                                                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.add), Text('CARD ${i + 1}')]))
-                                            : _CardArt(card)))))));
-              })
-        ]);
-      }));
+                    final card = cards[i];
+                    return AnimatedPositioned(
+                        key: ValueKey(i),
+                        duration: const Duration(milliseconds: 200),
+                        left: (box.maxWidth - size) / 2 +
+                            side * size * (editor ? .26 : .16),
+                        top: (height - size) / 2 + (on ? 0 : size * .08),
+                        width: size,
+                        height: size,
+                        child: Transform.rotate(
+                            angle: side * .12,
+                            child: Transform.scale(
+                                scale: on ? 1.06 : .88,
+                                child: Semantics(
+                                    key: ValueKey('showcase-slot-$i'),
+                                    button: true,
+                                    selected: on,
+                                    label:
+                                        'Card ${i + 1}: ${card?.song ?? 'empty'}',
+                                    child: GestureDetector(
+                                        onTap: () => onPick(i),
+                                        child: Container(
+                                            padding: const EdgeInsets.all(3),
+                                            decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: on && editor
+                                                    ? Border.all(
+                                                        color: FloorPop.volt,
+                                                        width: 2)
+                                                    : null),
+                                            child: card == null
+                                                ? DecoratedBox(
+                                                    decoration: BoxDecoration(
+                                                        color: FloorPop.of(context)
+                                                            .stage,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                                10),
+                                                        border: Border.all(
+                                                            color:
+                                                                FloorPop.of(context)
+                                                                    .haze)),
+                                                    child: Column(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment.center,
+                                                        children: [
+                                                          const Icon(Icons.add),
+                                                          Text('CARD ${i + 1}')
+                                                        ]))
+                                                : Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
+                                                    _CardArt(card),
+                                                    if (editor)
+                                                      Positioned(
+                                                          left: 4,
+                                                          bottom: 4,
+                                                          child: CircleAvatar(
+                                                              radius: 12,
+                                                              backgroundColor:
+                                                                  FloorPop.volt,
+                                                              child: Text(
+                                                                  '${i + 1}',
+                                                                  style: const TextStyle(
+                                                                      color: FloorPop
+                                                                          .onVolt)))),
+                                                    if (on && onClear != null)
+                                                      Positioned(
+                                                          top: 4,
+                                                          right: 4,
+                                                          child: IconButton.filled(
+                                                              tooltip:
+                                                                  'Take this card out',
+                                                              onPressed:
+                                                                  onClear,
+                                                              icon: const Icon(
+                                                                  Icons
+                                                                      .close))),
+                                                  ])))))));
+                  })
+            ]));
+      });
 }
 
 class ShowcasePickerPage extends StatefulWidget {
@@ -422,17 +344,10 @@ class _ShowcasePickerPageState extends State<ShowcasePickerPage> {
   String _sort = 'Hardest';
   bool _loading = true, _saving = false;
   String? _error;
-  final _caption = TextEditingController();
   @override
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _caption.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -495,7 +410,6 @@ class _ShowcasePickerPageState extends State<ShowcasePickerPage> {
           if (_active < 0) {
             _active = 0;
           }
-          _caption.text = _slots[_active]?.caption ?? '';
         });
       }
     } catch (e) {
@@ -510,7 +424,6 @@ class _ShowcasePickerPageState extends State<ShowcasePickerPage> {
 
   void _select(int i) => setState(() {
         _active = i;
-        _caption.text = _slots[i]?.caption ?? '';
       });
   void _place(ShowcaseCard card) => setState(() {
         final was = _slots.indexWhere((c) =>
@@ -522,7 +435,6 @@ class _ShowcasePickerPageState extends State<ShowcasePickerPage> {
         _slots[_active] = chosen;
         final empty = _slots.indexWhere((c) => c == null);
         if (empty >= 0) _active = empty;
-        _caption.text = _slots[_active]?.caption ?? '';
       });
   Future<void> _save() async {
     setState(() => _saving = true);
@@ -554,7 +466,7 @@ class _ShowcasePickerPageState extends State<ShowcasePickerPage> {
       });
     final active = _slots[_active];
     return Scaffold(
-        appBar: AppBar(title: const Text('SHOWCASE'), actions: [
+        appBar: AppBar(actions: [
           Center(child: Text('${_slots.whereType<ShowcaseCard>().length} / 3')),
           const SizedBox(width: 16)
         ]),
@@ -580,51 +492,15 @@ class _ShowcasePickerPageState extends State<ShowcasePickerPage> {
                             child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                              Text('Three cards your circle sees on your page',
-                                  style: TextStyle(color: pop.haze)),
                               _CardFan(
                                   cards: _slots,
                                   active: _active,
                                   onPick: _saving ? (_) {} : _select,
-                                  editor: true),
-                              if (active == null)
-                                Padding(
-                                    padding: const EdgeInsets.all(24),
-                                    child: Column(children: [
-                                      Text('CARD ${_active + 1}',
-                                          style: pop.label),
-                                      const Text('Pick a best below'),
-                                      const Text("Any chart you've a score on")
-                                    ])),
-                              if (active != null) ...[
-                                Row(children: [
-                                  Expanded(
-                                      child: Text('CARD ${_active + 1}',
-                                          style: pop.label)),
-                                  IconButton(
-                                      tooltip: 'Take this card out',
-                                      onPressed: _saving
-                                          ? null
-                                          : () => setState(() {
-                                                _slots[_active] = null;
-                                                _caption.clear();
-                                              }),
-                                      icon: const Icon(Icons.close))
-                                ]),
-                                _CardDetails(active),
-                                const SizedBox(height: 12),
-                                TextField(
-                                    controller: _caption,
-                                    enabled: !_saving,
-                                    maxLength: 40,
-                                    decoration: const InputDecoration(
-                                        labelText: 'WHY THIS ONE · OPTIONAL',
-                                        hintText:
-                                            'A line your circle sees under it'),
-                                    onChanged: (value) => setState(() =>
-                                        _slots[_active] =
-                                            active.withCaption(value))),
-                              ],
+                                  editor: true,
+                                  onClear: active == null || _saving
+                                      ? null
+                                      : () => setState(
+                                          () => _slots[_active] = null)),
                               const SizedBox(height: 16),
                               Wrap(
                                   alignment: WrapAlignment.spaceBetween,

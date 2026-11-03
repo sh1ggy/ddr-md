@@ -1,6 +1,6 @@
 /// Name: ShowcaseCard
 /// Parent: CircleState
-/// Description: A published best, kept as a snapshot with its short caption.
+/// Description: A published best, kept as the facts that render its card.
 library;
 
 import 'package:ddr_md/components/song_json.dart';
@@ -15,28 +15,11 @@ class ShowcaseCard {
       required this.mode,
       required this.difficulty,
       required this.best,
-      this.caption = '',
-      this.playedAt,
-      this.cheers = 0,
-      this.cheered = false});
-  final String id, song, difficulty, caption;
+      this.playedAt});
+  final String id, song, difficulty;
   final Modes mode;
   final ChartBest best;
   final DateTime? playedAt;
-  final int cheers;
-  final bool cheered;
-
-  ShowcaseCard withCaption(String value) => ShowcaseCard(
-      id: id,
-      song: song,
-      mode: mode,
-      difficulty: difficulty,
-      best: best,
-      caption: value,
-      playedAt: playedAt,
-      cheers: cheers,
-      cheered: cheered);
-
   Map<String, Object?> toJson() => {
         'id': id,
         'song': song,
@@ -46,7 +29,6 @@ class ShowcaseCard {
         'grade': best.grade?.label ?? '',
         'lamp': best.lamp?.name ?? '',
         'flare': best.flare ?? '',
-        'caption': caption,
         'playedAt': playedAt?.toUtc().toIso8601String(),
       };
 
@@ -63,8 +45,5 @@ class ShowcaseCard {
             ? null
             : m['flare'] as String?
       ),
-      caption: m['caption'] as String? ?? '',
-      playedAt: DateTime.tryParse(m['playedAt'] as String? ?? ''),
-      cheers: m['cheers'] as int? ?? 0,
-      cheered: m['cheered'] == true);
+      playedAt: DateTime.tryParse(m['playedAt'] as String? ?? ''));
 }

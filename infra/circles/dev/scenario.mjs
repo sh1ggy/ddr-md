@@ -81,22 +81,21 @@ function someSongs(credit) {
 }
 
 const scenarios = {
-  "showcase: your three cards and MIKA's showcase, with a cheer": async () => {
+  "showcase: your three cards and MIKA's showcase": async () => {
     const me = await you();
     const mika = await joinTheirs("MIKA");
     await joinYours("MIKA");
     const cards = [
       {id:"max-300-sp-expert",song:"MAX 300",mode:"singles",difficulty:"EXPERT",score:988410,
-        grade:"AA+",lamp:"gfc",flare:"IX",caption:"First milestone",playedAt:"2026-10-20T00:00:00Z"},
+        grade:"AA+",lamp:"gfc",flare:"IX",playedAt:"2026-10-20T00:00:00Z"},
       {id:"chaos-sp-expert",song:"CHAOS",mode:"singles",difficulty:"EXPERT",score:995000,
-        grade:"AAA",lamp:"pfc",flare:"EX",caption:"Finally!",playedAt:"2026-10-21T00:00:00Z"},
+        grade:"AAA",lamp:"pfc",flare:"EX",playedAt:"2026-10-21T00:00:00Z"},
       {id:"pluto-sp-expert",song:"Pluto Relinquish",mode:"singles",difficulty:"EXPERT",score:962850,
-        grade:"AA+",lamp:"fc",flare:"VIII",caption:"",playedAt:null},
+        grade:"AA+",lamp:"fc",flare:"VIII",playedAt:null},
     ];
     await as(mika.key,"PUT","/v1/credit",{session:"mika-previous",credit:1,plays:someSongs(1)});
     await as(YOU,"PUT","/v1/showcase",{cards});
     await as(mika.key,"PUT","/v1/showcase",{cards:[cards[1],cards[0],null]});
-    await as(mika.key,"PUT","/v1/showcase-cheer",{by:me.id,card:cards[0].id,cheered:true});
   },
   "seed: a circle to look at: MIKA a friend, REXX and TOFU in yours, you in JUN.K's": async () => {
     await joinYours("MIKA");

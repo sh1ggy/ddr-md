@@ -71,6 +71,13 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 - `docs/` holds only how-tos the code relies on (noteskin assets, parity labelling, dancer form). Plans and design write-ups don't live in the repo.
 - `docs/arcade/` (gitignored, kept locally) is the cabinet-behaviour reference. Check it, when present, before claiming or changing anything "arcade accurate". Never commit it or anything else derived from Konami material.
 
+## Card presentation preferences
+
+- Let the jacket cards carry their own information. Give them the space instead of repeating the selected card's title, chart, score, badges or earned date below it.
+- Omit section headings and catalogue/page dots when the cards already make the purpose and selection clear.
+- Showcase is a card-only collection: no editable captions/subtitles or showcase reactions. Session cheers stay on session pages.
+- Friend rows open profiles (cards and previous sessions); current live activity has its own entry and page.
+
 ## Local validation preference
 
 For interactive validation, use `flutter run -d macos`. Run it from the feature worktree and reuse its running session for hot reload when possible. Outside the main checkout, add `--dart-define=DB_NAME=$(basename "$PWD").db`: every build shares one app container, and a branch on an older schema winds the shared database's version back.
