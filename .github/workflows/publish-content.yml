@@ -30,21 +30,26 @@ on:
       CLOUDFLARE_API_TOKEN:
         required: true
 
+permissions:
+  contents: read
+
 concurrency: publish-content
 
 jobs:
   publish:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: sh1ggy/ddr-md
           ref: ${{ inputs.app-ref }}
+          persist-credentials: false
       # The calling (content) repo.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: ${{ github.repository }}
           path: _content
+          persist-credentials: false
       - name: Move the content into assets/
         run: |
           for d in songs steps jackets jackets-160; do
@@ -52,12 +57,14 @@ jobs:
             mv "_content/$d" "assets/$d"
           done
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: 3.44.4
           channel: stable
           cache: true
       - run: flutter pub get
+      - name: Validate scoring fingerprints
+        run: python3 tool/scoring/validate_content.py --songs assets/songs --steps assets/steps
       - run: bash scripts/generate_songlist.sh
       # A different cwebp changes every jacket's hash and devices re-download
       # them all, hence the pinned runner image above.
@@ -134,6 +141,17 @@ jobs:
                   problems.append(f"counts changed for {len(changed)} songs whose charts didn't "
                                   f"(e.g. {changed[:3]}): bump kPatternEngineVersion")
 
+          # Compare the preceding songlist as well as checking each new fingerprint.
+          if 'songlist.json' in old:
+              before = json.load(urllib.request.urlopen(urllib.request.Request(
+                  f"{os.environ['CONTENT_URL']}/objects/{old['songlist.json']}.json",
+                  headers={"User-Agent": "ddr-md-publish-check"})))
+              with open('previous_songlist.json', 'w') as f:
+                  json.dump(before, f)
+              sys.path.insert(0, 'tool/scoring')
+              from validate_content import validate
+              problems.extend(validate('assets/songs', 'assets/steps', 'previous_songlist.json')['problems'])
+
           print(f"{len(songs)} songs, {len(gone)} removed, engine {new['engine']} (live {live.get('engine')})")
           for p in problems:
               print(f"::error::{p}")
@@ -155,5 +173,5 @@ jobs:
             echo "Unchanged since the live publish, nothing to deploy"
             exit 0
           fi
-          npx --yes wrangler@4 pages deploy build/content \
+          npx --yes wrangler@4.156.0 pages deploy build/content \
             --project-name "${{ inputs.pages-project }}" --branch "${{ inputs.pages-branch }}" --commit-dirty=true
