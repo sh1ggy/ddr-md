@@ -6,6 +6,23 @@ engine version. Official chart levels and song IDs remain unchanged.
 
 ## Environment and model bundle
 
+The production `scoring-v31` macOS bundle and its checksum are retained in the
+private [content repository release](https://github.com/sh1ggy/ddr-md-content/releases/tag/scoring-v31).
+Restore it from this checkout with access to that repository:
+
+```sh
+mkdir -p build
+gh release download scoring-v31 --repo sh1ggy/ddr-md-content \
+  --pattern 'scoring-v31-macos.*' --dir build
+(cd build && shasum -a 256 -c scoring-v31-macos.sha256)
+tar -xzf build/scoring-v31-macos.tar.gz -C build
+```
+
+The bundle manifest checks the feature sources against the app checkout before
+inference. This archive supports macOS; Linux needs a separately frozen and
+conformance-checked native bundle. OTA publishing validates the precomputed
+ratings without running inference.
+
 Use Python 3.12 in an isolated environment, separately from prep's Poetry env:
 
 ```sh
