@@ -225,7 +225,16 @@ class PageTitle extends StatelessWidget {
                 style: FloorPop.display(28,
                     color: Theme.of(context).colorScheme.onSurface)),
           ),
-          if (trailing != null) ...[const SizedBox(width: 10), trailing!],
+          if (trailing != null) ...[
+            const SizedBox(width: 10),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: trailing!,
+              ),
+            ),
+          ],
         ],
       );
 }

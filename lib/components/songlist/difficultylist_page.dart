@@ -375,7 +375,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                           style: TextStyle(
                               color: FloorPop.of(context).haze,
                               fontWeight: FontWeight.w600,
-                              fontSize: 14))
+                              fontSize: 12))
                       : const SizedBox.shrink(),
                 ),
               ),
