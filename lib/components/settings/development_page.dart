@@ -134,10 +134,10 @@ Future<void> previewSessionWrap(BuildContext context) async {
       _ => gain(CardLayer.card),
     });
   }
-  // A circle that cheered three credits, a friend or two each.
-  const cheerers = ['MIKA', 'REXX', 'TOFU', 'JUN.K'];
+  // A crowded sticker wall: three friends cheering each of twelve credits.
+  const cheerers = ['MIKA', 'REXX', 'TOFU', 'JUN.K', 'SORA', 'KAI'];
   final cheered = [
-    for (var c = 1; c <= 3; c++)
+    for (var c = 1; c <= 12; c++)
       (
         by: null,
         session: visit.session!.id,
@@ -145,7 +145,7 @@ Future<void> previewSessionWrap(BuildContext context) async {
         at: visit.plays.first.playedAt,
         plays: const <CirclePlay>[],
         cheers: [
-          for (var i = 0; i < 1 + c % 2; i++)
+          for (var i = 0; i < 3; i++)
             (
               id: null,
               name: cheerers[(c + i) % cheerers.length],

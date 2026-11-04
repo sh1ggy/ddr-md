@@ -404,84 +404,93 @@ class _SessionWrapPageState extends State<SessionWrapPage>
     return Scaffold(
       backgroundColor: pop.stage,
       body: SafeArea(
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-            child: Row(children: [
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('SESSION WRAP',
-                          style: pop.label.copyWith(color: pop.voltText)),
-                      const SizedBox(height: 6),
-                      visit == null
-                          ? const VisitTag(
-                              Icons.cloud_download_rounded, 'From e-amusement')
-                          : VisitTags(visit, venue: true),
-                    ]),
-              ),
-              IconButton(
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close)),
-            ]),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-            child: Row(spacing: 6, children: [
-              for (var i = 0; i < beats.length + (n == 0 ? 0 : 1); i++)
+        child: Stack(children: [
+          Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+              child: Row(children: [
                 Expanded(
-                    child: AnimatedContainer(
-                        duration: FloorPop.eighth,
-                        height: 4,
-                        decoration: BoxDecoration(
-                            color: i <= _beat ? FloorPop.volt : pop.line,
-                            borderRadius: BorderRadius.circular(2)))),
-            ]),
-          ),
-          Expanded(
-            child: AnimatedSwitcher(
-              duration: FloorPop.beat,
-              switchInCurve: FloorPop.settle,
-              // The outgoing beat fades; the incoming one comes in whole, as a card's
-              // finish doesn't draw while it's faded.
-              transitionBuilder: (child, a) => child.key == ValueKey(_beat)
-                  ? child
-                  : FadeTransition(opacity: a, child: child),
-              child: KeyedSubtree(
-                key: ValueKey(_beat),
-                child: switch (beat) {
-                  _Beat.verdict => _Verdict(_summary,
-                      cards: n,
-                      spin: _spin,
-                      missing: missing,
-                      goal: _goalProgress()),
-                  _Beat.circle => _ShowedUp(_cheered(circle)),
-                  _Beat.pack => _Pack(_cards, gains: _gains),
-                },
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('SESSION WRAP',
+                            style: pop.label.copyWith(color: pop.voltText)),
+                        const SizedBox(height: 6),
+                        visit == null
+                            ? const VisitTag(Icons.cloud_download_rounded,
+                                'From e-amusement')
+                            : VisitTags(visit, venue: true),
+                      ]),
+                ),
+                IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close)),
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Row(spacing: 6, children: [
+                for (var i = 0; i < beats.length + (n == 0 ? 0 : 1); i++)
+                  Expanded(
+                      child: AnimatedContainer(
+                          duration: FloorPop.eighth,
+                          height: 4,
+                          decoration: BoxDecoration(
+                              color: i <= _beat ? FloorPop.volt : pop.line,
+                              borderRadius: BorderRadius.circular(2)))),
+              ]),
+            ),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: FloorPop.beat,
+                switchInCurve: FloorPop.settle,
+                // The outgoing beat fades; the incoming one comes in whole, as a card's
+                // finish doesn't draw while it's faded.
+                transitionBuilder: (child, a) => child.key == ValueKey(_beat)
+                    ? child
+                    : FadeTransition(opacity: a, child: child),
+                child: KeyedSubtree(
+                  key: ValueKey(_beat),
+                  child: switch (beat) {
+                    _Beat.verdict => _Verdict(_summary,
+                        cards: n,
+                        spin: _spin,
+                        missing: missing,
+                        goal: _goalProgress()),
+                    _Beat.circle => _CheerWall(_cheered(circle)),
+                    _Beat.pack => Padding(
+                        padding: const EdgeInsets.only(bottom: 80),
+                        child: _Pack(_cards, gains: _gains)),
+                  },
+                ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Row(children: [
-              if (_beat > 0) ...[
-                IconButton.filledTonal(
-                    tooltip: 'Back',
-                    iconSize: 24,
-                    onPressed: () => setState(() => _beat--),
-                    icon: const Icon(Icons.arrow_back_rounded)),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: VoltButton(
-                    onPressed: _beat == 0 && _collecting ? null : _next,
-                    child: action == null
-                        ? const Icon(Icons.arrow_forward_rounded, size: 28)
-                        : Text(action, style: FloorPop.display(16))),
-              ),
-            ]),
+          ]),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Row(children: [
+                if (_beat > 0) ...[
+                  IconButton.filledTonal(
+                      tooltip: 'Back',
+                      iconSize: 24,
+                      onPressed: () => setState(() => _beat--),
+                      icon: const Icon(Icons.arrow_back_rounded)),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: VoltButton(
+                      onPressed: _beat == 0 && _collecting ? null : _next,
+                      child: action == null
+                          ? const Icon(Icons.arrow_forward_rounded, size: 28)
+                          : Text(action, style: FloorPop.display(16))),
+                ),
+              ]),
+            ),
           ),
         ]),
       ),
@@ -491,135 +500,226 @@ class _SessionWrapPageState extends State<SessionWrapPage>
 
 enum _Beat { verdict, circle, pack }
 
-// The circle's beat: everyone who cheered the broadcast, each cheer a card
-// in its own colour slapped on at its own lean, with the credit it was for.
-// Confetti bursts from each friend's first card in turn, so more friends
-// throw more of it.
-class _ShowedUp extends StatefulWidget {
-  const _ShowedUp(this.credits);
+// Each cheer lands as another stamp. Positions stay fixed across rebuilds;
+// a busy session fills the page before stickers start to overlap.
+class _CheerWall extends StatefulWidget {
+  const _CheerWall(this.credits);
   final List<CircleCredit> credits;
 
   @override
-  State<_ShowedUp> createState() => _ShowedUpState();
+  State<_CheerWall> createState() => _CheerWallState();
 }
 
-class _ShowedUpState extends State<_ShowedUp> {
+class _CheerWallState extends State<_CheerWall> {
   late final _cheers = [
     for (final c in widget.credits)
       for (final x in c.cheers) (credit: c.credit, cheer: x)
   ];
-  // Each friend's first card, where their confetti comes from.
-  final _firsts = <String, GlobalKey>{};
+  late final _keys = [for (final _ in _cheers) GlobalKey()];
+  late final _tilts = [
+    for (var i = 0; i < _cheers.length; i++)
+      (math.Random(47 + i).nextDouble() - .5) * .4
+  ];
+  int _landed = 0;
 
   @override
   void initState() {
     super.initState();
-    for (final c in _cheers) {
-      _firsts.putIfAbsent(c.cheer.id ?? c.cheer.name, GlobalKey.new);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _stamp());
+  }
+
+  Future<void> _stamp() async {
+    if (!mounted) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      setState(() => _landed = _cheers.length);
+      return;
     }
-    // Once the beat has settled in.
-    Future.delayed(FloorPop.beat, () async {
-      for (final (i, key) in _firsts.values.indexed) {
+    await Future.delayed(FloorPop.beat);
+    for (var i = 0; i < _cheers.length; i++) {
+      if (!mounted) return;
+      setState(() => _landed = i + 1);
+      HapticFeedback.mediumImpact();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final box = key.currentContext?.findRenderObject() as RenderBox?;
-        final cheer = _cheers
-            .firstWhere((c) => _firsts[c.cheer.id ?? c.cheer.name] == key)
-            .cheer
-            .cheer;
+        final box = _keys[i].currentContext?.findRenderObject() as RenderBox?;
         if (box != null && box.attached) {
-          if (i > 0) HapticFeedback.lightImpact();
-          burstConfetti(context,
-              box.localToGlobal(box.size.center(Offset.zero)), cheer.color);
+          burstConfetti(
+              context,
+              box.localToGlobal(box.size.center(Offset.zero)),
+              _cheers[i].cheer.cheer.color);
         }
-        await Future.delayed(const Duration(milliseconds: 220));
-      }
-    });
+      });
+      await Future.delayed(Duration(
+          milliseconds: (3000 / _cheers.length).round().clamp(45, 240)));
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final seen = <String>{};
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 16),
-      children: [
-        Transform(
-            transform: FloorPop.titleLean,
-            child: Text('Your circle\nshowed up',
-                style: FloorPop.display(28,
-                    color: Theme.of(context).colorScheme.onSurface))),
-        const SizedBox(height: 20),
-        for (final (i, (:credit, :cheer)) in _cheers.indexed)
-          Align(
-            alignment: i.isEven ? Alignment.centerLeft : Alignment.centerRight,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Transform.rotate(
-                key: seen.add(cheer.id ?? cheer.name)
-                    ? _firsts[cheer.id ?? cheer.name]
-                    : null,
-                angle: cheer.cheer.tilt,
-                child: Container(
-                  width: 250,
-                  padding: const EdgeInsets.fromLTRB(14, 12, 16, 12),
-                  decoration: BoxDecoration(
-                    color: cheer.cheer.color,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                          color: cheer.cheer.color.withValues(alpha: 0.4),
-                          blurRadius: 18,
-                          offset: const Offset(0, 4)),
-                    ],
-                  ),
-                  child: Row(children: [
-                    Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                          color: cheer.cheer.ink, shape: BoxShape.circle),
-                      child: CircleAvatar(
-                          radius: 20,
-                          backgroundColor: avatarColour(cheer.id ?? cheer.name),
-                          child: Text(
-                              cheer.name.isEmpty
-                                  ? '?'
-                                  : cheer.name.substring(0, 1),
-                              style: FloorPop.display(16,
-                                  color: avatarInk(
-                                      avatarColour(cheer.id ?? cheer.name))))),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${cheer.name} · credit $credit',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color:
-                                        cheer.cheer.ink.withValues(alpha: 0.75),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700)),
-                            Row(children: [
-                              Icon(cheer.cheer.icon,
-                                  size: 18, color: cheer.cheer.ink),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(cheer.cheer.label,
-                                    style: FloorPop.display(18,
-                                        color: cheer.cheer.ink)),
-                              ),
-                            ]),
-                          ]),
-                    ),
-                  ]),
-                ),
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        final stampWidth = math.min(290.0, box.maxWidth * .94);
+        return Stack(children: [
+          Positioned(
+            left: 24,
+            right: 24,
+            top: 24,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Transform(
+                transform: FloorPop.titleLean,
+                child: Text(
+                    '${_cheers.length} ${_cheers.length == 1 ? 'CHEER' : 'CHEERS'}',
+                    style: FloorPop.display(38,
+                        color: FloorPop.of(context).voltText)),
               ),
             ),
           ),
-      ],
+          Positioned.fill(
+            top: 100,
+            bottom: 100,
+            child: ClipRect(
+              child: CustomMultiChildLayout(
+                delegate: _StickerLayout(_tilts, _landed, stampWidth),
+                children: [
+                  for (var i = 0; i < _landed; i++)
+                    LayoutId(
+                      id: i,
+                      child: TweenAnimationBuilder<double>(
+                        key: ValueKey(i),
+                        tween: Tween(
+                            begin:
+                                MediaQuery.disableAnimationsOf(context) ? 1 : 0,
+                            end: 1),
+                        duration: const Duration(milliseconds: 360),
+                        curve: Curves.easeOutBack,
+                        builder: (context, t, child) => Transform.scale(
+                            scale: 1.7 - .7 * t,
+                            child: Opacity(
+                                opacity: t.clamp(0.0, 1.0), child: child)),
+                        child: Transform.rotate(
+                          angle: _tilts[i],
+                          child: KeyedSubtree(
+                              key: _keys[i], child: _stampCard(i, stampWidth)),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ]);
+      });
+
+  Widget _stampCard(int i, double stampWidth) {
+    final (:credit, :cheer) = _cheers[i];
+    return Container(
+      width: stampWidth,
+      padding: const EdgeInsets.fromLTRB(16, 14, 18, 14),
+      decoration: BoxDecoration(
+        color: cheer.cheer.color,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+              color: cheer.cheer.color.withValues(alpha: 0.4),
+              blurRadius: 18,
+              offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Row(children: [
+        CircleAvatar(
+            radius: 23,
+            backgroundColor: avatarColour(cheer.id ?? cheer.name),
+            child: Text(cheer.name.isEmpty ? '?' : cheer.name.substring(0, 1),
+                style: FloorPop.display(18,
+                    color: avatarInk(avatarColour(cheer.id ?? cheer.name))))),
+        const SizedBox(width: 12),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${cheer.name} · credit $credit',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: cheer.cheer.ink.withValues(alpha: 0.75),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700)),
+            Row(children: [
+              Icon(cheer.cheer.icon, size: 21, color: cheer.cheer.ink),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(cheer.cheer.label,
+                    style: FloorPop.display(21, color: cheer.cheer.ink)),
+              ),
+            ]),
+          ]),
+        ),
+      ]),
     );
   }
+}
+
+// Measure each sticker, including its rotated footprint, then try scattered
+// spots. Keep the first clear spot; when crowded, spread arrivals across
+// the width and find the least overlap near each sticker's preferred spot.
+// Horizontal spill lets edge stickers crop like a sticker-covered laptop.
+// Each sticker has its own seed so later arrivals never move earlier ones.
+class _StickerLayout extends MultiChildLayoutDelegate {
+  _StickerLayout(this.tilts, this.count, this.width);
+  final List<double> tilts;
+  final int count;
+  final double width;
+
+  @override
+  void performLayout(Size size) {
+    final occupied = <Rect>[];
+    for (var i = 0; i < count; i++) {
+      final child = layoutChild(i, BoxConstraints.tightFor(width: width));
+      final angle = tilts[i].abs();
+      final footprint = Size(
+          child.width * math.cos(angle) + child.height * math.sin(angle),
+          child.height * math.cos(angle) + child.width * math.sin(angle));
+      final random = math.Random(173 + i * 997);
+      final spanX = math.max(0.0, size.width - footprint.width + width * .36);
+      // Once crowded, give each arrival a different horizontal neighbourhood.
+      // Otherwise minimising overlap alone pushes every new sticker to an edge.
+      final preferredX =
+          size.width / 2 + (((i * .61803398875 + .5) % 1) - .5) * spanX;
+      Rect? best;
+      var least = double.infinity;
+      for (var attempt = 0; attempt < 600; attempt++) {
+        final center = Offset(
+            attempt == 0
+                ? preferredX
+                : size.width / 2 + (random.nextDouble() - .5) * spanX,
+            size.height / 2 +
+                (random.nextDouble() - .5) *
+                    math.max(0, size.height - footprint.height - 16));
+        final candidate = Rect.fromCenter(
+            center: center, width: footprint.width, height: footprint.height);
+        var overlap = 0.0;
+        for (final previous in occupied) {
+          final intersection = previous.inflate(10).intersect(candidate);
+          if (!intersection.isEmpty) {
+            overlap += intersection.width * intersection.height;
+          }
+        }
+        if (overlap == 0) {
+          best = candidate;
+          break;
+        }
+        if ((center.dx - preferredX).abs() <= spanX * .14 && overlap < least) {
+          least = overlap;
+          best = candidate;
+        }
+      }
+      occupied.add(best!);
+      positionChild(i, best.center - child.center(Offset.zero));
+    }
+  }
+
+  @override
+  bool shouldRelayout(_StickerLayout old) =>
+      old.count != count || old.width != width || old.tilts != tilts;
 }
 
 // Beat one: the gap from your usual, counting up inside a spinning ring; the
@@ -685,7 +785,7 @@ class _Verdict extends StatelessWidget {
     const ring = 270.0;
     return Center(
         child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 104),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         SizedBox.square(
           dimension: ring,
@@ -1222,6 +1322,26 @@ class ShockPainter extends CustomPainter {
   bool shouldRepaint(ShockPainter old) => old.t != t || old.color != color;
 }
 
+// The same filled NEW and outlined UP stamps on cards and their tally.
+class _CardBadge extends StatelessWidget {
+  const _CardBadge({required this.fresh, required this.ink});
+  final bool fresh;
+  final double ink;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(
+            color: fresh ? FloorPop.volt : FloorPop.of(context).stage,
+            border: Border.all(color: FloorPop.volt, width: 1.5),
+            borderRadius: BorderRadius.circular(5)),
+        child: Text(fresh ? 'NEW' : 'UP',
+            style: FloorPop.display(ink,
+                color:
+                    fresh ? FloorPop.onVolt : FloorPop.of(context).voltText)),
+      );
+}
+
 // A card in the pack, tagged NEW or UP.
 class _PackCard extends StatelessWidget {
   const _PackCard(this.card, {required this.side, required this.onTap});
@@ -1231,7 +1351,6 @@ class _PackCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
     final fresh = card.before == null;
     final ink = math.max(9.0, side * .09);
     return Semantics(
@@ -1248,16 +1367,7 @@ class _PackCard extends StatelessWidget {
             Positioned(
               left: 6,
               top: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                    color: fresh ? FloorPop.volt : pop.stage,
-                    border: Border.all(color: FloorPop.volt, width: 1.5),
-                    borderRadius: BorderRadius.circular(5)),
-                child: Text(fresh ? 'NEW' : 'UP',
-                    style: FloorPop.display(ink,
-                        color: fresh ? FloorPop.onVolt : pop.voltText)),
-              ),
+              child: _CardBadge(fresh: fresh, ink: ink),
             ),
           ]),
         ),
@@ -1522,50 +1632,24 @@ class CardTally extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    final ink = height * .42;
     final cards = wrapCards(gains);
     final fresh = cards.where((c) => c.before == null).length;
-    // Statistics' tiles: the label and its count in one, sized to fit both.
-    final count = TextStyle(
-        fontSize: height * .46,
-        height: 1,
-        fontWeight: FontWeight.w700,
-        fontFeatures: const [FontFeature.tabularFigures()]);
     return Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        alignment: alignment,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (final (label, n) in [
-            ('NEW', fresh),
-            ('UP', cards.length - fresh),
-          ])
-            if (n > 0)
-              () {
-                final style = FloorPop.display(ink, color: pop.voltText);
-                double wide(String text, TextStyle style) => (TextPainter(
-                        text: TextSpan(text: text, style: style),
-                        textDirection: TextDirection.ltr)
-                      ..layout())
-                    .width;
-                // The tile gives its label two thirds of the row, so the
-                // label sets the width; the count only widens it past that.
-                final inner = math.max(wide(label, style) * 1.5,
-                    wide(label, style) + 4 + wide('$n', count));
-                return ArtTile(null,
-                    aspect: 0,
-                    ink: ink,
-                    width: inner + 14,
-                    height: height,
-                    color: pop.voltText,
-                    label: Text(label, style: style),
-                    trailing: Text('$n', style: count));
-              }(),
-          if (gains.isEmpty)
-            Text('No cards', style: TextStyle(color: pop.haze)),
-        ]);
+      spacing: 10,
+      runSpacing: 6,
+      alignment: alignment,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final (isNew, n) in [(true, fresh), (false, cards.length - fresh)])
+          if (n > 0)
+            Row(mainAxisSize: MainAxisSize.min, spacing: 5, children: [
+              _CardBadge(fresh: isNew, ink: height * .46),
+              Text('$n', style: FloorPop.readout(height * .54)),
+            ]),
+        if (gains.isEmpty)
+          Text('No cards', style: TextStyle(color: FloorPop.of(context).haze)),
+      ],
+    );
   }
 }
 
