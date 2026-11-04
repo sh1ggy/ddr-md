@@ -158,7 +158,10 @@ class GoalCard extends StatelessWidget {
                         style: FloorPop.display(22, color: ink)),
                   ),
                   const SizedBox(height: 10),
-                  GoalArt(goal),
+                  FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: GoalArt(goal)),
                 ],
               ),
             ),

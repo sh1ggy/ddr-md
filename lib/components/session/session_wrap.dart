@@ -1,7 +1,8 @@
 /// Name: SessionWrap
 /// Parent: LastSessionCard, VisitPage, SessionPage
 /// Description: A session told once its plays are synced: how it went
-/// against your usual, who in your circle cheered it when it was broadcast,
+/// against your usual, how its goal went, who in your circle cheered it
+/// when it was broadcast,
 /// then every card its plays collected or upgraded
 /// dealt at once like a pack, each opening on its own beside what it was,
 /// then into the binder, where they slot into their pockets sheet by sheet.
@@ -254,6 +255,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
       _shown ??
       [
         _Beat.verdict,
+        if (_visit?.session?.goal != null) _Beat.goal,
         if (_cheered(circle).isNotEmpty) _Beat.circle,
         if (_cards.isNotEmpty) _Beat.pack,
       ];
@@ -458,6 +460,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
                         spin: _spin,
                         missing: missing,
                         goal: _goalProgress()),
+                    _Beat.goal => _GoalResult(_goalProgress()!),
                     _Beat.circle => _CheerWall(_cheered(circle)),
                     _Beat.pack => Padding(
                         padding: const EdgeInsets.only(bottom: 80),
@@ -498,7 +501,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   }
 }
 
-enum _Beat { verdict, circle, pack }
+enum _Beat { verdict, goal, circle, pack }
 
 // Each cheer lands as another stamp. Positions stay fixed across rebuilds;
 // a busy session fills the page before stickers start to overlap.
@@ -827,9 +830,10 @@ class _Verdict extends StatelessWidget {
                                 '${v >= 0 ? '+' : '−'}${formatScore(v.abs().round())}',
                                 maxLines: 1,
                                 style: FloorPop.readout(52, color: color))))),
-              const SizedBox(height: 8),
-              Text(gap == null ? 'plays' : 'vs your usual',
-                  style: TextStyle(fontSize: 13, color: pop.haze)),
+              if (gap == null) ...[
+                const SizedBox(height: 8),
+                Text('plays', style: TextStyle(fontSize: 13, color: pop.haze)),
+              ],
             ]),
           ]),
         ),
@@ -891,27 +895,56 @@ class _Verdict extends StatelessWidget {
                   Text('$cards',
                       style: FloorPop.readout(20, color: pop.voltText)),
                 ])),
+          if (goal case final goal?)
+            _VerdictTile(
+                label: 'GOAL',
+                color: goal.reached ? pop.up : pop.voltText,
+                fill: goal.reached ? FloorPop.night.up : FloorPop.volt,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(
+                      goal.reached
+                          ? Icons.check_circle_outline
+                          : Icons.flag_outlined,
+                      size: 20,
+                      color: goal.reached ? pop.up : pop.voltText),
+                  const SizedBox(width: 4),
+                  Text(
+                      '${goal.count}'
+                      '${goal.goal.target == null ? '' : '/${goal.goal.target}'}',
+                      style: FloorPop.readout(20,
+                          color: goal.reached ? pop.up : pop.voltText)),
+                ])),
         ]),
-        if (goal case final goal?) ...[
-          const SizedBox(height: 30),
-          GoalCard(
-            goal: goal.goal,
-            count: goal.count,
-            stamp: goal.reached
-                ? 'GOAL HIT'
-                : goal.goal.target == null
-                    ? null
-                    : '${goal.goal.target! - goal.count} TO GO',
-            footer: Text(goalSummary(goal),
-                style: TextStyle(
-                    color: goal.goal.kind.ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-          ),
-        ],
       ]),
     ));
   }
+}
+
+// The goal has its own beat, with room for its full title, artwork and result.
+class _GoalResult extends StatelessWidget {
+  const _GoalResult(this.progress);
+  final GoalProgress progress;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 104),
+          child: GoalCard(
+            goal: progress.goal,
+            count: progress.count,
+            stamp: progress.reached
+                ? 'GOAL HIT'
+                : progress.goal.target == null
+                    ? null
+                    : '${progress.goal.target! - progress.count} TO GO',
+            footer: Text(goalSummary(progress),
+                style: TextStyle(
+                    color: progress.goal.kind.ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ),
+      );
 }
 
 // One of the verdict's tiles: a tile washed in [color], its figure over a
@@ -934,14 +967,13 @@ class _VerdictTile extends StatelessWidget {
     final pop = FloorPop.of(context);
     return Expanded(
         child: Container(
-            height: 70,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            constraints: const BoxConstraints(minHeight: 70),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
                 color: Color.alphaBlend(
                     (fill ?? color).withValues(alpha: .16), pop.riser),
                 borderRadius: BorderRadius.circular(14)),
-            child:
-                Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
               SizedBox(height: 24, child: FittedBox(child: child)),
               const SizedBox(height: 6),
               Text(label,
