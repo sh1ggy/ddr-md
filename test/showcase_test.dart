@@ -9,6 +9,7 @@ import 'package:ddr_md/components/circle/circle_live_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
 import 'package:ddr_md/components/circle/circle_credit_card.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/database.dart';
@@ -63,7 +64,7 @@ class _Circle extends CircleState {
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues(
-        {Settings.jacketMotionOffKey: 1, Settings.jacketEffectsOffKey: 1});
+        {Settings.jacketMotionOffKey: 1, Settings.jacketEffectsOffKey: 0});
     await Settings.init();
   });
   testWidgets(
@@ -161,15 +162,61 @@ void main() {
     await tester.pumpAndSettle();
     final firstSlot = find.byKey(const ValueKey('showcase-slot-0'));
     final secondSlot = find.byKey(const ValueKey('showcase-slot-1'));
-    expect(tester.getSize(firstSlot).width, greaterThan(230));
+    expect(tester.getSize(firstSlot).width, inInclusiveRange(180, 200));
     final rect = tester.getRect(secondSlot);
     await tester.tapAt(Offset(rect.left + 15, rect.center.dy));
     await tester.pumpAndSettle();
     expect(tester.widget<Semantics>(secondSlot).properties.selected, isTrue);
+    expect(find.byType(DifficultyLabel), findsNWidgets(2));
     expect(find.byType(TextField), findsNothing);
     expect(find.byType(TextButton), findsNothing);
     expect(find.byType(FilledButton), findsNothing);
     expect(find.text('SHOWCASE'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('fan animates selection and shows chart levels', (tester) async {
+    final oldSongs = Songs.list;
+    addTearDown(() => Songs.list = oldSongs);
+    Songs.list = [
+      SongInfo.fromJson({
+        'name': 'first',
+        'title': 'first',
+        'version': 'DDR WORLD',
+        'sp': {'hard': 15},
+        'dp': <String, dynamic>{}
+      })
+    ];
+    await tester.pumpWidget(MaterialApp(
+        theme: floorPopTheme(Brightness.dark),
+        home: const Scaffold(
+            body: SizedBox(
+                width: 390,
+                child: ShowcaseDisplay(cards: [first, second, null])))));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widgetList<DifficultyLabel>(find.byType(DifficultyLabel))
+            .any((label) => label.difficulty == 'EXPERT' && label.level == 15),
+        isTrue);
+    final secondSlot = find.byKey(const ValueKey('showcase-slot-1'));
+    final before = tester.getRect(secondSlot);
+    await tester.tapAt(Offset(before.left + 35, before.center.dy));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final during = tester.getRect(secondSlot);
+    await tester.pumpAndSettle();
+    final after = tester.getRect(secondSlot);
+    expect(during.center.dx, isNot(before.center.dx));
+    expect(during.center.dx, isNot(after.center.dx));
+    expect(tester.widget<Semantics>(secondSlot).properties.selected, isTrue);
+    await tester.fling(secondSlot, const Offset(-150, 0), 600);
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<Semantics>(find.byKey(const ValueKey('showcase-slot-0')))
+            .properties
+            .selected,
+        isTrue);
     expect(tester.takeException(), isNull);
   });
   testWidgets('picker swaps cards, clears a slot, and retries failed saves',

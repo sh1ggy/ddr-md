@@ -18,6 +18,7 @@ class CompactJacketEdition extends StatefulWidget {
       required this.options,
       this.aura = true,
       this.flareStamp = false,
+      this.fitChart = false,
       required this.child});
   final EditionFacts facts;
   final EditionOptions options;
@@ -25,6 +26,8 @@ class CompactJacketEdition extends StatefulWidget {
   final bool aura;
   // Show flare independently of the grade and score stamps in the binder.
   final bool flareStamp;
+  // Keep the full chart identity visible in showcase footers.
+  final bool fitChart;
   final Widget child;
   @override
   State<CompactJacketEdition> createState() => _CompactJacketEditionState();
@@ -118,7 +121,8 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
                           geometry.width +
                               size.height * editionFooterHeight * 1.3 -
                               size.height)),
-                      shortStyle: true))),
+                      shortStyle: true,
+                      fitChart: widget.fitChart))),
       ]));
     });
   }

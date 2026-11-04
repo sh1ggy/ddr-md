@@ -122,14 +122,10 @@ class _CirclePageState extends State<CirclePage> {
                             ))))),
             // While it's empty the tab's own buttons invite.
             if (!empty)
-              SizedBox(
-                width: 96,
-                child: VoltButton(
-                  height: 40,
-                  radius: 14,
-                  onPressed: () => showInviteSheet(context),
-                  child: const Text('Invite', style: _bold),
-                ),
+              HeaderButton(
+                icon: const Icon(Icons.person_add_alt_1),
+                tooltip: 'Invite',
+                onPressed: () => showInviteSheet(context),
               ),
             HeaderButton(
               icon: const Icon(Icons.more_horiz),

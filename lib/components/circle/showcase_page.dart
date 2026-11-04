@@ -7,13 +7,14 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:ddr_md/components/circle/circle_credit_card.dart';
 import 'package:ddr_md/components/circle/circle_page.dart' show CircleBubble;
+import 'package:ddr_md/components/circle/circle_widgets.dart' show DdrCodeBadge;
 import 'package:ddr_md/components/session/recent_plays.dart' show chartOf;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/compact_jacket_edition.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
-import 'package:ddr_md/helpers.dart' show formatScore;
+import 'package:ddr_md/helpers.dart' show formatScore, kInGameDifficultyNames;
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/database.dart';
@@ -52,15 +53,17 @@ class ShowcasePage extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                               Text(person.name, style: FloorPop.display(22)),
-                              Text(formatDdrCode(person.ddrCode)),
-                              Text(
-                                  own
-                                      ? 'Your page, as your circle sees it'
-                                      : person.friend
-                                          ? 'FRIENDS'
-                                          : 'IN THEIR CIRCLE',
-                                  style:
-                                      TextStyle(color: pop.haze, fontSize: 12)),
+                              const SizedBox(height: 8),
+                              DdrCodeBadge(person.ddrCode),
+                              if (!own) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                    person.friend
+                                        ? 'FRIENDS'
+                                        : 'IN THEIR CIRCLE',
+                                    style: TextStyle(
+                                        color: pop.haze, fontSize: 12)),
+                              ],
                             ]))
                       ])),
                   CircleShowcase(person: person, revision: circle.feedRevision),
@@ -187,24 +190,31 @@ class _CardArt extends StatelessWidget {
   const _CardArt(this.card);
   final ShowcaseCard card;
   @override
-  Widget build(BuildContext context) => CompactJacketEdition(
-      facts: EditionFacts(
-          chart: (
-            song: card.song,
-            mode: card.mode.name,
-            difficulty: card.difficulty
-          ),
-          level: chartOf(card.song, card.mode, card.difficulty).level,
-          score: card.best.score,
-          grade: card.best.grade,
-          lamp: card.best.lamp,
-          flare: card.best.flare),
-      options: editionPreferences(),
-      flareStamp: true,
-      child: SongArtwork(
-          songName: card.song,
-          title: chartOf(card.song, card.mode, card.difficulty).song?.title ??
-              card.song));
+  Widget build(BuildContext context) {
+    final chart = chartOf(card.song, card.mode, card.difficulty);
+    final difficulty = kInGameDifficultyNames.entries
+            .where((entry) => entry.value == card.difficulty)
+            .firstOrNull
+            ?.key ??
+        card.difficulty;
+    return CompactJacketEdition(
+        facts: EditionFacts(
+            chart: (
+              song: card.song,
+              mode: card.mode.name,
+              difficulty: difficulty
+            ),
+            level: chart.level,
+            score: card.best.score,
+            grade: card.best.grade,
+            lamp: card.best.lamp,
+            flare: card.best.flare),
+        options: editionPreferences(),
+        fitChart: true,
+        flareStamp: true,
+        child: SongArtwork(
+            songName: card.song, title: chart.song?.title ?? card.song));
+  }
 }
 
 class _CardFan extends StatelessWidget {
@@ -221,8 +231,12 @@ class _CardFan extends StatelessWidget {
   final VoidCallback? onClear;
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        final height = box.maxWidth * (editor ? .86 : 1.04);
-        final size = box.maxWidth * (editor ? .62 : .78);
+        final width = box.maxWidth.clamp(0.0, 520.0);
+        final height = width * .78;
+        final size = width * .58;
+        final duration = MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 420);
         final others = [
           for (var i = 0; i < cards.length; i++)
             if (i != active) i
@@ -240,92 +254,112 @@ class _CardFan extends StatelessWidget {
               ], radius: .65))))),
               for (final i in [...others, active])
                 if (i < cards.length)
-                  Builder(builder: (context) {
-                    final on = i == active;
-                    final side = on
-                        ? 0
-                        : others.indexOf(i) == 0
-                            ? -1
-                            : 1;
-                    final card = cards[i];
-                    return AnimatedPositioned(
-                        key: ValueKey(i),
-                        duration: const Duration(milliseconds: 200),
-                        left: (box.maxWidth - size) / 2 +
-                            side * size * (editor ? .26 : .16),
-                        top: (height - size) / 2 + (on ? 0 : size * .08),
-                        width: size,
-                        height: size,
-                        child: Transform.rotate(
-                            angle: side * .12,
-                            child: Transform.scale(
-                                scale: on ? 1.06 : .88,
-                                child: Semantics(
-                                    key: ValueKey('showcase-slot-$i'),
-                                    button: true,
-                                    selected: on,
-                                    label:
-                                        'Card ${i + 1}: ${card?.song ?? 'empty'}',
-                                    child: GestureDetector(
-                                        onTap: () => onPick(i),
-                                        child: Container(
-                                            padding: const EdgeInsets.all(3),
-                                            decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: on && editor
-                                                    ? Border.all(
-                                                        color: FloorPop.volt,
-                                                        width: 2)
-                                                    : null),
-                                            child: card == null
-                                                ? DecoratedBox(
-                                                    decoration: BoxDecoration(
-                                                        color: FloorPop.of(context)
-                                                            .stage,
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                                10),
-                                                        border: Border.all(
+                  Builder(
+                      key: ValueKey(i),
+                      builder: (context) {
+                        final on = i == active;
+                        final side = on
+                            ? 0
+                            : others.indexOf(i) == 0
+                                ? -1
+                                : 1;
+                        final card = cards[i];
+                        return AnimatedPositioned(
+                            key: ValueKey(i),
+                            duration: duration,
+                            curve: Curves.easeInOutCubic,
+                            left: (box.maxWidth - size) / 2 + side * size * .34,
+                            top: (height - size) / 2 + (on ? 0 : size * .08),
+                            width: size,
+                            height: size,
+                            child: AnimatedRotation(
+                                turns: side * .027,
+                                duration: duration,
+                                curve: Curves.easeInOutCubic,
+                                child: AnimatedScale(
+                                    scale: on ? 1 : .9,
+                                    duration: duration,
+                                    curve: Curves.easeInOutCubic,
+                                    child: Semantics(
+                                        key: ValueKey('showcase-slot-$i'),
+                                        button: true,
+                                        selected: on,
+                                        label:
+                                            'Card ${i + 1}: ${card?.song ?? 'empty'}',
+                                        child: GestureDetector(
+                                            behavior: HitTestBehavior.opaque,
+                                            onTap: () => onPick(i),
+                                            onHorizontalDragEnd: (details) {
+                                              final speed =
+                                                  details.primaryVelocity ?? 0;
+                                              if (speed.abs() > 80) {
+                                                onPick((active +
+                                                        (speed < 0 ? 1 : -1)) %
+                                                    cards.length);
+                                              }
+                                            },
+                                            child: Container(
+                                                padding:
+                                                    const EdgeInsets.all(3),
+                                                decoration: BoxDecoration(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                    border: on && editor
+                                                        ? Border.all(
                                                             color:
-                                                                FloorPop.of(context)
+                                                                FloorPop.volt,
+                                                            width: 2)
+                                                        : null),
+                                                child: card == null
+                                                    ? DecoratedBox(
+                                                        decoration: BoxDecoration(
+                                                            color: FloorPop.of(context)
+                                                                .stage,
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                    10),
+                                                            border: Border.all(
+                                                                color: FloorPop.of(context)
                                                                     .haze)),
-                                                    child: Column(
-                                                        mainAxisAlignment:
-                                                            MainAxisAlignment.center,
-                                                        children: [
+                                                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                                                           const Icon(Icons.add),
                                                           Text('CARD ${i + 1}')
                                                         ]))
-                                                : Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
-                                                    _CardArt(card),
-                                                    if (editor)
-                                                      Positioned(
-                                                          left: 4,
-                                                          bottom: 4,
-                                                          child: CircleAvatar(
-                                                              radius: 12,
-                                                              backgroundColor:
-                                                                  FloorPop.volt,
-                                                              child: Text(
-                                                                  '${i + 1}',
-                                                                  style: const TextStyle(
-                                                                      color: FloorPop
-                                                                          .onVolt)))),
-                                                    if (on && onClear != null)
-                                                      Positioned(
-                                                          top: 4,
-                                                          right: 4,
-                                                          child: IconButton.filled(
-                                                              tooltip:
-                                                                  'Take this card out',
-                                                              onPressed:
-                                                                  onClear,
-                                                              icon: const Icon(
-                                                                  Icons
-                                                                      .close))),
-                                                  ])))))));
-                  })
+                                                    : Stack(
+                                                        fit: StackFit.expand,
+                                                        clipBehavior: Clip.none,
+                                                        children: [
+                                                            _CardArt(card),
+                                                            if (editor)
+                                                              Positioned(
+                                                                  left: 4,
+                                                                  bottom: 4,
+                                                                  child: CircleAvatar(
+                                                                      radius:
+                                                                          12,
+                                                                      backgroundColor:
+                                                                          FloorPop
+                                                                              .volt,
+                                                                      child: Text(
+                                                                          '${i + 1}',
+                                                                          style:
+                                                                              const TextStyle(color: FloorPop.onVolt)))),
+                                                            if (on &&
+                                                                onClear != null)
+                                                              Positioned(
+                                                                  top: 4,
+                                                                  right: 4,
+                                                                  child: IconButton.filled(
+                                                                      tooltip:
+                                                                          'Take this card out',
+                                                                      onPressed:
+                                                                          onClear,
+                                                                      icon: const Icon(
+                                                                          Icons
+                                                                              .close))),
+                                                          ])))))));
+                      })
             ]));
       });
 }

@@ -288,12 +288,14 @@ class EditionFooter extends StatelessWidget {
       {super.key,
       required this.recipe,
       required this.clip,
-      this.shortStyle = false});
+      this.shortStyle = false,
+      this.fitChart = false});
   final EditionRecipe recipe;
   // The art's outline in the band's own space, which its corners follow.
   final Path clip;
   // SINGLE or DOUBLE without STYLE, for the small card.
   final bool shortStyle;
+  final bool fitChart;
 
   static bool shows(EditionRecipe recipe) =>
       recipe.modeStamp != null ||
@@ -340,16 +342,24 @@ class EditionFooter extends StatelessWidget {
                     children: [
                       SizedBox(width: _content * .45 * scale),
                       Expanded(
-                          child: ClipRect(
-                              child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Transform.scale(
-                                      scale: scale,
+                          child: fitChart
+                              ? Padding(
+                                  padding:
+                                      EdgeInsets.symmetric(vertical: h * .22),
+                                  child: FittedBox(
+                                      fit: BoxFit.contain,
                                       alignment: Alignment.centerLeft,
-                                      child: OverflowBox(
+                                      child: _chart()))
+                              : ClipRect(
+                                  child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Transform.scale(
+                                          scale: scale,
                                           alignment: Alignment.centerLeft,
-                                          maxWidth: double.infinity,
-                                          child: _chart()))))),
+                                          child: OverflowBox(
+                                              alignment: Alignment.centerLeft,
+                                              maxWidth: double.infinity,
+                                              child: _chart()))))),
                       if (score != null)
                         DecoratedBox(
                             key: const ValueKey('edition-score-tab'),
