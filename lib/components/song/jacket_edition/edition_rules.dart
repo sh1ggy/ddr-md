@@ -14,9 +14,14 @@ import 'package:ddr_md/models/version_group.dart';
 import 'edition_model.dart';
 import 'edition_catalog.dart';
 
-// As the grade badges: only AAA is foiled; the rest leave the art clean.
-EditionFinish finishFor(Grade? grade) =>
-    grade == Grade.aaa ? EditionFinish.prism : EditionFinish.print;
+// Grade controls the jacket's surface; lamp and flare keep their own layers.
+EditionFinish finishFor(Grade? grade) => switch (grade) {
+      Grade.aaa => EditionFinish.prism,
+      Grade.aaMinus || Grade.aa || Grade.aaPlus => EditionFinish.metallic,
+      Grade.aMinus || Grade.a || Grade.aPlus => EditionFinish.gloss,
+      Grade.bMinus || Grade.b || Grade.bPlus => EditionFinish.satin,
+      _ => EditionFinish.print,
+    };
 
 EditionRecipe resolveEdition(EditionFacts facts,
     [EditionOptions options = defaultEditionOptions]) {

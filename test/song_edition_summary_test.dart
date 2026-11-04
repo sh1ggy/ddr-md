@@ -80,8 +80,12 @@ void main() {
 
           Future<JacketEdition> zoom() async {
             await tester.tap(find.byType(SongArtwork).last);
-            await Future<void>.delayed(const Duration(milliseconds: 80));
-            await tester.pump();
+            final deadline = DateTime.now().add(const Duration(seconds: 10));
+            while (find.byType(JacketEdition).evaluate().isEmpty &&
+                DateTime.now().isBefore(deadline)) {
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              await tester.pump();
+            }
             await tester.pump(const Duration(seconds: 1));
             return tester.widget<JacketEdition>(find.byType(JacketEdition));
           }

@@ -4,6 +4,9 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/circle/cheer_notifications.dart';
+import 'package:ddr_md/models/circle_credits.dart';
+import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
@@ -46,6 +49,7 @@ void main() async {
   await session.restore();
   final eamuse = EamuseSyncState();
   await eamuse.restore();
+  final circles = CircleState();
 
   // Wrapped app with providers
   runApp(MultiProvider(
@@ -53,6 +57,7 @@ void main() async {
       ChangeNotifierProvider(create: (context) => SongState()),
       ChangeNotifierProvider.value(value: session),
       ChangeNotifierProvider.value(value: eamuse),
+      ChangeNotifierProvider.value(value: circles),
     ],
     child: const App(),
   ));
@@ -68,6 +73,25 @@ void main() async {
   CloudSync.syncQuietly();
   AppLifecycleListener(
       onHide: CloudSync.syncQuietly, onResume: CloudSync.syncQuietly);
+  // Each credit's plays sync once the next credit starts, when that's on.
+  session.onCreditEnded = eamuse.creditEnded;
+  // A broadcast ends with its session; the next one asks again.
+  session.onSessionEnded = () => circles.endBroadcast(keepChoice: true);
+  // While broadcasting, each sync shares the session's credits with the
+  // circle, the last one included once the session's ended.
+  String? broadcastSession;
+  var syncing = false;
+  session.addListener(() => circles.session = session.session?.id);
+  circles.session = session.session?.id;
+  eamuse.addListener(() {
+    if (session.session case final s?) broadcastSession = s.id;
+    final now = eamuse.status == EamuseStatus.syncing;
+    if (syncing && !now) circles.followKonamiProfile();
+    if (syncing && !now && CircleState.broadcasting) {
+      if (broadcastSession case final id?) shareSessionCredits(circles, id);
+    }
+    syncing = now;
+  });
 }
 
 class App extends StatelessWidget {
@@ -87,7 +111,7 @@ class App extends StatelessWidget {
         value: Theme.of(context).brightness == Brightness.dark
             ? SystemUiOverlayStyle.light
             : SystemUiOverlayStyle.dark,
-        child: child!,
+        child: CheerNotifications(child: child!),
       ),
     );
   }

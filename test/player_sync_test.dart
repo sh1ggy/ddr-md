@@ -45,17 +45,34 @@ void main() {
     expect(resolve('c', 'hard', override: -1).ms, -1);
   });
 
-  test('far off the beat, the steps that missed every note are put back', () {
+  test('timing statistics use the GOOD window, excluding Boos', () {
+    expect(kTimingStatsWindowMs, 124);
+    // Fixed moments of N(110, 35) restricted to [-124, 124] ms.
+    // A 160 ms cutoff would recover a different centre and spread.
+    for (final sign in [-1.0, 1.0]) {
+      final (mean, sd) = untruncate(sign * 90.3341053709518, 23.72614723450297);
+      expect(mean, closeTo(sign * 110, 1e-5));
+      expect(sd, closeTo(35, 1e-5));
+    }
+  });
+
+  test('untruncation caps the inferred centre at the statistics window', () {
+    final (mean, sd) = untruncate(89.5105675623949, 26.410600811556343);
+    expect(mean, 124);
+    expect(sd, closeTo(45, 1e-4));
+  });
+
+  test('far off the beat, excluded Boo and missed timings are estimated', () {
     final rng = Random(1);
-    for (final (mu, sigma) in [(4.0, 12.0), (-90.0, 40.0), (130.0, 35.0)]) {
-      // Box-Muller draws, kept only where they land on a note.
+    for (final (mu, sigma) in [(4.0, 12.0), (-90.0, 40.0), (110.0, 35.0)]) {
+      // Box-Muller draws, kept only for MARVELOUS through GOOD.
       final hits = [
-        for (var i = 0; i < 400000; i++)
+        for (var i = 0; i < 2000000; i++)
           mu +
               sigma *
                   sqrt(-2 * log(1 - rng.nextDouble())) *
                   cos(2 * pi * rng.nextDouble())
-      ].where((x) => x.abs() <= kJudgeWindowMs).toList();
+      ].where((x) => x.abs() <= kTimingStatsWindowMs).toList();
       final mean = hits.reduce((a, b) => a + b) / hits.length;
       final sd = sqrt(
           hits.map((x) => (x - mean) * (x - mean)).reduce((a, b) => a + b) /

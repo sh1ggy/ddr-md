@@ -16,3 +16,8 @@ output "sync_url" {
   description = "Pass to builds: --dart-define=SYNC_URL=<this>"
   value       = var.workers_subdomain == "" ? null : "https://${var.sync_worker}.${var.workers_subdomain}.workers.dev"
 }
+
+output "circles_url" {
+  description = "Pass to builds: --dart-define=CIRCLES_URL=<this>"
+  value       = var.workers_subdomain == "" ? null : "https://${var.circles_worker}.${var.workers_subdomain}.workers.dev"
+}

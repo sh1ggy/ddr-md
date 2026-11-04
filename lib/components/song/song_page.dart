@@ -323,7 +323,7 @@ class _SongPageState extends State<SongPage> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(18)),
                   ),
-                  onPressed: () => context.go('/scan'),
+                  onPressed: () => context.push('/scan'),
                   icon: const Icon(Icons.document_scanner_outlined),
                 ),
               ),

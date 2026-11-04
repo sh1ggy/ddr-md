@@ -1,18 +1,20 @@
 /// Name: NavBar
 /// Parent: Layout
-/// Description: The tab bar: Songs, Snippets, Home, Scan, Profile on a
+/// Description: The tab bar: Songs, Snippets, Home, Circle, Profile on a
 /// floating pill, Home in Volt in the middle, ringed while a session runs.
 /// Above it on every tab while a session runs, the live dock carries the
-/// running credit and starts the next one.
+/// running credit, scanning, ending and the next credit.
 library;
 
 import 'dart:ui';
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/session_page.dart';
+import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 const kHomeTab = 2;
@@ -28,7 +30,7 @@ class FloorPopNavBar extends StatelessWidget {
     (Icons.music_note_outlined, Icons.music_note, 'Songs'),
     (Icons.content_cut_outlined, Icons.content_cut, 'Snippets'),
     (null, null, 'Home'),
-    (Icons.document_scanner_outlined, Icons.document_scanner, 'Scan'),
+    (Icons.groups_outlined, Icons.groups, 'Circle'),
     (Icons.person_outline, Icons.person, 'Profile'),
   ];
 
@@ -161,7 +163,7 @@ class _HomeTab extends StatelessWidget {
 }
 
 /// The running session over the tab bar: credit, side and cab, tap for
-/// Home, and the next credit one tap away.
+/// Home, then a scan, the end and the next credit one tap away.
 class LiveSessionDock extends StatelessWidget {
   const LiveSessionDock({super.key, required this.onOpen});
 
@@ -193,17 +195,30 @@ class LiveSessionDock extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                              'CREDIT ${credit.number} · ${sideLabel(credit.side)}',
-                              style:
-                                  FloorPop.readout(16, color: FloorPop.onVolt)),
-                          Text(credit.cabinet.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: FloorPop.onVolt)),
+                          // Scaled down rather than wrapped, beside three buttons
+                          // on a phone.
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                                'CREDIT ${credit.number} · ${sideLabel(credit.side)}',
+                                style: FloorPop.readout(16,
+                                    color: FloorPop.onVolt)),
+                          ),
+                          Row(children: [
+                            const Icon(Icons.videogame_asset_outlined,
+                                size: 13, color: FloorPop.onVolt),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(credit.cabinet.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: FloorPop.onVolt)),
+                            ),
+                          ]),
                         ],
                       ),
                     ),
@@ -211,6 +226,31 @@ class LiveSessionDock extends StatelessWidget {
                 ),
               ),
             ),
+            IconButton(
+              tooltip: 'Scan a score',
+              style: IconButton.styleFrom(
+                backgroundColor: FloorPop.onVolt.withValues(alpha: 0.12),
+                foregroundColor: FloorPop.onVolt,
+                fixedSize: const Size(44, 44),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () => context.push('/scan'),
+              icon: const Icon(Icons.document_scanner_outlined),
+            ),
+            IconButton(
+              tooltip: 'End session',
+              style: IconButton.styleFrom(
+                backgroundColor: FloorPop.onVolt.withValues(alpha: 0.12),
+                foregroundColor: FloorPop.onVolt,
+                fixedSize: const Size(44, 44),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () => endSession(context),
+              icon: const Icon(Icons.stop_rounded),
+            ),
+            const SizedBox(width: 4),
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: FilledButton.icon(
@@ -245,9 +285,23 @@ class LivePulse extends StatefulWidget {
 
 class _LivePulseState extends State<LivePulse>
     with SingleTickerProviderStateMixin {
-  late final _controller =
-      AnimationController(vsync: this, duration: FloorPop.beat * 2)
-        ..repeat(reverse: true);
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: FloorPop.beat * 2);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
+  }
 
   @override
   void dispose() {

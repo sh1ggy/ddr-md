@@ -7,45 +7,71 @@ import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_browser.dart';
-import 'package:ddr_md/components/song/jacket_edition/edition_fixture_store.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_guide.dart';
 import 'package:ddr_md/components/song_json.dart' show Modes;
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart' show kFlareRanks;
 import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
+import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/db_models.dart';
-import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Always reachable in debug and profile builds; absent from release UI.
-const developmentToolsEnabled = !kReleaseMode;
+/// Always reachable in debug and profile builds; in a release, once four
+/// quick taps on Profile's flare rank unlock them.
+final developmentToolsEnabled = ValueNotifier(
+    !kReleaseMode || Settings.getInt(Settings.developmentToolsKey) == 1);
 
+/// Unlocks the development tools in a release, or locks them again.
+Future<void> toggleDevelopmentTools(BuildContext context) async {
+  final on = Settings.getInt(Settings.developmentToolsKey) != 1;
+  await Settings.setInt(Settings.developmentToolsKey, on ? 1 : 0);
+  developmentToolsEnabled.value = !kReleaseMode || on;
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            on ? 'Development tools unlocked' : 'Development tools locked')));
+  }
+}
+
+/// A way into [DevelopmentPage], while [developmentToolsEnabled].
 class DevelopmentToolsTile extends StatelessWidget {
   const DevelopmentToolsTile({super.key});
   @override
-  Widget build(BuildContext context) => Card(
-          child: ListTile(
-        leading: const Icon(Icons.developer_mode),
-        title: const Text('Development'),
-        subtitle: const Text('Session wrap, seeded scores and card effects'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const DevelopmentPage())),
-      ));
+  Widget build(BuildContext context) => ValueListenableBuilder(
+      valueListenable: developmentToolsEnabled,
+      builder: (context, on, _) => !on
+          ? const SizedBox.shrink()
+          : Card(
+              child: ListTile(
+              leading: const Icon(Icons.developer_mode),
+              title: const Text('Development'),
+              subtitle:
+                  const Text('Session wrap, seeded scores and card effects'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DevelopmentPage())),
+            )));
 }
 
 const _previewCards = 12;
 
-/// Opens the wrap of the latest session with plays, its gains made up from
+/// Home's wrap banner held up for testing: it stays on its session's real
+/// wrap, however often it's opened.
+final wrapBannerPreview =
+    ValueNotifier(Settings.getInt(Settings.wrapBannerPreviewKey) == 1);
+
+/// Opens the wrap of the latest session with plays, cheers from a made-up
+/// circle on its credits, and its gains made up from
 /// its charts' bests in turn: a new card, AAA's foil, a frame one tier up and
 /// a flare one rank up, each where the best allows, from a few thousand
 /// points lower. A dozen cards, topped
 /// up from the player's other bests when the session has fewer charts.
-Future<void> _previewWrap(BuildContext context) async {
+Future<void> previewSessionWrap(BuildContext context) async {
   final data = await loadVisits(context.read<SessionState>().session?.id);
   final visit = data.visits
       .where((v) => v.session != null && v.plays.isNotEmpty)
@@ -108,9 +134,33 @@ Future<void> _previewWrap(BuildContext context) async {
       _ => gain(CardLayer.card),
     });
   }
+  // A crowded sticker wall: three friends cheering each of twelve credits.
+  const cheerers = ['MIKA', 'REXX', 'TOFU', 'JUN.K', 'SORA', 'KAI'];
+  final cheered = [
+    for (var c = 1; c <= 12; c++)
+      (
+        by: null,
+        session: visit.session!.id,
+        credit: c,
+        at: visit.plays.first.playedAt,
+        plays: const <CirclePlay>[],
+        cheers: [
+          for (var i = 0; i < 3; i++)
+            (
+              id: null,
+              name: cheerers[(c + i) % cheerers.length],
+              cheer: Cheer.values[(c * 2 + i) % Cheer.values.length],
+            )
+        ],
+        mine: null,
+      )
+  ];
   if (!context.mounted) return;
   await showSessionWrap(context,
-      visit: visit, summary: data.model.summarize(visit.plays), gains: gains);
+      visit: visit,
+      summary: data.model.summarize(visit.plays),
+      gains: gains,
+      cheered: cheered);
 }
 
 class DevelopmentPage extends StatefulWidget {
@@ -120,7 +170,6 @@ class DevelopmentPage extends StatefulWidget {
 }
 
 class _DevelopmentPageState extends State<DevelopmentPage> {
-  final _fixtures = EditionFixtureSpace();
   @override
   Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(title: const Text('Development')),
@@ -132,34 +181,46 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                     leading: const Icon(Icons.style_outlined),
                     title: const Text('Session wrap preview'),
                     subtitle: const Text(
-                        'Your last session with made-up card gains, nothing saved'),
+                        'Your last session with made-up cheers and card gains, nothing saved'),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _previewWrap(context))),
+                    onTap: () => previewSessionWrap(context))),
+            Card(
+                child: ValueListenableBuilder(
+                    valueListenable: wrapBannerPreview,
+                    builder: (context, on, _) => SwitchListTile(
+                        secondary: const Icon(Icons.flag_outlined),
+                        title: const Text('Session wrap banner'),
+                        subtitle: const Text(
+                            'Keep Home\'s banner up on your last session\'s real wrap'),
+                        value: on,
+                        onChanged: (v) async {
+                          await Settings.setInt(
+                              Settings.wrapBannerPreviewKey, v ? 1 : 0);
+                          wrapBannerPreview.value = v;
+                        }))),
             Card(
                 child: ListTile(
-                    leading: const Icon(Icons.flag_outlined),
-                    title: const Text('Session wrap banner'),
+                    leading: const Icon(Icons.layers_outlined),
+                    title: const Text('Card effects lab'),
                     subtitle: const Text(
-                        'Show Home\'s banner for your last session, as after a sync'),
-                    onTap: () async {
-                      await Settings.setString(Settings.sessionWrapSinceKey,
-                          DateTime.utc(2000).toIso8601String());
-                      if (!context.mounted) return;
-                      // Home rereads its sessions, as after a sync.
-                      await context.read<EamuseSyncState>().reloadSaved();
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('Banner on: go to Home')));
-                    })),
-            Card(
-                child: ListTile(
-                    leading: const Icon(Icons.storage_outlined),
-                    title: const Text('Seeded score combinations'),
-                    subtitle: Text(
-                        '${_fixtures.count} combinations • isolated test database'),
+                        'Choose a jacket and edit each infographic layer'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const EditionFixtureBrowser())))),
+                        builder: (_) =>
+                            const EditionGuidePage(editable: true))))),
+            Card(
+                child: ExpansionTile(
+                    leading: const Icon(Icons.bug_report_outlined),
+                    title: const Text('Card renderer tests'),
+                    children: [
+                  ListTile(
+                      title: const Text('Seeded score combinations'),
+                      subtitle: const Text(
+                          'Isolated test database and exhaustive validation'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const EditionFixtureBrowser()))),
+                ])),
             const Padding(
                 padding: EdgeInsets.all(12),
                 child: Text(

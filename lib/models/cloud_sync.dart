@@ -12,13 +12,12 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/device_key.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sqflite/sqflite.dart';
 
 /// Release builds default to the live server; debug/profile to off unless
@@ -166,6 +165,24 @@ class HttpSyncServer implements SyncServer {
   @override
   Future<({int rev, List<int> lost})> push(List<SyncChange> changes,
       {String? ddrCode}) async {
+    // Bound upload bytes as well as row count. Large Unicode batches can
+    // exceed a server's byte cap despite each row fitting its character cap.
+    final payload = {
+      'ddrCode': ddrCode,
+      'changes': [
+        for (final c in changes) {'t': c.t, 'k': c.k, 'u': c.u, 'd': c.d}
+      ]
+    };
+    if (changes.length > 1 &&
+        utf8.encode(json.encode(payload)).length > 512 * 1024) {
+      final half = changes.length ~/ 2;
+      final first = await push(changes.sublist(0, half), ddrCode: ddrCode);
+      final second = await push(changes.sublist(half), ddrCode: ddrCode);
+      return (
+        rev: second.rev,
+        lost: [...first.lost, for (final i in second.lost) i + half]
+      );
+    }
     final body = await _send('POST', 'v1/push', {
       'ddrCode': ddrCode,
       'changes': [
@@ -508,7 +525,7 @@ class CloudSync {
     try {
       final rival = Settings.getString(Settings.rivalCodeSpeedKey)
           .replaceAll(RegExp(r'\D'), '');
-      final key = await _key();
+      final key = await _key.read();
       final pulled = await SyncEngine(
         await DatabaseProvider.db,
         HttpSyncServer(kSyncUrl, key),
@@ -536,46 +553,11 @@ class CloudSync {
   /// (the engine starts over for an account it hasn't synced).
   static Future<void> deleteCloudCopy() async {
     await _running;
-    await HttpSyncServer(kSyncUrl, await _key()).deleteAll();
+    await HttpSyncServer(kSyncUrl, await _key.read()).deleteAll();
     await Settings.setInt(Settings.cloudSyncOnKey, 0);
     await Settings.setString(Settings.cloudSyncedAtKey, '');
-    await _store(_newKey());
+    await _key.replace();
   }
 
-  static const _keychain = FlutterSecureStorage(
-      iOptions: IOSOptions(
-          synchronizable: true,
-          accessibility: KeychainAccessibility.first_unlock));
-  static const _keyName = 'cloudSyncKey';
-  static final _keyFormat = RegExp(r'^[A-Za-z0-9_-]{43}$');
-
-  // The Keychain copy wins: on a new iPhone it arrives through iCloud
-  // Keychain, before any preferences do.
-  static Future<String> _key() async {
-    String? key;
-    if (Platform.isIOS) {
-      key = await _keychain.read(key: _keyName).catchError((_) => null);
-    }
-    if (key == null || !_keyFormat.hasMatch(key)) {
-      key = Settings.getString(Settings.cloudSyncKeyKey);
-    }
-    if (!_keyFormat.hasMatch(key)) key = _newKey();
-    await _store(key);
-    return key;
-  }
-
-  static Future<void> _store(String key) async {
-    await Settings.setString(Settings.cloudSyncKeyKey, key);
-    if (Platform.isIOS) {
-      await _keychain
-          .write(key: _keyName, value: key)
-          .catchError((Object e) => debugPrint('Keychain: $e'));
-    }
-  }
-
-  static String _newKey() {
-    final random = Random.secure();
-    return base64Url.encode(
-        [for (var i = 0; i < 32; i++) random.nextInt(256)]).replaceAll('=', '');
-  }
+  static const _key = DeviceKey('cloudSyncKey', Settings.cloudSyncKeyKey);
 }

@@ -11,7 +11,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '26 October 2026';
+const privacyUpdated = '1 November 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
@@ -21,7 +21,8 @@ const privacySections = <(String, List<String>)>[
     [
       "DDR MD keeps everything on your device. There's no sign-in, no ads, "
           'no analytics and no tracking, and nothing you save or type leaves '
-          'your device unless you turn on Cloud Backup. Photos never do. It '
+          'your device unless you turn on Cloud Backup or start a circle. '
+          'Photos never do. It '
           'downloads song data, with nothing about you attached, and, only '
           'if you link your e-amusement account, your own scores from Konami.',
     ]
@@ -61,7 +62,9 @@ const privacySections = <(String, List<String>)>[
           'like a browser would, and DDR MD keeps any Konami renews during a '
           'sync. If the e-amusement session has lapsed, Sync reopens the '
           'sign-in page out of sight, which signs straight back in while '
-          'Konami still remembers you. When you tap Sync, and only then, DDR MD '
+          'Konami still remembers you. When you tap Sync, when you end a '
+          'session, and after each credit if you turn that on in Settings, '
+          'DDR MD '
           'uses that cookie to read your DDR WORLD play data from '
           "Konami's e-amusement site: your recent plays first, then only the "
           'charts you played since the last sync (or, the first time, every '
@@ -88,10 +91,34 @@ const privacySections = <(String, List<String>)>[
           'Google backup on a new phone). The server stores a one-way '
           'fingerprint of that key, never the key itself, and your rival '
           'code if DDR MD has one, so a backup can be recognised as yours. '
+          'Backup rows and cabinet identifiers are encrypted in the database '
+          'with a key kept separately by the server. The server decrypts them '
+          'for your devices; this is not end-to-end encryption. '
           'Cloudflare sees your IP address and the time of each request. '
           "DDR MD doesn't log them; to stop one network flooding the "
           "server, it counts each day's backups against a one-way "
-          'fingerprint of the IP address, cleared the next day.',
+          'fingerprint of the IP address, removed by scheduled cleanup after the day ends.',
+      '- Circles (optional, nothing is sent until you start one on the '
+          'Circle tab): the dancer name and DDR-CODE you give, your invite '
+          'code and how long it lasts, who is in your circle and whose '
+          "circles you are in are kept on DDR MD's circles server (hosted on "
+          'Cloudflare), so people in your circles see that name and code and '
+          'whether you are friends. If you broadcast a session (a switch '
+          'when you start one), the circles you lead also see that you are '
+          'playing, your venue only if Show my location is on (off by default), '
+          'your credit and pad side, '
+          'and each credit\'s songs, scores, fails and new bests once '
+          'e-amusement syncs them. They can cheer a credit with one of a '
+          'few set cheers, which everyone in your circle sees with their '
+          'name. A broadcast ends with its session (or two hours after its '
+          'last credit). Credits and cheers disappear from feeds after two days. '
+          'Expired broadcasts, credits and cheers are removed by periodic cleanup; '
+          'Cloudflare recovery copies may remain longer. '
+          'Like Cloud '
+          'Backup there is no account, but the random key is a separate one, '
+          'kept the same way, and the server stores only a one-way fingerprint '
+          "of it. Cloudflare sees your IP address and the "
+          "time of each request; DDR MD doesn't log them.",
       "- Links: the GitHub, LinkedIn and PayPal buttons, and the links under "
           "Credits, open in your browser, where those sites' own privacy "
           'policies apply.',
@@ -100,8 +127,8 @@ const privacySections = <(String, List<String>)>[
   (
     'Permissions',
     [
-      "- Camera: to read your score from a cabinet's result screen, only "
-          'while the camera screen is open.',
+      "- Camera: to read your score from a cabinet's result screen, and to "
+          "scan a friend's circle QR code, only while that screen is open.",
       '- Photos: to read a result-screen screenshot you choose. DDR MD only '
           'sees the photo you pick.',
       '- Microphone: iOS lists this because of the audio engine behind the '
@@ -118,7 +145,11 @@ const privacySections = <(String, List<String>)>[
           'device, including scores and their photos. With Cloud Backup on, '
           'Delete cloud copy under Home → Settings removes everything on the '
           'sync server straight away and turns backup off. Deleting a row '
-          'on your device deletes it from the backup at the next sync. '
+          'on your device deletes it from the backup at the next sync. Leave '
+          'circles & delete, under the Circle tab\'s settings, removes your '
+          'name and code, your circle and your place in others\' from the circles '
+          'server straight away. Blocks set by other players can retain a '
+          'random profile fingerprint to prevent the same profile rejoining. '
           "Without Cloud Backup nothing is kept anywhere else, so there's "
           'nothing for me to delete on your behalf.',
     ]

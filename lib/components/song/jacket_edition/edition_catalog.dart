@@ -59,7 +59,17 @@ const editionPearl = [
   Color(0x1FF4E4F0),
   Color(0x1FFFDCC4)
 ];
-const editionFinishAlpha = [0.0, .06, .10, .12, .14, .16];
+// Broad satin, focused gloss, silver metal and gold foil. Kept visible in
+// static binder pockets as well as the full-size moving card.
+const editionFinishAlpha = [0.0, .10, .24, .28, .32];
+const editionSilverFoil = [
+  Color(0xFF536477),
+  Color(0xFFE7F3FF),
+  Color(0xFF8B9AAA),
+  Color(0xFFF8FCFF),
+  Color(0xFF637386),
+  Color(0xFF536477),
+];
 const editionGlintCount = 6;
 // MFC's frame, round the card.
 // The badges' rainbow (kFlareExColors), round the card.
@@ -156,5 +166,5 @@ const editionStampRim = 1.8;
 const editionFooterHeight = .09;
 const editionCompactMotifLines = 8;
 const editionCompactGlints = 4;
-const editionCompactFinishStrength = .55;
+const editionCompactFinishStrength = .85;
 const editionTiltRadians = .14;

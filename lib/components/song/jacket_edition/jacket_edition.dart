@@ -4,7 +4,8 @@
 library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
-import 'package:ddr_md/grades.dart' show gradeIcon, flareRankIcon;
+import 'package:ddr_md/grades.dart'
+    show gradeIcon, flareRankIcon, kFlareCardColors, kFlareExColors;
 import 'package:ddr_md/helpers.dart' show formatScore;
 import 'package:ddr_md/theme.dart' show FloorPop;
 import 'package:ddr_md/models/settings_model.dart';
@@ -196,6 +197,14 @@ class _JacketEditionState extends State<JacketEdition>
                                     layers: widget.layers),
                                 foregroundPainter: EditionFlarePainter(
                                     staticGeometry, _motion, widget.layers)))),
+                    // Flare without its sticker: the chip in the art's corner.
+                    if (_recipe.flareStamp == null && _recipe.flareIndex >= 0)
+                      EditionFlareChip(
+                          geometry: geometry,
+                          side: .16,
+                          lift: EditionFooter.shows(_recipe)
+                              ? size.height * editionFooterHeight
+                              : 0),
                     if (_recipe.gradeStamp != null ||
                         _recipe.flareStamp != null)
                       Positioned(
@@ -231,16 +240,18 @@ class _JacketEditionState extends State<JacketEdition>
 /// across the width it's given.
 class EditionAchievementStamps extends StatelessWidget {
   const EditionAchievementStamps(
-      {super.key, required this.recipe, this.motion});
+      {super.key, required this.recipe, this.motion, this.flareStamp});
   final EditionRecipe recipe;
   final EditionMotion? motion;
+  // Compact cards can show flare without the recipe's grade/score stamps.
+  final String? flareStamp;
   @override
   Widget build(BuildContext context) => Row(
           key: const ValueKey('edition-achievement-stamp'),
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            if (recipe.flareStamp case final flare?)
+            if ((flareStamp ?? recipe.flareStamp) case final flare?)
               Flexible(
                   child: FittedBox(
                       fit: BoxFit.scaleDown,
@@ -251,7 +262,8 @@ class EditionAchievementStamps extends StatelessWidget {
                           height: 22,
                           label: flare,
                           motion: motion))),
-            if (recipe.flareStamp == null) const SizedBox.shrink(),
+            if ((flareStamp ?? recipe.flareStamp) == null)
+              const SizedBox.shrink(),
             if (recipe.gradeStamp case final grade?)
               Flexible(
                   child: FittedBox(
@@ -276,12 +288,14 @@ class EditionFooter extends StatelessWidget {
       {super.key,
       required this.recipe,
       required this.clip,
-      this.shortStyle = false});
+      this.shortStyle = false,
+      this.fitChart = false});
   final EditionRecipe recipe;
   // The art's outline in the band's own space, which its corners follow.
   final Path clip;
   // SINGLE or DOUBLE without STYLE, for the small card.
   final bool shortStyle;
+  final bool fitChart;
 
   static bool shows(EditionRecipe recipe) =>
       recipe.modeStamp != null ||
@@ -328,16 +342,24 @@ class EditionFooter extends StatelessWidget {
                     children: [
                       SizedBox(width: _content * .45 * scale),
                       Expanded(
-                          child: ClipRect(
-                              child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Transform.scale(
-                                      scale: scale,
+                          child: fitChart
+                              ? Padding(
+                                  padding:
+                                      EdgeInsets.symmetric(vertical: h * .22),
+                                  child: FittedBox(
+                                      fit: BoxFit.contain,
                                       alignment: Alignment.centerLeft,
-                                      child: OverflowBox(
+                                      child: _chart()))
+                              : ClipRect(
+                                  child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Transform.scale(
+                                          scale: scale,
                                           alignment: Alignment.centerLeft,
-                                          maxWidth: double.infinity,
-                                          child: _chart()))))),
+                                          child: OverflowBox(
+                                              alignment: Alignment.centerLeft,
+                                              maxWidth: double.infinity,
+                                              child: _chart()))))),
                       if (score != null)
                         DecoratedBox(
                             key: const ValueKey('edition-score-tab'),
@@ -409,4 +431,77 @@ class _Style extends StatelessWidget {
                 child: Transform.translate(
                     offset: Offset(-crop.$1 * unit, 0), child: image))));
   }
+}
+
+/// The flare as a chip folded over the art's bottom right corner, [side] of
+/// the card's, in its song select card's colour or EX's rainbow; [lift] up
+/// off the foot, to clear a footer band. Over the finish, so the foil and
+/// EX's polychrome don't wash it out.
+class EditionFlareChip extends StatelessWidget {
+  const EditionFlareChip(
+      {super.key, required this.geometry, required this.side, this.lift = 0});
+  final EditionGeometry geometry;
+  final double side;
+  final double lift;
+
+  @override
+  Widget build(BuildContext context) {
+    final recipe = geometry.recipe;
+    return Padding(
+        padding: EdgeInsets.all(geometry.width),
+        child: IgnorePointer(
+            child: ClipPath(
+                clipper: EditionClipper(geometry.inner
+                    .shift(Offset(-geometry.width, -geometry.width))),
+                child: Align(
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                        padding: EdgeInsets.only(bottom: lift),
+                        child: SizedBox.square(
+                            dimension: geometry.size.shortestSide * side,
+                            child: CustomPaint(
+                                painter: _FlareChipPainter(recipe.ex
+                                    ? null
+                                    : kFlareCardColors[recipe.flareIndex]
+                                        .frame))))))));
+  }
+}
+
+// A corner triangle in [color], or EX's rainbow when null, its fold edged
+// light then dark so it holds against any art.
+class _FlareChipPainter extends CustomPainter {
+  _FlareChipPainter(this.color);
+  final Color? color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    final fill = Paint();
+    if (color case final color?) {
+      fill.color = color;
+    } else {
+      fill.shader = const LinearGradient(colors: kFlareExColors)
+          .createShader(Offset.zero & size);
+    }
+    canvas.drawPath(path, fill);
+    canvas.drawLine(
+        Offset(size.width - 1.5, 0),
+        Offset(0, size.height - 1.5),
+        Paint()
+          ..color = const Color(0xB3000000)
+          ..strokeWidth = 1.5);
+    canvas.drawLine(
+        Offset(size.width, 0),
+        Offset(0, size.height),
+        Paint()
+          ..color = const Color(0xE6FFFFFF)
+          ..strokeWidth = 1.5);
+  }
+
+  @override
+  bool shouldRepaint(_FlareChipPainter old) => old.color != color;
 }

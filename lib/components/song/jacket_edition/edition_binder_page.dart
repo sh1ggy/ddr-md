@@ -22,6 +22,7 @@ import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
 import 'package:ddr_md/theme.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -354,7 +355,15 @@ class _EditionBinderPageState extends State<EditionBinderPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: const Text('Binder')),
+        appBar: AppBar(
+          title: const Text('Binder'),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 20),
+              child: Center(child: PlayStyleIcon(mode: _mode, height: 18)),
+            ),
+          ],
+        ),
         // No spinner flashing up as cards come in, just the sheet once it's
         // ready.
         body: !_ready
@@ -482,8 +491,8 @@ const _kPad = 10.0, _kGap = 8.0;
   );
 }
 
-// A level's cover: its number and rings across the top, its best cards
-// fanned in the middle with the negative in front, and the count below.
+// A level's cover: its number across the top, its best cards fanned in the
+// middle with the negative in front, and its tiers and count below.
 class _Cover extends StatelessWidget {
   const _Cover({required this.divider, required this.onOpen});
   final BinderDivider divider;
@@ -517,32 +526,25 @@ class _Cover extends StatelessWidget {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(children: [
-                        Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('LEVEL', style: caps),
-                              const SizedBox(height: 6),
-                              LevelNumber(
-                                  level: divider.level,
-                                  difficulty: 'EXPERT',
-                                  height: 76),
-                            ]),
-                        const Spacer(),
-                        // The level list's rings, tapped open the same way.
-                        BestRings(divider.bests, size: 84, track: pop.ink),
-                      ]),
+                      LevelNumber(
+                          level: divider.level,
+                          difficulty: 'EXPERT',
+                          height: 76),
+                      // The fan and the tiers split the cover evenly,
+                      // always, so paging from level to level nothing moves;
+                      // tiers past their share scroll.
                       Expanded(
                           child: fan.isEmpty
                               ? Center(
                                   child: Text('No cards here yet',
                                       style: TextStyle(color: pop.haze)))
                               : _Fan(pockets: fan, onOpen: onOpen)),
-                      Text(
-                          top != null
-                              ? 'Top card · ${top.song.title}'
-                              : 'Your top score at your hardest level '
-                                  'turns negative.',
+                      // What the level list's rings count, laid out.
+                      Expanded(
+                          child: SingleChildScrollView(
+                              child: BestTiers(divider.bests, columns: 4))),
+                      const SizedBox(height: 14),
+                      Text(top == null ? '' : 'Top card · ${top.song.title}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 12, color: pop.haze)),
@@ -569,7 +571,8 @@ class _Fan extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        final side = math.min(box.maxHeight - 32, box.maxWidth * .52);
+        final side =
+            math.max(0.0, math.min(box.maxHeight - 32, box.maxWidth * .52));
         Widget card(BinderPocket pocket, double turn, double shift) =>
             Transform.translate(
                 offset: Offset(shift * side, 0),
@@ -613,9 +616,11 @@ class _Sheet extends StatefulWidget {
   State<_Sheet> createState() => _SheetState();
 }
 
-// The sheet's arrivals drop in one after another, each over what its pocket
-// held, slamming into the pocket: the card squashes and bounces with a flash,
-// a ring bursts out and the sheet jolts, then the pocket glows.
+// The sheet's arrivals come in one after another. A new card drops into its
+// empty pocket and slams: it squashes and bounces with a flash, a volt ring
+// bursts out and the sheet jolts. An upgrade lifts the card already there and
+// flips it over to what it is now, a sun ring rippling out with no jolt. Then
+// the pocket glows.
 class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
   // Kept until the parent takes the arrivals in, then cleared so the sheet
   // carries on as it is rather than being built again.
@@ -633,31 +638,44 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
   static const _lead = .15, _fall = 340, _tail = 450;
   late final _ms = 500 + 420 * _order.length + _tail;
 
-  // Falling under gravity: picking up speed until it hits.
+  // Whether arrival [n] upgrades a card its pocket already held.
+  bool _upgrade(int n) {
+    final p = widget.sheet.pockets[_order[n]];
+    return widget.arrivals[(song: p.song.name, difficulty: p.difficulty)] !=
+        null;
+  }
+
+  // A new card falls under gravity, picking up speed until it hits; an
+  // upgrade turns over smoothly.
   Interval _interval(int n) {
     final step =
         (1 - _lead - (_fall + _tail) / _ms) / math.max(1, _order.length - 1);
     return Interval(_lead + n * step, _lead + n * step + _fall / _ms,
-        curve: Curves.easeInQuad);
+        curve: _upgrade(n) ? Curves.easeInOutCubic : Curves.easeInQuad);
   }
 
   // Milliseconds since arrival [n] landed, negative before.
   double _since(int n) => (_clock.value - _interval(n).end) * _ms;
 
   void _tick() {
-    final landed = [
-      for (var n = 0; n < _order.length; n++)
-        if (_clock.value >= _interval(n).end) n
-    ].length;
-    if (landed > _in) HapticFeedback.heavyImpact();
+    var landed = 0;
+    for (var n = 0; n < _order.length; n++) {
+      if (_clock.value < _interval(n).end) continue;
+      if (n >= _in) {
+        _upgrade(n)
+            ? HapticFeedback.mediumImpact()
+            : HapticFeedback.heavyImpact();
+      }
+      landed++;
+    }
     _in = landed;
   }
 
-  // The sheet knocked down as each card hits, ringing out.
+  // The sheet knocked down as each new card hits, ringing out.
   double _jolt() {
     final since = [
       for (var n = 0; n < _order.length; n++)
-        if (_since(n) >= 0) _since(n)
+        if (!_upgrade(n) && _since(n) >= 0) _since(n)
     ].fold(double.infinity, math.min);
     return since < 350
         ? 5 * math.exp(-since / 70) * math.cos(since / 100 * math.pi)
@@ -711,6 +729,18 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
       final pocket = pockets[i];
       final n = arriving[i];
       final before = widget.arrivals[chart(pocket)];
+      final upgrade = n != null && before != null;
+      // What it held, the face an upgrade turns over from.
+      final was = upgrade
+          ? RepaintBoundary(
+              child: _Pocket(pocket: (
+              song: pocket.song,
+              difficulty: pocket.difficulty,
+              best: null,
+              card: before
+            ), onOpen: (_) {}))
+          : null;
+      final color = upgrade ? FloorPop.sun : FloorPop.volt;
       return Positioned(
           key: ValueKey(chart(pocket)),
           left: (i % _kColumns) * (side + _kGap),
@@ -718,17 +748,6 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
           width: side,
           height: side,
           child: Stack(clipBehavior: Clip.none, children: [
-            // What it held, under the card coming in.
-            if (n != null && before != null)
-              Positioned.fill(
-                  key: const ValueKey('before'),
-                  child: RepaintBoundary(
-                      child: _Pocket(pocket: (
-                    song: pocket.song,
-                    difficulty: pocket.difficulty,
-                    best: null,
-                    card: before
-                  ), onOpen: (_) {}, dimmed: true))),
             Positioned.fill(
                 key: const ValueKey('card'),
                 child: AnimatedBuilder(
@@ -741,31 +760,48 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
                       }
                       final landing = since >= 0 && since < _tail;
                       final glow = landing ? 1 - since / _tail : 0.0;
-                      // Squashed flat on the hit, then a damped bounce.
+                      // Squashed flat on the hit, then a damped bounce; an
+                      // upgrade only settles back down.
                       final press = since < 0 || since > _tail
                           ? 1.0
-                          : 1 -
-                              .07 * math.max(0, 1 - since / 90) +
-                              .045 *
-                                  math.exp(-since / 110) *
-                                  math.sin(since / 130 * math.pi).abs();
+                          : upgrade
+                              ? 1 - .03 * math.max(0, 1 - since / 120)
+                              : 1 -
+                                  .07 * math.max(0, 1 - since / 90) +
+                                  .045 *
+                                      math.exp(-since / 110) *
+                                      math.sin(since / 130 * math.pi).abs();
                       final flash = since >= 0 && since < 250
                           ? math.pow(1 - since / 250, 2).toDouble()
                           : 0.0;
-                      // Dropped from above onto the sheet.
-                      final s = (1 + .9 * (1 - t)) * press;
+                      // A new card dropped from above onto the sheet; an
+                      // upgrade lifted and turned over in its pocket, the old
+                      // face showing until it's edge on.
+                      final Matrix4 transform;
+                      var showWas = false;
+                      if (upgrade) {
+                        final angle = t * math.pi;
+                        showWas = angle < math.pi / 2;
+                        final s = (1 + .18 * math.sin(angle)) * press;
+                        transform = Matrix4.identity()
+                          ..setEntry(3, 2, .0015)
+                          ..rotateY(showWas ? angle : angle - math.pi)
+                          ..scaleByDouble(s, s, 1, 1);
+                      } else {
+                        final s = (1 + .9 * (1 - t)) * press;
+                        transform =
+                            Matrix4.translationValues(0, -(1 - t) * 140, 0)
+                              ..rotateZ((1 - t) * .25)
+                              ..scaleByDouble(s, s, 1, 1);
+                      }
                       return Opacity(
-                          opacity: t <= 0 ? 0 : 1,
+                          opacity: t <= 0 && !upgrade ? 0 : 1,
                           child: Transform(
                               alignment: Alignment.center,
-                              transform: Matrix4.translationValues(
-                                  0, -(1 - t) * 140, 0)
-                                ..rotateZ((1 - t) * .25)
-                                ..scaleByDouble(s, s, 1, 1),
+                              transform: transform,
                               child: CustomPaint(
                                   foregroundPainter: landing
-                                      ? ShockPainter(
-                                          since / _tail, FloorPop.volt)
+                                      ? ShockPainter(since / _tail, color)
                                       : null,
                                   child: DecoratedBox(
                                       decoration: BoxDecoration(
@@ -774,15 +810,20 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
                                           boxShadow: [
                                             if (glow > 0)
                                               BoxShadow(
-                                                  color: FloorPop.volt
-                                                      .withValues(alpha: glow),
+                                                  color: color.withValues(
+                                                      alpha: glow),
                                                   blurRadius: 18,
                                                   spreadRadius:
                                                       2 + 6 * (1 - glow)),
                                           ]),
                                       position: DecorationPosition.background,
                                       child: Stack(children: [
-                                        child!,
+                                        // Kept built under the old face, so
+                                        // its jacket is up when it turns.
+                                        Opacity(
+                                            opacity: showWas ? 0 : 1,
+                                            child: child!),
+                                        if (showWas) was!,
                                         if (flash > 0)
                                           Positioned.fill(
                                               child: IgnorePointer(
@@ -836,16 +877,11 @@ class _SheetState extends State<_Sheet> with SingleTickerProviderStateMixin {
 // A sleeve: the card when collected, else the chart's jacket as a ghost.
 class _Pocket extends StatelessWidget {
   const _Pocket(
-      {required this.pocket,
-      required this.onOpen,
-      this.focused = false,
-      this.dimmed = false});
+      {required this.pocket, required this.onOpen, this.focused = false});
   final BinderPocket pocket;
   final ValueChanged<BinderPocket> onOpen;
   // Picked out, as the chart the binder was opened on.
   final bool focused;
-  // What a pocket held, under the card coming in to it.
-  final bool dimmed;
 
   static const _grey = ColorFilter.matrix([
     .2126, .7152, .0722, 0, 0, //
@@ -894,13 +930,49 @@ class _Pocket extends StatelessWidget {
               aura: false,
               child: art));
     }
-    if (dimmed) return Opacity(opacity: .5, child: sleeve);
     if (!focused) return sleeve;
-    return DecoratedBox(
-        position: DecorationPosition.foreground,
-        decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: FloorPop.volt, width: 2.5)),
-        child: sleeve);
+    return _ArrivingJacket(child: sleeve);
   }
+}
+
+// Draw attention to the card reached from the viewer, then let it settle.
+class _ArrivingJacket extends StatefulWidget {
+  const _ArrivingJacket({required this.child});
+  final Widget child;
+
+  @override
+  State<_ArrivingJacket> createState() => _ArrivingJacketState();
+}
+
+class _ArrivingJacketState extends State<_ArrivingJacket>
+    with SingleTickerProviderStateMixin {
+  late final _bounce = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 1800));
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _bounce.value = 1;
+    } else if (!_bounce.isAnimating && _bounce.value == 0) {
+      _bounce.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _bounce.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+      animation: _bounce,
+      child: widget.child,
+      builder: (context, child) {
+        final t = _bounce.value;
+        // Three diminishing hops, ending exactly in the sleeve.
+        final lift = math.sin(t * math.pi * 3).abs() * (1 - t) * 18;
+        return Transform.translate(offset: Offset(0, -lift), child: child);
+      });
 }

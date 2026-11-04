@@ -23,6 +23,7 @@ import 'package:ddr_md/models/visit_model.dart';
 import 'package:ddr_md/router.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -302,9 +303,7 @@ class _PlayCard extends StatelessWidget {
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
                           child: Row(children: [
-                            Text(play.mode == Modes.singles ? 'SP' : 'DP',
-                                style: muted.copyWith(
-                                    fontWeight: FontWeight.w700)),
+                            PlayStyleIcon(mode: play.mode),
                             const SizedBox(width: 6),
                             DifficultyLabel(
                                 difficulty: play.difficulty,
@@ -456,9 +455,11 @@ class _CompactPlayCard extends StatelessWidget {
 /// Marks an upscore, a play that set the chart's best: an up arrow in a
 /// primary circle.
 class UpscoreBadge extends StatelessWidget {
-  const UpscoreBadge({super.key, this.size = 14});
+  const UpscoreBadge({super.key, this.size = 14, this.color});
 
   final double size;
+  // The primary colour unless given.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -467,10 +468,10 @@ class UpscoreBadge extends StatelessWidget {
       message: 'Upscore',
       child: Container(
         padding: const EdgeInsets.all(2),
-        decoration:
-            BoxDecoration(color: scheme.primary, shape: BoxShape.circle),
+        decoration: BoxDecoration(
+            color: color ?? scheme.primary, shape: BoxShape.circle),
         child: Icon(Icons.arrow_upward_rounded,
-            size: size, color: scheme.onPrimary),
+            size: size, color: color == null ? scheme.onPrimary : Colors.white),
       ),
     );
   }

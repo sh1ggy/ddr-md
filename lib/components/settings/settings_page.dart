@@ -88,8 +88,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 clearOfBars(context, const EdgeInsets.all(8)),
                             children: [
                               const EamuseProfileCard(),
-                              if (developmentToolsEnabled)
-                                const DevelopmentToolsTile(),
+                              const DevelopmentToolsTile(),
                               Card(
                                 child: ListTile(
                                   leading:

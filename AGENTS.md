@@ -23,6 +23,7 @@ flutter test tool/content_manifest.dart   # hash content into assets/content_man
 bash scripts/build_store.sh <ipa|appbundle>  # store builds: fetch the live content into assets/, build with CONTENT_URL
 bash scripts/fetch_content.sh && flutter run --release  # release on a device: same live content, updates on
 bash scripts/build_lite.sh [apk --release]  # build without jackets/per-song JSONs (~430 MB smaller)
+node infra/circles/dev/worker_test.mjs   # circles Worker end to end; server.mjs + scenario.mjs drive the app (infra/README.md "Circles")
 bash scripts/init.sh                 # Android only: download OpenCV + ONNX Runtime into native_opencv/.../jniLibs/ (gitignored; rerun after clean checkout)
 cd ios && pod install                # iOS native deps (vendored opencv2 + onnxruntime frameworks)
 ```
@@ -69,6 +70,13 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 - Shell scripts here inline pure commands — don't extract fetch/copy/check helper functions.
 - `docs/` holds only how-tos the code relies on (noteskin assets, parity labelling, dancer form). Plans and design write-ups don't live in the repo.
 - `docs/arcade/` (gitignored, kept locally) is the cabinet-behaviour reference. Check it, when present, before claiming or changing anything "arcade accurate". Never commit it or anything else derived from Konami material.
+
+## Card presentation preferences
+
+- Let the jacket cards carry their own information. Give them the space instead of repeating the selected card's title, chart, score, badges or earned date below it.
+- Omit section headings and catalogue/page dots when the cards already make the purpose and selection clear.
+- Showcase is a card-only collection: no editable captions/subtitles or showcase reactions. Session cheers stay on session pages.
+- Friend rows open profiles (cards and previous sessions); current live activity has its own entry and page.
 
 ## Local validation preference
 

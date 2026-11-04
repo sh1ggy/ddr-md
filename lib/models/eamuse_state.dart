@@ -49,6 +49,9 @@ class EamuseSyncState extends ChangeNotifier {
   // Bumped when a sync ends, so views of what it saved reload.
   int revision = 0;
   EamuseSync? _sync;
+  // Stopped before there's a sync to cancel: while renewing the sign-in, or
+  // reading what's saved first.
+  bool _stopped = false;
   DateTime? _notBefore;
   // Held off because Konami refused the last sync, not just the cooldown.
   bool _refused = false;
@@ -104,6 +107,34 @@ class EamuseSyncState extends ChangeNotifier {
   bool get waiting =>
       _notBefore != null && DateTime.now().isBefore(_notBefore!);
 
+  /// After a credit ends, when its plays are looked for: once they've had
+  /// time to reach e-amusement, and again if they hadn't yet.
+  static const creditSyncDelays = [Duration(seconds: 90), Duration(minutes: 4)];
+
+  Timer? _creditSync;
+
+  static bool get syncEachCredit =>
+      Settings.getInt(Settings.eamuseSyncEachCreditKey) == 1;
+
+  static Future<void> setSyncEachCredit(bool on) =>
+      Settings.setInt(Settings.eamuseSyncEachCreditKey, on ? 1 : 0);
+
+  /// A credit just ended: with [syncEachCredit] on, its plays are synced as
+  /// soon as they're up, once the player has synced at all.
+  void creditEnded() {
+    if (!syncEachCredit || syncedAt == null) return;
+    _creditSync?.cancel();
+    final before = Settings.getString(Settings.eamuseLastPlayKey);
+    void attempt(int i) => _creditSync = Timer(creditSyncDelays[i], () async {
+          await sync();
+          if (i + 1 < creditSyncDelays.length &&
+              Settings.getString(Settings.eamuseLastPlayKey) == before) {
+            attempt(i + 1);
+          }
+        });
+    attempt(0);
+  }
+
   void _holdOff(Duration wait) {
     _notBefore = DateTime.now().add(wait);
     _wake?.cancel();
@@ -118,6 +149,7 @@ class EamuseSyncState extends ChangeNotifier {
   void dispose() {
     ContentStore.revision.removeListener(relink);
     _wake?.cancel();
+    _creditSync?.cancel();
     super.dispose();
   }
 
@@ -147,19 +179,29 @@ class EamuseSyncState extends ChangeNotifier {
     await restore();
   }
 
+  /// Holding off because Konami refused the last sync: not even a tap syncs.
+  bool get refused => waiting && _refused;
+
   /// [renewed]: the session was just renewed, by signing in or by
   /// [_signInSilently], so a signed-out answer means it really has to be
-  /// signed into again. One for a session that just [ended] skips the
-  /// cooldown, but not the backoff after Konami refused one.
-  Future<void> sync({bool renewed = false, bool ended = false}) async {
+  /// signed into again. One [asked] for, by a tap or a session ending,
+  /// skips the cooldown, but not the backoff after Konami refused one.
+  Future<void> sync({bool renewed = false, bool asked = false}) async {
     // The sync after a sign-in carries on the one that needed it.
     if (status == EamuseStatus.syncing ||
-        (!ended && (upToDate || (waiting && !renewed))) ||
-        (ended && waiting && _refused)) {
+        (!asked && (upToDate || (waiting && !renewed))) ||
+        (asked && refused)) {
       return;
     }
+    _stopped = false;
     _holdOff(EamuseSync.cooldown);
     _refused = false;
+    // Showing at once, before the reads below.
+    status = EamuseStatus.syncing;
+    progress = 0;
+    error = '';
+    note = '';
+    notifyListeners();
     final stored = {
       for (final r
           in await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse))
@@ -177,6 +219,8 @@ class EamuseSyncState extends ChangeNotifier {
         before[m] = ChartBests.bestsOf(m);
       }
     }
+    // Stopped while reading those, before there was a sync to cancel.
+    if (_stopped) return;
     // Each chart's best as this sync left it, by chart.
     final now = <String, ChartBest>{};
     final carded = <String>{};
@@ -221,11 +265,6 @@ class EamuseSyncState extends ChangeNotifier {
         await DatabaseProvider.saveCardGains(gains);
       },
     );
-    status = EamuseStatus.syncing;
-    progress = 0;
-    error = '';
-    note = '';
-    notifyListeners();
     void onProgress(int done, int total) {
       progress = total == 0 ? 0 : done / total;
       notifyListeners();
@@ -353,6 +392,11 @@ class EamuseSyncState extends ChangeNotifier {
       error = 'Sync failed';
       debugPrint('e-amusement sync failed: $e');
     }
+    // Stopping drops the request in flight, which fails however it fails.
+    if (sync.cancelled) {
+      status = EamuseStatus.idle;
+      error = '';
+    }
     sync.close();
     _sync = null;
     changed = changedNow;
@@ -364,8 +408,10 @@ class EamuseSyncState extends ChangeNotifier {
     if (status == EamuseStatus.signedOut && !renewed) {
       status = EamuseStatus.syncing;
       progress = 0;
+      note = 'Signing back in';
       notifyListeners();
       final signedIn = await _signInSilently();
+      if (_stopped) return;
       status = signedIn ? EamuseStatus.idle : EamuseStatus.signedOut;
       notifyListeners();
       if (signedIn) await this.sync(renewed: true);
@@ -447,7 +493,16 @@ class EamuseSyncState extends ChangeNotifier {
     }
   }
 
-  void stop() => _sync?.cancelled = true;
+  void stop() {
+    // Nor do the syncs queued after a credit.
+    _creditSync?.cancel();
+    if (_sync case final sync?) return sync.cancel();
+    if (status != EamuseStatus.syncing) return;
+    // Renewing the sign-in: it finishes unseen and no sync follows.
+    _stopped = true;
+    status = EamuseStatus.idle;
+    notifyListeners();
+  }
 
   Future<void> signOut() async {
     await CookieManager.instance().deleteAllCookies();

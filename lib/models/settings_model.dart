@@ -16,7 +16,8 @@ class Settings {
   // Development: the flare aura as a gauge round the card instead of flames.
   static const jacketFlareGaugeKey = 'jacketEditionFlareGauge';
   // Development: how the session wrap's cards land, a [PackLanding] index.
-  static const wrapLandingKey = 'sessionWrapLanding';
+  static const wrapBannerPreviewKey = 'sessionWrapBannerPreview';
+  static const wrapLandingKey = 'sessionWrapLandingFlipFirst';
 
   static const String chosenReadSpeedKey = "chosenReadSpeed";
 
@@ -182,6 +183,12 @@ class Settings {
   // 1 = leave doubles charts out of e-amusement syncs.
   static const String eamuseSkipDoublesKey = "eamuseSkipDoubles";
 
+  // 1 = the development tools are unlocked in a release build.
+  static const String developmentToolsKey = "developmentTools";
+
+  // 1 = sync each credit's plays as it ends, not only at the session's end.
+  static const String eamuseSyncEachCreditKey = "eamuseSyncEachCredit";
+
   // The e-amusement player status, from the play data index: dancer name,
   // total plays and last play (Japan-time text, as above). The rival code is
   // kept under [rivalCodeSpeedKey].
@@ -193,6 +200,15 @@ class Settings {
   // account key, and when the last sync finished (ISO-8601, '' = never).
   static const String cloudSyncOnKey = "cloudSyncOn";
   static const String cloudSyncKeyKey = "cloudSyncKey";
+  static const String circleKeyKey = "circleKey";
+  static const String circleStateKey = "circleState";
+  // The running session is broadcast to the circle (1) or not (0).
+  static const String circleBroadcastKey = "circleBroadcast";
+  static const String circleShowLocationKey = "circleShowLocation";
+  // What a new session starts with, from the Circle tab's settings: going
+  // live to the circle (1) or not (0), and with the venue (1) or without.
+  static const String circleLiveDefaultKey = "circleLiveDefault";
+  static const String circleLocationDefaultKey = "circleLocationDefault";
   static const String cloudSyncedAtKey = "cloudSyncedAt";
 
   // Settings that follow the player to their other devices. Left out: the
@@ -241,6 +257,8 @@ class Settings {
     eamuseNameKey,
     eamusePlayCountKey,
     eamuseProfileLastPlayKey,
+    circleLiveDefaultKey,
+    circleLocationDefaultKey,
   };
 
   static Map<String, Object> syncedPrefs() => {

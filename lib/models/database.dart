@@ -4,6 +4,7 @@ import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_labels.dart';
+import 'package:ddr_md/models/session_goal.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier, visibleForTesting;
@@ -99,7 +100,16 @@ class DatabaseProvider {
     await _addRecentPlayFailed(db);
     await _addRecentPlayOrder(db);
     await db.execute(_cardGainsDdl);
+    await _addSessionGoal(db);
     await installSync(db);
+  }
+
+  // v20: a session's goal (SessionGoal's JSON) and when it was reached.
+  static Future<void> _addSessionGoal(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(sessions)');
+    if (columns.any((c) => c['name'] == 'goal')) return;
+    await db.execute('ALTER TABLE sessions ADD COLUMN goal TEXT');
+    await db.execute('ALTER TABLE sessions ADD COLUMN goalHitAt TEXT');
   }
 
   static Future<void> _addRecentPlayFailed(Database db) => db.execute(
@@ -167,7 +177,7 @@ class DatabaseProvider {
       open(join(await getDatabasesPath(), _dbName));
 
   static Future<Database> open(String path) {
-    return openDatabase(path, version: 19, onCreate: (db, version) async {
+    return openDatabase(path, version: 20, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -208,6 +218,7 @@ class DatabaseProvider {
             db, syncTables.firstWhere((t) => t.name == 'card_gains'));
       }
       if (oldVersion >= 18 && oldVersion < 19) await _addCardGainFromScore(db);
+      if (oldVersion >= 6 && oldVersion < 20) await _addSessionGoal(db);
     });
   }
 
@@ -254,15 +265,30 @@ class DatabaseProvider {
       'SELECT s.*, v.name AS venueName FROM sessions s '
       'JOIN venues v ON v.id = s.venueId';
 
-  static Future<PlaySession> startSession(Venue venue) async {
+  static Future<PlaySession> startSession(Venue venue,
+      {SessionGoal? goal}) async {
     final db = await _instance;
-    final session = PlaySession(const Uuid().v4(), venue, DateTime.now(), null);
+    final session =
+        PlaySession(const Uuid().v4(), venue, DateTime.now(), null, goal: goal);
     await db.insert("sessions", {
       'id': session.id,
       'venueId': venue.id,
       'startedAt': session.startedAt.toIso8601String(),
+      'goal': goal?.toJson(),
     });
     return session;
+  }
+
+  static Future<void> setSessionGoal(String id, SessionGoal? goal) async {
+    final db = await _instance;
+    await db.update("sessions", {'goal': goal?.toJson(), 'goalHitAt': null},
+        where: "id = ?", whereArgs: [id]);
+  }
+
+  static Future<void> setSessionGoalHit(String id, DateTime at) async {
+    final db = await _instance;
+    await db.update("sessions", {'goalHitAt': at.toIso8601String()},
+        where: "id = ?", whereArgs: [id]);
   }
 
   /// A session recorded after the fact, over a synced set's span.

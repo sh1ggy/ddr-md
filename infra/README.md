@@ -38,11 +38,15 @@ DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
 | Terraform state | `infra/terraform.tfstate`, local, gitignored | you |
 | Sync Worker `sync` (code in [sync/worker.js](sync/worker.js)) at `sync.<workers_subdomain>.workers.dev`, and its D1 database `ddr-md-sync` | Cloudflare | Terraform |
 | Players' synced data | that D1 database | the app (see [Cloud Sync](#cloud-sync)) |
+| Circles Worker `circles` (code in [circles/worker.js](circles/worker.js)) at `circles.<workers_subdomain>.workers.dev`, and its D1 database `ddr-md-circles` | Cloudflare | Terraform |
+| Players' circles | that D1 database | the app (see [Circles](#circles)) |
+| Optional `circles-uat` Worker (code/config in [circles/uat/](circles/uat/)) | Cloudflare, using the existing Circles API | `cf deploy` (see [production test people](#persistent-production-test-people)) |
 
 ## Reproducible from scratch?
 
-Everything in the cloud, yes: `terraform apply` recreates all of it. Not
-covered by Terraform:
+The core content, sync and Circles services, yes: `terraform apply` recreates
+them. The optional production test Worker is recreated with `cf deploy` as
+described below. Not covered by Terraform:
 
 - **Bootstrap credentials.** A Cloudflare token with *Account › Cloudflare
   Pages › Edit*, *Account › Account API Tokens › Edit*, *Account › Workers
@@ -208,18 +212,12 @@ or is caught before it ships. The ones that need you are marked.
 - The content repo is ~675 MB of plain git. GitHub starts warning near 1 GB;
   past that, prune jacket history or move jackets to Git LFS.
 - Pages serves the content publicly; the content repo is what's private.
-- Sync costs nothing: the account is on the Workers Free plan, where going
-  over a limit fails requests (until 00:00 UTC) instead of billing. The
-  Worker also stops accepting writes at 80,000 D1 rows a day across all
-  players (`DAY_WRITES`), under the free 100,000 and far under what Workers
-  Paid includes, so even an upgraded account wouldn't be billed for sync.
-  Each pushed row costs two (row + revision index), so that's ~40,000 rows
-  a day; a heavy player's first backup is ~2,200, and a launch day with
-  many first backups fills it. Refused pushes stay in the apps' outboxes
-  and go up on a later day, nothing lost. Each player is also capped at
-  20,000 rows a day (`DAY_ROWS`), and each IP address at 30,000 however
-  many keys it makes (`NETWORK_ROWS`, counted against a one-way
-  fingerprint cleared daily), so one script can't spend the day's budget.
+- Sync atomically enforces 20,000 rows/player/day and 30,000/network/day.
+  Empty uploads do not create accounts. New account creation is limited to
+  200/day independently of established accounts; there is no shared mutation
+  kill switch. Request limits aggregate IPv6 addresses by /64. These controls
+  do not guarantee availability or a spending cap: requests still invoke a
+  Worker, and distributed abuse can exhaust free platform quotas.
 
 ## Cloud Sync
 
@@ -237,7 +235,11 @@ from under released apps.
   the key lives in the Keychain (synced by iCloud Keychain), and on every
   platform in preferences (Android's backup restores it on a new phone).
   The DDR-CODE, when known, is stored as a label only.
-- **The server never reads rows.** Each is opaque JSON under (table, key);
+- **Encrypted storage.** The server does not interpret app rows. It encrypts
+  their payloads and original keys with AES-256-GCM and indexes row keys with
+  HMAC-SHA-256, using a Worker secret outside D1. The optional DDR-CODE label
+  is encrypted too. This is server-side encryption, not end-to-end encryption.
+  The API still returns the original JSON to the authenticated owner;
   every accepted write gets a per-user revision, and a device pulls
   everything after its cursor. The latest edit to a row wins: an older
   write keeps the stored data but still takes a new revision, so the
@@ -253,5 +255,215 @@ from under released apps.
   triggers in a migration; the server needs no change.
 
 Try it locally: put [sync/worker.js](sync/worker.js) behind a `cf dev`
-project with a D1 binding named `DB`, then run the app with
+project with a D1 binding named `DB`, a 64-character hex `DATA_KEY` secret,
+and the request/safety rate bindings in `main.tf`, then run the app with
 `--dart-define=SYNC_URL=http://localhost:<port>`.
+
+## Circles
+
+Players following and cheering each other, at
+`https://circles.ddr-md.workers.dev`. Off until a player starts a circle on
+the Circle tab. All builds default to the deployed server. Use
+`--dart-define=CIRCLES_URL=http://localhost:8787` for local scenarios, or an
+explicitly empty CIRCLES_URL to disable it.
+
+- **Its own key.** Like cloud sync there's no sign-in, but the key is a
+  separate one, so deleting a backup never loses a circle.
+- **Known by dancer name and DDR-CODE**, filled from e-amusement when it's
+  linked. Nobody checks them, and DDR-CODEs show on the cabinet, so a code
+  isn't unique here: people are told apart by an opaque id derived from the
+  key.
+- **The server reads rows**, unlike sync: it checks who may see whom. A
+  player has one circle, joined by scanning its QR or typing the invite code
+  under it (8 characters with no 0/O or 1/I, good for a day); whoever has
+  it is in. Two players in each other's circles are
+  friends; joining can let the leader into the joiner's circle too, so one
+  scan makes friends. Removing a player revokes the current invite and blocks
+  that identity from rejoining, including after code rotation. The owner can
+  still be impersonated by a different self-asserted identity; only share
+  invites with trusted people. Code lookups are capped per player per day,
+  and mutations at 600/player/day. New profiles have a separate 200/day
+  admission limit. These are abuse controls, not a guaranteed spending cap.
+- **Live sessions and cheers.** A broadcast session shows on its player
+  (venue, credit, side) until it ends or lapses after two hours. After each
+  e-amusement sync during one, the app shares the session's credits (songs,
+  scores, fails, new bests), and the circle can cheer each with one of a few
+  preset cheers (no free text, nothing to moderate). Credits and cheers
+  disappear from feeds after two days; scheduled cleanup deletes expired
+  credits/cheers and live broadcasts in bounded batches every five minutes,
+  including for inactive players. The app polls only while it shows live people or your own
+  broadcast: once a minute on the Circle tab and the live card, every half
+  minute on someone's page.
+
+Showcases are three ordered, nullable card snapshots. Cards fill the profile
+area and carry their own score, grade, lamp and flare artwork; selecting one
+only brings it forward. There are no captions, pagination dots, selected-card
+information panels or showcase reactions. The Circle header opens your preview
+and editor; friend rows show the showcase and previous session, including while
+the friend is live. Separate **LIVE NOW** entries open current credits.
+
+The picker uses local chart bests in SP and DP, with Hardest / Lamp / Recent
+sorts and slot swapping or clearing. Publishing takes a snapshot rather than
+changing a card after later syncs. Snapshots are encrypted at rest and remain
+until replaced or the account is deleted, independently of the two-day feed.
+Only the owner and members of their circle can read them. The table is created
+additively by Worker initialisation; deploy the updated Circles Worker before
+using a build with these routes against the live service.
+
+- `GET /v1/showcase/:id` returns `{cards: [card|null, card|null, card|null]}`.
+- `PUT /v1/showcase` accepts `{cards}` and replaces your three snapshots.
+  A card has `id`, `song` (content ID), `mode` (`singles`/`doubles`),
+  `difficulty`, `score`, `grade`, `lamp`, `flare` and nullable ISO `playedAt`.
+  Grade/lamp/flare may be empty; each chart appears at most once. Legacy
+  caption/reaction fields are ignored on write and omitted on read.
+
+The friend profile always uses the latest completed session, excluding the
+active broadcast. Live pages use only the current broadcast's session ID and
+show an ended state when it stops; they never switch to a profile or previous
+session implicitly. Both pages can link to the other explicitly.
+
+### Trying it locally
+
+[circles/dev/](circles/dev/) runs the Worker on Node's SQLite, no Cloudflare
+needed (Node 22+):
+
+```bash
+node infra/circles/dev/worker_test.mjs            # the Worker end to end
+node infra/circles/dev/showcase_test.mjs          # showcase API checks
+node infra/circles/dev/server.mjs --fresh         # http://localhost:8787
+flutter run -d macos --dart-define=DB_NAME=timing-preview.db --dart-define=CIRCLES_URL=http://localhost:8787 --dart-define=CIRCLES_KEY=dev-you____________________________________
+node infra/circles/dev/scenario.mjs               # lists the scenarios
+node infra/circles/dev/scenario.mjs seed          # e.g. a circle to look at
+node infra/circles/dev/scenario.mjs showcase      # showcase fixtures
+flutter test test/showcase_test.dart              # picker and profile/live routes
+```
+
+`CIRCLES_KEY` (debug localhost builds only) fixes the app's key to the one
+scenario.mjs calls "you", so a scenario can set up your circle or have
+made-up players join it, leave or take you out of theirs. Pull to refresh on the
+Circle tab to see each land. Add a scenario to `scenarios` in
+scenario.mjs for each new circle feature.
+
+To preview incoming cheer toasts, start a session with **Broadcast to my
+circle** enabled, then run `node infra/circles/dev/scenario.mjs cheered`.
+It uses the broadcast's session id and posts a sample credit if needed, so
+no arcade sync is required. While you broadcast, incoming cheers are checked
+every 30 seconds while the app is in the foreground and appear as brief toasts.
+Existing cheers are not replayed on startup. Repeating the scenario changes
+the preset cheers so you can test another arrival. Broadcast and Show my location are
+chosen once for the session; location is off by default.
+
+The Circles Worker and D1 database are deployed and recorded in the main
+checkout's Terraform state. The cf OAuth login can deploy; Terraform's
+account-token data sources require the bootstrap API token described above.
+
+### Security checks and deployment
+
+Run `node infra/security_test.mjs`,
+`node infra/circles/dev/worker_test.mjs`, and
+`node infra/circles/uat/worker_test.mjs` for offline security/behavior checks;
+`flutter test test/cloud_sync_test.dart test/cloud_sync_http_test.dart` checks
+client convergence and large Unicode upload splitting. Validate Terraform
+with `terraform -chdir=infra validate`. Use the cached cf/Miniflare runtime
+for workerd checks before a deployment. These checks do not constitute a
+production load test or proof of DDoS immunity.
+
+`data_crypto.js` is an additional module for both Terraform Worker uploads.
+Both Workers require distinct, stable `DATA_KEY` secrets (32 random bytes as
+64 hex characters) and `MAINTENANCE_KEY` secrets. Keep them outside Terraform
+state; `keep_bindings = ["secret_text"]` preserves secrets on Terraform
+uploads. Back up encryption keys securely. Never generate a replacement data
+key over an existing encrypted database: old data needs its original key.
+A code rollback must retain encrypted-row support and the same key.
+
+Sync accepts at most 8 MiB per upload. New clients split uploads at 512 KiB.
+Every private response has `no-store`. The request bindings are 120/key/min,
+600/network/min, and, for Circles, 30 invite operations/network/min. All
+DELETE requests instead use `SAFETY_RATE` (30/key/min), preserving deletion
+and revocation when mutation/network allowances are exhausted. Missing rate
+bindings fail closed in production. Sync daily counters, revisions and writes
+commit or roll back together. Daily shared counters are telemetry only.
+
+Circles stores live venue names encrypted. New app versions use
+`POST /v1/code/lookup`; the legacy invite GET route stays compatible.
+Automatic invocation logs are disabled and logs/traces are not persisted,
+since legacy URLs contain invite capabilities. Only allowlisted operational
+event names/counts are logged. Use platform request/error metrics and the
+account's unexpected-spend notification for operations. The $1 account budget
+notification is managed separately through `cf alerting`, not the pinned
+Terraform provider (which lacks its filter); it is an alert, not a cap.
+
+Both Workers expose a maintenance endpoint restricted to `MAINTENANCE_KEY`:
+`POST /internal/maintenance`. It performs bounded legacy encryption and
+retention cleanup, and returns counts only. On Circles, the administrative
+`X-Revoke-Invites: 1` header also revokes existing invite codes; scheduled
+cleanup does not revoke unexpired codes. Run maintenance until no legacy
+rows remain after deploying encryption support. Older D1 recovery snapshots
+can contain plaintext until Cloudflare's recovery retention expires.
+
+Terraform configures five-minute maintenance schedules, explicitly disables
+version preview URLs, and prevents destruction of either D1 database while
+its lifecycle guard is present. Deploy matching code, helper module and
+bindings together. The production workers.dev URLs remain enabled for
+released apps. No paid plan is enabled here; an owned zone is needed for
+hostname WAF rules before Worker invocation. Work through a compatible
+hostname migration before disabling workers.dev.
+
+The November security deployment used cached cf OAuth because the bootstrap
+API token in the local tfvars was invalid. Terraform source is updated and
+validated, but a full Terraform refresh/apply still needs a valid bootstrap
+token. The private `_private/security-deploy/` directory holds the deployment
+configuration, secret files and evidence; its encryption-key backup is under
+`_private/backups/`, never in git. Preserve those keys when restoring infra.
+
+Public fixture keys are accepted by the app only for localhost testing;
+remote scenario execution requires explicit --allow-remote-fixtures and
+must contain only disposable fake data.
+
+### Persistent production test people
+
+The reusable `circles-uat` Worker in [circles/uat/](circles/uat/) maintains
+three private test profiles for one explicitly configured Circles profile
+id. It uses the normal production API and existing database: no additional
+database, queue or storage service. This optional Worker and its minute cron
+are managed with `cf` and `cloudflare.config.ts`, separately from Terraform.
+Extend this Worker for future automated Circles scenarios.
+
+- **MIKA** follows the target and cheers each shared credit while live.
+  After a session ends (or its broadcast expires), the final credit gets
+  LEGEND, matching the app's existing session cheer behaviour. A 15-second
+  grace period lets the app establish its notification baseline. Broadcasts
+  without shared credits have nothing to cheer yet.
+- **REXX** is a mutual friend, always live at UAT Arcade with three sample
+  credits (including a fail and a new best). The sample session rolls daily;
+  its live status is renewed hourly before the two-hour expiry.
+- **TOFU** is a mutual friend with no broadcast or shared credits.
+
+These are real test profiles visible through normal Circles permissions;
+MIKA's cheers are visible to anyone who can see the target's shared credits.
+Only the configured profile id is targeted, never a dancer name or DDR-CODE.
+The scheduled Worker has no database binding or real player's key. It never
+reattaches removed profiles. Removing MIKA from the target's circle stops all
+automated activity; removing REXX stops its sample activity.
+
+From `infra/circles/uat/` (Node 22.18+ and a Cloudflare login):
+
+```bash
+npm ci
+node worker_test.mjs
+node manage.mjs setup <target-profile-id>
+cf deploy --secrets-file .secrets.json
+node manage.mjs status
+node manage.mjs tick                 # run the same scenario immediately
+node manage.mjs reset                # disable automation, delete only the three test profiles
+```
+
+Setup reads the existing Circles database id/account from the local
+Terraform state, checks the target profile, creates three profiles with
+cryptographically random private keys and attaches their memberships. The
+keys are saved with owner-only permissions in gitignored `.secrets.json`
+and deployed as the Worker's `UAT_CONFIG` secret. Repeating setup for the
+same target reuses those identities; reset is required to change targets.
+Keep that file to manage or remove the profiles later. Cron changes can
+take up to 15 minutes to propagate. Missing `UAT_CONFIG` disables the job;
+there is no public HTTP control endpoint or workers.dev route.

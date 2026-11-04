@@ -27,13 +27,14 @@ class FloorPop extends ThemeExtension<FloorPop> {
     required this.haze,
     required this.stripe,
     required this.voltText,
+    required this.sunText,
     required this.up,
     required this.down,
   });
 
   final Color ink, stage, riser, line, haze, stripe;
-  // Volt as text, darkened on Day where the fill would not read.
-  final Color voltText;
+  // Volt and sun as text, darkened on Day where the fills would not read.
+  final Color voltText, sunText;
   // Above and below your usual.
   final Color up, down;
 
@@ -68,6 +69,7 @@ class FloorPop extends ThemeExtension<FloorPop> {
     haze: Color(0xFFA9A3CC),
     stripe: Color(0x0BFFFFFF),
     voltText: volt,
+    sunText: sun,
     up: Color(0xFF3DDC84),
     down: coral,
   );
@@ -80,6 +82,7 @@ class FloorPop extends ThemeExtension<FloorPop> {
     haze: Color(0xFF5B5580),
     stripe: Color(0x0D16122C),
     voltText: Color(0xFF4E6B00),
+    sunText: Color(0xFF946200),
     up: Color(0xFF1E9E5A),
     down: Color(0xFFD93354),
   );

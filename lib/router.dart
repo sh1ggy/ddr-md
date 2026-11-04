@@ -5,6 +5,7 @@
 /// and every page reachable by link has a path for deep links to target.
 library;
 
+import 'package:ddr_md/components/circle/circle_page.dart';
 import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/session/app_settings_page.dart';
@@ -110,8 +111,9 @@ final router = GoRouter(
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
-              path: '/scan',
-              pageBuilder: (context, state) => _page(state, const OcrPage())),
+              path: '/circle',
+              pageBuilder: (context, state) =>
+                  _page(state, const CirclePage())),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
@@ -121,6 +123,10 @@ final router = GoRouter(
         ]),
       ],
     ),
+    // Scanning opens over the tabs, from a song page or the live session.
+    GoRoute(
+        path: '/scan',
+        pageBuilder: (context, state) => _page(state, const OcrPage())),
   ],
 );
 

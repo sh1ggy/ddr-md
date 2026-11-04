@@ -17,11 +17,17 @@ class CompactJacketEdition extends StatefulWidget {
       required this.facts,
       required this.options,
       this.aura = true,
+      this.flareStamp = false,
+      this.fitChart = false,
       required this.child});
   final EditionFacts facts;
   final EditionOptions options;
   // The flare's flames round the card; the binder's pockets go without.
   final bool aura;
+  // Show flare independently of the grade and score stamps in the binder.
+  final bool flareStamp;
+  // Keep the full chart identity visible in showcase footers.
+  final bool fitChart;
   final Widget child;
   @override
   State<CompactJacketEdition> createState() => _CompactJacketEditionState();
@@ -39,6 +45,10 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
   Widget build(BuildContext context) {
     if (!widget.options.effects) return widget.child;
     final recipe = resolveEdition(widget.facts, widget.options);
+    final flareStamp = recipe.flareStamp ??
+        (widget.flareStamp && recipe.flareIndex >= 0
+            ? widget.facts.flare
+            : null);
     return LayoutBuilder(builder: (context, constraints) {
       final size = constraints.biggest;
       if (!size.isFinite || size.isEmpty) return widget.child;
@@ -78,8 +88,16 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
                             EditionLayer.finish,
                             EditionLayer.frame
                           }))),
+        // Flare without its sticker: the chip in the art's corner.
+        if (flareStamp == null && recipe.flareIndex >= 0)
+          EditionFlareChip(
+              geometry: geometry,
+              side: .24,
+              lift: EditionFooter.shows(recipe)
+                  ? size.height * editionFooterHeight * 1.3
+                  : 0),
         // Stickers at full size, scaled down to the card.
-        if (recipe.gradeStamp != null || recipe.flareStamp != null)
+        if (recipe.gradeStamp != null || flareStamp != null)
           Positioned(
               left: geometry.width + 3,
               right: geometry.width + 3,
@@ -87,7 +105,8 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
               child: IgnorePointer(
                   child: SizedBox(
                       height: size.height * .22,
-                      child: EditionAchievementStamps(recipe: recipe)))),
+                      child: EditionAchievementStamps(
+                          recipe: recipe, flareStamp: flareStamp)))),
         if (EditionFooter.shows(recipe))
           Positioned(
               left: geometry.width,
@@ -102,7 +121,8 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
                           geometry.width +
                               size.height * editionFooterHeight * 1.3 -
                               size.height)),
-                      shortStyle: true))),
+                      shortStyle: true,
+                      fitChart: widget.fitChart))),
       ]));
     });
   }

@@ -126,7 +126,8 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('CHALLENGE 15')), findsOneWidget);
     expect(
         tester.widget<ListTile>(find.byType(ListTile).last).selected, isTrue);
-    await tester.tap(find.text('DP'));
+    await tester.tap(find.ancestor(
+        of: find.bySemanticsLabel('Doubles'), matching: find.byType(ListTile)));
     await tester.pumpAndSettle();
     expect(picked, 'dp');
     expect(tester.takeException(), isNull);

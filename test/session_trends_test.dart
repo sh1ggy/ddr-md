@@ -418,7 +418,7 @@ void main() {
     expect(find.bySemanticsLabel('Average score: 850,000'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('trend-filters')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('SP'));
+    await tester.tap(find.bySemanticsLabel('Singles'));
     await tester.pumpAndSettle();
     // Back dismisses the sheet, preserving the applied filter.
     Navigator.of(tester.element(find.text('Apply filters'))).pop();
@@ -429,7 +429,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('All modes'), findsOneWidget);
     final modeTarget = find
-        .ancestor(of: find.text('DP'), matching: find.byType(InkWell))
+        .ancestor(
+            of: find.bySemanticsLabel('Doubles'),
+            matching: find.byType(InkWell))
         .first;
     final modeRect = tester.getRect(modeTarget);
     expect(modeRect.height, 48);

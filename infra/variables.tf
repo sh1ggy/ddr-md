@@ -51,8 +51,20 @@ variable "sync_database" {
   default     = "ddr-md-sync"
 }
 
+variable "circles_worker" {
+  description = "Circles Worker name, the first label of its address: <this>.<workers_subdomain>.workers.dev"
+  type        = string
+  default     = "circles"
+}
+
+variable "circles_database" {
+  description = "Circles D1 database name (renaming replaces the database and loses every circle)"
+  type        = string
+  default     = "ddr-md-circles"
+}
+
 variable "workers_subdomain" {
-  description = "The account's workers.dev subdomain (dashboard: Workers & Pages), for the sync_url output"
+  description = "The account's workers.dev subdomain (dashboard: Workers & Pages), for the sync_url and circles_url outputs"
   type        = string
   default     = ""
 }

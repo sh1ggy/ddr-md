@@ -5,17 +5,25 @@
 /// in each; the gear opens Settings.
 library;
 
+import 'dart:async';
+
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart';
+import 'package:ddr_md/components/session/count_in.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
+import 'package:ddr_md/components/session/goal_card.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/session_goal.dart';
 import 'package:ddr_md/models/session_model.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -134,6 +142,26 @@ class _CreditSheetState extends State<_CreditSheet> {
   List<Cabinet> _cabinets = [];
   Cabinet? _cabinet;
   late PadSide _side = widget.last?.side ?? context.read<SessionState>().side;
+  SessionGoal? _goal;
+  late bool _broadcast = widget.newSession
+      ? Settings.getInt(Settings.circleLiveDefaultKey) == 1
+      : CircleState.broadcasting;
+  late bool _showLocation = Settings.getInt(widget.newSession
+          ? Settings.circleLocationDefaultKey
+          : Settings.circleShowLocationKey) ==
+      1;
+
+  bool get _startsNow => widget.past == null;
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  /// Counts in over the whole screen, then starts the session.
+  Future<void> _countIn() async {
+    if (await showCountIn(context) && mounted) await _go();
+  }
 
   @override
   void initState() {
@@ -217,8 +245,9 @@ class _CreditSheetState extends State<_CreditSheet> {
 
   Future<void> _go() async {
     final session = context.read<SessionState>();
+    final circles = context.read<CircleState>();
     if (widget.newSession) {
-      await session.start(_venue!, _cabinet!, _side);
+      await session.start(_venue!, _cabinet!, _side, goal: _goal);
     } else if (widget.past case final past?) {
       final e = widget.editing;
       await session.saveCredit(Credit(
@@ -231,6 +260,22 @@ class _CreditSheetState extends State<_CreditSheet> {
       ));
     } else {
       await session.newCredit(_cabinet!, _side);
+    }
+    // Sent in the background, so the credit starts on time.
+    if (_startsNow ||
+        (widget.editing?.id == session.credit?.id &&
+            CircleState.broadcasting)) {
+      final credit = session.credit!;
+      if (_startsNow && !_broadcast) {
+        circles.endBroadcast();
+      } else {
+        if (widget.newSession) {
+          await Settings.setInt(
+              Settings.circleShowLocationKey, _showLocation ? 1 : 0);
+        }
+        circles.broadcast(
+            session.session!.venue.name, credit.number, sideLabel(credit.side));
+      }
     }
     if (mounted) Navigator.pop(context);
   }
@@ -245,7 +290,7 @@ class _CreditSheetState extends State<_CreditSheet> {
                 ? 'Log credit'
                 : 'Credit ${widget.editing!.number}'
             : 'Credit ${(session.credit?.number ?? 0) + 1}';
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
           16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
       child: Column(
@@ -313,9 +358,61 @@ class _CreditSheetState extends State<_CreditSheet> {
             selected: {_side},
             onSelectionChanged: (s) => setState(() => _side = s.first),
           ),
+          if (widget.newSession)
+            ListTile(
+              contentPadding: const EdgeInsets.only(top: 8),
+              leading: Icon(_goal?.kind.icon ?? Icons.flag_outlined,
+                  color: _goal?.kind.color),
+              title: Text(_goal?.title ?? 'Set a goal'),
+              subtitle: _goal == null
+                  ? const Text('What are you here to work on?')
+                  : Text(_goal!.target == null
+                      ? 'Open-ended'
+                      : 'Target: ${_goal!.target}'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                final picked = await showGoalSheet(context, _goal);
+                if (picked != null) setState(() => _goal = picked.$1);
+              },
+            ),
+          if (widget.newSession && CircleState.available)
+            Column(children: [
+              SwitchListTile(
+                contentPadding: const EdgeInsets.only(top: 8),
+                secondary: const Icon(Icons.podcasts),
+                title: const Text('Broadcast to my circle'),
+                subtitle: Text(context.watch<CircleState>().id == null
+                    ? 'Set up your circle on the Circle tab first'
+                    : _broadcast
+                        ? 'Friends can see your credits and cheer you on'
+                        : 'Just you this time'),
+                value: context.watch<CircleState>().id != null && _broadcast,
+                onChanged: context.read<CircleState>().id == null
+                    ? null
+                    : (on) => setState(() => _broadcast = on),
+              ),
+              if (_broadcast && context.read<CircleState>().id != null)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: Icon(_showLocation
+                      ? Icons.location_on_outlined
+                      : Icons.location_off_outlined),
+                  title: const Text('Show my location'),
+                  subtitle: Text(_showLocation
+                      ? (_venue?.name ?? 'Your selected venue')
+                      : 'Your venue stays private'),
+                  value: _showLocation,
+                  onChanged: (on) => setState(() => _showLocation = on),
+                ),
+            ]),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _cabinet == null ? null : _go,
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 52)),
+            onPressed: _cabinet == null
+                ? null
+                : widget.newSession
+                    ? _countIn
+                    : _go,
             child: Text(widget.newSession
                 ? 'Start'
                 : widget.past != null
@@ -379,30 +476,53 @@ class SessionPage extends StatelessWidget {
   }
 }
 
-class _ActiveSession extends StatelessWidget {
+class _ActiveSession extends StatefulWidget {
   const _ActiveSession({required this.session, required this.header});
 
   final SessionState session;
   final List<Widget> header;
 
   @override
+  State<_ActiveSession> createState() => _ActiveSessionState();
+}
+
+class _ActiveSessionState extends State<_ActiveSession> {
+  late int _revision = widget.session.revision;
+  late Future<(List<Credit>, List<TimingPlay>)> _load = _fetch();
+
+  Future<(List<Credit>, List<TimingPlay>)> _fetch() {
+    final id = widget.session.session!.id;
+    return (
+      DatabaseProvider.getCredits(id),
+      DatabaseProvider.getSessionPlays(id),
+    ).wait;
+  }
+
+  // Refetched on each revision, so a logged or deleted play shows at once;
+  // the list keeps showing the last answer meanwhile rather than blinking.
+  @override
+  void didUpdateWidget(_ActiveSession old) {
+    super.didUpdateWidget(old);
+    if (widget.session.revision != _revision) {
+      _revision = widget.session.revision;
+      _load = _fetch();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final id = session.session!.id;
+    final session = widget.session;
+    final header = widget.header;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return FutureBuilder<(List<Credit>, List<TimingPlay>)>(
-      // Keyed on the revision so a logged or deleted play shows at once.
-      key: ValueKey(session.revision),
-      future: (
-        DatabaseProvider.getCredits(id),
-        DatabaseProvider.getSessionPlays(id),
-      ).wait,
+      future: _load,
       builder: (context, snapshot) {
         final (credits, plays) = snapshot.data ?? (<Credit>[], <TimingPlay>[]);
         return ListView(
           padding: clearOfBars(context, const EdgeInsets.only(bottom: 12)),
           children: [
-            BeatIn(
-                child: _LiveSessionCard(session: session, plays: plays.length)),
+            BeatIn(child: _LiveSessionCard(session: session)),
+            const BeatIn(index: 1, child: LiveGoalCard()),
             ...header,
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -485,22 +605,31 @@ class _ActiveSession extends StatelessWidget {
   }
 }
 
-/// The running session, first on Home: where and since when, the credit in
-/// big type with its cab and side (tap to swap), and the next credit.
+/// The running session, first on Home: since when, with its discard and
+/// end, then where, and the credit in big type over its cab and side, each
+/// changed right there. Scanning and the next credit are on the dock.
 class _LiveSessionCard extends StatelessWidget {
-  const _LiveSessionCard({required this.session, required this.plays});
+  const _LiveSessionCard({required this.session});
 
   final SessionState session;
-  final int plays;
 
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
     final credit = session.credit!;
+    Widget action(String tooltip, IconData icon, VoidCallback onPressed) =>
+        IconButton(
+          tooltip: tooltip,
+          visualDensity: VisualDensity.compact,
+          color: pop.haze,
+          iconSize: 20,
+          icon: Icon(icon),
+          onPressed: onPressed,
+        );
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.fromLTRB(18, 8, 8, 18),
       decoration: pop
           .stripes(color: pop.stage, radius: BorderRadius.circular(26))
           .copyWith(
@@ -512,115 +641,237 @@ class _LiveSessionCard extends StatelessWidget {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    const LivePulse(),
-                    const SizedBox(width: 6),
-                    Text(
-                        'LIVE · SINCE ${formatTime12(session.session!.startedAt).toUpperCase()}',
-                        style: pop.label.copyWith(color: pop.voltText)),
-                  ]),
-                  const SizedBox(height: 4),
-                  Text(session.session!.venue.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: FloorPop.display(18, color: scheme.onSurface)
-                          .copyWith(fontWeight: FontWeight.w700)),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: 'Discard session',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () async {
-                if (await confirmDelete(context, 'Discard this session?',
-                    'Its credits and every play logged in them go too.')) {
-                  await session.discard();
-                }
-              },
-            ),
-            OutlinedButton(
-                onPressed: () => endSession(context), child: const Text('End')),
+            const LivePulse(),
+            const SizedBox(width: 6),
+            Text('LIVE', style: pop.label.copyWith(color: pop.voltText)),
+            const SizedBox(width: 10),
+            Icon(Icons.schedule, size: 13, color: pop.haze),
+            const SizedBox(width: 3),
+            Text(formatTime12(session.session!.startedAt).toUpperCase(),
+                style: pop.label.copyWith(color: pop.haze)),
+            const Spacer(),
+            action('Discard session', Icons.delete_outline, () async {
+              if (await confirmDelete(context, 'Discard this session?',
+                  'Its credits and every play logged in them go too.')) {
+                await session.discard();
+              }
+            }),
+            action('End session', Icons.stop_circle_outlined,
+                () => endSession(context)),
           ]),
-          const SizedBox(height: 14),
-          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  BeatSwap(
-                    child: Text('CREDIT ${credit.number}',
-                        key: ValueKey(credit.number),
-                        style: FloorPop.readout(38, color: scheme.onSurface)),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.place_outlined,
+                      size: 18, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(session.session!.venue.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: FloorPop.display(18, color: scheme.onSurface)
+                            .copyWith(fontWeight: FontWeight.w700)),
                   ),
-                  const SizedBox(height: 6),
-                  // Tapping the credit starts the next one, for a side or cab
-                  // swap.
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => showNewCreditSheet(context),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _CreditPill(credit.cabinet.name.isEmpty
-                            ? 'Main cab'
-                            : credit.cabinet.name),
-                        _CreditPill(sideLabel(credit.side)),
-                        _CreditPill(plays == 1 ? '1 play' : '$plays plays'),
-                        Icon(Icons.swap_horiz, size: 18, color: pop.haze),
-                      ],
+                ]),
+                const SizedBox(height: 12),
+                BeatSwap(
+                  child: Text('CREDIT ${credit.number}',
+                      key: ValueKey(credit.number),
+                      style: FloorPop.readout(38, color: scheme.onSurface)),
+                ),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(
+                    child: _CreditTile(
+                      icon: Icons.videogame_asset_outlined,
+                      label: 'CAB',
+                      onTap: _pickCabinet,
+                      child: Row(children: [
+                        Expanded(
+                          child: Text(
+                              credit.cabinet.name.isEmpty
+                                  ? 'Main cab'
+                                  : credit.cabinet.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w700)),
+                        ),
+                        Icon(Icons.unfold_more, size: 18, color: pop.haze),
+                      ]),
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 112,
-              child: VoltButton(
-                height: 72,
-                radius: 20,
-                onPressed: () => showNewCreditSheet(context),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.add, size: 26),
-                  Text('Credit ${credit.number + 1}',
-                      style: const TextStyle(
-                          fontFamily: kTextFont,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _CreditTile(
+                      icon: Icons.person_outline,
+                      label: 'SIDE',
+                      child: Row(children: [
+                        for (final s in PadSide.values)
+                          Expanded(
+                            child: _SideSegment(
+                                side: s, selected: s == credit.side),
+                          ),
+                      ]),
+                    ),
+                  ),
                 ]),
-              ),
+              ],
             ),
-          ]),
+          ),
         ],
       ),
     );
   }
 }
 
-/// One fact about the running credit as a small pill.
-class _CreditPill extends StatelessWidget {
-  const _CreditPill(this.text);
+/// Puts the running credit on [cabinet] or [side], and tells the circle if
+/// it's broadcasting.
+Future<void> _changeCredit(BuildContext context,
+    {Cabinet? cabinet, PadSide? side}) async {
+  final session = context.read<SessionState>();
+  final circles = context.read<CircleState>();
+  final c = session.credit!;
+  HapticFeedback.selectionClick();
+  await session.saveCredit(Credit(
+    id: c.id,
+    sessionId: c.sessionId,
+    number: c.number,
+    cabinet: cabinet ?? c.cabinet,
+    side: side ?? c.side,
+    startedAt: c.startedAt,
+  ));
+  if (CircleState.broadcasting) {
+    circles.broadcast(
+        session.session!.venue.name, c.number, sideLabel(side ?? c.side));
+  }
+}
 
-  final String text;
+/// The venue's cabs in a menu under the cab pill, and one more.
+Future<void> _pickCabinet(BuildContext context) async {
+  final session = context.read<SessionState>();
+  final venue = session.session!.venue;
+  final current = session.credit!.cabinet;
+  final box = context.findRenderObject()! as RenderBox;
+  final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+  final at =
+      box.localToGlobal(Offset(0, box.size.height + 4), ancestor: overlay);
+  final cabinets = await DatabaseProvider.getCabinets(venue.id);
+  if (!context.mounted) return;
+  // A cab's id, or -1 for another cab.
+  final picked = await showMenu<int>(
+    context: context,
+    position: RelativeRect.fromRect(at & Size.zero, Offset.zero & overlay.size),
+    items: [
+      for (final c in cabinets)
+        CheckedPopupMenuItem(
+            value: c.id,
+            checked: c.id == current.id,
+            child: Text(c.name.isEmpty ? 'Main cab' : c.name)),
+      const PopupMenuDivider(),
+      const PopupMenuItem(
+          value: -1,
+          child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.add),
+              title: Text('Another cab here'))),
+    ],
+  );
+  if (picked == null || picked == current.id || !context.mounted) return;
+  final Cabinet cabinet;
+  if (picked == -1) {
+    final name = await askName(context, 'Another cab here', 'e.g. Cab 2');
+    if (name == null || name.isEmpty || !context.mounted) return;
+    cabinet = await DatabaseProvider.addCabinet(venue, name);
+  } else {
+    cabinet = cabinets.firstWhere((c) => c.id == picked);
+  }
+  if (context.mounted) await _changeCredit(context, cabinet: cabinet);
+}
+
+/// Half of the credit's settings row: a small label over its value, the
+/// whole tile tappable with [onTap].
+class _CreditTile extends StatelessWidget {
+  const _CreditTile(
+      {required this.icon,
+      required this.label,
+      required this.child,
+      this.onTap});
+
+  final IconData icon;
+  final String label;
+  final Widget child;
+  // Given the tile's own context, for a menu under it.
+  final void Function(BuildContext)? onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-            color: FloorPop.of(context).riser,
-            borderRadius: BorderRadius.circular(8)),
-        child: Text(text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-      );
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Material(
+      color: pop.riser,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: pop.line)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap == null ? null : () => onTap!(context),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(icon, size: 13, color: pop.haze),
+                const SizedBox(width: 4),
+                Text(label, style: pop.label.copyWith(color: pop.haze)),
+              ]),
+              const SizedBox(height: 4),
+              SizedBox(height: 30, child: child),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 1P or 2P in the side tile, lit in Volt when it's the credit's.
+class _SideSegment extends StatelessWidget {
+  const _SideSegment({required this.side, required this.selected});
+
+  final PadSide side;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: selected ? null : () => _changeCredit(context, side: side),
+        child: AnimatedContainer(
+          duration: FloorPop.sixteenth,
+          curve: FloorPop.settle,
+          margin: const EdgeInsets.only(right: 4),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? FloorPop.volt : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Text(sideLabel(side),
+              style: FloorPop.readout(15,
+                  color: selected ? FloorPop.onVolt : pop.haze)),
+        ),
+      ),
+    );
+  }
 }
