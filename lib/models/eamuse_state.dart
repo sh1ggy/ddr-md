@@ -24,6 +24,7 @@ import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse.dart';
+import 'package:ddr_md/models/eamuse_cookie_store.dart';
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/foundation.dart';
@@ -49,6 +50,7 @@ class EamuseSyncState extends ChangeNotifier {
   // Bumped when a sync ends, so views of what it saved reload.
   int revision = 0;
   EamuseSync? _sync;
+  final _cookies = EamuseCookieStore();
   // Stopped before there's a sync to cancel: while renewing the sign-in, or
   // reading what's saved first.
   bool _stopped = false;
@@ -147,6 +149,8 @@ class EamuseSyncState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stopped = true;
+    unawaited(_cookies.dispose());
     ContentStore.revision.removeListener(relink);
     _wake?.cancel();
     _creditSync?.cancel();
@@ -224,12 +228,21 @@ class EamuseSyncState extends ChangeNotifier {
     // Each chart's best as this sync left it, by chart.
     final now = <String, ChartBest>{};
     final carded = <String>{};
+    final String cookies;
+    try {
+      cookies = await _cookies.read();
+    } catch (e) {
+      if (!_stopped) {
+        status = EamuseStatus.failed;
+        error = "Couldn't restore sign-in. Try again.";
+        debugPrint('e-amusement cookie store failed: ${e.runtimeType}');
+        notifyListeners();
+      }
+      return;
+    }
+    if (_stopped) return;
     final sync = _sync = EamuseSync(
-      cookies: [
-        for (final c in await CookieManager.instance()
-            .getCookies(url: WebUri(kEamuseHost)))
-          '${c.name}=${c.value}'
-      ].join('; '),
+      cookies: cookies,
       onCookies: _keepCookies,
       songs: EamuseSongIndex(Songs.list),
       save: (records) async {
