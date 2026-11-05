@@ -18,6 +18,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/best_rings.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
+import 'package:ddr_md/grades.dart' show Grade;
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
@@ -28,6 +29,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'compact_jacket_edition.dart';
 import 'edition_model.dart';
+import 'edition_rules.dart';
 import 'edition_viewer.dart';
 import 'jacket_edition.dart';
 
@@ -56,6 +58,23 @@ class BinderDivider extends BinderPage {
   int get total => pockets.length;
   // The negative, when this is the hardest level played: its top score.
   final BinderPocket? top;
+
+  /// Only a complete level earns materials, each from its weakest chart.
+  EditionFacts? get coverFacts {
+    if (pockets.isEmpty || collected != total) return null;
+    final cards = pockets.map((p) => p.card!).toList();
+    final grade = cards.every((c) => c.grade == Grade.aaa) ? Grade.aaa : null;
+    final weakest = cards.reduce((a, b) =>
+        resolveEdition(a).frame.index <= resolveEdition(b).frame.index ? a : b);
+    final frame =
+        resolveEdition(weakest).frame.index >= EditionFrame.gold.index;
+    if (grade == null && !frame) return null;
+    return EditionFacts(
+        chart: (song: 'binder-$level', mode: '', difficulty: ''),
+        grade: grade,
+        lamp: frame ? weakest.lamp : null,
+        precision: frame ? weakest.precision : null);
+  }
 }
 
 class BinderSheet extends BinderPage {
@@ -161,8 +180,7 @@ class _EditionBinderPageState extends State<EditionBinderPage>
   bool _touring = true;
   // A turn to a sheet further than the next: 0 to .5 the sheet in view
   // shrinks away, .5 to 1 the new one grows in.
-  late final _zoom = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 380));
+  late final AnimationController _zoom;
   // Sheets' jackets decoding, by page, so a sheet the tour turns to comes up
   // whole rather than fading its jackets in under the cards landing.
   final _warmed = <int, Future<void>>{};
@@ -176,6 +194,8 @@ class _EditionBinderPageState extends State<EditionBinderPage>
   @override
   void initState() {
     super.initState();
+    _zoom = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 380));
     _load();
   }
 
@@ -503,6 +523,14 @@ class _Cover extends StatelessWidget {
     final pop = FloorPop.of(context);
     final scheme = Theme.of(context).colorScheme;
     final top = divider.top;
+    final floor = divider.coverFacts;
+    final preferences = editionPreferences();
+    final finished = preferences.effects && floor?.grade == Grade.aaa;
+    final ink = finished
+        ? scheme.brightness == Brightness.dark
+            ? const Color(0xFFFFF6DF)
+            : const Color(0xFF30243C)
+        : pop.haze;
     // Up to three, best score first, the negative always in front.
     final fan = [
       if (top != null) top,
@@ -515,51 +543,78 @@ class _Cover extends StatelessWidget {
         fontSize: 11,
         fontWeight: FontWeight.w700,
         letterSpacing: 1.6,
-        color: pop.haze);
-    return DecoratedBox(
+        color: ink);
+    final background = DecoratedBox(
         decoration: BoxDecoration(
-            color: pop.riser, borderRadius: BorderRadius.circular(20)),
+            color: pop.riser,
+            borderRadius: floor != null && preferences.effects
+                ? BorderRadius.zero
+                : BorderRadius.circular(20)),
         child: DecoratedBox(
-            decoration: pop.stripes(radius: BorderRadius.circular(20)),
-            child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      LevelNumber(
-                          level: divider.level,
-                          difficulty: 'EXPERT',
-                          height: 76),
-                      // The fan and the tiers split the cover evenly,
-                      // always, so paging from level to level nothing moves;
-                      // tiers past their share scroll.
-                      Expanded(
-                          child: fan.isEmpty
-                              ? Center(
-                                  child: Text('No cards here yet',
-                                      style: TextStyle(color: pop.haze)))
-                              : _Fan(pockets: fan, onOpen: onOpen)),
-                      // What the level list's rings count, laid out.
-                      Expanded(
-                          child: SingleChildScrollView(
-                              child: BestTiers(divider.bests, columns: 4))),
-                      const SizedBox(height: 14),
-                      Text(top == null ? '' : 'Top card · ${top.song.title}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: pop.haze)),
-                      const SizedBox(height: 10),
-                      Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Text('${divider.collected}/${divider.total}',
-                                style: FloorPop.readout(24,
-                                    color: scheme.onSurface)),
-                            const SizedBox(width: 8),
-                            Text('COLLECTED', style: caps),
-                          ]),
-                    ]))));
+            decoration: pop.stripes(radius: BorderRadius.circular(20))));
+    return Stack(fit: StackFit.expand, children: [
+      if (floor == null)
+        background
+      else
+        JacketEdition(
+            facts: floor,
+            interactive: false,
+            maxFrameWidth: 14,
+            options: (
+              borderId: preferences.borderId,
+              effects: preferences.effects,
+              motion: preferences.motion,
+              modeStamp: false,
+              gradeStamp: false,
+              difficultyStamp: false,
+              tierSuffix: false
+            ),
+            layers: const {
+              EditionLayer.art,
+              EditionLayer.frame,
+              EditionLayer.finish
+            },
+            child: background),
+      // Materials inset only the background; every cover keeps its layout.
+      Padding(
+          padding: const EdgeInsets.all(24),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            LevelNumber(level: divider.level, difficulty: 'EXPERT', height: 76),
+            // The fan and the tiers split the cover evenly,
+            // always, so paging from level to level nothing moves;
+            // tiers past their share scroll.
+            Expanded(
+                child: fan.isEmpty
+                    ? Center(
+                        child: Text('No cards here yet',
+                            style: TextStyle(color: pop.haze)))
+                    : _Fan(pockets: fan, onOpen: onOpen)),
+            // What the level list's rings count, laid out.
+            Expanded(
+                child: SingleChildScrollView(
+                    child: LayoutBuilder(
+                        builder: (context, box) => BestTiers(divider.bests,
+                            columns: (box.maxWidth / 100).floor().clamp(1, 4),
+                            labelColor: finished ? ink : null)))),
+            const SizedBox(height: 14),
+            Text(top == null ? '' : 'Top card · ${top.song.title}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: ink)),
+            const SizedBox(height: 10),
+            Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text('${divider.collected}/${divider.total}',
+                      style: FloorPop.readout(24,
+                          color: finished ? ink : scheme.onSurface)),
+                  const SizedBox(width: 8),
+                  Text('COLLECTED', style: caps),
+                ]),
+          ])),
+    ]);
   }
 }
 

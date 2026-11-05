@@ -15,9 +15,10 @@ import 'edition_motion.dart';
 /// Per-viewer resources. No raster masks, retained textures, blur, saveLayer,
 /// or global combination cache. Recreated only on a recipe/size change.
 class EditionGeometry {
-  EditionGeometry(this.recipe, this.size, {this.compact = false}) {
+  EditionGeometry(this.recipe, this.size,
+      {this.compact = false, this.maxFrameWidth = double.infinity}) {
     final side = size.shortestSide;
-    width = side * editionFrameWidths[recipe.frame]!;
+    width = math.min(maxFrameWidth, side * editionFrameWidths[recipe.frame]!);
     outer = at(0);
     inner = at(width);
     innerRect = (Offset.zero & size).deflate(width);
@@ -56,6 +57,7 @@ class EditionGeometry {
   final EditionRecipe recipe;
   final Size size;
   final bool compact;
+  final double maxFrameWidth;
   late final double width;
   late final Path outer, inner, ring;
   late final Rect innerRect;

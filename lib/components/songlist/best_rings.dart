@@ -363,10 +363,12 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
 /// the columns line up from section to section. [rise] wraps the [i]th
 /// section, for an entrance.
 class BestTiers extends StatelessWidget {
-  const BestTiers(this.bests, {super.key, this.columns = 3, this.rise});
+  const BestTiers(this.bests,
+      {super.key, this.columns = 3, this.rise, this.labelColor});
   final List<ChartBest?> bests;
   final int columns;
   final Widget Function(int i, Widget section)? rise;
+  final Color? labelColor;
 
   @override
   Widget build(BuildContext context) {
@@ -383,7 +385,7 @@ class BestTiers extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.2,
-                    color: pop.haze)),
+                    color: labelColor ?? pop.haze)),
             const SizedBox(height: 6),
             LayoutBuilder(
               builder: (context, box) =>
@@ -399,7 +401,7 @@ class BestTiers extends StatelessWidget {
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.5,
-                              color: pop.haze)),
+                              color: labelColor ?? pop.haze)),
                       trailing: Text('${t.count}',
                           style: FloorPop.readout(14).copyWith(
                               fontFeatures: const [
