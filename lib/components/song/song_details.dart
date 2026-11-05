@@ -311,7 +311,7 @@ class SongDetails extends StatelessWidget {
               const SizedBox(height: 14),
               // Every song has per-difficulty radar data, so the difficulty is
               // always selectable.
-              SongDifficultyPicker(difficulty: difficulty),
+              SongDifficultyPicker(difficulty: difficulty, song: songInfo),
             ],
           ),
         ),

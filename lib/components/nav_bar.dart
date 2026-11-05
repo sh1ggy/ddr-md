@@ -3,14 +3,13 @@
 /// Description: The tab bar: Songs, Snippets, Home, Circle, Profile on a
 /// floating pill, Home in Volt in the middle, ringed while a session runs.
 /// Above it on every tab while a session runs, the live dock carries the
-/// running credit, scanning, ending and the next credit.
+/// running credit, scanning and the next credit.
 library;
 
 import 'dart:ui';
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/session_page.dart';
-import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
@@ -162,8 +161,8 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
-/// The running session over the tab bar: credit, side and cab, tap for
-/// Home, then a scan, the end and the next credit one tap away.
+/// The running session over the tab bar as one slim line: credit, side and
+/// cab (tap for Home), then a scan and the next credit.
 class LiveSessionDock extends StatelessWidget {
   const LiveSessionDock({super.key, required this.onOpen});
 
@@ -173,99 +172,66 @@ class LiveSessionDock extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<SessionState>();
     final credit = session.credit!;
+    Widget action(String tooltip, IconData icon, VoidCallback onPressed,
+            {bool primary = false}) =>
+        IconButton(
+          tooltip: tooltip,
+          style: IconButton.styleFrom(
+            backgroundColor: primary ? FloorPop.onVolt : Colors.transparent,
+            foregroundColor: primary ? FloorPop.volt : FloorPop.onVolt,
+            fixedSize: const Size(36, 36),
+            minimumSize: const Size(36, 36),
+            padding: EdgeInsets.zero,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          iconSize: 20,
+          onPressed: onPressed,
+          icon: Icon(icon),
+        );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Material(
         color: FloorPop.volt,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: SizedBox(
-          height: 56,
+          height: 44,
           child: Row(children: [
             Expanded(
               child: InkWell(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
                 onTap: onOpen,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Row(children: [
                     const LivePulse(color: FloorPop.onVolt),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
+                    Text('C${credit.number} · ${sideLabel(credit.side)}',
+                        style: FloorPop.readout(15, color: FloorPop.onVolt)),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.videogame_asset_outlined,
+                        size: 14, color: FloorPop.onVolt),
+                    const SizedBox(width: 3),
                     Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Scaled down rather than wrapped, beside three buttons
-                          // on a phone.
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                                'CREDIT ${credit.number} · ${sideLabel(credit.side)}',
-                                style: FloorPop.readout(16,
-                                    color: FloorPop.onVolt)),
-                          ),
-                          Row(children: [
-                            const Icon(Icons.videogame_asset_outlined,
-                                size: 13, color: FloorPop.onVolt),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(credit.cabinet.label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: FloorPop.onVolt)),
-                            ),
-                          ]),
-                        ],
-                      ),
+                      child: Text(credit.cabinet.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: FloorPop.onVolt)),
                     ),
                   ]),
                 ),
               ),
             ),
-            IconButton(
-              tooltip: 'Scan a score',
-              style: IconButton.styleFrom(
-                backgroundColor: FloorPop.onVolt.withValues(alpha: 0.12),
-                foregroundColor: FloorPop.onVolt,
-                fixedSize: const Size(44, 44),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              onPressed: () => context.push('/scan'),
-              icon: const Icon(Icons.document_scanner_outlined),
-            ),
-            IconButton(
-              tooltip: 'End session',
-              style: IconButton.styleFrom(
-                backgroundColor: FloorPop.onVolt.withValues(alpha: 0.12),
-                foregroundColor: FloorPop.onVolt,
-                fixedSize: const Size(44, 44),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              onPressed: () => endSession(context),
-              icon: const Icon(Icons.stop_rounded),
-            ),
+            action('Scan a score', Icons.document_scanner_outlined,
+                () => context.push('/scan')),
+            const SizedBox(width: 2),
+            action('Credit ${credit.number + 1}', Icons.add,
+                () => showNewCreditSheet(context),
+                primary: true),
             const SizedBox(width: 4),
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: FloorPop.onVolt,
-                  foregroundColor: FloorPop.volt,
-                  minimumSize: const Size(44, 44),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                onPressed: () => showNewCreditSheet(context),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Credit'),
-              ),
-            ),
           ]),
         ),
       ),

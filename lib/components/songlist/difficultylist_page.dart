@@ -277,17 +277,9 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
       }
     }
 
-    final int sign = descending ? -1 : 1;
     if (sortType == SortType.level) {
-      // Level lives here rather than in compareSongInfo because it needs the
-      // mode to know which chart set to read.
-      songItems.sort((a, b) {
-        final byLevel =
-            sign * levelForItem(a, mode).compareTo(levelForItem(b, mode));
-        return byLevel != 0
-            ? byLevel
-            : compareSongInfo(a.songInfo, b.songInfo, SortType.title);
-      });
+      songItems.sort(
+          (a, b) => compareLevelItems(a, b, mode, descending: descending));
     } else if (sortType.isBest) {
       songItems.sort((a, b) =>
           compareBestItems(a, b, sortType, mode, descending: descending));
@@ -383,7 +375,7 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                           style: TextStyle(
                               color: FloorPop.of(context).haze,
                               fontWeight: FontWeight.w600,
-                              fontSize: 14))
+                              fontSize: 12))
                       : const SizedBox.shrink(),
                 ),
               ),

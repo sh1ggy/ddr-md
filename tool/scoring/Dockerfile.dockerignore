@@ -1,0 +1,6 @@
+**
+!tool/
+!tool/scoring/
+!tool/scoring/**
+**/__pycache__/
+**/*.pyc
