@@ -219,6 +219,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   late List<WrapCard> _cards = wrapCards(widget.gains);
   // Into [_beats]; after the cards, the binder they go into.
   int _beat = 0;
+  int _furthestBeat = 0;
   // The beats as they stood on leaving the first, so cheers landing later
   // don't shift the one on screen.
   List<_Beat>? _shown;
@@ -336,6 +337,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
       setState(() {
         _shown = beats;
         _beat++;
+        _furthestBeat = math.max(_furthestBeat, _beat);
       });
     } else if (beats[_beat] == _Beat.pack) {
       _intoBinder();
@@ -385,6 +387,16 @@ class _SessionWrapPageState extends State<SessionWrapPage>
     final circle = context.watch<CircleState>();
     final beats = _beats(circle);
     final beat = beats[_beat];
+    final pageLabels = [
+      for (final page in beats)
+        switch (page) {
+          _Beat.verdict => 'Summary',
+          _Beat.goal => 'Goal',
+          _Beat.circle => 'Cheers',
+          _Beat.pack => 'Cards',
+        },
+      if (n > 0) 'Binder',
+    ];
     final action = switch (_beat) {
       0 when _collecting => _summary == null
           ? 'Collecting your plays'
@@ -431,16 +443,45 @@ class _SessionWrapPageState extends State<SessionWrapPage>
               ]),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(spacing: 6, children: [
-                for (var i = 0; i < beats.length + (n == 0 ? 0 : 1); i++)
+                for (final (i, label) in pageLabels.indexed)
                   Expanded(
-                      child: AnimatedContainer(
-                          duration: FloorPop.eighth,
-                          height: 4,
-                          decoration: BoxDecoration(
-                              color: i <= _beat ? FloorPop.volt : pop.line,
-                              borderRadius: BorderRadius.circular(2)))),
+                    child: Semantics(
+                      label: label,
+                      button: i < beats.length,
+                      selected: i == _beat,
+                      enabled: i < beats.length ? i <= _furthestBeat : null,
+                      child: Tooltip(
+                        message: label,
+                        excludeFromSemantics: true,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: i <= _furthestBeat
+                              ? () => setState(() => _beat = i)
+                              : null,
+                          child: SizedBox(
+                            height: 44,
+                            child: Center(
+                              child: AnimatedContainer(
+                                duration: FloorPop.eighth,
+                                width: double.infinity,
+                                height: i == _beat ? 6 : 4,
+                                decoration: BoxDecoration(
+                                  color: i == _beat
+                                      ? pop.voltText
+                                      : i <= _furthestBeat
+                                          ? pop.voltText.withValues(alpha: .55)
+                                          : pop.line,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ]),
             ),
             Expanded(
@@ -476,23 +517,11 @@ class _SessionWrapPageState extends State<SessionWrapPage>
             bottom: 0,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Row(children: [
-                if (_beat > 0) ...[
-                  IconButton.filledTonal(
-                      tooltip: 'Back',
-                      iconSize: 24,
-                      onPressed: () => setState(() => _beat--),
-                      icon: const Icon(Icons.arrow_back_rounded)),
-                  const SizedBox(width: 10),
-                ],
-                Expanded(
-                  child: VoltButton(
-                      onPressed: _beat == 0 && _collecting ? null : _next,
-                      child: action == null
-                          ? const Icon(Icons.arrow_forward_rounded, size: 28)
-                          : Text(action, style: FloorPop.display(16))),
-                ),
-              ]),
+              child: VoltButton(
+                  onPressed: _beat == 0 && _collecting ? null : _next,
+                  child: action == null
+                      ? const Icon(Icons.arrow_forward_rounded, size: 28)
+                      : Text(action, style: FloorPop.display(16))),
             ),
           ),
         ]),
