@@ -39,11 +39,17 @@ class JacketEdition extends StatefulWidget {
       required this.child,
       this.options = defaultEditionOptions,
       this.frozenLight,
+      this.interactive = true,
+      this.maxFrameWidth = double.infinity,
       this.layers = editionAllLayers});
   final EditionFacts facts;
   final Widget child;
   final EditionOptions options;
   final Offset? frozenLight;
+  // Covers keep their light sweep without responding to taps or drags.
+  final bool interactive;
+  // Keep wide covers' frames clear of their content padding.
+  final double maxFrameWidth;
   // Which of the card's layers to draw; the guide pulls them apart.
   final Set<EditionLayer> layers;
   @override
@@ -134,11 +140,81 @@ class _JacketEditionState extends State<JacketEdition>
       var geometry = _geometry;
       if (geometry == null ||
           geometry.size != size ||
+          geometry.maxFrameWidth != widget.maxFrameWidth ||
           geometry.recipe != _recipe) {
         geometry?.dispose();
-        geometry = _geometry = EditionGeometry(_recipe, size);
+        geometry = _geometry =
+            EditionGeometry(_recipe, size, maxFrameWidth: widget.maxFrameWidth);
       }
       final staticGeometry = geometry;
+      final card = RepaintBoundary(
+          child:
+              Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
+        if (widget.layers.contains(EditionLayer.frame))
+          RepaintBoundary(
+              child: CustomPaint(
+                  painter: EditionStaticPainter(staticGeometry,
+                      ring: !widget.layers.contains(EditionLayer.art)))),
+        if (widget.layers.contains(EditionLayer.art))
+          Padding(
+              padding: EdgeInsets.all(geometry.width),
+              child: ClipPath(
+                  clipper: EditionClipper(geometry.inner
+                      .shift(Offset(-geometry.width, -geometry.width))),
+                  child: RepaintBoundary(
+                      key: const ValueKey('edition-art'),
+                      child: _recipe.negative
+                          ? ColorFiltered(
+                              colorFilter: editionNegative, child: widget.child)
+                          : widget.child))),
+        if (widget.layers.contains(EditionLayer.finish))
+          IgnorePointer(
+              child: RepaintBoundary(
+                  child: CustomPaint(
+                      painter: EditionStaticPainter(staticGeometry,
+                          foreground: true)))),
+        // Only this sibling listens to light. The decoded image and both
+        // display lists retain separate layers throughout a sweep.
+        IgnorePointer(
+            child: RepaintBoundary(
+                child: CustomPaint(
+                    painter: EditionLightPainter(staticGeometry, _motion,
+                        layers: widget.layers),
+                    foregroundPainter: EditionFlarePainter(
+                        staticGeometry, _motion, widget.layers)))),
+        // Flare without its sticker: the chip in the art's corner.
+        if (_recipe.flareStamp == null && _recipe.flareIndex >= 0)
+          EditionFlareChip(
+              geometry: geometry,
+              side: .16,
+              lift: EditionFooter.shows(_recipe)
+                  ? size.height * editionFooterHeight
+                  : 0),
+        if (_recipe.gradeStamp != null || _recipe.flareStamp != null)
+          Positioned(
+              left: geometry.width + 8,
+              right: geometry.width + 8,
+              top: geometry.width + 8,
+              child: IgnorePointer(
+                  child: RepaintBoundary(
+                      child: EditionAchievementStamps(
+                          recipe: _recipe, motion: _motion)))),
+        if (EditionFooter.shows(_recipe))
+          Positioned(
+              left: geometry.width,
+              right: geometry.width,
+              bottom: geometry.width,
+              height: size.height * editionFooterHeight,
+              child: IgnorePointer(
+                  child: EditionFooter(
+                      recipe: _recipe,
+                      clip: geometry.inner.shift(Offset(
+                          -geometry.width,
+                          geometry.width +
+                              size.height * editionFooterHeight -
+                              size.height))))),
+      ]));
+      if (!widget.interactive) return card;
       return MouseRegion(
         onHover: (e) => _motion.point(e.localPosition, size),
         onExit: (_) => _motion.release(),
@@ -157,79 +233,7 @@ class _JacketEditionState extends State<JacketEdition>
                     ..rotateX(-_motion.tilt.dy * editionTiltRadians)
                     ..rotateY(_motion.tilt.dx * editionTiltRadians),
                   child: child),
-              child: RepaintBoundary(
-                  child: Stack(
-                      fit: StackFit.expand,
-                      clipBehavior: Clip.none,
-                      children: [
-                    if (widget.layers.contains(EditionLayer.frame))
-                      RepaintBoundary(
-                          child: CustomPaint(
-                              painter: EditionStaticPainter(staticGeometry,
-                                  ring: !widget.layers
-                                      .contains(EditionLayer.art)))),
-                    if (widget.layers.contains(EditionLayer.art))
-                      Padding(
-                          padding: EdgeInsets.all(geometry.width),
-                          child: ClipPath(
-                              clipper: EditionClipper(geometry.inner.shift(
-                                  Offset(-geometry.width, -geometry.width))),
-                              child: RepaintBoundary(
-                                  key: const ValueKey('edition-art'),
-                                  child: _recipe.negative
-                                      ? ColorFiltered(
-                                          colorFilter: editionNegative,
-                                          child: widget.child)
-                                      : widget.child))),
-                    if (widget.layers.contains(EditionLayer.finish))
-                      IgnorePointer(
-                          child: RepaintBoundary(
-                              child: CustomPaint(
-                                  painter: EditionStaticPainter(staticGeometry,
-                                      foreground: true)))),
-                    // Only this sibling listens to light. The decoded image and both
-                    // display lists retain separate layers throughout a sweep.
-                    IgnorePointer(
-                        child: RepaintBoundary(
-                            child: CustomPaint(
-                                painter: EditionLightPainter(
-                                    staticGeometry, _motion,
-                                    layers: widget.layers),
-                                foregroundPainter: EditionFlarePainter(
-                                    staticGeometry, _motion, widget.layers)))),
-                    // Flare without its sticker: the chip in the art's corner.
-                    if (_recipe.flareStamp == null && _recipe.flareIndex >= 0)
-                      EditionFlareChip(
-                          geometry: geometry,
-                          side: .16,
-                          lift: EditionFooter.shows(_recipe)
-                              ? size.height * editionFooterHeight
-                              : 0),
-                    if (_recipe.gradeStamp != null ||
-                        _recipe.flareStamp != null)
-                      Positioned(
-                          left: geometry.width + 8,
-                          right: geometry.width + 8,
-                          top: geometry.width + 8,
-                          child: IgnorePointer(
-                              child: RepaintBoundary(
-                                  child: EditionAchievementStamps(
-                                      recipe: _recipe, motion: _motion)))),
-                    if (EditionFooter.shows(_recipe))
-                      Positioned(
-                          left: geometry.width,
-                          right: geometry.width,
-                          bottom: geometry.width,
-                          height: size.height * editionFooterHeight,
-                          child: IgnorePointer(
-                              child: EditionFooter(
-                                  recipe: _recipe,
-                                  clip: geometry.inner.shift(Offset(
-                                      -geometry.width,
-                                      geometry.width +
-                                          size.height * editionFooterHeight -
-                                          size.height))))),
-                  ]))),
+              child: card),
         ),
       );
     });

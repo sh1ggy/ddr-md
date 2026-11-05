@@ -9,6 +9,10 @@ import 'package:ddr_md/components/song/jacket_edition/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_viewer.dart';
 import 'package:ddr_md/components/song/jacket_edition/compact_jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_model.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_rules.dart';
+import 'package:ddr_md/components/song/jacket_edition/edition_painter.dart';
+import 'package:ddr_md/models/chart_achievements.dart';
+import 'package:ddr_md/components/songlist/best_rings.dart';
 import 'package:flutter/gestures.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/chart_bests.dart';
@@ -24,6 +28,179 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
+  testWidgets('complete covers earn finish and weakest frame independently',
+      (tester) async {
+    await tester.runAsync(() async {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      SharedPreferences.setMockInitialValues({});
+      await Settings.init();
+      final db = await DatabaseProvider.open(inMemoryDatabasePath);
+      final originalSongs = Songs.list;
+      SongInfo song(String name) => SongInfo.fromJson({
+            'name': name,
+            'title': name,
+            'version': 'DDR WORLD',
+            'sp': {'hard': 14},
+            'dp': <String, dynamic>{}
+          });
+      Songs.list = [song('a'), song('b')];
+      final state = SongState();
+      try {
+        await DatabaseProvider.withTestDatabase(db, () async {
+          Future<void> show() async {
+            await tester.pumpWidget(ChangeNotifierProvider.value(
+                value: state,
+                child: MaterialApp(
+                    key: UniqueKey(),
+                    theme: floorPopTheme(Brightness.dark),
+                    home: const EditionBinderPage(level: 14))));
+            for (var i = 0; i < 8; i++) {
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+              await tester.pump(const Duration(milliseconds: 50));
+            }
+            expect(tester.takeException(), isNull);
+          }
+
+          Offset? countPosition;
+          for (final (rank, lamp, finish, frame) in [
+            ('AAA', ClearLamp.clear, EditionFinish.prism, EditionFrame.stock),
+            ('AA', ClearLamp.pfc, EditionFinish.print, EditionFrame.gold),
+            ('AAA', ClearLamp.pfc, EditionFinish.prism, EditionFrame.gold),
+          ]) {
+            await DatabaseProvider.saveScoreRecords([
+              for (final name in ['a', 'b'])
+                ScoreRecord(
+                    id: name,
+                    source: ScoreRecordSource.manual,
+                    song: name,
+                    title: name,
+                    mode: Modes.singles,
+                    difficulty: 'EXPERT',
+                    score: rank == 'AAA' ? 995000 : 960000,
+                    rank: rank,
+                    clearLamp: lamp,
+                    flareRank: 'EX',
+                    updatedAt: DateTime(2026)),
+            ]);
+            await show();
+            final cover =
+                tester.widget<JacketEdition>(find.byType(JacketEdition));
+            final recipe = resolveEdition(cover.facts, cover.options);
+            expect((recipe.finish, recipe.frame), (finish, frame));
+            final geometry = EditionGeometry(recipe, const Size(488, 700),
+                maxFrameWidth: cover.maxFrameWidth);
+            expect(geometry.width, lessThanOrEqualTo(14));
+            geometry.dispose();
+            expect((
+              recipe.motif,
+              recipe.tier,
+              recipe.flareIndex,
+              recipe.negative,
+              recipe.difficultyShape
+            ), (
+              EditionMotif.neutral,
+              null,
+              -1,
+              false,
+              0
+            ));
+            expect(cover.interactive, isFalse);
+            expect(cover.layers,
+                {EditionLayer.art, EditionLayer.frame, EditionLayer.finish});
+            expect(find.byType(EditionFooter), findsNothing);
+            expect(find.byKey(const ValueKey('edition-grade-stamp')),
+                findsNothing);
+            final position = tester.getTopLeft(find.text('2/2'));
+            countPosition ??= position;
+            expect(position, countPosition);
+          }
+
+          final originalSize = tester.view.physicalSize;
+          final originalRatio = tester.view.devicePixelRatio;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = const Size(350, 540);
+          await show();
+          expect(tester.widget<BestTiers>(find.byType(BestTiers)).columns, 2);
+          tester.view.physicalSize = originalSize;
+          tester.view.devicePixelRatio = originalRatio;
+
+          final divider =
+              binderPages(Modes.singles).whereType<BinderDivider>().single;
+          BinderDivider precisionFloor(List<PrecisionAward> awards) =>
+              BinderDivider(14, pockets: [
+                for (final (i, p) in divider.pockets.indexed)
+                  (
+                    song: p.song,
+                    difficulty: p.difficulty,
+                    best: p.best,
+                    card: EditionFacts(chart: p.card!.chart, precision: (
+                      award: awards[i],
+                      sourceRowId: '$i',
+                      perfects: null
+                    ))
+                  )
+              ]);
+          expect(
+              resolveEdition(
+                      precisionFloor([PrecisionAward.mfc, PrecisionAward.sdp])
+                          .coverFacts!)
+                  .frame,
+              EditionFrame.platinum);
+          expect(
+              resolveEdition(
+                      precisionFloor([PrecisionAward.mfc, PrecisionAward.mfc])
+                          .coverFacts!)
+                  .frame,
+              EditionFrame.rainbow);
+
+          await Settings.setInt(Settings.jacketEffectsOffKey, 1);
+          await Settings.setInt(Settings.jacketMotionOffKey, 1);
+          await show();
+          final off = tester.widget<JacketEdition>(find.byType(JacketEdition));
+          expect(off.options.effects, isFalse);
+          expect(off.options.motion, isFalse);
+          expect(
+              find.descendant(
+                  of: find.byType(JacketEdition),
+                  matching: find.byType(CustomPaint)),
+              findsNothing);
+          expect(tester.getTopLeft(find.text('2/2')), countPosition);
+          await Settings.setInt(Settings.jacketEffectsOffKey, 0);
+
+          Songs.list = [...Songs.list, song('c')];
+          await show();
+          expect(find.byType(JacketEdition), findsNothing);
+          expect(find.text('2/3'), findsOneWidget);
+          await DatabaseProvider.saveScoreRecords([
+            ScoreRecord(
+                id: 'c',
+                source: ScoreRecordSource.manual,
+                song: 'c',
+                title: 'c',
+                mode: Modes.singles,
+                difficulty: 'EXPERT',
+                score: 960000,
+                rank: 'AA',
+                clearLamp: ClearLamp.gfc,
+                flareRank: '',
+                updatedAt: DateTime(2026))
+          ]);
+          await show();
+          expect(find.byType(JacketEdition), findsNothing);
+          expect(find.text('3/3'), findsOneWidget);
+          await tester.pumpWidget(const SizedBox());
+        });
+      } finally {
+        Songs.list = originalSongs;
+        state.dispose();
+        await db.close();
+      }
+    });
+  });
+
   testWidgets('dividers and sheets by level, gaps as empty pockets',
       (tester) async {
     await tester.runAsync(() async {
