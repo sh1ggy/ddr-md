@@ -150,6 +150,8 @@ class Settings {
 
   // The songlist's sort: a SortType index, and 1 for descending.
   static const String songlistSortKey = "songlistSort";
+  // Migration key for the first tier test build; now uses the Level sort.
+  static const String songlistCalculatedSortKey = "songlistCalculatedSort";
   static const String songlistSortDescKey = "songlistSortDesc";
 
   static const String rivalCodeSpeedKey = "rivalCode";

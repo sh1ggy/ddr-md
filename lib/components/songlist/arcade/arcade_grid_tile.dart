@@ -264,7 +264,12 @@ class ArcadeGridTile extends StatelessWidget {
           height: kSongListLevelHeight,
           // Fixed columns don't fit all five on a narrow tile.
           packed: true,
-          highlightIndex: item.isChartScoped ? item.difficultyIndex : null),
+          highlightIndex: item.isChartScoped ? item.difficultyIndex : null,
+          highlightTier: item.isChartScoped
+              ? item.songInfo
+                  .scoringTierFor(mode, item.difficultyIndex!)
+                  ?.hundredths
+              : null),
     );
   }
 

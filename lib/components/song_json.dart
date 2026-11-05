@@ -31,6 +31,7 @@ class SongInfo {
   List<Chart> charts;
   Sync? sync;
   Sync? arcadeSync;
+  ScoringTiers? scoringTiers;
 
   /// The song's bar lengths, when it isn't plain 4/4 from beat 0 (empty then).
   List<TimeSignature> timeSignatures;
@@ -55,6 +56,7 @@ class SongInfo {
     required this.charts,
     this.sync,
     this.arcadeSync,
+    this.scoringTiers,
     this.timeSignatures = const [],
   });
 
@@ -86,6 +88,19 @@ class SongInfo {
         (mode == Modes.singles ? singles : doubles).availableTypes;
     if (available.isEmpty) return charts.first;
     return chartFor(available[chosenDifficulty.clamp(0, available.length - 1)]);
+  }
+
+  /// Calculated scoring difficulty for the same available-chart index as the
+  /// picker. A rating must belong to this chart's current official folder.
+  ScoringTier? scoringTierFor(Modes mode, int chosenDifficulty) {
+    final levels = mode == Modes.singles ? singles : doubles;
+    final available = levels.availableTypes;
+    if (available.isEmpty) return null;
+    final key = available[chosenDifficulty.clamp(0, available.length - 1)];
+    final entry = (mode == Modes.singles
+        ? scoringTiers?.singles
+        : scoringTiers?.doubles)?[key];
+    return entry?.tier.floor() == levels.toJson()[key] ? entry : null;
   }
 
   /// Radar for the chart at [chosenDifficulty], which indexes the non-null
@@ -142,6 +157,7 @@ class SongInfo {
         (json["charts"] ?? json["chart"] ?? []).map((x) => Chart.fromJson(x)),
       ),
 
+      scoringTiers: ScoringTiers.tryParse(json["scoring_tiers"]),
       sync: json["sync"] == null ? null : Sync.fromJson(json["sync"]),
       arcadeSync: json["arcade_sync"] == null
           ? null
@@ -153,6 +169,7 @@ class SongInfo {
   }
 
   Map<String, dynamic> toJson() => {
+        if (scoringTiers != null) "scoring_tiers": scoringTiers!.toJson(),
         "ssc": ssc,
         "version": version,
         "name": name,
@@ -422,7 +439,7 @@ enum SortType {
   flare,
   lamp;
 
-  bool get isBest => index >= score.index;
+  bool get isBest => this == score || this == flare || this == lamp;
 
   /// Rows stand for one chart each, not a song.
   bool get isChartScoped => this == level || isBest;
@@ -475,4 +492,89 @@ class Difficulty {
         (index: i, level: levels[types[i]] as int),
     ];
   }
+}
+
+/// A tier's hundredths as its shortest exact decimal digits: 90 → "9",
+/// 85 → "85", 5 → "05", 0 → "0".
+String decimalDigits(int hundredths) => hundredths % 10 == 0
+    ? '${hundredths ~/ 10}'
+    : hundredths.toString().padLeft(2, '0');
+
+/// Optional chart-content predictions, independent of player achievements.
+class ScoringTiers {
+  const ScoringTiers(
+      {required this.model,
+      required this.engine,
+      required this.singles,
+      required this.doubles});
+  final String model;
+  final String engine;
+  final Map<String, ScoringTier> singles;
+  final Map<String, ScoringTier> doubles;
+
+  static ScoringTiers? tryParse(dynamic value) {
+    if (value is! Map ||
+        value['schema'] != 1 ||
+        value['model'] is! String ||
+        (value['model'] as String).isEmpty) {
+      return null;
+    }
+    Map<String, ScoringTier> entries(dynamic raw) => {
+          if (raw is Map)
+            for (final e in raw.entries)
+              if (e.key is String)
+                if (ScoringTier.tryParse(e.value) case final tier?)
+                  e.key as String: tier,
+        };
+    return ScoringTiers(
+        model: value['model'],
+        engine: value['engine'] is String ? value['engine'] : '',
+        singles: entries(value['sp']),
+        doubles: entries(value['dp']));
+  }
+
+  Map<String, dynamic> toJson() => {
+        'schema': 1,
+        'model': model,
+        if (engine.isNotEmpty) 'engine': engine,
+        'sp': singles.map((k, v) => MapEntry(k, v.toJson())),
+        if (doubles.isNotEmpty)
+          'dp': doubles.map((k, v) => MapEntry(k, v.toJson())),
+      };
+}
+
+class ScoringTier {
+  const ScoringTier(
+      {required this.tier, required this.position, required this.inputHash});
+  final double tier;
+  final double position;
+  final String inputHash;
+  // Hundredths past the level, e.g. 90 for 14.90.
+  int get hundredths => (tier * 100).round() % 100;
+  // Shortest exact decimal, e.g. 14.9, 14.85.
+  String get label => '${tier.floor()}.${decimalDigits(hundredths)}';
+
+  static ScoringTier? tryParse(dynamic value) {
+    if (value is! Map ||
+        value['tier'] is! num ||
+        value['position'] is! num ||
+        value['input_hash'] is! String) {
+      return null;
+    }
+    final tier = (value['tier'] as num).toDouble();
+    final position = (value['position'] as num).toDouble();
+    if (!tier.isFinite || !position.isFinite || tier < 1 || tier >= 20) {
+      return null;
+    }
+    final step = tier.floor() == 19 ? 10 : 5;
+    final hundredths = (tier * 100).round();
+    if ((tier * 100 - hundredths).abs() > .00001 || hundredths % step != 0) {
+      return null;
+    }
+    return ScoringTier(
+        tier: tier, position: position, inputHash: value['input_hash']);
+  }
+
+  Map<String, dynamic> toJson() =>
+      {'tier': tier, 'position': position, 'input_hash': inputHash};
 }

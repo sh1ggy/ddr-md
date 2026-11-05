@@ -101,16 +101,16 @@ class _SongListItemState extends State<SongListItem> {
       children: [
         Text(widget.songInfo.charts[0].bpmRange),
         _syncAdjust(context),
-        // The song's flare group, what the cabinet sorts folders and flare
-        // skill by.
-        if (flareGroup(canonicalVersion(widget.songInfo.version))
-            case final group?)
-          Text(group.label,
-              style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                  color: group
-                      .color(Theme.of(context).brightness == Brightness.dark))),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          if (flareGroup(canonicalVersion(widget.songInfo.version))
+              case final group?)
+            Text(group.label,
+                style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    color: group.color(
+                        Theme.of(context).brightness == Brightness.dark))),
+        ]),
       ],
     );
     // Fixed height so every row is the same size; a song without a
@@ -147,7 +147,12 @@ class _SongListItemState extends State<SongListItem> {
               difficulty: mode == Modes.singles
                   ? widget.songInfo.singles
                   : widget.songInfo.doubles,
-              highlightIndex: widget.difficultyIndex),
+              highlightIndex: widget.difficultyIndex,
+              highlightTier: scoped
+                  ? widget.songInfo
+                      .scoringTierFor(mode, widget.difficultyIndex!)
+                      ?.hundredths
+                  : null),
         ],
       ),
     );

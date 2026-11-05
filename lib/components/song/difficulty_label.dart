@@ -10,7 +10,10 @@ library;
 
 import 'dart:convert';
 
-import 'package:ddr_md/components/song_json.dart' show Difficulty;
+import 'package:ddr_md/theme.dart';
+
+import 'package:ddr_md/components/song_json.dart'
+    show Difficulty, decimalDigits;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames;
 import 'package:flutter/material.dart';
@@ -77,10 +80,14 @@ class LevelNumber extends StatelessWidget {
     this.height = kLevelHeight,
     this.dimmed = false,
     this.suffix,
+    this.decimalHundredths,
   });
 
   final int level;
   final int? suffix;
+
+  /// Precise scoring fraction, separate from the legacy material suffix.
+  final int? decimalHundredths;
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final double height;
@@ -106,6 +113,26 @@ class LevelNumber extends StatelessWidget {
                   outline: Colors.white)));
     }
 
+    // The scoring tier rides on the numeral as a raised Volt decimal.
+    if (decimalHundredths case final fraction?) {
+      final digits = decimalDigits(fraction);
+      final pop = Theme.of(context).extension<FloorPop>();
+      return Semantics(
+        label: '$level.$digits',
+        child: ExcludeSemantics(
+            child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              numeral(level),
+              Text('.$digits',
+                  style: FloorPop.readout(height * .62,
+                      color: (pop?.voltText ??
+                              Theme.of(context).colorScheme.primary)
+                          .withValues(alpha: dimmed ? .35 : 1))),
+            ])),
+      );
+    }
     if (suffix == null) return numeral(level);
     final fractionalHeight = height * .62;
     return Semantics(
@@ -131,11 +158,14 @@ class LevelRow extends StatelessWidget {
       {super.key,
       required this.levels,
       this.highlightIndex,
+      this.highlightTier,
       this.height = kLevelHeight,
       this.packed = false});
 
   final Difficulty levels;
   final int? highlightIndex;
+  // The highlighted chart's scoring tier hundredths, drawn on its numeral.
+  final int? highlightTier;
   final double height;
   // Charted levels sit side by side with an even gap instead of in fixed
   // columns, for spaces too narrow for all five slots.
@@ -159,6 +189,7 @@ class LevelRow extends StatelessWidget {
             level: level,
             difficulty: kInGameDifficultyNames[key]!,
             height: height,
+            decimalHundredths: i == highlightIndex ? highlightTier : null,
             dimmed: highlightIndex != null && i != highlightIndex);
       }
       if (packed) {
@@ -167,12 +198,34 @@ class LevelRow extends StatelessWidget {
         cells.add(child);
         continue;
       }
+      // Let the tier take only the space its digits need, with the same
+      // small gap before the next difficulty as the packed row.
+      if (level != null &&
+          highlightTier != null &&
+          charted - 1 == highlightIndex) {
+        cells.add(SizedBox(
+            height: height,
+            child: Padding(
+                padding: EdgeInsets.only(right: height * .25),
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: 1,
+                    child: child))));
+        continue;
+      }
       cells.add(SizedBox(
           width: slot,
           height: height,
           child: Align(alignment: Alignment.centerLeft, child: child)));
     }
-    return Row(mainAxisSize: MainAxisSize.min, children: cells);
+    // Keep the tier and the other difficulties together on narrow list rows
+    // and jacket tiles, shrinking only when their natural width cannot fit.
+    return SizedBox(
+        height: height,
+        child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(mainAxisSize: MainAxisSize.min, children: cells)));
   }
 }
 
