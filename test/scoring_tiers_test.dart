@@ -160,9 +160,10 @@ void main() {
                   )),
             )),
           );
-          if (missingArt)
+          if (missingArt) {
             app =
                 DefaultAssetBundle(bundle: MissingDifficultyArt(), child: app);
+          }
           await tester.pumpWidget(app);
           if (!missingArt) {
             await tester.runAsync(() async {
