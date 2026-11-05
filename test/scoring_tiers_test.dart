@@ -130,6 +130,65 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('tier decimals leave a compact gap before the next difficulty',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    final levels = Difficulty.fromJson({
+      'beginner': 4,
+      'easy': 10,
+      'medium': 14,
+      'hard': 17,
+      'challenge': 18,
+    });
+    for (final missingArt in [false, true]) {
+      for (final packed in [false, true]) {
+        final availableWidth = packed ? 92.0 : 140.0;
+        for (final fraction in [5, 90, 95]) {
+          Widget app = MaterialApp(
+            theme: floorPopTheme(Brightness.dark),
+            home: Scaffold(
+                body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                  width: availableWidth,
+                  child: LevelRow(
+                    packed: packed,
+                    levels: levels,
+                    height: 14,
+                    highlightIndex: 2,
+                    highlightTier: fraction,
+                  )),
+            )),
+          );
+          if (missingArt)
+            app =
+                DefaultAssetBundle(bundle: MissingDifficultyArt(), child: app);
+          await tester.pumpWidget(app);
+          if (!missingArt) {
+            await tester.runAsync(() async {
+              final context = tester.element(find.byType(LevelRow));
+              await Future.wait(tester
+                  .widgetList<Image>(find.byType(Image))
+                  .map((image) => precacheImage(image.image, context)));
+            });
+          }
+          await tester.pumpAndSettle();
+          final numbers = find.byType(LevelNumber);
+          expect(numbers, findsNWidgets(5));
+          final highlighted = tester.getRect(numbers.at(2));
+          final following = tester.getRect(numbers.at(3));
+          expect(following.left - highlighted.right, inInclusiveRange(1, 4));
+          expect(tester.getRect(numbers.last).right,
+              lessThanOrEqualTo(availableWidth + .001));
+          expect(find.bySemanticsLabel('14.${decimalDigits(fraction)}'),
+              findsOneWidget);
+          expect(tester.takeException(), isNull);
+        }
+      }
+    }
+    semantics.dispose();
+  });
+
   test('Level sort orders tiers within official folders, missing ratings last',
       () {
     SongItem item(String name, double? tier, {int level = 14}) {

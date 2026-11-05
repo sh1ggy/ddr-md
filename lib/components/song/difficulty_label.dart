@@ -198,18 +198,19 @@ class LevelRow extends StatelessWidget {
         cells.add(child);
         continue;
       }
-      // A slot carrying a decimal widens by a fixed amount, so the same
-      // chart lines up on every row whatever its digits.
+      // Let the tier take only the space its digits need, with the same
+      // small gap before the next difficulty as the packed row.
       if (level != null &&
           highlightTier != null &&
           charted - 1 == highlightIndex) {
-        cells.add(ConstrainedBox(
-            constraints: BoxConstraints(
-                minWidth: slot + height * 1.3, maxHeight: height),
-            child: Align(
-                alignment: Alignment.centerLeft,
-                widthFactor: 1,
-                child: child)));
+        cells.add(SizedBox(
+            height: height,
+            child: Padding(
+                padding: EdgeInsets.only(right: height * .25),
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: 1,
+                    child: child))));
         continue;
       }
       cells.add(SizedBox(
@@ -217,7 +218,14 @@ class LevelRow extends StatelessWidget {
           height: height,
           child: Align(alignment: Alignment.centerLeft, child: child)));
     }
-    return Row(mainAxisSize: MainAxisSize.min, children: cells);
+    // Keep the tier and the other difficulties together on narrow list rows
+    // and jacket tiles, shrinking only when their natural width cannot fit.
+    return SizedBox(
+        height: height,
+        child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(mainAxisSize: MainAxisSize.min, children: cells)));
   }
 }
 
