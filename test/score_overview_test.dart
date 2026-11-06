@@ -62,6 +62,10 @@ void main() {
     expect(
         skill.groups[FlareGroup.gold]!.map((r) => r.song), ['g', 'prefixed']);
 
+    expect(skill.floor(FlareGroup.classic), 110);
+    expect(skill.floor(FlareGroup.gold), isNull);
+    expect(skill.lowestFloor, FlareGroup.white);
+
     final levels = chartsByLevel(records, songs, Modes.singles);
     expect(levels[15]!.charts, 44);
     expect(levels[15]!.played.length, 43);

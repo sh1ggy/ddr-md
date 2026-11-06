@@ -13,6 +13,8 @@ import 'package:ddr_md/components/song/difficulty_label.dart'
     show LevelNumber, LevelPicker;
 import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/songlist/flare_card.dart';
+import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/grades.dart'
     show
         Grade,
@@ -115,7 +117,8 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
                   onChanged: (m) => setState(() => _mode = m),
                 ),
               ),
-              _FlareCard(flareSkill(data.records, Songs.list, _mode)),
+              _FlareCard(flareSkill(data.records, Songs.list, _mode),
+                  key: ValueKey(_mode)),
               _LevelsCard(levels, key: _levelsKey, initial: widget.level),
               _LevelStatsCard(levels, initial: widget.level),
               _ActivityCard(playsPerDay(data.plays, data.records)),
@@ -130,122 +133,257 @@ class _ScoreOverviewPageState extends State<ScoreOverviewPage> {
 String _thousands(int n) =>
     n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+$)'), (_) => ',');
 
-class _FlareCard extends StatelessWidget {
-  const _FlareCard(this.skill);
+/// The class and its progress, then one tile per group. Tapping a tile swaps
+/// the single chart list under them, which opens on the lowest floor.
+class _FlareCard extends StatefulWidget {
+  const _FlareCard(this.skill, {super.key});
 
   final FlareSkill skill;
 
   @override
+  State<_FlareCard> createState() => _FlareCardState();
+}
+
+class _FlareCardState extends State<_FlareCard> {
+  FlareGroup? _picked;
+
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
+    final skill = widget.skill;
+    final pop = FloorPop.of(context);
     final total = skill.total;
     final cls = flareClass(total);
+    final next = cls.next;
+    final picked = _picked ?? skill.lowestFloor;
+    final rankColor = flareClassColor(cls.name);
+    final track = FloorPop.readout(13, color: pop.haze);
     return HomeCard(
       title: 'Flare Skill',
       icon: Icons.local_fire_department_outlined,
       children: [
-        Center(
-            child: Image.asset(flareClassIcon(cls.name),
-                width: 96, filterQuality: FilterQuality.medium)),
-        Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(_thousands(total),
-                  style: theme.textTheme.headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(width: 10),
-              Text(cls.name,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                      color: flareClassColor(cls.name))),
+        Row(children: [
+          DecoratedBox(
+            decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [
+              BoxShadow(color: rankColor.withValues(alpha: 0.5), blurRadius: 14)
             ]),
-        if (cls.next != null)
-          Text('${_thousands(cls.next! - total)} to the next class',
-              textAlign: TextAlign.center, style: TextStyle(color: muted)),
-        const SizedBox(height: 4),
-        for (final g in FlareGroup.values)
-          Theme(
-            // No dividers around an open group.
-            data: theme.copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              childrenPadding: EdgeInsets.zero,
-              title: Row(children: [
-                SizedBox(
-                    width: 84,
-                    child: Text(g.label,
-                        softWrap: false,
-                        style: const TextStyle(fontWeight: FontWeight.w600))),
-                Expanded(
-                  child: LinearProgressIndicator(
-                    value: skill.groups[g]!.length / kFlareChartsPerGroup,
-                    minHeight: 6,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-                SizedBox(
-                    width: 64,
-                    child: Text(_thousands(skill.groupTotal(g)),
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                            fontFeatures: [FontFeature.tabularFigures()]))),
-              ]),
-              subtitle: Text(
-                  '${skill.groups[g]!.length} of $kFlareChartsPerGroup charts',
-                  style: TextStyle(fontSize: 12, color: muted)),
-              children: [
-                for (final r in skill.groups[g]!) _FlareChartRow(r),
-              ],
-            ),
+            child: Image.asset(flareClassIcon(cls.name),
+                width: 40, filterQuality: FilterQuality.medium),
           ),
+          const SizedBox(width: 8),
+          Text(_thousands(total),
+              style: FloorPop.display(22, color: rankColor)),
+          const Spacer(),
+          Text(cls.name,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                  color: rankColor)),
+        ]),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: next == null ? 1 : (total - cls.from) / (next - cls.from),
+          minHeight: 6,
+          borderRadius: BorderRadius.circular(3),
+          color: rankColor,
+          backgroundColor: pop.riser,
+        ),
+        const SizedBox(height: 3),
+        Row(children: [
+          Expanded(child: Text(_thousands(cls.from), style: track)),
+          Text(
+              next == null
+                  ? 'Top class'
+                  : '${_thousands(next - total)} to ${flareClass(next).name}',
+              style: track.copyWith(color: rankColor)),
+          Expanded(
+              child: Text(next == null ? '' : _thousands(next),
+                  textAlign: TextAlign.right, style: track)),
+        ]),
+        const SizedBox(height: 8),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          for (final g in FlareGroup.values) ...[
+            if (g != FlareGroup.values.first) const SizedBox(width: 6),
+            Expanded(
+              child: _FlareGroupTile(
+                group: g,
+                skill: skill,
+                selected: g == picked,
+                onTap: () => setState(() => _picked = g),
+              ),
+            ),
+          ],
+        ]),
+        _FlareCharts(skill.groups[picked]!),
       ],
     );
   }
 }
 
-class _FlareChartRow extends StatelessWidget {
-  const _FlareChartRow(this.record);
+class _FlareGroupTile extends StatelessWidget {
+  const _FlareGroupTile({
+    required this.group,
+    required this.skill,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final FlareGroup group;
+  final FlareSkill skill;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final pop = FloorPop.of(context);
+    final charts = skill.groups[group]!;
+    final radius = BorderRadius.circular(12);
+    return Semantics(
+      selected: selected,
+      child: Material(
+        color: selected ? pop.riser : pop.stage,
+        shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(
+                width: 2, color: selected ? pop.voltText : Colors.transparent)),
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(group.label,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                      color: group.color(theme.brightness == Brightness.dark))),
+              const SizedBox(height: 2),
+              Text(_thousands(skill.groupTotal(group)),
+                  style:
+                      FloorPop.readout(16, color: theme.colorScheme.onSurface)),
+              const SizedBox(height: 5),
+              SizedBox(
+                height: 10,
+                child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < kFlareChartsPerGroup; i++)
+                        Expanded(
+                            child: DecoratedBox(
+                                decoration: _slot(
+                                    i,
+                                    i < charts.length
+                                        ? charts[i].flareRank
+                                        : null,
+                                    pop))),
+                    ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A counted chart in its flare's colour, or an outline for an open slot.
+  /// EX slots read off one rainbow spanning the ribbon.
+  BoxDecoration _slot(int i, String? rank, FloorPop pop) {
+    if (rank == null) {
+      return BoxDecoration(border: Border.all(color: pop.line, width: 0.5));
+    }
+    if (rank != 'EX') {
+      return BoxDecoration(color: rank.isEmpty ? pop.haze : flareColor(rank));
+    }
+    final t = i / (kFlareChartsPerGroup - 1) * (kFlareExColors.length - 1);
+    final from = t.floor();
+    return BoxDecoration(
+        color: Color.lerp(
+            kFlareExColors[from],
+            kFlareExColors[min(from + 1, kFlareExColors.length - 1)],
+            t - from));
+  }
+}
+
+/// A group's counted charts, best first, two to a line.
+class _FlareCharts extends StatelessWidget {
+  const _FlareCharts(this.charts);
+
+  final List<ScoreRecord> charts;
+
+  @override
+  Widget build(BuildContext context) => Column(children: [
+        for (var i = 0; i < charts.length; i += 2)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(children: [
+              Expanded(child: _FlareChartCard(charts[i])),
+              const SizedBox(width: 4),
+              Expanded(
+                  child: i + 1 < charts.length
+                      ? _FlareChartCard(charts[i + 1])
+                      : const SizedBox.shrink()),
+            ]),
+          ),
+      ]);
+}
+
+/// A counted chart in its flare's colours: the jacket, then its title over its
+/// level, flare and points.
+class _FlareChartCard extends StatelessWidget {
+  const _FlareChartCard(this.record);
 
   final ScoreRecord record;
+
+  static const _height = 40.0;
 
   @override
   Widget build(BuildContext context) {
     final song = Songs.list.where((s) => s.name == record.song).firstOrNull;
     final level =
         song == null ? null : chartLevel(song, record.mode, record.difficulty);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+    final rank = record.flareRank;
+    return Container(
+      height: _height,
+      clipBehavior: Clip.antiAlias,
+      decoration: flareCardBack(context, rank.isEmpty ? null : rank, radius: 6),
       child: Row(children: [
-        SizedBox(
-            width: 28,
-            child: level == null
-                ? null
-                : Align(
-                    alignment: Alignment.centerLeft,
-                    child: LevelNumber(
+        SizedBox.square(
+            dimension: _height,
+            child: SongArtwork(
+                songName: record.song ?? record.title, title: record.title)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(record.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Row(children: [
+                  if (level != null)
+                    LevelNumber(
                         level: level,
                         difficulty: record.difficulty,
-                        height: 16),
-                  )),
-        Expanded(
-            child: Text(record.title,
-                maxLines: 1, overflow: TextOverflow.ellipsis)),
-        if (record.flareRank.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: ArtBadge(flareRankIcon(record.flareRank),
-                aspect: kFlareAspect, ink: 14, height: 22),
-          ),
-        SizedBox(
-            width: 40,
-            child: Text('${record.flareSkill}',
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                    fontFeatures: [FontFeature.tabularFigures()]))),
+                        height: 12),
+                  const SizedBox(width: 4),
+                  if (rank.isNotEmpty)
+                    ArtBadge(flareRankIcon(rank),
+                        aspect: kFlareAspect, ink: 12, height: 14),
+                  const Spacer(),
+                  Text('${record.flareSkill}',
+                      style: FloorPop.readout(14,
+                          color: Theme.of(context).colorScheme.onSurface)),
+                ]),
+              ]),
+        ),
+        const SizedBox(width: 6),
       ]),
     );
   }
