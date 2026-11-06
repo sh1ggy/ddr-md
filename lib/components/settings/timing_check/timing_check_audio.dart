@@ -25,9 +25,18 @@ class TimingCheckAudio {
         'timing_check_practice.wav', _drumTrack(practice: true));
   }
 
-  void play({bool practice = false}) {
+  // A muted round still plays, so arrows-only keeps the same audio clock.
+  void play({bool practice = false, bool muted = false}) {
     final track = practice ? _practiceTrack : _track;
-    if (track != null) _voice = _engine.play(track, looping: practice);
+    if (track == null) return;
+    _voice = _engine.play(track, looping: practice, volume: muted ? 0 : 1);
+  }
+
+  Duration? get position {
+    final voice = _voice;
+    return voice != null && _engine.getIsValidVoiceHandle(voice)
+        ? _engine.getPosition(voice)
+        : null;
   }
 
   void stop() {

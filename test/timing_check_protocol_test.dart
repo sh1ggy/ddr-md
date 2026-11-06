@@ -60,12 +60,12 @@ void main() {
     });
   });
 
-  test('three cue rounds estimate the center and both candidate dials', () {
+  test('cue rounds set both candidate dials from each cue', () {
     final protocol = TimingProtocol(current, Random(1));
     final rounds = protocol.baseline();
-    expect(rounds, hasLength(3));
-    expect(rounds.first.cue, Cue.sound);
-    expect(rounds.skip(1).map((r) => r.pullMs), unorderedEquals([-20, 20]));
+    expect(rounds, hasLength(baselineRounds));
+    expect(rounds.map((r) => r.pullMs).where((p) => p != 0),
+        unorderedEquals([-20, 20]));
     final results = [
       for (final round in rounds)
         TimingResult(
@@ -73,7 +73,6 @@ void main() {
           List.filled(scoredBeats, -12 + round.pullMs * 0.5),
         ),
     ];
-    expect(TimingProtocol.estimatedCenter(results), -12);
     expect(TimingProtocol.follow(results), 0.5);
     expect(protocol.candidates(results), {
       TimingDial.current: current,
@@ -82,34 +81,42 @@ void main() {
     });
   });
 
-  test('a face-off can see gains within a grade and rejects uneven gains', () {
+  test('a dial must win every run of the face-off', () {
     final rounds = TimingProtocol(current, Random(1)).faceOff({
       TimingDial.current: current,
       TimingDial.judgement: judgement,
       TimingDial.visual: visual,
     });
-    expect(rounds, hasLength(3));
-    expect(rounds.map((r) => r.dial), unorderedEquals(TimingDial.values));
+    expect(rounds, hasLength(faceOffRuns * TimingDial.values.length));
 
-    List<TimingResult> results(double secondVisual, {int misses = 0}) => [
+    List<TimingResult> results(int secondRunTight) => [
           for (final round in rounds)
             TimingResult(round, [
               for (var i = 0; i < scoredBeats; i++)
-                if (round.dial == TimingDial.visual &&
-                    i >= scoredBeats - misses)
-                  null
-                else
-                  switch (round.dial!) {
-                    TimingDial.current => 16,
-                    TimingDial.judgement => i < scoredBeats ~/ 2 ? 2 : 20,
-                    TimingDial.visual =>
-                      i < scoredBeats ~/ 2 ? 8 : secondVisual,
-                  },
+                i <
+                        switch (round.dial!) {
+                          TimingDial.current => 6,
+                          TimingDial.judgement => 6,
+                          TimingDial.visual =>
+                            round.run == 0 ? 12 : secondRunTight,
+                        }
+                    ? 5
+                    : 30,
             ]),
         ];
 
-    expect(TimingProtocol.winner(results(8)), TimingDial.visual);
-    expect(TimingProtocol.winner(results(16)), isNull);
-    expect(TimingProtocol.winner(results(8, misses: 5)), isNull);
+    expect(TimingProtocol.winner(results(9)), TimingDial.visual);
+    expect(TimingProtocol.winner(results(6)), isNull);
+  });
+
+  test('taps use the audio start and when the finger landed', () {
+    final clock = TapClock(10)
+      ..audioAt(100, const Duration(milliseconds: 60))
+      ..audioAt(120, const Duration(milliseconds: 90));
+    expect(clock.music(1000), 960);
+    clock
+      ..tap(1016, const Duration(milliseconds: 1000))
+      ..tap(1503, const Duration(milliseconds: 1500));
+    expect(clock.taps, [963, 1463]);
   });
 }
