@@ -1,6 +1,6 @@
 /// Name: TimingCheckProtocolTest
 /// Parent: TimingCheckProtocol
-/// Description: Covers offset direction, judgement windows and short comparisons.
+/// Description: Covers offset direction, judgement windows and the player type.
 library;
 
 import 'dart:math';
@@ -10,8 +10,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   const current = (judgement: 0, visual: 0);
-  const judgement = (judgement: 12, visual: 0);
-  const visual = (judgement: 0, visual: 10);
 
   test('judgement moves both targets and visual moves only the crossing', () {
     const round = TimingRound(Cue.both, (judgement: 12, visual: 10));
@@ -60,53 +58,23 @@ void main() {
     });
   });
 
-  test('cue rounds set both candidate dials from each cue', () {
-    final protocol = TimingProtocol(current, Random(1));
-    final rounds = protocol.baseline();
+  test('the type comes from how far taps follow the hidden shifts', () {
+    final rounds = TimingProtocol.rounds(Random(1));
     expect(rounds, hasLength(baselineRounds));
-    expect(rounds.map((r) => r.pullMs).where((p) => p != 0),
-        unorderedEquals([-20, 20]));
-    final results = [
-      for (final round in rounds)
-        TimingResult(
-          round,
-          List.filled(scoredBeats, -12 + round.pullMs * 0.5),
-        ),
-    ];
-    expect(TimingProtocol.follow(results), 0.5);
-    expect(protocol.candidates(results), {
-      TimingDial.current: current,
-      TimingDial.judgement: judgement,
-      TimingDial.visual: (judgement: 0, visual: 24),
-    });
-  });
-
-  test('a dial must win every run of the face-off', () {
-    final rounds = TimingProtocol(current, Random(1)).faceOff({
-      TimingDial.current: current,
-      TimingDial.judgement: judgement,
-      TimingDial.visual: visual,
-    });
-    expect(rounds, hasLength(faceOffRuns * TimingDial.values.length));
-
-    List<TimingResult> results(int secondRunTight) => [
+    List<TimingResult> play(double follow) => [
           for (final round in rounds)
-            TimingResult(round, [
-              for (var i = 0; i < scoredBeats; i++)
-                i <
-                        switch (round.dial!) {
-                          TimingDial.current => 6,
-                          TimingDial.judgement => 6,
-                          TimingDial.visual =>
-                            round.run == 0 ? 12 : secondRunTight,
-                        }
-                    ? 5
-                    : 30,
-            ]),
+            TimingResult(
+                round, List.filled(scoredBeats, -12 + round.pullMs * follow)),
         ];
-
-    expect(TimingProtocol.winner(results(9)), TimingDial.visual);
-    expect(TimingProtocol.winner(results(6)), isNull);
+    expect(TimingProtocol.type(play(.8)), PlayerType.visual);
+    expect(TimingProtocol.type(play(.1)), PlayerType.audio);
+    expect(TimingProtocol.type(play(.45)), PlayerType.both);
+    expect(
+        TimingProtocol.type([
+          for (final round in rounds)
+            TimingResult(round, List.filled(scoredBeats, null)),
+        ]),
+        isNull);
   });
 
   test('taps use the audio start and when the finger landed', () {

@@ -67,7 +67,7 @@ class AppSettingsPage extends StatelessWidget {
                           title: const Text('Timing Check',
                               style: TextStyle(fontWeight: FontWeight.w600)),
                           subtitle:
-                              const Text('Compare judgement and visual timing'),
+                              const Text('Are you a visual or audio player?'),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () =>
                               Navigator.of(context, rootNavigator: true).push(

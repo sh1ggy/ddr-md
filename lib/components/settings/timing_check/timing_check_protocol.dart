@@ -1,6 +1,6 @@
 /// Name: TimingCheckProtocol
 /// Parent: TimingCheckPage
-/// Description: Tap timing, cue experiments and the repeated face-off.
+/// Description: Tap timing and the hidden arrow shifts that show which cue a player follows.
 library;
 
 import 'dart:math' as math;
@@ -12,10 +12,7 @@ const practiceLoopMs = scoredBeats * beatMs;
 const firstBeatMs = (countInBeats + 1) * beatMs;
 const roundEndMs = firstBeatMs + (scoredBeats - 1) * beatMs + beatMs;
 const baselineRounds = 8;
-const faceOffRuns = 2;
 const _minimumHits = 12;
-const _minimumGain = 3;
-const _minimumLead = 2;
 const pullShiftMs = 20;
 
 enum Cue {
@@ -24,15 +21,6 @@ enum Cue {
   both('Sound + arrows');
 
   const Cue(this.label);
-  final String label;
-}
-
-enum TimingDial {
-  current('Your settings'),
-  judgement('Judgement timing'),
-  visual('Visual timing');
-
-  const TimingDial(this.label);
   final String label;
 }
 
@@ -55,26 +43,14 @@ enum TapJudgement {
   }
 }
 
-enum Aim {
-  early('Aimed early'),
-  natural('Felt natural'),
-  late('Aimed late');
-
-  const Aim(this.label);
-  final String label;
-}
-
 typedef TimingOptions = ({int judgement, int visual});
 
 class TimingRound {
-  const TimingRound(this.cue, this.options,
-      {this.pullMs = 0, this.dial, this.run = 0});
+  const TimingRound(this.cue, this.options, {this.pullMs = 0});
 
   final Cue cue;
   final TimingOptions options;
   final int pullMs;
-  final TimingDial? dial;
-  final int run;
 
   // Positive judgement advances both targets. Positive visual delays only
   // the receptor crossing. The drum always stays on the music timeline.
@@ -128,8 +104,6 @@ class TimingResult {
         ? null
         : median(timedHits.map((t) => (t - middle).abs()));
   }
-
-  Aim? aim;
 }
 
 class TimingTaps {
@@ -154,102 +128,56 @@ double? median(Iterable<double> values) {
   return (sorted[(sorted.length - 1) ~/ 2] + sorted[sorted.length ~/ 2]) / 2;
 }
 
+enum PlayerType { visual, audio, both }
+
 class TimingProtocol {
-  TimingProtocol(this.current, this.random);
+  const TimingProtocol._();
 
-  final TimingOptions current;
-  final math.Random random;
+  static const _shiftsEachWay = 3;
+  static const _minimumShifts = 2;
+  static const _visualFollow = 0.6;
+  static const _audioFollow = 0.3;
 
-  // Two blocks of every cue, in different orders. One hidden arrow shift sits
-  // in each block among rounds labelled the same.
-  List<TimingRound> baseline() {
-    final pulls = [-pullShiftMs, pullShiftMs]..shuffle(random);
-    List<TimingRound> block(int pull) => [
-          TimingRound(Cue.sound, current),
-          TimingRound(Cue.arrows, current),
-          TimingRound(Cue.both, current),
-          TimingRound(Cue.both, current, pullMs: pull),
-        ]..shuffle(random);
-    final first = block(pulls[0]);
-    var second = block(pulls[1]);
-    while (second.first.cue == first.first.cue) {
-      second = block(pulls[1]);
-    }
-    return [...first, ...second];
+  // Mostly hidden arrow shifts, labelled like any other round. The player's
+  // cabinet dials don't matter: only how far taps move with the arrows does.
+  static List<TimingRound> rounds(math.Random random) {
+    const none = (judgement: 0, visual: 0);
+    return [
+      for (var i = 0; i < _shiftsEachWay; i++) ...[
+        const TimingRound(Cue.both, none, pullMs: -pullShiftMs),
+        const TimingRound(Cue.both, none, pullMs: pullShiftMs),
+      ],
+      const TimingRound(Cue.sound, none),
+      const TimingRound(Cue.arrows, none),
+    ]..shuffle(random);
   }
 
-  Map<TimingDial, TimingOptions> candidates(List<TimingResult> baseline) {
-    final sound = cueCenter(baseline, Cue.sound);
-    final bias = cueCenter(baseline, Cue.both);
-    final weight = follow(baseline);
-    final visualDelta = bias == null || weight == null || weight < 0.25
-        ? 0
-        : (-bias / weight).round().clamp(-40, 40);
-    final judgementDelta = sound == null ? 0 : (-sound).round().clamp(-40, 40);
-    return {
-      TimingDial.current: current,
-      TimingDial.judgement: (
-        judgement: (current.judgement + judgementDelta).clamp(-100, 100),
-        visual: current.visual,
-      ),
-      TimingDial.visual: (
-        judgement: current.judgement,
-        visual: (current.visual + visualDelta).clamp(-100, 100),
-      ),
-    };
-  }
-
-  // The average center of a cue's usable, unshifted rounds.
-  static double? cueCenter(List<TimingResult> baseline, Cue cue) {
+  static double? _shiftCenter(List<TimingResult> results, int pull) {
     final centers = [
-      for (final r in baseline)
-        if (r.round.cue == cue && r.round.pullMs == 0 && r.usable) r.center!,
+      for (final r in results)
+        if (r.round.pullMs == pull && r.usable) r.center!,
     ];
-    return centers.isEmpty
+    return centers.length < _minimumShifts
         ? null
         : centers.reduce((a, b) => a + b) / centers.length;
   }
 
-  static double? follow(List<TimingResult> baseline) {
-    final early = baseline.firstWhere((r) => r.round.pullMs == -pullShiftMs);
-    final late = baseline.firstWhere((r) => r.round.pullMs == pullShiftMs);
-    if (!early.usable || !late.usable) return null;
-    return (late.center! - early.center!) / (2 * pullShiftMs);
+  // How much of an arrow shift the taps moved with: 0 stays on the beat.
+  static double? follow(List<TimingResult> results) {
+    final early = _shiftCenter(results, -pullShiftMs);
+    final late = _shiftCenter(results, pullShiftMs);
+    return early == null || late == null
+        ? null
+        : (late - early) / (2 * pullShiftMs);
   }
 
-  List<TimingRound> faceOff(Map<TimingDial, TimingOptions> options) => [
-        for (var run = 0; run < faceOffRuns; run++)
-          ...[
-            for (final dial in TimingDial.values)
-              TimingRound(Cue.both, options[dial]!, dial: dial, run: run),
-          ]..shuffle(random),
-      ];
-
-  // A dial wins only by beating the current settings in every run, by a real
-  // margin overall and clear of the other dial.
-  static TimingDial? winner(List<TimingResult> results) {
-    Iterable<TimingResult> runs(TimingDial dial) =>
-        results.where((r) => r.round.dial == dial);
-    int total(TimingDial dial) =>
-        runs(dial).fold(0, (sum, r) => sum + r.tightHits);
-    final current = runs(TimingDial.current).toList();
-    final contenders = [TimingDial.judgement, TimingDial.visual].where((dial) {
-      final trial = runs(dial).toList();
-      if (trial.first.round.options == current.first.round.options) {
-        return false;
-      }
-      return trial.every((r) =>
-              r.usable && r.tightHits > current[r.round.run].tightHits) &&
-          total(dial) - total(TimingDial.current) >= _minimumGain;
-    }).toList()
-      ..sort((a, b) => total(b).compareTo(total(a)));
-    if (contenders.isEmpty ||
-        (contenders.length > 1 &&
-            total(contenders[0]) - total(contenders[1]) < _minimumLead)) {
-      return null;
-    }
-    return contenders.first;
-  }
+  static PlayerType? type(List<TimingResult> results) =>
+      switch (follow(results)) {
+        null => null,
+        final f when f >= _visualFollow => PlayerType.visual,
+        final f when f <= _audioFollow => PlayerType.audio,
+        _ => PlayerType.both,
+      };
 }
 
 /// Puts taps on the music's timeline. The audio clock says when the track

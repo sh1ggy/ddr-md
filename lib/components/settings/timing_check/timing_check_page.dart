@@ -21,8 +21,6 @@ import 'timing_check_chart.dart';
 import 'timing_check_protocol.dart';
 
 String _signed(int ms) => ms < 0 ? '−${-ms}' : '+$ms';
-String _pair(TimingOptions o) =>
-    'J ${_signed(o.judgement)} · V ${_signed(o.visual)}';
 
 class TimingCheckPage extends StatefulWidget {
   const TimingCheckPage({super.key});
@@ -54,14 +52,10 @@ class _TimingCheckPageState extends State<TimingCheckPage>
   bool _ready = false;
   bool _interrupted = false;
   String? _error;
-  late TimingProtocol _protocol;
   List<TimingRound> _rounds = [];
-  final _baseline = <TimingResult>[];
-  final _faceOff = <TimingResult>[];
-  late Map<TimingDial, TimingOptions> _candidates;
+  final _played = <TimingResult>[];
   late TimingResult _last;
   int _index = 0;
-  bool _faceOffOnly = false;
   late TimingOptions _practiceOptions;
   int _lastPracticeBeat = -1;
   double? _practiceError;
@@ -71,9 +65,6 @@ class _TimingCheckPageState extends State<TimingCheckPage>
 
   TimingRound get _round => _rounds[_index];
   double get _elapsed => _stopwatch.elapsedMicroseconds / 1000;
-  int get _roundCount => _faceOffOnly
-      ? faceOffRuns * TimingDial.values.length
-      : baselineRounds + faceOffRuns * TimingDial.values.length;
 
   @override
   void initState() {
@@ -155,12 +146,9 @@ class _TimingCheckPageState extends State<TimingCheckPage>
 
   Future<void> _start() async {
     if (!await _prepare() || !mounted) return;
-    _protocol = TimingProtocol(_options, math.Random());
-    _rounds = _protocol.baseline();
-    _baseline.clear();
-    _faceOff.clear();
+    _rounds = TimingProtocol.rounds(math.Random());
+    _played.clear();
     _index = 0;
-    _faceOffOnly = false;
     _startRound();
   }
 
@@ -177,12 +165,9 @@ class _TimingCheckPageState extends State<TimingCheckPage>
     setState(() => _stage = _Stage.practice);
   }
 
-  void _leavePractice({bool useSettings = false}) {
+  void _leavePractice() {
     _stop();
-    setState(() {
-      if (useSettings) _saveOptions(_practiceOptions);
-      _stage = _Stage.setup;
-    });
+    setState(() => _stage = _Stage.setup);
   }
 
   void _startRound() {
@@ -246,13 +231,7 @@ class _TimingCheckPageState extends State<TimingCheckPage>
     final taps = TimingTaps(_round);
     _clock.taps.forEach(taps.add);
     _last = taps.finish();
-    (_round.dial == null ? _baseline : _faceOff).add(_last);
-    if (_baseline.length == baselineRounds &&
-        _round.dial == null &&
-        _index == baselineRounds - 1) {
-      _candidates = _protocol.candidates(_baseline);
-      _rounds.addAll(_protocol.faceOff(_candidates));
-    }
+    _played.add(_last);
     setState(() => _stage = _Stage.roundDone);
   }
 
@@ -263,14 +242,6 @@ class _TimingCheckPageState extends State<TimingCheckPage>
     } else {
       setState(() => _stage = _Stage.result);
     }
-  }
-
-  void _repeatFaceOff() {
-    _rounds = _protocol.faceOff(_candidates);
-    _faceOff.clear();
-    _index = 0;
-    _faceOffOnly = true;
-    _startRound();
   }
 
   @override
@@ -294,16 +265,11 @@ class _TimingCheckPageState extends State<TimingCheckPage>
                     )
                   : null,
           actions: [
-            if (_inPractice)
-              TextButton(
-                onPressed: () => _leavePractice(useSettings: true),
-                child: const Text('Use settings'),
-              ),
             if (testing)
               Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Center(
-                  child: Text('ROUND ${_index + 1} / $_roundCount',
+                  child: Text('ROUND ${_index + 1} / $baselineRounds',
                       style: FloorPop.readout(15,
                           color: FloorPop.of(context).haze)),
                 ),
@@ -379,25 +345,22 @@ class _TimingCheckPageState extends State<TimingCheckPage>
       Padding(
         padding: const EdgeInsets.fromLTRB(8, 14, 8, 8),
         child: Text(
-            'Tap along by ear, by sight, then both. You’ll learn which cabinet '
-            'dial to try first: judgement or visual timing.',
+            'Tap along to a beat and scrolling arrows. You’ll learn whether '
+            'you play by sight or by ear, and which cabinet dial to try first.',
             style: TextStyle(color: pop.haze, fontSize: 15, height: 1.45)),
       ),
-      _panel(title: 'What you play on now', [
-        ..._timingDials(_options, (value) => _saveOptions(value)),
+      _panel([
         _adjust('CONSTANT', '$_constant', _constant, 100, 3000, 10, (value) {
           _constant = value;
           Settings.setInt(Settings.timingConstantKey, value);
         }),
-        _adjust('Device audio delay', '$_delay', _delay, 0, 300, 1, _saveDelay),
-        Text('ms. Dials as the cabinet menu shows them, −100 to +100.',
+        Text('Your usual read speed, in ms.',
             style: TextStyle(color: pop.haze, fontSize: 12)),
       ]),
       const SizedBox(height: 16),
       for (final (i, step) in const [
-        'Sound only, arrows only, both',
+        'Tap through eight short rounds',
         'See which cue pulls your taps',
-        'Your settings vs judgement vs visual',
         'A recipe to confirm it on the cab',
       ].indexed)
         Padding(
@@ -430,12 +393,12 @@ class _TimingCheckPageState extends State<TimingCheckPage>
       const SizedBox(height: 16),
       VoltButton(
         onPressed: _loading ? null : _start,
-        child: Text(_loading ? 'Loading audio…' : 'Start · about 3 min'),
+        child: Text(_loading ? 'Loading audio…' : 'Start · about 2 min'),
       ),
       const SizedBox(height: 8),
       GhostButton(
         onPressed: _loading ? null : _openPractice,
-        child: const Text('Set device delay in Timing Lab'),
+        child: const Text('Practice in Timing Lab'),
       ),
     ]);
   }
@@ -524,7 +487,7 @@ class _TimingCheckPageState extends State<TimingCheckPage>
   Widget _progress() {
     final pop = FloorPop.of(context);
     return Row(spacing: 4, children: [
-      for (var i = 0; i < _roundCount; i++)
+      for (var i = 0; i < baselineRounds; i++)
         Expanded(
           child: Container(
             height: 4,
@@ -641,59 +604,17 @@ class _TimingCheckPageState extends State<TimingCheckPage>
 
   Widget _roundDone() {
     final pop = FloorPop.of(context);
-    final center = _last.center;
-    final early = (center ?? 0) < 0;
-    final color = center == null ? pop.haze : (early ? pop.sunText : pop.up);
     return _column([
       Text(_last.round.cue.label.toUpperCase(), style: pop.label),
-      const SizedBox(height: 6),
-      Row(children: [
-        Text(center == null ? '—' : _signed(center.round()),
-            style: FloorPop.readout(64, color: color)),
-        if (center != null) ...[
-          const SizedBox(width: 8),
-          Text('ms', style: FloorPop.readout(22, color: color)),
-          const SizedBox(width: 12),
-          if (center.round() != 0)
-            _chip(early ? 'Early' : 'Late', early ? FloorPop.sun : pop.up),
-        ],
-      ]),
       _panel([
         _TapPlot(_last.hits),
         const SizedBox(height: 14),
         Divider(color: pop.line, height: 1),
         const SizedBox(height: 14),
         Row(children: [
-          _stat('${_last.tightHits}', ' / $scoredBeats',
-              'in the Marvelous window'),
-          _stat(_last.spread == null ? '—' : '±${_last.spread!.round()}', ' ms',
-              'spread'),
+          _stat('${_last.tightHits}', ' / $scoredBeats', 'Marvelous'),
           _stat('${_last.judgements[TapJudgement.miss]}', '', 'missed'),
         ]),
-      ]),
-      const SizedBox(height: 22),
-      Text('Did you have to aim early or late?', style: FloorPop.display(17)),
-      const SizedBox(height: 12),
-      Row(spacing: 8, children: [
-        for (final aim in Aim.values)
-          Expanded(
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(0, 64),
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                backgroundColor: _last.aim == aim
-                    ? Theme.of(context).colorScheme.onSurface
-                    : pop.riser,
-                foregroundColor: _last.aim == aim
-                    ? Theme.of(context).colorScheme.surface
-                    : Theme.of(context).colorScheme.onSurface,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              onPressed: () => setState(() => _last.aim = aim),
-              child: Text(aim.label, textAlign: TextAlign.center),
-            ),
-          ),
       ]),
       const SizedBox(height: 24),
       VoltButton(
@@ -740,8 +661,10 @@ class _TimingCheckPageState extends State<TimingCheckPage>
           const SizedBox(height: 8),
           _adjust(
               'Device audio delay', '$_delay', _delay, 0, 300, 1, _saveDelay),
-          ..._timingDials(
-              _practiceOptions, (value) => _practiceOptions = value),
+          ..._timingDials(_practiceOptions, (value) {
+            _practiceOptions = value;
+            _saveOptions(value);
+          }),
         ],
       ),
     );
@@ -862,170 +785,62 @@ class _TimingCheckPageState extends State<TimingCheckPage>
 
   Widget _results() {
     final pop = FloorPop.of(context);
-    final winner = TimingProtocol.winner(_faceOff);
-    final recommended = winner == null ? null : _candidates[winner]!;
-    final follow = TimingProtocol.follow(_baseline);
-    final early = _baseline.firstWhere((r) => r.round.pullMs < 0);
-    final late = _baseline.firstWhere((r) => r.round.pullMs > 0);
-    final currentLabel = _pair(_protocol.current);
-    final target = recommended == null
-        ? null
-        : winner == TimingDial.judgement
-            ? recommended.judgement
-            : recommended.visual;
-    final both = TimingProtocol.cueCenter(_baseline, Cue.both);
-
-    int tight(TimingDial dial) => _faceOff
-        .where((r) => r.round.dial == dial)
-        .fold(0, (sum, r) => sum + r.tightHits);
-    Iterable<TimingResult> runs(TimingDial dial) =>
-        _faceOff.where((r) => r.round.dial == dial);
-    int natural(TimingDial dial) =>
-        runs(dial).where((r) => r.aim == Aim.natural).length;
-
-    String why() {
-      final center = both;
-      if (winner == null) {
-        return 'No dial beat your settings in both runs, so the phone has no '
-            'case for changing either.';
-      }
-      final side = center == null || center.round() == 0
-          ? 'close to the beat'
-          : '${center.abs().round()} ms ${center < 0 ? 'early' : 'late'}';
-      return 'With sound and arrows you land $side. '
-          '${winner.label} won both face-off runs.';
-    }
-
+    final type = TimingProtocol.type(_played);
+    final follow = TimingProtocol.follow(_played);
+    final (title, why, step) = switch (type) {
+      PlayerType.visual => (
+          'Visual\nplayer',
+          'When the arrows moved, your taps moved with them.',
+          'Try visual timing first.',
+        ),
+      PlayerType.audio => (
+          'Audio\nplayer',
+          'When the arrows moved, your taps stayed with the beat.',
+          'Try judgement timing first.',
+        ),
+      PlayerType.both => (
+          'A bit of\nboth',
+          'Your taps followed the arrows part of the way.',
+          'Either dial could help. Try visual timing first.',
+        ),
+      null => (
+          'Couldn’t\ntell',
+          'Too many taps were off the beat to read a pattern.',
+          'Run it again when you’re settled in.',
+        ),
+    };
     return _column([
-      if (winner != null) Text('TRY FIRST', style: pop.label),
-      const SizedBox(height: 8),
-      _title(
-          winner == null
-              ? 'No clear\nwinner'
-              : winner.label.replaceFirst(' ', '\n'),
-          color: winner == null ? null : pop.voltText),
-      const SizedBox(height: 14),
-      if (target != null)
-        Align(
-            alignment: Alignment.centerLeft,
-            child: _chip('Start at ${_signed(target)} ms', FloorPop.volt)),
+      _title(title, color: type == null ? null : pop.voltText),
       Padding(
-        padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
-        child: Text(why(),
+        padding: const EdgeInsets.only(top: 14),
+        child: Text(why,
             style: TextStyle(color: pop.haze, fontSize: 15, height: 1.45)),
       ),
-      if (winner == TimingDial.judgement && _delay == 0)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(
-              'This value assumes your device has no audio delay. Set it in '
-              'Timing Lab if the arrows land off the kick.',
-              style: TextStyle(color: pop.sunText, fontSize: 13)),
-        ),
-      _panel(title: 'What pulls your taps', [
-        for (final cue in Cue.values)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(cue.label,
-                      style: TextStyle(color: pop.haze, fontSize: 13)),
-                  Text(
-                      switch (TimingProtocol.cueCenter(_baseline, cue)) {
-                        null => 'Too few taps',
-                        final c => '${_signed(c.round())} ms',
-                      },
-                      style: FloorPop.readout(14)),
-                ]),
-          ),
-        const SizedBox(height: 8),
-        if (follow == null || both == null)
-          const Text('More taps are needed to estimate arrow pull.')
-        else ...[
-          _PullRow('Arrows $pullShiftMs ms earlier', -pullShiftMs,
-              early.center! - both),
+      if (follow != null)
+        _panel(title: 'What pulls your taps', [
+          _PullRow('Arrows moved earlier', -pullShiftMs, -follow * pullShiftMs),
           const SizedBox(height: 12),
-          _PullRow(
-              'Arrows $pullShiftMs ms later', pullShiftMs, late.center! - both),
-          const SizedBox(height: 10),
-          Text(
-              follow < 0 || follow > 1
-                  ? 'Arrow pull varied outside the expected range.'
-                  : 'About ${(follow * 100).round()}% arrow follow',
-              style: FloorPop.readout(14)),
-        ],
-      ]),
-      _panel(
-          title: 'Face-off',
-          aside: winner == null ? 'run 1 · run 2' : 'Marvelous window',
-          [
-            for (final dial in TimingDial.values)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _FaceOffRow(
-                  title: dial.label,
-                  detail: switch (dial) {
-                    TimingDial.current => currentLabel,
-                    TimingDial.judgement =>
-                      _signed(_candidates[dial]!.judgement),
-                    TimingDial.visual => _signed(_candidates[dial]!.visual),
-                  },
-                  shares: winner == null
-                      ? [for (final r in runs(dial)) r.tightHits / scoredBeats]
-                      : [tight(dial) / (scoredBeats * faceOffRuns)],
-                  highlight: dial == winner,
-                ),
-              ),
-            Text(
-                'Each played twice, shuffled. Misses count against. '
-                'Felt natural: ${[
-                  for (final dial in TimingDial.values)
-                    '${dial == TimingDial.current ? 'yours' : dial.name} '
-                        '${natural(dial)}/$faceOffRuns'
-                ].join(', ')}.',
-                style: TextStyle(color: pop.haze, fontSize: 12, height: 1.4)),
-          ]),
+          _PullRow('Arrows moved later', pullShiftMs, follow * pullShiftMs),
+        ]),
       _panel(title: 'Check it on the cab', [
-        Text('Same easy chart, cabinet and side, CONSTANT $_constant.',
-            style: TextStyle(color: pop.haze, fontSize: 13)),
-        const SizedBox(height: 12),
-        if (recommended == null)
-          Text('Keep $currentLabel. If one cab still feels off, A/B one dial '
-              'there by 5 ms: same chart, twice each way.')
-        else
-          for (final (i, step) in [
-            'Play it twice at $currentLabel',
-            'Twice at ${_pair(recommended)}',
-            'Better? Nudge 5 ms either way. Worse? Go back.',
-          ].indexed)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(spacing: 12, children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      color: pop.riser, borderRadius: BorderRadius.circular(8)),
-                  child: Text('${i + 1}', style: FloorPop.readout(14)),
-                ),
-                Expanded(child: Text(step)),
-              ]),
-            ),
+        Text(step, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        if (type != null)
+          Text(
+              'Same easy chart, cabinet and side. Play it twice as you are, '
+              'then twice with that dial moved a little each way. Keep '
+              'whatever scores and feels better.',
+              style: TextStyle(color: pop.haze, fontSize: 13, height: 1.4)),
       ]),
       const SizedBox(height: 18),
       VoltButton(
-        onPressed:
-            winner == null ? _repeatFaceOff : () => Navigator.of(context).pop(),
-        child: Text(winner == null ? 'Face-off again · 1 min' : 'Done'),
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Done'),
       ),
       const SizedBox(height: 8),
       GhostButton(
-        onPressed: winner == null
-            ? () => Navigator.of(context).pop()
-            : () => setState(() => _stage = _Stage.setup),
-        child: Text(winner == null ? 'Done' : 'Run again'),
+        onPressed: () => setState(() => _stage = _Stage.setup),
+        child: const Text('Run again'),
       ),
     ]);
   }
@@ -1061,7 +876,6 @@ class _PullRow extends StatelessWidget {
     return Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text(label, style: TextStyle(color: pop.haze, fontSize: 13)),
-        Text('taps ${_signed(taps.round())}', style: FloorPop.readout(14)),
       ]),
       const SizedBox(height: 6),
       Row(children: [
@@ -1069,57 +883,6 @@ class _PullRow extends StatelessWidget {
         Container(width: 2, height: 18, color: pop.line),
         side(false),
       ]),
-    ]);
-  }
-}
-
-class _FaceOffRow extends StatelessWidget {
-  const _FaceOffRow(
-      {required this.title,
-      required this.detail,
-      required this.shares,
-      required this.highlight});
-  final String title, detail;
-  final List<double> shares;
-  final bool highlight;
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    final on = highlight ? pop.voltText : null;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Expanded(
-          child: Text.rich(TextSpan(children: [
-            TextSpan(
-                text: '$title ',
-                style: TextStyle(fontWeight: FontWeight.w600, color: on)),
-            TextSpan(text: detail, style: TextStyle(color: on ?? pop.haze)),
-          ])),
-        ),
-        Text('${shares.map((s) => (s * 100).round()).join(' · ')}%',
-            style: FloorPop.readout(15, color: on)),
-      ]),
-      for (final (i, share) in shares.indexed)
-        Container(
-          height: shares.length > 1 ? 6 : 10,
-          margin: EdgeInsets.only(top: i == 0 ? 6 : 3),
-          alignment: Alignment.centerLeft,
-          decoration: BoxDecoration(
-              color: pop.riser, borderRadius: BorderRadius.circular(5)),
-          child: FractionallySizedBox(
-            widthFactor: share,
-            child: Container(
-              decoration: BoxDecoration(
-                  color: highlight
-                      ? FloorPop.volt
-                      : i == 0
-                          ? Theme.of(context).colorScheme.onSurface
-                          : pop.haze,
-                  borderRadius: BorderRadius.circular(5)),
-            ),
-          ),
-        ),
     ]);
   }
 }
