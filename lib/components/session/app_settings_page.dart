@@ -10,6 +10,7 @@ import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/settings/credits_page.dart';
 import 'package:ddr_md/components/settings/development_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
+import 'package:ddr_md/components/settings/timing_check/timing_check_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
@@ -60,6 +61,20 @@ class AppSettingsPage extends StatelessWidget {
                       const Card(child: _ContentTile()),
                       const Card(child: _CloudTile()),
                       const Card(child: _EamuseTiles()),
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.timer_outlined),
+                          title: const Text('Timing Check',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle:
+                              const Text('Compare judgement and visual timing'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () =>
+                              Navigator.of(context, rootNavigator: true).push(
+                                  MaterialPageRoute(
+                                      builder: (_) => const TimingCheckPage())),
+                        ),
+                      ),
                       Card(
                         child: ListTile(
                           leading: const Icon(Icons.privacy_tip_outlined),
