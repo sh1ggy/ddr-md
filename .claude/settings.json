@@ -16,6 +16,7 @@
       "native_opencv/ios/opencv2.framework",
       "DDR-BPM-prep",
       "_private",
+      "designs",
       "docs/arcade"
     ]
   }

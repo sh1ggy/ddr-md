@@ -65,11 +65,15 @@ cd native_opencv/tools/model_compare && cmake -B build && cmake --build build
 ## Gotchas
 
 - `pubspec.yaml` asset entries carry load-bearing comments (noteskin is optional/gitignored; only one model triplet ships). Don't "clean them up" or blindly add `assets/models/` as a directory.
-- Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songs/`, `assets/steps/`, `assets/patterns/`, `assets/jackets-webp/`, `assets/jackets-160-webp/`, `assets/pattern_levels.json`, `assets/content_manifest.json`, `infra/*.tfstate`, `assets/songlist.json`, `assets/noteskin/`, `assets/difficulty/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive), `docs/arcade/`.
+- Generated/downloaded things that are absent on a fresh clone and must not be committed: `assets/songs/`, `assets/steps/`, `assets/patterns/`, `assets/jackets-webp/`, `assets/jackets-160-webp/`, `assets/pattern_levels.json`, `assets/content_manifest.json`, `infra/*.tfstate`, `assets/songlist.json`, `assets/noteskin/`, `assets/difficulty/`, `native_opencv/android/src/main/jniLibs/`, `DDR-BPM-prep/`, `_private/` (RE notes archive), `designs/`, `docs/arcade/`.
 - Session worktrees (`.claude/worktrees/`) need those gitignored directories from the main checkout; `.claude/settings.json` lists them for Claude Code to symlink. A worktree made without them (`ls assets/songs` fails) gets the same links by hand: `ln -s <main checkout>/<dir> <dir>` for each entry. Two more things a worktree needs to build: copy (don't link) `assets/songlist.json`, `assets/pattern_levels.json` and `assets/content_manifest.json`, and for iOS copy `native_opencv/ios/libs/` (a symlinked xcframework fails at link time with `Undefined symbol: _OrtGetApiBase`) then `pod install`. iOS simulators: the vendored OpenCV has no arm64-simulator slice, so the app only runs on an x86_64 (Rosetta) simulator below iOS 26, which means lowering `IPHONEOS_DEPLOYMENT_TARGET` locally; don't commit that.
 - Shell scripts here inline pure commands — don't extract fetch/copy/check helper functions.
-- `docs/` holds only how-tos the code relies on (noteskin assets, parity labelling, dancer form). Plans and design write-ups don't live in the repo.
+- `docs/` holds only how-tos the code relies on (noteskin assets, parity labelling, dancer form). Plans don't live in the repo; designs live in the gitignored `designs/` (see "Design work").
 - `docs/arcade/` (gitignored, kept locally) is the cabinet-behaviour reference. Check it, when present, before claiming or changing anything "arcade accurate". Never commit it or anything else derived from Konami material.
+
+## Design work
+
+Every design request (mockups, UI options, visual labs) goes in `designs/<slug>/`, gitignored and symlinked into worktrees. Before designing, read `designs/README.md` (index, Floor Pop tokens, Circles rules, what not to copy) and the boards closest to the request. Create the canvas from the Design artifact type, keep its files in `designs/<slug>/project/`, publish with `root: designs/<slug>`, and add a row to the index. Don't leave a design only in a scratchpad or as an artifact with no local copy.
 
 ## Card presentation preferences
 
