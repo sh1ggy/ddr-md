@@ -1,9 +1,11 @@
 /// Name: ChartMusic
 /// Parent: chart_scroller.dart
 /// Description: Plays the player's own copy of a song in time with the chart
-/// preview. The app ships no music: with no file for the song this stays silent.
+/// preview. Store builds ship no music: with no file for the song this stays
+/// silent.
 library;
 
+import 'package:ddr_md/models/music_library.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 
 /// A decoded song, shared because switching difficulty opens the new chart
@@ -29,8 +31,12 @@ class ChartMusic {
   bool _playing = false;
 
   Future<void> load(String path) async {
-    final shared =
-        _shared[path] ??= _SharedSource(path, SoLoud.instance.loadFile(path));
+    final engine = SoLoud.instance;
+    final shared = _shared[path] ??= _SharedSource(
+        path,
+        MusicLibrary.isBundled(path)
+            ? engine.loadAsset(path)
+            : engine.loadFile(path));
     shared.users++;
     _held = shared;
     final AudioSource source;

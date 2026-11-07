@@ -7,6 +7,7 @@ library;
 
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -106,16 +107,41 @@ class MusicLibrary {
     return [
       await for (final entry
           in folder.list(recursive: true, followLinks: false))
-        if (entry is File) entry.path
+        if (entry is File && entry.lengthSync() > 0) entry.path
     ];
   }
 
-  static Future<MusicScan> scan(Iterable<String> songs) async =>
-      matchMusic(await _files(), songs);
+  /// Music a personal build bundles (scripts/with_music.sh). Absent otherwise.
+  static Future<List<String>> _bundled() async => _bundledMusic ??=
+      (await AssetManifest.loadFromAssetBundle(rootBundle))
+          .listAssets()
+          .where((asset) => asset.startsWith('assets/music/'))
+          .toList();
+  static List<String>? _bundledMusic;
 
-  /// The song's file, or null when the player hasn't added one.
+  static bool isBundled(String file) => file.startsWith('assets/');
+
+  /// A bundled file can't be renamed or removed, so it's never put to the player.
+  static Future<MusicScan> scan(Iterable<String> songs) async {
+    final found = matchMusic([...await _files(), ...await _bundled()], songs);
+    return MusicScan(
+      matched: found.matched,
+      close: {
+        for (final MapEntry(key: song, value: file) in found.close.entries)
+          if (!isBundled(file)) song: file
+      },
+      unused: [
+        for (final file in found.unused)
+          if (!isBundled(file)) file
+      ],
+      missing: found.missing,
+    );
+  }
+
+  /// The song's file or bundled asset, or null when there's neither. A file of
+  /// the player's own comes first: absolute paths sort ahead of assets/.
   static Future<String?> pathFor(String song) async =>
-      matchMusic(await _files(), [song]).matched[song];
+      matchMusic([...await _files(), ...await _bundled()], [song]).matched[song];
 
   /// Accepts a close match by giving the file its song's exact name.
   static Future<void> confirm(String song, String file) async {
