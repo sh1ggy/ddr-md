@@ -5,8 +5,8 @@ without a store release, and how to rebuild, change or recover the infra
 behind it. App-side behaviour is in [AGENTS.md](../AGENTS.md) (data flow §6).
 
 ```
-DDR-BPM-prep ──copy──▶ ddr-md-content (private repo)
-                          │ push to master (or staging) / daily 03:17 UTC / manual
+DDR-BPM-prep release console ──release──▶ ddr-md-content (private repo)
+                          │ staging push, then signed-off fast-forward to master
                           ▼
             .github/workflows/publish.yml   (written by Terraform)
                           │ calls
@@ -104,21 +104,29 @@ curl -s https://ddr-md-content.pages.dev/latest.json
 
 ## Day to day
 
+Content only ships through the release console in DDR-BPM-prep (`make admin`,
+or `poetry run python -m admin` as a CLI). Every release is a commit carrying
+`release.json`: what changed, which ddr-md commit's generators build it, how
+it was tested and the manifest id that was tested. CI refuses to publish a
+push without a matching record, and production only publishes the id that
+was tested on staging. Don't copy files into the content repo by hand.
+
 | To... | Do |
 |---|---|
-| Publish new songs / chart fixes | Copy prep output into `ddr-md-content`, commit, push to `master` (other branches don't publish, except `staging`) |
-| Try a chart before it goes live | Push it to the content repo's `staging` branch (branch it from `master`). It publishes to the staging URL with the same checks; run a build with `--dart-define=CONTENT_URL=https://staging.ddr-md-content.pages.dev` to take it. Happy → merge into `master` and push |
-| Publish generator or parity engine changes | Merge to `workflow_ref`; the daily run picks it up, or `gh workflow run Publish -R sh1ggy/ddr-md-content` |
+| Publish new songs / chart fixes | Console: prepare, pick the songs, draft, run checks, publish to staging, test on a phone (long-press Song Updates to follow staging), sign off |
+| Remove a song | Console: the song's page → Remove from the app. The release names it in `removes`; without that CI refuses |
+| Publish generator or parity engine changes | Merge to ddr-md `master`, then draft an engine release in the console. The nightly run only reports what would change (the console's inbox shows it); it never deploys |
+| Watch a publish | Console home and release page (CI runs are linked) |
+| Roll back a bad publish | Console: History → Roll back to this. It drafts a new release with that release's files and generators; a rollback to a release that was live can skip staging |
 | Make a store build | `bash scripts/build_store.sh ipa` (or `appbundle`): fetches the live content, then builds with `CONTENT_URL` set |
-| Remove a song | Delete its four files, add its name to `removed.txt` in `ddr-md-content`, push. Without the `removed.txt` line CI refuses |
-| Watch a publish | `gh run list -R sh1ggy/ddr-md-content` |
 | Find what a publish was built from | `curl -s <content_url>/manifest.json \| jq .source`: the content and ddr-md commits it was first built from |
 | Try ddr-md changes before merging | Set `workflow_ref` to the branch and apply; set it back to `master` and apply again **before** deleting the branch, or every run fails |
-| Roll back a bad publish | Revert the commit in `ddr-md-content` and push. Apps follow whatever is live, so they take the old files like any update |
 
 ### Adding one song
 
-Run prep for it, then copy its four files into `ddr-md-content` and push:
+The console's inbox lists songs in the game with no simfile yet; give one its
+Zenius simfile id to scrape it, prepare, then draft a release with it. A
+release copies these four files for each song:
 
 ```
 songs/<name>.json        metadata: title, artist, version, BPM, levels, radar
@@ -186,7 +194,8 @@ or is caught before it ships. The ones that need you are marked.
 | Content in a shape an older app can't read | Can't happen if changes stay additive; a breaking one ships at a new path that older apps never download (AGENTS.md) |
 | ddr-md `master` breaks a generator | CI fails before deploying; live content is untouched. GitHub emails you about the failed run |
 | A bad prep run (missing steps, truncated songlist) | The pre-deploy check fails the run if any listed song lacks steps |
-| A song renamed or dropped by accident | CI fails if any live song disappears without being named in the content repo's `removed.txt`; a rename looks like remove + add, which would orphan players' scores, notes and footing edits |
+| A song renamed or dropped by accident | CI fails if any live song disappears without being named in the release's `removes`; a rename looks like remove + add, which would orphan players' scores, notes and footing edits |
+| Content pushed without the console | CI refuses it: no `release.json` matching the files, so nothing deploys and the console flags master as unreleased |
 | A parity change without a `kPatternEngineVersion` bump | CI fails if counts change for any song whose charts didn't, while `engine` still matches live |
 | A store build bundling stale or local content | `scripts/build_store.sh` always fetches the live content first |
 | Live manifest briefly unreachable from CI | The run fails rather than publishing without its checks |

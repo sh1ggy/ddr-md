@@ -1,24 +1,22 @@
 ---
 name: add-song
-description: Add a new song (or a chart fix) to DDR MD over the air — scrape it from Zenius-I-vanisher, parse it in DDR-BPM-prep, copy it into the ddr-md-content repo, push, and confirm the publish is live. Use when the user says "add <song>", "push <song> to the app", "new WORLD song", or asks to ship a chart fix without a store release.
+description: Add a new song (or a chart fix) to DDR MD over the air through the release console — scrape it from Zenius-I-vanisher, prepare it in DDR-BPM-prep, draft and stage a release, and make it live once the user signs it off. Use when the user says "add <song>", "push <song> to the app", "new WORLD song", or asks to ship a chart fix without a store release.
 ---
 
 # Add a song
 
-Adds one song end to end. Paths: prep is `~/repos/ddr-md/DDR-BPM-prep` (nested repo, poetry), content is `~/repos/ddr-md-content` (private, pushes to `master` publish to every installed app via CI). The song `name` is the ID everything keys on: never rename one that's already live.
-
-Prep ships every scraped folder unless `data/removed.txt` names it, so a scraped song needs no list edit.
+Everything goes through the release console in `~/repos/ddr-md/DDR-BPM-prep`: `poetry run python -m admin <command>` from there (the page, `make admin`, runs the same code). Never copy files into `~/repos/ddr-md-content` or push it yourself: CI refuses content without the console's `release.json`. The song `name` is the ID everything keys on: never rename one that's already live.
 
 ## Steps
 
-1. **Find it.** Check whether the simfile is already on disk: `ls DDR-BPM-prep/data/*/ | grep -i "<name>"`. If not, find the Zenius simfile id (the `simfileid=` in its viewsimfile URL — ask the user if you can't find it) and the version folder (e.g. `WORLD`), add `<id>\t<VERSION>\t<title>` to `scripts/scrape/songs.txt`, and run `bash scripts/scrape/zenius_song.sh <id> <VERSION>` from the prep repo with `SEED_DIR=./data`.
-2. **Check it isn't excluded, and link its Konami ID.** `data/removed.txt` mustn't name it, and `data/title_map.csv` mustn't already cover it under another spelling. After the parse in step 3, link it in the git-ignored `data/konami.tsv`: `poetry run python src/konami_music.py -l` rebuilds it from saved pages, and a song new to Konami needs a fresh `make konami_music` (asks for the user's e-amusement cookie in the Keychain). If it's still listed with no prep song, set its `name` by hand. Then rerun the parse so the song JSON carries `konami_id`.
-3. **Parse.** `poetry run python src/parse_simfiles.py > <scratchpad>/parse.log 2>&1` from the prep repo (several minutes; run it in the background). Confirm `build/songs/<name>.json` and `build/steps/<name>.json` exist and grep the log for errors on that song. Then put the cabinet data back (the parse rewrites every song JSON without it): `poetry run python src/arcade_sync.py "<name>"` and `poetry run python src/arcade_timesigs.py "<name>"` (needs the dump in `data/arcade/`; see CODEBASE.md §6).
-4. **Jackets.** `src="data/<VERSION>/<name>/<name>-jacket.png"`; copy it to `build/jackets/<name>.png` and `magick "$src" -resize 160x160 -quality 100 "build/jackets-160/<name>.png"`.
-5. **Sanity-check the shape** against a live song: `diff <(jq -c 'paths|map(if type=="number" then 0 else . end)' build/songs/<name>.json | sort -u) <(jq -c '...same...' ~/repos/ddr-md-content/songs/<any>.json | sort -u)`. Missing `sync`/`arcade_sync`/`time_signatures` is fine (optional; `time_signatures` only appears on songs that aren't plain 4/4); anything else missing, stop and tell the user.
-6. **Show the user** title, artist, version and chart levels, and get a yes before pushing — a push to content `master` goes live to every installed app within minutes.
-7. **Publish.** In `~/repos/ddr-md-content`: copy the four files (`songs/`, `steps/`, `jackets/`, `jackets-160/`), `git add -A`, commit `content: <name> (<VERSION>)`, push. If the user wants to try it on a phone first, commit on the content repo's `staging` branch instead (`git switch staging && git merge master`), push that, and check `https://staging.ddr-md-content.pages.dev` in step 8; the phone needs a build with `--dart-define=CONTENT_URL=https://staging.ddr-md-content.pages.dev`. Once they're happy, merge `staging` into `master` and push.
-8. **Confirm live.** Watch the run (`gh run list -R sh1ggy/ddr-md-content -L 1`, then `gh run watch <id> -R sh1ggy/ddr-md-content --exit-status`, ~2½ min), then check `curl -s https://ddr-md-content.pages.dev/manifest.json | jq '[.files|keys[]|select(test("<name>"))]'` lists its files.
-9. **Wrap up.** Commit the `songs.txt` edit in the prep repo. Tell the user to sync from Settings → Song Updates on the phone to see it.
+1. **Find it.** `python -m admin inbox` lists songs in the game with no simfile yet. If it isn't on disk (`ls data/*/ | grep -i "<name>"`), find its Zenius simfile id (the `simfileid=` in its viewsimfile URL; ask the user if you can't) and add it from the console's inbox (Scrape), or `python -m admin seed-add songs "<id>\t<VERSION>\t<title>" --why "scrape <title>"` then `python -m admin job scrape_song simfile_id=<id> version=<VERSION>`.
+2. **Prepare.** `python -m admin job prepare` (several minutes; run it in the background). For one song already parsed, `python -m admin job song song="<name>"` rebuilds just its sync, arcade data, tiers and jacket.
+3. **Link its Konami ID.** `python -m admin job konami_relink` (a song new to Konami needs `job konami_fetch`, which uses the user's cookie from the Keychain). If it's still unlinked, link it on its song page, then rebuild its data.
+4. **Check the diff.** `python -m admin diff "<name>"` shows what changes for players. A warning like missing Konami ID or arcade sync: fix it or tell the user before going on.
+5. **Draft and check.** `python -m admin draft "<name>" --title "<name> (<VERSION>)" --kind add` (use `--kind fix` for a chart fix), then `python -m admin checks`. Fix anything it reports.
+6. **Show the user** title, artist, version, chart levels and the diff, and get a yes before staging.
+7. **Stage.** `python -m admin stage` pushes the release to the content repo's `staging` branch and opens its PR. CI publishes it to `https://staging.ddr-md-content.pages.dev` in about 5 minutes (`python -m admin status`).
+8. **Sign off is the user's.** They test on a phone following staging (long-press Song Updates) and sign off in the console, or tell you how they tested and you run `python -m admin signoff "<their words>"`. That fast-forwards `master` and goes live to every installed app.
+9. **Confirm.** `python -m admin status` shows `confirmed: true` once the live id equals the one tested. Tell the user to sync from Settings → Song Updates on the phone to see it.
 
-Several songs: run steps 1–5 for each, parse once, and publish them in one content commit.
+Several songs: prepare once and draft them in one release.
