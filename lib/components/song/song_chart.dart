@@ -6,10 +6,14 @@ library;
 import 'dart:math' as math;
 
 import 'package:ddr_md/components/song/card_heading.dart';
+import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song/song_details.dart';
 import 'package:ddr_md/components/song/song_sync_status.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
+import 'package:ddr_md/models/note_density.dart';
+import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/steps_model.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
@@ -21,10 +25,14 @@ class SongChart extends StatefulWidget {
     required this.context,
     required this.songInfo,
     required this.chart,
+    this.notes,
   });
   final BuildContext context;
   final SongInfo? songInfo;
   final Chart chart;
+
+  /// The chosen difficulty's steps; null until loaded or when not bundled.
+  final List<StepNote>? notes;
 
   @override
   State<StatefulWidget> createState() => SongChartState();
@@ -46,8 +54,21 @@ class SongChartState extends State<SongChart> {
   _Band? _band;
   int? _picked;
   int? _pickedStop;
+  int? _pickedBin;
+  bool _notesOn = Settings.getInt(Settings.songGraphNotesHiddenKey) != 1;
+
+  NoteDensity? _density;
+  List<StepNote>? _densityNotes;
+  bool? _densityArcade;
 
   static const _height = 100.0;
+  static const _ribbonHeight = 36.0;
+
+  bool get _hasBpmGraph =>
+      widget.chart.trueMax != widget.chart.trueMin ||
+      widget.chart.stops.isNotEmpty;
+  // A constant tempo has no bars to show, so its graph is only the notes.
+  bool get _notesShown => _density != null && (!_hasBpmGraph || _notesOn);
 
   @override
   void didUpdateWidget(SongChart oldWidget) {
@@ -57,6 +78,47 @@ class SongChartState extends State<SongChart> {
       _picked = null;
       _pickedStop = null;
     }
+    if (oldWidget.notes != widget.notes) _pickedBin = null;
+  }
+
+  // Coloured with the palette the player picked in the chart preview.
+  NoteDensity? _densityFor(List<StepNote>? notes, double length) {
+    if (notes == null || notes.isEmpty || length <= 0) return _density = null;
+    final arcade = Settings.getInt(Settings.quantColorsOnKey) != 1;
+    if (_density == null ||
+        notes != _densityNotes ||
+        arcade != _densityArcade) {
+      QuantColors.arcadeMode = arcade;
+      _densityNotes = notes;
+      _densityArcade = arcade;
+      _density = NoteDensity.of(notes, length);
+    }
+    return _density;
+  }
+
+  void _toggleNotes() {
+    HapticFeedback.selectionClick();
+    Settings.setInt(Settings.songGraphNotesHiddenKey, _notesOn ? 1 : 0);
+    setState(() {
+      _notesOn = !_notesOn;
+      _pickedBin = null;
+      _picked = null;
+    });
+  }
+
+  void _pickBin(double dx, double width, {required bool tap}) {
+    if (width <= 0) return;
+    final count = _density!.bins.length;
+    int? bin = (dx / width * count).floor().clamp(0, count - 1);
+    if (tap && bin == _pickedBin) bin = null;
+    if (bin == _pickedBin) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _pickedBin = bin;
+      _picked = null;
+      _pickedStop = null;
+      _band = null;
+    });
   }
 
   bool get _showStops => widget.chart.stops.isNotEmpty && !_stopsHidden;
@@ -78,10 +140,14 @@ class SongChartState extends State<SongChart> {
         }
       }
       if (tap && nearest != null && nearest == _pickedStop) nearest = null;
-      if (nearest != _pickedStop || _picked != null || _band != null) {
+      if (nearest != _pickedStop ||
+          _picked != null ||
+          _band != null ||
+          (nearest != null && _pickedBin != null)) {
         if (nearest != null && !hover) HapticFeedback.selectionClick();
         setState(() {
           _pickedStop = nearest;
+          if (nearest != null) _pickedBin = null;
           _picked = null;
           _band = null;
         });
@@ -95,9 +161,13 @@ class SongChartState extends State<SongChart> {
     final i = bpms.indexWhere((b) => t >= b.st && t < b.ed);
     int? picked = i < 0 ? (t < bpms.first.st ? 0 : bpms.length - 1) : i;
     if (tap && picked == _picked) picked = null;
-    if (picked != _picked || _pickedStop != null || _band != null) {
+    if (picked != _picked ||
+        _pickedStop != null ||
+        _band != null ||
+        _pickedBin != null) {
       HapticFeedback.selectionClick();
       setState(() {
+        _pickedBin = null;
         _picked = picked;
         _pickedStop = null;
         _band = null;
@@ -109,6 +179,7 @@ class SongChartState extends State<SongChart> {
     HapticFeedback.lightImpact();
     setState(() {
       _band = _band == band ? null : band;
+      _pickedBin = null;
       _picked = null;
       _pickedStop = null;
     });
@@ -129,6 +200,10 @@ class SongChartState extends State<SongChart> {
     final scheme = Theme.of(context).colorScheme;
     final length = widget.songInfo!.songLength;
     final hasStops = chart.stops.isNotEmpty;
+    final density = _densityFor(widget.notes, length);
+    final hasBpmGraph = _hasBpmGraph;
+    final notesShown = _notesShown;
+    final bin = notesShown ? _pickedBin : null;
     final picked = _picked == null ? null : chart.bpms[_picked!];
     final pickedStop = _pickedStop == null ? null : chart.stops[_pickedStop!];
     String time(double s) => formattedTime(timeInSecond: s.round());
@@ -167,150 +242,176 @@ class SongChartState extends State<SongChart> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const CardHeading('BPM Graph', icon: Icons.show_chart),
-            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                  child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: hasBpmGraph
+                          ? const CardHeading('BPM Graph',
+                              icon: Icons.show_chart)
+                          : const CardHeading('Notes', icon: Icons.bar_chart))),
+              if (!hasBpmGraph)
+                Text('${chart.dominantBpm} BPM',
+                    style: FloorPop.readout(14, color: FloorPop.volt))
+              else if (density != null)
+                _NotesToggle(on: _notesOn, onTap: _toggleNotes),
+            ]),
+            if (hasBpmGraph) const SizedBox(height: 10),
             // The legend up front, as the glance: what each colour holds and
             // the stops. A tempo tile picks its band out on the graph, one at
             // a time; the stops tile switches the stops off and on.
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final (i, (band, colour, label)) in [
-                    (_Band.slower, FloorPop.padBlue, 'SLOWER'),
-                    (_Band.core, FloorPop.volt, 'CORE'),
-                    (_Band.faster, FloorPop.coral, 'FASTER'),
-                  ].indexed) ...[
-                    if (i > 0) const SizedBox(width: 6),
-                    Expanded(
-                      child: _LegendTile(
-                        colour: colour,
-                        label: label,
-                        value: spans[band]!,
-                        on: _band == null || _band == band,
-                        selected: _band == band,
-                        onTap: () => _pickBand(band),
+            if (hasBpmGraph)
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final (i, (band, colour, label)) in [
+                      (_Band.slower, FloorPop.padBlue, 'SLOWER'),
+                      (_Band.core, FloorPop.volt, 'CORE'),
+                      (_Band.faster, FloorPop.coral, 'FASTER'),
+                    ].indexed) ...[
+                      if (i > 0) const SizedBox(width: 6),
+                      Expanded(
+                        child: _LegendTile(
+                          colour: colour,
+                          label: label,
+                          value: spans[band]!,
+                          on: _band == null || _band == band,
+                          selected: _band == band,
+                          onTap: () => _pickBand(band),
+                        ),
                       ),
-                    ),
-                  ],
-                  if (hasStops) ...[
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: _LegendTile(
-                        colour: scheme.onSurface,
-                        label: 'STOPS',
-                        value:
-                            '${chart.stops.length} · ${stopSeconds.toStringAsFixed(1)}s',
-                        on: !_stopsHidden,
-                        onTap: _toggleStops,
+                    ],
+                    if (hasStops) ...[
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: _LegendTile(
+                          colour: scheme.onSurface,
+                          label: 'STOPS',
+                          value:
+                              '${chart.stops.length} · ${stopSeconds.toStringAsFixed(1)}s',
+                          on: !_stopsHidden,
+                          onTap: _toggleStops,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
             // The band, section or stop picked, once there is one.
             AnimatedSize(
               duration: FloorPop.eighth,
               curve: FloorPop.settle,
-              child: picked == null && pickedStop == null && _band == null
+              child: picked == null &&
+                      pickedStop == null &&
+                      _band == null &&
+                      bin == null
                   ? const SizedBox(width: double.infinity)
                   : Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.baseline,
                         textBaseline: TextBaseline.alphabetic,
-                        children: _band != null
-                            ? [
-                                Text(spans[_band]!,
-                                    style: FloorPop.readout(22,
-                                        color: switch (_band!) {
-                                          _Band.slower => FloorPop.padBlue,
-                                          _Band.core => FloorPop.volt,
-                                          _Band.faster => FloorPop.coral,
-                                        })),
-                                const SizedBox(width: 8),
-                                Text(
-                                    bandSections.isEmpty
-                                        ? 'no sections'
-                                        : '${bandSections.length} '
-                                            '${bandSections.length == 1 ? 'section' : 'sections'}'
-                                            ' · ${time(bandSeconds)}',
-                                    style: FloorPop.readout(14, color: pop.haze)
-                                        .copyWith(fontWeight: FontWeight.w600)),
-                              ]
-                            : pickedStop != null
+                        children: bin != null
+                            ? _notesReadout(bin, length)
+                            : _band != null
                                 ? [
-                                    Text('STOP',
-                                        style: pop.label
-                                            .copyWith(color: scheme.onSurface)),
-                                    const SizedBox(width: 8),
-                                    Text(stopTime(pickedStop.st),
+                                    Text(spans[_band]!,
                                         style: FloorPop.readout(22,
-                                            color: scheme.onSurface)),
+                                            color: switch (_band!) {
+                                              _Band.slower => FloorPop.padBlue,
+                                              _Band.core => FloorPop.volt,
+                                              _Band.faster => FloorPop.coral,
+                                            })),
                                     const SizedBox(width: 8),
                                     Text(
-                                        'for ${pickedStop.dur.toStringAsFixed(2)}s',
+                                        bandSections.isEmpty
+                                            ? 'no sections'
+                                            : '${bandSections.length} '
+                                                '${bandSections.length == 1 ? 'section' : 'sections'}'
+                                                ' · ${time(bandSeconds)}',
                                         style: FloorPop.readout(14,
                                                 color: pop.haze)
                                             .copyWith(
                                                 fontWeight: FontWeight.w600)),
                                   ]
-                                : [
-                                    Text('${picked!.val}',
-                                        style: FloorPop.readout(22,
-                                            color: _bpmColor(picked.val,
-                                                chart.dominantBpm))),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                        '${time(picked.st)} – ${time(picked.ed)}',
-                                        style: FloorPop.readout(14,
-                                                color: pop.haze)
-                                            .copyWith(
-                                                fontWeight: FontWeight.w600)),
-                                  ],
+                                : pickedStop != null
+                                    ? [
+                                        Text('STOP',
+                                            style: pop.label.copyWith(
+                                                color: scheme.onSurface)),
+                                        const SizedBox(width: 8),
+                                        Text(stopTime(pickedStop.st),
+                                            style: FloorPop.readout(22,
+                                                color: scheme.onSurface)),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                            'for ${pickedStop.dur.toStringAsFixed(2)}s',
+                                            style: FloorPop.readout(14,
+                                                    color: pop.haze)
+                                                .copyWith(
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                      ]
+                                    : [
+                                        Text('${picked!.val}',
+                                            style: FloorPop.readout(22,
+                                                color: _bpmColor(picked.val,
+                                                    chart.dominantBpm))),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                            '${time(picked.st)} – ${time(picked.ed)}',
+                                            style: FloorPop.readout(14,
+                                                    color: pop.haze)
+                                                .copyWith(
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                      ],
                       ),
                     ),
             ),
             const SizedBox(height: 10),
-            LayoutBuilder(
-              builder: (context, box) => MouseRegion(
-                onHover: (e) =>
-                    _pick(e.localPosition, box.maxWidth, hover: true),
-                onExit: (_) {
-                  if (_pickedStop != null) setState(() => _pickedStop = null);
-                },
-                child: GestureDetector(
-                  onTapDown: (d) =>
-                      _pick(d.localPosition, box.maxWidth, tap: true),
-                  onHorizontalDragUpdate: (d) =>
-                      _pick(d.localPosition, box.maxWidth),
-                  child: RepaintBoundary(
-                    child: SizedBox(
-                      height: _height,
-                      child: TweenAnimationBuilder<double>(
-                        // Bars rise into place when the chart changes.
-                        key: ValueKey(chart),
-                        tween: Tween(begin: 0, end: 1),
-                        duration: MediaQuery.of(context).disableAnimations
-                            ? Duration.zero
-                            : FloorPop.beat,
-                        curve: FloorPop.step,
-                        builder: (context, grow, _) => CustomPaint(
-                          size: Size.infinite,
-                          painter: _BpmBarsPainter(
-                            bpms: chart.bpms,
-                            stops: _showStops ? chart.stops : const [],
-                            length: length,
-                            dominant: chart.dominantBpm,
-                            lowest: chart.trueMin,
-                            highest: chart.trueMax,
-                            band: _band,
-                            picked: _picked,
-                            pickedStop: _pickedStop,
-                            grow: grow,
-                            stopColor: scheme.onSurface,
-                            baseline: pop.line,
+            if (hasBpmGraph)
+              LayoutBuilder(
+                builder: (context, box) => MouseRegion(
+                  onHover: (e) =>
+                      _pick(e.localPosition, box.maxWidth, hover: true),
+                  onExit: (_) {
+                    if (_pickedStop != null) setState(() => _pickedStop = null);
+                  },
+                  child: GestureDetector(
+                    onTapDown: (d) =>
+                        _pick(d.localPosition, box.maxWidth, tap: true),
+                    onHorizontalDragUpdate: (d) =>
+                        _pick(d.localPosition, box.maxWidth),
+                    child: RepaintBoundary(
+                      child: SizedBox(
+                        height: _height,
+                        child: TweenAnimationBuilder<double>(
+                          // Bars rise into place when the chart changes.
+                          key: ValueKey(chart),
+                          tween: Tween(begin: 0, end: 1),
+                          duration: MediaQuery.of(context).disableAnimations
+                              ? Duration.zero
+                              : FloorPop.beat,
+                          curve: FloorPop.step,
+                          builder: (context, grow, _) => CustomPaint(
+                            size: Size.infinite,
+                            painter: _BpmBarsPainter(
+                              bpms: hasBpmGraph ? chart.bpms : const [],
+                              stops: _showStops ? chart.stops : const [],
+                              length: length,
+                              dominant: chart.dominantBpm,
+                              lowest: chart.trueMin,
+                              highest: chart.trueMax,
+                              band: _band,
+                              picked: _picked,
+                              pickedStop: _pickedStop,
+                              grow: grow,
+                              stopColor: scheme.onSurface,
+                              baseline: pop.line,
+                            ),
                           ),
                         ),
                       ),
@@ -318,7 +419,31 @@ class SongChartState extends State<SongChart> {
                   ),
                 ),
               ),
-            ),
+            if (notesShown) ...[
+              if (hasBpmGraph) const SizedBox(height: 6),
+              LayoutBuilder(
+                builder: (context, box) => GestureDetector(
+                  onTapDown: (d) =>
+                      _pickBin(d.localPosition.dx, box.maxWidth, tap: true),
+                  onHorizontalDragUpdate: (d) =>
+                      _pickBin(d.localPosition.dx, box.maxWidth, tap: false),
+                  child: RepaintBoundary(
+                    child: SizedBox(
+                      height: _ribbonHeight,
+                      child: CustomPaint(
+                        size: Size.infinite,
+                        painter: _RibbonPainter(
+                          density: density!,
+                          picked: bin,
+                          empty: pop.riser,
+                          cursor: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -332,6 +457,113 @@ class SongChartState extends State<SongChart> {
       ),
     );
   }
+
+  List<Widget> _notesReadout(int bin, double length) {
+    final pop = FloorPop.of(context);
+    final at = (bin + 0.5) * _density!.binSeconds;
+    final bpm = widget.chart.bpms
+        .where((b) => at >= b.st && at < b.ed)
+        .firstOrNull
+        ?.val;
+    return [
+      Text('${_density!.rate(bin).toStringAsFixed(1)}/s',
+          style: FloorPop.readout(22,
+              color: Theme.of(context).colorScheme.onSurface)),
+      const SizedBox(width: 8),
+      Text(
+          'at ${formattedTime(timeInSecond: at.round())}'
+          '${bpm == null ? '' : ' · $bpm BPM'}',
+          style: FloorPop.readout(14, color: pop.haze)
+              .copyWith(fontWeight: FontWeight.w600)),
+    ];
+  }
+}
+
+class _NotesToggle extends StatelessWidget {
+  const _NotesToggle({required this.on, required this.onTap});
+
+  final bool on;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final colour = on ? FloorPop.onVolt : pop.haze;
+    return Semantics(
+      button: true,
+      toggled: on,
+      child: Material(
+        color: on ? FloorPop.volt : pop.riser,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(on ? Icons.check_box : Icons.check_box_outline_blank,
+                  size: 16, color: colour),
+              const SizedBox(width: 6),
+              Text('NOTES',
+                  style: pop.label.copyWith(fontSize: 11, color: colour)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One cell per slice of the song: its note colours stacked in proportion,
+/// brighter the busier it is, on the same time axis as the BPM bars above.
+class _RibbonPainter extends CustomPainter {
+  _RibbonPainter({
+    required this.density,
+    required this.picked,
+    required this.empty,
+    required this.cursor,
+  });
+
+  final NoteDensity density;
+  final int? picked;
+  final Color empty, cursor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final count = density.bins.length;
+    final w = size.width / count;
+    final paint = Paint();
+    for (var i = 0; i < count; i++) {
+      final left = i * w + 0.5, right = (i + 1) * w - 0.5;
+      canvas.drawRect(
+          Rect.fromLTRB(left, 0, right, size.height), paint..color = empty);
+      final total = density.bins[i].fold<int>(0, (a, b) => a + b);
+      if (total == 0) continue;
+      final alpha = math.min(1.0, 0.12 + density.rate(i) / kDensityScale);
+      var y = 0.0;
+      for (var c = 0; c < kDensityColours.length; c++) {
+        final n = density.bins[i][c];
+        if (n == 0) continue;
+        final h = size.height * n / total;
+        canvas.drawRect(Rect.fromLTRB(left, y, right, y + h),
+            paint..color = kDensityColours[c].withValues(alpha: alpha));
+        y += h;
+      }
+    }
+    if (picked != null) {
+      canvas.drawRect(
+          Rect.fromLTWH(picked! * w, 0, w, size.height),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = cursor);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RibbonPainter old) =>
+      old.density != density || old.picked != picked;
 }
 
 /// A legend entry: its colour, name and values. Off, it fades and its swatch

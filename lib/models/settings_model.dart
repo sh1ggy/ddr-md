@@ -96,6 +96,8 @@ class Settings {
   // palette instead of the cabinet's coarser one (4ths/8ths/16ths only,
   // everything else green). Stored as 0/1. See [QuantColors.arcadeMode].
   static const String quantColorsOnKey = "chartPreviewQuantColorsOn";
+  // Stored inverted so the 0 default shows notes on the song page's graph.
+  static const String songGraphNotesHiddenKey = "songGraphNotesHidden";
 
   // BLINKING for the chart preview, stored inverted so the 0 default keeps the
   // cabinet's blinking arrow art on: 1 draws static sprites instead.

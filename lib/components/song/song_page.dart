@@ -147,8 +147,16 @@ class _SongPageState extends State<SongPage> {
   void _loadStepsFor(SongInfo songInfo) {
     if (_stepsSongName == songInfo.name) return;
     _stepsSongName = songInfo.name;
-    _stepsFuture = StepsLoader.load(songInfo.name);
+    _steps = null;
+    final future = _stepsFuture = StepsLoader.load(songInfo.name);
+    future.then((steps) {
+      if (!mounted || _stepsFuture != future) return;
+      setState(() => _steps = steps);
+    });
   }
+
+  // The loaded value of [_stepsFuture], for the graph's notes.
+  SongSteps? _steps;
 
   // Same lazy per-song load as the steps, held as a value so the section can
   // be left out entirely when there is no analysis.
@@ -391,8 +399,25 @@ class _SongPageState extends State<SongPage> {
                 available[
                     songState.chosenDifficulty.clamp(0, available.length - 1)]));
       case SongSection.bpmGraph:
-        if (!_isBpmChange && _chart.stops.isEmpty) return null;
-        return SongChart(context: context, songInfo: songInfo, chart: _chart);
+        final available = (songState.modes == Modes.singles
+                ? songInfo.singles
+                : songInfo.doubles)
+            .availableTypes;
+        final notes = available.isEmpty
+            ? null
+            : _steps
+                ?.chartFor(
+                    songState.modes,
+                    available[songState.chosenDifficulty
+                        .clamp(0, available.length - 1)])
+                ?.notes;
+        if (!_isBpmChange &&
+            _chart.stops.isEmpty &&
+            (notes == null || notes.isEmpty)) {
+          return null;
+        }
+        return SongChart(
+            context: context, songInfo: songInfo, chart: _chart, notes: notes);
       case SongSection.latestScore:
         return GestureDetector(
           onTap: () => openHistory(HistoryPage.scoresTab),
