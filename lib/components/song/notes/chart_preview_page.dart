@@ -446,7 +446,32 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
             onPressed: () => setState(() => _editFooting = !_editFooting),
           );
     return Stack(
+      clipBehavior: Clip.none,
       children: [
+        // Fades the field out under the header and the top of the receptors,
+        // so the bare buttons and title stay readable over the arrows.
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: -72,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xF2080A0E),
+                    Color(0xCC080A0E),
+                    Color(0x00080A0E)
+                  ],
+                  stops: [0, 0.45, 1],
+                ),
+              ),
+            ),
+          ),
+        ),
         // Keep the chart visible through the preview controls.
         SafeArea(
           bottom: false,
