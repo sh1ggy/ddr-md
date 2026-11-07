@@ -5,6 +5,8 @@ library;
 
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
+import 'package:ddr_md/components/settings/score_overview_page.dart'
+    show FlareClassPreviewPage;
 import 'package:ddr_md/components/song/jacket_edition.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_fixture_browser.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_guide.dart';
@@ -198,6 +200,15 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                               Settings.wrapBannerPreviewKey, v ? 1 : 0);
                           wrapBannerPreview.value = v;
                         }))),
+            Card(
+                child: ListTile(
+                    leading: const Icon(Icons.local_fire_department_outlined),
+                    title: const Text('Flare class preview'),
+                    subtitle: const Text(
+                        'How Statistics looks at every flare skill class'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const FlareClassPreviewPage())))),
             Card(
                 child: ListTile(
                     leading: const Icon(Icons.layers_outlined),

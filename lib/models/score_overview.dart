@@ -101,6 +101,16 @@ FlareSkill flareSkill(
   return FlareSkill(groups);
 }
 
+const _kFlareBasePoints = [
+  145, 155, 170, 185, 205, 230, 255, 290, 335, 400, //
+  465, 510, 545, 575, 600, 620, 635, 650, 665,
+];
+
+/// A chart's flare skill at [level] (1 to 19). [rank] is 0 for a clear without
+/// flare, 1 to 9 for I to IX and 10 for EX.
+int flarePoints(int level, int rank) =>
+    _kFlareBasePoints[level - 1] * (100 + 6 * rank) ~/ 100;
+
 /// The flare skill class a total reaches, with the total it starts at and
 /// the total the next one starts at (null at WORLD, the top).
 ({String name, int from, int? next}) flareClass(int total) {

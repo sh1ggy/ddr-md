@@ -66,6 +66,11 @@ void main() {
     expect(skill.floor(FlareGroup.gold), isNull);
     expect(skill.lowestFloor, FlareGroup.white);
 
+    expect(flarePoints(1, 0), 145);
+    expect(flarePoints(12, 3), 601);
+    expect(flarePoints(17, 9), 977);
+    expect(flarePoints(19, 10), 1064);
+
     final levels = chartsByLevel(records, songs, Modes.singles);
     expect(levels[15]!.charts, 44);
     expect(levels[15]!.played.length, 43);
