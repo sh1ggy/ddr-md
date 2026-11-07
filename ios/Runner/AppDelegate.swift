@@ -39,6 +39,7 @@ enum BackupExclusions {
       applicationSupport.appendingPathComponent("content", isDirectory: true),
       documents.appendingPathComponent("models", isDirectory: true),
       documents.appendingPathComponent("templates", isDirectory: true),
+      documents.appendingPathComponent("music", isDirectory: true),
     ]
     for var directory in directories {
       do {

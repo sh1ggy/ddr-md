@@ -17,6 +17,7 @@ import 'package:ddr_md/theme.dart';
 
 import 'chart_chrome.dart';
 import 'chart_models.dart';
+import 'chart_music.dart';
 import 'constant_speed.dart';
 // Re-exported so callers keep importing the test handles from the preview's
 // entry point rather than reaching into the split-out parts.
@@ -40,6 +41,7 @@ import 'package:ddr_md/components/song/notes/noteskin.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/models/database.dart';
+import 'package:ddr_md/models/music_library.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_shocks.dart';
 import 'package:ddr_md/models/parity_labels.dart';
@@ -135,9 +137,13 @@ class ChartScroller extends StatefulWidget {
     this.onPlaybackRateChanged,
     this.caption,
     this.onShareReady,
+    this.musicSong,
   });
 
   final ChartSteps steps;
+
+  /// The song whose music, if the player has added it, plays with the chart.
+  final String? musicSong;
 
   /// Heads a shared section; the bars it spans join its note.
   final ShareCaption? caption;
@@ -757,6 +763,7 @@ class _ChartScrollerState extends State<ChartScroller>
       if (_playing) {
         _tickClock.start(chartSecond: _second, rate: _playbackRate);
       }
+      _loadMusic();
     }).catchError((Object e, StackTrace st) {
       // Engine/sample failed to load: the tick stays silent. Surface it so a
       // device that plays nothing is diagnosable instead of mysteriously mute.
@@ -1996,11 +2003,35 @@ class _ChartScrollerState extends State<ChartScroller>
     } else {
       _tickClock.stop();
     }
+    if (_playing) {
+      _music.play(_second + _audioOffsetSeconds, _playbackRate);
+    } else {
+      _music.pause();
+    }
+  }
+
+  // Runs once the engine is up, so it can't race the tick clock's init.
+  Future<void> _loadMusic() async {
+    final song = widget.musicSong;
+    if (song == null) return;
+    final path = await MusicLibrary.pathFor(song);
+    if (path == null || !mounted) return;
+    try {
+      await _music.load(path);
+    } catch (e) {
+      debugPrint("ChartMusic load failed: $e");
+      return;
+    }
+    if (mounted && _playing) _resyncTickClock();
   }
 
   // Silence and unschedule everything: pause, chart switch, tick toggled off,
   // dispose. Cheap and idempotent.
   void _cancelPendingTicks() => _tickClock.stop();
+
+  final _music = ChartMusic();
+  static const double _musicLean = 0.05; // share of the error taken each frame
+  static const double _musicSnapSeconds = 0.1;
 
   // Momentum for drag-flings: seconds-of-chart per real second, decaying by
   // [_flingDecay] each real second until it dies out. Separate from playback.
@@ -2044,6 +2075,14 @@ class _ChartScrollerState extends State<ChartScroller>
       if (_loop case (final from, final to) when next >= to) {
         next = from;
         looped = true;
+      } else if (_music.second case final heard?) {
+        // The frame clock scrolls smoothly; the music's position only moves in
+        // whole mixer buffers. So lean toward the music, and jump only if a
+        // stall has left the chart audibly behind.
+        final error = heard - _audioOffsetSeconds - next;
+        final stalled = error.abs() > _musicSnapSeconds;
+        next += stalled ? error : error * _musicLean;
+        looped = stalled;
       }
     } else if (_flingVel != 0) {
       // Inertial scrub: advance by the current velocity, then decay it.
@@ -2117,6 +2156,7 @@ class _ChartScrollerState extends State<ChartScroller>
   void _pause() {
     if (!_playing) return;
     _cancelPendingTicks(); // scheduled rows ahead of the playhead go silent
+    _music.pause();
     setState(() => _playing = false);
     _stopTickerIfIdle();
   }
@@ -2520,6 +2560,7 @@ class _ChartScrollerState extends State<ChartScroller>
     _seekOverlayTimer?.cancel();
     _ticker.dispose();
     _tickClock.dispose();
+    _music.dispose();
     _playhead.dispose();
     super.dispose();
   }

@@ -11,7 +11,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '1 November 2026';
+const privacyUpdated = '7 November 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
@@ -40,6 +40,9 @@ const privacySections = <(String, List<String>)>[
           'and photos are never uploaded. On iPhone, saved score photos sit in '
           "DDR MD's folder in the Files app. Like any app's data, all of this "
           "is included in your device's own backups (iCloud or Google).",
+      'Music you add under Your Music stays on your device. It is never '
+          "uploaded, and isn't included in your device's backups or Cloud "
+          'Backup.',
     ]
   ),
   (

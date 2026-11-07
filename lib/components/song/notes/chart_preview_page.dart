@@ -349,6 +349,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 key: ValueKey(
                     "${widget.title}-${widget.mode.name}-${widget.difficultyKey}"),
                 steps: steps,
+                musicSong:
+                    widget.feedActive == null ? snapshot.data!.name : null,
                 feedActive: widget.feedActive,
                 playbackRate: widget.playbackRate,
                 onPlaybackRateChanged: widget.onPlaybackRateChanged,
