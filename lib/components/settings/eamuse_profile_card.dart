@@ -12,6 +12,8 @@ import 'package:ddr_md/components/settings/development_page.dart'
     show toggleDevelopmentTools;
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/settings/flare_class_style.dart';
+import 'package:ddr_md/components/settings/score_overview_page.dart'
+    show ScoreOverviewPage;
 import 'package:ddr_md/grades.dart' show flareClassColor;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
@@ -202,6 +204,30 @@ class EamuseProfileCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   stat("Plays", plays == 0 ? '—' : '$plays'),
                 ]),
+                const SizedBox(height: 8),
+                Material(
+                  color: tint == null
+                      ? pop.riser
+                      : Color.lerp(pop.riser, tint, 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ScoreOverviewPage())),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      child: Row(children: [
+                        const Icon(Icons.leaderboard_outlined, size: 20),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                            child: Text('Statistics',
+                                style: TextStyle(fontWeight: FontWeight.w600))),
+                        Icon(Icons.chevron_right, color: muted),
+                      ]),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

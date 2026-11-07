@@ -206,8 +206,11 @@ class FlareClassPreviewPage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 120),
         children: [
           for (final total in totals)
-            Card(
+            Container(
               margin: const EdgeInsets.only(bottom: 8),
+              decoration: flareClassSurface(flareClass(total).name,
+                  base: FloorPop.of(context).stage,
+                  radius: BorderRadius.circular(24)),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -252,6 +255,8 @@ class _FlareCardState extends State<_FlareCard> {
     return HomeCard(
       title: 'Flare Skill',
       icon: Icons.local_fire_department_outlined,
+      decoration: flareClassSurface(flareClass(skill.total).name,
+          base: FloorPop.of(context).stage, radius: BorderRadius.circular(24)),
       heading: Row(mainAxisSize: MainAxisSize.min, children: [
         CardHeading('Flare Skill',
             icon: Icons.local_fire_department_outlined,
