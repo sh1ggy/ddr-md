@@ -11,7 +11,10 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/settings/development_page.dart'
     show toggleDevelopmentTools;
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/grades.dart' show flareClassColor, flareClassIcon;
+import 'package:ddr_md/components/settings/flare_class_style.dart';
+import 'package:ddr_md/components/settings/score_overview_page.dart'
+    show ScoreOverviewPage;
+import 'package:ddr_md/grades.dart' show flareClassColor;
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/score_overview.dart';
@@ -98,94 +101,138 @@ class EamuseProfileCard extends StatelessWidget {
     }
 
     final pop = FloorPop.of(context);
-    Widget stat(String label, String value) => Expanded(
+    final radius = BorderRadius.circular(26);
+
+    return FutureBuilder<String?>(
+      future: _flareClass(),
+      builder: (context, snapshot) {
+        final cls = snapshot.data;
+        final tint = cls == null ? null : flareClassColor(cls);
+        Widget stat(String label, String value) => Expanded(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                    color: tint == null
+                        ? pop.riser
+                        : Color.lerp(pop.riser, tint, 0.18),
+                    borderRadius: BorderRadius.circular(14)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label.toUpperCase(), style: pop.label),
+                    const SizedBox(height: 2),
+                    Text(value,
+                        style: FloorPop.readout(20,
+                            color: theme.colorScheme.onSurface)),
+                  ],
+                ),
+              ),
+            );
+        return AnimatedContainer(
+          duration: FloorPop.beat,
+          curve: FloorPop.settle,
+          margin: const EdgeInsets.symmetric(vertical: 5),
+          decoration: cls == null
+              ? BoxDecoration(
+                  color: pop.stage,
+                  borderRadius: radius,
+                  border: Border.all(color: Colors.transparent, width: 1.5))
+              : flareClassSurface(cls, base: pop.stage, radius: radius),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-                color: pop.riser, borderRadius: BorderRadius.circular(14)),
+            padding: const EdgeInsets.all(18),
+            decoration: pop.stripes(radius: radius),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(label.toUpperCase(), style: pop.label),
-                const SizedBox(height: 2),
-                Text(value,
-                    style: FloorPop.readout(20,
-                        color: theme.colorScheme.onSurface)),
+                Row(
+                  children: [
+                    // Held at one size so nothing moves as the class loads.
+                    SizedBox.square(
+                      dimension: 64,
+                      child: cls == null
+                          ? Center(
+                              child: Transform.rotate(
+                                  angle: -0.07,
+                                  child: const PadGlyph(size: 48, lit: true)))
+                          : _FlareTaps(
+                              child: Tooltip(
+                                message: 'Flare rank',
+                                child: FlareClassArt(cls, size: 64),
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name.isEmpty ? 'DANCER' : name.toUpperCase(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: FloorPop.display(24,
+                                  color: theme.colorScheme.onSurface)),
+                          if (code.isNotEmpty)
+                            Text(formatRivalCode(code),
+                                style: FloorPop.readout(18, color: muted)
+                                    .copyWith(letterSpacing: 1.5)),
+                          SizedBox(
+                              height: 18,
+                              child: cls == null
+                                  ? null
+                                  : FlareClassName(cls, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    if (code.isNotEmpty)
+                      HeaderButton(
+                        tooltip: "Copy rival code",
+                        icon: const Icon(Icons.copy_rounded, size: 20),
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: code));
+                          if (context.mounted) {
+                            showToast(context, "Copied rival code");
+                          }
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(children: [
+                  stat("Last play",
+                      lastPlay.isEmpty ? '—' : formatAgo(eamuseTime(lastPlay))),
+                  const SizedBox(width: 8),
+                  stat("Plays", plays == 0 ? '—' : '$plays'),
+                ]),
+                const SizedBox(height: 8),
+                Material(
+                  color: tint == null
+                      ? pop.riser
+                      : Color.lerp(pop.riser, tint, 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ScoreOverviewPage())),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      child: Row(children: [
+                        const Icon(Icons.leaderboard_outlined, size: 20),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                            child: Text('Statistics',
+                                style: TextStyle(fontWeight: FontWeight.w600))),
+                        Icon(Icons.chevron_right, color: muted),
+                      ]),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         );
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      padding: const EdgeInsets.all(18),
-      decoration:
-          pop.stripes(color: pop.stage, radius: BorderRadius.circular(26)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          FutureBuilder<String?>(
-            future: _flareClass(),
-            builder: (context, snapshot) {
-              final cls = snapshot.data;
-              return Row(
-                children: [
-                  cls == null
-                      ? Transform.rotate(
-                          angle: -0.07,
-                          child: const PadGlyph(size: 48, lit: true))
-                      : _FlareTaps(
-                          child: Tooltip(
-                            message: 'Flare rank',
-                            child: Image.asset(flareClassIcon(cls),
-                                width: 64, filterQuality: FilterQuality.medium),
-                          ),
-                        ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name.isEmpty ? 'DANCER' : name.toUpperCase(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: FloorPop.display(24,
-                                color: theme.colorScheme.onSurface)),
-                        if (code.isNotEmpty)
-                          Text(formatRivalCode(code),
-                              style: FloorPop.readout(18, color: muted)
-                                  .copyWith(letterSpacing: 1.5)),
-                        if (cls != null)
-                          Text(cls,
-                              style: pop.label
-                                  .copyWith(color: flareClassColor(cls))),
-                      ],
-                    ),
-                  ),
-                  if (code.isNotEmpty)
-                    HeaderButton(
-                      tooltip: "Copy rival code",
-                      icon: const Icon(Icons.copy_rounded, size: 20),
-                      onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: code));
-                        if (context.mounted) {
-                          showToast(context, "Copied rival code");
-                        }
-                      },
-                    ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 14),
-          Row(children: [
-            stat("Last play",
-                lastPlay.isEmpty ? '—' : formatAgo(eamuseTime(lastPlay))),
-            const SizedBox(width: 8),
-            stat("Plays", plays == 0 ? '—' : '$plays'),
-          ]),
-        ],
-      ),
+      },
     );
   }
 }

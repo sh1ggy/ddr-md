@@ -7,6 +7,8 @@
 /// session's synced plays, bursting the moment a sync takes it to target.
 library;
 
+import 'dart:math' as math;
+
 import 'package:ddr_md/components/circle/cheer_stamp.dart' show burstConfetti;
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/recent_plays.dart' show chartOf;
@@ -15,6 +17,7 @@ import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart'
     show clearLampIcon;
 import 'package:ddr_md/components/song_json.dart' show Modes;
+import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/helpers.dart' show formatTime12;
 import 'package:ddr_md/models/chart_bests.dart';
@@ -66,13 +69,15 @@ String? goalValueArt(SessionGoal goal) => switch (goal.kind) {
 /// What [goal] is after in the game's art: its grade, lamp or flare, the
 /// level's numeral (with a + for and up), and the style when doubles.
 class GoalArt extends StatelessWidget {
-  const GoalArt(this.goal, {super.key, this.height = 22});
+  const GoalArt(this.goal, {super.key, this.height = 22, this.ink});
   final SessionGoal goal;
   final double height;
+  // The words' colour, off the goal's stamp; the kind's ink on it.
+  final Color? ink;
 
   @override
   Widget build(BuildContext context) {
-    final ink = goal.kind.ink;
+    final ink = this.ink ?? goal.kind.ink;
     final art = goalValueArt(goal);
     return Row(mainAxisSize: MainAxisSize.min, children: [
       if (art != null) Image.asset(art, height: height),
@@ -269,6 +274,325 @@ class _Pips extends StatelessWidget {
       ],
     ]);
   }
+}
+
+/// How a session's goal went, told as it happens: the goal's colour floods up
+/// a tank as the count ticks, each counted chart's jacket landing with its
+/// tick, then GOAL HIT slams on with confetti, or the to-go stamp drops.
+class GoalReveal extends StatefulWidget {
+  const GoalReveal(this.progress, {super.key});
+  final GoalProgress progress;
+
+  @override
+  State<GoalReveal> createState() => _GoalRevealState();
+}
+
+class _GoalRevealState extends State<GoalReveal> with TickerProviderStateMixin {
+  static const _lead = 450.0, _landing = 320.0, _slam = 260.0;
+  static const _shownJackets = 12;
+
+  late final int _n = widget.progress.count;
+  late final double _step = _n == 0 ? 0 : (1800 / _n).clamp(140.0, 420.0);
+  late final double _stampAt = _lead + _step * _n + 200;
+  late final double _total = _stampAt + _slam + 700;
+  late final _clock = AnimationController(
+      vsync: this, duration: Duration(milliseconds: _total.round()))
+    ..addListener(_tick);
+  late final _swell =
+      AnimationController(vsync: this, duration: const Duration(seconds: 4));
+  final _stampKey = GlobalKey();
+  int _ticked = 0;
+  bool _slammed = false;
+
+  double get _ms => _clock.value * _total;
+  // Counted so far, with the part of the tick in progress.
+  double get _ticks =>
+      _step == 0 ? 0 : ((_ms - _lead) / _step).clamp(0.0, _n.toDouble());
+  int get _shown => _clock.isCompleted
+      ? widget.progress.count
+      : _ms < _lead
+          ? 0
+          : math.min(_n, _ticks.floor() + 1);
+  // 1 at the stamp's impact, gone 400ms on.
+  double get _hit {
+    final since = _ms - _stampAt - _slam;
+    return since < 0 ? 0 : 1 - (since / 400).clamp(0.0, 1.0);
+  }
+
+  void _tick() {
+    if (_shown > _ticked) {
+      _ticked = _shown;
+      HapticFeedback.selectionClick();
+    }
+    if (!_slammed && _ms >= _stampAt + _slam) {
+      _slammed = true;
+      _land();
+    }
+  }
+
+  void _land() {
+    if (!widget.progress.reached) {
+      if (widget.progress.goal.target != null) HapticFeedback.lightImpact();
+      return;
+    }
+    HapticFeedback.heavyImpact();
+    final box = _stampKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.attached) {
+      burstConfetti(context, box.localToGlobal(box.size.center(Offset.zero)),
+          widget.progress.goal.kind.color);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _slammed = true;
+        _ticked = _n;
+        _clock.value = 1;
+      } else {
+        _clock.forward();
+        _swell.repeat();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock.dispose();
+    _swell.dispose();
+    super.dispose();
+  }
+
+  double get _level {
+    final target = widget.progress.goal.target;
+    final whole = _ticks.floor();
+    final x = whole + Curves.easeOutCubic.transform(_ticks - whole);
+    // An open goal has no full, so any haul fills it most of the way.
+    return target == null
+        ? (_n == 0 ? 0 : x / _n * .7)
+        : (x / target).clamp(0.0, 1.0);
+  }
+
+  Widget _face(FloorPop pop, Color ink) {
+    final goal = widget.progress.goal;
+    final target = goal.target;
+    final shown = _shown;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(goal.kind.icon, size: 18, color: ink),
+          const SizedBox(width: 6),
+          Text("TONIGHT'S GOAL", style: pop.label.copyWith(color: ink)),
+        ]),
+        const SizedBox(height: 10),
+        FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Lean(
+                child:
+                    Text(goal.title, style: FloorPop.display(30, color: ink)))),
+        const SizedBox(height: 8),
+        FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: GoalArt(goal, height: 26, ink: ink)),
+        const Spacer(),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text.rich(TextSpan(children: [
+            TextSpan(
+                text: target == null ? '+$shown' : '$shown',
+                style: FloorPop.readout(92, color: ink)),
+            if (target != null)
+              TextSpan(
+                  text: '/$target',
+                  style:
+                      FloorPop.readout(30, color: ink.withValues(alpha: .6))),
+          ])),
+        ),
+        if (target != null) ...[
+          const SizedBox(height: 10),
+          _Pips(count: shown, target: target, ink: ink),
+        ],
+      ]),
+    );
+  }
+
+  Widget _tank(FloorPop pop) {
+    final kind = widget.progress.goal.kind;
+    final level = _level, phase = _swell.value;
+    return SizedBox(
+      height: 280,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                  color: level > 0 ? kind.riser : pop.line,
+                  offset: const Offset(0, 6))
+            ]),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(fit: StackFit.expand, children: [
+            ColoredBox(color: pop.riser),
+            _face(
+                pop,
+                pop.riser.computeLuminance() < .5
+                    ? Colors.white
+                    : FloorPop.onVolt),
+            // The swell behind, then the water, whose face reads in its ink.
+            ClipPath(
+                clipper: _Water(level, phase + .4),
+                child: ColoredBox(color: kind.color.withValues(alpha: .35))),
+            ClipPath(
+                clipper: _Water(level, phase),
+                child:
+                    ColoredBox(color: kind.color, child: _face(pop, kind.ink))),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _stamp() {
+    final progress = widget.progress;
+    final kind = progress.goal.kind;
+    final target = progress.goal.target;
+    if (target == null) return const SizedBox.shrink();
+    final hit = progress.reached;
+    final t = ((_ms - _stampAt) / _slam).clamp(0.0, 1.0);
+    return Positioned(
+      top: -18,
+      right: 10,
+      child: Opacity(
+        opacity: t == 0 ? 0 : 1,
+        child: Transform.scale(
+          // Falls at the tank from above the screen when hit; else just drops.
+          scale: (hit ? 3.0 : 1.6) -
+              (hit ? 2.0 : .6) * Curves.easeInCubic.transform(t),
+          child: Transform.rotate(
+            angle: .1,
+            child: Container(
+              key: _stampKey,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                  color: hit
+                      ? (kind == GoalKind.upscore
+                          ? Colors.white
+                          : FloorPop.volt)
+                      : FloorPop.onVolt,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black38, blurRadius: 12)
+                  ]),
+              child: Text(hit ? 'GOAL HIT' : '${target - progress.count} TO GO',
+                  style: FloorPop.display(20,
+                      color: hit ? FloorPop.onVolt : Colors.white)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // A counted chart's jacket, slapped down on its tick.
+  Widget _jacket(int i, GoalHit hit, double side) {
+    final t = ((_ms - _lead - _step * i) / _landing).clamp(0.0, 1.0);
+    final eased = Curves.easeOutBack.transform(t);
+    return Opacity(
+      opacity: t == 0 ? 0 : 1,
+      child: Transform.scale(
+        scale: 1.7 - .7 * eased,
+        child: Transform.rotate(
+          angle: (i.isEven ? -1 : 1) * (.05 + .25 * (1 - eased)),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox.square(
+                dimension: side,
+                child: SongArtwork(
+                    songName: hit.song ?? hit.title, title: hit.title)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final progress = widget.progress;
+    final hits = progress.hits;
+    final extra = hits.length - _shownJackets;
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: '${progress.goal.title}: ${goalSummary(progress)}'
+          '${progress.reached ? ' Goal hit.' : ''}',
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_clock, _swell]),
+        builder: (context, _) => Column(children: [
+          Transform.scale(
+            scale: 1 + .035 * _hit,
+            child: Transform.rotate(
+              angle: -.02,
+              child: Stack(clipBehavior: Clip.none, children: [
+                _tank(pop),
+                _stamp(),
+              ]),
+            ),
+          ),
+          if (hits.isNotEmpty) ...[
+            const SizedBox(height: 26),
+            Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (final (i, hit) in hits.take(_shownJackets).indexed)
+                    _jacket(i, hit, 64),
+                  if (extra > 0 && _shown > _shownJackets)
+                    SizedBox.square(
+                        dimension: 64,
+                        child: Center(
+                            child: Text('+${_shown - _shownJackets}',
+                                style: FloorPop.readout(22, color: pop.haze)))),
+                ]),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+// What's under the water line at [level] of the way up, its surface a swell
+// that flattens out as the tank empties or fills.
+class _Water extends CustomClipper<Path> {
+  _Water(this.level, this.phase);
+  final double level, phase;
+
+  @override
+  Path getClip(Size size) {
+    final calm = math.min(1.0, math.min(level, 1 - level) * 8);
+    final top = size.height * (1 - level);
+    final path = Path()..moveTo(0, size.height);
+    for (var x = 0.0;; x = math.min(x + 6, size.width)) {
+      final slant = (x / size.width - .5) * -16;
+      final swell = math.sin((x / size.width * 1.4 + phase) * 2 * math.pi) * 7;
+      path.lineTo(x, top + (swell + slant) * calm);
+      if (x >= size.width) break;
+    }
+    return path
+      ..lineTo(size.width, size.height)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_Water old) => old.level != level || old.phase != phase;
 }
 
 /// The running session's goal on Home, counted over its synced plays. A

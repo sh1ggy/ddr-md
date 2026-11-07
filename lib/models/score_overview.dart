@@ -68,6 +68,15 @@ class FlareSkill {
 
   final Map<FlareGroup, List<ScoreRecord>> groups;
 
+  /// The points a chart must beat to count, or null while slots are open.
+  int? floor(FlareGroup g) => groups[g]!.length < kFlareChartsPerGroup
+      ? null
+      : groups[g]!.last.flareSkill;
+
+  /// The group with the most to gain: open slots, or else the lowest floor.
+  FlareGroup get lowestFloor => FlareGroup.values
+      .reduce((a, b) => (floor(b) ?? 0) < (floor(a) ?? 0) ? b : a);
+
   int groupTotal(FlareGroup g) =>
       groups[g]!.fold(0, (sum, r) => sum + (r.flareSkill ?? 0));
 
@@ -92,9 +101,19 @@ FlareSkill flareSkill(
   return FlareSkill(groups);
 }
 
-/// The flare skill class a total reaches, with the total the next one
-/// starts at (null at WORLD, the top).
-({String name, int? next}) flareClass(int total) {
+const _kFlareBasePoints = [
+  145, 155, 170, 185, 205, 230, 255, 290, 335, 400, //
+  465, 510, 545, 575, 600, 620, 635, 650, 665,
+];
+
+/// A chart's flare skill at [level] (1 to 19). [rank] is 0 for a clear without
+/// flare, 1 to 9 for I to IX and 10 for EX.
+int flarePoints(int level, int rank) =>
+    _kFlareBasePoints[level - 1] * (100 + 6 * rank) ~/ 100;
+
+/// The flare skill class a total reaches, with the total it starts at and
+/// the total the next one starts at (null at WORLD, the top).
+({String name, int from, int? next}) flareClass(int total) {
   const steps = [
     (0, 'NONE'), (500, 'NONE+'), (1000, 'NONE++'), (1500, 'NONE+++'), //
     (2000, 'MERCURY'), (3000, 'MERCURY+'), (4000, 'MERCURY++'),
@@ -114,11 +133,12 @@ FlareSkill flareSkill(
     if (total >= steps[i].$1) {
       return (
         name: steps[i].$2,
+        from: steps[i].$1,
         next: i + 1 < steps.length ? steps[i + 1].$1 : null
       );
     }
   }
-  return (name: 'NONE', next: 500);
+  return (name: 'NONE', from: 0, next: 500);
 }
 
 /// Plays per local calendar day, keyed by midnight: every kept recent play,

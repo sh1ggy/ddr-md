@@ -875,81 +875,113 @@ class _Verdict extends StatelessWidget {
                 style: FloorPop.display(30, color: color))),
         const SizedBox(height: 24),
         // What went well, each in its own colour.
-        Row(spacing: 8, children: [
-          if (best != null && best.average > best.usual)
+        LayoutBuilder(builder: (context, constraints) {
+          final tiles = <Widget>[
+            if (best != null && best.average > best.usual)
+              _VerdictTile(
+                  label: 'BEST LEVEL',
+                  color: pop.up,
+                  fill: FloorPop.night.up,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    LevelNumber(
+                        level: best.level, difficulty: 'EXPERT', height: 20),
+                    const SizedBox(width: 6),
+                    Flexible(
+                        child: FittedBox(
+                            child: Text(
+                                '+${formatScore((best.average - best.usual).round())}',
+                                style: FloorPop.readout(20, color: pop.up)))),
+                  ]))
+            else
+              _VerdictTile(
+                  label: 'PLAYS',
+                  color: pop.haze,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.music_note_rounded, size: 20, color: pop.haze),
+                    const SizedBox(width: 4),
+                    Text('${summary.points.length}',
+                        style: FloorPop.readout(20, color: pop.haze)),
+                  ])),
             _VerdictTile(
-                label: 'BEST LEVEL',
-                color: pop.up,
-                fill: FloorPop.night.up,
+                label: 'UPSCORES',
+                color: summary.upscores > 0 ? pop.sunText : pop.haze,
+                fill: summary.upscores > 0 ? FloorPop.sun : pop.haze,
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  LevelNumber(
-                      level: best.level, difficulty: 'EXPERT', height: 20),
+                  UpscoreBadge(
+                      color: summary.upscores > 0 ? pop.sunText : pop.haze),
                   const SizedBox(width: 6),
-                  Flexible(
-                      child: FittedBox(
-                          child: Text(
-                              '+${formatScore((best.average - best.usual).round())}',
-                              style: FloorPop.readout(20, color: pop.up)))),
-                ]))
-          else
-            _VerdictTile(
-                label: 'PLAYS',
-                color: pop.haze,
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.music_note_rounded, size: 20, color: pop.haze),
-                  const SizedBox(width: 4),
-                  Text('${summary.points.length}',
-                      style: FloorPop.readout(20, color: pop.haze)),
-                ])),
-          _VerdictTile(
-              label: 'UPSCORES',
-              color: summary.upscores > 0 ? pop.sunText : pop.haze,
-              fill: summary.upscores > 0 ? FloorPop.sun : pop.haze,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                UpscoreBadge(
-                    color: summary.upscores > 0 ? pop.sunText : pop.haze),
-                const SizedBox(width: 6),
-                Text('${summary.upscores}',
-                    style: FloorPop.readout(20,
-                        color: summary.upscores > 0 ? pop.sunText : pop.haze)),
-              ])),
-          if (cards > 0)
-            _VerdictTile(
-                label: 'CARDS',
-                color: pop.voltText,
-                fill: FloorPop.volt,
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.style_rounded, size: 20, color: pop.voltText),
-                  const SizedBox(width: 4),
-                  Text('$cards',
-                      style: FloorPop.readout(20, color: pop.voltText)),
-                ])),
-          if (goal case final goal?)
-            _VerdictTile(
-                label: 'GOAL',
-                color: goal.reached ? pop.up : pop.voltText,
-                fill: goal.reached ? FloorPop.night.up : FloorPop.volt,
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(
-                      goal.reached
-                          ? Icons.check_circle_outline
-                          : Icons.flag_outlined,
-                      size: 20,
-                      color: goal.reached ? pop.up : pop.voltText),
-                  const SizedBox(width: 4),
-                  Text(
-                      '${goal.count}'
-                      '${goal.goal.target == null ? '' : '/${goal.goal.target}'}',
+                  Text('${summary.upscores}',
                       style: FloorPop.readout(20,
-                          color: goal.reached ? pop.up : pop.voltText)),
+                          color:
+                              summary.upscores > 0 ? pop.sunText : pop.haze)),
                 ])),
-        ]),
+            if (cards > 0)
+              _VerdictTile(
+                  label: 'CARDS',
+                  color: pop.voltText,
+                  fill: FloorPop.volt,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.style_rounded, size: 20, color: pop.voltText),
+                    const SizedBox(width: 4),
+                    Text('$cards',
+                        style: FloorPop.readout(20, color: pop.voltText)),
+                  ])),
+            if (goal case final goal?)
+              _VerdictTile(
+                  label: 'GOAL',
+                  color: goal.reached ? pop.up : pop.voltText,
+                  fill: goal.reached ? FloorPop.night.up : FloorPop.volt,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                        goal.reached
+                            ? Icons.check_circle_outline
+                            : Icons.flag_outlined,
+                        size: 20,
+                        color: goal.reached ? pop.up : pop.voltText),
+                    const SizedBox(width: 4),
+                    Text(
+                        '${goal.count}'
+                        '${goal.goal.target == null ? '' : '/${goal.goal.target}'}',
+                        style: FloorPop.readout(20,
+                            color: goal.reached ? pop.up : pop.voltText)),
+                  ])),
+          ];
+          return Column(
+            children: [
+              for (var i = 0; i < tiles.length; i += 2) ...[
+                if (i > 0) const SizedBox(height: 8),
+                if (i + 1 == tiles.length)
+                  Center(
+                    child: SizedBox(
+                      width: (constraints.maxWidth - 8) / 2,
+                      child: tiles[i],
+                    ),
+                  )
+                else
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: tiles[i]),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: i + 1 < tiles.length
+                              ? tiles[i + 1]
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ],
+          );
+        }),
       ]),
     ));
   }
 }
 
-// The goal has its own beat, with room for its full title, artwork and result.
+// The goal has its own beat, telling its result as it counts up.
 class _GoalResult extends StatelessWidget {
   const _GoalResult(this.progress);
   final GoalProgress progress;
@@ -957,21 +989,8 @@ class _GoalResult extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 104),
-          child: GoalCard(
-            goal: progress.goal,
-            count: progress.count,
-            stamp: progress.reached
-                ? 'GOAL HIT'
-                : progress.goal.target == null
-                    ? null
-                    : '${progress.goal.target! - progress.count} TO GO',
-            footer: Text(goalSummary(progress),
-                style: TextStyle(
-                    color: progress.goal.kind.ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 32, 16, 104),
+          child: GoalReveal(progress),
         ),
       );
 }
@@ -994,15 +1013,18 @@ class _VerdictTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    return Expanded(
-        child: Container(
-            constraints: const BoxConstraints(minHeight: 70),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            decoration: BoxDecoration(
-                color: Color.alphaBlend(
-                    (fill ?? color).withValues(alpha: .16), pop.riser),
-                borderRadius: BorderRadius.circular(14)),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
+    return Container(
+        constraints: const BoxConstraints(minHeight: 70),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        decoration: BoxDecoration(
+            color: Color.alphaBlend(
+                (fill ?? color).withValues(alpha: .16), pop.riser),
+            borderRadius: BorderRadius.circular(14)),
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
               SizedBox(height: 24, child: FittedBox(child: child)),
               const SizedBox(height: 6),
               Text(label,
@@ -1011,7 +1033,7 @@ class _VerdictTile extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.4,
                       color: color.withValues(alpha: .8))),
-            ])));
+            ]));
   }
 }
 
@@ -1385,9 +1407,10 @@ class ShockPainter extends CustomPainter {
 
 // The same filled NEW and outlined UP stamps on cards and their tally.
 class _CardBadge extends StatelessWidget {
-  const _CardBadge({required this.fresh, required this.ink});
+  const _CardBadge({required this.fresh, required this.ink, this.count});
   final bool fresh;
   final double ink;
+  final int? count;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -1396,10 +1419,20 @@ class _CardBadge extends StatelessWidget {
             color: fresh ? FloorPop.volt : FloorPop.of(context).stage,
             border: Border.all(color: FloorPop.volt, width: 1.5),
             borderRadius: BorderRadius.circular(5)),
-        child: Text(fresh ? 'NEW' : 'UP',
-            style: FloorPop.display(ink,
-                color:
-                    fresh ? FloorPop.onVolt : FloorPop.of(context).voltText)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(fresh ? 'NEW' : 'UP',
+              style: FloorPop.display(ink,
+                  color:
+                      fresh ? FloorPop.onVolt : FloorPop.of(context).voltText)),
+          if (count case final count?) ...[
+            const SizedBox(width: 5),
+            Text('$count',
+                style: FloorPop.readout(ink * 1.17,
+                    color: fresh
+                        ? FloorPop.onVolt
+                        : FloorPop.of(context).voltText)),
+          ],
+        ]),
       );
 }
 
@@ -1702,11 +1735,7 @@ class CardTally extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         for (final (isNew, n) in [(true, fresh), (false, cards.length - fresh)])
-          if (n > 0)
-            Row(mainAxisSize: MainAxisSize.min, spacing: 5, children: [
-              _CardBadge(fresh: isNew, ink: height * .46),
-              Text('$n', style: FloorPop.readout(height * .54)),
-            ]),
+          if (n > 0) _CardBadge(fresh: isNew, ink: height * .46, count: n),
         if (gains.isEmpty)
           Text('No cards', style: TextStyle(color: FloorPop.of(context).haze)),
       ],

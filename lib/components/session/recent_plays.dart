@@ -55,6 +55,7 @@ class HomeCard extends StatelessWidget {
     required this.icon,
     this.heading,
     this.onMore,
+    this.decoration,
     required this.children,
   });
 
@@ -63,13 +64,14 @@ class HomeCard extends StatelessWidget {
   // Stands in for the [CardHeading], e.g. a button asking for the title.
   final Widget? heading;
   final VoidCallback? onMore;
+  // Replaces the plain card's surface.
+  final Decoration? decoration;
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: Padding(
+    const margin = EdgeInsets.fromLTRB(12, 12, 12, 0);
+    final content = Padding(
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -89,9 +91,10 @@ class HomeCard extends StatelessWidget {
             ),
             ...children,
           ],
-        ),
-      ),
-    );
+        ));
+    return decoration == null
+        ? Card(margin: margin, child: content)
+        : Container(margin: margin, decoration: decoration, child: content);
   }
 }
 

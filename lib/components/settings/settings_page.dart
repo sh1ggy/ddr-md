@@ -10,7 +10,6 @@ import 'package:ddr_md/components/settings/development_page.dart';
 import 'package:ddr_md/components/settings/dancer_type_page.dart';
 import 'package:ddr_md/components/settings/eamuse_profile_card.dart';
 import 'package:ddr_md/components/settings/footing_style_page.dart';
-import 'package:ddr_md/components/settings/score_overview_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
@@ -89,20 +88,6 @@ class _SettingsPageState extends State<SettingsPage> {
                             children: [
                               const EamuseProfileCard(),
                               const DevelopmentToolsTile(),
-                              Card(
-                                child: ListTile(
-                                  leading:
-                                      const Icon(Icons.leaderboard_outlined),
-                                  title: const Text("Statistics",
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.w600)),
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                          builder: (_) =>
-                                              const ScoreOverviewPage())),
-                                ),
-                              ),
                               _ReadSpeedCard(
                                 value: _chosenReadSpeed,
                                 onChanged: _setReadSpeed,
