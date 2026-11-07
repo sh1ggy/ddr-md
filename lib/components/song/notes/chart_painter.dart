@@ -46,6 +46,7 @@ class ChartPainter extends CustomPainter {
     required this.skin,
     required this.playing,
     this.showMeasureLines = false,
+    this.showHitEffects = true,
     this.paintBackground = true,
     this.guideline = Guideline.off,
     this.timeSignatures = const [],
@@ -157,6 +158,10 @@ class ChartPainter extends CustomPainter {
   final int columnCount;
   final Noteskin skin;
   final bool playing;
+
+  /// Preview hit animations follow note arrivals. Input tests can keep the
+  /// scroll and beat animations while withholding feedback until scoring.
+  final bool showHitEffects;
 
   /// Rule the field into numbered 4-beat measures. Needs the beat axis, so it
   /// does nothing on charts with no BPM data.
@@ -463,7 +468,7 @@ class ChartPainter extends CustomPainter {
     // one is older than the longest effect. Only while playing: scrubbing sweeps
     // arrivals past the playhead at arbitrary speed, strobing the whole field.
     final arrivals = <int, double>{};
-    if (playing) {
+    if (playing && showHitEffects) {
       final longest =
           [_flashSeconds, receptorRecoilSeconds, bombSeconds].reduce(math.max);
       for (int i = _lowerBoundBySecond(notes, targetSecond) - 1; i >= 0; i--) {
@@ -671,7 +676,7 @@ class ChartPainter extends CustomPainter {
       for (final MapEntry(key: col, value: age) in arrivals.entries) {
         skin.paintBomb(canvas, laneCenterX(col), targetY, arrowSize, age);
       }
-      if (playing) {
+      if (playing && showHitEffects) {
         for (final n in holds) {
           if (n.second > targetSecond) break;
           final age = targetSecond - (n.endSecond ?? n.second);
@@ -692,7 +697,7 @@ class ChartPainter extends CustomPainter {
             dirs[col], age / _flashSeconds);
       }
     }
-    if (atlas != null) {
+    if (atlas != null && showHitEffects) {
       final frame = (targetSecond * 60).floor();
       for (final n in holds) {
         if (n.second > targetSecond) break;
@@ -1354,6 +1359,7 @@ class ChartPainter extends CustomPainter {
       !listEquals(old.colMap, colMap) ||
       old.skin != skin ||
       old.playing != playing ||
+      old.showHitEffects != showHitEffects ||
       old.showMeasureLines != showMeasureLines ||
       old.paintBackground != paintBackground ||
       old.guideline != guideline ||

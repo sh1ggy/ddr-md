@@ -21,6 +21,13 @@ class Settings {
 
   static const String chosenReadSpeedKey = "chosenReadSpeed";
 
+  // Timing Check: the cabinet dials last entered, its CONSTANT, and this
+  // device's audio output delay in ms.
+  static const timingJudgementKey = "timingCheckJudgement";
+  static const timingVisualKey = "timingCheckVisual";
+  static const timingConstantKey = "timingCheckConstant";
+  static const timingDeviceDelayKey = "timingCheckDeviceDelay";
+
   // DDR CONSTANT modifier for the chart preview: the arrow display time in ms
   // (100–3000, 10ms steps; DDR default 1000). Only applied when [constantOnKey]
   // is set. Stored as an int of milliseconds.
