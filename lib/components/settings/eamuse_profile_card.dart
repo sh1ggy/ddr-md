@@ -10,7 +10,6 @@ import 'dart:math';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/settings/development_page.dart'
     show toggleDevelopmentTools;
-import 'package:ddr_md/components/settings/timing_check/timing_check_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/settings/flare_class_style.dart';
 import 'package:ddr_md/components/settings/score_overview_page.dart'
@@ -223,29 +222,6 @@ class EamuseProfileCard extends StatelessWidget {
                         const SizedBox(width: 10),
                         const Expanded(
                             child: Text('Statistics',
-                                style: TextStyle(fontWeight: FontWeight.w600))),
-                        Icon(Icons.chevron_right, color: muted),
-                      ]),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Material(
-                  color: pop.riser,
-                  borderRadius: BorderRadius.circular(14),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: () => Navigator.of(context, rootNavigator: true)
-                        .push(MaterialPageRoute(
-                            builder: (_) => const TimingCheckPage())),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
-                      child: Row(children: [
-                        const Icon(Icons.timer_outlined, size: 20),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                            child: Text('Timing Check',
                                 style: TextStyle(fontWeight: FontWeight.w600))),
                         Icon(Icons.chevron_right, color: muted),
                       ]),

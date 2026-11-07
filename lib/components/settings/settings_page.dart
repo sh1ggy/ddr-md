@@ -10,6 +10,7 @@ import 'package:ddr_md/components/settings/development_page.dart';
 import 'package:ddr_md/components/settings/dancer_type_page.dart';
 import 'package:ddr_md/components/settings/eamuse_profile_card.dart';
 import 'package:ddr_md/components/settings/footing_style_page.dart';
+import 'package:ddr_md/components/settings/timing_check/timing_check_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
@@ -145,6 +146,21 @@ class _SettingsPageState extends State<SettingsPage> {
                                       MaterialPageRoute(
                                           builder: (_) =>
                                               const ChartCategoriesPage())),
+                                ),
+                              ),
+                              Card(
+                                child: ListTile(
+                                  title: const Text("Timing Check",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w600)),
+                                  subtitle: const Text(
+                                      "Are you a visual or audio player?"),
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () =>
+                                      Navigator.of(context, rootNavigator: true)
+                                          .push(MaterialPageRoute(
+                                              builder: (_) =>
+                                                  const TimingCheckPage())),
                                 ),
                               ),
                             ],
