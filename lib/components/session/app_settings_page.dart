@@ -1,14 +1,17 @@
 /// Name: AppSettingsPage
 /// Parent: SessionPage
 /// Description: Settings, opened from Home's gear: check for song updates,
-/// turn on cloud backup, choose when e-amusement syncs and whether it reads
+/// add your own music, turn on cloud backup, choose when e-amusement syncs and whether it reads
 /// doubles, sign out of it, read the privacy notes and credits, and the app
 /// version with links.
 library;
 
+import 'dart:io';
+
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/settings/credits_page.dart';
 import 'package:ddr_md/components/settings/development_page.dart';
+import 'package:ddr_md/components/settings/music_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
@@ -58,6 +61,21 @@ class AppSettingsPage extends StatelessWidget {
                     children: [
                       const DevelopmentToolsTile(),
                       const Card(child: _ContentTile()),
+                      // Android can't reach this folder until it can import.
+                      if (!Platform.isAndroid)
+                        Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.music_note_outlined),
+                            title: const Text("Your Music",
+                                style: TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: const Text(
+                                "Hear your own songs in chart preview"),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) => const MusicPage())),
+                          ),
+                        ),
                       const Card(child: _CloudTile()),
                       const Card(child: _EamuseTiles()),
                       Card(
