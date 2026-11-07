@@ -66,16 +66,17 @@ void main() {
     ]);
     await tester.pump();
     await tester.pump();
-    expect(find.text('TOFU'), findsOneWidget);
-    expect(find.text('MIKA'), findsNothing);
+    expect(find.text('TOFU · Credit 1'), findsOneWidget);
+    expect(find.textContaining('MIKA'), findsNothing);
     await tester.pump(const Duration(seconds: 5));
-    expect(find.text('TOFU'), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('TOFU'), findsNothing);
     circle.arrived([
       (id: 'mika', name: 'MIKA', cheer: Cheer.clean),
       (id: 'tofu', name: 'TOFU', cheer: Cheer.legend)
     ]);
     await tester.pump();
-    expect(find.text('TOFU'), findsNothing);
+    expect(find.textContaining('TOFU'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

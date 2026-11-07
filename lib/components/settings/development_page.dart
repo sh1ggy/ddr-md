@@ -3,6 +3,7 @@
 /// Description: Persistent debug/profile tools, isolated fixtures and previews.
 library;
 
+import 'package:ddr_md/components/circle/cheer_notifications.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/song/jacket_edition.dart';
@@ -184,6 +185,14 @@ class _DevelopmentPageState extends State<DevelopmentPage> {
                         'Your last session with made-up cheers and card gains, nothing saved'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => previewSessionWrap(context))),
+            Card(
+                child: ListTile(
+                    leading: const Icon(Icons.celebration_outlined),
+                    title: const Text('Incoming cheers preview'),
+                    subtitle: const Text(
+                        'Plays every cheer from a made-up circle, nothing saved'),
+                    trailing: const Icon(Icons.play_arrow),
+                    onTap: () => CheerNotifications.preview(context))),
             Card(
                 child: ValueListenableBuilder(
                     valueListenable: wrapBannerPreview,

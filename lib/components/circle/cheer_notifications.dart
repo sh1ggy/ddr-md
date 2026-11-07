@@ -18,6 +18,11 @@ import 'package:provider/provider.dart';
 class CheerNotifications extends StatefulWidget {
   const CheerNotifications({super.key, required this.child});
   final Widget child;
+
+  /// Plays each cheer in turn, for the development tools; nothing is saved.
+  static void preview(BuildContext context) =>
+      context.findAncestorStateOfType<_CheerNotificationsState>()?._preview();
+
   @override
   State<CheerNotifications> createState() => _CheerNotificationsState();
 }
@@ -105,6 +110,18 @@ class _CheerNotificationsState extends State<CheerNotifications>
     }
   }
 
+  /// Every cheer through the real banner, from a made-up circle.
+  void _preview() {
+    const names = ['MIKA', 'REXX', 'TOFU', 'JUN.K', 'SORA', 'KAI'];
+    _pending
+      ..clear()
+      ..addAll([
+        for (final c in Cheer.values)
+          (name: names[c.index], id: null, cheer: c, credit: c.index + 1)
+      ]);
+    _next();
+  }
+
   void _next() {
     _dismiss?.cancel();
     if (!mounted) return;
@@ -123,48 +140,113 @@ class _CheerNotificationsState extends State<CheerNotifications>
   }
 
   @override
-  Widget build(BuildContext context) => Stack(children: [
-        widget.child,
-        if (_showing case final cheer?)
-          Positioned(
-            top: 0,
-            left: 16,
-            right: 16,
-            child: SafeArea(
-                bottom: false,
-                child: Align(
-                    alignment: Alignment.topCenter,
-                    child: Semantics(
-                        liveRegion: true,
-                        child: Material(
-                          elevation: 8,
-                          color: FloorPop.of(context).stage,
-                          borderRadius: BorderRadius.circular(22),
-                          child: Padding(
-                              padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
-                              child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                        child: CheerNote(cheer.cheer,
-                                            name: cheer.name,
-                                            personId: cheer.id)),
-                                    const SizedBox(width: 12),
-                                    Flexible(
-                                        child: Text(
-                                            'Cheering you on\nCredit ${cheer.credit}',
-                                            style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600))),
-                                    Semantics(
-                                        label: 'Dismiss cheer',
-                                        button: true,
-                                        child: IconButton(
-                                            onPressed: _next,
-                                            icon: const Icon(Icons.close,
-                                                size: 18))),
-                                  ])),
-                        )))),
-          ),
-      ]);
+  Widget build(BuildContext context) {
+    final showing = _showing;
+    return Stack(children: [
+      widget.child,
+      Positioned(
+        top: 0,
+        left: 16,
+        right: 16,
+        child: SafeArea(
+            bottom: false,
+            child: Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: AnimatedSwitcher(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : FloorPop.beat,
+                      reverseDuration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : FloorPop.eighth,
+                      layoutBuilder: (current, previous) => Stack(
+                          alignment: Alignment.topCenter,
+                          children: [
+                            ...previous,
+                            if (current != null) current
+                          ]),
+                      transitionBuilder: (child, t) => SlideTransition(
+                          position: CurvedAnimation(
+                                  parent: t,
+                                  curve: FloorPop.step,
+                                  reverseCurve: FloorPop.settle)
+                              .drive(Tween(
+                                  begin: const Offset(0, -1.4),
+                                  end: Offset.zero)),
+                          child: FadeTransition(opacity: t, child: child)),
+                      child: showing == null
+                          ? const SizedBox.shrink()
+                          : _CheerBanner(
+                              key: ObjectKey(showing),
+                              name: showing.name,
+                              cheer: showing.cheer,
+                              credit: showing.credit,
+                              // An outgoing banner mustn't dismiss the next.
+                              onDismiss: () {
+                                if (identical(_showing, showing)) _next();
+                              }),
+                    )))),
+      ),
+    ]);
+  }
+}
+
+/// The cheer's own colour edge to edge, its label loudest; swipe up to dismiss.
+class _CheerBanner extends StatelessWidget {
+  const _CheerBanner(
+      {super.key,
+      required this.name,
+      required this.cheer,
+      required this.credit,
+      required this.onDismiss});
+  final String name;
+  final Cheer cheer;
+  final int credit;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+      liveRegion: true,
+      label: '$name: ${cheer.label}, credit $credit',
+      onDismiss: onDismiss,
+      child: ExcludeSemantics(
+          child: GestureDetector(
+              onVerticalDragUpdate: (d) {
+                if (d.delta.dy < -3) onDismiss();
+              },
+              child: Material(
+                  elevation: 8,
+                  color: cheer.color,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 16, 10),
+                      child: Row(children: [
+                        CircleAvatar(
+                            radius: 20,
+                            backgroundColor: cheer.ink,
+                            child: Text(
+                                name.isEmpty ? '?' : name.substring(0, 1),
+                                style:
+                                    FloorPop.display(16, color: cheer.color))),
+                        const SizedBox(width: 12),
+                        Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                              Text(cheer.label,
+                                  style:
+                                      FloorPop.display(20, color: cheer.ink)),
+                              Text('$name · Credit $credit',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      color: cheer.ink,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600)),
+                            ])),
+                        const SizedBox(width: 8),
+                        Icon(cheer.icon, color: cheer.ink, size: 26),
+                      ]))))));
 }
