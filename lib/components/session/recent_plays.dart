@@ -11,6 +11,7 @@ import 'package:ddr_md/components/session/timing_edit_sheet.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/scores/art_badge.dart';
+import 'package:ddr_md/components/song/song_page.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/grades.dart';
@@ -20,12 +21,10 @@ import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
-import 'package:ddr_md/router.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 /// The song a chart's [song] name matched, the chart's index among the
@@ -355,12 +354,18 @@ class _PlayCard extends StatelessWidget {
   }
 }
 
-/// Opens the song page on [play]'s chart.
+/// Opens the song page on [play]'s chart, on the navigator the play is in:
+/// pushing its `/songs` path from another tab would switch to Songs to show
+/// it, then snap back on pop.
 void _openChart(BuildContext context, RecentPlay play) {
   final (:song, :index, level: _) = playChart(play);
   final songState = context.read<SongState>();
   if (songState.modes != play.mode) songState.setMode(play.mode);
-  context.push(songPath(song!, difficulty: index < 0 ? 0 : index));
+  songState
+    ..setSongInfo(song!)
+    ..setChosenDifficulty(index < 0 ? 0 : index);
+  Navigator.of(context)
+      .push(MaterialPageRoute<void>(builder: (_) => const SongPage()));
 }
 
 /// The [count] highest scores among [plays], best first, one per chart.
