@@ -981,7 +981,7 @@ class _Verdict extends StatelessWidget {
   }
 }
 
-// The goal has its own beat, with room for its full title, artwork and result.
+// The goal has its own beat, telling its result as it counts up.
 class _GoalResult extends StatelessWidget {
   const _GoalResult(this.progress);
   final GoalProgress progress;
@@ -989,21 +989,8 @@ class _GoalResult extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 104),
-          child: GoalCard(
-            goal: progress.goal,
-            count: progress.count,
-            stamp: progress.reached
-                ? 'GOAL HIT'
-                : progress.goal.target == null
-                    ? null
-                    : '${progress.goal.target! - progress.count} TO GO',
-            footer: Text(goalSummary(progress),
-                style: TextStyle(
-                    color: progress.goal.kind.ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 32, 16, 104),
+          child: GoalReveal(progress),
         ),
       );
 }
