@@ -24,11 +24,19 @@ import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-class ShowcasePage extends StatelessWidget {
+class ShowcasePage extends StatefulWidget {
   const ShowcasePage({super.key, required this.person});
   final CirclePerson person;
   @override
+  State<ShowcasePage> createState() => _ShowcasePageState();
+}
+
+class _ShowcasePageState extends State<ShowcasePage> {
+  int _revision = 0;
+
+  @override
   Widget build(BuildContext context) {
+    final person = widget.person;
     final circle = context.watch<CircleState>();
     final own = circle.id == person.id;
     final credits = own ? circle.yours : circle.lastSessionOf(person);
@@ -64,9 +72,31 @@ class ShowcasePage extends StatelessWidget {
                                     style: TextStyle(
                                         color: pop.haze, fontSize: 12)),
                               ],
-                            ]))
+                            ])),
+                        if (own)
+                          TextButton.icon(
+                              onPressed: () async {
+                                await Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            const ShowcasePickerPage()));
+                                if (mounted) setState(() => _revision++);
+                              },
+                              icon: const Icon(Icons.edit_outlined, size: 16),
+                              label: const Text('Edit'),
+                              style: TextButton.styleFrom(
+                                  backgroundColor: pop.riser,
+                                  foregroundColor: pop.haze,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(10)))),
                       ])),
-                  CircleShowcase(person: person, revision: circle.feedRevision),
+                  CircleShowcase(
+                      key: ValueKey(_revision),
+                      person: person,
+                      revision: circle.feedRevision),
                   if (credits.isNotEmpty) ...[
                     const SizedBox(height: 24),
                     Text('LAST SESSION', style: pop.label),
@@ -140,30 +170,15 @@ class _CircleShowcaseState extends State<CircleShowcase> {
       ] else if (_cards == null)
         const Center(child: CircularProgressIndicator())
       else
-        Stack(children: [
-          ShowcaseDisplay(cards: _cards!),
-          if (own)
-            Positioned(
-                top: 0,
-                right: 0,
-                child: IconButton(
-                    tooltip: 'Edit cards',
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () async {
-                      await Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => const ShowcasePickerPage()));
-                      if (mounted) {
-                        await _load();
-                      }
-                    })),
-        ]),
+        ShowcaseDisplay(cards: _cards!, own: own),
     ]);
   }
 }
 
 class ShowcaseDisplay extends StatefulWidget {
-  const ShowcaseDisplay({super.key, required this.cards});
+  const ShowcaseDisplay({super.key, required this.cards, this.own = false});
   final List<ShowcaseCard?> cards;
+  final bool own;
   @override
   State<ShowcaseDisplay> createState() => _ShowcaseDisplayState();
 }
@@ -174,9 +189,64 @@ class _ShowcaseDisplayState extends State<ShowcaseDisplay> {
   Widget build(BuildContext context) {
     final cards = widget.cards.whereType<ShowcaseCard>().toList();
     if (cards.isEmpty) {
-      return const Padding(
-          padding: EdgeInsets.symmetric(vertical: 40),
-          child: Text('No cards yet', textAlign: TextAlign.center));
+      final pop = FloorPop.of(context);
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(8, 30, 8, 20),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Semantics(
+            image: true,
+            label: 'Empty showcase cards',
+            child: ExcludeSemantics(
+              child: SizedBox(
+                width: 156,
+                height: 132,
+                child: Center(
+                  child: Transform.rotate(
+                    angle: -0.12,
+                    child: Stack(clipBehavior: Clip.none, children: [
+                      Container(
+                        width: 100,
+                        height: 116,
+                        decoration: BoxDecoration(
+                          color: pop.stage,
+                          border: Border.all(color: pop.line),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.album_outlined,
+                            size: 36, color: FloorPop.padBlue),
+                      ),
+                      Positioned(
+                        right: -14,
+                        bottom: -10,
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                              color: pop.riser, shape: BoxShape.circle),
+                          child: const Icon(Icons.auto_awesome_outlined,
+                              size: 20, color: FloorPop.coral),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          Text('No cards on display yet',
+              textAlign: TextAlign.center,
+              style: FloorPop.display(18,
+                  color: Theme.of(context).colorScheme.onSurface)),
+          const SizedBox(height: 10),
+          Text(
+              widget.own
+                  ? 'Add your favourite scores to your showcase.'
+                  : 'Their showcase is waiting for its first cards.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: pop.haze, fontSize: 13, height: 1.5)),
+        ]),
+      );
     }
     _active = _active.clamp(0, cards.length - 1);
     return _CardFan(
