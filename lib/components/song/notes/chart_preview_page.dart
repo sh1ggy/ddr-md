@@ -445,70 +445,63 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
             tooltip: _editFooting ? 'Done editing' : 'Edit footing',
             onPressed: () => setState(() => _editFooting = !_editFooting),
           );
-    return IconButtonTheme(
-      data: IconButtonThemeData(
-          style: IconButton.styleFrom(
-        backgroundColor: FloorPop.night.riser,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      )),
-      child: Stack(
-        children: [
-          // Keep the chart visible through the preview controls.
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back, color: FloorPop.night.haze),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 48),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+    return Stack(
+      children: [
+        // Keep the chart visible through the preview controls.
+        SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: FloorPop.night.haze),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 48),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.title,
+                        textAlign: TextAlign.center,
+                        style: FloorPop.display(18, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (widget.feedLabel != null)
+                        Text(widget.feedLabel!,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12)),
+                      if (kInGameDifficultyColors
+                          .containsKey(_pretty(widget.difficultyKey)))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: DifficultyLabel(
+                              difficulty: _pretty(widget.difficultyKey),
+                              level: widget.difficultyLevel,
+                              height: 16),
+                        )
+                      else
                         Text(
-                          widget.title,
-                          textAlign: TextAlign.center,
-                          style: FloorPop.display(18, color: Colors.white),
-                          overflow: TextOverflow.ellipsis,
+                          difficultyLabel,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: diffColor,
+                              fontWeight: FontWeight.w900),
                         ),
-                        if (widget.feedLabel != null)
-                          Text(widget.feedLabel!,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
-                        if (kInGameDifficultyColors
-                            .containsKey(_pretty(widget.difficultyKey)))
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: DifficultyLabel(
-                                difficulty: _pretty(widget.difficultyKey),
-                                level: widget.difficultyLevel,
-                                height: 16),
-                          )
-                        else
-                          Text(
-                            difficultyLabel,
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: diffColor,
-                                fontWeight: FontWeight.w900),
-                          ),
-                      ],
-                    ),
+                    ],
                   ),
-                  // The pattern breakdown, balanced by an empty slot on the left
-                  // when an action joins it.
-                  if (widget.feedActive == null) patternsButton,
-                  action,
-                ],
-              ),
+                ),
+                // The pattern breakdown, balanced by an empty slot on the left
+                // when an action joins it.
+                if (widget.feedActive == null) patternsButton,
+                action,
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
