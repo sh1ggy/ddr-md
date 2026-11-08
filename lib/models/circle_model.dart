@@ -13,6 +13,9 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:ddr_md/models/db_models.dart' show ClearLamp;
+import 'package:ddr_md/models/pad_rating.dart';
+import 'package:ddr_md/models/session_model.dart' show PadSide;
 import 'package:ddr_md/models/showcase.dart';
 import 'package:ddr_md/models/device_key.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -49,6 +52,24 @@ typedef CirclePerson = ({
   String ddrCode,
   bool friend,
   CircleLive? live,
+});
+
+/// One side of a cab in a pad check.
+typedef CirclePadSide = ({
+  PadSide side,
+  ClearLamp lamp,
+  Map<PadArrow, ArrowFlag> arrows
+});
+
+/// A pad check someone in your circle posted: the venue, the cab ('' for
+/// a venue's one) and its sides.
+typedef CirclePad = ({
+  CirclePerson? by,
+  String id,
+  DateTime at,
+  String venue,
+  String cab,
+  List<CirclePadSide> sides,
 });
 
 /// A circle an invite code opens, before joining it.
@@ -143,6 +164,9 @@ class CircleState extends ChangeNotifier {
 
   /// Credits shared by those whose circles you're in, newest first.
   List<CircleCredit> feed = const [];
+
+  /// Pad checks from those whose circles you're in, newest first.
+  List<CirclePad> pads = const [];
 
   /// Your own shared credits, newest first, with their cheers.
   List<CircleCredit> yours = const [];
@@ -328,6 +352,26 @@ class CircleState extends ChangeNotifier {
         ];
     feed = credits(m?['credits']);
     yours = credits(m?['yours']);
+    pads = [
+      for (final d in (m?['pads'] as List? ?? const []).cast<Map>())
+        (
+          by: d['by'] == null ? null : _person(d['by'] as Map),
+          id: d['id'] as String,
+          at: DateTime.tryParse(d['at'] as String? ?? '') ?? DateTime.now(),
+          venue: d['venue'] as String,
+          cab: d['cab'] as String? ?? '',
+          sides: [
+            for (final x in (d['sides'] as List).cast<Map>())
+              if (PadSide.values.asNameMap()[x['side']] case final side?)
+                if (ClearLamp.values.asNameMap()[x['lamp']] case final lamp?)
+                  (
+                    side: side,
+                    lamp: lamp,
+                    arrows: PadRating.decodeArrows(json.encode(x['arrows'])),
+                  )
+          ],
+        )
+    ];
     feedRevision++;
   }
 
@@ -396,6 +440,34 @@ class CircleState extends ChangeNotifier {
       });
     } catch (e) {
       debugPrint('Circles: credit not shared: $e');
+    }
+  }
+
+  /// Posts a pad check to your circle; posting [id] again replaces it.
+  /// Names the venue: a pad check is no use without it.
+  Future<bool> postPads(
+      String id, String venue, String cab, List<PadRating> ratings) async {
+    if (!available || this.id == null || ratings.isEmpty) return false;
+    try {
+      await _send('PUT', 'v1/pad', {
+        'id': id,
+        'venue': venue,
+        'cab': cab,
+        'sides': [
+          for (final r in ratings)
+            {
+              'side': r.side.name,
+              'lamp': r.lamp.name,
+              'arrows': json.decode(PadRating.encodeArrows(r.arrows)),
+            }
+        ],
+      });
+      await _loadFeed();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Circles: pad check not posted: $e');
+      return false;
     }
   }
 

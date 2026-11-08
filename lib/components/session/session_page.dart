@@ -12,6 +12,7 @@ import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/session/count_in.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart';
 import 'package:ddr_md/components/session/goal_card.dart';
+import 'package:ddr_md/components/session/pad_check.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/constants.dart';
@@ -358,6 +359,7 @@ class _CreditSheetState extends State<_CreditSheet> {
             selected: {_side},
             onSelectionChanged: (s) => setState(() => _side = s.first),
           ),
+          CabinetPadLamps(cabinet: _cabinet),
           if (widget.newSession)
             ListTile(
               contentPadding: const EdgeInsets.only(top: 8),

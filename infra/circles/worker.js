@@ -34,6 +34,9 @@ import { dataCrypto, networkOf, secretMatches } from "../data_crypto.js";
 //                                     yours: [{session, credit, at, plays, cheers}]}
 //                                     cheer = {name, preset}; mine = your preset
 //   PUT    /v1/cheer {by, session, credit, preset}  preset null takes it back
+//   PUT    /v1/pad {id, venue, cab, sides: [{side, lamp, arrows}]}  a pad check
+//                                     arrows = {up|left|right|down: {issues, zone}}
+//                                     feed's pads: [{by: person, id, at, venue, cab, sides}]
 //   GET    /v1/showcase/ID         -> {cards: [card|null, card|null, card|null]}
 //   PUT    /v1/showcase {cards}    replaces your three snapshots
 //   DELETE /v1/me                 everything of this player's goes
@@ -58,6 +61,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS live_until ON live(until)`,
   `CREATE INDEX IF NOT EXISTS live_legacy ON live(owner) WHERE substr(venue,1,8) != 'sealed1:'`,
   `CREATE INDEX IF NOT EXISTS credits_expiry ON credits(at)`,
+  `CREATE TABLE IF NOT EXISTS pads(owner TEXT NOT NULL, id TEXT NOT NULL, at TEXT NOT NULL, report TEXT NOT NULL, PRIMARY KEY(owner, id)) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS pads_at ON pads(at)`,
   `CREATE INDEX IF NOT EXISTS cheers_expiry ON cheers(at)`,
   `CREATE INDEX IF NOT EXISTS cheers_cheerer ON cheers(cheerer)`,
 ];
@@ -102,7 +107,7 @@ export default {
       const auth = request.headers.get('Authorization') ?? '';
       if (!/^Bearer [A-Za-z0-9_-]{43}$/.test(auth)) return json({error: 'key'}, 401);
       const url = new URL(request.url);
-      const allowed = /^(GET \/v1\/(me|feed|showcase\/[a-f0-9]{16}|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer|showcase)|POST \/v1\/(code|join|code\/lookup)|DELETE \/v1\/(me|live|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
+      const allowed = /^(GET \/v1\/(me|feed|showcase\/[a-f0-9]{16}|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer|showcase|pad)|POST \/v1\/(code|join|code\/lookup)|DELETE \/v1\/(me|live|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
       if (!allowed.test(`${request.method} ${url.pathname}`)) return json({error: 'not found'}, 404);
       if (request.cf && (!env.REQUEST_RATE || !env.NETWORK_RATE || !env.INVITE_RATE || !env.SAFETY_RATE)) {
         return json({error: 'unavailable'}, 503);
@@ -199,7 +204,8 @@ async function route(request, db, owner, body, vault) {
   if (route === "PUT live") return goLive(db, me, body, vault);
   if (route === "DELETE live") return endLive(db, me);
   if (route === "PUT credit") return postCredit(db, me, body);
-  if (route === "GET feed") return feed(db, me);
+  if (route === "GET feed") return feed(db, me, vault);
+  if (route === "PUT pad") return postPad(db, me, body, vault);
   if (route === "PUT cheer") return cheer(db, me, body);
   return json({ error: "not found" }, 404);
 }
@@ -410,9 +416,58 @@ async function postCredit(db, me, body) {
   return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
 }
 
-async function feed(db, me) {
+// A pad check: the venue and cab it's of, and each side's lamp and flagged
+// arrows, nothing typed in. Null when anything else is in it.
+const PAD_LAMPS = ["mfc", "pfc", "gfc", "fc", "life4", "clear", "failed"];
+const PAD_ISSUES = ["dropsSteps", "heavy", "dead", "sticky", "ghosts", "dropsHolds"];
+const PAD_ZONES = ["outer", "centre", "inner"];
+const MAX_PADS = 10;
+function padOf(body) {
+  const venue = typeof body?.venue === "string" ? body.venue.trim().slice(0, VENUE) : "";
+  const cab = typeof body?.cab === "string" ? body.cab.trim().slice(0, 40) : null;
+  if (!SESSION.test(body?.id ?? "") || !venue || cab === null || !Array.isArray(body?.sides) ||
+      !body.sides.length || body.sides.length > 2) return null;
+  const sides = [];
+  for (const s of body.sides) {
+    if (!s || !["p1", "p2"].includes(s.side) || sides.some((x) => x.side === s.side) ||
+        !PAD_LAMPS.includes(s.lamp) || !s.arrows || typeof s.arrows !== "object" || Array.isArray(s.arrows)) return null;
+    const arrows = {};
+    for (const [arrow, flag] of Object.entries(s.arrows)) {
+      if (!["up", "left", "right", "down"].includes(arrow) || !flag || !Array.isArray(flag.issues) ||
+          flag.issues.length > PAD_ISSUES.length || flag.issues.some((i) => !PAD_ISSUES.includes(i)) ||
+          new Set(flag.issues).size !== flag.issues.length ||
+          (flag.zone != null && !PAD_ZONES.includes(flag.zone))) return null;
+      arrows[arrow] = { issues: flag.issues, ...(flag.zone == null ? {} : { zone: flag.zone }) };
+    }
+    sides.push({ side: s.side, lamp: s.lamp, arrows });
+  }
+  return { id: body.id, venue, cab, sides };
+}
+
+async function postPad(db, me, body, vault) {
+  const pad = padOf(body);
+  if (!pad) return json({ error: "pad" }, 400);
+  const now = Date.now();
+  const old = new Date(now - FEED_LIFE).toISOString();
+  const report = await vault.seal(JSON.stringify({ venue: pad.venue, cab: pad.cab, sides: pad.sides }), `pad:${me.owner}`);
+  const posted = await db.batch([
+    db
+      .prepare(
+        `INSERT INTO pads(owner, id, at, report) SELECT ?1, ?2, ?3, ?4
+         WHERE (SELECT count(*) FROM pads WHERE owner = ?1 AND at > ?5) < ${MAX_PADS}
+           OR EXISTS(SELECT 1 FROM pads WHERE owner = ?1 AND id = ?2)
+         ON CONFLICT(owner, id) DO UPDATE SET report = ?4, at = ?3 RETURNING id`,
+      )
+      .bind(me.owner, pad.id, new Date(now).toISOString(), report, old),
+    db.prepare(`DELETE FROM pads WHERE owner = ? AND at < ?`).bind(me.owner, old),
+  ]);
+  if (!posted[0].results.length) return json({ error: "pad limit" }, 429);
+  return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
+}
+
+async function feed(db, me, vault) {
   const since = new Date(Date.now() - FEED_LIFE).toISOString();
-  const [theirs, yours, cheers] = await db.batch([
+  const [theirs, yours, cheers, pads] = await db.batch([
     db
       .prepare(
         `SELECT c.owner, c.session, c.credit, c.at, c.plays, p.id, p.name, p.ddrCode, ${FRIEND} AS friend
@@ -431,6 +486,13 @@ async function feed(db, me) {
          ORDER BY ch.at DESC LIMIT 2000`,
       )
       .bind(me.owner, since),
+    db
+      .prepare(
+        `SELECT d.owner, d.id AS padId, d.at, d.report, p.id, p.name, p.ddrCode, ${FRIEND} AS friend
+         FROM members m JOIN pads d ON d.owner = m.leader JOIN profiles p ON p.owner = m.leader
+         WHERE m.member = ?1 AND d.at > ?2 ORDER BY d.at DESC LIMIT 30`,
+      )
+      .bind(me.owner, since),
   ]);
   const cheersOf = (owner, session, credit) =>
     cheers.results.filter((c) => c.owner === owner && c.session === session && c.credit === credit);
@@ -447,6 +509,12 @@ async function feed(db, me) {
         mine: on.find((x) => x.mine === 1)?.preset ?? null,
       };
     }),
+    pads: await Promise.all(pads.results.map(async (d) => ({
+      by: person(d),
+      id: d.padId,
+      at: d.at,
+      ...JSON.parse(await vault.open(d.report, `pad:${d.owner}`)),
+    }))),
     yours: yours.results.map((c) => ({
       session: c.session,
       credit: c.credit,
@@ -487,6 +555,7 @@ async function remove(db, owner) {
   await db.batch([
     db.prepare(`DELETE FROM showcases WHERE owner=?`).bind(owner),
     db.prepare(`DELETE FROM credits WHERE owner = ?`).bind(owner),
+    db.prepare(`DELETE FROM pads WHERE owner = ?`).bind(owner),
     db.prepare(`DELETE FROM cheers WHERE owner = ?1 OR cheerer = ?1`).bind(owner),
     db.prepare(`DELETE FROM live WHERE owner = ?`).bind(owner),
     db.prepare(`DELETE FROM members WHERE leader = ?1 OR member = ?1`).bind(owner),
@@ -542,6 +611,7 @@ function validate(route, body) {
         !Array.isArray(body?.plays) || !body.plays.length || body.plays.length>6 || body.plays.map(playOf).includes(null)) return "credit";
   }
   if (route === "PUT cheer" && body?.preset != null && !PRESETS.includes(body.preset)) return "preset";
+  if (route === "PUT pad" && !padOf(body)) return "pad";
   return null;
 }
 
@@ -556,6 +626,7 @@ async function maintain(db,vault,revokeInvites=false) {
     db.prepare(`DELETE FROM live WHERE owner IN(SELECT owner FROM live WHERE until<=? LIMIT 1000)`).bind(now),
     db.prepare(`DELETE FROM credits WHERE (owner,session,credit) IN(SELECT owner,session,credit FROM credits WHERE at<=? LIMIT 1000)`).bind(old),
     db.prepare(`DELETE FROM cheers WHERE (owner,session,credit,cheerer) IN(SELECT owner,session,credit,cheerer FROM cheers WHERE at<=? LIMIT 1000)`).bind(old),
+    db.prepare(`DELETE FROM pads WHERE (owner,id) IN(SELECT owner,id FROM pads WHERE at<=? LIMIT 1000)`).bind(old),
     db.prepare(`UPDATE profiles SET code=NULL,codeUntil=NULL WHERE owner IN(SELECT owner FROM profiles WHERE codeUntil<=? AND code IS NOT NULL LIMIT 1000)`).bind(now),
     db.prepare(`DELETE FROM usage WHERE day<?`).bind(day),
     db.prepare(`DELETE FROM admissions WHERE day<?`).bind(day),
