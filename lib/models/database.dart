@@ -584,8 +584,10 @@ class DatabaseProvider {
   }
 
   // -- RECENT PLAY FUNCTIONS
-  // [plays] is in scraped order, newest first. Replaces by play, so a later
-  // sync can fill in a song match and refresh the order of tied timestamps.
+  // [plays] is in scraped order, newest first. Writes only plays that are new
+  // or changed (a later sync can fill in a song match), so re-listing the same
+  // plays queues nothing for backup. Plays tied on playedAt keep their order
+  // unless it disagrees with the scrape's.
   static Future<void> saveRecentPlays(List<RecentPlay> plays) async {
     final db = await _instance;
     if (plays.isEmpty) return;
@@ -593,10 +595,52 @@ class DatabaseProvider {
       final newest = Sqflite.firstIntValue(await txn.rawQuery(
               'SELECT COALESCE(MAX(syncOrder), 0) FROM recent_plays'))! +
           plays.length;
+      final rows = [for (final p in plays) p.toMap()];
+      String key(Map<String, Object?> r) =>
+          '${r['konamiId']}|${r['mode']}|${r['difficulty']}|${r['playedAt']}';
+      final times = {for (final r in rows) r['playedAt']}.toList();
+      final stored = {
+        for (final r in await txn.query('recent_plays',
+            where: 'playedAt IN (${List.filled(times.length, '?').join(',')})',
+            whereArgs: times))
+          key(r): r
+      };
+      final order = [
+        for (final (i, r) in rows.indexed)
+          stored[key(r)]?['syncOrder'] as int? ?? newest - i
+      ];
+      final tied = <Object?, List<int>>{};
+      for (final (i, r) in rows.indexed) {
+        (tied[r['playedAt']] ??= []).add(i);
+      }
+      for (final group in tied.values) {
+        for (var j = 1; j < group.length; j++) {
+          if (order[group[j - 1]] <= order[group[j]]) {
+            for (final i in group) {
+              order[i] = newest - i;
+            }
+            break;
+          }
+        }
+      }
       final batch = txn.batch();
-      for (final (i, p) in plays.indexed) {
-        batch.insert("recent_plays", {...p.toMap(), 'syncOrder': newest - i},
-            conflictAlgorithm: ConflictAlgorithm.replace);
+      for (final (i, r) in rows.indexed) {
+        final row = {...r, 'syncOrder': order[i]};
+        final old = stored[key(r)];
+        if (old == null) {
+          batch.insert('recent_plays', row,
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        } else if (row.entries.any((e) => old[e.key] != e.value)) {
+          batch.update('recent_plays', row,
+              where:
+                  'konamiId = ? AND mode = ? AND difficulty = ? AND playedAt = ?',
+              whereArgs: [
+                r['konamiId'],
+                r['mode'],
+                r['difficulty'],
+                r['playedAt']
+              ]);
+        }
       }
       await batch.commit(noResult: true);
     });
