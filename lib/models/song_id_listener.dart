@@ -13,6 +13,7 @@ import 'dart:typed_data';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_id.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:record/record.dart';
 
 /// Where the cab is in a song Song ID placed, carried on from the match.
@@ -55,11 +56,20 @@ class SongIdListener {
     final files = <String, Uint8List>{};
     await Future.wait([
       for (final song in Songs.list)
-        ContentStore.loadBytes('assets/fingerprints/${song.name}.fp')
-            .then((bytes) => files[song.name] = bytes, onError: (_) => null),
+        () async {
+          // A song with no audio to fingerprint has no file.
+          try {
+            files[song.name] = await ContentStore.loadBytes(
+                'assets/fingerprints/${song.name}.fp');
+          } catch (_) {}
+        }(),
     ]);
     return Isolate.run(() => SongIdIndex.build(files));
   }
+
+  /// Stands in for the mic in tests: 16 kHz mono 16-bit PCM.
+  @visibleForTesting
+  static Stream<Uint8List> Function()? debugMic;
 
   final _recorder = AudioRecorder();
   final _pcm = BytesBuilder();
@@ -70,20 +80,22 @@ class SongIdListener {
   /// Whole seconds heard so far, for the sheet's progress.
   int get seconds => _elapsed.elapsed.inSeconds;
 
-  Future<bool> hasPermission() => _recorder.hasPermission();
+  Future<bool> hasPermission() async =>
+      debugMic != null || await _recorder.hasPermission();
 
   /// Listens until a match (with where the cab is when it's returned), or
   /// null after [maxSeconds] or [stop]. Throws when the mic can't be opened.
   Future<SongIdFollow?> listen() async {
     final indexFuture = index();
-    final stream = await _recorder.startStream(const RecordConfig(
-      encoder: AudioEncoder.pcm16bits,
-      sampleRate: _rate,
-      numChannels: 1,
-      autoGain: false,
-      echoCancel: false,
-      noiseSuppress: false,
-    ));
+    final stream = debugMic?.call() ??
+        await _recorder.startStream(const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: _rate,
+          numChannels: 1,
+          autoGain: false,
+          echoCancel: false,
+          noiseSuppress: false,
+        ));
     _elapsed.start();
     _sub = stream.listen(_pcm.add);
     try {
