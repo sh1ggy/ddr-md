@@ -29,6 +29,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:ddr_md/models/session_model.dart';
 import 'package:provider/provider.dart';
 
 enum CameraState {
@@ -316,7 +317,10 @@ class _OcrPageState extends State<OcrPage>
     final title = _aggregator.best('title')?.value;
     if (title != _liveTitle) {
       _liveTitle = title;
-      _liveSongMatch = title == null ? null : Songs.matchTitle(title);
+      _liveSongMatch = title == null
+          ? null
+          : Songs.matchTitle(title,
+              heard: context.read<SessionState>().heardSongs);
     }
     return _liveSongMatch;
   }

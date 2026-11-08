@@ -138,12 +138,17 @@ class ChartScroller extends StatefulWidget {
     this.caption,
     this.onShareReady,
     this.musicSong,
+    this.follow,
   });
 
   final ChartSteps steps;
 
   /// The song whose music, if the player has added it, plays with the chart.
   final String? musicSong;
+
+  /// Where in its audio the cab is now, in seconds, once Song ID has heard
+  /// it: the chart plays along and keeps to it like it keeps to the music.
+  final double Function()? follow;
 
   /// Heads a shared section; the bars it spans join its note.
   final ShareCaption? caption;
@@ -737,7 +742,7 @@ class _ChartScrollerState extends State<ChartScroller>
     } else if (_loop case (final from, _)) {
       _second = from;
     }
-    if (widget.feedActive == true) {
+    if (widget.feedActive == true || widget.follow != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _play();
       });
@@ -774,6 +779,8 @@ class _ChartScrollerState extends State<ChartScroller>
   @override
   void didUpdateWidget(ChartScroller old) {
     super.didUpdateWidget(old);
+    // Heard again: back in step with the cab.
+    if (widget.follow != null && widget.follow != old.follow) _play();
     // Switching difficulty/mode restarts the preview from the top.
     if (old.steps != widget.steps ||
         old.mode != widget.mode ||
@@ -2075,7 +2082,7 @@ class _ChartScrollerState extends State<ChartScroller>
       if (_loop case (final from, final to) when next >= to) {
         next = from;
         looped = true;
-      } else if (_music.second case final heard?) {
+      } else if ((_music.second ?? widget.follow?.call()) case final heard?) {
         // The frame clock scrolls smoothly; the music's position only moves in
         // whole mixer buffers. So lean toward the music, and jump only if a
         // stall has left the chart audibly behind.

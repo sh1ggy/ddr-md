@@ -75,6 +75,7 @@ const syncTables = [
       ['{r}.song', '{r}.mode', '{r}.difficulty', '{r}.beat', '{r}.col']),
   SyncTable('snippets', ['{r}.id']),
   SyncTable('card_gains', ['{r}.id']),
+  SyncTable('heard', ['{r}.id']),
 ];
 
 const _now = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";

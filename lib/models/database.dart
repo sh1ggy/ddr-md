@@ -84,6 +84,9 @@ class DatabaseProvider {
 
   // v18: what each sync did to the player's cards (see CardGain); v19 adds
   // the score before it.
+  /// Songs Song ID heard during a credit.
+  static const String _heardDdl =
+      'CREATE TABLE IF NOT EXISTS heard(id TEXT PRIMARY KEY, creditId TEXT NOT NULL, song TEXT NOT NULL, heardAt TEXT NOT NULL)';
   static const String _cardGainsDdl =
       'CREATE TABLE IF NOT EXISTS card_gains(id TEXT PRIMARY KEY, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, layer TEXT NOT NULL, fromValue TEXT NOT NULL, toValue TEXT NOT NULL, score INT, grade TEXT, lamp TEXT, flare TEXT, playedAt TEXT NOT NULL, syncedAt TEXT NOT NULL, fromScore INT)';
 
@@ -100,6 +103,7 @@ class DatabaseProvider {
     await _addRecentPlayFailed(db);
     await _addRecentPlayOrder(db);
     await db.execute(_cardGainsDdl);
+    await db.execute(_heardDdl);
     await _addSessionGoal(db);
     await installSync(db);
   }
@@ -177,7 +181,7 @@ class DatabaseProvider {
       open(join(await getDatabasesPath(), _dbName));
 
   static Future<Database> open(String path) {
-    return openDatabase(path, version: 20, onCreate: (db, version) async {
+    return openDatabase(path, version: 21, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -205,6 +209,7 @@ class DatabaseProvider {
       if (oldVersion >= 6 && oldVersion < 14) await _addRecentPlayFailed(db);
       // Before installSync, which puts triggers on every synced table.
       if (oldVersion < 18) await db.execute(_cardGainsDdl);
+      if (oldVersion < 21) await db.execute(_heardDdl);
       if (oldVersion < 15) await installSync(db);
       if (oldVersion >= 6 && oldVersion < 16) await _addRecentPlayOrder(db);
       if (oldVersion >= 6 && oldVersion < 17) {
@@ -219,6 +224,10 @@ class DatabaseProvider {
       }
       if (oldVersion >= 18 && oldVersion < 19) await _addCardGainFromScore(db);
       if (oldVersion >= 6 && oldVersion < 20) await _addSessionGoal(db);
+      if (oldVersion >= 15 && oldVersion < 21) {
+        await addSyncTriggers(
+            db, syncTables.firstWhere((t) => t.name == 'heard'));
+      }
     });
   }
 
@@ -393,6 +402,7 @@ class DatabaseProvider {
   static Future<void> deleteCredit(String id) async {
     final db = await _instance;
     await db.delete("timing_plays", where: "creditId = ?", whereArgs: [id]);
+    await db.delete("heard", where: "creditId = ?", whereArgs: [id]);
     await db.delete("credits", where: "id = ?", whereArgs: [id]);
   }
 
@@ -401,12 +411,18 @@ class DatabaseProvider {
     await db.delete("timing_plays",
         where: "creditId IN (SELECT id FROM credits WHERE sessionId = ?)",
         whereArgs: [id]);
+    await db.delete("heard",
+        where: "creditId IN (SELECT id FROM credits WHERE sessionId = ?)",
+        whereArgs: [id]);
     await db.delete("credits", where: "sessionId = ?", whereArgs: [id]);
     await db.delete("sessions", where: "id = ?", whereArgs: [id]);
   }
 
   static Future<void> deleteCabinet(int id) async {
     final db = await _instance;
+    await db.delete("heard",
+        where: "creditId IN (SELECT id FROM credits WHERE cabinetId = ?)",
+        whereArgs: [id]);
     for (final table in ["timing_plays", "sync_overrides", "credits"]) {
       await db.delete(table, where: "cabinetId = ?", whereArgs: [id]);
     }
@@ -434,6 +450,44 @@ class DatabaseProvider {
         'WHERE cr.sessionId = ? ORDER BY p.playedAt DESC',
         [sessionId]);
     return [for (final r in rows) TimingPlay.fromMap(r)];
+  }
+
+  // Songs heard in a session's credits, oldest first.
+  static Future<List<Heard>> getSessionHeard(String sessionId) async {
+    final db = await _instance;
+    final rows = await db.rawQuery(
+        'SELECT h.* FROM heard h JOIN credits cr ON cr.id = h.creditId '
+        'WHERE cr.sessionId = ? ORDER BY h.heardAt',
+        [sessionId]);
+    return [
+      for (final r in rows)
+        (
+          id: r['id'] as String,
+          creditId: r['creditId'] as String,
+          song: r['song'] as String,
+          heardAt: DateTime.parse(r['heardAt'] as String),
+        )
+    ];
+  }
+
+  /// Notes [song] on [creditId], once: hearing it again moves it to now.
+  static Future<String> addHeard(String creditId, String song) async {
+    final db = await _instance;
+    await db.delete("heard",
+        where: "creditId = ? AND song = ?", whereArgs: [creditId, song]);
+    final id = const Uuid().v4();
+    await db.insert("heard", {
+      'id': id,
+      'creditId': creditId,
+      'song': song,
+      'heardAt': DateTime.now().toUtc().toIso8601String(),
+    });
+    return id;
+  }
+
+  static Future<void> deleteHeard(String id) async {
+    final db = await _instance;
+    await db.delete("heard", where: "id = ?", whereArgs: [id]);
   }
 
   static Future<void> saveTimingPlay(TimingPlay play) async {

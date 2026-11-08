@@ -134,8 +134,9 @@ const privacySections = <(String, List<String>)>[
           "scan a friend's circle QR code, only while that screen is open.",
       '- Photos: to read a result-screen screenshot you choose. DDR MD only '
           'sees the photo you pick.',
-      '- Microphone: iOS lists this because of the audio engine behind the '
-          'assist tick. DDR MD never records audio.',
+      '- Microphone: only while Song ID is listening, to name the song a '
+          'cab is playing. The audio is matched on your device, then '
+          'dropped: it is never saved or uploaded.',
     ]
   ),
   (

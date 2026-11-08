@@ -1,20 +1,23 @@
 /// Name: AppSettingsPage
 /// Parent: SessionPage
 /// Description: Settings, opened from Home's gear: check for song updates,
-/// add your own music, turn on cloud backup, choose when e-amusement syncs and whether it reads
-/// doubles, sign out of it, read the privacy notes and credits, and the app
-/// version with links.
+/// add your own music, name a song with Song ID, turn on cloud backup, choose
+/// when e-amusement syncs and whether it reads doubles, sign out of it, read
+/// the privacy notes and credits, and the app version with links.
 library;
 
 import 'dart:io';
 
 import 'package:ddr_md/components/session/recent_plays.dart';
+import 'package:ddr_md/components/session/listen_sheet.dart';
 import 'package:ddr_md/components/settings/credits_page.dart';
 import 'package:ddr_md/components/settings/development_page.dart';
 import 'package:ddr_md/components/settings/music_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/song_id.dart';
+import 'package:ddr_md/models/song_id_listener.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/settings_model.dart';
@@ -76,6 +79,7 @@ class AppSettingsPage extends StatelessWidget {
                                     builder: (_) => const MusicPage())),
                           ),
                         ),
+                      const Card(child: _SongIdTile()),
                       const Card(child: _CloudTile()),
                       const Card(child: _EamuseTiles()),
                       Card(
@@ -395,4 +399,29 @@ class _CloudTileState extends State<_CloudTile> {
       },
     );
   }
+}
+
+/// Song ID: how many songs it knows, all on the phone; tap to listen.
+class _SongIdTile extends StatelessWidget {
+  const _SongIdTile();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<SongIdIndex>(
+        future: SongIdListener.index(),
+        builder: (context, snapshot) {
+          final known = snapshot.data?.songs.length;
+          return ListTile(
+            leading: const Icon(Icons.hearing),
+            title: const Text("Song ID",
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(known == null
+                ? "Name the song a cab is playing"
+                : known == 0
+                    ? "No song fingerprints in this build"
+                    : "Knows $known songs · matched on this phone, offline"),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: known == 0 ? null : () => showListenSheet(context),
+          );
+        },
+      );
 }
