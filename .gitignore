@@ -145,6 +145,7 @@ app.*.symbols
 /assets/songs
 /assets/steps
 /assets/patterns
+/assets/fingerprints
 /assets/pattern_levels.json
 # Copied from the live publish by CI and scripts/fetch_content.sh
 /assets/content_manifest.json
