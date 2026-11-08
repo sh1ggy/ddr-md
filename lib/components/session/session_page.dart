@@ -354,12 +354,16 @@ class _CreditSheetState extends State<_CreditSheet> {
           SegmentedButton<PadSide>(
             segments: [
               for (final s in PadSide.values)
-                ButtonSegment(value: s, label: Text(sideLabel(s))),
+                ButtonSegment(
+                    value: s,
+                    label: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(sideLabel(s)),
+                      SidePadLamp(cabinet: _cabinet, side: s),
+                    ])),
             ],
             selected: {_side},
             onSelectionChanged: (s) => setState(() => _side = s.first),
           ),
-          CabinetPadLamps(cabinet: _cabinet),
           if (widget.newSession)
             ListTile(
               contentPadding: const EdgeInsets.only(top: 8),

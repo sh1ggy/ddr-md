@@ -954,64 +954,32 @@ class PadsCard extends StatelessWidget {
   }
 }
 
-/// Under the credit sheet's side picker: each side of [cabinet] as last
-/// rated, so a sketchy one shows before the credit starts.
-class CabinetPadLamps extends StatelessWidget {
-  const CabinetPadLamps({super.key, required this.cabinet});
+/// Beside a side in the credit sheet's picker: its last rated lamp, so a
+/// sketchy side shows before the credit starts. Nothing when unrated.
+class SidePadLamp extends StatelessWidget {
+  const SidePadLamp({super.key, required this.cabinet, required this.side});
 
   final Cabinet? cabinet;
+  final PadSide side;
 
   @override
   Widget build(BuildContext context) {
     final c = cabinet;
     if (c == null) return const SizedBox.shrink();
-    final pop = FloorPop.of(context);
     return ValueListenableBuilder(
       valueListenable: padRatingsRevision,
       builder: (context, _, __) => FutureBuilder<List<PadRating>>(
         future: DatabaseProvider.getVenuePadRatings(c.venueId),
         builder: (context, snapshot) {
-          final all = snapshot.data ?? const [];
-          PadRating? latest(PadSide s) =>
-              all.where((r) => r.cabinet.id == c.id && r.side == s).firstOrNull;
-          if (PadSide.values.every((s) => latest(s) == null)) {
-            return const SizedBox.shrink();
-          }
+          final r = (snapshot.data ?? const <PadRating>[])
+              .where((r) => r.cabinet.id == c.id && r.side == side)
+              .firstOrNull;
+          if (r == null) return const SizedBox.shrink();
           return Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(children: [
-              for (final s in PadSide.values)
-                Expanded(
-                  child: Opacity(
-                    opacity: latest(s)?.stale ?? false ? 0.55 : 1,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: switch (latest(s)) {
-                        null => [
-                            Text('Not rated',
-                                style: TextStyle(fontSize: 12, color: pop.haze))
-                          ],
-                        final r => [
-                            PadLamp(r.lamp, height: 14),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                  r.arrows.isEmpty
-                                      ? padWhen(r.at)
-                                      : '${r.flagSummary.split(' · ').first} · ${padWhen(r.at)}',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: r.arrows.isEmpty
-                                          ? pop.haze
-                                          : FloorPop.coral)),
-                            ),
-                          ],
-                      },
-                    ),
-                  ),
-                ),
-            ]),
+            padding: const EdgeInsets.only(left: 8),
+            child: Opacity(
+                opacity: r.stale ? 0.45 : 1,
+                child: PadLamp(r.lamp, height: 12)),
           );
         },
       ),
