@@ -151,9 +151,12 @@ String playCount(int n) => '$n ${n == 1 ? 'play' : 'plays'}';
 
 /// A visit's facts as tags: its venue when [venue], its day, times and plays.
 class VisitTags extends StatelessWidget {
-  const VisitTags(this.visit, {super.key, this.venue = false});
+  const VisitTags(this.visit,
+      {super.key, this.venue = false, this.trailing = const []});
   final Visit visit;
   final bool venue;
+  // After the facts, e.g. Home's pad nudge.
+  final List<Widget> trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -169,6 +172,7 @@ class VisitTags extends StatelessWidget {
           visit.plays.isEmpty
               ? 'no synced plays'
               : playCount(visit.plays.length)),
+      ...trailing,
     ]);
   }
 }

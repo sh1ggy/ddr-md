@@ -104,6 +104,17 @@ const scenarios = {
     await joinYours("TOFU");
     await joinTheirs("JUN.K");
   },
+  "pads: MIKA, a friend, posts a pad check": async () => {
+    await joinYours("MIKA");
+    await joinTheirs("MIKA");
+    await as(keyOf("MIKA"), "PUT", "/v1/pad", {
+      id: "mika-pads", venue: "Round1 Ludo", cab: "Left",
+      sides: [
+        { side: "p1", lamp: "clear", arrows: { up: { issues: ["dropsSteps"], zone: "outer" } } },
+        { side: "p2", lamp: "pfc", arrows: {} },
+      ],
+    });
+  },
   "join: SABLE joins your circle": () => joinYours("SABLE"),
   "befriend: SABLE joins yours and lets you into theirs": async () => {
     await joinYours("SABLE");

@@ -202,8 +202,8 @@ class LastSessionCard extends StatelessWidget {
           children: [
             Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: VisitTags(visit)),
-            PadNudge(visit: visit, data: data),
+                child: VisitTags(visit,
+                    trailing: [PadNudge(visit: visit, data: data)])),
             SessionSummaryBody(
               summary,
               plays: visit.plays,

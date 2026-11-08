@@ -219,8 +219,6 @@ class Settings {
   static const String circleLiveDefaultKey = "circleLiveDefault";
   static const String circleLocationDefaultKey = "circleLocationDefault";
   static const String cloudSyncedAtKey = "cloudSyncedAt";
-  // The session whose Home pad nudge was waved off.
-  static const String padNudgeDismissedKey = "padNudgeDismissed";
 
   // Settings that follow the player to their other devices. Left out: the
   // timing offsets (they depend on the device's own audio and display), the

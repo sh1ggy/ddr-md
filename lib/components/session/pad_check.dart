@@ -21,7 +21,6 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart' show ClearLamp, RecentPlay;
 import 'package:ddr_md/models/pad_rating.dart';
 import 'package:ddr_md/models/session_model.dart';
-import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
@@ -56,7 +55,8 @@ String? _lampArt(ClearLamp l) => switch (l) {
       ClearLamp.fc => fullComboIcon(FullComboTier.fc),
       ClearLamp.life4 => life4Icon,
       ClearLamp.clear => clearIcon,
-      ClearLamp.failed => null,
+      // No lamp for a fail: its E grade, as the score overview shows it.
+      ClearLamp.failed => 'assets/icons/rank_e.png',
     };
 
 String sideName(PadSide s) => s == PadSide.p1 ? 'P1' : 'P2';
@@ -67,6 +67,7 @@ String padSideLabel(Cabinet c, PadSide s) =>
 
 /// "Today", "Yesterday", a weekday within the week, then weeks ago.
 String padWhen(DateTime at) {
+  at = at.toLocal();
   final now = DateTime.now();
   final days = DateTime(now.year, now.month, now.day)
       .difference(DateTime(at.year, at.month, at.day))
@@ -89,7 +90,9 @@ String padWhen(DateTime at) {
 }
 
 /// "Sun 1 Nov".
-String padDay(DateTime at) => '${const [
+String padDay(DateTime at) => _day(at.toLocal());
+
+String _day(DateTime at) => '${const [
       'Mon',
       'Tue',
       'Wed',
@@ -113,7 +116,7 @@ String padDay(DateTime at) => '${const [
       'Dec'
     ][at.month - 1]}';
 
-/// A rated lamp in its art; FAILED, which has none, as a grey tag.
+/// A rated lamp in its art (a fail as its E).
 class PadLamp extends StatelessWidget {
   const PadLamp(this.lamp, {super.key, this.height = 18});
 
@@ -142,39 +145,67 @@ class LampTag extends StatelessWidget {
       {super.key,
       required this.width,
       required this.height,
-      this.label = true});
+      this.label = true,
+      this.ring});
 
   final ClearLamp lamp;
   final double width, height;
   final bool label;
 
+  /// Volt around the tag, on its lean, when true: the picked lamp. Null
+  /// leaves no room for one.
+  final bool? ring;
+
   @override
   Widget build(BuildContext context) => Lean(
-        child: Container(
-          width: width,
-          height: height,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-              color: kLampColors[lamp],
-              borderRadius: BorderRadius.circular(height * 0.28)),
-          child: label
-              ? Upright(
-                  child: FittedBox(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 3),
-                      child: Text(lampCode(lamp),
-                          style: const TextStyle(
-                              fontFamily: kReadoutFont,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 10,
-                              letterSpacing: 0.4,
-                              color: FloorPop.onVolt)),
-                    ),
-                  ),
-                )
-              : null,
-        ),
+        child: ring == null
+            ? _tag()
+            : Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                    border: Border.all(
+                        color: ring! ? FloorPop.volt : Colors.transparent,
+                        width: 2),
+                    borderRadius: BorderRadius.circular(height * 0.28 + 4)),
+                child: _tag(),
+              ),
       );
+
+  Widget _tag() {
+    final art = label ? _lampArt(lamp) : null;
+    final text = Text(lampCode(lamp),
+        style: const TextStyle(
+            fontFamily: kReadoutFont,
+            fontWeight: FontWeight.w700,
+            fontSize: 10,
+            letterSpacing: 0.4,
+            color: FloorPop.onVolt));
+    return Container(
+      width: width,
+      height: height,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+          // The lamp's own art reads on the dark, edged in its colour.
+          color: art == null ? kLampColors[lamp] : FloorPop.night.ink,
+          border: art == null
+              ? null
+              : Border.all(color: kLampColors[lamp]!, width: 1.5),
+          borderRadius: BorderRadius.circular(height * 0.28)),
+      child: !label
+          ? null
+          : Upright(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+                child: FittedBox(
+                  child: art == null
+                      ? text
+                      : Image.asset(art,
+                          height: height, errorBuilder: (_, __, ___) => text),
+                ),
+              ),
+            ),
+    );
+  }
 }
 
 /// The pad's four arrows in a 3×3, flagged ones in coral.
@@ -589,19 +620,9 @@ class _SideRow extends StatelessWidget {
                         child: AnimatedOpacity(
                           duration: FloorPop.sixteenth,
                           opacity: r.lamp == null || r.lamp == l ? 1 : 0.3,
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                  color: r.lamp == l
-                                      ? FloorPop.volt
-                                      : Colors.transparent,
-                                  width: 2),
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            child: ExcludeSemantics(
-                                child: LampTag(l, width: 38, height: 22)),
-                          ),
+                          child: ExcludeSemantics(
+                              child: LampTag(l,
+                                  width: 44, height: 24, ring: r.lamp == l)),
                         ),
                       ),
                     ),
@@ -784,8 +805,8 @@ class _Flags extends StatelessWidget {
   }
 }
 
-/// Home's one prompt after a session: rate its sides, or wave it off. Gone
-/// once they're rated, waved off, or a few days on.
+/// Home's one prompt after a session, as a chip among the last session's
+/// tags. Gone once its sides are rated or a few days on.
 class PadNudge extends StatelessWidget {
   const PadNudge({super.key, required this.visit, required this.data});
 
@@ -800,8 +821,7 @@ class PadNudge extends StatelessWidget {
     final active = context.watch<SessionState>().session?.id;
     if (session == null ||
         session.id == active ||
-        DateTime.now().difference(visit.end) > _lasts ||
-        Settings.getString(Settings.padNudgeDismissedKey) == session.id) {
+        DateTime.now().difference(visit.end) > _lasts) {
       return const SizedBox.shrink();
     }
     final sides = sidesPlayed(data.credits[session.id] ?? []);
@@ -812,76 +832,37 @@ class PadNudge extends StatelessWidget {
         future: DatabaseProvider.getSessionPadRatings(session.id),
         builder: (context, snapshot) {
           final rated = snapshot.data;
-          if (rated == null) return const SizedBox.shrink();
-          final left = sides
-              .where((s) => !rated
-                  .any((r) => r.cabinet.id == s.cabinet.id && r.side == s.side))
-              .length;
-          if (left == 0) return const SizedBox.shrink();
-          return _NudgeRow(
-            sides: left,
-            onRate: () => showPadRatingSheet(context,
-                session: session, sides: sides, hints: sideHints(visit, data)),
-            onDismiss: () async {
-              await Settings.setString(
-                  Settings.padNudgeDismissedKey, session.id);
-              padRatingsRevision.value++;
-            },
+          if (rated == null ||
+              sides.every((s) => rated.any(
+                  (r) => r.cabinet.id == s.cabinet.id && r.side == s.side))) {
+            return const SizedBox.shrink();
+          }
+          return Semantics(
+            button: true,
+            child: GestureDetector(
+              onTap: () => showPadRatingSheet(context,
+                  session: session,
+                  sides: sides,
+                  hints: sideHints(visit, data)),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(7, 3, 9, 3),
+                decoration: BoxDecoration(
+                    color: FloorPop.volt,
+                    borderRadius: BorderRadius.circular(99)),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  PadGlyph(size: 13, color: FloorPop.onVolt),
+                  SizedBox(width: 5),
+                  Text('How were the pads?',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: FloorPop.onVolt)),
+                ]),
+              ),
+            ),
           );
         },
       ),
-    );
-  }
-}
-
-class _NudgeRow extends StatelessWidget {
-  const _NudgeRow(
-      {required this.sides, required this.onRate, required this.onDismiss});
-
-  final int sides;
-  final VoidCallback onRate, onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
-      decoration: BoxDecoration(
-          color: pop.riser, borderRadius: BorderRadius.circular(16)),
-      child: Row(children: [
-        const PadGlyph(size: 22, lit: true),
-        const SizedBox(width: 10),
-        Expanded(
-          child: InkWell(
-            onTap: onRate,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text.rich(TextSpan(children: [
-                const TextSpan(
-                    text: 'How were the pads?',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
-                TextSpan(
-                    text: ' · $sides side${sides == 1 ? '' : 's'}',
-                    style: TextStyle(color: pop.haze)),
-              ])),
-            ),
-          ),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-              backgroundColor: FloorPop.volt,
-              foregroundColor: FloorPop.onVolt,
-              minimumSize: const Size(44, 40)),
-          onPressed: onRate,
-          child: const Text('Rate'),
-        ),
-        IconButton(
-          tooltip: 'Not now',
-          icon: Icon(Icons.close, size: 18, color: pop.haze),
-          onPressed: onDismiss,
-        ),
-      ]),
     );
   }
 }
