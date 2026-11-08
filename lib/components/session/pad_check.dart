@@ -210,10 +210,13 @@ class LampTag extends StatelessWidget {
 
 /// The pad's four arrows in a 3×3, flagged ones in coral.
 class MiniPad extends StatelessWidget {
-  const MiniPad(this.flagged, {super.key, this.size = 30});
+  const MiniPad(this.flagged, {super.key, this.size = 30, this.idle});
 
   final Set<PadArrow> flagged;
   final double size;
+
+  /// The unflagged arrows' colour; the card's line by default.
+  final Color? idle;
 
   @override
   Widget build(BuildContext context) {
@@ -227,7 +230,7 @@ class MiniPad extends StatelessWidget {
             width: cell,
             height: cell,
             decoration: BoxDecoration(
-                color: flagged.contains(a) ? FloorPop.coral : pop.line,
+                color: flagged.contains(a) ? FloorPop.coral : idle ?? pop.line,
                 borderRadius: BorderRadius.circular(cell * 0.25)),
           ),
         );
@@ -421,6 +424,8 @@ class _Row {
   Map<PadArrow, ArrowFlag> arrows = {};
   // The arrow whose issues show, once one's tapped.
   PadArrow? selected;
+  // Its flags open under the lamps.
+  bool open = false;
 }
 
 /// A side's rating as of [session]: its own, else the latest before it.
@@ -555,8 +560,12 @@ class _SideRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final r = row;
+    final flagged = {
+      for (final MapEntry(:key, :value) in r.arrows.entries)
+        if (!value.isEmpty) key
+    };
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
       decoration: BoxDecoration(
         color: pop.ink,
         border: Border.all(color: pop.line),
@@ -565,71 +574,104 @@ class _SideRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text.rich(TextSpan(children: [
-            TextSpan(
-                text: padSideLabel(r.key.cabinet, r.key.side),
-                style:
-                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-            if (hint case final h? when h.warn)
-              TextSpan(
-                  text: ' · ${h.text.toLowerCase()}',
-                  style: const TextStyle(fontSize: 12, color: FloorPop.coral)),
-          ])),
-          const SizedBox(height: 6),
           Row(children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    for (final l in _lamps)
-                      Expanded(
-                        child: Semantics(
-                          button: true,
-                          selected: r.lamp == l,
-                          label: '${lampCode(l)}, ${kPadVibes[l]}',
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              r.lamp = l;
-                              onChanged();
-                            },
-                            child: SizedBox(
-                              height: 44,
-                              child: Center(
-                                child: AnimatedOpacity(
-                                  duration: FloorPop.sixteenth,
-                                  opacity:
-                                      r.lamp == null || r.lamp == l ? 1 : 0.3,
-                                  child: ExcludeSemantics(
-                                      child: LampTag(l,
-                                          width: 34,
-                                          height: 20,
-                                          ring: r.lamp == l)),
-                                ),
-                              ),
-                            ),
+              child: Text.rich(TextSpan(children: [
+                TextSpan(
+                    text: padSideLabel(r.key.cabinet, r.key.side),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700)),
+                if (hint case final h? when h.warn)
+                  TextSpan(
+                      text: ' · ${h.text.toLowerCase()}',
+                      style:
+                          const TextStyle(fontSize: 12, color: FloorPop.coral)),
+              ])),
+            ),
+            // The flags sit behind the side's own pad: its flagged arrows
+            // lit, tap to open.
+            Tooltip(
+              message: flagged.isEmpty ? 'Flag an arrow' : 'Flagged arrows',
+              child: InkResponse(
+                radius: 24,
+                onTap: () {
+                  r.open = !r.open;
+                  if (!r.open) r.selected = null;
+                  onChanged();
+                },
+                child: Container(
+                  width: 44,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: r.open ? pop.riser : null,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: MiniPad(flagged,
+                      size: 20, idle: pop.haze.withValues(alpha: 0.6)),
+                ),
+              ),
+            ),
+          ]),
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Row(children: [
+              for (final l in _lamps)
+                Expanded(
+                  child: Semantics(
+                    button: true,
+                    selected: r.lamp == l,
+                    label: '${lampCode(l)}, ${kPadVibes[l]}',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        r.lamp = l;
+                        onChanged();
+                      },
+                      child: SizedBox(
+                        height: 44,
+                        child: Center(
+                          child: AnimatedOpacity(
+                            duration: FloorPop.sixteenth,
+                            opacity: r.lamp == null || r.lamp == l ? 1 : 0.3,
+                            child: ExcludeSemantics(
+                                child: LampTag(l,
+                                    width: 44, height: 24, ring: r.lamp == l)),
                           ),
                         ),
                       ),
-                  ]),
-                  Text(r.lamp == null ? 'Tap a lamp' : kPadVibes[r.lamp]!,
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: r.lamp == null
-                              ? FontWeight.w400
-                              : FontWeight.w700,
-                          color: r.lamp == null ? pop.haze : null)),
-                  if (r.selected == null)
-                    Text("Tap an arrow if one's off",
-                        style: TextStyle(fontSize: 11, color: pop.haze)),
-                ],
-              ),
+                    ),
+                  ),
+                ),
+            ]),
+          ),
+          Text(r.lamp == null ? 'Tap a lamp' : kPadVibes[r.lamp]!,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight:
+                      r.lamp == null ? FontWeight.w400 : FontWeight.w700,
+                  color: r.lamp == null ? pop.haze : null)),
+          if (r.open)
+            Container(
+              margin: const EdgeInsets.only(top: 10, right: 4),
+              padding: const EdgeInsets.only(top: 10),
+              decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: pop.line))),
+              child:
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _TapPad(row: r, onChanged: onChanged),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: r.selected == null
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text('Tap the arrow that was off',
+                              style: TextStyle(fontSize: 12, color: pop.haze)),
+                        )
+                      : _Issues(row: r, onChanged: onChanged),
+                ),
+              ]),
             ),
-            const SizedBox(width: 10),
-            _TapPad(row: r, onChanged: onChanged),
-          ]),
-          if (r.selected != null) _Issues(row: r, onChanged: onChanged),
         ],
       ),
     );
@@ -757,34 +799,28 @@ class _Issues extends StatelessWidget {
           onSelected: (_) => onTap(),
         );
 
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.only(top: 10),
-      decoration:
-          BoxDecoration(border: Border(top: BorderSide(color: pop.line))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('${a.name.toUpperCase()} ARROW', style: label),
-        const SizedBox(height: 6),
-        Wrap(spacing: 5, runSpacing: 5, children: [
-          for (final i in PadIssue.values)
-            chip(i.label, cur.issues.contains(i), FloorPop.coral,
-                () => set(cur.toggled(i)),
-                icon: IssueGlyph(i,
-                    size: 18,
-                    color: cur.issues.contains(i)
-                        ? FloorPop.onVolt
-                        : FloorPop.coral)),
-        ]),
-        const SizedBox(height: 8),
-        Text('ROUGHLY WHERE', style: label),
-        const SizedBox(height: 6),
-        Wrap(spacing: 5, children: [
-          for (final z in PadZone.values)
-            chip(z.label, cur.zone == z, FloorPop.volt,
-                () => set(cur.zoned(cur.zone == z ? null : z))),
-        ]),
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('${a.name.toUpperCase()} ARROW', style: label),
+      const SizedBox(height: 6),
+      Wrap(spacing: 5, runSpacing: 5, children: [
+        for (final i in PadIssue.values)
+          chip(i.label, cur.issues.contains(i), FloorPop.coral,
+              () => set(cur.toggled(i)),
+              icon: IssueGlyph(i,
+                  size: 18,
+                  color: cur.issues.contains(i)
+                      ? FloorPop.onVolt
+                      : FloorPop.coral)),
       ]),
-    );
+      const SizedBox(height: 8),
+      Text('ROUGHLY WHERE', style: label),
+      const SizedBox(height: 6),
+      Wrap(spacing: 5, children: [
+        for (final z in PadZone.values)
+          chip(z.label, cur.zone == z, FloorPop.volt,
+              () => set(cur.zoned(cur.zone == z ? null : z))),
+      ]),
+    ]);
   }
 }
 
