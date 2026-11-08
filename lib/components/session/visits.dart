@@ -495,17 +495,14 @@ Future<void> _delete(BuildContext context, Visit v) async {
 }
 
 /// A session as a row: the jackets of its best plays, venue, day and plays,
-/// its goal and how it went against usual. [compact] is the Sessions page's
-/// form, led by the day instead. Tap for its page; swipe one with a venue to
-/// delete it.
+/// its goal and how it went against usual, the same on Home and the Sessions
+/// page. Tap for its page; swipe one with a venue to delete it.
 class VisitTile extends StatefulWidget {
-  const VisitTile(this.visit,
-      {super.key, required this.model, this.goal, this.compact = false});
+  const VisitTile(this.visit, {super.key, required this.model, this.goal});
 
   final Visit visit;
   final ScoreModel model;
   final GoalProgress? goal;
-  final bool compact;
 
   @override
   State<VisitTile> createState() => _VisitTileState();
@@ -528,7 +525,6 @@ class _VisitTileState extends State<VisitTile> {
   Widget build(BuildContext context) {
     if (_dismissed) return const SizedBox.shrink();
     final visit = widget.visit;
-    final compact = widget.compact;
     final pop = FloorPop.of(context);
     final gap =
         visit.plays.isEmpty ? null : widget.model.summarize(visit.plays).gap;
@@ -539,86 +535,42 @@ class _VisitTileState extends State<VisitTile> {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
             fontWeight: FontWeight.w700,
-            fontSize: compact ? 14 : 15,
+            fontSize: 15,
             color: visit.session == null ? pop.voltText : null));
     // Its facts with the icons Home's visit tags carry.
     final facts = Wrap(spacing: 10, runSpacing: 2, children: [
-      if (!compact)
-        _Fact(Icons.calendar_today_rounded,
-            visitSpan(visit.start, visit.end).split(' · ').first),
+      _Fact(Icons.calendar_today_rounded,
+          visitSpan(visit.start, visit.end).split(' · ').first),
       _Fact(Icons.music_note_rounded, plays),
       if (visit.plays.isNotEmpty && visit.end.isAfter(visit.start))
         _Fact(
             Icons.schedule_rounded, _length(visit.end.difference(visit.start))),
     ]);
-    final score = gap == null
-        ? null
-        : Text(_signed(gap),
-            style: FloorPop.readout(compact ? 15 : 18,
-                color: gap >= 0 ? pop.up : pop.down));
-    final Widget row;
-    if (compact) {
-      final day = visit.start.toLocal();
-      row = SizedBox(
-        height: 52,
-        child: Row(spacing: 12, children: [
-          SizedBox(
-            width: 38,
-            child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_weekdays[day.weekday - 1],
-                      style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.1,
-                          color: pop.haze)),
-                  Text('${day.day}', style: FloorPop.readout(18)),
-                ]),
-          ),
-          Expanded(
-            child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  title,
-                  const SizedBox(height: 2),
-                  facts,
-                ]),
-          ),
-          if (widget.goal case final g?) GoalMark(g),
-          if (score != null) score,
-        ]),
-      );
-    } else {
-      row = Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(spacing: 14, children: [
-          JacketFan(visit.plays),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              title,
-              const SizedBox(height: 3),
-              facts,
-              if (widget.goal case final g?)
-                Padding(
-                    padding: const EdgeInsets.only(top: 5), child: GoalMark(g)),
-            ]),
-          ),
-          if (score != null) score,
-        ]),
-      );
-    }
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(spacing: 14, children: [
+        JacketFan(visit.plays),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            title,
+            const SizedBox(height: 3),
+            facts,
+            if (widget.goal case final g?)
+              Padding(
+                  padding: const EdgeInsets.only(top: 5), child: GoalMark(g)),
+          ]),
+        ),
+        if (gap != null)
+          Text(_signed(gap),
+              style: FloorPop.readout(18, color: gap >= 0 ? pop.up : pop.down)),
+      ]),
+    );
     final tile = Material(
       color: pop.stage,
       child: InkWell(
         onTap: () => context.push(_path(visit)),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 0),
-          child: row,
-        ),
+        child: row,
       ),
     );
     return DecoratedBox(
@@ -646,20 +598,19 @@ class _VisitTileState extends State<VisitTile> {
   }
 }
 
-const _weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const _months = [
-  'JAN',
-  'FEB',
-  'MAR',
-  'APR',
-  'MAY',
-  'JUN',
-  'JUL',
-  'AUG',
-  'SEP',
-  'OCT',
-  'NOV',
-  'DEC'
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
 ];
 
 /// "+1,240", "−820".
@@ -692,7 +643,8 @@ class _Fact extends StatelessWidget {
   }
 }
 
-/// Every session, newest first, a card per week.
+/// Every session, newest first: a card per week, each like Home's Past
+/// sessions card, with the week's average gap in its heading.
 class SessionsPage extends StatelessWidget {
   const SessionsPage({super.key});
 
@@ -719,84 +671,58 @@ class SessionsPage extends StatelessWidget {
           }
           final thisWeek = monday(DateTime.now());
           return ListView(
-            padding: clearOfBars(context, const EdgeInsets.all(12)),
+            padding: clearOfBars(context, const EdgeInsets.only(bottom: 12)),
             children: [
-              ListTile(
-                  leading: const Icon(Icons.insights),
-                  title: const Text('Trends'),
-                  subtitle: Text(record == null
-                      ? 'Your progress over weeks'
-                      : 'Goals hit ${record.hit} of the last ${record.of}'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push('/home/trends')),
-              for (final MapEntry(key: week, value: visits)
-                  in weeks.entries) ...[
-                _WeekHeading(
-                  switch (thisWeek.difference(week).inDays ~/ 7) {
-                    0 => 'THIS WEEK',
-                    1 => 'LAST WEEK',
-                    _ => 'WEEK OF ${week.day} ${_months[week.month - 1]}',
-                  },
-                  gaps: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: ListTile(
+                    leading: const Icon(Icons.insights),
+                    title: const Text('Trends'),
+                    subtitle: Text(record == null
+                        ? 'Your progress over weeks'
+                        : 'Goals hit ${record.hit} of the last ${record.of}'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push('/home/trends')),
+              ),
+              for (final MapEntry(key: week, value: visits) in weeks.entries)
+                () {
+                  final title = switch (thisWeek.difference(week).inDays ~/ 7) {
+                    0 => 'This week',
+                    1 => 'Last week',
+                    _ => 'Week of ${week.day} ${_months[week.month - 1]}',
+                  };
+                  final gaps = [
                     for (final v in visits)
                       if (v.plays.isNotEmpty)
                         if (data!.model.summarize(v.plays).gap case final g?) g
-                  ],
-                ),
-                Container(
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                      color: pop.stage,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: pop.line)),
-                  // Each row draws its line on top; the card's edge covers
-                  // the first.
-                  child: Transform.translate(
-                    offset: const Offset(0, -1),
-                    child: Column(children: [
+                  ];
+                  final avg = gaps.isEmpty
+                      ? null
+                      : gaps.reduce((a, b) => a + b) / gaps.length;
+                  return HomeCard(
+                    title: title,
+                    icon: Icons.calendar_today_rounded,
+                    heading: Row(children: [
+                      Expanded(
+                          child: CardHeading(title,
+                              icon: Icons.calendar_today_rounded)),
+                      if (avg != null)
+                        Text('${_signed(avg)} avg',
+                            style: FloorPop.readout(13,
+                                color: avg >= 0 ? pop.up : pop.down)),
+                    ]),
+                    children: [
                       for (final v in visits)
                         VisitTile(v,
                             model: data!.model,
-                            goal: data.goals[v.session?.id],
-                            compact: true),
-                    ]),
-                  ),
-                ),
-              ],
+                            goal: data.goals[v.session?.id]),
+                    ],
+                  );
+                }(),
             ],
           );
         },
       ),
-    );
-  }
-}
-
-/// A week's label on a measure line, then its average gap.
-class _WeekHeading extends StatelessWidget {
-  const _WeekHeading(this.label, {required this.gaps});
-
-  final String label;
-  final List<double> gaps;
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    final avg =
-        gaps.isEmpty ? null : gaps.reduce((a, b) => a + b) / gaps.length;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-      child: Row(spacing: 10, children: [
-        Text(label,
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.3,
-                color: pop.haze)),
-        Expanded(child: Divider(height: 1, color: pop.line)),
-        if (avg != null)
-          Text('${_signed(avg)} avg',
-              style: FloorPop.readout(12, color: avg >= 0 ? pop.up : pop.down)),
-      ]),
     );
   }
 }
