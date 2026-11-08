@@ -179,7 +179,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
         bottom: 0,
         child: SafeArea(
           top: false,
-          minimum: const EdgeInsets.only(bottom: 12),
+          // Above the scroller's timeline strip.
+          minimum: const EdgeInsets.only(bottom: 92),
           child: Row(children: [
             Expanded(
               child: Container(
