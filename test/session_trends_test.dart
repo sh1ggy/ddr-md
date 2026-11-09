@@ -64,8 +64,8 @@ void main() {
               sessionAt: DateTime(2026, 10, 19, 17)),
         ]),
         const TrendFilter());
-    final w = TrendWindow.containing(DateTime(2026, 10, 21));
-    final week = h.week(w);
+    final w = TrendWindow.containing(DateTime(2026, 10, 21), TrendRange.week);
+    final week = h.period(w);
     expect(w.start, DateTime(2026, 10, 19));
     // a: +20k on 900k, b: −10k on 950k, equal weight.
     expect(week.gap, closeTo(5000, 1));
@@ -74,15 +74,31 @@ void main() {
     expect(week.biggest?.gain, 20000);
     expect(week.days.first, closeTo(5000, 1));
     // First week has nothing to compare against.
-    expect(h.week(w.shift(-1)).gap, null);
+    expect(h.period(w.shift(-1)).gap, null);
     final span = h.span(w.shift(1));
     final sides = h.sides(span);
-    expect(sides.map((s) => (s.id, s.weeks)), [
+    expect(sides.map((s) => (s.id, s.periods)), [
       ((1, PadSide.p1), 1),
       ((1, PadSide.p2), 1),
     ]);
     expect(h.lamp((1, PadSide.p1), w), ClearLamp.gfc);
     expect(h.lamp((1, PadSide.p1), w.shift(1)), null);
+    // Fortnights keep a fixed Monday anchor; months follow the calendar.
+    final fortnight =
+        TrendWindow.containing(DateTime(2026, 10, 21), TrendRange.fortnight);
+    expect(fortnight.start.weekday, DateTime.monday);
+    expect(fortnight.days, 14);
+    expect(fortnight.shift(1).shift(-1), fortnight);
+    expect(h.period(fortnight).gap, isNotNull);
+    final feb = TrendWindow.containing(DateTime(2024, 2, 29), TrendRange.month);
+    expect((feb.days, feb.shift(1).start), (29, DateTime(2024, 3)));
+    expect(
+        h
+            .period(
+                TrendWindow.containing(DateTime(2026, 10, 1), TrendRange.month))
+            .plays
+            .length,
+        5);
     expect(sideRead([-1000, -5000, -9000], [null, ClearLamp.gfc, null]),
         startsWith('Sliding for three weeks'));
   });
@@ -131,9 +147,21 @@ void main() {
     await tester.tap(find.text('Arcade · P1'));
     await tester.pumpAndSettle();
     expect(find.byType(LampTag), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, 3000));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Month'));
+    await tester.pumpAndSettle();
+    expect(find.text('October'), findsOneWidget);
+    expect(find.text('LAST 8 MONTHS'), findsOneWidget);
+    await tester.tap(find.byTooltip('Next month'));
+    await tester.pumpAndSettle();
+    expect(find.text('November'), findsNothing);
+    await tester.tap(find.text('Fortnight'));
+    await tester.pumpAndSettle();
+    expect(find.text('This fortnight'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('trend-mode')));
     await tester.pumpAndSettle();
-    expect(find.text('No week before to compare'), findsOneWidget);
+    expect(find.text('No fortnight before to compare'), findsOneWidget);
     expect(tester.takeException(), null);
   });
 }

@@ -1,10 +1,11 @@
 /// Name: SessionTrendsPage
 /// Parent: SessionPage, SessionsPage
-/// Description: Trends as one page per week, read against your usual on the
-/// same charts: the week and the seven before it, its days and biggest
-/// upscore, each cab side's form with the lamps you gave it, each level,
-/// timing and goals. Swipe or use the arrows to change week; SP/DP sits in
-/// the header and the other filters in a sheet behind it.
+/// Description: Trends a week, fortnight or month at a time, read
+/// against your usual on the same charts: the period and the seven before
+/// it, its days and biggest upscore, each cab side's form with the lamps
+/// you gave it, each level, timing and goals. Swipe or use the arrows to
+/// change period; SP/DP sits in the header and the other filters in a
+/// sheet behind it.
 library;
 
 import 'dart:math' as math;
@@ -101,8 +102,24 @@ const _months = [
   'Dec'
 ];
 
-/// "Nov 2–8", "Oct 26 – Nov 1".
-String weekRange(TrendWindow w) {
+const _fullMonths = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+];
+
+/// "Nov 2–8", "Oct 26 – Nov 1", "October".
+String periodTitle(TrendWindow w) {
+  if (w.range == TrendRange.month) return _fullMonths[w.start.month - 1];
   final end = DateTime(w.end.year, w.end.month, w.end.day - 1);
   final from = '${_months[w.start.month - 1]} ${w.start.day}';
   return w.start.month == end.month
@@ -110,7 +127,8 @@ String weekRange(TrendWindow w) {
       : '$from – ${_months[end.month - 1]} ${end.day}';
 }
 
-/// Data is supplied separately so week changes and filters need no re-query.
+/// Data is supplied separately so period changes and filters need no
+/// re-query.
 class SessionTrendsView extends StatefulWidget {
   const SessionTrendsView({super.key, required this.sources, this.now});
   final TrendSources sources;
@@ -122,7 +140,8 @@ class SessionTrendsView extends StatefulWidget {
 
 class _SessionTrendsViewState extends State<SessionTrendsView> {
   DateTime get _now => widget.now ?? DateTime.now();
-  late TrendWindow _week = TrendWindow.containing(_now);
+  TrendRange _range = TrendRange.week;
+  late TrendWindow _period = TrendWindow.containing(_now, _range);
   late TrendFilter _filter = TrendFilter(
       mode: widget.sources.plays.any((p) => p.play.mode == Modes.singles) ||
               !widget.sources.plays.any((p) => p.play.mode == Modes.doubles)
@@ -158,13 +177,26 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     );
   }
 
-  TrendWindow get _current => TrendWindow.containing(_now);
+  TrendWindow get _current => TrendWindow.containing(_now, _range);
+  String get _unit => _range.unit;
 
-  void _move(int weeks) {
-    final next = _week.shift(weeks);
+  /// "21/9" for a week or fortnight, "Sep" for a month.
+  String _short(TrendWindow w) => w.range == TrendRange.month
+      ? _months[w.start.month - 1]
+      : '${w.start.day}/${w.start.month}';
+
+  void _move(int periods) {
+    final next = _period.shift(periods);
     if (next.start.isAfter(_now)) return;
-    setState(() => _week = next);
+    setState(() => _period = next);
   }
+
+  void _setRange(TrendRange range) => setState(() {
+        // Stay on today if that's where you were, else on the period's start.
+        final at = _period.contains(_now) ? _now : _period.start;
+        _range = range;
+        _period = TrendWindow.containing(at, range);
+      });
 
   Future<void> _showFilters() async {
     final picked = await showModalBottomSheet<TrendFilter>(
@@ -187,14 +219,14 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         _filterLabels(_filter, widget.sources.plays, widget.sources.cabinets);
     final mode = _filter.mode;
     final current = _current;
-    // Recent weeks keep the same eight bars; further back, the bars end at
-    // the week shown.
-    final last = _week.start.isAfter(current.shift(-kTrendWeeks).start)
+    // Recent periods keep the same eight bars; further back, the bars end
+    // at the period shown.
+    final last = _period.start.isAfter(current.shift(-kTrendPeriods).start)
         ? current
-        : _week;
+        : _period;
     final span = history.span(last);
-    final week = history.week(_week);
-    final before = history.week(_week.shift(-1));
+    final shown = history.period(_period);
+    final before = history.period(_period.shift(-1));
     return HomeSubpage(
       title: 'Trends',
       actions: [
@@ -240,6 +272,18 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                   padding: clearOfBars(
                       context, const EdgeInsets.fromLTRB(16, 8, 16, 32)),
                   children: [
+                    PillTabs<TrendRange>(
+                      tabHeight: 44,
+                      values: TrendRange.values,
+                      tabs: const [
+                        Text('Week'),
+                        Text('Fortnight'),
+                        Text('Month')
+                      ],
+                      selected: _range,
+                      onChanged: _setRange,
+                    ),
+                    const SizedBox(height: 12),
                     _header(current),
                     if (labels.isNotEmpty)
                       Padding(
@@ -264,21 +308,21 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                             style: TextStyle(fontSize: 12, color: pop.haze)),
                       ),
                     const SizedBox(height: 12),
-                    _hero(week, before),
+                    _hero(shown, before),
                     const SizedBox(height: 12),
-                    _weeks(span),
+                    _periods(span),
                     const SizedBox(height: 12),
-                    _days(week),
+                    _days(shown),
                     ..._sides(span),
-                    if (week.levels.isNotEmpty) ...[
+                    if (shown.levels.isNotEmpty) ...[
                       const SizedBox(height: 12),
-                      _levels(week, before),
+                      _levels(shown, before),
                     ],
                     if (span.any((w) => w.spreadMs != null)) ...[
                       const SizedBox(height: 12),
-                      _timing(span, week, before),
+                      _timing(span, shown, before),
                     ],
-                    if (history.goals(_week) case final goals
+                    if (history.goals(_period) case final goals
                         when goals.isNotEmpty) ...[
                       const SizedBox(height: 12),
                       _goals(goals),
@@ -315,14 +359,19 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
 
   Widget _header(TrendWindow current) {
     final pop = FloorPop.of(context);
-    final ago = current.start.difference(_week.start).inDays ~/ 7;
-    final empty = history.week(_week).plays.isEmpty;
+    final ago = _range == TrendRange.month
+        ? (current.start.year - _period.start.year) * 12 +
+            current.start.month -
+            _period.start.month
+        : current.start.difference(_period.start).inDays ~/ _period.days;
+    final empty = history.period(_period).plays.isEmpty;
     final note = switch (ago) {
-      0 => empty ? 'This week · nothing played yet' : 'This week',
-      1 => 'Last week',
-      _ => '$ago weeks ago',
+      0 => empty ? 'This $_unit · nothing played yet' : 'This $_unit',
+      1 => 'Last $_unit',
+      _ => '$ago ${_unit}s ago',
     };
-    final year = _week.start.year == _now.year ? '' : ' · ${_week.start.year}';
+    final year =
+        _period.start.year == _now.year ? '' : ' · ${_period.start.year}';
     Widget arrow(String tip, IconData icon, VoidCallback? onPressed) =>
         IconButton.filledTonal(
           tooltip: tip,
@@ -336,11 +385,11 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
           ),
         );
     return Row(children: [
-      arrow('Previous week', Icons.chevron_left_rounded, () => _move(-1)),
+      arrow('Previous $_unit', Icons.chevron_left_rounded, () => _move(-1)),
       Expanded(
         child: Column(children: [
-          Text(weekRange(_week),
-              key: const ValueKey('trend-week'),
+          Text(periodTitle(_period),
+              key: const ValueKey('trend-period'),
               textAlign: TextAlign.center,
               style: FloorPop.display(18)),
           const SizedBox(height: 3),
@@ -349,7 +398,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
               style: TextStyle(fontSize: 12, color: pop.haze)),
         ]),
       ),
-      arrow('Next week', Icons.chevron_right_rounded,
+      arrow('Next $_unit', Icons.chevron_right_rounded,
           ago == 0 ? null : () => _move(1)),
     ]);
   }
@@ -363,9 +412,9 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
             : pop.up;
   }
 
-  Widget _hero(TrendWeek week, TrendWeek before) {
+  Widget _hero(TrendPeriod shown, TrendPeriod before) {
     final pop = FloorPop.of(context);
-    final gap = week.gap, was = before.gap;
+    final gap = shown.gap, was = before.gap;
     final delta = gap == null || was == null ? null : gap - was;
     Widget stat(String label, int value, Color? colour) => Expanded(
           child: Container(
@@ -385,7 +434,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         Semantics(
           container: true,
           label: gap == null
-              ? 'No scores against your usual this week'
+              ? 'No scores against your usual this $_unit'
               : '${vsUsual(gap)} vs your usual',
           excludeSemantics: true,
           child: Row(
@@ -407,28 +456,28 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         const SizedBox(height: 6),
         Text(
             delta == null
-                ? 'No week before to compare'
-                : '${delta >= 0 ? '↑' : '↓'} ${vsUsual(delta.abs()).replaceFirst('+', '')} on the week before',
+                ? 'No $_unit before to compare'
+                : '${delta >= 0 ? '↑' : '↓'} ${vsUsual(delta.abs()).replaceFirst('+', '')} on the $_unit before',
             style: TextStyle(fontSize: 13, color: _tone(delta))),
         const SizedBox(height: 12),
         Row(spacing: 6, children: [
-          stat('SESSIONS', week.sessions, null),
-          stat('PLAYS', week.plays.length, null),
-          stat('UPSCORES', week.upscores, pop.sunText),
-          stat('CARDS', week.cards, pop.voltText),
+          stat('SESSIONS', shown.sessions, null),
+          stat('PLAYS', shown.plays.length, null),
+          stat('UPSCORES', shown.upscores, pop.sunText),
+          stat('CARDS', shown.cards, pop.voltText),
         ]),
       ]),
     );
   }
 
-  Widget _weeks(List<TrendWeek> span) {
+  Widget _periods(List<TrendPeriod> span) {
     final pop = FloorPop.of(context);
     final most = math.max(
         5000.0, span.map((w) => w.gap?.abs() ?? 0).fold(0.0, math.max));
     const half = 50.0;
     return _card(
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _labelRow('LAST 8 WEEKS', 'vs your usual'),
+        _labelRow('LAST 8 ${_unit.toUpperCase()}S', 'vs your usual'),
         const SizedBox(height: 8),
         SizedBox(
           height: half * 2 + 10,
@@ -439,7 +488,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                 top: half + 4,
                 child: Container(height: 1.5, color: pop.line)),
             Row(spacing: 4, children: [
-              for (final w in span) Expanded(child: _weekBar(w, most, half)),
+              for (final w in span) Expanded(child: _periodBar(w, most, half)),
             ]),
           ]),
         ),
@@ -447,22 +496,23 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
         Row(spacing: 4, children: [
           for (final w in span)
             Expanded(
-              child: Text('${w.window.start.day}/${w.window.start.month}',
+              child: Text(_short(w.window),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 10,
-                      fontWeight:
-                          w.window == _week ? FontWeight.w700 : FontWeight.w400,
-                      color: w.window == _week ? pop.voltText : pop.haze)),
+                      fontWeight: w.window == _period
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      color: w.window == _period ? pop.voltText : pop.haze)),
             ),
         ]),
       ]),
     );
   }
 
-  Widget _weekBar(TrendWeek w, double most, double half) {
+  Widget _periodBar(TrendPeriod w, double most, double half) {
     final gap = w.gap;
-    final picked = w.window == _week;
+    final picked = w.window == _period;
     final h = gap == null ? 4.0 : math.max(4.0, gap.abs() / most * half);
     final colour = gap == null ? FloorPop.of(context).line : _tone(gap);
     final bar = Lean(
@@ -481,11 +531,11 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
       button: true,
       selected: picked,
       label:
-          '${weekRange(w.window)}: ${gap == null ? 'no scores' : '${vsUsual(gap)} vs your usual'}',
+          '${periodTitle(w.window)}: ${gap == null ? 'no scores' : '${vsUsual(gap)} vs your usual'}',
       excludeSemantics: true,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => setState(() => _week = w.window),
+        onTap: () => setState(() => _period = w.window),
         child: Column(children: [
           SizedBox(
               height: half + 4,
@@ -503,56 +553,89 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     );
   }
 
-  Widget _days(TrendWeek week) {
+  Widget _days(TrendPeriod shown) {
     final pop = FloorPop.of(context);
     const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final days = week.days;
-    final played = {for (final p in week.plays) trendDay(p.play.playedAt)};
-    final biggest = week.biggest;
+    final days = shown.days;
+    final played = {for (final p in shown.plays) trendDay(p.play.playedAt)};
+    final biggest = shown.biggest;
+    final lead = _period.start.weekday - 1;
+    DateTime dayOf(int i) => DateTime(
+        _period.start.year, _period.start.month, _period.start.day + i);
+    Widget dot(int i) {
+      final day = dayOf(i), v = days[i];
+      return Semantics(
+        label: '${names[day.weekday - 1]} ${day.day}: '
+            '${v != null ? '${vsUsual(v)} vs your usual' : played.contains(day) ? 'played' : 'not played'}',
+        excludeSemantics: true,
+        child: SizedBox(
+          height: 16,
+          child: Center(
+            child: v == null && !played.contains(day)
+                ? Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: pop.line, width: 1.5)))
+                : Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: v == null ? pop.haze : _tone(v))),
+          ),
+        ),
+      );
+    }
+
     return _card(
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _labelRow(_week == _current ? 'THIS WEEK' : 'THE WEEK'),
+        _labelRow(
+            '${_period == _current ? 'THIS' : 'THE'} ${_unit.toUpperCase()}'),
         const SizedBox(height: 10),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          for (var i = 0; i < 7; i++)
-            () {
-              final day = DateTime(
-                  _week.start.year, _week.start.month, _week.start.day + i);
-              final v = days[i];
-              return Semantics(
-                label:
-                    '${names[i]}: ${v != null ? '${vsUsual(v)} vs your usual' : played.contains(day) ? 'played' : 'not played'}',
-                excludeSemantics: true,
-                child: SizedBox(
-                  width: 36,
-                  child: Column(children: [
-                    SizedBox(
-                      height: 16,
-                      child: Center(
-                        child: v == null && !played.contains(day)
-                            ? Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: pop.line, width: 1.5)))
-                            : Container(
-                                width: 16,
-                                height: 16,
-                                decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: v == null ? pop.haze : _tone(v))),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(names[i],
-                        style: TextStyle(fontSize: 11, color: pop.haze)),
-                  ]),
-                ),
-              );
-            }(),
-        ]),
+        if (_range == TrendRange.week)
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            for (var i = 0; i < 7; i++)
+              SizedBox(
+                width: 36,
+                child: Column(children: [
+                  dot(i),
+                  const SizedBox(height: 6),
+                  Text(names[i],
+                      style: TextStyle(fontSize: 11, color: pop.haze)),
+                ]),
+              ),
+          ])
+        else ...[
+          // Monday-first rows, the month's first day under its weekday.
+          Row(children: [
+            for (final n in names)
+              Expanded(
+                  child: Text(n,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, color: pop.haze))),
+          ]),
+          for (var row = 0; row * 7 < lead + days.length; row++)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(children: [
+                for (var c = 0; c < 7; c++)
+                  Expanded(
+                    child: switch (row * 7 + c - lead) {
+                      final i when i >= 0 && i < days.length =>
+                        Column(children: [
+                          dot(i),
+                          const SizedBox(height: 2),
+                          Text('${dayOf(i).day}',
+                              style: TextStyle(fontSize: 10, color: pop.haze)),
+                        ]),
+                      _ => const SizedBox.shrink(),
+                    },
+                  ),
+              ]),
+            ),
+        ],
         if (biggest != null) ...[
           const SizedBox(height: 14),
           Divider(height: 1, color: pop.line),
@@ -603,19 +686,19 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     return '${c.venueName} · ${padSideLabel(c, id.$2)}';
   }
 
-  List<Widget> _sides(List<TrendWeek> span) {
+  List<Widget> _sides(List<TrendPeriod> span) {
     final pop = FloorPop.of(context);
     final sides = history.sides(span);
     if (sides.isEmpty) return const [];
     final regular = [
       for (final s in sides)
-        if (s.weeks >= 2) s
+        if (s.periods >= 2) s
     ];
     final other = [
       for (final s in sides)
-        if (s.weeks < 2) s
+        if (s.periods < 2) s
     ];
-    Widget rows(List<({PadSideId id, int sessions, int weeks})> list) =>
+    Widget rows(List<({PadSideId id, int sessions, int periods})> list) =>
         Column(children: [
           for (final (i, s) in list.indexed) ...[
             if (i > 0) Divider(height: 1, color: pop.line),
@@ -627,7 +710,8 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
       const SizedBox(height: 20),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: _labelRow('PADS AND SIDES · 8 WEEKS', 'vs your usual'),
+        child: _labelRow(
+            'PADS AND SIDES · 8 ${_unit.toUpperCase()}S', 'vs your usual'),
       ),
       const SizedBox(height: 8),
       _card(
@@ -648,19 +732,19 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
       Padding(
         padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
         child: Text(
-            'Lamps are your pad check that week (the latest if there were '
+            'Lamps are your pad check that $_unit (the latest if there were '
             'several); a dashed slot means you didn\'t rate it.',
             style: TextStyle(fontSize: 12, color: pop.haze, height: 1.4)),
       ),
     ];
   }
 
-  Widget _sideRow(List<TrendWeek> span, PadSideId id, int sessions,
+  Widget _sideRow(List<TrendPeriod> span, PadSideId id, int sessions,
       {required bool most}) {
     final pop = FloorPop.of(context);
     final gaps = [for (final w in span) w.sideGap(id)];
     final lamps = [for (final w in span) history.lamp(id, w.window)];
-    final upTo = span.indexWhere((w) => w.window == _week);
+    final upTo = span.indexWhere((w) => w.window == _period);
     final latest = [
       for (var i = 0; i < gaps.length; i++)
         if (gaps[i] != null && (upTo < 0 || i <= upTo)) gaps[i]!
@@ -722,7 +806,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
             : Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: LayoutBuilder(builder: (context, box) {
-                  final col = box.maxWidth / kTrendWeeks;
+                  final col = box.maxWidth / kTrendPeriods;
                   return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -755,18 +839,17 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                                               height: 14)),
                                 ),
                                 const SizedBox(height: 3),
-                                Text(
-                                    '${w.window.start.day}/${w.window.start.month}',
+                                Text(_short(w.window),
                                     style: TextStyle(
                                         fontSize: 9,
-                                        color: w.window == _week
+                                        color: w.window == _period
                                             ? pop.voltText
                                             : pop.haze)),
                               ]),
                             ),
                         ]),
                         const SizedBox(height: 10),
-                        Text(sideRead(gaps, lamps),
+                        Text(sideRead(gaps, lamps, unit: _unit),
                             style: const TextStyle(fontSize: 13, height: 1.4)),
                       ]);
                 }),
@@ -775,9 +858,9 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     ]);
   }
 
-  Widget _levels(TrendWeek week, TrendWeek before) {
+  Widget _levels(TrendPeriod shown, TrendPeriod before) {
     final pop = FloorPop.of(context);
-    final levels = week.levels, was = before.levels;
+    final levels = shown.levels, was = before.levels;
     Widget numeral(int l) =>
         LevelNumber(level: l, difficulty: 'EXPERT', height: 16);
     final best = levels.entries.reduce((a, b) => b.value > a.value ? b : a);
@@ -790,7 +873,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                 WidgetSpan(
                     alignment: PlaceholderAlignment.middle,
                     child: numeral(best.key)),
-                const TextSpan(text: 's carried the week; '),
+                TextSpan(text: 's carried the $_unit; '),
                 WidgetSpan(
                     alignment: PlaceholderAlignment.middle,
                     child: numeral(worst.key)),
@@ -804,7 +887,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
               ];
     return _card(
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _labelRow('BY LEVEL', 'this week · vs last'),
+        _labelRow('BY LEVEL', 'this $_unit · vs last'),
         const SizedBox(height: 4),
         LevelGapBars([
           for (final MapEntry(key: l, value: v) in levels.entries)
@@ -826,11 +909,12 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     );
   }
 
-  Widget _timing(List<TrendWeek> span, TrendWeek week, TrendWeek before) {
+  Widget _timing(
+      List<TrendPeriod> span, TrendPeriod shown, TrendPeriod before) {
     final pop = FloorPop.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final fast = kFastColor(dark), slow = kSlowColor(dark);
-    final avg = week.timingMs, spread = week.spreadMs, was = before.spreadMs;
+    final avg = shown.timingMs, spread = shown.spreadMs, was = before.spreadMs;
     final lean = avg == null
         ? 'no timing logged'
         : avg.abs() < 1.5
@@ -838,7 +922,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
             : '${avg.abs() < 5 ? 'a touch ' : ''}${avg < 0 ? 'fast' : 'slow'}';
     final change = spread == null || was == null || (spread - was).abs() < .5
         ? ''
-        : ', ${spread < was ? '↓' : '↑'} ${(spread - was).abs().round()} on last week';
+        : ', ${spread < was ? '↓' : '↑'} ${(spread - was).abs().round()} on last $_unit';
     final averages = [for (final w in span) w.timingMs];
     final spreads = [for (final w in span) w.spreadMs];
     final range = [
@@ -877,7 +961,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                 scale: range,
                 colour: fast,
                 baseline: pop.line,
-                inset: box.maxWidth / kTrendWeeks / 2,
+                inset: box.maxWidth / kTrendPeriods / 2,
                 stroke: 2,
                 second: spreads,
                 secondColour: pop.haze),
@@ -917,7 +1001,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
   }
 }
 
-/// A week's goal as a small tilted stamp in its kind's colour, faded when
+/// A period's goal as a small tilted stamp in its kind's colour, faded when
 /// missed.
 class _GoalStamp extends StatelessWidget {
   const _GoalStamp(this.progress);
@@ -962,7 +1046,7 @@ class _GoalStamp extends StatelessWidget {
   }
 }
 
-/// No lamp given that week: a dashed slot.
+/// No lamp given that period: a dashed slot.
 class _NoLamp extends StatelessWidget {
   const _NoLamp({required this.colour, required this.width});
   final Color colour;
@@ -997,7 +1081,7 @@ class _DashedBox extends CustomPainter {
   bool shouldRepaint(_DashedBox old) => old.colour != colour;
 }
 
-/// Weekly values (oldest first, null where unknown) as a line around a
+/// Values a period (oldest first, null where unknown) as a line around a
 /// zero baseline, [scale] the value that reaches the edge.
 class _FormLine extends CustomPainter {
   _FormLine(this.values,
@@ -1062,7 +1146,7 @@ class _FormLine extends CustomPainter {
 
     line(values, colour);
     if (dots == null) {
-      // A lone week still shows on a sparkline.
+      // A lone period still shows on a sparkline.
       for (var i = 0; i < values.length; i++) {
         if (values[i] != null) {
           canvas.drawCircle(at(i, values[i]!), stroke, Paint()..color = colour);

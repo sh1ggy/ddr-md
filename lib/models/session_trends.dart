@@ -1,9 +1,10 @@
 /// Name: SessionTrends
 /// Parent: SessionTrendsPage
-/// Description: Weeks of play read against your usual on the same charts
-/// (the session summary's model, so a week of harder charts isn't a bad
-/// week): the week as a whole, its days, each cab side with the lamp you
-/// gave it, each level, timing and goals. Missing weeks stay unknown.
+/// Description: Weeks, fortnights or months of play read against your
+/// usual on the same charts (the session summary's model, so a week of
+/// harder charts isn't a bad week): the period as a whole, its days, each
+/// cab side with the lamp you gave it, each level, timing and goals.
+/// Missing periods stay unknown.
 library;
 
 import 'package:ddr_md/components/session/session_summary.dart';
@@ -15,36 +16,72 @@ import 'package:ddr_md/models/session_goal.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
 
-/// Weeks the form lines cover.
-const kTrendWeeks = 8;
+/// Periods the form lines cover.
+const kTrendPeriods = 8;
+
+enum TrendRange {
+  week('week'),
+  fortnight('fortnight'),
+  month('month');
+
+  const TrendRange(this.unit);
+
+  /// "week", "fortnight", "month".
+  final String unit;
+}
 
 DateTime trendDay(DateTime date) {
   final d = date.toLocal();
   return DateTime(d.year, d.month, d.day);
 }
 
-/// A Monday-to-Sunday week in local calendar dates, [end] exclusive.
+/// A week, fortnight or month in local calendar dates, [end] exclusive.
+/// Weeks and fortnights start on a Monday.
 class TrendWindow {
-  const TrendWindow(this.start, this.end);
+  const TrendWindow(this.start, this.end, this.range);
   final DateTime start, end;
+  final TrendRange range;
 
-  factory TrendWindow.containing(DateTime date) {
+  factory TrendWindow.containing(DateTime date, TrendRange range) {
     final day = trendDay(date);
+    if (range == TrendRange.month) {
+      return TrendWindow(DateTime(day.year, day.month),
+          DateTime(day.year, day.month + 1), range);
+    }
     final monday = DateTime(day.year, day.month, day.day - day.weekday + 1);
+    // Fortnights share a fixed Monday anchor, so they don't move as you
+    // browse.
+    final weeks = DateTime.utc(monday.year, monday.month, monday.day)
+            .difference(DateTime.utc(2020, 1, 6))
+            .inDays ~/
+        7;
+    final start = range == TrendRange.fortnight && weeks.isOdd
+        ? DateTime(monday.year, monday.month, monday.day - 7)
+        : monday;
     return TrendWindow(
-        monday, DateTime(monday.year, monday.month, monday.day + 7));
+        start,
+        DateTime(start.year, start.month,
+            start.day + (range == TrendRange.week ? 7 : 14)),
+        range);
   }
 
+  int get days => DateTime.utc(end.year, end.month, end.day)
+      .difference(DateTime.utc(start.year, start.month, start.day))
+      .inDays;
   bool contains(DateTime date) => !date.isBefore(start) && date.isBefore(end);
-  TrendWindow shift(int weeks) => TrendWindow(
-      DateTime(start.year, start.month, start.day + 7 * weeks),
-      DateTime(end.year, end.month, end.day + 7 * weeks));
+  TrendWindow shift(int amount) => range == TrendRange.month
+      ? TrendWindow(DateTime(start.year, start.month + amount),
+          DateTime(start.year, start.month + amount + 1), range)
+      : TrendWindow(
+          DateTime(start.year, start.month, start.day + days * amount),
+          DateTime(end.year, end.month, end.day + days * amount),
+          range);
 
   @override
   bool operator ==(Object other) =>
-      other is TrendWindow && other.start == start;
+      other is TrendWindow && other.start == start && other.range == range;
   @override
-  int get hashCode => start.hashCode;
+  int get hashCode => Object.hash(start, range);
 }
 
 class TrendPlay {
@@ -142,8 +179,8 @@ double? _mean(Iterable<double> values) =>
 
 typedef PadSideId = (int cabinet, PadSide side);
 
-class TrendWeek {
-  TrendWeek({
+class TrendPeriod {
+  TrendPeriod({
     required this.window,
     required this.plays,
     required this.points,
@@ -156,15 +193,15 @@ class TrendWeek {
   final List<TrendPoint> points;
   final int upscores, cards;
 
-  /// The week's largest gain on a chart's earlier best play.
+  /// The period's largest gain on a chart's earlier best play.
   final ({TrendPlay play, int gain})? biggest;
 
   double? get gap => gapOf(points);
   int get sessions => plays.map((p) => p.visitKey).toSet().length;
 
-  /// Monday first; null where nothing scored.
+  /// Each day, first first; null where nothing scored.
   List<double?> get days => [
-        for (var i = 0; i < 7; i++)
+        for (var i = 0; i < window.days; i++)
           gapOf(points.where((p) =>
               trendDay(p.play.play.playedAt) ==
               DateTime(window.start.year, window.start.month,
@@ -197,7 +234,7 @@ class TrendWeek {
       ]);
 }
 
-/// [sources]' plays under [filter], ready to read a week at a time.
+/// [sources]' plays under [filter], ready to read a period at a time.
 class TrendHistory {
   TrendHistory(this.sources, this.filter) {
     final plays = sources.plays.where(filter.matches).toList();
@@ -248,25 +285,25 @@ class TrendHistory {
   final _plays = <TrendPlay>[];
   final _points = <TrendPoint>[];
   final _upscores = <TrendPlay, int?>{};
-  final _weeks = <TrendWindow, TrendWeek>{};
+  final _periods = <TrendWindow, TrendPeriod>{};
 
   bool get isEmpty => _plays.isEmpty;
 
-  TrendWeek week(TrendWindow w) => _weeks.putIfAbsent(w, () {
-        bool inWeek(TrendPlay p) => w.contains(p.play.playedAt);
-        final plays = _plays.where(inWeek).toList();
+  TrendPeriod period(TrendWindow w) => _periods.putIfAbsent(w, () {
+        bool inPeriod(TrendPlay p) => w.contains(p.play.playedAt);
+        final plays = _plays.where(inPeriod).toList();
         final ups = {
           for (final MapEntry(:key, :value) in _upscores.entries)
-            if (inWeek(key)) key: value
+            if (inPeriod(key)) key: value
         };
         final best = ups.entries
             .where((e) => e.value != null)
             .fold<MapEntry<TrendPlay, int?>?>(
                 null, (a, e) => a == null || e.value! > a.value! ? e : a);
-        return TrendWeek(
+        return TrendPeriod(
           window: w,
           plays: plays,
-          points: _points.where((p) => inWeek(p.play)).toList(),
+          points: _points.where((p) => inPeriod(p.play)).toList(),
           upscores: ups.length,
           biggest: best == null ? null : (play: best.key, gain: best.value!),
           cards: sources.gains
@@ -282,16 +319,18 @@ class TrendHistory {
         );
       });
 
-  /// The [kTrendWeeks] weeks ending with [last], oldest first.
-  List<TrendWeek> span(TrendWindow last) => [
-        for (var i = kTrendWeeks - 1; i >= 0; i--) week(last.shift(-i)),
+  /// The [kTrendPeriods] periods ending with [last], oldest first.
+  List<TrendPeriod> span(TrendWindow last) => [
+        for (var i = kTrendPeriods - 1; i >= 0; i--) period(last.shift(-i)),
       ];
 
-  /// Every side played in [weeks], most sessions first.
-  List<({PadSideId id, int sessions, int weeks})> sides(List<TrendWeek> weeks) {
+  /// Every side played in [periods], most sessions first, with how many of
+  /// them it was played in.
+  List<({PadSideId id, int sessions, int periods})> sides(
+      List<TrendPeriod> periods) {
     final sessions = <PadSideId, Set<String>>{};
     final played = <PadSideId, Set<TrendWindow>>{};
-    for (final w in weeks) {
+    for (final w in periods) {
       for (final p in w.points) {
         if (p.play.cabinetId == null || p.play.side == null) continue;
         final id = (p.play.cabinetId!, p.play.side!);
@@ -301,7 +340,7 @@ class TrendHistory {
     }
     return [
       for (final id in sessions.keys)
-        (id: id, sessions: sessions[id]!.length, weeks: played[id]!.length)
+        (id: id, sessions: sessions[id]!.length, periods: played[id]!.length)
     ]..sort((a, b) => b.sessions.compareTo(a.sessions));
   }
 
@@ -323,14 +362,15 @@ class TrendHistory {
       ];
 }
 
-/// A side's eight weeks in one line, from its weekly gaps (oldest first)
-/// and the lamps given those weeks.
-String sideRead(List<double?> gaps, List<ClearLamp?> lamps) {
+/// A side's periods in one line, from its gaps (oldest first) and the
+/// lamps given in each; [unit] names a period.
+String sideRead(List<double?> gaps, List<ClearLamp?> lamps,
+    {String unit = 'week'}) {
   final known = [
     for (final g in gaps)
       if (g != null) g
   ];
-  if (known.length < 2) return 'Not enough weeks to call a trend.';
+  if (known.length < 2) return 'Not enough ${unit}s to call a trend.';
   final at = [
     for (var i = 0; i < gaps.length; i++)
       if (gaps[i] != null) i
@@ -344,17 +384,17 @@ String sideRead(List<double?> gaps, List<ClearLamp?> lamps) {
     ];
     if (a > b && b > c && c < 0) {
       return good.isEmpty
-          ? 'Down three weeks running.'
-          : 'Sliding for three weeks while you rated it well. The pad may be '
+          ? 'Down three ${unit}s running.'
+          : 'Sliding for three ${unit}s while you rated it well. The pad may be '
               'drifting, or you are.';
     }
-    if (a < b && b < c && c > 0) return 'Up three weeks running.';
+    if (a < b && b < c && c > 0) return 'Up three ${unit}s running.';
   }
   if (known.every((g) => g >= 0)) {
-    return 'Above your usual every week you played it.';
+    return 'Above your usual every $unit you played it.';
   }
   if (known.every((g) => g < 0)) {
-    return 'Below your usual every week you played it.';
+    return 'Below your usual every $unit you played it.';
   }
   final mean = known.reduce((a, b) => a + b) / known.length;
   return mean.abs() < 3000
