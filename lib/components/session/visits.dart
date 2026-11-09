@@ -9,6 +9,7 @@ library;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/goal_card.dart';
+import 'package:ddr_md/components/session/pad_check.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/session/session_summary.dart';
@@ -203,7 +204,8 @@ class LastSessionCard extends StatelessWidget {
           children: [
             Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: VisitTags(visit)),
+                child: VisitTags(visit,
+                    trailing: [PadNudge(visit: visit, data: data)])),
             SessionSummaryBody(
               summary,
               plays: visit.plays,
@@ -846,6 +848,7 @@ class _VisitPageState extends State<VisitPage> {
                             ),
                         ],
                       ),
+                      PadsCard(visit: visit, data: data),
                       if (visit.plays.isNotEmpty || timing.isNotEmpty)
                         HomeCard(
                           title: 'Plays',
