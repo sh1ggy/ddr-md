@@ -151,9 +151,10 @@ class LastSessionCard extends StatelessWidget {
         final data = snapshot.data;
         if (data == null) return const SizedBox.shrink();
         final visit = data.visits.where((v) => v.plays.isNotEmpty).firstOrNull;
+        // A session that never synced a play has nothing to show.
         final others = [
           for (final v in data.visits)
-            if (v != visit) v
+            if (v != visit && v.plays.isNotEmpty) v
         ];
         if (visit == null && sync.charts == 0) {
           return others.isEmpty
@@ -651,6 +652,7 @@ class SessionsPage extends StatelessWidget {
 
           final weeks = <DateTime, List<Visit>>{};
           for (final v in data?.visits ?? <Visit>[]) {
+            if (v.plays.isEmpty) continue;
             (weeks[monday(v.start)] ??= []).add(v);
           }
           final thisWeek = monday(DateTime.now());
