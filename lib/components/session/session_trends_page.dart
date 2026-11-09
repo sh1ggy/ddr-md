@@ -280,7 +280,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                     const SizedBox(height: 12),
                     _header(current),
                     const SizedBox(height: 10),
-                    Center(child: _filterChip(labels)),
+                    _filterChip(labels),
                     const SizedBox(height: 12),
                     _hero(shown, before),
                     const SizedBox(height: 12),
@@ -307,7 +307,7 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     );
   }
 
-  /// The filters sheet's way in, saying what's filtered: "All plays", or
+  /// The filters sheet's way in, full width, saying what's filtered: "All plays", or
   /// each filter with a level in its numeral.
   Widget _filterChip(List<String> labels) {
     final pop = FloorPop.of(context);
@@ -324,10 +324,10 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
           constraints: const BoxConstraints(minHeight: 44),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
+            child: Row(children: [
               Icon(Icons.tune_rounded, size: 18, color: ink),
               const SizedBox(width: 8),
-              Flexible(
+              Expanded(
                 child: Text.rich(
                     TextSpan(children: [
                       if (!on) const TextSpan(text: 'All plays'),
@@ -352,6 +352,8 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                         fontWeight: FontWeight.w600,
                         color: on ? null : pop.haze)),
               ),
+              const SizedBox(width: 8),
+              Icon(Icons.expand_more_rounded, size: 20, color: pop.haze),
             ]),
           ),
         ),
