@@ -538,32 +538,29 @@ class _VisitTileState extends State<VisitTile> {
             fontWeight: FontWeight.w700,
             fontSize: 15,
             color: visit.session == null ? pop.voltText : null));
-    final length = visit.plays.isNotEmpty && visit.end.isAfter(visit.start)
-        ? ' · ${_length(visit.end.difference(visit.start))}'
-        : '';
-    // Two tags and the goal, short enough for one line on a small phone.
-    final facts = Wrap(spacing: 6, runSpacing: 6, children: [
-      VisitTag(Icons.calendar_today_rounded, _day(visit.start)),
-      VisitTag(Icons.music_note_rounded, '$plays$length'),
-      if (widget.goal case final g?) GoalMark(g),
-    ]);
+    // Every row is the jacket beside two lines: title with its goal and gap,
+    // then the day and plays as tags, never wrapping, so rows stay one
+    // height even on a small phone.
     final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(spacing: 12, children: [
-        JacketFan(visit.plays),
+        BestJacket(visit.plays),
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // The gap sits on the title's line so the tags get the width.
             Row(spacing: 8, children: [
               Expanded(child: title),
+              if (widget.goal case final g?) GoalMark(g),
               if (gap != null)
                 Text(_signed(gap),
                     style: FloorPop.readout(16,
                         color: gap >= 0 ? pop.up : pop.down)),
             ]),
             const SizedBox(height: 6),
-            facts,
+            Row(spacing: 6, children: [
+              VisitTag(Icons.calendar_today_rounded, _day(visit.start)),
+              Flexible(child: VisitTag(Icons.music_note_rounded, plays)),
+            ]),
           ]),
         ),
       ]),
@@ -633,16 +630,6 @@ String _day(DateTime t) {
   if (days == 1) return 'Yesterday';
   final day = '${_weekdays[t.weekday - 1]} ${t.day} ${_months[t.month - 1]}';
   return t.year == now.year ? day : '$day ${t.year}';
-}
-
-/// "2 hr 30 min", "46 min", "1 hr".
-String _length(Duration d) {
-  final (h, m) = (d.inHours, d.inMinutes % 60);
-  return h == 0
-      ? '$m min'
-      : m == 0
-          ? '$h hr'
-          : '$h hr $m min';
 }
 
 /// Every session, newest first: a card per week, each like Home's Past
