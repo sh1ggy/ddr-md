@@ -388,8 +388,8 @@ class JacketFan extends StatelessWidget {
 
   final List<RecentPlay> plays;
 
-  static const size = 52.0;
-  static const _step = 14.0;
+  static const size = 46.0;
+  static const _step = 10.0;
 
   @override
   Widget build(BuildContext context) {
