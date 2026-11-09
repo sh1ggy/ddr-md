@@ -381,24 +381,21 @@ List<RecentPlay> bestPlays(List<RecentPlay> plays, int count) {
       .toList();
 }
 
-/// The jackets of a visit's three best plays fanned out, the best in front;
-/// a pin on a riser when it has no scored plays.
-class JacketFan extends StatelessWidget {
-  const JacketFan(this.plays, {super.key});
+/// The jacket of a visit's best play, or a pin on a riser when it has no
+/// scored plays.
+class BestJacket extends StatelessWidget {
+  const BestJacket(this.plays, {super.key});
 
   final List<RecentPlay> plays;
 
   static const size = 52.0;
-  static const _step = 14.0;
 
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    final top = bestPlays(plays, 3);
-    // Always three slots, so every row's fan keeps the same shape; the
-    // empty ones are risers, the front one marking a session with no plays.
-    Widget slot(int i) => i < top.length
-        ? _Jacket(song: top[i].song, size: size)
+    final best = bestPlays(plays, 1).firstOrNull;
+    return best != null
+        ? _Jacket(song: best.song, size: size)
         : Container(
             width: size,
             height: size,
@@ -406,35 +403,8 @@ class JacketFan extends StatelessWidget {
                 color: pop.riser,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: pop.line)),
-            child: i == 0 ? Icon(Icons.place_outlined, color: pop.haze) : null,
+            child: Icon(Icons.place_outlined, color: pop.haze),
           );
-    return SizedBox(
-      width: size + 2 * _step,
-      height: size,
-      child: Stack(clipBehavior: Clip.none, children: [
-        // Back to front, each further one smaller and tucked right.
-        for (var i = 2; i >= 0; i--)
-          Positioned(
-            left: i * _step,
-            top: 0,
-            child: Transform.scale(
-              scale: 1 - i * 0.08,
-              alignment: Alignment.centerRight,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0x66000000),
-                          blurRadius: 6,
-                          offset: Offset(0, 2))
-                    ]),
-                child: slot(i),
-              ),
-            ),
-          ),
-      ]),
-    );
   }
 }
 
@@ -580,7 +550,7 @@ class _Jacket extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final fallback = ColoredBox(
-      color: scheme.surfaceContainerLow,
+      color: FloorPop.of(context).riser,
       child: Icon(Icons.music_note, size: 24, color: scheme.onSurfaceVariant),
     );
     return ClipRRect(

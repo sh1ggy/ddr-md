@@ -538,33 +538,31 @@ class _VisitTileState extends State<VisitTile> {
             fontWeight: FontWeight.w700,
             fontSize: 15,
             color: visit.session == null ? pop.voltText : null));
-    // Its facts with the icons Home's visit tags carry.
-    final facts = Wrap(spacing: 6, runSpacing: 6, children: [
-      VisitTag(Icons.calendar_today_rounded,
-          visitSpan(visit.start, visit.end).split(' · ').first),
-      VisitTag(Icons.music_note_rounded, plays),
-      if (visit.plays.isNotEmpty && visit.end.isAfter(visit.start))
-        VisitTag(
-            Icons.schedule_rounded, _length(visit.end.difference(visit.start))),
-    ]);
+    // Every row is the jacket beside two lines: title with its goal and gap,
+    // then the day and plays as tags, never wrapping, so rows stay one
+    // height even on a small phone.
     final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(spacing: 14, children: [
-        JacketFan(visit.plays),
+      child: Row(spacing: 12, children: [
+        BestJacket(visit.plays),
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            title,
+            Row(spacing: 8, children: [
+              Expanded(child: title),
+              if (widget.goal case final g?) GoalMark(g),
+              if (gap != null)
+                Text(_signed(gap),
+                    style: FloorPop.readout(16,
+                        color: gap >= 0 ? pop.up : pop.down)),
+            ]),
             const SizedBox(height: 6),
-            facts,
-            if (widget.goal case final g?)
-              Padding(
-                  padding: const EdgeInsets.only(top: 5), child: GoalMark(g)),
+            Row(spacing: 6, children: [
+              VisitTag(Icons.calendar_today_rounded, _day(visit.start)),
+              Flexible(child: VisitTag(Icons.music_note_rounded, plays)),
+            ]),
           ]),
         ),
-        if (gap != null)
-          Text(_signed(gap),
-              style: FloorPop.readout(18, color: gap >= 0 ? pop.up : pop.down)),
       ]),
     );
     final tile = Material(
@@ -618,14 +616,20 @@ const _months = [
 String _signed(double gap) =>
     '${gap >= 0 ? '+' : '−'}${formatScore(gap.abs().round())}';
 
-/// "2 hr 30 min", "46 min", "1 hr".
-String _length(Duration d) {
-  final (h, m) = (d.inHours, d.inMinutes % 60);
-  return h == 0
-      ? '$m min'
-      : m == 0
-          ? '$h hr'
-          : '$h hr $m min';
+const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/// "Today", "Yesterday", "Sun 1 Nov", with the year only when it isn't
+/// this one.
+String _day(DateTime t) {
+  t = t.toLocal();
+  final now = DateTime.now();
+  final days = DateTime(now.year, now.month, now.day)
+      .difference(DateTime(t.year, t.month, t.day))
+      .inDays;
+  if (days == 0) return 'Today';
+  if (days == 1) return 'Yesterday';
+  final day = '${_weekdays[t.weekday - 1]} ${t.day} ${_months[t.month - 1]}';
+  return t.year == now.year ? day : '$day ${t.year}';
 }
 
 /// Every session, newest first: a card per week, each like Home's Past
