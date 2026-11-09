@@ -538,12 +538,12 @@ class _VisitTileState extends State<VisitTile> {
             fontSize: 15,
             color: visit.session == null ? pop.voltText : null));
     // Its facts with the icons Home's visit tags carry.
-    final facts = Wrap(spacing: 10, runSpacing: 2, children: [
-      _Fact(Icons.calendar_today_rounded,
+    final facts = Wrap(spacing: 6, runSpacing: 6, children: [
+      VisitTag(Icons.calendar_today_rounded,
           visitSpan(visit.start, visit.end).split(' · ').first),
-      _Fact(Icons.music_note_rounded, plays),
+      VisitTag(Icons.music_note_rounded, plays),
       if (visit.plays.isNotEmpty && visit.end.isAfter(visit.start))
-        _Fact(
+        VisitTag(
             Icons.schedule_rounded, _length(visit.end.difference(visit.start))),
     ]);
     final row = Padding(
@@ -554,7 +554,7 @@ class _VisitTileState extends State<VisitTile> {
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             title,
-            const SizedBox(height: 3),
+            const SizedBox(height: 6),
             facts,
             if (widget.goal case final g?)
               Padding(
@@ -625,22 +625,6 @@ String _length(Duration d) {
       : m == 0
           ? '$h hr'
           : '$h hr $m min';
-}
-
-/// One fact on a session row: [VisitTag]'s icon, inline.
-class _Fact extends StatelessWidget {
-  const _Fact(this.icon, this.text);
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    return Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: [
-      Icon(icon, size: 13, color: pop.voltText),
-      Text(text, style: TextStyle(fontSize: 12, color: pop.haze)),
-    ]);
-  }
 }
 
 /// Every session, newest first: a card per week, each like Home's Past

@@ -395,45 +395,45 @@ class JacketFan extends StatelessWidget {
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final top = bestPlays(plays, 3);
+    // Always three slots, so every row's fan keeps the same shape; the
+    // empty ones are risers, the front one marking a session with no plays.
+    Widget slot(int i) => i < top.length
+        ? _Jacket(song: top[i].song, size: size)
+        : Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+                color: pop.riser,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: pop.line)),
+            child: i == 0 ? Icon(Icons.place_outlined, color: pop.haze) : null,
+          );
     return SizedBox(
       width: size + 2 * _step,
       height: size,
-      child: top.isEmpty
-          ? Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                width: size,
-                height: size,
+      child: Stack(clipBehavior: Clip.none, children: [
+        // Back to front, each further one smaller and tucked right.
+        for (var i = 2; i >= 0; i--)
+          Positioned(
+            left: i * _step,
+            top: 0,
+            child: Transform.scale(
+              scale: 1 - i * 0.08,
+              alignment: Alignment.centerRight,
+              child: DecoratedBox(
                 decoration: BoxDecoration(
-                    color: pop.riser,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: pop.line)),
-                child: Icon(Icons.place_outlined, color: pop.haze),
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Color(0x66000000),
+                          blurRadius: 6,
+                          offset: Offset(0, 2))
+                    ]),
+                child: slot(i),
               ),
-            )
-          : Stack(clipBehavior: Clip.none, children: [
-              // Back to front, each further one smaller and tucked right.
-              for (var i = top.length - 1; i >= 0; i--)
-                Positioned(
-                  left: i * _step,
-                  top: 0,
-                  child: Transform.scale(
-                    scale: 1 - i * 0.08,
-                    alignment: Alignment.centerRight,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: const [
-                            BoxShadow(
-                                color: Color(0x66000000),
-                                blurRadius: 6,
-                                offset: Offset(0, 2))
-                          ]),
-                      child: _Jacket(song: top[i].song, size: size),
-                    ),
-                  ),
-                ),
-            ]),
+            ),
+          ),
+      ]),
     );
   }
 }
