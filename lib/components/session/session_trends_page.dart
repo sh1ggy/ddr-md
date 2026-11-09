@@ -15,6 +15,8 @@ import 'package:ddr_md/components/session/goal_card.dart';
 import 'package:ddr_md/components/session/pad_check.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_page.dart' show signedMs;
+import 'package:ddr_md/components/session/session_summary.dart'
+    show LevelGapBars, vsUsual;
 import 'package:ddr_md/components/session/visits.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -83,10 +85,6 @@ class _SessionTrendsPageState extends State<SessionTrendsPage> {
     );
   }
 }
-
-/// "+2.6k", "−4.6k": thousands of points off your usual.
-String vsUsual(double v) =>
-    '${v >= 50 ? '+' : v <= -50 ? '−' : ''}${(v.abs() / 1000).toStringAsFixed(1)}k';
 
 const _months = [
   'Jan',
@@ -780,8 +778,6 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
   Widget _levels(TrendWeek week, TrendWeek before) {
     final pop = FloorPop.of(context);
     final levels = week.levels, was = before.levels;
-    final most =
-        math.max(5000.0, levels.values.map((v) => v.abs()).reduce(math.max));
     Widget numeral(int l) =>
         LevelNumber(level: l, difficulty: 'EXPERT', height: 16);
     final best = levels.entries.reduce((a, b) => b.value > a.value ? b : a);
@@ -810,59 +806,18 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _labelRow('BY LEVEL', 'this week · vs last'),
         const SizedBox(height: 4),
-        for (final MapEntry(key: l, value: v) in levels.entries)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(children: [
-              SizedBox(
-                  width: 40,
-                  child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Semantics(
-                          label: 'Level $l',
-                          child: ExcludeSemantics(child: numeral(l))))),
-              Expanded(
-                child: LayoutBuilder(builder: (context, box) {
-                  final w = box.maxWidth / 2 * (v.abs() / most);
-                  return SizedBox(
-                    height: 16,
-                    child: Stack(children: [
-                      Positioned(
-                          left: box.maxWidth / 2 - .75,
-                          top: 0,
-                          bottom: 0,
-                          child: Container(width: 1.5, color: pop.line)),
-                      Positioned(
-                        top: 3,
-                        height: 10,
-                        left: v < 0 ? box.maxWidth / 2 - w : box.maxWidth / 2,
-                        width: w,
-                        child: Lean(
-                            child: Container(
-                                decoration: BoxDecoration(
-                                    color: _tone(v),
-                                    borderRadius: BorderRadius.circular(3)))),
-                      ),
-                    ]),
-                  );
-                }),
-              ),
-              SizedBox(
-                  width: 56,
-                  child: Text(vsUsual(v),
-                      textAlign: TextAlign.right,
-                      style: FloorPop.readout(14, color: _tone(v)))),
-              SizedBox(
-                width: 26,
-                child: was[l] == null
-                    ? null
-                    : Text(v >= was[l]! ? '↑' : '↓',
-                        textAlign: TextAlign.right,
-                        style:
-                            TextStyle(fontSize: 13, color: _tone(v - was[l]!))),
-              ),
-            ]),
-          ),
+        LevelGapBars([
+          for (final MapEntry(key: l, value: v) in levels.entries)
+            (
+              level: l,
+              gap: v,
+              trailing: was[l] == null
+                  ? null
+                  : Text(v >= was[l]! ? '↑' : '↓',
+                      style:
+                          TextStyle(fontSize: 13, color: _tone(v - was[l]!))),
+            ),
+        ]),
         if (read != null) ...[
           const SizedBox(height: 6),
           Text.rich(TextSpan(children: read), style: style),
