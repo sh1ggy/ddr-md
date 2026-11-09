@@ -369,6 +369,75 @@ void _openChart(BuildContext context, RecentPlay play) {
 }
 
 /// The [count] highest scores among [plays], best first, one per chart.
+List<RecentPlay> bestPlays(List<RecentPlay> plays, int count) {
+  final best = <String, RecentPlay>{};
+  for (final p in plays) {
+    if (p.score == null) continue;
+    final kept = best[p.recordId];
+    if (kept == null || p.score! > kept.score!) best[p.recordId] = p;
+  }
+  return (best.values.toList()..sort((a, b) => b.score!.compareTo(a.score!)))
+      .take(count)
+      .toList();
+}
+
+/// The jackets of a visit's three best plays fanned out, the best in front;
+/// a pin on a riser when it has no scored plays.
+class JacketFan extends StatelessWidget {
+  const JacketFan(this.plays, {super.key});
+
+  final List<RecentPlay> plays;
+
+  static const size = 52.0;
+  static const _step = 14.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final top = bestPlays(plays, 3);
+    // Always three slots, so every row's fan keeps the same shape; the
+    // empty ones are risers, the front one marking a session with no plays.
+    Widget slot(int i) => i < top.length
+        ? _Jacket(song: top[i].song, size: size)
+        : Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+                color: pop.riser,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: pop.line)),
+            child: i == 0 ? Icon(Icons.place_outlined, color: pop.haze) : null,
+          );
+    return SizedBox(
+      width: size + 2 * _step,
+      height: size,
+      child: Stack(clipBehavior: Clip.none, children: [
+        // Back to front, each further one smaller and tucked right.
+        for (var i = 2; i >= 0; i--)
+          Positioned(
+            left: i * _step,
+            top: 0,
+            child: Transform.scale(
+              scale: 1 - i * 0.08,
+              alignment: Alignment.centerRight,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Color(0x66000000),
+                          blurRadius: 6,
+                          offset: Offset(0, 2))
+                    ]),
+                child: slot(i),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
 class TopPlays extends StatelessWidget {
   const TopPlays(
       {super.key, required this.plays, required this.bests, this.count = 4});
@@ -381,16 +450,7 @@ class TopPlays extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final best = <String, RecentPlay>{};
-    for (final p in plays) {
-      if (p.score == null) continue;
-      final kept = best[p.recordId];
-      if (kept == null || p.score! > kept.score!) best[p.recordId] = p;
-    }
-    final top = (best.values.toList()
-          ..sort((a, b) => b.score!.compareTo(a.score!)))
-        .take(count)
-        .toList();
+    final top = bestPlays(plays, count);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

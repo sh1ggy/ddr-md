@@ -15,6 +15,7 @@ import 'package:ddr_md/components/session/session_summary.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/settings/development_page.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
+import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/database.dart';
@@ -150,9 +151,10 @@ class LastSessionCard extends StatelessWidget {
         final data = snapshot.data;
         if (data == null) return const SizedBox.shrink();
         final visit = data.visits.where((v) => v.plays.isNotEmpty).firstOrNull;
+        // A session that never synced a play has nothing to show.
         final others = [
           for (final v in data.visits)
-            if (v != visit) v
+            if (v != visit && v.plays.isNotEmpty) v
         ];
         if (visit == null && sync.charts == 0) {
           return others.isEmpty
@@ -493,8 +495,9 @@ Future<void> _delete(BuildContext context, Visit v) async {
   session.changed();
 }
 
-/// A session in a rounded tile: venue, when, plays and how they went against
-/// usual. Tap for its page; swipe one with a venue to delete it.
+/// A session as a row: the jackets of its best plays, venue, day and plays,
+/// its goal and how it went against usual, the same on Home and the Sessions
+/// page. Tap for its page; swipe one with a venue to delete it.
 class VisitTile extends StatefulWidget {
   const VisitTile(this.visit, {super.key, required this.model, this.goal});
 
@@ -523,97 +526,185 @@ class _VisitTileState extends State<VisitTile> {
   Widget build(BuildContext context) {
     if (_dismissed) return const SizedBox.shrink();
     final visit = widget.visit;
-    final model = widget.model;
-    final scheme = Theme.of(context).colorScheme;
-    final gap = visit.plays.isEmpty ? null : model.summarize(visit.plays).gap;
+    final pop = FloorPop.of(context);
+    final gap =
+        visit.plays.isEmpty ? null : widget.model.summarize(visit.plays).gap;
+    final plays =
+        visit.plays.isEmpty ? 'no synced plays' : playCount(visit.plays.length);
+    final title = Text(visit.session?.venue.name ?? 'Where was this?',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+            color: visit.session == null ? pop.voltText : null));
+    // Its facts with the icons Home's visit tags carry.
+    final facts = Wrap(spacing: 6, runSpacing: 6, children: [
+      VisitTag(Icons.calendar_today_rounded,
+          visitSpan(visit.start, visit.end).split(' · ').first),
+      VisitTag(Icons.music_note_rounded, plays),
+      if (visit.plays.isNotEmpty && visit.end.isAfter(visit.start))
+        VisitTag(
+            Icons.schedule_rounded, _length(visit.end.difference(visit.start))),
+    ]);
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(spacing: 14, children: [
+        JacketFan(visit.plays),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            title,
+            const SizedBox(height: 6),
+            facts,
+            if (widget.goal case final g?)
+              Padding(
+                  padding: const EdgeInsets.only(top: 5), child: GoalMark(g)),
+          ]),
+        ),
+        if (gap != null)
+          Text(_signed(gap),
+              style: FloorPop.readout(18, color: gap >= 0 ? pop.up : pop.down)),
+      ]),
+    );
     final tile = Material(
-      color: scheme.surfaceContainerHighest,
-      child: ListTile(
-        dense: true,
+      color: pop.stage,
+      child: InkWell(
         onTap: () => context.push(_path(visit)),
-        title: Text(visit.session?.venue.name ?? 'Where was this?',
-            style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontStyle: visit.session == null ? FontStyle.italic : null,
-                color: visit.session == null ? scheme.onSurfaceVariant : null)),
-        subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4), child: VisitTags(visit)),
-        trailing: gap == null && widget.goal == null
-            ? null
-            : Row(mainAxisSize: MainAxisSize.min, spacing: 10, children: [
-                if (widget.goal case final g?) GoalMark(g),
-                if (gap != null)
-                  Text(
-                      '${gap >= 0 ? '+' : '−'}${(gap.abs() / 1000).toStringAsFixed(1)}k',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: gap >= 0
-                              ? FloorPop.of(context).up
-                              : FloorPop.of(context).down,
-                          fontFeatures: const [FontFeature.tabularFigures()])),
-              ]),
+        child: row,
       ),
     );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: visit.session == null
-            ? tile
-            : Dismissible(
-                key: ValueKey(visit.key),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 16),
-                  color: Colors.red,
-                  child: const Icon(Icons.delete, color: Colors.white),
-                ),
-                confirmDismiss: (_) => _confirmDelete(context, visit),
-                onDismissed: (_) {
-                  setState(() => _dismissed = true);
-                  _delete(context, visit);
-                },
-                child: tile,
+    return DecoratedBox(
+      decoration:
+          BoxDecoration(border: Border(top: BorderSide(color: pop.line))),
+      child: visit.session == null
+          ? tile
+          : Dismissible(
+              key: ValueKey(visit.key),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 16),
+                color: FloorPop.coral,
+                child: const Icon(Icons.delete, color: FloorPop.onVolt),
               ),
-      ),
+              confirmDismiss: (_) => _confirmDelete(context, visit),
+              onDismissed: (_) {
+                setState(() => _dismissed = true);
+                _delete(context, visit);
+              },
+              child: tile,
+            ),
     );
   }
 }
 
-/// Every session, newest first.
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
+
+/// "+1,240", "−820".
+String _signed(double gap) =>
+    '${gap >= 0 ? '+' : '−'}${formatScore(gap.abs().round())}';
+
+/// "2 hr 30 min", "46 min", "1 hr".
+String _length(Duration d) {
+  final (h, m) = (d.inHours, d.inMinutes % 60);
+  return h == 0
+      ? '$m min'
+      : m == 0
+          ? '$h hr'
+          : '$h hr $m min';
+}
+
+/// Every session, newest first: a card per week, each like Home's Past
+/// sessions card, with the week's average gap in its heading.
 class SessionsPage extends StatelessWidget {
   const SessionsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
     return HomeSubpage(
       title: 'Sessions',
       body: FutureBuilder<VisitData>(
         future: visitsFor(context),
         builder: (context, snapshot) {
           final data = snapshot.data;
+          final record = data == null
+              ? null
+              : goalRecord(data, context.read<SessionState>().session?.id);
+          DateTime monday(DateTime t) {
+            t = t.toLocal();
+            return DateTime(t.year, t.month, t.day - (t.weekday - 1));
+          }
+
+          final weeks = <DateTime, List<Visit>>{};
+          for (final v in data?.visits ?? <Visit>[]) {
+            if (v.plays.isEmpty) continue;
+            (weeks[monday(v.start)] ??= []).add(v);
+          }
+          final thisWeek = monday(DateTime.now());
           return ListView(
-            padding: clearOfBars(context, const EdgeInsets.all(12)),
+            padding: clearOfBars(context, const EdgeInsets.only(bottom: 12)),
             children: [
-              ListTile(
-                  leading: const Icon(Icons.insights),
-                  title: const Text('Trends'),
-                  subtitle: const Text('Your progress over weeks'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push('/home/trends')),
-              if (data == null
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: ListTile(
+                    leading: const Icon(Icons.insights),
+                    title: const Text('Trends'),
+                    subtitle: Text(record == null
+                        ? 'Your progress over weeks'
+                        : 'Goals hit ${record.hit} of the last ${record.of}'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push('/home/trends')),
+              ),
+              for (final MapEntry(key: week, value: visits) in weeks.entries)
+                () {
+                  final title = switch (thisWeek.difference(week).inDays ~/ 7) {
+                    0 => 'This week',
+                    1 => 'Last week',
+                    _ => 'Week of ${week.day} ${_months[week.month - 1]}',
+                  };
+                  final gaps = [
+                    for (final v in visits)
+                      if (v.plays.isNotEmpty)
+                        if (data!.model.summarize(v.plays).gap case final g?) g
+                  ];
+                  final avg = gaps.isEmpty
                       ? null
-                      : goalRecord(
-                          data, context.read<SessionState>().session?.id)
-                  case final r?)
-                ListTile(
-                    leading: const Icon(Icons.flag_outlined),
-                    title: Text('Goals hit: ${r.hit} of the last ${r.of}'),
-                    subtitle: const Text('Sessions with a number to reach')),
-              for (final v in data?.visits ?? <Visit>[])
-                VisitTile(v,
-                    model: data!.model, goal: data.goals[v.session?.id]),
+                      : gaps.reduce((a, b) => a + b) / gaps.length;
+                  return HomeCard(
+                    title: title,
+                    icon: Icons.calendar_today_rounded,
+                    heading: Row(children: [
+                      Expanded(
+                          child: CardHeading(title,
+                              icon: Icons.calendar_today_rounded)),
+                      if (avg != null)
+                        Text('${_signed(avg)} avg',
+                            style: FloorPop.readout(13,
+                                color: avg >= 0 ? pop.up : pop.down)),
+                    ]),
+                    children: [
+                      for (final v in visits)
+                        VisitTile(v,
+                            model: data!.model,
+                            goal: data.goals[v.session?.id]),
+                    ],
+                  );
+                }(),
             ],
           );
         },
