@@ -1,68 +1,50 @@
 /// Name: SessionTrends
 /// Parent: SessionTrendsPage
-/// Description: Calendar windows, level-matched comparisons and daily averages
-/// across visits. Missing history stays unknown rather than becoming zero.
+/// Description: Weeks of play read against your usual on the same charts
+/// (the session summary's model, so a week of harder charts isn't a bad
+/// week): the week as a whole, its days, each cab side with the lamp you
+/// gave it, each level, timing and goals. Missing weeks stay unknown.
 library;
-
-import 'dart:math' as math;
 
 import 'package:ddr_md/components/session/session_summary.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/pad_rating.dart';
+import 'package:ddr_md/models/session_goal.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/visit_model.dart';
 
-enum TrendRange { week, fortnight, month }
-
-enum TrendMetric { score, timing }
+/// Weeks the form lines cover.
+const kTrendWeeks = 8;
 
 DateTime trendDay(DateTime date) {
   final d = date.toLocal();
   return DateTime(d.year, d.month, d.day);
 }
 
+/// A Monday-to-Sunday week in local calendar dates, [end] exclusive.
 class TrendWindow {
-  const TrendWindow(this.start, this.end, this.range);
-  final DateTime start, end; // Local calendar dates, end exclusive.
-  final TrendRange range;
+  const TrendWindow(this.start, this.end);
+  final DateTime start, end;
 
-  factory TrendWindow.containing(DateTime date, TrendRange range) {
+  factory TrendWindow.containing(DateTime date) {
     final day = trendDay(date);
-    if (range == TrendRange.month) {
-      return TrendWindow(DateTime(day.year, day.month),
-          DateTime(day.year, day.month + 1), range);
-    }
     final monday = DateTime(day.year, day.month, day.day - day.weekday + 1);
-    // Fortnights share a stable Monday anchor, independent of navigation.
-    final anchor = DateTime.utc(2020, 1, 6);
-    final weeks = DateTime.utc(monday.year, monday.month, monday.day)
-            .difference(anchor)
-            .inDays ~/
-        7;
-    final start = range == TrendRange.fortnight && weeks.isOdd
-        ? DateTime(monday.year, monday.month, monday.day - 7)
-        : monday;
     return TrendWindow(
-        start,
-        DateTime(start.year, start.month,
-            start.day + (range == TrendRange.week ? 7 : 14)),
-        range);
+        monday, DateTime(monday.year, monday.month, monday.day + 7));
   }
 
-  int get days => DateTime.utc(end.year, end.month, end.day)
-      .difference(DateTime.utc(start.year, start.month, start.day))
-      .inDays;
   bool contains(DateTime date) => !date.isBefore(start) && date.isBefore(end);
-  TrendWindow shift(int amount) {
-    if (range == TrendRange.month) {
-      return TrendWindow(DateTime(start.year, start.month + amount),
-          DateTime(start.year, start.month + amount + 1), range);
-    }
-    return TrendWindow(
-        DateTime(start.year, start.month, start.day + days * amount),
-        DateTime(end.year, end.month, end.day + days * amount),
-        range);
-  }
+  TrendWindow shift(int weeks) => TrendWindow(
+      DateTime(start.year, start.month, start.day + 7 * weeks),
+      DateTime(end.year, end.month, end.day + 7 * weeks));
+
+  @override
+  bool operator ==(Object other) =>
+      other is TrendWindow && other.start == start;
+  @override
+  int get hashCode => start.hashCode;
 }
 
 class TrendPlay {
@@ -112,18 +94,18 @@ List<TrendPlay> trendPlays(
 
 class TrendFilter {
   const TrendFilter(
-      {this.mode,
+      {this.mode = Modes.singles,
       this.level,
       this.chart,
       this.venueId,
       this.cabinetId,
       this.side});
-  final Modes? mode;
+  final Modes mode;
   final int? level, venueId, cabinetId;
   final String? chart;
   final PadSide? side;
   bool matches(TrendPlay p) =>
-      (mode == null || p.play.mode == mode) &&
+      p.play.mode == mode &&
       (level == null || p.level == level) &&
       (chart == null || p.chart == chart) &&
       (venueId == null || p.venueId == venueId) &&
@@ -131,185 +113,253 @@ class TrendFilter {
       (side == null || p.side == side);
 }
 
-class TrendSample {
-  const TrendSample(this.day, this.value, this.plays, this.observations);
-  final DateTime day;
-  final double? value;
-  final int plays, observations;
+/// Everything the page reads, loaded once.
+typedef TrendSources = ({
+  List<TrendPlay> plays,
+  ScoreModel model,
+  Map<int, Cabinet> cabinets,
+  List<PadRating> ratings,
+  List<CardGain> gains,
+  // By session id.
+  Map<String, GoalProgress> goals,
+});
+
+/// A scored play against its usual, weighted as the session summary does.
+typedef TrendPoint = ({TrendPlay play, double usual, double weight});
+
+/// The weighted average of [points]' score less their usual.
+double? gapOf(Iterable<TrendPoint> points) {
+  var sum = 0.0, weight = 0.0;
+  for (final p in points) {
+    sum += (p.play.play.score! - p.usual) * p.weight;
+    weight += p.weight;
+  }
+  return weight == 0 ? null : sum / weight;
 }
 
-typedef TrendLevel = ({Modes mode, int level});
+double? _mean(Iterable<double> values) =>
+    values.isEmpty ? null : values.reduce((a, b) => a + b) / values.length;
 
-class TrendLevelComparison {
-  const TrendLevelComparison(this.group, this.previous, this.current,
-      this.previousPlays, this.currentPlays);
-  final TrendLevel group;
-  final double previous, current;
-  final int previousPlays, currentPlays;
-  String get label =>
-      '${group.mode == Modes.singles ? 'SP' : 'DP'} ${group.level}';
+typedef PadSideId = (int cabinet, PadSide side);
+
+class TrendWeek {
+  TrendWeek({
+    required this.window,
+    required this.plays,
+    required this.points,
+    required this.upscores,
+    required this.biggest,
+    required this.cards,
+  });
+  final TrendWindow window;
+  final List<TrendPlay> plays;
+  final List<TrendPoint> points;
+  final int upscores, cards;
+
+  /// The week's largest gain on a chart's earlier best play.
+  final ({TrendPlay play, int gain})? biggest;
+
+  double? get gap => gapOf(points);
+  int get sessions => plays.map((p) => p.visitKey).toSet().length;
+
+  /// Monday first; null where nothing scored.
+  List<double?> get days => [
+        for (var i = 0; i < 7; i++)
+          gapOf(points.where((p) =>
+              trendDay(p.play.play.playedAt) ==
+              DateTime(window.start.year, window.start.month,
+                  window.start.day + i))),
+      ];
+
+  double? sideGap(PadSideId side) => gapOf(points
+      .where((p) => p.play.cabinetId == side.$1 && p.play.side == side.$2));
+
+  /// Each level played, easiest first, against the usual.
+  Map<int, double> get levels {
+    final levels = {
+      for (final p in points)
+        if (p.play.level case final l?) l
+    }.toList()
+      ..sort();
+    return {
+      for (final l in levels) l: gapOf(points.where((p) => p.play.level == l))!
+    };
+  }
+
+  /// Timing landed, FAST negative, and how widely it spread.
+  double? get timingMs => _mean([
+        for (final p in plays)
+          if (p.timing?.offBeatMs case final v?) v
+      ]);
+  double? get spreadMs => _mean([
+        for (final p in plays)
+          if (p.timing?.trueVariationMs case final v? when v.isFinite) v
+      ]);
 }
 
-class TrendSummary {
-  TrendSummary(
-      {required this.samples,
-      required this.current,
-      required this.average,
-      required this.observations,
-      required this.comparison,
-      required this.levels,
-      required this.goodSets,
-      required this.ratedSets});
-  final List<TrendSample> samples;
-  final List<TrendPlay> current;
+/// [sources]' plays under [filter], ready to read a week at a time.
+class TrendHistory {
+  TrendHistory(this.sources, this.filter) {
+    final plays = sources.plays.where(filter.matches).toList();
+    final byVisit = <String, List<TrendPlay>>{};
+    for (final p in plays) {
+      byVisit.putIfAbsent(p.visitKey, () => []).add(p);
+    }
+    for (final visit in byVisit.values) {
+      final scored = [
+        for (final p in visit.reversed)
+          if (p.play.score != null) p
+      ];
+      if (scored.isEmpty) continue;
+      final of = {for (final p in scored) p.play: p};
+      for (final p in sources.model.summarize([
+        for (final p in scored) p.play,
+      ]).points) {
+        _points.add((play: of[p.play]!, usual: p.usual, weight: p.weight));
+      }
+    }
+    // Each chart's plays in order, to tell an upscore by what came before.
+    final charts = <String, List<RecentPlay>>{};
+    for (final p in sources.model.history.reversed) {
+      if (p.score != null) charts.putIfAbsent(p.recordId, () => []).add(p);
+    }
+    for (final p in plays) {
+      final score = p.play.score;
+      if (score == null) continue;
+      final before = [
+        for (final e in charts[p.play.recordId] ?? const <RecentPlay>[])
+          if (e.playedAt.isBefore(p.play.playedAt)) e.score!
+      ];
+      final best = sources.model.best(p.play);
+      if (before.isNotEmpty) {
+        final was = before.reduce((a, b) => a > b ? a : b);
+        if (score > was) _upscores[p] = score - was;
+      } else if (best != null && score >= best) {
+        // First synced play holding the chart's best: an upscore, by how
+        // much unknown.
+        _upscores[p] = null;
+      }
+    }
+    _plays.addAll(plays);
+  }
 
-  /// Actual average over this period's cleared scores or logged timing.
-  final double? average;
-  final int observations;
+  final TrendSources sources;
+  final TrendFilter filter;
+  final _plays = <TrendPlay>[];
+  final _points = <TrendPoint>[];
+  final _upscores = <TrendPlay, int?>{};
+  final _weeks = <TrendWindow, TrendWeek>{};
 
-  /// Positive means improvement. Each shared mode/level gets equal weight,
-  /// so playing more easy songs cannot inflate the comparison.
-  final double? comparison;
-  final List<TrendLevelComparison> levels;
-  final int goodSets, ratedSets;
+  bool get isEmpty => _plays.isEmpty;
 
-  double? get comparedCurrent =>
-      levels.isEmpty ? null : _mean(levels.map((l) => l.current));
-  double? get comparedPrevious =>
-      levels.isEmpty ? null : _mean(levels.map((l) => l.previous));
+  TrendWeek week(TrendWindow w) => _weeks.putIfAbsent(w, () {
+        bool inWeek(TrendPlay p) => w.contains(p.play.playedAt);
+        final plays = _plays.where(inWeek).toList();
+        final ups = {
+          for (final MapEntry(:key, :value) in _upscores.entries)
+            if (inWeek(key)) key: value
+        };
+        final best = ups.entries
+            .where((e) => e.value != null)
+            .fold<MapEntry<TrendPlay, int?>?>(
+                null, (a, e) => a == null || e.value! > a.value! ? e : a);
+        return TrendWeek(
+          window: w,
+          plays: plays,
+          points: _points.where((p) => inWeek(p.play)).toList(),
+          upscores: ups.length,
+          biggest: best == null ? null : (play: best.key, gain: best.value!),
+          cards: sources.gains
+              .where((g) =>
+                  g.mode == filter.mode &&
+                  w.contains(g.playedAt) &&
+                  plays.any((p) =>
+                      p.play.song == g.song &&
+                      p.play.difficulty == g.difficulty &&
+                      p.play.playedAt.difference(g.playedAt).inSeconds.abs() <=
+                          60))
+              .length,
+        );
+      });
+
+  /// The [kTrendWeeks] weeks ending with [last], oldest first.
+  List<TrendWeek> span(TrendWindow last) => [
+        for (var i = kTrendWeeks - 1; i >= 0; i--) week(last.shift(-i)),
+      ];
+
+  /// Every side played in [weeks], most sessions first.
+  List<({PadSideId id, int sessions, int weeks})> sides(List<TrendWeek> weeks) {
+    final sessions = <PadSideId, Set<String>>{};
+    final played = <PadSideId, Set<TrendWindow>>{};
+    for (final w in weeks) {
+      for (final p in w.points) {
+        if (p.play.cabinetId == null || p.play.side == null) continue;
+        final id = (p.play.cabinetId!, p.play.side!);
+        sessions.putIfAbsent(id, () => {}).add(p.play.visitKey);
+        played.putIfAbsent(id, () => {}).add(w.window);
+      }
+    }
+    return [
+      for (final id in sessions.keys)
+        (id: id, sessions: sessions[id]!.length, weeks: played[id]!.length)
+    ]..sort((a, b) => b.sessions.compareTo(a.sessions));
+  }
+
+  /// The latest lamp given to [side] in [w].
+  ClearLamp? lamp(PadSideId side, TrendWindow w) => sources.ratings
+      .where((r) =>
+          r.cabinet.id == side.$1 && r.side == side.$2 && w.contains(r.at))
+      .fold<PadRating?>(null, (a, r) => a == null || r.at.isAfter(a.at) ? r : a)
+      ?.lamp;
+
+  /// Goals set in [w]'s sessions for this mode, oldest first.
+  List<GoalProgress> goals(TrendWindow w) => [
+        for (final key in {
+          for (final p in sources.plays)
+            if (w.contains(p.play.playedAt)) p.visitKey
+        })
+          if (sources.goals[key] case final g? when g.goal.mode == filter.mode)
+            g
+      ];
 }
 
-double? _value(TrendPlay p, TrendMetric metric) => metric == TrendMetric.score
-    ? (p.play.failed ? null : p.play.score?.toDouble())
-    : p.timing?.trueVariationMs;
-
-List<double> _values(Iterable<TrendPlay> plays, TrendMetric metric) => [
-      for (final p in plays)
-        if (_value(p, metric) case final value?)
-          if (value.isFinite) value,
+/// A side's eight weeks in one line, from its weekly gaps (oldest first)
+/// and the lamps given those weeks.
+String sideRead(List<double?> gaps, List<ClearLamp?> lamps) {
+  final known = [
+    for (final g in gaps)
+      if (g != null) g
+  ];
+  if (known.length < 2) return 'Not enough weeks to call a trend.';
+  final at = [
+    for (var i = 0; i < gaps.length; i++)
+      if (gaps[i] != null) i
+  ];
+  final last = at.sublist(at.length < 3 ? 0 : at.length - 3);
+  if (last.length == 3) {
+    final [a, b, c] = [for (final i in last) gaps[i]!];
+    final good = [
+      for (final i in last)
+        if (lamps[i] case final l? when l.index >= ClearLamp.gfc.index) l
     ];
-
-double _mean(Iterable<double> values) =>
-    values.reduce((a, b) => a + b) / values.length;
-
-Map<TrendLevel, List<double>> _byLevel(
-    Iterable<TrendPlay> plays, TrendMetric metric) {
-  final groups = <TrendLevel, List<double>>{};
-  for (final p in plays) {
-    final value = _value(p, metric);
-    if (p.level != null && value != null && value.isFinite) {
-      groups.putIfAbsent(
-          (mode: p.play.mode, level: p.level!), () => []).add(value);
+    if (a > b && b > c && c < 0) {
+      return good.isEmpty
+          ? 'Down three weeks running.'
+          : 'Sliding for three weeks while you rated it well. The pad may be '
+              'drifting, or you are.';
     }
+    if (a < b && b < c && c > 0) return 'Up three weeks running.';
   }
-  return groups;
-}
-
-TrendSummary summarizeTrends(List<TrendPlay> all, TrendWindow window,
-    TrendFilter filter, TrendMetric metric) {
-  final filtered = all.where(filter.matches).toList();
-  final current =
-      filtered.where((p) => window.contains(p.play.playedAt)).toList();
-  final previous = window.shift(-1);
-  final now = _byLevel(current, metric);
-  final before = _byLevel(
-      filtered.where((p) => previous.contains(p.play.playedAt)), metric);
-  final common = now.keys.where(before.containsKey).toList()
-    ..sort((a, b) => a.mode.index == b.mode.index
-        ? a.level.compareTo(b.level)
-        : a.mode.index.compareTo(b.mode.index));
-  final levels = [
-    for (final group in common)
-      TrendLevelComparison(group, _mean(before[group]!), _mean(now[group]!),
-          before[group]!.length, now[group]!.length)
-  ];
-  final comparison = levels.isEmpty
-      ? null
-      : _mean([
-          for (final l in levels)
-            (l.current - l.previous) * (metric == TrendMetric.timing ? -1 : 1),
-        ]);
-  // A set is rated against earlier cleared scores at the same mode and
-  // level. Different songs are valid peers; later plays cannot change it.
-  final baseline = _byLevel(
-      filtered.where((p) => p.play.playedAt.isBefore(window.start)),
-      TrendMetric.score);
-  double? scoreGap(Iterable<TrendPlay> plays) {
-    final scores = _byLevel(plays, TrendMetric.score);
-    final known = scores.keys.where(baseline.containsKey).toList();
-    return known.isEmpty
-        ? null
-        : _mean([
-            for (final group in known)
-              _mean(scores[group]!) - _mean(baseline[group]!),
-          ]);
+  if (known.every((g) => g >= 0)) {
+    return 'Above your usual every week you played it.';
   }
-
-  final sets = <String, List<TrendPlay>>{};
-  for (final p in current) {
-    sets.putIfAbsent(p.visitKey, () => []).add(p);
+  if (known.every((g) => g < 0)) {
+    return 'Below your usual every week you played it.';
   }
-  final gaps = [
-    for (final set in sets.values)
-      if (scoreGap(set) case final gap?) gap
-  ];
-  final values = _values(current, metric);
-  return TrendSummary(
-    current: current,
-    average: values.isEmpty ? null : _mean(values),
-    observations: values.length,
-    comparison: comparison,
-    levels: levels,
-    goodSets: gaps.where((g) => g >= 0).length,
-    ratedSets: gaps.length,
-    samples: [
-      for (var i = 0; i < window.days; i++)
-        (() {
-          final day = DateTime(
-              window.start.year, window.start.month, window.start.day + i);
-          final plays =
-              current.where((p) => trendDay(p.play.playedAt) == day).toList();
-          final values = _values(plays, metric);
-          return TrendSample(day, values.isEmpty ? null : _mean(values),
-              plays.length, values.length);
-        })(),
-    ],
-  );
-}
-
-/// Rounded chart bounds with roughly four intervals. Compute the interval
-/// from the final visible range, including zero when requested.
-class TrendAxis {
-  const TrendAxis(this.min, this.max, this.step);
-  final double min, max, step;
-  factory TrendAxis.forValues(
-    Iterable<double> values, {
-    double minimumPadding = 1,
-    double? floor,
-    double? ceiling,
-    bool includeZero = false,
-  }) {
-    final finite = values.where((v) => v.isFinite).toList();
-    final low = finite.isEmpty ? 0.0 : finite.reduce(math.min);
-    final high = finite.isEmpty ? 0.0 : finite.reduce(math.max);
-    final pad = math.max(minimumPadding, (high - low) * .2);
-    var lower = low - pad, upper = high + pad;
-    if (includeZero) {
-      lower = math.min(0, lower);
-      upper = math.max(0, upper);
-    }
-    if (floor != null) lower = math.max(floor, lower);
-    if (ceiling != null) upper = math.min(ceiling, upper);
-    final span = math.max(minimumPadding, upper - lower);
-    final magnitude =
-        math.pow(10, (math.log(span / 4) / math.ln10).floor()).toDouble();
-    final step =
-        [1, 2, 5, 10].firstWhere((n) => n * magnitude >= span / 4) * magnitude;
-    lower = (lower / step).floor() * step;
-    upper = (upper / step).ceil() * step;
-    if (floor != null) lower = math.max(floor, lower);
-    if (ceiling != null) upper = math.min(ceiling, upper);
-    if (upper <= lower) upper = lower + step;
-    return TrendAxis(lower, upper, step);
-  }
+  final mean = known.reduce((a, b) => a + b) / known.length;
+  return mean.abs() < 3000
+      ? 'Close to your usual.'
+      : mean > 0
+          ? 'Above your usual more often than not.'
+          : 'Below your usual more often than not.';
 }
