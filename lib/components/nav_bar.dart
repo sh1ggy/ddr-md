@@ -3,12 +3,13 @@
 /// Description: The tab bar: Songs, Snippets, Home, Circle, Profile on a
 /// floating pill, Home in Volt in the middle, ringed while a session runs.
 /// Above it on every tab while a session runs, the live dock carries the
-/// running credit, scanning and the next credit.
+/// running credit, Song ID, scanning and the next credit.
 library;
 
 import 'dart:ui';
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/session/listen_sheet.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/theme.dart';
@@ -162,7 +163,7 @@ class _HomeTab extends StatelessWidget {
 }
 
 /// The running session over the tab bar as one slim line: credit, side and
-/// cab (tap for Home), then a scan and the next credit.
+/// cab (tap for Home), then Song ID, a scan and the next credit.
 class LiveSessionDock extends StatelessWidget {
   const LiveSessionDock({super.key, required this.onOpen});
 
@@ -225,6 +226,9 @@ class LiveSessionDock extends StatelessWidget {
                 ),
               ),
             ),
+            action('Name the song playing', Icons.hearing,
+                () => showListenSheet(context)),
+            const SizedBox(width: 2),
             action('Scan a score', Icons.document_scanner_outlined,
                 () => context.push('/scan')),
             const SizedBox(width: 2),

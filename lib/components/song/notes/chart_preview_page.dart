@@ -22,6 +22,10 @@ import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/services.dart';
+import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/nav_bar.dart' show LivePulse;
+import 'package:ddr_md/components/session/listen_sheet.dart';
+import 'package:ddr_md/models/song_id_listener.dart';
 
 class ChartPreviewPage extends StatefulWidget {
   const ChartPreviewPage({
@@ -40,6 +44,7 @@ class ChartPreviewPage extends StatefulWidget {
     this.sync,
     this.timeSignatures = const [],
     this.initialSecond,
+    this.follow,
     this.snippet,
     this.newSnippet = false,
     this.feedActive,
@@ -58,6 +63,7 @@ class ChartPreviewPage extends StatefulWidget {
     Key? key,
     Future<SongSteps?>? stepsFuture,
     double? initialSecond,
+    SongIdFollow? follow,
     Snippet? snippet,
     bool newSnippet = false,
     bool? feedActive,
@@ -86,6 +92,7 @@ class ChartPreviewPage extends StatefulWidget {
       sync: info.displaySyncFor(chart),
       timeSignatures: info.timeSignatures,
       initialSecond: initialSecond,
+      follow: follow,
       snippet: snippet,
       newSnippet: newSnippet,
       feedActive: feedActive,
@@ -149,11 +156,58 @@ class ChartPreviewPage extends StatefulWidget {
   /// editor where there is one — to judge a moment picked elsewhere.
   final double? initialSecond;
 
+  /// Song ID heard the cab playing this song: the chart plays along with it,
+  /// silent, and Resync listens again.
+  final SongIdFollow? follow;
+
   @override
   State<ChartPreviewPage> createState() => _ChartPreviewPageState();
 }
 
 class _ChartPreviewPageState extends State<ChartPreviewPage> {
+  late SongIdFollow? _follow = widget.follow;
+
+  Future<void> _resync(String song) async {
+    final heard = await relisten(context, song);
+    if (heard != null && mounted) setState(() => _follow = heard);
+  }
+
+  /// With the cab: where it is in the song, and Resync to listen again.
+  Widget _followBar(String song) => Positioned(
+        left: 16,
+        right: 16,
+        bottom: 0,
+        child: SafeArea(
+          top: false,
+          // Above the scroller's timeline strip.
+          minimum: const EdgeInsets.only(bottom: 92),
+          child: Row(children: [
+            Expanded(
+              child: Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                    color: FloorPop.volt,
+                    borderRadius: BorderRadius.circular(14)),
+                child: Row(children: [
+                  const LivePulse(color: FloorPop.onVolt),
+                  const SizedBox(width: 8),
+                  Text('WITH THE CAB',
+                      style: FloorPop.readout(13, color: FloorPop.onVolt)),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GhostButton(
+              height: 48,
+              icon: const Icon(Icons.sync, size: 18),
+              onPressed: () => _resync(song),
+              child: const Text('Resync'),
+            ),
+          ]),
+        ),
+      );
+
   bool _showFootGuide = false;
 
   // Footing edit mode: a distinct mode, entered from the header rather than
@@ -345,10 +399,14 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                   ],
                 );
               }
-              return ChartScroller(
+              final scroller = ChartScroller(
                 key: ValueKey(
                     "${widget.title}-${widget.mode.name}-${widget.difficultyKey}"),
                 steps: steps,
+                musicSong: widget.feedActive == null && _follow == null
+                    ? snapshot.data!.name
+                    : null,
+                follow: _follow?.now,
                 feedActive: widget.feedActive,
                 playbackRate: widget.playbackRate,
                 onPlaybackRateChanged: widget.onPlaybackRateChanged,
@@ -404,6 +462,9 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 onSaveSection: () => _saveSnippet(snapshot.data!, steps),
                 onSectionChanged: (s) => setState(() => _section = s),
               );
+              if (_follow == null) return scroller;
+              return Stack(
+                  children: [scroller, _followBar(snapshot.data!.name)]);
             },
           ),
         ),
@@ -443,70 +504,88 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
             tooltip: _editFooting ? 'Done editing' : 'Edit footing',
             onPressed: () => setState(() => _editFooting = !_editFooting),
           );
-    return IconButtonTheme(
-      data: IconButtonThemeData(
-          style: IconButton.styleFrom(
-        backgroundColor: FloorPop.night.riser,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      )),
-      child: Stack(
-        children: [
-          // Keep the chart visible through the preview controls.
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back, color: FloorPop.night.haze),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 48),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          widget.title,
-                          textAlign: TextAlign.center,
-                          style: FloorPop.display(18, color: Colors.white),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (widget.feedLabel != null)
-                          Text(widget.feedLabel!,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
-                        if (kInGameDifficultyColors
-                            .containsKey(_pretty(widget.difficultyKey)))
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: DifficultyLabel(
-                                difficulty: _pretty(widget.difficultyKey),
-                                level: widget.difficultyLevel,
-                                height: 16),
-                          )
-                        else
-                          Text(
-                            difficultyLabel,
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: diffColor,
-                                fontWeight: FontWeight.w900),
-                          ),
-                      ],
-                    ),
-                  ),
-                  // The pattern breakdown, balanced by an empty slot on the left
-                  // when an action joins it.
-                  if (widget.feedActive == null) patternsButton,
-                  action,
-                ],
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // Fades the field out under the header and the top of the receptors,
+        // so the bare buttons and title stay readable over the arrows.
+        const Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: -72,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xF2080A0E),
+                    Color(0xCC080A0E),
+                    Color(0x00080A0E)
+                  ],
+                  stops: [0, 0.45, 1],
+                ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+        // Keep the chart visible through the preview controls.
+        SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: FloorPop.night.haze),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 48),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.title,
+                        textAlign: TextAlign.center,
+                        style: FloorPop.display(18, color: Colors.white),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (widget.feedLabel != null)
+                        Text(widget.feedLabel!,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12)),
+                      if (kInGameDifficultyColors
+                          .containsKey(_pretty(widget.difficultyKey)))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: DifficultyLabel(
+                              difficulty: _pretty(widget.difficultyKey),
+                              level: widget.difficultyLevel,
+                              height: 16),
+                        )
+                      else
+                        Text(
+                          difficultyLabel,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: diffColor,
+                              fontWeight: FontWeight.w900),
+                        ),
+                    ],
+                  ),
+                ),
+                // The pattern breakdown, balanced by an empty slot on the left
+                // when an action joins it.
+                if (widget.feedActive == null) patternsButton,
+                action,
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

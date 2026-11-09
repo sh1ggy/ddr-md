@@ -1,7 +1,7 @@
 /// Name: Content store
 /// Parent: Songs, StepsLoader, PatternsLoader, jacket images
-/// Description: Where chart content (songlist, steps, patterns, jackets) is
-/// read from. Files the content updater downloaded override the copies bundled
+/// Description: Where chart content (songlist, steps, patterns, jackets,
+/// fingerprints) is read from. Files the content updater downloaded override the copies bundled
 /// in the app, so charts and songs can change without a store release.
 ///
 /// Both sides are described by a [ContentManifest]: the bundle's is
@@ -28,8 +28,13 @@ import 'package:flutter/services.dart';
 bool appReads(String path) =>
     const ['songlist.json', 'parity_patterns.json', 'pattern_levels.json']
         .contains(path) ||
-    const ['steps/', 'patterns/', 'jackets-webp/', 'jackets-160-webp/']
-        .any(path.startsWith);
+    const [
+      'steps/',
+      'patterns/',
+      'jackets-webp/',
+      'jackets-160-webp/',
+      'fingerprints/',
+    ].any(path.startsWith);
 
 /// Content paths (relative to assets/) the engine version gates.
 bool isPatternPath(String path) =>
@@ -149,6 +154,14 @@ class ContentStore {
     if (file != null) return file.readAsString();
     // `cache: false`: these are large and parsed once by their loader.
     return rootBundle.loadString(assetPath, cache: false);
+  }
+
+  /// [assetPath]'s bytes, downloaded copy first.
+  static Future<Uint8List> loadBytes(String assetPath) async {
+    final file = _overlay[_relative(assetPath)];
+    if (file != null) return file.readAsBytes();
+    final data = await rootBundle.load(assetPath);
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
   }
 
   static ImageProvider image(String assetPath) {

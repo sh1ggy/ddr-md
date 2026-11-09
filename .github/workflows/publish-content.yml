@@ -56,6 +56,10 @@ jobs:
             rm -rf "assets/$d"
             mv "_content/$d" "assets/$d"
           done
+          # Song ID fingerprints are made from audio CI doesn't have, so the
+          # content repo carries them ready-made, once it has any.
+          rm -rf assets/fingerprints
+          if [ -d _content/fingerprints ]; then mv _content/fingerprints assets/fingerprints; fi
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:

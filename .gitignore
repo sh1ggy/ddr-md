@@ -145,6 +145,7 @@ app.*.symbols
 /assets/songs
 /assets/steps
 /assets/patterns
+/assets/fingerprints
 /assets/pattern_levels.json
 # Copied from the live publish by CI and scripts/fetch_content.sh
 /assets/content_manifest.json
@@ -171,6 +172,9 @@ app.*.symbols
 
 # Design canvases and the index that ties them together. Kept locally only.
 /designs
+
+# Personal builds' music (scripts/with_music.sh). Must never be committed.
+/assets/music
 
 # The simfile-scraping pipeline is its own nested git repo with its own history.
 # Checked out here for convenience; must never be committed into this one.
