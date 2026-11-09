@@ -229,6 +229,31 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     final before = history.period(_period.shift(-1));
     return HomeSubpage(
       title: 'Trends',
+      actions: [
+        // Mirrors the back button: same riser, size and corners.
+        Tooltip(
+          message: 'Switch to ${mode == Modes.singles ? 'doubles' : 'singles'}',
+          child: Material(
+            color: pop.riser,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              key: const ValueKey('trend-mode'),
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => setState(() => _filter = TrendFilter(
+                  mode: mode == Modes.singles ? Modes.doubles : Modes.singles,
+                  venueId: _filter.venueId,
+                  cabinetId: _filter.cabinetId,
+                  side: _filter.side)),
+              child: Container(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                alignment: Alignment.center,
+                child: PlayStyleIcon(mode: mode, height: 13),
+              ),
+            ),
+          ),
+        ),
+      ],
       body: GestureDetector(
         onHorizontalDragEnd: (d) {
           final v = d.primaryVelocity ?? 0;
@@ -240,77 +265,22 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                   padding: clearOfBars(
                       context, const EdgeInsets.fromLTRB(16, 8, 16, 32)),
                   children: [
-                    // Period, style and filters as one toolbar.
-                    Row(children: [
-                      Expanded(
-                        child: PillTabs<TrendRange>(
-                          tabHeight: 40,
-                          values: TrendRange.values,
-                          tabs: [
-                            // One line each, scaled down on narrow phones.
-                            for (final r in TrendRange.values)
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                    '${r.unit[0].toUpperCase()}${r.unit.substring(1)}',
-                                    maxLines: 1),
-                              ),
-                          ],
-                          selected: _range,
-                          onChanged: _setRange,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      _toolButton(
-                        key: const ValueKey('trend-mode'),
-                        tooltip:
-                            'Switch to ${mode == Modes.singles ? 'doubles' : 'singles'}',
-                        onTap: () => setState(() => _filter = TrendFilter(
-                            mode: mode == Modes.singles
-                                ? Modes.doubles
-                                : Modes.singles,
-                            venueId: _filter.venueId,
-                            cabinetId: _filter.cabinetId,
-                            side: _filter.side)),
-                        child: PlayStyleIcon(mode: mode, height: 13),
-                      ),
-                      const SizedBox(width: 6),
-                      _toolButton(
-                        key: const ValueKey('trend-filters'),
-                        tooltip: labels.isEmpty
-                            ? 'Filters'
-                            : 'Filters (${labels.length})',
-                        onTap: _showFilters,
-                        child: Badge(
-                            isLabelVisible: labels.isNotEmpty,
-                            label: Text('${labels.length}'),
-                            child: const Icon(Icons.tune_rounded, size: 22)),
-                      ),
-                    ]),
+                    PillTabs<TrendRange>(
+                      tabHeight: 40,
+                      values: TrendRange.values,
+                      tabs: [
+                        for (final r in TrendRange.values)
+                          Text(
+                              '${r.unit[0].toUpperCase()}${r.unit.substring(1)}',
+                              maxLines: 1),
+                      ],
+                      selected: _range,
+                      onChanged: _setRange,
+                    ),
                     const SizedBox(height: 12),
                     _header(current),
-                    if (labels.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text.rich(
-                            TextSpan(children: [
-                              for (final (i, l) in labels.indexed) ...[
-                                if (i > 0) const TextSpan(text: ' · '),
-                                // The level in its numeral, not as text.
-                                if (l == 'Level ${_filter.level}')
-                                  WidgetSpan(
-                                      alignment: PlaceholderAlignment.middle,
-                                      child: LevelNumber(
-                                          level: _filter.level!,
-                                          difficulty: 'EXPERT',
-                                          height: 14))
-                                else
-                                  TextSpan(text: l),
-                              ],
-                            ]),
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 12, color: pop.haze)),
-                      ),
+                    const SizedBox(height: 10),
+                    Center(child: _filterChip(labels)),
                     const SizedBox(height: 12),
                     _hero(shown, before),
                     const SizedBox(height: 12),
@@ -337,32 +307,57 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     );
   }
 
-  /// A square-ish button that sits beside [PillTabs]: its height, fill and
-  /// corners.
-  Widget _toolButton(
-          {required Key key,
-          required String tooltip,
-          required VoidCallback onTap,
-          required Widget child}) =>
-      Tooltip(
-        message: tooltip,
-        child: Material(
-          color: FloorPop.of(context).riser,
-          borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            key: key,
-            borderRadius: BorderRadius.circular(16),
-            onTap: onTap,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Center(widthFactor: 1, child: child),
+  /// The filters sheet's way in, saying what's filtered: "All plays", or
+  /// each filter with a level in its numeral.
+  Widget _filterChip(List<String> labels) {
+    final pop = FloorPop.of(context);
+    final on = labels.isNotEmpty;
+    final ink = on ? pop.voltText : pop.haze;
+    return Material(
+      color: pop.riser,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: const ValueKey('trend-filters'),
+        borderRadius: BorderRadius.circular(14),
+        onTap: _showFilters,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.tune_rounded, size: 18, color: ink),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text.rich(
+                    TextSpan(children: [
+                      if (!on) const TextSpan(text: 'All plays'),
+                      for (final (i, l) in labels.indexed) ...[
+                        if (i > 0) const TextSpan(text: ' · '),
+                        // The level in its numeral, not as text.
+                        if (l == 'Level ${_filter.level}')
+                          WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: LevelNumber(
+                                  level: _filter.level!,
+                                  difficulty: 'EXPERT',
+                                  height: 14))
+                        else
+                          TextSpan(text: l),
+                      ],
+                    ]),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: on ? null : pop.haze)),
               ),
-            ),
+            ]),
           ),
         ),
-      );
+      ),
+    );
+  }
 
   Widget _card({required Widget child, EdgeInsets? padding}) {
     final pop = FloorPop.of(context);
