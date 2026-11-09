@@ -42,11 +42,12 @@ void main() {
               arrows: arrows);
       await DatabaseProvider.savePadRating(rate(ClearLamp.gfc, {}));
       await DatabaseProvider.savePadRating(rate(ClearLamp.clear, {
-        PadArrow.up: const ArrowFlag(
-            issues: {PadIssue.dropsSteps}, zone: PadZone.outer)
+        PadArrow.up:
+            const ArrowFlag(issues: {PadIssue.dropsSteps}, zone: PadZone.top)
       }));
 
-      final r = (await DatabaseProvider.getSessionPadRatings(session.id)).single;
+      final r =
+          (await DatabaseProvider.getSessionPadRatings(session.id)).single;
       expect(r.lamp, ClearLamp.clear);
       expect(r.flagSummary, 'Up drops steps · outer edge');
       expect(r.sessionAt, session.startedAt);

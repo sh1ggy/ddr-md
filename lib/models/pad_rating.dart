@@ -20,7 +20,40 @@ final padRatingsRevision = ValueNotifier(0);
 /// A rating this old (by its session) may not hold any more.
 const kPadRatingStale = Duration(days: 28);
 
-enum PadArrow { up, left, right, down }
+enum PadArrow {
+  up,
+  left,
+  right,
+  down;
+
+  /// The rim toward the cabinet's frame, and the one toward the centre.
+  PadZone get outerRim => switch (this) {
+        up => PadZone.top,
+        down => PadZone.bottom,
+        left => PadZone.left,
+        right => PadZone.right,
+      };
+  PadZone get innerRim => switch (this) {
+        up => PadZone.bottom,
+        down => PadZone.top,
+        left => PadZone.right,
+        right => PadZone.left,
+      };
+
+  /// Its rims as offered: outer, inner, then the two sides.
+  List<PadZone> get rims => [
+        outerRim,
+        innerRim,
+        for (final z in PadZone.values)
+          if (z != outerRim && z != innerRim) z
+      ];
+
+  String rimLabel(PadZone z) => z == outerRim
+      ? 'Outer edge'
+      : z == innerRim
+          ? 'Inner edge'
+          : '${z.name[0].toUpperCase()}${z.name.substring(1)} edge';
+}
 
 /// What a misbehaving arrow does, in the words pad threads use.
 enum PadIssue {
@@ -35,16 +68,9 @@ enum PadIssue {
   final String label;
 }
 
-/// Where on the arrow: toward the cabinet's frame, its middle, or toward
-/// the centre panel.
-enum PadZone {
-  outer('Outer edge'),
-  centre('Centre'),
-  inner('Inner edge');
-
-  const PadZone(this.label);
-  final String label;
-}
+/// Which rim of the arrow's panel, as seen standing on the pad: a panel's
+/// sensors run along its four edges.
+enum PadZone { top, right, bottom, left }
 
 /// How each lamp reads as a pad, best first.
 const kPadVibes = {
@@ -52,7 +78,7 @@ const kPadVibes = {
   ClearLamp.pfc: 'Great',
   ClearLamp.gfc: 'Good',
   ClearLamp.fc: 'Solid',
-  ClearLamp.life4: 'Gremlins',
+  ClearLamp.life4: 'Tilting',
   ClearLamp.clear: 'Fighting it',
   ClearLamp.failed: 'Broken',
 };
@@ -82,13 +108,18 @@ class ArrowFlag {
         if (zone != null) 'zone': zone!.name,
       };
 
-  // Names a newer app added are skipped.
-  factory ArrowFlag.fromJson(Map m) => ArrowFlag(
+  // Names a newer app added are skipped; early builds' "outer" and
+  // "inner" are that arrow's rims.
+  factory ArrowFlag.fromJson(Map m, PadArrow a) => ArrowFlag(
         issues: {
           for (final n in (m['issues'] as List? ?? const []))
             if (PadIssue.values.asNameMap()[n] case final i?) i
         },
-        zone: PadZone.values.asNameMap()[m['zone']],
+        zone: switch (m['zone']) {
+          'outer' => a.outerRim,
+          'inner' => a.innerRim,
+          final z => PadZone.values.asNameMap()[z],
+        },
       );
 }
 
@@ -130,7 +161,7 @@ class PadRating {
     return {
       for (final MapEntry(:key, :value) in m.entries)
         if (PadArrow.values.asNameMap()[key] case final a?)
-          a: ArrowFlag.fromJson(value as Map)
+          a: ArrowFlag.fromJson(value as Map, a)
     };
   }
 
@@ -177,7 +208,7 @@ class PadRating {
           (f.issues.isEmpty
               ? ''
               : ' ${PadIssue.values.firstWhere(f.issues.contains).label.toLowerCase()}'),
-      if (f.zone != null) f.zone!.label.toLowerCase(),
+      if (f.zone != null) a.rimLabel(f.zone!).toLowerCase(),
     ].join(' · ');
   }
 }

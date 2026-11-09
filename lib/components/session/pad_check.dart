@@ -208,11 +208,12 @@ class LampTag extends StatelessWidget {
   }
 }
 
-/// The pad's four arrows in a 3×3, flagged ones in coral.
+/// The pad's four arrows in a 3×3, flagged ones in coral. A flag with a
+/// rim lights that edge of the panel solid.
 class MiniPad extends StatelessWidget {
-  const MiniPad(this.flagged, {super.key, this.size = 30, this.idle});
+  const MiniPad(this.flags, {super.key, this.size = 30, this.idle});
 
-  final Set<PadArrow> flagged;
+  final Map<PadArrow, ArrowFlag> flags;
   final double size;
 
   /// The unflagged arrows' colour; the card's line by default.
@@ -223,17 +224,28 @@ class MiniPad extends StatelessWidget {
     final pop = FloorPop.of(context);
     final gap = size * 0.07;
     final cell = (size - gap * 2) / 3;
-    Widget at(PadArrow a, double x, double y) => Positioned(
-          left: x * (cell + gap),
-          top: y * (cell + gap),
-          child: Container(
-            width: cell,
-            height: cell,
-            decoration: BoxDecoration(
-                color: flagged.contains(a) ? FloorPop.coral : idle ?? pop.line,
-                borderRadius: BorderRadius.circular(cell * 0.25)),
-          ),
-        );
+    Widget at(PadArrow a, double x, double y) {
+      final f = flags[a];
+      final on = f != null && !f.isEmpty;
+      return Positioned(
+        left: x * (cell + gap),
+        top: y * (cell + gap),
+        child: Container(
+          width: cell,
+          height: cell,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+              color: !on
+                  ? idle ?? pop.line
+                  : f.zone == null
+                      ? FloorPop.coral
+                      : FloorPop.coral.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(cell * 0.25)),
+          child: on && f.zone != null ? _rimBand(f.zone!, cell) : null,
+        ),
+      );
+    }
+
     return ExcludeSemantics(
       child: SizedBox.square(
         dimension: size,
@@ -246,6 +258,24 @@ class MiniPad extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A solid coral strip along the [rim] of a panel [cell] wide.
+Widget _rimBand(PadZone rim, double cell) {
+  final across = rim == PadZone.top || rim == PadZone.bottom;
+  return Align(
+    alignment: switch (rim) {
+      PadZone.top => Alignment.topCenter,
+      PadZone.right => Alignment.centerRight,
+      PadZone.bottom => Alignment.bottomCenter,
+      PadZone.left => Alignment.centerLeft,
+    },
+    child: Container(
+      width: across ? cell : cell * 0.3,
+      height: across ? cell * 0.3 : cell,
+      color: FloorPop.coral,
+    ),
+  );
 }
 
 /// Each issue's glyph: the Chevron doing what the arrow does.
@@ -499,7 +529,7 @@ class _RatingSheetState extends State<_RatingSheet> {
             const SizedBox(height: 2),
             Text(
                 '${padDay(widget.session.startedAt)} at '
-                '${widget.session.venue.name} · just your read',
+                '${widget.session.venue.name}',
                 style: TextStyle(fontSize: 13, color: pop.haze)),
             const SizedBox(height: 12),
             for (final r in _rows) ...[
@@ -560,10 +590,7 @@ class _SideRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final r = row;
-    final flagged = {
-      for (final MapEntry(:key, :value) in r.arrows.entries)
-        if (!value.isEmpty) key
-    };
+    final flagged = r.arrows.values.any((f) => !f.isEmpty);
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
       decoration: BoxDecoration(
@@ -591,7 +618,7 @@ class _SideRow extends StatelessWidget {
             // The flags sit behind the side's own pad: its flagged arrows
             // lit, tap to open.
             Tooltip(
-              message: flagged.isEmpty ? 'Flag an arrow' : 'Flagged arrows',
+              message: flagged ? 'Flagged arrows' : 'Flag an arrow',
               child: InkResponse(
                 radius: 24,
                 onTap: () {
@@ -607,7 +634,7 @@ class _SideRow extends StatelessWidget {
                     color: r.open ? pop.riser : null,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: MiniPad(flagged,
+                  child: MiniPad(r.arrows,
                       size: 20, idle: pop.haze.withValues(alpha: 0.6)),
                 ),
               ),
@@ -645,12 +672,10 @@ class _SideRow extends StatelessWidget {
                 ),
             ]),
           ),
-          Text(r.lamp == null ? 'Tap a lamp' : kPadVibes[r.lamp]!,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight:
-                      r.lamp == null ? FontWeight.w400 : FontWeight.w700,
-                  color: r.lamp == null ? pop.haze : null)),
+          if (r.lamp != null)
+            Text(kPadVibes[r.lamp]!,
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
           if (r.open)
             Container(
               margin: const EdgeInsets.only(top: 10, right: 4),
@@ -663,11 +688,7 @@ class _SideRow extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: r.selected == null
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text('Tap the arrow that was off',
-                              style: TextStyle(fontSize: 12, color: pop.haze)),
-                        )
+                      ? const SizedBox.shrink()
                       : _Issues(row: r, onChanged: onChanged),
                 ),
               ]),
@@ -691,6 +712,7 @@ class _TapPad extends StatelessWidget {
     final r = row;
     Widget panel(PadArrow a) {
       final flagged = !(r.arrows[a]?.isEmpty ?? true);
+      final zone = r.arrows[a]?.zone;
       final on = r.selected == a;
       return Semantics(
         button: true,
@@ -706,6 +728,9 @@ class _TapPad extends StatelessWidget {
             decoration: BoxDecoration(
               color:
                   flagged ? FloorPop.coral.withValues(alpha: 0.18) : pop.riser,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            foregroundDecoration: BoxDecoration(
               border: Border.all(
                   color: on
                       ? FloorPop.volt
@@ -713,10 +738,16 @@ class _TapPad extends StatelessWidget {
                           ? FloorPop.coral
                           : pop.line,
                   width: on ? 2 : 1),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(7),
             ),
-            child: Center(
-              child: Transform.rotate(
+            clipBehavior: Clip.antiAlias,
+            child: Stack(alignment: Alignment.center, children: [
+              if (zone != null)
+                Positioned.fill(
+                  child: LayoutBuilder(
+                      builder: (_, c) => _rimBand(zone, c.maxWidth)),
+                ),
+              Transform.rotate(
                 angle: switch (a) {
                   PadArrow.up => 0,
                   PadArrow.right => math.pi / 2,
@@ -728,7 +759,7 @@ class _TapPad extends StatelessWidget {
                     painter:
                         _ChevronPainter(flagged ? FloorPop.coral : pop.haze)),
               ),
-            ),
+            ]),
           ),
         ),
       );
@@ -813,11 +844,9 @@ class _Issues extends StatelessWidget {
                       : FloorPop.coral)),
       ]),
       const SizedBox(height: 8),
-      Text('ROUGHLY WHERE', style: label),
-      const SizedBox(height: 6),
       Wrap(spacing: 5, children: [
-        for (final z in PadZone.values)
-          chip(z.label, cur.zone == z, FloorPop.volt,
+        for (final z in a.rims)
+          chip(a.rimLabel(z), cur.zone == z, FloorPop.volt,
               () => set(cur.zoned(cur.zone == z ? null : z))),
       ]),
     ]);
@@ -969,7 +998,7 @@ class _PadsRow extends StatelessWidget {
                 Text(padSideLabel(side.cabinet, side.side)),
                 Text(
                     r != null
-                        ? '${kPadVibes[r.lamp]} · ${r.flagSummary}'
+                        ? r.flagSummary
                         : warn
                             ? hint!.text
                             : 'Not rated',
@@ -979,7 +1008,7 @@ class _PadsRow extends StatelessWidget {
             ),
           ),
           if (r != null) ...[
-            MiniPad(r.arrows.keys.toSet()),
+            MiniPad(r.arrows),
             const SizedBox(width: 10),
             PadLamp(r.lamp),
           ] else
@@ -1037,15 +1066,21 @@ class VenuePadsPage extends StatelessWidget {
         Venue? venue,
         List<Cabinet> cabinets,
         List<PadRating> ratings,
-        Map<(int, PadSide), double> timing
+        Map<(int, PadSide), double> timing,
+        Map<(int, PadSide), String> lastSession
       })> _load() async {
     final venue = (await DatabaseProvider.getVenues())
         .where((v) => v.id == venueId)
         .firstOrNull;
     final cabinets = await DatabaseProvider.getCabinets(venueId);
     final timing = <(int, PadSide), double>{};
+    final lastSession = <(int, PadSide), String>{};
     for (final c in cabinets) {
       for (final s in PadSide.values) {
+        if (await DatabaseProvider.getLastSessionOnSide(c.id, s)
+            case final id?) {
+          lastSession[(c.id, s)] = id;
+        }
         final plays = (await DatabaseProvider.getTimingPlays(c.id, s)).take(10);
         if (plays.isNotEmpty) {
           timing[(c.id, s)] =
@@ -1059,12 +1094,12 @@ class VenuePadsPage extends StatelessWidget {
       cabinets: cabinets,
       ratings: await DatabaseProvider.getVenuePadRatings(venueId),
       timing: timing,
+      lastSession: lastSession,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
     return ValueListenableBuilder(
       valueListenable: padRatingsRevision,
       builder: (context, _, __) => FutureBuilder(
@@ -1085,16 +1120,28 @@ class VenuePadsPage extends StatelessWidget {
                               HomeCard(
                                 title: c.name.isEmpty ? 'Pads' : c.name,
                                 icon: Icons.grid_view_rounded,
+                                heading: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const PadGlyph(size: 20, lit: true),
+                                      const SizedBox(width: 8),
+                                      Text(c.name.isEmpty ? 'Pads' : c.name,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium),
+                                    ]),
                                 children: [
-                                  Row(
+                                  IntrinsicHeight(
+                                      child: Row(
                                     crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                        CrossAxisAlignment.stretch,
                                     children: [
                                       for (final s in PadSide.values) ...[
                                         if (s == PadSide.p2)
                                           const SizedBox(width: 10),
                                         Expanded(
                                           child: _SideTile(
+                                            cabinet: c,
                                             side: s,
                                             trail: [
                                               for (final r in d.ratings)
@@ -1103,18 +1150,22 @@ class VenuePadsPage extends StatelessWidget {
                                                   r
                                             ],
                                             timing: d.timing[(c.id, s)],
+                                            lastSession:
+                                                d.lastSession[(c.id, s)],
                                           ),
                                         ),
                                       ],
                                     ],
-                                  ),
+                                  )),
                                   if (CircleState.available &&
                                       context.watch<CircleState>().id != null &&
                                       d.ratings
                                           .any((r) => r.cabinet.id == c.id))
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton(
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 12),
+                                      child: VoltButton(
+                                        height: 48,
+                                        radius: 16,
                                         onPressed: () {
                                           final latest = [
                                             for (final s in PadSide.values)
@@ -1131,20 +1182,18 @@ class VenuePadsPage extends StatelessWidget {
                                               venueName: c.venueName,
                                               ratings: latest);
                                         },
-                                        child: const Text('Post to circle'),
+                                        child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.groups_rounded,
+                                                  size: 20),
+                                              SizedBox(width: 8),
+                                              Text('Post to circle'),
+                                            ]),
                                       ),
                                     ),
                                 ],
                               ),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-                              child: Text(
-                                  'Your read of each pad, not an official check. '
-                                  'Rate them from a session\'s page.',
-                                  textAlign: TextAlign.center,
-                                  style:
-                                      TextStyle(fontSize: 12, color: pop.haze)),
-                            ),
                           ],
                         )),
           );
@@ -1155,78 +1204,112 @@ class VenuePadsPage extends StatelessWidget {
 }
 
 class _SideTile extends StatelessWidget {
-  const _SideTile({required this.side, required this.trail, this.timing});
+  const _SideTile(
+      {required this.cabinet,
+      required this.side,
+      required this.trail,
+      this.timing,
+      this.lastSession});
 
+  final Cabinet cabinet;
   final PadSide side;
   // Newest first.
   final List<PadRating> trail;
   final double? timing;
 
+  /// The last session played on this side; none greys it out.
+  final String? lastSession;
+
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final r = trail.firstOrNull;
+    final played = lastSession != null || r != null;
+    // Rates the side as of the last session on it.
+    Future<void> edit() async {
+      final session =
+          await DatabaseProvider.getSession(lastSession ?? r!.sessionId);
+      if (session == null || !context.mounted) return;
+      await showPadRatingSheet(context,
+          session: session, sides: [(cabinet: cabinet, side: side)]);
+    }
+
     return Opacity(
-      opacity: r?.stale ?? false ? 0.55 : 1,
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-            color: pop.riser, borderRadius: BorderRadius.circular(14)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(children: [
-              Text(sideName(side),
-                  style: const TextStyle(
-                      fontFamily: kReadoutFont,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14)),
-              const Spacer(),
-              if (r != null) PadLamp(r.lamp, height: 16),
-            ]),
-            const SizedBox(height: 8),
-            Row(children: [
-              MiniPad(r?.arrows.keys.toSet() ?? const {}),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(r == null ? 'Not rated' : kPadVibes[r.lamp]!,
-                        style: const TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w700)),
-                    if (r != null)
-                      Text(r.flagSummary,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: pop.haze)),
-                  ],
-                ),
-              ),
-            ]),
-            if (r != null) ...[
-              const SizedBox(height: 8),
-              Row(children: [
-                // Oldest first, toward the latest.
-                for (final t in trail.take(5).toList().reversed) ...[
-                  LampTag(t.lamp, width: 16, height: 8, label: false),
-                  const SizedBox(width: 4),
+      opacity: !played
+          ? 0.4
+          : r?.stale ?? false
+              ? 0.55
+              : 1,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: played ? edit : null,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+                color: pop.riser, borderRadius: BorderRadius.circular(14)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Text(sideName(side),
+                      style: const TextStyle(
+                          fontFamily: kReadoutFont,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14)),
+                  const Spacer(),
+                  if (r != null) PadLamp(r.lamp, height: 16),
+                ]),
+                const SizedBox(height: 8),
+                Row(children: [
+                  MiniPad(r?.arrows ?? const {}),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                            r != null
+                                ? r.flagSummary
+                                : played
+                                    ? 'Not rated'
+                                    : 'Not played',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: r == null
+                                ? const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w700)
+                                : TextStyle(fontSize: 12, color: pop.haze)),
+                      ],
+                    ),
+                  ),
+                ]),
+                if (r != null) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    // Oldest first, toward the latest.
+                    for (final t in trail.take(5).toList().reversed) ...[
+                      LampTag(t.lamp, width: 16, height: 8, label: false),
+                      const SizedBox(width: 4),
+                    ],
+                    const Spacer(),
+                    Text(padWhen(r.at),
+                        style: TextStyle(fontSize: 11, color: pop.haze)),
+                  ]),
                 ],
-                const Spacer(),
-                Text(padWhen(r.at),
-                    style: TextStyle(fontSize: 11, color: pop.haze)),
-              ]),
-            ],
-            if (timing case final ms?) ...[
-              Divider(height: 16, color: pop.line),
-              Row(children: [
-                Text('Timing avg',
-                    style: TextStyle(fontSize: 11, color: pop.haze)),
-                const Spacer(),
-                Text(signedMs(ms), style: FloorPop.readout(12)),
-              ]),
-            ],
-          ],
+                if (timing case final ms?) ...[
+                  Divider(height: 16, color: pop.line),
+                  Row(children: [
+                    Text('Timing avg',
+                        style: TextStyle(fontSize: 11, color: pop.haze)),
+                    const Spacer(),
+                    Text(signedMs(ms), style: FloorPop.readout(12)),
+                  ]),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );

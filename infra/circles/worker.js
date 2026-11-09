@@ -420,7 +420,7 @@ async function postCredit(db, me, body) {
 // arrows, nothing typed in. Null when anything else is in it.
 const PAD_LAMPS = ["mfc", "pfc", "gfc", "fc", "life4", "clear", "failed"];
 const PAD_ISSUES = ["dropsSteps", "heavy", "dead", "sticky", "ghosts", "dropsHolds"];
-const PAD_ZONES = ["outer", "centre", "inner"];
+const PAD_ZONES = ["top", "right", "bottom", "left"];
 const MAX_PADS = 10;
 function padOf(body) {
   const venue = typeof body?.venue === "string" ? body.venue.trim().slice(0, VENUE) : "";

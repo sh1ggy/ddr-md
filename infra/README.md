@@ -327,8 +327,8 @@ using a build with these routes against the live service.
   caption/reaction fields are ignored on write and omitted on read.
 
 Pad checks are a player's read of one cab after a session: the venue, the cab
-and each side's clear lamp with its flagged arrows (preset issues and an edge
-or centre, no free text). They always name the venue, are encrypted at rest,
+and each side's clear lamp with its flagged arrows (preset issues and which rim
+of the panel, no free text). They always name the venue, are encrypted at rest,
 show to the player's circle under **PAD CHECKS** and leave the feed after two
 days like credits, at most ten per player in that time. The table is created
 by Worker initialisation; deploy the updated Circles Worker before posting

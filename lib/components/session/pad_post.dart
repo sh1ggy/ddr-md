@@ -265,7 +265,7 @@ class CirclePadCard extends StatelessWidget {
                       ]),
                       const SizedBox(height: 8),
                       Row(children: [
-                        MiniPad(s.arrows.keys.toSet(), size: 28),
+                        MiniPad(s.arrows, size: 28),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(PadRating.summarize(s.arrows),

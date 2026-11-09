@@ -110,7 +110,7 @@ const scenarios = {
     await as(keyOf("MIKA"), "PUT", "/v1/pad", {
       id: "mika-pads", venue: "Round1 Ludo", cab: "Left",
       sides: [
-        { side: "p1", lamp: "clear", arrows: { up: { issues: ["dropsSteps"], zone: "outer" } } },
+        { side: "p1", lamp: "clear", arrows: { up: { issues: ["dropsSteps"], zone: "top" } } },
         { side: "p2", lamp: "pfc", arrows: {} },
       ],
     });

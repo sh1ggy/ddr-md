@@ -247,8 +247,7 @@ class DatabaseProvider {
         columns: ['id'],
         where: "sessionId = ? AND cabinetId = ? AND side = ?",
         whereArgs: [rating.sessionId, rating.cabinet.id, rating.side.name]);
-    await db.insert(
-        "pad_ratings",
+    await db.insert("pad_ratings",
         {...rating.toMap(), if (old.isNotEmpty) 'id': old.first['id']},
         conflictAlgorithm: ConflictAlgorithm.replace);
     padRatingsRevision.value++;
@@ -440,6 +439,19 @@ class DatabaseProvider {
         'JOIN venues v ON v.id = c.venueId '
         'ORDER BY cr.startedAt DESC LIMIT 1');
     return rows.isEmpty ? null : Credit.fromMap(rows.first);
+  }
+
+  /// The last session with a credit on [side] of cab [cabinetId], if any.
+  static Future<String?> getLastSessionOnSide(
+      int cabinetId, PadSide side) async {
+    final db = await _instance;
+    final rows = await db.query('credits',
+        columns: ['sessionId'],
+        where: 'cabinetId = ? AND side = ?',
+        whereArgs: [cabinetId, side.name],
+        orderBy: 'startedAt DESC',
+        limit: 1);
+    return rows.isEmpty ? null : rows.first['sessionId'] as String;
   }
 
   // Deletes cascade to the plays logged under them.

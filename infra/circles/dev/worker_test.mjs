@@ -125,7 +125,7 @@ assert.equal((await call("a", "GET", "/v1/feed")).body.yours[0].cheers.length, 0
 assert.equal((await call("c", "GET", "/v1/feed")).body.credits.length, 0);
 
 // A pad check shows to the circle, sealed at rest, and takes nothing typed.
-const pad = { id: "s-1", venue: "Round1", cab: "Left", sides: [{ side: "p1", lamp: "clear", arrows: { up: { issues: ["dropsSteps"], zone: "outer" } } }] };
+const pad = { id: "s-1", venue: "Round1", cab: "Left", sides: [{ side: "p1", lamp: "clear", arrows: { up: { issues: ["dropsSteps"], zone: "top" } } }] };
 assert.equal((await call("a", "PUT", "/v1/pad", { ...pad, note: "hi", sides: [{ ...pad.sides[0], lamp: "great" }] })).status, 400);
 assert.equal((await call("a", "PUT", "/v1/pad", { ...pad, sides: [{ ...pad.sides[0], arrows: { up: { issues: ["wobbly"] } } }] })).status, 400);
 assert.equal((await call("a", "PUT", "/v1/pad", pad)).status, 204);
