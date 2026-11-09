@@ -10,6 +10,7 @@ library;
 
 import 'dart:math';
 
+import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
@@ -355,7 +356,14 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
           const SizedBox(height: 8),
           if (summary.byLevel case final levels when levels.isNotEmpty) ...[
             widget.detailed
-                ? _LevelBars(levels, up: up, down: down)
+                ? LevelGapBars([
+                    for (final l in levels)
+                      (
+                        level: l.level,
+                        gap: l.average - l.usual,
+                        trailing: Text('×${l.plays}', style: muted),
+                      ),
+                  ])
                 : _LevelChips(_scoreChips(levels, up: up, down: down)),
             const SizedBox(height: 12),
           ],
@@ -488,113 +496,76 @@ class _StatText extends StatelessWidget {
       Text(text, style: FloorPop.readout(17, color: color));
 }
 
-/// Each level's average on one score axis beside its usual, easiest first:
-/// a tick at the usual, a dot at the average and the gap filled between
-/// them, with the gap and the level's plays at the end.
-class _LevelBars extends StatelessWidget {
-  const _LevelBars(this.levels, {required this.up, required this.down});
+/// "+2.6k", "−4.6k": thousands of points off your usual.
+String vsUsual(double v) =>
+    '${v >= 50 ? '+' : v <= -50 ? '−' : ''}${(v.abs() / 1000).toStringAsFixed(1)}k';
 
-  final List<LevelSummary> levels;
-  final Color up, down;
+/// Each level's gap from your usual as a leaning bar either side of it, on
+/// one scale, then the gap and [trailing] (an arrow, a play count).
+class LevelGapBars extends StatelessWidget {
+  const LevelGapBars(this.levels, {super.key});
+
+  final List<({int level, double gap, Widget? trailing})> levels;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final muted = TextStyle(fontSize: 11, color: scheme.onSurfaceVariant);
-    // From a round 10k under the lowest score shown up to the 1,000,000
-    // ceiling, shared so the levels line up.
-    final lowest = levels.map((l) => min(l.usual, l.average)).reduce(min);
-    final lo = ((lowest - 20000) / 10000).floor() * 10000.0;
-    const hi = 1000000.0;
-    double at(double score) => ((score - lo) / (hi - lo)).clamp(0, 1);
-    String gap(double g) =>
-        '${g >= 0 ? '+' : '−'}${formatScore(g.abs().round())}';
+    final pop = FloorPop.of(context);
+    final most = max(5000.0, levels.map((l) => l.gap.abs()).reduce(max));
     return Column(children: [
       for (final l in levels)
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(children: [
             SizedBox(
-              width: 28,
-              child: ColorFiltered(
-                colorFilter: kGreyLevel,
-                child: LevelNumber(
-                    level: l.level, difficulty: 'EXPERT', height: 16),
-              ),
-            ),
+                width: 40,
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Semantics(
+                        label: 'Level ${l.level}',
+                        child: ExcludeSemantics(
+                            child: LevelNumber(
+                                level: l.level,
+                                difficulty: 'EXPERT',
+                                height: 16))))),
             Expanded(
               child: LayoutBuilder(builder: (context, box) {
-                final w = box.maxWidth;
-                final colour = l.average >= l.usual ? up : down;
+                final mid = box.maxWidth / 2;
+                final w = mid * (l.gap.abs() / most);
                 return SizedBox(
-                  height: 18,
-                  child: Stack(clipBehavior: Clip.none, children: [
+                  height: 16,
+                  child: Stack(children: [
                     Positioned(
-                      left: 0,
-                      right: 0,
-                      top: 6,
-                      height: 6,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(3)),
-                      ),
-                    ),
+                        left: mid - .75,
+                        top: 0,
+                        bottom: 0,
+                        child: Container(width: 1.5, color: pop.line)),
                     Positioned(
-                      left: min(at(l.usual), at(l.average)) * w,
-                      width: (at(l.average) - at(l.usual)).abs() * w,
-                      top: 6,
-                      height: 6,
-                      child: ColoredBox(color: colour.withValues(alpha: 0.6)),
-                    ),
-                    Positioned(
-                      left: at(l.usual) * w - 1,
-                      top: 0,
-                      width: 2,
-                      height: 18,
-                      child: ColoredBox(color: scheme.onSurfaceVariant),
-                    ),
-                    Positioned(
-                      left: at(l.average) * w - 6,
                       top: 3,
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                            color: colour, shape: BoxShape.circle),
-                      ),
+                      height: 10,
+                      left: l.gap < 0 ? mid - w : mid,
+                      width: w,
+                      child: Lean(
+                          child: Container(
+                              decoration: BoxDecoration(
+                                  color: l.gap < 0 ? pop.down : pop.up,
+                                  borderRadius: BorderRadius.circular(3)))),
                     ),
                   ]),
                 );
               }),
             ),
             SizedBox(
-              width: 92,
-              child: Text.rich(
-                TextSpan(children: [
-                  TextSpan(
-                    text: gap(l.average - l.usual),
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: l.average >= l.usual ? up : down),
-                  ),
-                  TextSpan(text: ' ×${l.plays}', style: muted),
-                ]),
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                    fontFeatures: [FontFeature.tabularFigures()]),
-              ),
-            ),
+                width: 56,
+                child: Text(vsUsual(l.gap),
+                    textAlign: TextAlign.right,
+                    style: FloorPop.readout(14,
+                        color: l.gap < 0 ? pop.down : pop.up))),
+            SizedBox(
+                width: 30,
+                child:
+                    Align(alignment: Alignment.centerRight, child: l.trailing)),
           ]),
         ),
-      Row(children: [
-        const SizedBox(width: 28),
-        Text('${(lo / 1000).round()}k', style: muted),
-        const Spacer(),
-        Text('1M', style: muted),
-        const SizedBox(width: 92),
-      ]),
     ]);
   }
 }
