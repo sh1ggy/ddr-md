@@ -229,38 +229,6 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
     final before = history.period(_period.shift(-1));
     return HomeSubpage(
       title: 'Trends',
-      actions: [
-        Tooltip(
-          message: 'Switch to ${mode == Modes.singles ? 'doubles' : 'singles'}',
-          child: InkWell(
-            key: const ValueKey('trend-mode'),
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => setState(() => _filter = TrendFilter(
-                mode: mode == Modes.singles ? Modes.doubles : Modes.singles,
-                venueId: _filter.venueId,
-                cabinetId: _filter.cabinetId,
-                side: _filter.side)),
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                  color: pop.riser, borderRadius: BorderRadius.circular(12)),
-              child: PlayStyleIcon(mode: mode, height: 14),
-            ),
-          ),
-        ),
-        IconButton(
-          key: const ValueKey('trend-filters'),
-          tooltip: labels.isEmpty ? 'Filters' : 'Filters (${labels.length})',
-          onPressed: _showFilters,
-          icon: Badge(
-              isLabelVisible: labels.isNotEmpty,
-              label: Text('${labels.length}'),
-              child: const Icon(Icons.tune_rounded)),
-        ),
-        const SizedBox(width: 4),
-      ],
       body: GestureDetector(
         onHorizontalDragEnd: (d) {
           final v = d.primaryVelocity ?? 0;
@@ -272,17 +240,53 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
                   padding: clearOfBars(
                       context, const EdgeInsets.fromLTRB(16, 8, 16, 32)),
                   children: [
-                    PillTabs<TrendRange>(
-                      tabHeight: 44,
-                      values: TrendRange.values,
-                      tabs: const [
-                        Text('Week'),
-                        Text('Fortnight'),
-                        Text('Month')
-                      ],
-                      selected: _range,
-                      onChanged: _setRange,
-                    ),
+                    // Period, style and filters as one toolbar.
+                    Row(children: [
+                      Expanded(
+                        child: PillTabs<TrendRange>(
+                          tabHeight: 40,
+                          values: TrendRange.values,
+                          tabs: [
+                            // One line each, scaled down on narrow phones.
+                            for (final r in TrendRange.values)
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                    '${r.unit[0].toUpperCase()}${r.unit.substring(1)}',
+                                    maxLines: 1),
+                              ),
+                          ],
+                          selected: _range,
+                          onChanged: _setRange,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      _toolButton(
+                        key: const ValueKey('trend-mode'),
+                        tooltip:
+                            'Switch to ${mode == Modes.singles ? 'doubles' : 'singles'}',
+                        onTap: () => setState(() => _filter = TrendFilter(
+                            mode: mode == Modes.singles
+                                ? Modes.doubles
+                                : Modes.singles,
+                            venueId: _filter.venueId,
+                            cabinetId: _filter.cabinetId,
+                            side: _filter.side)),
+                        child: PlayStyleIcon(mode: mode, height: 13),
+                      ),
+                      const SizedBox(width: 6),
+                      _toolButton(
+                        key: const ValueKey('trend-filters'),
+                        tooltip: labels.isEmpty
+                            ? 'Filters'
+                            : 'Filters (${labels.length})',
+                        onTap: _showFilters,
+                        child: Badge(
+                            isLabelVisible: labels.isNotEmpty,
+                            label: Text('${labels.length}'),
+                            child: const Icon(Icons.tune_rounded, size: 22)),
+                      ),
+                    ]),
                     const SizedBox(height: 12),
                     _header(current),
                     if (labels.isNotEmpty)
@@ -332,6 +336,33 @@ class _SessionTrendsViewState extends State<SessionTrendsView> {
       ),
     );
   }
+
+  /// A square-ish button that sits beside [PillTabs]: its height, fill and
+  /// corners.
+  Widget _toolButton(
+          {required Key key,
+          required String tooltip,
+          required VoidCallback onTap,
+          required Widget child}) =>
+      Tooltip(
+        message: tooltip,
+        child: Material(
+          color: FloorPop.of(context).riser,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            key: key,
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Center(widthFactor: 1, child: child),
+              ),
+            ),
+          ),
+        ),
+      );
 
   Widget _card({required Widget child, EdgeInsets? padding}) {
     final pop = FloorPop.of(context);
