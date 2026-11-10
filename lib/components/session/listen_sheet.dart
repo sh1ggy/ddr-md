@@ -11,6 +11,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:ddr_md/components/settings/development_page.dart'
+    show developmentToolsEnabled;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
 import 'package:ddr_md/components/song/song_page.dart';
@@ -471,6 +473,18 @@ class _ListenSheetState extends State<ListenSheet> {
         ]),
       );
 
+  /// What the mic gave, for checking a device (Development tools only).
+  Widget _micStats(FloorPop pop, SongIdListener listener) {
+    final s = listener.stats;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Text(
+          'Mic ${s.measured} Hz (read at ${s.used}) · peak '
+          '${s.peakDb.toStringAsFixed(0)} dB · ${s.heard.toStringAsFixed(1)} s heard',
+          style: FloorPop.readout(12, color: pop.haze)),
+    );
+  }
+
   Widget _missed(FloorPop pop) => Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -498,6 +512,8 @@ class _ListenSheetState extends State<ListenSheet> {
           const SizedBox(height: 12),
           _tip(Icons.volume_up_outlined, 'Get closer to a speaker',
               'The cab next door or the crowd can drown it'),
+          if (developmentToolsEnabled.value && _listener != null)
+            _micStats(pop, _listener!),
           _tip(Icons.schedule, 'Wait for the song to start',
               "Menus and the result screen aren't songs"),
           if (widget.resyncing == null)

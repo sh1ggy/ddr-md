@@ -7,13 +7,14 @@
 library;
 
 import 'dart:async';
+import 'dart:math';
 import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_id.dart';
 import 'package:ddr_md/models/song_model.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:record/record.dart';
 
 /// Where the cab is in a song Song ID placed, carried on from the match.
@@ -35,7 +36,10 @@ class SongIdFollow {
 
 class SongIdListener {
   static const maxSeconds = 12;
-  static const _rate = 16000;
+  // The mic's own rate on phones and Macs. Asking for less makes the
+  // recorder resample a buffer at a time, which drops audio and left nothing
+  // to match; Song ID's resampler does it instead.
+  static const _rate = 48000;
 
   static Future<SongIdIndex>? _index;
   static int _indexRevision = -1;
@@ -67,18 +71,60 @@ class SongIdListener {
     return Isolate.run(() => SongIdIndex.build(files));
   }
 
-  /// Stands in for the mic in tests: 16 kHz mono 16-bit PCM.
+  /// Stands in for the mic in tests: mono 16-bit PCM at [debugMicRate].
   @visibleForTesting
   static Stream<Uint8List> Function()? debugMic;
+  @visibleForTesting
+  static int debugMicRate = 16000;
 
   final _recorder = AudioRecorder();
-  final _pcm = BytesBuilder();
+  final _pcm = BytesBuilder(copy: false);
+  final _clip = <double>[];
+  int _fed = 0;
+  SongIdResampler? _resampler;
+  int _peak = 0;
+  ({int at, int bytes})? _firstChunk;
   StreamSubscription<Uint8List>? _sub;
   final _elapsed = Stopwatch();
   bool _stopped = false;
 
   /// Whole seconds heard so far, for the sheet's progress.
   int get seconds => _elapsed.elapsed.inSeconds;
+
+  /// What the mic delivered, for checking a device: its rate as measured
+  /// from the first chunk on, the rate it was read at, the loudest sample in
+  /// dBFS and the seconds of audio heard. A measured rate well under the one
+  /// read at means the recorder is dropping audio.
+  ({int measured, int used, double peakDb, double heard}) get stats =>
+      _lastStats ?? _stats();
+  ({int measured, int used, double peakDb, double heard})? _lastStats;
+
+  ({int measured, int used, double peakDb, double heard}) _stats() {
+    final first = _firstChunk;
+    final secs =
+        first == null ? 0.0 : (_elapsed.elapsedMicroseconds - first.at) / 1e6;
+    final samples = (_pcm.length - (first?.bytes ?? 0)) ~/ 2;
+    return (
+      measured: secs > 0.5 ? (samples / secs).round() : 0,
+      used: _resampler?.rate ?? 0,
+      peakDb: _peak == 0 ? -96 : 20 * log(_peak / 32768) / ln10,
+      heard: _clip.length / kSongIdRate,
+    );
+  }
+
+  /// The audio so far at [kSongIdRate], converting only what's new.
+  Float32List _heard(int rate) {
+    final bytes = _pcm.toBytes();
+    final resampler = _resampler ??= SongIdResampler(rate);
+    final fresh = Uint8List.sublistView(bytes, _fed);
+    for (var i = 0; i + 1 < fresh.length; i += 2) {
+      final v = (fresh[i] | fresh[i + 1] << 8).toSigned(16).abs();
+      if (v > _peak) _peak = v;
+    }
+    _clip.addAll(resampler.add(fresh));
+    _fed = bytes.length;
+    return Float32List.fromList(_clip);
+  }
 
   Future<bool> hasPermission() async =>
       debugMic != null || await _recorder.hasPermission();
@@ -99,7 +145,10 @@ class SongIdListener {
           noiseSuppress: false,
         ));
     _elapsed.start();
-    _sub = stream.listen(_pcm.add);
+    _sub = stream.listen((chunk) {
+      _firstChunk ??= (at: _elapsed.elapsedMicroseconds, bytes: chunk.length);
+      _pcm.add(chunk);
+    });
     try {
       final index = await indexFuture;
       // Try often, on everything heard so far: a try takes a few
@@ -112,7 +161,7 @@ class SongIdListener {
         }
         if (_stopped) break;
         final heardAt = _elapsed.elapsedMicroseconds;
-        final clip = toSongIdRate(_pcm.toBytes(), _rate);
+        final clip = _heard(debugMic != null ? debugMicRate : _rate);
         final marks = landmarks(clip, perSecond: kClipPeaksPerSecond);
         final match = only == null
             ? index.match(marks)
@@ -142,6 +191,10 @@ class SongIdListener {
     if (_stopped) return;
     _stopped = true;
     _elapsed.stop();
+    final stats = _lastStats = _stats();
+    debugPrint('Song ID mic: ${stats.measured} Hz measured, read at '
+        '${stats.used}, peak ${stats.peakDb.toStringAsFixed(0)} dB, '
+        '${stats.heard.toStringAsFixed(1)} s heard');
     await _sub?.cancel();
     await _recorder.stop();
     await _recorder.dispose();

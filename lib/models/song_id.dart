@@ -132,25 +132,97 @@ List<Landmark> landmarks(Float32List pcm, {required int perSecond}) {
 }
 
 /// [pcm] (16-bit little-endian, [channels] interleaved, at [rate]) as mono
-/// at [kSongIdRate]. Each output sample averages the input it spans, which
-/// is low-pass enough for what the landmarks look at.
-Float32List toSongIdRate(Uint8List pcm, int rate, {int channels = 1}) {
-  final samples = ByteData.sublistView(pcm);
-  final frames = pcm.length ~/ (2 * channels);
-  final step = rate / kSongIdRate;
-  final out = Float32List((frames / step).floor());
-  for (var i = 0; i < out.length; i++) {
-    final from = (i * step).floor();
-    final to = max(from + 1, ((i + 1) * step).floor());
-    var sum = 0.0;
-    for (var f = from; f < to && f < frames; f++) {
-      for (var c = 0; c < channels; c++) {
-        sum += samples.getInt16((f * channels + c) * 2, Endian.little);
+/// at [kSongIdRate].
+Float32List toSongIdRate(Uint8List pcm, int rate, {int channels = 1}) =>
+    SongIdResampler(rate, channels: channels).add(pcm);
+
+/// Mono at [kSongIdRate] from 16-bit PCM at any rate, fed a chunk at a time
+/// as a mic delivers it. A whole-number ratio (48 kHz to 8 kHz) goes through
+/// a windowed-sinc low-pass first, so cymbals and hats above 4 kHz don't
+/// fold down into the pitches the landmarks use; any other ratio averages
+/// the input each output sample spans.
+class SongIdResampler {
+  SongIdResampler(this.rate, {this.channels = 1})
+      : _factor = rate % kSongIdRate == 0 ? rate ~/ kSongIdRate : 0,
+        // Long enough to stay flat to ~3.8 kHz and shut by 4, like the
+        // resampler the songs' fingerprints were made through: a short one
+        // dims the upper pitches and lets noise above 4 kHz fold back in.
+        _taps = 64 * max(1, rate ~/ kSongIdRate).toInt() + 1 {
+    _kernel = Float64List(_taps);
+    if (_factor > 1) {
+      final half = _taps ~/ 2;
+      final cutoff = 0.47 / _factor; // of the input rate, just under 4 kHz
+      var sum = 0.0;
+      for (var i = 0; i < _taps; i++) {
+        final n = i - half;
+        final sinc = n == 0 ? 2 * cutoff : sin(2 * pi * cutoff * n) / (pi * n);
+        final w = 0.42 -
+            0.5 * cos(2 * pi * i / (_taps - 1)) +
+            0.08 * cos(4 * pi * i / (_taps - 1));
+        _kernel[i] = sinc * w;
+        sum += _kernel[i];
+      }
+      for (var i = 0; i < _taps; i++) {
+        _kernel[i] /= sum;
       }
     }
-    out[i] = sum / ((to - from) * channels * 32768);
   }
-  return out;
+
+  final int rate, channels;
+  final int _factor;
+  final int _taps;
+  late final Float64List _kernel;
+  // Mono input not yet used, and how far into it the next output sits.
+  final _held = <double>[];
+  double _phase = 0;
+  Uint8List _odd = Uint8List(0);
+
+  /// The output for [pcm], continuing from the chunks before it.
+  Float32List add(Uint8List pcm) {
+    final bytes = _odd.isEmpty ? pcm : Uint8List.fromList([..._odd, ...pcm]);
+    final frame = 2 * channels;
+    final whole = bytes.length - bytes.length % frame;
+    _odd = Uint8List.sublistView(bytes, whole);
+    final data = ByteData.sublistView(bytes, 0, whole);
+    for (var f = 0; f < whole ~/ frame; f++) {
+      var sum = 0;
+      for (var c = 0; c < channels; c++) {
+        sum += data.getInt16((f * channels + c) * 2, Endian.little);
+      }
+      _held.add(sum / (channels * 32768));
+    }
+    final out = <double>[];
+    if (_factor == 1) {
+      out.addAll(_held);
+      _held.clear();
+    } else if (_factor > 1) {
+      var at = 0;
+      for (; at + _taps <= _held.length; at += _factor) {
+        var acc = 0.0;
+        for (var k = 0; k < _taps; k++) {
+          acc += _held[at + k] * _kernel[k];
+        }
+        out.add(acc);
+      }
+      _held.removeRange(0, at);
+    } else {
+      final step = rate / kSongIdRate;
+      while (_phase + step <= _held.length) {
+        final from = _phase.floor(),
+            to = max(from + 1, (_phase + step).floor());
+        var acc = 0.0;
+        for (var i = from; i < to; i++) {
+          acc += _held[i];
+        }
+        out.add(acc / (to - from));
+        _phase += step;
+      }
+      final used = _phase.floor();
+      _held.removeRange(0, used);
+      _phase -= used;
+    }
+    return Float32List.fromList(out);
+  }
 }
 
 void _varint(BytesBuilder out, int v) {
