@@ -7,6 +7,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -14,6 +15,7 @@ import 'dart:typed_data';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_id.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:record/record.dart';
 
@@ -78,6 +80,8 @@ class SongIdListener {
   static int debugMicRate = 16000;
 
   final _recorder = AudioRecorder();
+  static const _session = MethodChannel('ddr_md/song_id_session');
+  bool _ownsSession = false;
   final _pcm = BytesBuilder(copy: false);
   final _clip = <double>[];
   int _fed = 0;
@@ -172,6 +176,12 @@ class SongIdListener {
   /// every 0.5 s, looking first near [near], where the cab should be.
   Future<SongIdFollow?> listen({String? only, double? near}) async {
     final indexFuture = index();
+    if (debugMic == null && Platform.isIOS) {
+      // The app sets up the session (see SongIdSession in AppDelegate).
+      await _recorder.ios?.manageAudioSession(false);
+      await _session.invokeMethod<void>('listen');
+      _ownsSession = true;
+    }
     final stream = debugMic?.call() ??
         await _recorder.startStream(RecordConfig(
           encoder: AudioEncoder.pcm16bits,
@@ -184,6 +194,9 @@ class SongIdListener {
           // (AirPods in a pocket) hears the room muffled through voice
           // processing and matched nothing.
           device: await _builtInMic(),
+          // Unprocessed for recognition: no noise suppression or gain riding.
+          androidConfig: const AndroidRecordConfig(
+              audioSource: AndroidAudioSource.voiceRecognition),
           iosConfig: const IosRecordConfig(categoryOptions: [
             IosAudioCategoryOption.defaultToSpeaker,
             IosAudioCategoryOption.allowBluetoothA2DP,
@@ -245,6 +258,10 @@ class SongIdListener {
     await _sub?.cancel();
     await _recorder.stop();
     await _recorder.dispose();
+    if (_ownsSession) {
+      _ownsSession = false;
+      await _session.invokeMethod<void>('done').catchError((_) {});
+    }
     _pcm.clear();
   }
 }
