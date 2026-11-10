@@ -151,9 +151,12 @@ String playCount(int n) => '$n ${n == 1 ? 'play' : 'plays'}';
 
 /// A visit's facts as tags: its venue when [venue], its day, times and plays.
 class VisitTags extends StatelessWidget {
-  const VisitTags(this.visit, {super.key, this.venue = false});
+  const VisitTags(this.visit,
+      {super.key, this.venue = false, this.trailing = const []});
   final Visit visit;
   final bool venue;
+  // After the facts, e.g. Home's pad nudge.
+  final List<Widget> trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -169,6 +172,7 @@ class VisitTags extends StatelessWidget {
           visit.plays.isEmpty
               ? 'no synced plays'
               : playCount(visit.plays.length)),
+      ...trailing,
     ]);
   }
 }
@@ -369,6 +373,45 @@ void _openChart(BuildContext context, RecentPlay play) {
 }
 
 /// The [count] highest scores among [plays], best first, one per chart.
+List<RecentPlay> bestPlays(List<RecentPlay> plays, int count) {
+  final best = <String, RecentPlay>{};
+  for (final p in plays) {
+    if (p.score == null) continue;
+    final kept = best[p.recordId];
+    if (kept == null || p.score! > kept.score!) best[p.recordId] = p;
+  }
+  return (best.values.toList()..sort((a, b) => b.score!.compareTo(a.score!)))
+      .take(count)
+      .toList();
+}
+
+/// The jacket of a visit's best play, or a pin on a riser when it has no
+/// scored plays.
+class BestJacket extends StatelessWidget {
+  const BestJacket(this.plays, {super.key});
+
+  final List<RecentPlay> plays;
+
+  static const size = 52.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    final best = bestPlays(plays, 1).firstOrNull;
+    return best != null
+        ? _Jacket(song: best.song, size: size)
+        : Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+                color: pop.riser,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: pop.line)),
+            child: Icon(Icons.place_outlined, color: pop.haze),
+          );
+  }
+}
+
 class TopPlays extends StatelessWidget {
   const TopPlays(
       {super.key, required this.plays, required this.bests, this.count = 4});
@@ -381,16 +424,7 @@ class TopPlays extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final best = <String, RecentPlay>{};
-    for (final p in plays) {
-      if (p.score == null) continue;
-      final kept = best[p.recordId];
-      if (kept == null || p.score! > kept.score!) best[p.recordId] = p;
-    }
-    final top = (best.values.toList()
-          ..sort((a, b) => b.score!.compareTo(a.score!)))
-        .take(count)
-        .toList();
+    final top = bestPlays(plays, count);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -520,7 +554,7 @@ class _Jacket extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final fallback = ColoredBox(
-      color: scheme.surfaceContainerLow,
+      color: FloorPop.of(context).riser,
       child: Icon(Icons.music_note, size: 24, color: scheme.onSurfaceVariant),
     );
     return ClipRRect(

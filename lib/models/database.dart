@@ -2,6 +2,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/pad_rating.dart';
 import 'package:ddr_md/models/parity.dart';
 import 'package:ddr_md/models/parity_labels.dart';
 import 'package:ddr_md/models/session_goal.dart';
@@ -90,6 +91,10 @@ class DatabaseProvider {
   static const String _cardGainsDdl =
       'CREATE TABLE IF NOT EXISTS card_gains(id TEXT PRIMARY KEY, song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, layer TEXT NOT NULL, fromValue TEXT NOT NULL, toValue TEXT NOT NULL, score INT, grade TEXT, lamp TEXT, flare TEXT, playedAt TEXT NOT NULL, syncedAt TEXT NOT NULL, fromScore INT)';
 
+  // v21: the player's read of each pad side after a session (PadRating).
+  static const String _padRatingsDdl =
+      'CREATE TABLE IF NOT EXISTS pad_ratings(id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, cabinetId INT NOT NULL, side TEXT NOT NULL, lamp TEXT NOT NULL, arrows TEXT NOT NULL DEFAULT \'{}\', ratedAt TEXT NOT NULL)';
+
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
     await db.execute(_favoritesDdl);
@@ -105,6 +110,7 @@ class DatabaseProvider {
     await db.execute(_cardGainsDdl);
     await db.execute(_heardDdl);
     await _addSessionGoal(db);
+    await db.execute(_padRatingsDdl);
     await installSync(db);
   }
 
@@ -181,7 +187,7 @@ class DatabaseProvider {
       open(join(await getDatabasesPath(), _dbName));
 
   static Future<Database> open(String path) {
-    return openDatabase(path, version: 21, onCreate: (db, version) async {
+    return openDatabase(path, version: 22, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -209,7 +215,10 @@ class DatabaseProvider {
       if (oldVersion >= 6 && oldVersion < 14) await _addRecentPlayFailed(db);
       // Before installSync, which puts triggers on every synced table.
       if (oldVersion < 18) await db.execute(_cardGainsDdl);
-      if (oldVersion < 21) await db.execute(_heardDdl);
+      // v21 and v22 each added a table on separate branches, so a
+      // database at 21 may hold either; both only create what's missing.
+      if (oldVersion < 22) await db.execute(_padRatingsDdl);
+      if (oldVersion < 22) await db.execute(_heardDdl);
       if (oldVersion < 15) await installSync(db);
       if (oldVersion >= 6 && oldVersion < 16) await _addRecentPlayOrder(db);
       if (oldVersion >= 6 && oldVersion < 17) {
@@ -224,11 +233,54 @@ class DatabaseProvider {
       }
       if (oldVersion >= 18 && oldVersion < 19) await _addCardGainFromScore(db);
       if (oldVersion >= 6 && oldVersion < 20) await _addSessionGoal(db);
-      if (oldVersion >= 15 && oldVersion < 21) {
-        await addSyncTriggers(
-            db, syncTables.firstWhere((t) => t.name == 'heard'));
+      if (oldVersion >= 15 && oldVersion < 22) {
+        for (final table in ['pad_ratings', 'heard']) {
+          await addSyncTriggers(
+              db, syncTables.firstWhere((t) => t.name == table));
+        }
       }
     });
+  }
+
+  // -- PAD RATINGS
+  static const _padSelect =
+      'SELECT r.*, c.venueId, c.name AS cabinetName, v.name AS venueName, '
+      's.startedAt AS sessionAt FROM pad_ratings r '
+      'JOIN cabinets c ON c.id = r.cabinetId JOIN venues v ON v.id = c.venueId '
+      'LEFT JOIN sessions s ON s.id = r.sessionId';
+
+  /// One rating per session, cabinet and side: saving another replaces it.
+  static Future<void> savePadRating(PadRating rating) async {
+    final db = await _instance;
+    final old = await db.query("pad_ratings",
+        columns: ['id'],
+        where: "sessionId = ? AND cabinetId = ? AND side = ?",
+        whereArgs: [rating.sessionId, rating.cabinet.id, rating.side.name]);
+    await db.insert("pad_ratings",
+        {...rating.toMap(), if (old.isNotEmpty) 'id': old.first['id']},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    padRatingsRevision.value++;
+  }
+
+  static Future<List<PadRating>> getSessionPadRatings(String sessionId) async {
+    final db = await _instance;
+    return [
+      for (final r in await db
+          .rawQuery('$_padSelect WHERE r.sessionId = ?', [sessionId]))
+        PadRating.fromMap(r)
+    ];
+  }
+
+  /// Every rating at a venue, newest session first.
+  static Future<List<PadRating>> getVenuePadRatings(int venueId) async {
+    final db = await _instance;
+    return [
+      for (final r in await db.rawQuery(
+          '$_padSelect WHERE c.venueId = ? '
+          'ORDER BY coalesce(s.startedAt, r.ratedAt) DESC',
+          [venueId]))
+        PadRating.fromMap(r)
+    ];
   }
 
   // -- SESSION FUNCTIONS
@@ -398,6 +450,19 @@ class DatabaseProvider {
     return rows.isEmpty ? null : Credit.fromMap(rows.first);
   }
 
+  /// The last session with a credit on [side] of cab [cabinetId], if any.
+  static Future<String?> getLastSessionOnSide(
+      int cabinetId, PadSide side) async {
+    final db = await _instance;
+    final rows = await db.query('credits',
+        columns: ['sessionId'],
+        where: 'cabinetId = ? AND side = ?',
+        whereArgs: [cabinetId, side.name],
+        orderBy: 'startedAt DESC',
+        limit: 1);
+    return rows.isEmpty ? null : rows.first['sessionId'] as String;
+  }
+
   // Deletes cascade to the plays logged under them.
   static Future<void> deleteCredit(String id) async {
     final db = await _instance;
@@ -415,6 +480,7 @@ class DatabaseProvider {
         where: "creditId IN (SELECT id FROM credits WHERE sessionId = ?)",
         whereArgs: [id]);
     await db.delete("credits", where: "sessionId = ?", whereArgs: [id]);
+    await db.delete("pad_ratings", where: "sessionId = ?", whereArgs: [id]);
     await db.delete("sessions", where: "id = ?", whereArgs: [id]);
   }
 
@@ -423,7 +489,12 @@ class DatabaseProvider {
     await db.delete("heard",
         where: "creditId IN (SELECT id FROM credits WHERE cabinetId = ?)",
         whereArgs: [id]);
-    for (final table in ["timing_plays", "sync_overrides", "credits"]) {
+    for (final table in [
+      "timing_plays",
+      "sync_overrides",
+      "credits",
+      "pad_ratings"
+    ]) {
       await db.delete(table, where: "cabinetId = ?", whereArgs: [id]);
     }
     await db.delete("cabinets", where: "id = ?", whereArgs: [id]);

@@ -9,6 +9,7 @@ import 'package:ddr_md/components/circle/circle_page.dart';
 import 'package:ddr_md/components/nav_bar.dart';
 import 'package:ddr_md/components/ocr/ocr_page.dart';
 import 'package:ddr_md/components/session/app_settings_page.dart';
+import 'package:ddr_md/components/session/pad_check.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/components/session/session_trends_page.dart';
 import 'package:ddr_md/components/session/visits.dart';
@@ -103,6 +104,13 @@ final router = GoRouter(
                                       state.uri.queryParameters['play'] ??
                                           '')))),
                     ]),
+                GoRoute(
+                    path: 'pads/:venue',
+                    pageBuilder: (context, state) => _page(
+                        state,
+                        VenuePadsPage(
+                            venueId:
+                                int.parse(state.pathParameters['venue']!)))),
                 GoRoute(
                     path: 'settings',
                     pageBuilder: (context, state) =>
