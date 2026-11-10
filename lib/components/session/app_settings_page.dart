@@ -16,6 +16,7 @@ import 'package:ddr_md/components/settings/music_page.dart';
 import 'package:ddr_md/components/settings/privacy_page.dart';
 import 'package:ddr_md/constants.dart' as constants;
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/song_id.dart';
 import 'package:ddr_md/models/song_id_listener.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
@@ -401,27 +402,65 @@ class _CloudTileState extends State<_CloudTile> {
   }
 }
 
-/// Song ID: how many songs it knows, all on the phone; tap to listen.
-class _SongIdTile extends StatelessWidget {
+/// Song ID: how many songs it knows, all on the phone; tap to listen. Its
+/// sync pulls new fingerprints with the rest of the content, and the count
+/// follows any update applied, from here or Song Updates.
+class _SongIdTile extends StatefulWidget {
   const _SongIdTile();
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<SongIdIndex>(
-        future: SongIdListener.index(),
-        builder: (context, snapshot) {
-          final known = snapshot.data?.songs.length;
-          return ListTile(
-            leading: const Icon(Icons.hearing),
-            title: const Text("Song ID",
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text(known == null
-                ? "Name the song a cab is playing"
-                : known == 0
-                    ? "No song fingerprints in this build"
-                    : "Knows $known songs · matched on this phone, offline"),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: known == 0 ? null : () => showListenSheet(context),
-          );
-        },
+  State<_SongIdTile> createState() => _SongIdTileState();
+}
+
+class _SongIdTileState extends State<_SongIdTile> {
+  bool _syncing = false;
+
+  Future<void> _sync() async {
+    setState(() => _syncing = true);
+    String message;
+    try {
+      final before = (await SongIdListener.index()).songs.length;
+      await ContentUpdater.update(await getApplicationSupportDirectory());
+      final added = (await SongIdListener.index()).songs.length - before;
+      message = added > 0
+          ? "Song ID knows $added more ${added == 1 ? 'song' : 'songs'}"
+          : "Song ID is up to date";
+    } catch (_) {
+      message = "Couldn't check for updates";
+    }
+    if (!mounted) return;
+    setState(() => _syncing = false);
+    showToast(context, message);
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: ContentStore.revision,
+        builder: (context, _, __) => FutureBuilder<SongIdIndex>(
+          future: SongIdListener.index(),
+          builder: (context, snapshot) {
+            final known = snapshot.data?.songs.length;
+            return ListTile(
+              leading: const Icon(Icons.hearing),
+              title: const Text("Song ID",
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text(known == null
+                  ? "Name the song a cab is playing"
+                  : known == 0
+                      ? "No song fingerprints yet"
+                      : "Knows $known songs · matched on this phone, offline"),
+              trailing: _syncing
+                  ? const SizedBox.square(
+                      dimension: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : IconButton(
+                      tooltip: "Check for new songs",
+                      icon: const Icon(Icons.sync),
+                      onPressed: kContentUrl.isEmpty ? null : _sync,
+                    ),
+              onTap: known == 0 ? null : () => showListenSheet(context),
+            );
+          },
+        ),
       );
 }
