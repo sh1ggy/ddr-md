@@ -1,5 +1,5 @@
 /// Name: ListenSheet
-/// Parent: LiveDock, SongListPage, ChartPreviewPage
+/// Parent: LiveDock, AppSettingsPage, ChartPreviewPage
 /// Description: Song ID's sheet: listens to the cab until it places the
 /// song, then shows its jacket and where the cab is in it, with a chart to
 /// open or follow along. In a session the song is noted on the running

@@ -10,7 +10,6 @@ import 'dart:ui' show ImageFilter;
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/theme.dart';
-import 'package:ddr_md/components/session/listen_sheet.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart'
     show LevelNumber, kGreyLevel;
 import 'package:ddr_md/components/song_json.dart';
@@ -381,11 +380,6 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                 ),
               ),
               actions: <Widget>[
-                HeaderButton(
-                  icon: const Icon(Icons.hearing),
-                  tooltip: 'Name the song playing',
-                  onPressed: () => showListenSheet(context),
-                ),
                 HeaderButton(
                   icon: Icon(ChartBests.shown
                       ? Icons.military_tech
