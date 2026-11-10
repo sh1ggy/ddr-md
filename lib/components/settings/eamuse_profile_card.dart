@@ -28,16 +28,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+// The last answer, so the card rebuilt as it scrolls back in starts tinted.
+String? _lastFlareClass;
+
 /// The player's flare skill class, from whichever style is higher, or null
 /// before any scores are synced.
 Future<String?> _flareClass() async {
   final records =
       await DatabaseProvider.getScoreRecords(ScoreRecordSource.eamuse);
-  if (records.isEmpty) return null;
+  if (records.isEmpty) return _lastFlareClass = null;
   final total = [Modes.singles, Modes.doubles]
       .map((m) => flareSkill(records, Songs.list, m).total)
       .reduce(max);
-  return flareClass(total).name;
+  return _lastFlareClass = flareClass(total).name;
 }
 
 /// Four quick taps on the flare rank unlock the development tools, or lock
@@ -104,6 +107,7 @@ class EamuseProfileCard extends StatelessWidget {
     final radius = BorderRadius.circular(26);
 
     return FutureBuilder<String?>(
+      initialData: _lastFlareClass,
       future: _flareClass(),
       builder: (context, snapshot) {
         final cls = snapshot.data;

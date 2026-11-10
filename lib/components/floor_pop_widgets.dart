@@ -344,7 +344,8 @@ class BeatIn extends StatefulWidget {
   State<BeatIn> createState() => _BeatInState();
 }
 
-class _BeatInState extends State<BeatIn> with SingleTickerProviderStateMixin {
+class _BeatInState extends State<BeatIn>
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late final _controller =
       AnimationController(vsync: this, duration: FloorPop.beat);
   late final _curve =
@@ -352,6 +353,11 @@ class _BeatInState extends State<BeatIn> with SingleTickerProviderStateMixin {
   late final _slide =
       Tween(begin: const Offset(0, 0.06), end: Offset.zero).animate(_curve);
   Timer? _delay;
+
+  // A lazy list drops a card pushed off by an overscroll and rebuilds it on
+  // the spring back; kept alive, a card that rose in doesn't rise in again.
+  @override
+  bool get wantKeepAlive => _delay != null;
 
   @override
   void didChangeDependencies() {
@@ -367,6 +373,7 @@ class _BeatInState extends State<BeatIn> with SingleTickerProviderStateMixin {
     }
     _delay = Timer(
         FloorPop.sixteenth * widget.index ~/ 2, () => _controller.forward());
+    updateKeepAlive();
   }
 
   @override
@@ -378,10 +385,13 @@ class _BeatInState extends State<BeatIn> with SingleTickerProviderStateMixin {
   }
 
   @override
-  Widget build(BuildContext context) => FadeTransition(
-        opacity: _controller,
-        child: SlideTransition(position: _slide, child: widget.child),
-      );
+  Widget build(BuildContext context) {
+    super.build(context);
+    return FadeTransition(
+      opacity: _controller,
+      child: SlideTransition(position: _slide, child: widget.child),
+    );
+  }
 }
 
 /// A number that cross-fades when it changes, so a readout ticks over rather
