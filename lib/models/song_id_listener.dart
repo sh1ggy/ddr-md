@@ -99,6 +99,33 @@ class SongIdListener {
       _lastStats ?? _stats();
   ({int measured, int used, double peakDb, double heard})? _lastStats;
 
+  /// Keeps what was heard after listening stops, to check a device's audio
+  /// (Development tools).
+  bool keepRecording = false;
+  Uint8List? _recording;
+
+  /// What was heard as a mono 16-bit WAV, when [keepRecording] was on.
+  Uint8List? get recordingWav {
+    final pcm = _recording;
+    final rate = _resampler?.rate;
+    if (pcm == null || rate == null) return null;
+    final header = ByteData(44)
+      ..setUint32(0, 0x52494646) // RIFF
+      ..setUint32(4, 36 + pcm.length, Endian.little)
+      ..setUint32(8, 0x57415645) // WAVE
+      ..setUint32(12, 0x666d7420) // fmt
+      ..setUint32(16, 16, Endian.little)
+      ..setUint16(20, 1, Endian.little)
+      ..setUint16(22, 1, Endian.little)
+      ..setUint32(24, rate, Endian.little)
+      ..setUint32(28, rate * 2, Endian.little)
+      ..setUint16(32, 2, Endian.little)
+      ..setUint16(34, 16, Endian.little)
+      ..setUint32(36, 0x64617461) // data
+      ..setUint32(40, pcm.length, Endian.little);
+    return Uint8List.fromList([...header.buffer.asUint8List(), ...pcm]);
+  }
+
   ({int measured, int used, double peakDb, double heard}) _stats() {
     final first = _firstChunk;
     final secs =
@@ -192,6 +219,7 @@ class SongIdListener {
     _stopped = true;
     _elapsed.stop();
     final stats = _lastStats = _stats();
+    if (keepRecording) _recording = _pcm.toBytes();
     debugPrint('Song ID mic: ${stats.measured} Hz measured, read at '
         '${stats.used}, peak ${stats.peakDb.toStringAsFixed(0)} dB, '
         '${stats.heard.toStringAsFixed(1)} s heard');

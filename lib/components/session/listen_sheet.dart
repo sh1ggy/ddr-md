@@ -29,6 +29,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// Listens for the song the cab is playing. Pages it opens go on [context]'s
 /// navigator, so they stay on the tab it was opened from.
@@ -92,7 +93,8 @@ class _ListenSheetState extends State<ListenSheet> {
   }
 
   Future<void> _listen() async {
-    final listener = _listener = SongIdListener();
+    final listener = _listener = SongIdListener()
+      ..keepRecording = developmentToolsEnabled.value;
     setState(() => _phase = _Phase.listening);
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 250),
@@ -478,11 +480,36 @@ class _ListenSheetState extends State<ListenSheet> {
     final s = listener.stats;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Text(
-          'Mic ${s.measured} Hz (read at ${s.used}) · peak '
-          '${s.peakDb.toStringAsFixed(0)} dB · ${s.heard.toStringAsFixed(1)} s heard',
-          style: FloorPop.readout(12, color: pop.haze)),
+      child: Row(children: [
+        Expanded(
+          child: Text(
+              'Mic ${s.measured} Hz (read at ${s.used}) · peak '
+              '${s.peakDb.toStringAsFixed(0)} dB · ${s.heard.toStringAsFixed(1)} s heard',
+              style: FloorPop.readout(12, color: pop.haze)),
+        ),
+        if (listener.recordingWav != null)
+          Builder(
+            builder: (context) => IconButton(
+              tooltip: 'Share recording',
+              icon: const Icon(Icons.ios_share),
+              onPressed: () => _shareRecording(context, listener),
+            ),
+          ),
+      ]),
     );
+  }
+
+  Future<void> _shareRecording(
+      BuildContext context, SongIdListener listener) async {
+    final box = context.findRenderObject() as RenderBox?;
+    final origin =
+        box == null ? null : box.localToGlobal(Offset.zero) & box.size;
+    final file = File('${(await getTemporaryDirectory()).path}/'
+        'song-id-${DateTime.now().millisecondsSinceEpoch}.wav');
+    await file.writeAsBytes(listener.recordingWav!);
+    await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path, mimeType: 'audio/wav')],
+        sharePositionOrigin: origin));
   }
 
   Widget _missed(FloorPop pop) => Column(
