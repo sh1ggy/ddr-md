@@ -26,7 +26,7 @@ terraform {
 # Cloudflare: var.cloudflare_api_token, else CLOUDFLARE_API_TOKEN.
 # GitHub: GITHUB_TOKEN (run with GITHUB_TOKEN=$(gh auth token)).
 provider "cloudflare" {
-  api_token = var.cloudflare_api_token
+  api_token = var.cloudflare_api_token == "" ? null : var.cloudflare_api_token
 }
 
 provider "github" {

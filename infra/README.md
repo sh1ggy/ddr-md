@@ -326,6 +326,19 @@ using a build with these routes against the live service.
   Grade/lamp/flare may be empty; each chart appears at most once. Legacy
   caption/reaction fields are ignored on write and omitted on read.
 
+Pad checks are a player's read of one cab after a session: the venue, the cab
+and each side's clear lamp with its flagged arrows (preset issues and which rim
+of the panel, no free text). They always name the venue, are encrypted at rest,
+show to the player's circle under **PAD CHECKS** and leave the feed after two
+days like credits, at most ten per player in that time. The table is created
+by Worker initialisation; deploy the updated Circles Worker before posting
+from a build with this route.
+
+- `PUT /v1/pad` accepts `{id, venue, cab, sides}`; a side is `{side}`
+  (`p1`/`p2`), `lamp` (`mfc` … `failed`) and `arrows`, keyed `up`/`left`/
+  `right`/`down`, each `{issues, zone?}`. Posting an `id` again replaces it.
+  `GET /v1/feed` adds `pads: [{by, id, at, venue, cab, sides}]`.
+
 The friend profile always uses the latest completed session, excluding the
 active broadcast. Live pages use only the current broadcast's session ID and
 show an ended state when it stops; they never switch to a profile or previous

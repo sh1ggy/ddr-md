@@ -20,6 +20,7 @@ import 'package:ddr_md/components/circle/circle_live_page.dart';
 import 'package:ddr_md/components/circle/circle_sheets.dart';
 import 'package:ddr_md/components/circle/circle_widgets.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/session/pad_post.dart';
 import 'package:ddr_md/components/session/eamuse_sync_card.dart'
     show signInAndSync;
 import 'package:ddr_md/components/nav_bar.dart' show LivePulse;
@@ -215,6 +216,18 @@ class _CirclePageState extends State<CirclePage> {
                             ),
                             for (final s in latest)
                               CircleSessionCard(s, header: true),
+                          ],
+                          if (circle.pads.isNotEmpty) ...[
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(2, 26, 0, 10),
+                              child: Text('PAD CHECKS',
+                                  style: FloorPop.of(context).label),
+                            ),
+                            for (final p in circle.pads)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: CirclePadCard(p),
+                              ),
                           ],
                           if (youCheer.isNotEmpty) ...[
                             _Heading(CircleTie.youCheer, youCheer.length),

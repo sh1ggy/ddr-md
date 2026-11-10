@@ -104,6 +104,6 @@ void main() {
     expect(
         Score.fromMap((await migrated.query('scores')).single).completionLamp,
         ClearLamp.pfc);
-    expect(await migrated.getVersion(), 20);
+    expect(await migrated.getVersion(), 21);
   });
 }
