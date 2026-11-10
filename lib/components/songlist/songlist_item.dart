@@ -49,6 +49,7 @@ class _SongListItemState extends State<SongListItem> {
             : widget.songInfo.doubles)
         .availableTypes[widget.difficultyIndex!];
     return FutureBuilder(
+      initialData: PatternsLoader.loaded(widget.songInfo.name),
       future: PatternsLoader.cached(widget.songInfo.name),
       builder: (context, snapshot) {
         final category = chartCategory(
