@@ -153,6 +153,16 @@ class SongIdListener {
     return Float32List.fromList(_clip);
   }
 
+  Future<InputDevice?> _builtInMic() async {
+    try {
+      return (await _recorder.listInputDevices())
+          .where((d) => d.type == InputDeviceType.builtIn)
+          .firstOrNull;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<bool> hasPermission() async =>
       debugMic != null || await _recorder.hasPermission();
 
@@ -163,13 +173,22 @@ class SongIdListener {
   Future<SongIdFollow?> listen({String? only, double? near}) async {
     final indexFuture = index();
     final stream = debugMic?.call() ??
-        await _recorder.startStream(const RecordConfig(
+        await _recorder.startStream(RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: _rate,
           numChannels: 1,
           autoGain: false,
           echoCancel: false,
           noiseSuppress: false,
+          // The phone's own mic, pointed at the cab: a connected headset's
+          // (AirPods in a pocket) hears the room muffled through voice
+          // processing and matched nothing.
+          device: await _builtInMic(),
+          iosConfig: const IosRecordConfig(categoryOptions: [
+            IosAudioCategoryOption.defaultToSpeaker,
+            IosAudioCategoryOption.allowBluetoothA2DP,
+            IosAudioCategoryOption.mixWithOthers,
+          ]),
         ));
     _elapsed.start();
     _sub = stream.listen((chunk) {
