@@ -1166,21 +1166,25 @@ class VenuePadsPage extends StatelessWidget {
                                       child: VoltButton(
                                         height: 48,
                                         radius: 16,
-                                        onPressed: () {
-                                          final latest = [
-                                            for (final s in PadSide.values)
-                                              if (d.ratings
-                                                      .where((r) =>
-                                                          r.cabinet.id ==
-                                                              c.id &&
-                                                          r.side == s)
-                                                      .firstOrNull
-                                                  case final r?)
-                                                r
-                                          ];
-                                          showPadPostSheet(context,
-                                              venueName: c.venueName,
-                                              ratings: latest);
+                                        // The cab's latest rated session.
+                                        onPressed: () async {
+                                          final last = d.ratings.firstWhere(
+                                              (r) => r.cabinet.id == c.id);
+                                          final session =
+                                              await DatabaseProvider.getSession(
+                                                  last.sessionId);
+                                          if (session == null ||
+                                              !context.mounted) {
+                                            return;
+                                          }
+                                          await showPadPostSheet(context,
+                                              session: session,
+                                              ratings: [
+                                                for (final r in d.ratings)
+                                                  if (r.cabinet.id == c.id &&
+                                                      r.sessionId == session.id)
+                                                    r
+                                              ]);
                                         },
                                         child: const Row(
                                             mainAxisSize: MainAxisSize.min,

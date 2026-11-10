@@ -1,8 +1,8 @@
 /// Name: PadPost
 /// Parent: PadCheck, CirclePage
 /// Description: Posting a pad check to the circle, after rating a session's
-/// pads or from a venue's pads page: one cab's sides as rated, previewed as
-/// the circle will see it. It always names the venue, and carries no typed
+/// pads or from a venue's pads page: one cab's sides as rated that session,
+/// previewed as the circle will see it, played sides only. It always names the venue, and carries no typed
 /// text, as Circles has none to moderate. [CirclePadCard] is the post as it
 /// shows on the Circle tab.
 library;
@@ -11,35 +11,30 @@ import 'package:ddr_md/components/circle/circle_page.dart' show CircleBubble;
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/pad_check.dart';
 import 'package:ddr_md/models/circle_model.dart';
+import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/pad_rating.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:uuid/uuid.dart';
 
-/// Post one cab of [ratings] (all from [session], or each side's latest at
-/// a venue named [venueName]).
+/// Post one cab of [ratings], all from [session].
 Future<void> showPadPostSheet(BuildContext context,
-        {PlaySession? session,
-        String? venueName,
-        required List<PadRating> ratings}) =>
+        {required PlaySession session, required List<PadRating> ratings}) =>
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
-      builder: (_) => _PostSheet(
-          session: session,
-          venue: session?.venue.name ?? venueName ?? '',
-          ratings: ratings),
+      builder: (_) => _PostSheet(session: session, ratings: ratings),
     );
 
 class _PostSheet extends StatefulWidget {
-  const _PostSheet({this.session, required this.venue, required this.ratings});
+  const _PostSheet({required this.session, required this.ratings});
 
-  final PlaySession? session;
-  final String venue;
+  final PlaySession session;
   final List<PadRating> ratings;
+
+  String get venue => session.venue.name;
 
   @override
   State<_PostSheet> createState() => _PostSheetState();
@@ -50,12 +45,29 @@ class _PostSheetState extends State<_PostSheet> {
       {for (final r in widget.ratings) r.cabinet.id: r.cabinet}.values.toList();
   late Cabinet? _cab = _cabs.firstOrNull;
   final _off = <PadSide>{};
+  // The cab sides the session played on; null until loaded.
+  Set<(int, PadSide)>? _played;
   bool _posting = false;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    DatabaseProvider.getCredits(widget.session.id).then((credits) {
+      if (!mounted) return;
+      setState(() => _played = {
+            for (final s in sidesPlayed(credits)) (s.cabinet.id, s.side)
+          });
+    });
+  }
+
+  bool _postable(PadRating r) =>
+      r.cabinet.id == _cab?.id &&
+      (_played?.contains((r.cabinet.id, r.side)) ?? false);
+
   List<PadRating> get _shown => [
         for (final r in widget.ratings)
-          if (r.cabinet.id == _cab?.id && !_off.contains(r.side)) r
+          if (_postable(r) && !_off.contains(r.side)) r
       ];
 
   Future<void> _post() async {
@@ -64,9 +76,7 @@ class _PostSheetState extends State<_PostSheet> {
       _posting = true;
       _error = null;
     });
-    final id = widget.session == null
-        ? const Uuid().v4()
-        : '${widget.session!.id}-${cab.id}';
+    final id = '${widget.session.id}-${cab.id}';
     final ok = await context
         .read<CircleState>()
         .postPads(id, widget.venue, cab.name, _shown);
@@ -85,10 +95,10 @@ class _PostSheetState extends State<_PostSheet> {
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final circle = context.watch<CircleState>();
-    final sides = [
+    final open = {
       for (final r in widget.ratings)
-        if (r.cabinet.id == _cab?.id) r.side
-    ];
+        if (_postable(r)) r.side
+    };
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -108,7 +118,7 @@ class _PostSheetState extends State<_PostSheet> {
                 live: null
               ),
               id: '',
-              at: widget.session?.startedAt ?? DateTime.now(),
+              at: widget.session.startedAt,
               venue: widget.venue,
               cab: _cab?.name ?? '',
               sides: [
@@ -130,24 +140,25 @@ class _PostSheetState extends State<_PostSheet> {
                   ),
               ]),
             ],
-            if (sides.length > 1) ...[
-              const SizedBox(height: 10),
-              Wrap(spacing: 8, children: [
-                for (final s in sides)
-                  FilterChip(
-                    label: Text(sideName(s)),
-                    selected: !_off.contains(s),
-                    // One side always stays in.
-                    onSelected: (on) => setState(() {
-                      if (on) {
-                        _off.remove(s);
-                      } else if (_off.length + 1 < sides.length) {
-                        _off.add(s);
-                      }
-                    }),
-                  ),
-              ]),
-            ],
+            const SizedBox(height: 10),
+            // Both sides, the ones not played (or rated) that session greyed.
+            Wrap(spacing: 8, children: [
+              for (final s in PadSide.values)
+                FilterChip(
+                  label: Text(sideName(s)),
+                  selected: open.contains(s) && !_off.contains(s),
+                  // One side always stays in.
+                  onSelected: !open.contains(s)
+                      ? null
+                      : (on) => setState(() {
+                            if (on) {
+                              _off.remove(s);
+                            } else if (open.length - _off.length > 1) {
+                              _off.add(s);
+                            }
+                          }),
+                ),
+            ]),
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
