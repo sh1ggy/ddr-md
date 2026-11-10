@@ -85,7 +85,9 @@ class SongIdListener {
 
   /// Listens until a match (with where the cab is when it's returned), or
   /// null after [maxSeconds] or [stop]. Throws when the mic can't be opened.
-  Future<SongIdFollow?> listen() async {
+  /// Resyncing [only] (a song already followed) checks it alone, from 1 s in
+  /// every 0.5 s, looking first near [near], where the cab should be.
+  Future<SongIdFollow?> listen({String? only, double? near}) async {
     final indexFuture = index();
     final stream = debugMic?.call() ??
         await _recorder.startStream(const RecordConfig(
@@ -100,9 +102,10 @@ class SongIdListener {
     _sub = stream.listen(_pcm.add);
     try {
       final index = await indexFuture;
-      // Try every 0.75 s from 1.5 s in, on everything heard so far: a try
-      // takes a few milliseconds, so trying often only answers sooner.
-      for (var at = 1.5; at <= maxSeconds && !_stopped; at += 0.75) {
+      // Try often, on everything heard so far: a try takes a few
+      // milliseconds, so trying often only answers sooner.
+      final (from, step) = only == null ? (1.5, 0.75) : (1.0, 0.5);
+      for (var at = from; at <= maxSeconds && !_stopped; at += step) {
         final wait = at * 1000 - _elapsed.elapsedMilliseconds;
         if (wait > 0) {
           await Future<void>.delayed(Duration(milliseconds: wait.round()));
@@ -110,10 +113,12 @@ class SongIdListener {
         if (_stopped) break;
         final heardAt = _elapsed.elapsedMicroseconds;
         final clip = toSongIdRate(_pcm.toBytes(), _rate);
-        final match =
-            index.match(landmarks(clip, perSecond: kClipPeaksPerSecond));
+        final marks = landmarks(clip, perSecond: kClipPeaksPerSecond);
+        final match = only == null
+            ? index.match(marks)
+            : index.matchSong(marks, only, near: near);
         // A repeated part (a chorus) can't say where the cab is yet.
-        if (match != null && !match.settled && at + 0.75 <= maxSeconds) {
+        if (match != null && !match.settled && at + step <= maxSeconds) {
           continue;
         }
         if (match != null) {

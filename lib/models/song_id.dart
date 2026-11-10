@@ -16,7 +16,7 @@ import 'package:fftea/fftea.dart';
 
 /// Bump when a change here alters the landmarks, and regenerate every file:
 /// the loader skips files of any other schema.
-const kFingerprintSchema = 1;
+const kFingerprintSchema = 2;
 
 /// Sample rate everything is fingerprinted at.
 const kSongIdRate = 8000;
@@ -37,10 +37,12 @@ const _magic = [0x44, 0x44, 0x46, 0x50]; // DDFP
 /// Seconds a frame lasts.
 const kSongIdFrameSeconds = _hop / kSongIdRate;
 
-/// Peaks kept per second: a song's file is sparse to stay small, a clip
-/// denser so more of its landmarks find the song's.
-const kSongPeaksPerSecond = 4;
-const kClipPeaksPerSecond = 6;
+/// Peaks kept per second. Denser songs answer sooner and from further away
+/// (median ~3 s through a room, ~4.5 s far from the speaker, against ~7 and
+/// ~8 s at 4 a second) for ~11 KB a song; a clip needs fewer, as its extra
+/// peaks are mostly noise.
+const kSongPeaksPerSecond = 12;
+const kClipPeaksPerSecond = 8;
 
 /// A pair of peaks: [hash] names the pitches and gap, [frame] the first's.
 typedef Landmark = ({int hash, int frame});
@@ -178,14 +180,26 @@ Uint8List encodeFingerprint(List<Landmark> marks) {
 
 /// The landmarks in a song's file, or null when it isn't one of this schema.
 List<Landmark>? decodeFingerprint(Uint8List file) {
-  final List<int> bytes;
+  final packed = _decodePacked(file, 0);
+  return packed == null
+      ? null
+      : [for (final e in packed) (hash: e >> 32, frame: e & 0xffff)];
+}
+
+/// A song's file straight into the index's packing (see [SongIdIndex]) as
+/// song [id], skipping the per-landmark records the index would only repack.
+Int64List? _decodePacked(Uint8List file, int id) {
+  final Uint8List bytes;
   try {
-    bytes = gzip.decode(file);
+    bytes = Uint8List.fromList(gzip.decode(file));
   } on FormatException {
     return null;
   }
   if (bytes.length < 5 ||
-      !List.generate(4, (i) => bytes[i] == _magic[i]).every((ok) => ok) ||
+      bytes[0] != _magic[0] ||
+      bytes[1] != _magic[1] ||
+      bytes[2] != _magic[2] ||
+      bytes[3] != _magic[3] ||
       bytes[4] != kFingerprintSchema) {
     return null;
   }
@@ -201,10 +215,14 @@ List<Landmark>? decodeFingerprint(Uint8List file) {
   }
 
   final count = next();
-  var hash = 0;
-  return [
-    for (var i = 0; i < count; i++) (hash: hash += next(), frame: next()),
-  ];
+  final out = Int64List(count);
+  var hash = 0, kept = 0;
+  for (var i = 0; i < count; i++) {
+    hash += next();
+    final frame = next();
+    if (frame <= 0xffff) out[kept++] = hash << 32 | id << 16 | frame;
+  }
+  return kept == count ? out : Int64List.sublistView(out, 0, kept);
 }
 
 /// What a clip turned out to be.
@@ -242,22 +260,36 @@ class SongIdIndex {
     final songs = <String>[];
     final packed = <Int64List>[];
     for (final MapEntry(key: song, value: file) in files.entries) {
-      final marks = decodeFingerprint(file);
-      if (marks == null || songs.length > 0xffff) continue;
-      final id = songs.length;
+      if (songs.length > 0xffff) break;
+      final marks = _decodePacked(file, songs.length);
+      if (marks == null) continue;
       songs.add(song);
-      packed.add(Int64List.fromList([
-        for (final m in marks)
-          if (m.frame <= 0xffff) m.hash << 32 | id << 16 | m.frame
-      ]));
+      packed.add(marks);
     }
-    final entries = Int64List(packed.fold(0, (n, p) => n + p.length));
-    var at = 0;
+    // Sorted by bucketing on the hash's top bits first, then sorting each
+    // small bucket: one sort of millions of entries is most of the build.
+    const shift = 32 + 10;
+    final counts = Int32List((1 << 24 >> 10) + 1);
     for (final p in packed) {
-      entries.setAll(at, p);
-      at += p.length;
+      for (final e in p) {
+        counts[(e >> shift) + 1]++;
+      }
     }
-    entries.sort();
+    for (var i = 1; i < counts.length; i++) {
+      counts[i] += counts[i - 1];
+    }
+    final entries = Int64List(counts.last);
+    final next = Int32List.fromList(counts);
+    for (final p in packed) {
+      for (final e in p) {
+        entries[next[e >> shift]++] = e;
+      }
+    }
+    for (var b = 0; b + 1 < counts.length; b++) {
+      if (counts[b + 1] - counts[b] > 1) {
+        Int64List.sublistView(entries, counts[b], counts[b + 1]).sort();
+      }
+    }
     return SongIdIndex._(songs, entries);
   }
 
@@ -340,6 +372,46 @@ class SongIdIndex {
 
 /// Fewest agreeing landmarks that count as a match.
 const kMinVotes = 6;
+
+extension SongIdResync on SongIdIndex {
+  /// [clip] against [song] alone, for a resync: with no other song to tell
+  /// apart, fewer landmarks will do. [near] is where in its audio the clip
+  /// should start; a shift within [window] seconds of it wins over a repeat
+  /// elsewhere in the song.
+  SongIdMatch? matchSong(List<Landmark> clip, String song,
+      {double? near, double window = 4}) {
+    final id = songs.indexOf(song);
+    if (id < 0) return null;
+    final votes = <int, int>{};
+    for (final m in clip) {
+      final first = _firstAtLeast(m.hash << 32);
+      final end = _firstAtLeast((m.hash + 1) << 32);
+      for (var i = first; i < end; i++) {
+        final e = _entries[i];
+        if ((e >> 16) & 0xffff != id) continue;
+        final shift = (e & 0xffff) - m.frame;
+        votes[shift] = (votes[shift] ?? 0) + 1;
+      }
+    }
+    int sum(int s) => votes[s]! + (votes[s - 1] ?? 0) + (votes[s + 1] ?? 0);
+    bool inWindow(int s) =>
+        near == null || (s * kSongIdFrameSeconds - near).abs() <= window;
+    int? best;
+    for (final s in votes.keys) {
+      if (inWindow(s) && (best == null || sum(s) > sum(best))) best = s;
+    }
+    if (best == null || sum(best) < kMinResyncVotes) return null;
+    var repeat = 0;
+    for (final s in votes.keys) {
+      if ((s - best).abs() > 3 && inWindow(s)) repeat = max(repeat, sum(s));
+    }
+    return SongIdMatch(song, best * kSongIdFrameSeconds, sum(best),
+        settled: repeat * 10 < sum(best) * 6);
+  }
+}
+
+/// Fewest agreeing landmarks for a resync, which only has one song to fit.
+const kMinResyncVotes = 4;
 
 /// Songs' landmarks sharing a hash past which it's ignored.
 const _maxPostings = 150;

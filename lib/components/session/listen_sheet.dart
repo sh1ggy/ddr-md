@@ -42,21 +42,25 @@ Future<void> showListenSheet(BuildContext context) {
 
 /// Listens again for [song], for a preview following the cab; null when it
 /// wasn't heard.
-Future<SongIdFollow?> relisten(BuildContext context, String song) =>
+Future<SongIdFollow?> relisten(BuildContext context, String song,
+        {double? near}) =>
     showModalBottomSheet<SongIdFollow>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
-      builder: (_) => ListenSheet(resyncing: song),
+      builder: (_) => ListenSheet(resyncing: song, near: near),
     );
 
 enum _Phase { listening, heard, missed, noMic }
 
 class ListenSheet extends StatefulWidget {
-  const ListenSheet({super.key, this.host, this.resyncing});
+  const ListenSheet({super.key, this.host, this.resyncing, this.near});
 
   final NavigatorState? host;
   final String? resyncing;
+
+  /// Where in the song the cab should be when resyncing starts.
+  final double? near;
 
   @override
   State<ListenSheet> createState() => _ListenSheetState();
@@ -98,7 +102,7 @@ class _ListenSheetState extends State<ListenSheet> {
     }
     SongIdFollow? follow;
     try {
-      follow = await listener.listen();
+      follow = await listener.listen(only: widget.resyncing, near: widget.near);
     } catch (e) {
       debugPrint('Song ID: $e');
     }
@@ -182,8 +186,11 @@ class _ListenSheetState extends State<ListenSheet> {
     final types = _levels(song).availableTypes;
     if (types.isEmpty) return;
     final follow = _follow!;
-    Navigator.of(context).pop();
-    widget.host?.push(MaterialPageRoute<void>(
+    // Full screen, over the tab bar and live dock, which would cover the
+    // follow bar; the sheet is already on the root navigator.
+    final root = Navigator.of(context);
+    root.pop();
+    root.push(MaterialPageRoute<void>(
         builder: (_) => ChartPreviewPage.forChart(song, _mode, types[_chart],
             follow: follow)));
   }

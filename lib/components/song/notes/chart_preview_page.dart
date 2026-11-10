@@ -168,7 +168,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   late SongIdFollow? _follow = widget.follow;
 
   Future<void> _resync(String song) async {
-    final heard = await relisten(context, song);
+    final heard = await relisten(context, song, near: _follow?.now());
     if (heard != null && mounted) setState(() => _follow = heard);
   }
 
