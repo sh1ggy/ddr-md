@@ -40,7 +40,7 @@ const kSongIdFrameSeconds = _hop / kSongIdRate;
 /// Peaks kept per second: a song's file is sparse to stay small, a clip
 /// denser so more of its landmarks find the song's.
 const kSongPeaksPerSecond = 4;
-const kClipPeaksPerSecond = 8;
+const kClipPeaksPerSecond = 6;
 
 /// A pair of peaks: [hash] names the pitches and gap, [frame] the first's.
 typedef Landmark = ({int hash, int frame});
@@ -210,12 +210,15 @@ List<Landmark>? decodeFingerprint(Uint8List file) {
 /// What a clip turned out to be.
 class SongIdMatch {
   const SongIdMatch(this.song, this.second, this.votes,
-      {this.sameMusic = const []});
+      {this.sameMusic = const [], this.settled = true});
 
   final String song;
 
   /// Other songs with this same audio, any of which it could be.
   final List<String> sameMusic;
+
+  /// False while a repeated part of the song leaves where it is unclear.
+  final bool settled;
 
   /// Where in the song the clip starts, in seconds of its audio file.
   final double second;
@@ -310,10 +313,23 @@ class SongIdIndex {
         .where((e) => !sameCut(e.value))
         .fold(0, (n, e) => max(n, e.value.votes));
     if (top.votes < kMinVotes || top.votes < 2 * rival) return null;
+    // A part the song repeats (a chorus) matches at each time it plays; only
+    // more listening tells which one the cab is on.
+    final id = ranked.first.key;
+    var repeat = 0;
+    for (final MapEntry(:key, :value) in votes.entries) {
+      if (key >> 18 != id) continue;
+      final shift = (key & ((1 << 18) - 1)) - (1 << 17);
+      if ((shift - top.shift).abs() > 3) {
+        repeat =
+            max(repeat, value + (votes[key - 1] ?? 0) + (votes[key + 1] ?? 0));
+      }
+    }
     return SongIdMatch(
-      songs[ranked.first.key],
+      songs[id],
       top.shift * kSongIdFrameSeconds,
       top.votes,
+      settled: repeat * 10 < top.votes * 6,
       sameMusic: [
         for (final e in ranked.skip(1))
           if (sameCut(e.value)) songs[e.key]

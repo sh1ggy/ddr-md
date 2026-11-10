@@ -100,8 +100,9 @@ class SongIdListener {
     _sub = stream.listen(_pcm.add);
     try {
       final index = await indexFuture;
-      // Try every 1.5 s from 3 s in, on everything heard so far.
-      for (var at = 3.0; at <= maxSeconds && !_stopped; at += 1.5) {
+      // Try every 0.75 s from 1.5 s in, on everything heard so far: a try
+      // takes a few milliseconds, so trying often only answers sooner.
+      for (var at = 1.5; at <= maxSeconds && !_stopped; at += 0.75) {
         final wait = at * 1000 - _elapsed.elapsedMilliseconds;
         if (wait > 0) {
           await Future<void>.delayed(Duration(milliseconds: wait.round()));
@@ -111,6 +112,10 @@ class SongIdListener {
         final clip = toSongIdRate(_pcm.toBytes(), _rate);
         final match =
             index.match(landmarks(clip, perSecond: kClipPeaksPerSecond));
+        // A repeated part (a chorus) can't say where the cab is yet.
+        if (match != null && !match.settled && at + 0.75 <= maxSeconds) {
+          continue;
+        }
         if (match != null) {
           final since = (_elapsed.elapsedMicroseconds - heardAt) / 1e6;
           // Of songs sharing the audio, the plain one ("MAX 300" over

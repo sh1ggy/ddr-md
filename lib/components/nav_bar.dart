@@ -12,6 +12,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/listen_sheet.dart';
 import 'package:ddr_md/components/session/session_page.dart';
 import 'package:ddr_md/models/session_model.dart';
+import 'package:ddr_md/models/song_id_listener.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -172,6 +173,8 @@ class LiveSessionDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<SessionState>();
+    // Ready before the first listen; built once, off the UI thread.
+    SongIdListener.index().ignore();
     final credit = session.credit!;
     Widget action(String tooltip, IconData icon, VoidCallback onPressed,
             {bool primary = false}) =>

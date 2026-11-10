@@ -4,13 +4,14 @@
 /// loud, Song ID's sheet names it, notes it on the running credit, and
 /// Follow along opens the preview in step with it. Needs the fingerprints
 /// (tool/generate_fingerprints.dart). SONG_ID_CLIP, 16 kHz mono 16-bit PCM
-/// of the song inside the app's container (it's sandboxed), plays in place
-/// of the mic (a run started from a terminal gets no mic on macOS); without
-/// it the song must be playing near the mic.
+/// of the song in the app's Documents (it's sandboxed, and its tmp gets
+/// cleared), plays in place of the mic: a run started from a terminal gets
+/// no mic on macOS. Without it the song must be playing near the mic.
 ///
 ///   flutter test integration_test/song_id_test.dart \
 ///     -d macos --dart-define=DB_NAME=song-id-test.db \
-///     --dart-define=SONG_ID_EXPECT=PARANOiA --dart-define=SONG_ID_CLIP=<container>/Data/tmp/clip.raw
+///     --dart-define=SONG_ID_EXPECT=PARANOiA \
+///     --dart-define=SONG_ID_CLIP=<container>/Data/Documents/clip.raw
 library;
 
 import 'dart:io';
@@ -84,7 +85,8 @@ void main() {
     expect(find.text('Listening…'), findsOneWidget);
 
     // Up to the sheet's 12 s, then a little for the last try.
-    for (var i = 0; i < 70 && find.text('Follow along').evaluate().isEmpty;
+    for (var i = 0;
+        i < 70 && find.text('Follow along').evaluate().isEmpty;
         i++) {
       await tester.pump(const Duration(milliseconds: 250));
     }
@@ -98,7 +100,8 @@ void main() {
     expect(find.textContaining('Noted on credit 1'), findsOneWidget);
 
     await tester.tap(find.text('Follow along'));
-    for (var i = 0; i < 40 && find.text('WITH THE CAB').evaluate().isEmpty;
+    for (var i = 0;
+        i < 40 && find.text('WITH THE CAB').evaluate().isEmpty;
         i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }

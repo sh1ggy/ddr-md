@@ -9,6 +9,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/notes/chart_preview_page.dart';
@@ -204,9 +205,10 @@ class _ListenSheetState extends State<ListenSheet> {
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
+    // Scrolls on a screen too short for it (a small phone on its side).
     return SafeArea(
       top: false,
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
         child: AnimatedSize(
           duration: FloorPop.eighth,
@@ -293,7 +295,7 @@ class _ListenSheetState extends State<ListenSheet> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: SizedBox.square(
-              dimension: 280,
+              dimension: min(280, MediaQuery.sizeOf(context).height * 0.36),
               child: Stack(fit: StackFit.expand, children: [
                 SongArtwork(
                     songName: song.name,
