@@ -270,8 +270,8 @@ class _FlareCardState extends State<_FlareCard> {
             context: context,
             useRootNavigator: true,
             isScrollControlled: true,
-            builder: (_) =>
-                _FlareTableSheet(charts: skill.groups[picked]!, group: picked),
+            builder: (_) => _FlareTableSheet(
+                charts: [for (final g in skill.groups.values) ...g]),
           ),
         ),
       ]),
@@ -438,12 +438,12 @@ class _ClassTrack extends StatelessWidget {
 }
 
 /// Every level and flare rank's points, coloured by the class and sub-rank 90
-/// charts at that value would reach. The toggle lights the cells [charts] sit on.
+/// charts at that value would reach. The toggle lights the cells [charts], from
+/// every era, sit on.
 class _FlareTableSheet extends StatefulWidget {
-  const _FlareTableSheet({required this.charts, required this.group});
+  const _FlareTableSheet({required this.charts});
 
   final List<ScoreRecord> charts;
-  final FlareGroup group;
 
   @override
   State<_FlareTableSheet> createState() => _FlareTableSheetState();
@@ -547,7 +547,7 @@ class _FlareTableSheetState extends State<_FlareTableSheet> {
                       value: _mine,
                       visualDensity: VisualDensity.compact,
                       onChanged: (v) => setState(() => _mine = v ?? false)),
-                  Text('Show my ${widget.group.label} charts',
+                  Text('Show my charts',
                       style: TextStyle(fontSize: 13, color: ink)),
                 ]),
               ),
