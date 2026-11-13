@@ -5,6 +5,7 @@ library;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
+import 'package:ddr_md/components/song/unlock_badge.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -97,6 +98,13 @@ class SongDifficultyPicker extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (song?.unlockAt(songState.modes, i)
+                          case final unlock?)
+                        Positioned(
+                            top: 4,
+                            right: 4,
+                            child: Upright(
+                                child: UnlockBadge(unlock, size: 16))),
                       if (i != chosen)
                         Positioned(
                           left: 0,

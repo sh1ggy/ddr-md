@@ -36,6 +36,10 @@ class SongInfo {
   /// The song's bar lengths, when it isn't plain 4/4 from beat 0 (empty then).
   List<TimeSignature> timeSignatures;
 
+  /// Charts not playable by default, by difficulty key (beginner..challenge).
+  Map<String, ChartUnlock> unlocksSingles;
+  Map<String, ChartUnlock> unlocksDoubles;
+
   SongInfo({
     required this.ssc,
     required this.version,
@@ -58,7 +62,34 @@ class SongInfo {
     this.arcadeSync,
     this.scoringTiers,
     this.timeSignatures = const [],
+    this.unlocksSingles = const {},
+    this.unlocksDoubles = const {},
   });
+
+  /// What still locks the chart at [chosenDifficulty] (indexed as in
+  /// [radarFor]) on [day], today by default; null once it's playable by
+  /// default.
+  ChartUnlock? unlockAt(Modes mode, int chosenDifficulty, [DateTime? day]) {
+    final available =
+        (mode == Modes.singles ? singles : doubles).availableTypes;
+    if (available.isEmpty) return null;
+    final key = available[chosenDifficulty.clamp(0, available.length - 1)];
+    final unlock =
+        (mode == Modes.singles ? unlocksSingles : unlocksDoubles)[key];
+    return unlock != null && unlock.lockedOn(day ?? DateTime.now())
+        ? unlock
+        : null;
+  }
+
+  /// The first of [mode]'s charts still locked on [day], if any.
+  ChartUnlock? anyUnlock(Modes mode, [DateTime? day]) {
+    final count =
+        (mode == Modes.singles ? singles : doubles).availableTypes.length;
+    for (var i = 0; i < count; i++) {
+      if (unlockAt(mode, i, day) case final unlock?) return unlock;
+    }
+    return null;
+  }
 
   /// Simfile sync data for [chart]: per_chart songs carry it on the chart
   /// entry, otherwise the song-level block applies to every chart.
@@ -165,6 +196,8 @@ class SongInfo {
       timeSignatures: List<TimeSignature>.from(
         (json["time_signatures"] ?? []).map((x) => TimeSignature.fromJson(x)),
       ),
+      unlocksSingles: ChartUnlock.parseAll(json["unlocks"]?["sp"]),
+      unlocksDoubles: ChartUnlock.parseAll(json["unlocks"]?["dp"]),
     );
   }
 
@@ -196,6 +229,54 @@ class SongInfo {
         if (timeSignatures.isNotEmpty)
           "time_signatures":
               List<dynamic>.from(timeSignatures.map((x) => x.toJson())),
+        if (unlocksSingles.isNotEmpty || unlocksDoubles.isNotEmpty)
+          "unlocks": {
+            "sp": unlocksSingles.map((k, u) => MapEntry(k, u.toJson())),
+            "dp": unlocksDoubles.map((k, u) => MapEntry(k, u.toJson())),
+          },
+      };
+}
+
+/// Where a chart is unlocked when it isn't playable by default.
+enum UnlockSource { galaxyBrave, grandPrix }
+
+/// How a chart is unlocked, and the day it becomes playable by default when
+/// that's announced. GRAND PRIX charts are released this way about a year on,
+/// so a chart past [until] reads as default without new content.
+class ChartUnlock {
+  const ChartUnlock({required this.source, this.pack = '', this.until});
+
+  final UnlockSource source;
+
+  /// The GRAND PRIX pack that carries the chart; empty for GALAXY BRAVE.
+  final String pack;
+  final DateTime? until;
+
+  bool lockedOn(DateTime day) => until == null || day.isBefore(until!);
+
+  static const _sources = {
+    'galaxy_brave': UnlockSource.galaxyBrave,
+    'grand_prix': UnlockSource.grandPrix,
+  };
+
+  /// One style's map; an entry with a source this app doesn't know is
+  /// skipped, so content can add sources older apps ignore.
+  static Map<String, ChartUnlock> parseAll(dynamic json) => {
+        for (final MapEntry(:key, :value)
+            in (json as Map<String, dynamic>? ?? {}).entries)
+          if (_sources[value["via"]] case final source?)
+            key: ChartUnlock(
+              source: source,
+              pack: value["pack"] ?? "",
+              until: DateTime.tryParse(value["until"] ?? ""),
+            ),
+      };
+
+  Map<String, dynamic> toJson() => {
+        "via": _sources.entries.firstWhere((e) => e.value == source).key,
+        if (pack.isNotEmpty) "pack": pack,
+        if (until != null)
+          "until": until!.toIso8601String().substring(0, 10),
       };
 }
 
