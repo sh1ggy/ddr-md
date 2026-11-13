@@ -79,7 +79,9 @@ class SongIdListener {
   @visibleForTesting
   static int debugMicRate = 16000;
 
-  final _recorder = AudioRecorder();
+  // Made on first use, so a test's stand-in mic needs no plugin.
+  AudioRecorder? _rec;
+  AudioRecorder get _recorder => _rec ??= AudioRecorder();
   static const _session = MethodChannel('ddr_md/song_id_session');
   bool _ownsSession = false;
   final _pcm = BytesBuilder(copy: false);
@@ -256,8 +258,10 @@ class SongIdListener {
         '${stats.used}, peak ${stats.peakDb.toStringAsFixed(0)} dB, '
         '${stats.heard.toStringAsFixed(1)} s heard');
     await _sub?.cancel();
-    await _recorder.stop();
-    await _recorder.dispose();
+    if (_rec case final recorder?) {
+      await recorder.stop();
+      await recorder.dispose();
+    }
     if (_ownsSession) {
       _ownsSession = false;
       await _session.invokeMethod<void>('done').catchError((_) {});
