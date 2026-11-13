@@ -25,7 +25,6 @@ const _blurbs = <ChartCategory, String>{
   ChartCategory.jack: 'Repeats on one arrow and fast two-arrow trills',
   ChartCategory.crossover: 'Feet cross to reach the far side',
   ChartCategory.footswitch: 'Feet trade places on one arrow',
-  ChartCategory.bracket: 'One foot covering two arrows',
   ChartCategory.swing: 'Steps off the 4th, 8th and 16th grid',
   ChartCategory.freeze: 'Much of the chart spent holding',
   ChartCategory.gimmick: 'Speed changes and stops',

@@ -130,30 +130,6 @@ final Map<String, Iterable<_Alt> Function(_Chart)> _patterns = {
       was = swapped;
     }
   },
-  // A side + centre chord with a quick follow-up: bracket it or jump.
-  'bracket-vs-jump': (c) sync* {
-    for (int i = 0; i + 1 < c.rows.length; i++) {
-      final row = c.rows[i];
-      if (row.length != 2 || c.gap(i + 1) > 0.3) continue;
-      final side = row.where((n) => n.col == 0 || n.col == 3).firstOrNull;
-      final centre = row.where((n) => n.col == 1 || n.col == 2).firstOrNull;
-      if (side == null || centre == null) continue;
-      // Asked as all three readings: bracket, plain jump, crossed jump.
-      final sideFoot = side.col == 0 ? _l : _r;
-      final readings = [
-        {side: sideFoot, centre: sideFoot},
-        {side: sideFoot, centre: _flip(sideFoot)},
-        {side: _flip(sideFoot), centre: sideFoot},
-      ];
-      yield (
-        i,
-        [
-          for (final r in readings)
-            if (r[side] != c.foot(side) || r[centre] != c.foot(centre)) r
-        ]
-      );
-    }
-  },
   // A held centre arrow with side taps around it: which foot holds.
   'hold-with-taps': (c) sync* {
     for (int i = 0; i < c.rows.length; i++) {

@@ -191,7 +191,6 @@ Map<String, double> measure(List<StepNote> notes, {List<List<num>>? minaRows}) {
   final footwork = footworkOf(notes, parity, Modes.singles);
   for (final p in Pattern.values) {
     out['solved_${p.name}_per100'] = footwork.count(p) * 100 / n;
-    if (p == Pattern.bracket) continue;
     final spans = footwork.spans.where((s) => s.$1 == p).toList();
     out['solved_${p.name}_fast_per100'] =
         spans.where((s) => s.$3 - s.$2 < 0.15).length * 100 / n;

@@ -166,18 +166,10 @@ class ParityWeights {
   /// little.
   final double samePanel;
 
-  /// Flat surcharge for one foot covering two panels. Not from SMEditor, which
-  /// prices only specific awkward brackets and otherwise brackets freely to save
-  /// distance. DDR's panels are large, spaced and spring-loaded, so bracketing
-  /// is a fringe technique rather than a normal reading.
-  ///
-  /// Priced on panels *covered*, not freshly pressed, so a foot pinning a hold
-  /// and tapping its neighbour pays too — on a sprung pad that isn't free.
-  ///
-  /// Measured over ~5300 singles charts (~1.53M rows), brackets per row: 1.75%
-  /// (50), 0.14% (100), 0.05% (200), 0.005% (400). Past ~400 it's a ban rather
-  /// than a preference; 200 keeps them only where the alternative is a genuine
-  /// doublestep.
+  /// Flat surcharge for one foot covering two panels. DDR's panels are large,
+  /// spaced and spring-loaded, so bracketing isn't a reading: it's only offered
+  /// on a row with more panels down than two feet can take one each (see
+  /// [_ParityEngine._generateActions]), and this orders those.
   final double bracket;
 
   /// Side-panel ownership changes are represented by movement and body-facing
@@ -442,9 +434,8 @@ class _Placement {
 class _ParityEngine {
   final _StageLayout layout;
 
-  /// Whether one foot may cover two panels. On by default and priced by
-  /// [weights.bracket] so brackets stay rare; off drops them from the candidate
-  /// placements entirely, which no weight can match.
+  /// Whether one foot may cover two panels on a row that needs it (three or
+  /// more panels down at once). Off drops brackets entirely.
   final bool allowBrackets;
 
   _ParityEngine(this.layout,
@@ -585,6 +576,23 @@ class _ParityEngine {
     return was == _Foot.none || now == _Foot.none || _sameFoot(was, now);
   }
 
+  /// A jump that lands crossed over with a foot on the panel the other foot
+  /// just stood on: the feet trade sides in the air.
+  bool _jumpCrossesFeet(_State initial, _State result) {
+    final l = result.movedFeet.any(_Foot.isLeft);
+    final r = result.movedFeet.any((f) => !_Foot.isLeft(f));
+    if (!l || !r) return false;
+    final lp = layout.averagePoint(result.leftHeel, result.leftToe);
+    final rp = layout.averagePoint(result.rightHeel, result.rightToe);
+    if (lp.x <= rp.x) return false;
+    bool took(List<int> mine, List<int> theirs) =>
+        mine.any((c) => c != -1 && theirs.contains(c));
+    final iL = [initial.leftHeel, initial.leftToe];
+    final iR = [initial.rightHeel, initial.rightToe];
+    return took([result.leftHeel, result.leftToe], iR) ||
+        took([result.rightHeel, result.rightToe], iL);
+  }
+
   static bool _sameFoot(int a, int b) => _Foot.isLeft(a) == _Foot.isLeft(b);
 
   /// The two side panels of a jump across the pad (e.g. L+R), leftmost first,
@@ -606,13 +614,20 @@ class _ParityEngine {
   }
 
   /// Enumerate every legal assignment of foot parts to the stepped columns of a
-  /// row, pruned by bracket geometry and heel/toe validity. A jump across the
+  /// row, pruned by bracket geometry and heel/toe validity. A foot only
+  /// brackets when there are more panels down than feet: a hold and a tap, or
+  /// a jump, always has a free foot for each. A jump across the
   /// pad always lands left foot left, right foot right, facing forward: there's
   /// no reason to land one crossed, however the next notes would flow from it.
   List<List<int>> _generateActions(_Row row) {
     final results = <List<int>>[];
     final sideJump = _sideJump(row);
     final columns = List<int>.filled(layout.columnCount, _Foot.none);
+    var activeCount = 0;
+    for (int i = 0; i < layout.columnCount; i++) {
+      if (row.notes[i] != null || row.holds[i]) activeCount++;
+    }
+    final needsBracket = activeCount > 2;
 
     void recurse(int col) {
       if (col >= layout.columnCount) {
@@ -651,7 +666,8 @@ class _ParityEngine {
         recurse(col + 1);
         return;
       }
-      for (final foot in allowBrackets ? _Foot.all : _Foot.heels) {
+      for (final foot
+          in allowBrackets && needsBracket ? _Foot.all : _Foot.heels) {
         if (columns.contains(foot)) continue;
         columns[col] = foot;
         recurse(col + 1);
@@ -876,6 +892,22 @@ class _ParityEngine {
     // SPIN
     total += _spinCost(d);
 
+    // BACKWARDS: feet side by side the wrong way round (left foot on Right,
+    // right on Left). Only a scooby passes through it, one alternating step in
+    // and the next out; staying there, or getting in or out by a jump, jack
+    // or doublestep, is a turn-around.
+    if (_backwards(d.previousLeftPos, d.previousRightPos) ||
+        _backwards(d.leftPos, d.rightPos)) {
+      final scooby = !d.jumped &&
+          !d.leftJack &&
+          !d.rightJack &&
+          !d.leftDoubleStep &&
+          !d.rightDoubleStep &&
+          !(_backwards(d.previousLeftPos, d.previousRightPos) &&
+              _backwards(d.leftPos, d.rightPos));
+      if (!scooby) total += weights.spin;
+    }
+
     // FOOTSWITCH: slow ones, and any on a side panel.
     total += _footswitchCost(d, lastRow, row, elapsed);
 
@@ -948,6 +980,13 @@ class _ParityEngine {
     final penalty = math.pow(-math.min(heelFacing, 0.0), 7.2) * 200;
     if (penalty > 0) return penalty * weights.facing;
     return 0;
+  }
+
+  static bool _backwards(_Point left, _Point right) {
+    final dx = right.x - left.x;
+    final dy = right.y - left.y;
+    final dist = math.sqrt(dx * dx + dy * dy);
+    return dist > 0 && dx / dist < -0.9;
   }
 
   double _spinCost(_Placement d) {
@@ -1125,6 +1164,7 @@ class _ParityEngine {
               continue;
             }
             final result = _initResultState(prevLayer[p], row, action);
+            if (r > 0 && _jumpCrossesFeet(prevLayer[p], result)) continue;
             final c = prevCost[p] + _cost(prevLayer[p], result, rows, r);
             if (c < best) {
               best = c;
@@ -1213,9 +1253,8 @@ class _ParityEngine {
 }
 
 /// Entry point: run the cost-minimising parity engine over a note stream.
-/// Brackets are legal but carry [weights.bracket] so they stay rare; passing
-/// [allowBrackets] false removes them entirely, which can push the solve into
-/// worse alternatives on charts where a bracket was the sane reading.
+/// A foot brackets only on a row with more panels down than feet; passing
+/// [allowBrackets] false removes even those.
 ///
 /// [pins] fixes the foot for particular notes (hand labels); everything else is
 /// solved around them.
