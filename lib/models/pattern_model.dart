@@ -18,7 +18,6 @@ const kPatternLabels = <Pattern, String>{
   Pattern.sideswitch: "Side switches",
   Pattern.jack: "Jacks",
   Pattern.doublestep: "Doublesteps",
-  Pattern.bracket: "Brackets",
   Pattern.candle: "Candles",
   Pattern.drill: "Drills",
   Pattern.staircase: "Staircases",
@@ -31,7 +30,6 @@ const kPatternIcons = <Pattern, IconData>{
   Pattern.sideswitch: Icons.swap_horiz,
   Pattern.jack: Icons.repeat_one,
   Pattern.doublestep: Icons.double_arrow,
-  Pattern.bracket: Icons.data_array,
   Pattern.candle: Icons.local_fire_department,
   Pattern.drill: Icons.multiple_stop,
   Pattern.staircase: Icons.stairs,
@@ -47,7 +45,6 @@ enum ChartCategory {
   jack,
   crossover,
   footswitch,
-  bracket,
   swing,
   freeze,
   gimmick,
@@ -63,7 +60,6 @@ const kCategoryLabels = <ChartCategory, String>{
   ChartCategory.jack: "Jack/trill",
   ChartCategory.crossover: "Crossover",
   ChartCategory.footswitch: "Footswitch",
-  ChartCategory.bracket: "Bracket",
   ChartCategory.swing: "Swing",
   ChartCategory.freeze: "Freeze",
   ChartCategory.gimmick: "Gimmick",
@@ -79,7 +75,6 @@ const kCategoryIcons = <ChartCategory, IconData>{
   ChartCategory.jack: Icons.repeat_one,
   ChartCategory.crossover: Icons.shuffle,
   ChartCategory.footswitch: Icons.swap_vert,
-  ChartCategory.bracket: Icons.data_array,
   ChartCategory.swing: Icons.music_note,
   ChartCategory.freeze: Icons.ac_unit,
   ChartCategory.gimmick: Icons.speed,
@@ -210,7 +205,6 @@ class ChartPatterns {
       ChartCategory.crossover => rate(Pattern.crossover),
       ChartCategory.footswitch =>
         rate(Pattern.footswitch) + rate(Pattern.sideswitch),
-      ChartCategory.bracket => rate(Pattern.bracket),
       ChartCategory.swing => grid == 0
           ? 0
           : _rounded(1 -

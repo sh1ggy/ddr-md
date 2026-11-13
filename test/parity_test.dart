@@ -365,4 +365,35 @@ void main() {
     expect([p[notes[3]], p[notes[4]]], [ParityFoot.left, ParityFoot.right],
         reason: render(notes, p));
   });
+
+  test('osaka EVOLVED 15: no feet trading panels, no hold-and-tap bracket', () {
+    // Its opening: L, then an L+D jump the left foot must stay on Left for.
+    final opening = stream([
+      (4, L), (13 / 3, L), (13 / 3, D), (5, D), (16 / 3, R), (17 / 3, U), //
+      (6, R), (19 / 3, L), (19 / 3, D), (7, U),
+    ], bpm: 50);
+    var p = assignParity(opening, Modes.singles);
+    expect(p[opening[1]], ParityFoot.left, reason: render(opening, p));
+
+    // Beat 79: Down freezes under taps. The free foot takes them; the
+    // holding foot never covers a second panel.
+    StepNote freeze(double b) => StepNote(
+        beat: b,
+        second: b * .3,
+        col: D,
+        type: StepType.hold,
+        endBeat: b + 1,
+        endSecond: (b + 1) * .3);
+    final freezes = [
+      freeze(79),
+      ...stream([(79.5, U), (80, U), (80.5, L), (81, R), (81.5, U)], bpm: 200),
+      freeze(82),
+      ...stream([(82.5, L), (83, L), (83.5, U), (84, R), (84.5, L), (85, D)],
+          bpm: 200),
+    ];
+    for (final s in analyseParity(freezes, Modes.singles).stances) {
+      expect(s.leftToe == -1 && s.rightToe == -1, isTrue,
+          reason: 'bracket at ${s.second}');
+    }
+  });
 }

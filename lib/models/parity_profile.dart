@@ -48,7 +48,6 @@ const Map<String, String> tunableWeights = {
   'footswitch': 'Footswitches',
   'facing': 'Turning',
   'spin': 'Spins',
-  'bracket': 'Brackets',
   'jack': 'Jacks',
   'distance': 'Reaching',
   'sideswitch': 'Side switches',
