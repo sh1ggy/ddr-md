@@ -75,7 +75,12 @@ List<List<_Tier>> _rings(List<ChartBest?> bests) => [
 
 class BestRings extends StatefulWidget {
   const BestRings(this.bests,
-      {super.key, this.size = 30, this.track, this.onStats, this.onBinder});
+      {super.key,
+      this.size = 30,
+      this.track,
+      this.onStats,
+      this.onBinder,
+      this.onTiers});
 
   /// One per listed chart, null where it hasn't been played.
   final List<ChartBest?> bests;
@@ -89,6 +94,9 @@ class BestRings extends StatefulWidget {
 
   /// Opens the binder, from the expanded card.
   final VoidCallback? onBinder;
+
+  /// Opens your tier list for the level.
+  final VoidCallback? onTiers;
 
   @override
   State<BestRings> createState() => _BestRingsState();
@@ -110,8 +118,8 @@ class _BestRingsState extends State<BestRings> {
       barrierColor: Colors.black54,
       transitionDuration: FloorPop.beat + FloorPop.eighth,
       reverseTransitionDuration: FloorPop.beat,
-      pageBuilder: (_, animation, __) => _ExpandedRings(
-          widget.bests, from, animation, widget.onStats, widget.onBinder),
+      pageBuilder: (_, animation, __) => _ExpandedRings(widget.bests, from,
+          animation, widget.onStats, widget.onBinder, widget.onTiers),
     );
     Navigator.of(context, rootNavigator: true).push(route);
     // Back in their spot only once they've flown home.
@@ -156,13 +164,13 @@ class _BestRingsState extends State<BestRings> {
 /// place a little after the one outside it, while the card's counts rise in
 /// below.
 class _ExpandedRings extends StatefulWidget {
-  const _ExpandedRings(
-      this.bests, this.from, this.animation, this.onStats, this.onBinder);
+  const _ExpandedRings(this.bests, this.from, this.animation, this.onStats,
+      this.onBinder, this.onTiers);
 
   final List<ChartBest?> bests;
   final Rect from;
   final Animation<double> animation;
-  final VoidCallback? onStats, onBinder;
+  final VoidCallback? onStats, onBinder, onTiers;
 
   @override
   State<_ExpandedRings> createState() => _ExpandedRingsState();
@@ -250,13 +258,16 @@ class _ExpandedRingsState extends State<_ExpandedRings> {
                       const SizedBox(height: 18),
                       BestTiers(widget.bests, rise: _rise),
                       const SizedBox(height: 14),
-                      if (widget.onStats != null || widget.onBinder != null)
+                      if (widget.onStats != null ||
+                          widget.onBinder != null ||
+                          widget.onTiers != null)
                         _rise(
                             3,
                             Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 for (final (label, onTap) in [
+                                  ('Your tiers', widget.onTiers),
                                   ('Open binder', widget.onBinder),
                                   ('All stats', widget.onStats),
                                 ])

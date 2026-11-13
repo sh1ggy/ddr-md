@@ -19,6 +19,7 @@ import 'package:ddr_md/models/session_model.dart' show PadSide;
 import 'package:ddr_md/models/showcase.dart';
 import 'package:ddr_md/models/device_key.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:flutter/foundation.dart';
 
 /// The deployed service in every build. Override CIRCLES_URL for the local
@@ -70,6 +71,15 @@ typedef CirclePad = ({
   String venue,
   String cab,
   List<CirclePadSide> sides,
+});
+
+/// Someone in your circle placing charts in their tier list: how many, at
+/// which level.
+typedef CircleTierPost = ({
+  CirclePerson? by,
+  DateTime at,
+  int level,
+  int count
 });
 
 /// A circle an invite code opens, before joining it.
@@ -167,6 +177,12 @@ class CircleState extends ChangeNotifier {
 
   /// Pad checks from those whose circles you're in, newest first.
   List<CirclePad> pads = const [];
+
+  /// Tier lists placed in by those whose circles you're in, newest first.
+  List<CircleTierPost> tierPosts = const [];
+
+  /// Who the circle's tier lists are by, by person id.
+  Map<String, CirclePerson> tierPeople = const {};
 
   /// Your own shared credits, newest first, with their cheers.
   List<CircleCredit> yours = const [];
@@ -302,6 +318,7 @@ class CircleState extends ChangeNotifier {
   Future<void> refresh() => _run(() async {
         await _send('GET', 'v1/me');
         await _loadFeed();
+        await loadTiers();
       });
 
   /// [refresh] without showing it: for polling while someone's live. A
@@ -372,7 +389,90 @@ class CircleState extends ChangeNotifier {
           ],
         )
     ];
+    tierPosts = [
+      for (final t in (m?['tiers'] as List? ?? const []).cast<Map>())
+        (
+          by: _person(t['by'] as Map),
+          at: DateTime.tryParse(t['at'] as String? ?? '') ?? DateTime.now(),
+          level: t['level'] as int,
+          count: t['count'] as int,
+        )
+    ];
     feedRevision++;
+  }
+
+  /// Your tiers kept from the circle.
+  static bool get tiersHidden =>
+      Settings.getInt(Settings.circleTiersHiddenKey) == 1;
+
+  static List<List<Object>> _tierRows() => [
+        for (final MapEntry(key: (song, difficulty), value: p)
+            in YourTiers.all.entries)
+          [song, difficulty, p.level, p.hundredths]
+      ];
+
+  static Map<TierChart, TierPlacement> _tierList(Object? rows) => {
+        for (final r in (rows as List? ?? const []).cast<List>())
+          (r[0] as String, r[1] as String): (
+            level: r[2] as int,
+            hundredths: r[3] as int,
+            placedAt: DateTime.now(),
+          )
+      };
+
+  /// The tier lists of everyone whose circle you're in.
+  Future<void> loadTiers() async {
+    if (!available || id == null) return;
+    try {
+      final m = await _send('GET', 'v1/tiers');
+      final people = [
+        for (final p in (m?['people'] as List? ?? const []).cast<Map>()) p
+      ];
+      tierPeople = {
+        for (final p in people)
+          (p['by'] as Map)['id'] as String: _person(p['by'] as Map)
+      };
+      YourTiers.setCircle({
+        for (final p in people)
+          (p['by'] as Map)['id'] as String: _tierList(p['tiers'])
+      });
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Circles: tiers not loaded: $e');
+    }
+  }
+
+  /// Sends your whole tier list, when it changed since last time and isn't
+  /// kept from the circle. [post] puts "placed [count] at [level]" in the
+  /// circle's feed.
+  Future<void> shareTiers({({int level, int count})? post}) async {
+    if (!available || id == null || tiersHidden || !YourTiers.unshared) {
+      return;
+    }
+    try {
+      await _send('PUT', 'v1/tiers', {
+        'tiers': _tierRows(),
+        if (post != null && post.count > 0)
+          'post': {'level': post.level, 'count': post.count},
+      });
+      YourTiers.unshared = false;
+    } catch (e) {
+      debugPrint('Circles: tiers not shared: $e');
+    }
+  }
+
+  /// Keeps your tiers from the circle (taking them off the server), or
+  /// shares them again.
+  Future<void> setTiersHidden(bool hidden) async {
+    await Settings.setInt(Settings.circleTiersHiddenKey, hidden ? 1 : 0);
+    notifyListeners();
+    if (!available || id == null) return;
+    if (hidden) {
+      await _run(() => _send('DELETE', 'v1/tiers'));
+    } else {
+      YourTiers.unshared = true;
+      await shareTiers();
+    }
   }
 
   /// Cheers [credit] with [cheer], or takes yours back with null. Shown at

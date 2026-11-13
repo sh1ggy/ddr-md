@@ -220,6 +220,11 @@ class Settings {
   static const String circleLocationDefaultKey = "circleLocationDefault";
   static const String cloudSyncedAtKey = "cloudSyncedAt";
 
+  // Which tier rows and numerals show (TierShown's index: yours, calculated,
+  // circle median), and 1 = your tiers are kept from your circle.
+  static const String tierShownKey = "tierShown";
+  static const String circleTiersHiddenKey = "circleTiersHidden";
+
   // Settings that follow the player to their other devices. Left out: the
   // timing offsets (they depend on the device's own audio and display), the
   // running session, and e-amusement sync bookkeeping.
@@ -268,6 +273,8 @@ class Settings {
     eamuseProfileLastPlayKey,
     circleLiveDefaultKey,
     circleLocationDefaultKey,
+    tierShownKey,
+    circleTiersHiddenKey,
   };
 
   static Map<String, Object> syncedPrefs() => {

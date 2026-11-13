@@ -6,6 +6,7 @@
 /// so the tile carries no selection state of its own.
 library;
 
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -258,6 +259,9 @@ class ArcadeGridTile extends StatelessWidget {
         mode == Modes.singles ? item.songInfo.singles : item.songInfo.doubles;
     // Clipped rather than wrapped: on a narrow tile a wrap would silently add
     // a row and overflow the band's fixed height.
+    final tier = item.isChartScoped
+        ? item.songInfo.shownTierFor(mode, item.difficultyIndex!)
+        : null;
     return ClipRect(
       child: LevelRow(
           levels: difficulty,
@@ -265,11 +269,8 @@ class ArcadeGridTile extends StatelessWidget {
           // Fixed columns don't fit all five on a narrow tile.
           packed: true,
           highlightIndex: item.isChartScoped ? item.difficultyIndex : null,
-          highlightTier: item.isChartScoped
-              ? item.songInfo
-                  .scoringTierFor(mode, item.difficultyIndex!)
-                  ?.hundredths
-              : null),
+          highlightTier: tier?.hundredths,
+          highlightKind: tier?.kind ?? TierKind.calc),
     );
   }
 

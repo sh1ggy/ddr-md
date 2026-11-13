@@ -4,6 +4,7 @@ library;
 
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:flutter/material.dart';
 
 class SongDifficulty extends StatelessWidget {
@@ -12,6 +13,7 @@ class SongDifficulty extends StatelessWidget {
     required this.difficulty,
     this.highlightIndex,
     this.highlightTier,
+    this.highlightKind = TierKind.calc,
   });
 
   final Difficulty difficulty;
@@ -20,6 +22,7 @@ class SongDifficulty extends StatelessWidget {
   final int? highlightIndex;
   // The highlighted chart's scoring tier hundredths.
   final int? highlightTier;
+  final TierKind highlightKind;
 
   @override
   Widget build(BuildContext context) => Align(
@@ -28,6 +31,7 @@ class SongDifficulty extends StatelessWidget {
             levels: difficulty,
             highlightIndex: highlightIndex,
             highlightTier: highlightTier,
+            highlightKind: highlightKind,
             height: kSongListLevelHeight),
       );
 }

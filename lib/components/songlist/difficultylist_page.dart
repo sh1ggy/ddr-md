@@ -7,6 +7,7 @@ library;
 import 'dart:math' show max;
 import 'dart:ui' show ImageFilter;
 
+import 'package:ddr_md/components/tiers/your_tiers_page.dart';
 import 'package:ddr_md/models/cloud_sync.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/theme.dart';
@@ -646,19 +647,22 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
                   // The stats and the binder open on the hardest level
                   // picked.
                   : BestRings(bests,
-                      onStats: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => ScoreOverviewPage(
-                                  mode: songState.modes,
-                                  level: _filter.levels.isEmpty
-                                      ? null
-                                      : _filter.levels.reduce(max)))),
-                      onBinder: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => EditionBinderPage(
-                                  level: _filter.levels.isEmpty
-                                      ? null
-                                      : _filter.levels.reduce(max))))),
+                      onStats: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => ScoreOverviewPage(
+                              mode: songState.modes,
+                              level: _filter.levels.isEmpty
+                                  ? null
+                                  : _filter.levels.reduce(max)))),
+                      onTiers: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => YourTiersPage(
+                              level: _filter.levels.isEmpty
+                                  ? null
+                                  : _filter.levels.reduce(max)))),
+                      onBinder: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => EditionBinderPage(
+                              level: _filter.levels.isEmpty
+                                  ? null
+                                  : _filter.levels.reduce(max))))),
             ),
           ),
           const SizedBox(height: 12),

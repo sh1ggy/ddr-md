@@ -3,6 +3,7 @@
 /// Description: Rendering out the song item itself.
 library;
 
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/models/pattern_model.dart';
@@ -144,16 +145,21 @@ class _SongListItemState extends State<SongListItem> {
             ),
           // Same fixed gap under every line so the rows read evenly.
           const SizedBox(height: 4),
-          SongDifficulty(
-              difficulty: mode == Modes.singles
-                  ? widget.songInfo.singles
-                  : widget.songInfo.doubles,
-              highlightIndex: widget.difficultyIndex,
-              highlightTier: scoped
-                  ? widget.songInfo
-                      .scoringTierFor(mode, widget.difficultyIndex!)
-                      ?.hundredths
-                  : null),
+          ValueListenableBuilder(
+              valueListenable: YourTiers.revision,
+              builder: (context, _, __) {
+                final tier = scoped
+                    ? widget.songInfo
+                        .shownTierFor(mode, widget.difficultyIndex!)
+                    : null;
+                return SongDifficulty(
+                    difficulty: mode == Modes.singles
+                        ? widget.songInfo.singles
+                        : widget.songInfo.doubles,
+                    highlightIndex: widget.difficultyIndex,
+                    highlightTier: tier?.hundredths,
+                    highlightKind: tier?.kind ?? TierKind.calc);
+              }),
         ],
       ),
     );

@@ -37,12 +37,19 @@ import { dataCrypto, networkOf, secretMatches } from "../data_crypto.js";
 //   PUT    /v1/pad {id, venue, cab, sides: [{side, lamp, arrows}]}  a pad check
 //                                     arrows = {up|left|right|down: {issues, zone}}
 //                                     feed's pads: [{by: person, id, at, venue, cab, sides}]
+//   PUT    /v1/tiers {tiers: [[song, difficulty, level, hundredths]], post?: {level, count}}
+//                                     replaces your tier list; post puts "placed count at level" in the feed
+//   GET    /v1/tiers              -> {people: [{by: person, at, tiers}]} whose circles you're in
+//   DELETE /v1/tiers              your tier list goes
+//                                     feed's tiers: [{by: person, at, level, count}]
 //   GET    /v1/showcase/ID         -> {cards: [card|null, card|null, card|null]}
 //   PUT    /v1/showcase {cards}    replaces your three snapshots
 //   DELETE /v1/me                 everything of this player's goes
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS showcases(owner TEXT PRIMARY KEY, cards TEXT NOT NULL) WITHOUT ROWID`,
+  `CREATE TABLE IF NOT EXISTS tiers(owner TEXT PRIMARY KEY, list TEXT NOT NULL, at TEXT NOT NULL, postLevel INTEGER, postCount INTEGER, postedAt TEXT) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS tiers_posted ON tiers(postedAt)`,
   `CREATE TABLE IF NOT EXISTS profiles(owner TEXT PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL, ddrCode TEXT NOT NULL, code TEXT UNIQUE, codeUntil TEXT, createdAt TEXT NOT NULL, day TEXT NOT NULL DEFAULT '', lookups INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS members(leader TEXT NOT NULL, member TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(leader, member)) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS members_member ON members(member)`,
@@ -79,6 +86,10 @@ const DAY_LOOKUPS = 30;
 const CODE_LIFE = 86400000;
 // Mutations are bounded per player; there is no shared daily kill switch.
 const MAX_BODY = 8192;
+// A whole tier list goes up at once: every Singles chart a player has placed.
+const MAX_TIERS_BODY = 131072;
+const MAX_TIERS = 3000;
+const DIFFICULTIES = ['BEGINNER','BASIC','DIFFICULT','EXPERT','CHALLENGE'];
 const MAX_MEMBERS = 100;
 const MAX_CREDITS = 100;
 // A broadcast lapses this long after its last credit, for a session the app
@@ -107,7 +118,7 @@ export default {
       const auth = request.headers.get('Authorization') ?? '';
       if (!/^Bearer [A-Za-z0-9_-]{43}$/.test(auth)) return json({error: 'key'}, 401);
       const url = new URL(request.url);
-      const allowed = /^(GET \/v1\/(me|feed|showcase\/[a-f0-9]{16}|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer|showcase|pad)|POST \/v1\/(code|join|code\/lookup)|DELETE \/v1\/(me|live|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
+      const allowed = /^(GET \/v1\/(me|feed|tiers|showcase\/[a-f0-9]{16}|code\/[A-HJ-NP-Z2-9-]{8,9})|PUT \/v1\/(me|live|credit|cheer|showcase|pad|tiers)|POST \/v1\/(code|join|code\/lookup)|DELETE \/v1\/(me|live|tiers|circle\/[a-f0-9]{16}|following\/[a-f0-9]{16}))$/i;
       if (!allowed.test(`${request.method} ${url.pathname}`)) return json({error: 'not found'}, 404);
       if (request.cf && (!env.REQUEST_RATE || !env.NETWORK_RATE || !env.INVITE_RATE || !env.SAFETY_RATE)) {
         return json({error: 'unavailable'}, 503);
@@ -129,7 +140,7 @@ export default {
           const {done, value} = await reader.read();
           if (done) break;
           size += value.byteLength;
-          if (size > MAX_BODY) { await reader.cancel(); return json({error: 'body too large'}, 413); }
+          if (size > (url.pathname === '/v1/tiers' ? MAX_TIERS_BODY : MAX_BODY)) { await reader.cancel(); return json({error: 'body too large'}, 413); }
           chunks.push(value);
         }
         const data = new Uint8Array(size);
@@ -184,6 +195,21 @@ async function route(request, db, owner, body, vault) {
     const day = new Date().toISOString().slice(0,10);
     if (me) await db.prepare(`INSERT INTO usage(day,owner,mutations) VALUES (?1,?2,1)
       ON CONFLICT(day,owner) DO UPDATE SET mutations=mutations+1`).bind(day,owner).run();
+  }
+  if (route === "GET tiers") return tiersOf(db, me, vault);
+  if (route === "DELETE tiers") {
+    await db.prepare(`DELETE FROM tiers WHERE owner=?`).bind(owner).run();
+    return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
+  }
+  if (route === "PUT tiers") {
+    const now = new Date().toISOString();
+    const list = await vault.seal(JSON.stringify(body.tiers.map(t => t.slice(0,4))), `tiers:${owner}`);
+    const post = body.post ?? null;
+    await db.prepare(`INSERT INTO tiers(owner,list,at,postLevel,postCount,postedAt) VALUES (?1,?2,?3,?4,?5,?6)
+      ON CONFLICT(owner) DO UPDATE SET list=?2, at=?3,
+        postLevel=COALESCE(?4,postLevel), postCount=COALESCE(?5,postCount), postedAt=COALESCE(?6,postedAt)`)
+        .bind(owner, list, now, post?.level ?? null, post?.count ?? null, post ? now : null).run();
+    return new Response(null, { status: 204, headers: {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"} });
   }
   if (route === "GET showcase/") return showcase(db, me, arg, vault);
   if (route === "PUT showcase") {
@@ -467,7 +493,7 @@ async function postPad(db, me, body, vault) {
 
 async function feed(db, me, vault) {
   const since = new Date(Date.now() - FEED_LIFE).toISOString();
-  const [theirs, yours, cheers, pads] = await db.batch([
+  const [theirs, yours, cheers, pads, tierPosts] = await db.batch([
     db
       .prepare(
         `SELECT c.owner, c.session, c.credit, c.at, c.plays, p.id, p.name, p.ddrCode, ${FRIEND} AS friend
@@ -493,6 +519,13 @@ async function feed(db, me, vault) {
          WHERE m.member = ?1 AND d.at > ?2 ORDER BY d.at DESC LIMIT 30`,
       )
       .bind(me.owner, since),
+    db
+      .prepare(
+        `SELECT t.postedAt, t.postLevel, t.postCount, p.id, p.name, p.ddrCode, ${FRIEND} AS friend
+         FROM members m JOIN tiers t ON t.owner = m.leader JOIN profiles p ON p.owner = m.leader
+         WHERE m.member = ?1 AND t.postedAt > ?2 ORDER BY t.postedAt DESC LIMIT 30`,
+      )
+      .bind(me.owner, since),
   ]);
   const cheersOf = (owner, session, credit) =>
     cheers.results.filter((c) => c.owner === owner && c.session === session && c.credit === credit);
@@ -515,6 +548,7 @@ async function feed(db, me, vault) {
       at: d.at,
       ...JSON.parse(await vault.open(d.report, `pad:${d.owner}`)),
     }))),
+    tiers: tierPosts.results.map((t) => ({ by: person(t), at: t.postedAt, level: t.postLevel, count: t.postCount })),
     yours: yours.results.map((c) => ({
       session: c.session,
       credit: c.credit,
@@ -554,6 +588,7 @@ async function cheer(db, me, body) {
 async function remove(db, owner) {
   await db.batch([
     db.prepare(`DELETE FROM showcases WHERE owner=?`).bind(owner),
+    db.prepare(`DELETE FROM tiers WHERE owner=?`).bind(owner),
     db.prepare(`DELETE FROM credits WHERE owner = ?`).bind(owner),
     db.prepare(`DELETE FROM pads WHERE owner = ?`).bind(owner),
     db.prepare(`DELETE FROM cheers WHERE owner = ?1 OR cheerer = ?1`).bind(owner),
@@ -612,6 +647,23 @@ function validate(route, body) {
   }
   if (route === "PUT cheer" && body?.preset != null && !PRESETS.includes(body.preset)) return "preset";
   if (route === "PUT pad" && !padOf(body)) return "pad";
+  if (route === "PUT tiers") {
+    if (!Array.isArray(body?.tiers) || body.tiers.length > MAX_TIERS) return "tiers";
+    const charts = new Set();
+    for (const t of body.tiers) {
+      if (!Array.isArray(t) || t.length !== 4) return "tiers";
+      const [song, difficulty, level, h] = t;
+      if (typeof song !== 'string' || !song.length || song.length > 200 || !DIFFICULTIES.includes(difficulty) ||
+          !Number.isInteger(level) || level < 1 || level > 19 || !Number.isInteger(h) || h < 0 ||
+          h % (level === 19 ? 10 : 5) !== 0 || h > 100 - (level === 19 ? 10 : 5)) return "tiers";
+      const chart = JSON.stringify([song, difficulty]);
+      if (charts.has(chart)) return "tiers";
+      charts.add(chart);
+    }
+    const post = body.post;
+    if (post != null && (typeof post !== 'object' || !Number.isInteger(post.level) || post.level < 1 || post.level > 19 ||
+        !Number.isInteger(post.count) || post.count < 1 || post.count > MAX_TIERS)) return "tiers";
+  }
   return null;
 }
 
@@ -633,6 +685,17 @@ async function maintain(db,vault,revokeInvites=false) {
     db.prepare(`DELETE FROM days WHERE day<?`).bind(day),
   ]);
   return {encrypted:live.length,maintenance:true};
+}
+
+// Tier lists of the players whose circles you're in, as the showcase: only
+// members of a player's circle see theirs.
+async function tiersOf(db, me, vault) {
+  const {results} = await db.prepare(`SELECT t.owner, t.list, t.at, p.id, p.name, p.ddrCode, ${FRIEND} AS friend
+    FROM members m JOIN tiers t ON t.owner = m.leader JOIN profiles p ON p.owner = m.leader
+    WHERE m.member = ?1 LIMIT ${MAX_MEMBERS}`).bind(me.owner).all();
+  return json({people: await Promise.all(results.map(async (r) => ({
+    by: person(r), at: r.at, tiers: JSON.parse(await vault.open(r.list, `tiers:${r.owner}`)),
+  })))});
 }
 
 // Showcase snapshots outlast the session feed. Only the owner and members

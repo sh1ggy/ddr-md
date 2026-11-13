@@ -9,6 +9,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:ddr_md/theme.dart';
 
@@ -16,6 +17,7 @@ import 'package:ddr_md/components/song_json.dart'
     show Difficulty, decimalDigits;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames;
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -81,6 +83,7 @@ class LevelNumber extends StatelessWidget {
     this.dimmed = false,
     this.suffix,
     this.decimalHundredths,
+    this.decimalKind = TierKind.calc,
   });
 
   final int level;
@@ -88,6 +91,12 @@ class LevelNumber extends StatelessWidget {
 
   /// Precise scoring fraction, separate from the legacy material suffix.
   final int? decimalHundredths;
+
+  /// Whose tier [decimalHundredths] is: yours and the circle's in Volt, a
+  /// "for you" tier outlined, and the calculated one in Haze once you've
+  /// placed charts of your own (in Volt before that, and when the setting
+  /// shows calculated tiers).
+  final TierKind decimalKind;
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final double height;
@@ -117,6 +126,23 @@ class LevelNumber extends StatelessWidget {
     if (decimalHundredths case final fraction?) {
       final digits = decimalDigits(fraction);
       final pop = Theme.of(context).extension<FloorPop>();
+      final volt = (pop?.voltText ?? Theme.of(context).colorScheme.primary)
+          .withValues(alpha: dimmed ? .35 : 1);
+      final size = height * .62;
+      final style = switch (decimalKind) {
+        TierKind.forYou => FloorPop.readout(size).copyWith(
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = math.max(1, size / 14)
+              ..color = volt),
+        TierKind.calc
+            when YourTiers.shown == TierShown.mine &&
+                YourTiers.all.isNotEmpty =>
+          FloorPop.readout(size,
+              color: (pop?.haze ?? Colors.grey)
+                  .withValues(alpha: dimmed ? .35 : 1)),
+        _ => FloorPop.readout(size, color: volt),
+      };
       return Semantics(
         label: '$level.$digits',
         child: ExcludeSemantics(
@@ -125,11 +151,7 @@ class LevelNumber extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
               numeral(level),
-              Text('.$digits',
-                  style: FloorPop.readout(height * .62,
-                      color: (pop?.voltText ??
-                              Theme.of(context).colorScheme.primary)
-                          .withValues(alpha: dimmed ? .35 : 1))),
+              Text('.$digits', style: style),
             ])),
       );
     }
@@ -159,6 +181,7 @@ class LevelRow extends StatelessWidget {
       required this.levels,
       this.highlightIndex,
       this.highlightTier,
+      this.highlightKind = TierKind.calc,
       this.height = kLevelHeight,
       this.packed = false});
 
@@ -166,6 +189,7 @@ class LevelRow extends StatelessWidget {
   final int? highlightIndex;
   // The highlighted chart's scoring tier hundredths, drawn on its numeral.
   final int? highlightTier;
+  final TierKind highlightKind;
   final double height;
   // Charted levels sit side by side with an even gap instead of in fixed
   // columns, for spaces too narrow for all five slots.
@@ -190,6 +214,7 @@ class LevelRow extends StatelessWidget {
             difficulty: kInGameDifficultyNames[key]!,
             height: height,
             decimalHundredths: i == highlightIndex ? highlightTier : null,
+            decimalKind: highlightKind,
             dimmed: highlightIndex != null && i != highlightIndex);
       }
       if (packed) {
