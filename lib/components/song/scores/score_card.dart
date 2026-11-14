@@ -14,6 +14,7 @@ import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -362,17 +363,22 @@ class ScoreBadges extends StatelessWidget {
   }
 }
 
-/// One chart's best: difficulty and level, then its badges.
+/// One chart's best: difficulty and level, then its badges. With [onTap] it
+/// is a raised row ending in a chevron.
 class ScoreRecordRow extends StatelessWidget {
-  const ScoreRecordRow({super.key, required this.record, this.level});
+  const ScoreRecordRow(
+      {super.key, required this.record, this.level, this.onTap});
 
   final ScoreRecord record;
   final int? level;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    final row = Padding(
+      padding: onTap == null
+          ? const EdgeInsets.symmetric(vertical: 4)
+          : const EdgeInsets.fromLTRB(4, 0, 0, 0),
       child: Row(children: [
         // Name and level in their own columns, so levels line up whatever
         // the name's length.
@@ -410,7 +416,23 @@ class ScoreRecordRow extends StatelessWidget {
                 : Icons.edit_outlined,
             size: 14,
             color: Theme.of(context).colorScheme.onSurfaceVariant),
+        if (onTap != null)
+          Icon(Icons.chevron_right_rounded,
+              size: 24, color: FloorPop.of(context).haze),
       ]),
+    );
+    if (onTap == null) return row;
+    return Material(
+      color: FloorPop.of(context).riser,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+                padding: const EdgeInsets.only(left: 6, right: 2), child: row)),
+      ),
     );
   }
 }
