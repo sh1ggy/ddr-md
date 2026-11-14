@@ -338,6 +338,12 @@ from a build with this route.
   (`p1`/`p2`), `lamp` (`mfc` … `failed`) and `arrows`, keyed `up`/`left`/
   `right`/`down`, each `{issues, zone?}`. Posting an `id` again replaces it.
   `GET /v1/feed` adds `pads: [{by, id, at, venue, cab, sides}]`.
+- `PUT /v1/tiers {tiers: [[song, difficulty, level, hundredths]], post?}`
+  replaces the player's whole tier list (sealed, one row per player, its own
+  128 KB body limit). `post: {level, count}` adds "placed count at level" to
+  the circle's feed for two days. `GET /v1/tiers` returns the lists of
+  everyone whose circle you're in; `DELETE /v1/tiers` takes yours off.
+  `GET /v1/feed` adds `tiers: [{by, at, level, count}]`.
 
 The friend profile always uses the latest completed session, excluding the
 active broadcast. Live pages use only the current broadcast's session ID and
@@ -352,6 +358,7 @@ needed (Node 22+):
 ```bash
 node infra/circles/dev/worker_test.mjs            # the Worker end to end
 node infra/circles/dev/showcase_test.mjs          # showcase API checks
+node infra/circles/dev/tiers_test.mjs             # tier list API checks
 node infra/circles/dev/server.mjs --fresh         # http://localhost:8787
 flutter run -d macos --dart-define=DB_NAME=timing-preview.db --dart-define=CIRCLES_URL=http://localhost:8787 --dart-define=CIRCLES_KEY=dev-you____________________________________
 node infra/circles/dev/scenario.mjs               # lists the scenarios

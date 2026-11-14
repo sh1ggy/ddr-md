@@ -3,6 +3,7 @@
 /// cabinet's level numeral.
 library;
 
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/unlock_badge.dart';
@@ -40,6 +41,7 @@ class SongDifficultyPicker extends StatelessWidget {
     if (charts.isEmpty) return const SizedBox.shrink();
     final chosen = songState.chosenDifficulty.clamp(0, charts.length - 1);
     final pop = FloorPop.of(context);
+    final shown = song?.shownTierFor(songState.modes, chosen);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -89,11 +91,9 @@ class SongDifficultyPicker extends StatelessWidget {
                             child: LevelNumber(
                                 level: chart.level,
                                 difficulty: chart.name,
-                                decimalHundredths: i == chosen
-                                    ? song
-                                        ?.scoringTierFor(songState.modes, i)
-                                        ?.hundredths
-                                    : null,
+                                decimalHundredths:
+                                    i == chosen ? shown?.hundredths : null,
+                                decimalKind: shown?.kind ?? TierKind.calc,
                                 height: 24),
                           ),
                         ),

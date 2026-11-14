@@ -147,7 +147,8 @@ class BestMeasureSwitch extends StatelessWidget {
 
 /// The strip itself, with the played count beside it.
 class BestStrip extends StatelessWidget {
-  const BestStrip(this.bests, {super.key, this.onStats, this.onBinder});
+  const BestStrip(this.bests,
+      {super.key, this.onStats, this.onBinder, this.onTiers});
 
   /// One per listed chart, null where it hasn't been played.
   final List<ChartBest?> bests;
@@ -158,13 +159,16 @@ class BestStrip extends StatelessWidget {
   /// Opens the binder, from the ladder.
   final VoidCallback? onBinder;
 
+  /// Opens your tier list for the level, from the ladder.
+  final VoidCallback? onTiers;
+
   void _open(BuildContext context) {
     HapticFeedback.lightImpact();
     showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
-      builder: (_) => _Ladder(bests, onStats, onBinder),
+      builder: (_) => _Ladder(bests, onStats, onBinder, onTiers),
     );
   }
 
@@ -225,10 +229,10 @@ class BestStrip extends StatelessWidget {
 /// tiers above it, so a row reads as "this tier or better". The tabs switch
 /// the measure for the strip too.
 class _Ladder extends StatelessWidget {
-  const _Ladder(this.bests, this.onStats, this.onBinder);
+  const _Ladder(this.bests, this.onStats, this.onBinder, this.onTiers);
 
   final List<ChartBest?> bests;
-  final VoidCallback? onStats, onBinder;
+  final VoidCallback? onStats, onBinder, onTiers;
 
   @override
   Widget build(BuildContext context) {
@@ -341,10 +345,14 @@ class _Ladder extends StatelessWidget {
                     ]),
                   ),
                 ),
-                if (onStats != null || onBinder != null) ...[
+                if (onStats != null || onBinder != null || onTiers != null) ...[
                   const SizedBox(height: 20),
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    if (onStats != null)
+                    for (final (i, (label, onTap)) in [
+                      if (onTiers != null) ('Your tiers', onTiers!),
+                      if (onStats != null) ('All stats', onStats!),
+                    ].indexed) ...[
+                      if (i > 0) const SizedBox(width: 10),
                       Expanded(
                         child: FilledButton(
                           style: FilledButton.styleFrom(
@@ -355,12 +363,14 @@ class _Ladder extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(14))),
                           onPressed: () {
                             Navigator.of(context).pop();
-                            onStats!();
+                            onTap();
                           },
-                          child: const Text('All stats'),
+                          child: Text(label),
                         ),
                       ),
-                    if (onStats != null && onBinder != null)
+                    ],
+                    if ((onStats != null || onTiers != null) &&
+                        onBinder != null)
                       const SizedBox(width: 10),
                     if (onBinder != null)
                       Expanded(

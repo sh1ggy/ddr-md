@@ -5,6 +5,7 @@
 /// song list into the grid's sections.
 library;
 
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/constants.dart' as constants;
@@ -399,7 +400,7 @@ List<SongItem> _byTitle(List<SongItem> items) {
   return items;
 }
 
-/// Folder first, then calculated tier, with missing ratings last in either
+/// Folder first, then the tier shown (see YourTiers), with missing ratings last in either
 /// direction. Title and chart index make ties deterministic.
 int compareLevelItems(SongItem a, SongItem b, Modes mode,
     {bool descending = false}) {
@@ -408,7 +409,7 @@ int compareLevelItems(SongItem a, SongItem b, Modes mode,
   if (folder != 0) return folder;
   double? rating(SongItem item) => item.difficultyIndex == null
       ? null
-      : item.songInfo.scoringTierFor(mode, item.difficultyIndex!)?.tier;
+      : item.songInfo.shownTierValue(mode, item.difficultyIndex!);
   final x = rating(a), y = rating(b);
   if (x != y) {
     if (x == null) return 1;

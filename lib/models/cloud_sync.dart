@@ -18,6 +18,7 @@ import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/device_key.dart';
 import 'package:ddr_md/models/pad_rating.dart';
 import 'package:ddr_md/models/settings_model.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -78,6 +79,7 @@ const syncTables = [
   SyncTable('card_gains', ['{r}.id']),
   SyncTable('pad_ratings', ['{r}.id'], refs: {'cabinetId': 'cabinets'}),
   SyncTable('heard', ['{r}.id']),
+  SyncTable('tier_placements', ['{r}.song', '{r}.mode', '{r}.difficulty']),
 ];
 
 const _now = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
@@ -429,6 +431,7 @@ class SyncEngine {
       DatabaseProvider.invalidateAchievements();
     }
     if (changes.any((c) => c.t == 'pad_ratings')) padRatingsRevision.value++;
+    if (changes.any((c) => c.t == 'tier_placements')) await YourTiers.load();
     if (prefs case final remote?) {
       // Settings changed here since the last sync stay, on top of the
       // pulled ones, and go up after.

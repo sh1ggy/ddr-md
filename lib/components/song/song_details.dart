@@ -11,6 +11,7 @@ import 'package:ddr_md/components/song/jacket_edition/edition_viewer.dart';
 import 'package:ddr_md/components/song/song_difficulty_picker.dart';
 import 'package:ddr_md/components/song/song_radar.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/tiers/tier_chips.dart';
 import 'package:ddr_md/constants.dart' show canonicalVersion;
 import 'package:ddr_md/helpers.dart'
     show kInGameDifficultyColors, kInGameDifficultyNames, versionColor;
@@ -312,6 +313,7 @@ class SongDetails extends StatelessWidget {
               // Every song has per-difficulty radar data, so the difficulty is
               // always selectable.
               SongDifficultyPicker(difficulty: difficulty, song: songInfo),
+              TierChips(song: songInfo),
             ],
           ),
         ),

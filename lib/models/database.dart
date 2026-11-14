@@ -95,6 +95,11 @@ class DatabaseProvider {
   static const String _padRatingsDdl =
       'CREATE TABLE IF NOT EXISTS pad_ratings(id TEXT PRIMARY KEY, sessionId TEXT NOT NULL, cabinetId INT NOT NULL, side TEXT NOT NULL, lamp TEXT NOT NULL, arrows TEXT NOT NULL DEFAULT \'{}\', ratedAt TEXT NOT NULL)';
 
+  // v22: where the player puts each chart they've played among its level,
+  // on the same rungs as the calculated tier (see YourTiers).
+  static const String _tierPlacementsDdl =
+      'CREATE TABLE IF NOT EXISTS tier_placements(song TEXT NOT NULL, mode TEXT NOT NULL, difficulty TEXT NOT NULL, level INT NOT NULL, hundredths INT NOT NULL, placedAt TEXT NOT NULL, PRIMARY KEY(song, mode, difficulty))';
+
   static Future<void> _createSchema(Database db) async {
     await db.execute(_notesDdl);
     await db.execute(_favoritesDdl);
@@ -111,6 +116,7 @@ class DatabaseProvider {
     await db.execute(_heardDdl);
     await _addSessionGoal(db);
     await db.execute(_padRatingsDdl);
+    await db.execute(_tierPlacementsDdl);
     await installSync(db);
   }
 
@@ -187,7 +193,7 @@ class DatabaseProvider {
       open(join(await getDatabasesPath(), _dbName));
 
   static Future<Database> open(String path) {
-    return openDatabase(path, version: 22, onCreate: (db, version) async {
+    return openDatabase(path, version: 23, onCreate: (db, version) async {
       await _createSchema(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       // The app is not yet released and the pre-v6 tables overloaded their
@@ -219,6 +225,12 @@ class DatabaseProvider {
       // database at 21 may hold either; both only create what's missing.
       if (oldVersion < 22) await db.execute(_padRatingsDdl);
       if (oldVersion < 22) await db.execute(_heardDdl);
+      // v23 is tier_placements, which another branch also numbered 22.
+      if (oldVersion < 23) {
+        for (final ddl in [_padRatingsDdl, _heardDdl, _tierPlacementsDdl]) {
+          await db.execute(ddl);
+        }
+      }
       if (oldVersion < 15) await installSync(db);
       if (oldVersion >= 6 && oldVersion < 16) await _addRecentPlayOrder(db);
       if (oldVersion >= 6 && oldVersion < 17) {
@@ -239,7 +251,51 @@ class DatabaseProvider {
               db, syncTables.firstWhere((t) => t.name == table));
         }
       }
+      if (oldVersion >= 15 && oldVersion < 23) {
+        for (final table in ['pad_ratings', 'heard', 'tier_placements']) {
+          await addSyncTriggers(
+              db, syncTables.firstWhere((t) => t.name == table));
+        }
+      }
     });
+  }
+
+  // -- TIER PLACEMENTS
+  static Future<List<Map<String, Object?>>> getTierPlacements() async =>
+      (await _instance).query('tier_placements');
+
+  /// Replaces the chart's placement, or with [hundredths] null clears it.
+  static Future<void> setTierPlacement(
+      {required String song,
+      required String mode,
+      required String difficulty,
+      required int level,
+      required int? hundredths}) async {
+    final db = await _instance;
+    if (hundredths == null) {
+      await db.delete('tier_placements',
+          where: 'song = ? AND mode = ? AND difficulty = ?',
+          whereArgs: [song, mode, difficulty]);
+      return;
+    }
+    await db.insert(
+        'tier_placements',
+        {
+          'song': song,
+          'mode': mode,
+          'difficulty': difficulty,
+          'level': level,
+          'hundredths': hundredths,
+          'placedAt': DateTime.now().toUtc().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<void> clearTierPlacements(
+      {required String mode, required int level}) async {
+    final db = await _instance;
+    await db.delete('tier_placements',
+        where: 'mode = ? AND level = ?', whereArgs: [mode, level]);
   }
 
   // -- PAD RATINGS

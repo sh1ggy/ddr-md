@@ -15,6 +15,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:ddr_md/components/tiers/tier_pairs.dart';
 import 'package:ddr_md/components/circle/cheer_stamp.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/session/goal_card.dart';
@@ -295,9 +296,15 @@ class _SessionWrapPageState extends State<SessionWrapPage>
         _Beat.verdict,
         if (_visit?.session?.goal != null) _Beat.goal,
         if (_cheered(circle).isNotEmpty) _Beat.circle,
+        if (_pairs.isNotEmpty) _Beat.tiers,
         if (_unplayed().isNotEmpty) _Beat.heard,
         if (_cards.isNotEmpty) _Beat.pack,
       ];
+
+  // Fixed once the plays are in, so answering one doesn't reshuffle them.
+  List<TierPair>? _pairsFixed;
+  List<TierPair> get _pairs =>
+      _pairsFixed ??= _visit == null ? const [] : tierPairs(_visit!.plays);
 
   @override
   void dispose() {
@@ -353,6 +360,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
     }
     if (!mounted || load != _loads) return;
     setState(() {
+      _pairsFixed = null;
       _visit = visit;
       _summary = data.model.summarize(visit.plays);
       _gains = gains;
@@ -431,6 +439,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
           _Beat.verdict => 'Summary',
           _Beat.goal => 'Goal',
           _Beat.circle => 'Cheers',
+          _Beat.tiers => 'Tiers',
           _Beat.heard => 'Heard',
           _Beat.pack => 'Cards',
         },
@@ -542,6 +551,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
                         goal: _goalProgress()),
                     _Beat.goal => _GoalResult(_goalProgress()!),
                     _Beat.circle => _CheerWall(_cheered(circle)),
+                    _Beat.tiers => TierPairs(_pairs),
                     _Beat.heard => _HeardWall(_unplayed()),
                     _Beat.pack => Padding(
                         padding: const EdgeInsets.only(bottom: 80),
@@ -685,7 +695,7 @@ class _HeardWallState extends State<_HeardWall> {
   }
 }
 
-enum _Beat { verdict, goal, circle, heard, pack }
+enum _Beat { verdict, goal, circle, tiers, heard, pack }
 
 // Each cheer lands as another stamp. Positions stay fixed across rebuilds;
 // a busy session fills the page before stickers start to overlap.

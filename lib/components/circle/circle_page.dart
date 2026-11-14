@@ -12,6 +12,7 @@ library;
 
 import 'dart:async';
 
+import 'package:ddr_md/components/tiers/circle_tiers_page.dart';
 import 'package:ddr_md/components/circle/showcase_page.dart';
 import 'package:ddr_md/components/circle/circle_credit_card.dart';
 import 'package:ddr_md/components/circle/circle_art.dart';
@@ -227,6 +228,18 @@ class _CirclePageState extends State<CirclePage> {
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 10),
                                 child: CirclePadCard(p),
+                              ),
+                          ],
+                          if (circle.tierPosts.isNotEmpty) ...[
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(2, 26, 0, 10),
+                              child: Text('TIERS',
+                                  style: FloorPop.of(context).label),
+                            ),
+                            for (final t in circle.tierPosts)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: CircleTierPostCard(t),
                               ),
                           ],
                           if (youCheer.isNotEmpty) ...[

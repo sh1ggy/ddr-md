@@ -222,6 +222,11 @@ class Settings {
   static const String circleLocationDefaultKey = "circleLocationDefault";
   static const String cloudSyncedAtKey = "cloudSyncedAt";
 
+  // Which tier rows and numerals show (TierShown's index: yours, calculated,
+  // circle median), and 1 = your tiers are kept from your circle.
+  static const String tierShownKey = "tierShown";
+  static const String circleTiersHiddenKey = "circleTiersHidden";
+
   /// 1 once a store build's player has downloaded Song ID's fingerprints.
   static const String songIdDownloadKey = "songIdDownload";
 
@@ -274,6 +279,8 @@ class Settings {
     eamuseProfileLastPlayKey,
     circleLiveDefaultKey,
     circleLocationDefaultKey,
+    tierShownKey,
+    circleTiersHiddenKey,
   };
 
   static Map<String, Object> syncedPrefs() => {
