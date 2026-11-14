@@ -58,7 +58,6 @@ List<double> _evidence(_Entry e, ChartCategory c) {
     ChartCategory.jack => at([Pattern.jack, Pattern.drill]),
     ChartCategory.crossover => at([Pattern.crossover]),
     ChartCategory.footswitch => at([Pattern.footswitch, Pattern.sideswitch]),
-    ChartCategory.bracket => at([Pattern.bracket]),
     ChartCategory.freeze => [
         for (final n in taps)
           if (n.isHold && n.endSecond != null)

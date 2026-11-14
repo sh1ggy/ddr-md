@@ -60,7 +60,6 @@ const Map<String, String> _patternNames = {
   'doublestep-vs-crossover': 'Doublestep or Crossover',
   'candle': 'Candle',
   'spin': 'Spin',
-  'bracket-vs-jump': 'Bracket or Jump',
   'hold-with-taps': 'Hold with Taps',
 };
 
