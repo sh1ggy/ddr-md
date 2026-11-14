@@ -50,6 +50,27 @@ jobs:
           repository: ${{ github.repository }}
           path: _content
           persist-credentials: false
+      # Production only takes a release signed off in the release console
+      # (DDR-BPM-prep): release.json must describe exactly these files, the
+      # same hash the console records when it drafts them.
+      - name: Check the content is a signed-off release
+        if: inputs.pages-branch == 'main'
+        working-directory: _content
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess, sys
+          git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip()
+          if not os.path.exists("release.json"):
+              sys.exit("::error::No release.json: content only ships through the release console")
+          rec = json.load(open("release.json"))
+          dirs = ["songs", "steps", "jackets", "jackets-160"] + (["fingerprints"] if os.path.isdir("fingerprints") else [])
+          tree = "".join(f"{d} {git('rev-parse', f'HEAD:{d}')}\n" for d in dirs)
+          if rec.get("content_hash") != hashlib.sha256(tree.encode()).hexdigest():
+              sys.exit("::error::release.json doesn't describe these files: release them through the console")
+          if not rec.get("tested") or not rec.get("expected_id"):
+              sys.exit("::error::This release hasn't been signed off")
+          print(f"Release: {rec['title']} (expects {rec['expected_id']})")
+          PY
       - name: Move the content into assets/
         run: |
           for d in songs steps jackets jackets-160; do
@@ -94,7 +115,7 @@ jobs:
       # Checks a bad publish would otherwise slip past:
       # - every listed song has its steps (the songlist replaces the whole list
       #   on devices, so a bad prep run would reach everyone);
-      # - no song disappears unless removed.txt in the content repo names it
+      # - no song disappears unless the release (or removed.txt) names it
       #   (a rename looks like remove + add, and orphans players' scores,
       #   notes and footing edits);
       # - counts can't change for a chart whose steps didn't, unless
@@ -119,6 +140,8 @@ jobs:
           allowed = set()
           if os.path.exists("_content/removed.txt"):
               allowed = {l.strip() for l in open("_content/removed.txt") if l.strip()}
+          if os.path.exists("_content/release.json"):
+              allowed |= set(json.load(open("_content/release.json")).get("removes") or [])
           gone = sorted(p[6:-5] for p in old if p.startswith("steps/") and p not in files)
           if [n for n in gone if n not in allowed]:
               problems.append(f"songs would disappear: {[n for n in gone if n not in allowed]}. "
@@ -176,6 +199,19 @@ jobs:
               && cmp -s build/content/.well-known/assetlinks.json live_assetlinks.json; then
             echo "Unchanged since the live publish, nothing to deploy"
             exit 0
+          fi
+          # Production deploys only what staging built and was signed off. A
+          # newer generator gives another id: the nightly run just reports it,
+          # and the console drafts an engine release for it.
+          expected=$(jq -r '.expected_id // empty' _content/release.json 2>/dev/null || true)
+          built=$(jq -r .id build/content/manifest.json)
+          if [ "${{ inputs.pages-branch }}" = main ] && [ "$built" != "$expected" ]; then
+            if [ "${{ github.event_name }}" = schedule ]; then
+              echo "::notice::Generators now build $built (release expects $expected); not deploying until a release takes it"
+              exit 0
+            fi
+            echo "::error::Built $built but the release was signed off as $expected"
+            exit 1
           fi
           npx --yes wrangler@4.156.0 pages deploy build/content \
             --project-name "${{ inputs.pages-project }}" --branch "${{ inputs.pages-branch }}" --commit-dirty=true
