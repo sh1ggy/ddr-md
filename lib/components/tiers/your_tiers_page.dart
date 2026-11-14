@@ -5,6 +5,7 @@
 /// starts faded on its calculated rung; placed ones show how far they sit
 /// from it. Drag a chart onto a rung (its own rung keeps it there), or tap
 /// it to place it. Played charts with no calculated tier wait in a tray.
+/// Reset puts the whole level back on its calculated rungs, with an undo.
 /// Leaving shares what changed with your circle.
 library;
 
@@ -82,6 +83,20 @@ class _YourTiersPageState extends State<YourTiersPage> {
     _changed.putIfAbsent(chart.level, () => {}).add(chart.key);
   }
 
+  Future<void> _reset(int level) async {
+    HapticFeedback.mediumImpact();
+    final gone = await YourTiers.reset(level);
+    _changed.remove(level);
+    if (!mounted || gone.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      content: Text('$level back to calculated'),
+      action: SnackBarAction(
+          label: 'Undo', onPressed: () => YourTiers.restore(gone)),
+    ));
+  }
+
   Future<void> _open(LevelChart chart) async {
     final before = chart.placement?.hundredths;
     await showPlaceTierSheet(context, chart, share: false);
@@ -124,6 +139,12 @@ class _YourTiersPageState extends State<YourTiersPage> {
                 child: Row(children: [
                   const BackButton(),
                   const Expanded(child: PageTitle('Your tiers')),
+                  HeaderButton(
+                      tooltip: 'Reset to calculated',
+                      onPressed: charts.any((c) => c.placement != null)
+                          ? () => _reset(level!)
+                          : null,
+                      icon: const Icon(Icons.restart_alt_rounded)),
                   HeaderButton(
                       tooltip: 'Your lean',
                       onPressed: () => Navigator.of(context).push(
@@ -264,7 +285,8 @@ class _DraggableJacket extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Still on its calculated rung, not placed yet.
-    final jacket = Opacity(
+    final jacket = AnimatedOpacity(
+        duration: FloorPop.eighth,
         opacity: chart.placement == null ? .4 : 1,
         child: TierJacket(chart, rung: rung));
     return Semantics(

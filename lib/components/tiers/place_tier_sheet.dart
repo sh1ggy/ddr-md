@@ -161,7 +161,7 @@ class _PlaceSheetState extends State<_PlaceSheet> {
                   child: GhostButton(
                       height: 56,
                       onPressed: () => _save(null),
-                      child: const Text('Clear'))),
+                      child: const Text('Reset'))),
               const SizedBox(width: 10),
             ],
             Expanded(

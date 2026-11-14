@@ -114,6 +114,43 @@ class YourTiers {
     revision.value++;
   }
 
+  /// Takes every placement at [level] off, back to the calculated rungs,
+  /// and hands them back for [restore].
+  static Future<Map<TierChart, TierPlacement>> reset(int level) async {
+    final gone = {
+      for (final e in _placements.entries)
+        if (e.value.level == level) e.key: e.value
+    };
+    if (gone.isEmpty) return gone;
+    await DatabaseProvider.clearTierPlacements(
+        mode: Modes.singles.name, level: level);
+    _placements = {
+      for (final e in _placements.entries)
+        if (!gone.containsKey(e.key)) e.key: e.value
+    };
+    unshared = true;
+    TierLean.invalidate();
+    revision.value++;
+    return gone;
+  }
+
+  /// Puts back what [reset] took off.
+  static Future<void> restore(Map<TierChart, TierPlacement> placements) async {
+    for (final MapEntry(key: (song, difficulty), value: p)
+        in placements.entries) {
+      await DatabaseProvider.setTierPlacement(
+          song: song,
+          mode: Modes.singles.name,
+          difficulty: difficulty,
+          level: p.level,
+          hundredths: p.hundredths);
+    }
+    _placements = {..._placements, ...placements};
+    unshared = true;
+    TierLean.invalidate();
+    revision.value++;
+  }
+
   /// Only charts with a play on record can be placed.
   static bool canPlace(String song, String difficulty) =>
       ChartBests.forChart(song, Modes.singles, difficulty) != null;

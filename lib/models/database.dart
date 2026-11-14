@@ -275,6 +275,13 @@ class DatabaseProvider {
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  static Future<void> clearTierPlacements(
+      {required String mode, required int level}) async {
+    final db = await _instance;
+    await db.delete('tier_placements',
+        where: 'mode = ? AND level = ?', whereArgs: [mode, level]);
+  }
+
   // -- PAD RATINGS
   static const _padSelect =
       'SELECT r.*, c.venueId, c.name AS cabinetName, v.name AS venueName, '
