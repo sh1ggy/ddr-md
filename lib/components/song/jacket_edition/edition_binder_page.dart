@@ -600,18 +600,28 @@ class _Cover extends StatelessWidget {
             Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
               LevelNumber(
                   level: divider.level, difficulty: 'EXPERT', height: 60),
-              const Spacer(),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text.rich(
-                    TextSpan(text: '${divider.collected}', children: [
-                      TextSpan(
-                          text: '/${divider.total}',
-                          style: FloorPop.readout(20, color: ink)),
-                    ]),
-                    style: FloorPop.readout(40,
-                        color: finished ? ink : scheme.onSurface)),
-                Text('COLLECTED', style: caps),
-              ]),
+              const SizedBox(width: _kCoverGap),
+              // Shrinks rather than overflowing under large text.
+              Expanded(
+                  child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.bottomRight,
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text.rich(
+                                TextSpan(
+                                    text: '${divider.collected}',
+                                    children: [
+                                      TextSpan(
+                                          text: '/${divider.total}',
+                                          style:
+                                              FloorPop.readout(20, color: ink)),
+                                    ]),
+                                style: FloorPop.readout(40,
+                                    color: finished ? ink : scheme.onSurface)),
+                            Text('COLLECTED', style: caps),
+                          ]))),
             ]),
             const SizedBox(height: _kCoverGap),
             // The fan takes what the tiers leave, and the tiers never more
