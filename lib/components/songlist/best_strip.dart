@@ -432,6 +432,22 @@ class _BandsPainter extends CustomPainter {
       old.fill != fill;
 }
 
+/// The listed charts' clear lamps as one bar, best first, the unplayed as
+/// its track.
+class LampBar extends StatelessWidget {
+  const LampBar(this.bests, {super.key, this.height = 6});
+  final List<ChartBest?> bests;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) => bests.isEmpty
+      ? SizedBox(height: height)
+      : CustomPaint(
+          size: Size.fromHeight(height),
+          painter: _BandsPainter(_rings(bests)[BestMeasure.lamp.ring],
+              bests.length, FloorPop.of(context).stage));
+}
+
 /// How many tiers [bests] reach in each section: grade, lamp, flare.
 List<int> bestTierCounts(List<ChartBest?> bests) =>
     [for (final r in _rings(bests)) r.length];
@@ -481,7 +497,8 @@ class BestTiers extends StatelessWidget {
       }
 
       final sections = [
-        for (var i = 0; i < rings.length; i++)
+        // Lamps first, the most hard-won.
+        for (final i in const [1, 0, 2])
           if (math.max(rings[i].length, reserve?[i] ?? 0) case final n
               when n > 0)
             section(i, n),

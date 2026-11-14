@@ -507,6 +507,8 @@ class _EditionBinderPageState extends State<EditionBinderPage>
 }
 
 const _kPageMaxWidth = 520.0, _kColumns = 6;
+// The space between a cover's parts.
+const _kCoverGap = 16.0;
 // A sheet's padding and the gap between pockets.
 const _kPad = 10.0, _kGap = 8.0;
 
@@ -522,8 +524,9 @@ const _kPad = 10.0, _kGap = 8.0;
   );
 }
 
-// A level's cover: its number and count across the top, its best cards
-// fanned in the middle with the negative in front, and its tiers below.
+// A level's cover: its number and count across the top over a bar of its
+// lamps, its best cards fanned large in the middle with the negative in
+// front, and its tiers below.
 class _Cover extends StatelessWidget {
   const _Cover(
       {required this.divider, required this.reserve, required this.onOpen});
@@ -590,22 +593,33 @@ class _Cover extends StatelessWidget {
             child: background),
       // Materials inset only the background; every cover keeps its layout.
       Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            // The level and how much of it is collected lead the cover.
             Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
               LevelNumber(
-                  level: divider.level, difficulty: 'EXPERT', height: 76),
+                  level: divider.level, difficulty: 'EXPERT', height: 96),
               const Spacer(),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text('${divider.collected}/${divider.total}',
-                    style: FloorPop.readout(24,
+                Text.rich(
+                    TextSpan(text: '${divider.collected}', children: [
+                      TextSpan(
+                          text: '/${divider.total}',
+                          style: FloorPop.readout(20, color: ink)),
+                    ]),
+                    style: FloorPop.readout(40,
                         color: finished ? ink : scheme.onSurface)),
                 Text('COLLECTED', style: caps),
               ]),
             ]),
+            // Clears the numeral's shadow, which hangs below its box.
+            const SizedBox(height: _kCoverGap + 8),
+            // Every chart at the level by its lamp, the unplayed as track.
+            LampBar(divider.bests, height: 10),
+            const SizedBox(height: _kCoverGap),
             // The fan takes what the tiers leave, and the tiers never more
-            // than two thirds, shrinking to fit on a short screen rather than
+            // than half, shrinking to fit on a short screen rather than
             // scrolling.
             Expanded(
                 child: LayoutBuilder(
@@ -619,18 +633,10 @@ class _Cover extends StatelessWidget {
                                               style:
                                                   TextStyle(color: pop.haze)))
                                       : _Fan(pockets: fan, onOpen: onOpen)),
-                              Text(
-                                  top == null
-                                      ? ''
-                                      : 'Top card · ${top.song.title}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(fontSize: 12, color: ink)),
-                              const SizedBox(height: 12),
-                              // What the level list's strip counts, laid out.
+                              const SizedBox(height: _kCoverGap),
                               ConstrainedBox(
                                   constraints: BoxConstraints(
-                                      maxHeight: box.maxHeight * 2 / 3),
+                                      maxHeight: box.maxHeight / 2),
                                   child: FittedBox(
                                       fit: BoxFit.scaleDown,
                                       alignment: Alignment.bottomCenter,
@@ -654,8 +660,9 @@ class _Fan extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        // As big as the space allows, room left for the tilted cards' swing.
         final side =
-            math.max(0.0, math.min(box.maxHeight - 32, box.maxWidth * .52));
+            math.max(0.0, math.min(box.maxHeight * .92, box.maxWidth * .56));
         Widget card(BinderPocket pocket, double turn, double shift) =>
             Transform.translate(
                 offset: Offset(shift * side, 0),
