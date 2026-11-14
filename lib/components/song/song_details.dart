@@ -20,6 +20,7 @@ import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/score_overview.dart' show flareGroup;
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -208,6 +209,9 @@ class SongDetails extends StatelessWidget {
                                   difficulty: key ?? ''
                                 ),
                                 level: level,
+                                tier: key == null
+                                    ? null
+                                    : songInfo.cardTier(mode, key),
                                 version: flareGroup(songInfo.version),
                                 grade: best?.grade,
                                 flare: best?.flare,

@@ -22,6 +22,7 @@ import 'package:ddr_md/grades.dart' show Grade;
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
@@ -104,6 +105,7 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
             : EditionFacts(
                 chart: (song: song.name, mode: mode.name, difficulty: key),
                 level: level,
+                tier: song.cardTier(mode, key),
                 version: flareGroup(song.version),
                 grade: best.grade,
                 flare: best.flare,

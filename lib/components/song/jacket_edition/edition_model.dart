@@ -72,7 +72,7 @@ class EditionFacts {
   final EditionChartKey chart;
   final int? level;
   // How hard the chart is within its level, easy 0 to hard 9, as 17.0–17.9.
-  // From community ratings, which aren't loaded yet.
+  // The tier the level numeral shows (see ShownTiers.cardTier).
   final int? tier;
   final FlareGroup? version;
   final Grade? grade;
