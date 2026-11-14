@@ -70,11 +70,14 @@ Color tierDeltaColor(int delta) =>
 /// A chart's jacket, with a chip for how far [rung] sits from its
 /// calculated tier when they differ.
 class TierJacket extends StatelessWidget {
-  const TierJacket(this.chart, {super.key, this.rung, this.size = 48});
+  const TierJacket(this.chart,
+      {super.key, this.rung, this.size = 48, this.placed = false});
 
   final LevelChart chart;
   final int? rung;
   final double size;
+  // Outlined in Volt: the player has put it on its rung.
+  final bool placed;
 
   @override
   Widget build(BuildContext context) {
@@ -85,15 +88,33 @@ class TierJacket extends StatelessWidget {
       child: Stack(clipBehavior: Clip.none, children: [
         Positioned.fill(
           child: ClipRRect(
-              borderRadius: BorderRadius.circular(size / 5),
-              child: SongArtwork(
-                  songName: chart.song.name, title: chart.song.title)),
+            borderRadius: BorderRadius.circular(size / 5),
+            child: Stack(fit: StackFit.expand, children: [
+              SongArtwork(songName: chart.song.name, title: chart.song.title),
+              // The difficulty along the foot, as on the song list's rows.
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                    height: 3,
+                    width: double.infinity,
+                    child: ColoredBox(
+                        color: kInGameDifficultyColors[chart.difficulty] ??
+                            Colors.grey)),
+              ),
+            ]),
+          ),
         ),
-        Positioned(
-          left: 2,
-          bottom: 2,
-          child: DifficultyDot(chart.difficulty, size: size / 6),
-        ),
+        if (placed)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(size / 5),
+                    border: Border.all(
+                        color: FloorPop.of(context).voltText, width: 2)),
+              ),
+            ),
+          ),
         if (delta != 0)
           Positioned(
             top: -6,
@@ -111,25 +132,6 @@ class TierJacket extends StatelessWidget {
       ]),
     );
   }
-}
-
-/// The chart's difficulty as a dot of its colour, for jackets too small for
-/// the lettering.
-class DifficultyDot extends StatelessWidget {
-  const DifficultyDot(this.difficulty, {super.key, this.size = 8});
-
-  final String difficulty;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-            color: kInGameDifficultyColors[difficulty] ?? Colors.grey,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.black, width: 1)),
-      );
 }
 
 /// Levels 1–19 as the cabinet's numerals, the chosen one on Volt.

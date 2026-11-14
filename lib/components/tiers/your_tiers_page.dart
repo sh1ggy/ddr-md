@@ -142,7 +142,11 @@ class _YourTiersPageState extends State<YourTiersPage> {
                 padding: const EdgeInsets.fromLTRB(4, 8, 16, 0),
                 child: Row(children: [
                   const BackButton(),
-                  const Expanded(child: PageTitle('Your tiers')),
+                  const Expanded(
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: PageTitle('Your tiers'))),
                   HeaderButton(
                       tooltip: 'Reset to calculated',
                       onPressed: charts.any((c) => c.placement != null)
@@ -187,7 +191,16 @@ class _YourTiersPageState extends State<YourTiersPage> {
                 child: level == null
                     ? const Center(child: CircularProgressIndicator())
                     : SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                        // Clear of the floating tab bar when no tray sits
+                        // between.
+                        padding: EdgeInsets.fromLTRB(
+                            16,
+                            8,
+                            16,
+                            24 +
+                                (tray.isEmpty
+                                    ? MediaQuery.paddingOf(context).bottom
+                                    : 0)),
                         child: Column(key: _ladder, children: [
                           for (final h in rungsOf(level))
                             _Rung(
@@ -292,11 +305,8 @@ class _DraggableJacket extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Still on its calculated rung, not placed yet.
-    final jacket = AnimatedOpacity(
-        duration: FloorPop.eighth,
-        opacity: chart.placement == null ? .4 : 1,
-        child: TierJacket(chart, rung: rung));
+    final jacket =
+        TierJacket(chart, rung: rung, placed: chart.placement != null);
     return Semantics(
       button: true,
       label: '${chart.song.title} ${chart.difficulty}',
