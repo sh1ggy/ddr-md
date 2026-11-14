@@ -294,9 +294,11 @@ class _Ladder extends StatelessWidget {
                 if (onStats != null || onBinder != null || onTiers != null) ...[
                   const SizedBox(height: 20),
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    for (final (i, (label, onTap)) in [
-                      if (onTiers != null) ('Your tiers', onTiers!),
-                      if (onStats != null) ('All stats', onStats!),
+                    for (final (i, (icon, label, onTap)) in [
+                      if (onTiers != null)
+                        (Icons.stairs_rounded, 'Your tiers', onTiers!),
+                      if (onStats != null)
+                        (Icons.insights_rounded, 'All stats', onStats!),
                     ].indexed) ...[
                       if (i > 0) const SizedBox(width: 10),
                       Expanded(
@@ -314,7 +316,8 @@ class _Ladder extends StatelessWidget {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: FittedBox(
-                                fit: BoxFit.scaleDown, child: Text(label)),
+                                fit: BoxFit.scaleDown,
+                                child: _Labelled(icon, label)),
                           ),
                         ),
                       ),
@@ -335,7 +338,9 @@ class _Ladder extends StatelessWidget {
                             padding: EdgeInsets.symmetric(horizontal: 12),
                             child: FittedBox(
                                 fit: BoxFit.scaleDown,
-                                child: Text('Open binder')),
+                                child: _Labelled(
+                                    Icons.collections_bookmark_outlined,
+                                    'Open binder')),
                           ),
                         ),
                       ),
@@ -348,6 +353,21 @@ class _Ladder extends StatelessWidget {
       },
     );
   }
+}
+
+/// A button's icon and label on one line.
+class _Labelled extends StatelessWidget {
+  const _Labelled(this.icon, this.label);
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) =>
+      Row(mainAxisSize: MainAxisSize.min, spacing: 6, children: [
+        Icon(icon, size: 18),
+        Text(label),
+      ]);
 }
 
 /// How many tiers [bests] reach in each section: grade, lamp, flare.
