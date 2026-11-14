@@ -206,12 +206,7 @@ class BestStrip extends StatelessWidget {
               child: Row(children: [
                 Expanded(
                   child: TweenAnimationBuilder<double>(
-                    // Sweeps in afresh whenever the filter or measure lands on
-                    // a different mix.
-                    key: ValueKey(Object.hashAll([
-                      m,
-                      for (final t in tiers) Object.hash(t.count, t.color),
-                    ])),
+                    // Sweeps in once; filtering redraws the bands in place.
                     tween: Tween(begin: 0, end: 1),
                     duration: FloorPop.beat * 2,
                     curve: FloorPop.settle,
