@@ -38,6 +38,7 @@ class _EditionChartFactsState extends State<EditionChartFacts> {
     super.didUpdateWidget(old);
     if (old.facts.chart == widget.facts.chart &&
         old.facts.level == widget.facts.level &&
+        old.facts.tier == widget.facts.tier &&
         old.facts.version == widget.facts.version &&
         old.facts.grade == widget.facts.grade &&
         old.facts.lamp == widget.facts.lamp &&
@@ -67,6 +68,7 @@ class _EditionChartFactsState extends State<EditionChartFacts> {
       setState(() => _facts = EditionFacts(
           chart: facts.chart,
           level: facts.level,
+          tier: facts.tier,
           version: facts.version,
           grade: best?.grade,
           flare: best?.flare,

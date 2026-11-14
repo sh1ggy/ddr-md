@@ -240,6 +240,16 @@ extension ShownTiers on SongInfo {
     final level = tierChartAt(mode, index)?.level;
     return t == null || level == null ? null : level + t.hundredths / 100;
   }
+
+  /// The shown tier's tenths digit for [mode]'s chart [key] (14.85 → 8),
+  /// which picks a jacket card's foil cut.
+  int? cardTier(Modes mode, String key) {
+    final i = (mode == Modes.singles ? singles : doubles)
+        .availableTypes
+        .indexOf(key);
+    final hundredths = i < 0 ? null : shownTierFor(mode, i)?.hundredths;
+    return hundredths == null ? null : hundredths ~/ 10;
+  }
 }
 
 /// How the player's placements lean from the calculated tiers, per kind of
