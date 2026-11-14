@@ -1,8 +1,8 @@
 /// Name: EditionBinderPage
-/// Parent: DevelopmentPage, BestRings (from the level list)
+/// Parent: DevelopmentPage, BestStrip (from the level list)
 /// Description: The player's cards as a binder, in the profile's play style:
-/// a cover for each level, highest first, with its charts' bests as the
-/// level list's rings and its best cards fanned out, then sheets of every
+/// a cover for each level, highest first, with its best cards fanned out
+/// over its charts' tiers, then sheets of every
 /// chart at that level in title order, six across and as many rows as the
 /// screen holds. Jackets alone, like a binder's sleeves. A chart without a
 /// best is an empty pocket, its jacket a ghost, so the gaps show. Tapping a
@@ -15,7 +15,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart' show PageDots;
 import 'package:ddr_md/components/session/session_wrap.dart' show ShockPainter;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/songlist/best_rings.dart';
+import 'package:ddr_md/components/songlist/best_strip.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
 import 'package:ddr_md/grades.dart' show Grade;
@@ -398,6 +398,15 @@ class _EditionBinderPageState extends State<EditionBinderPage>
                   final grid = _grid(width - 32 - 2 * _kPad,
                       box.maxHeight - tabs - footer - 2 * margin - 2 * _kPad);
                   final pages = _paginate(grid.rows * _kColumns);
+                  // Room for the most tiers any level reaches, so every
+                  // cover lays out the same.
+                  final reserve = [
+                    for (var i = 0; i < 3; i++)
+                      pages
+                          .whereType<BinderDivider>()
+                          .map((d) => bestTierCounts(d.bests)[i])
+                          .fold(0, math.max),
+                  ];
                   if (!_shown) return const SizedBox.shrink();
                   final level = pages.isEmpty ? null : pages[_page].level;
                   final sheets = pages
@@ -467,7 +476,9 @@ class _EditionBinderPageState extends State<EditionBinderPage>
                                                 vertical: margin),
                                             child: switch (pages[i]) {
                                               final BinderDivider d => _Cover(
-                                                  divider: d, onOpen: _open),
+                                                  divider: d,
+                                                  reserve: reserve,
+                                                  onOpen: _open),
                                               final BinderSheet s => _Sheet(
                                                   key: ValueKey(
                                                       (s.level, s.start)),
@@ -496,6 +507,9 @@ class _EditionBinderPageState extends State<EditionBinderPage>
 }
 
 const _kPageMaxWidth = 520.0, _kColumns = 6;
+// The space between a cover's parts, the height of its level and count, and
+// the least its fan may be.
+const _kCoverGap = 16.0, _kCoverHero = 64.0, _kCoverFan = 120.0;
 // A sheet's padding and the gap between pockets.
 const _kPad = 10.0, _kGap = 8.0;
 
@@ -511,11 +525,14 @@ const _kPad = 10.0, _kGap = 8.0;
   );
 }
 
-// A level's cover: its number across the top, its best cards fanned in the
-// middle with the negative in front, and its tiers and count below.
+// A level's cover: its number and count across the top, its best cards
+// fanned large in the middle with the negative in front, and its tiers
+// below.
 class _Cover extends StatelessWidget {
-  const _Cover({required this.divider, required this.onOpen});
+  const _Cover(
+      {required this.divider, required this.reserve, required this.onOpen});
   final BinderDivider divider;
+  final List<int> reserve;
   final ValueChanged<BinderPocket> onOpen;
 
   @override
@@ -577,43 +594,94 @@ class _Cover extends StatelessWidget {
             child: background),
       // Materials inset only the background; every cover keeps its layout.
       Padding(
-          padding: const EdgeInsets.all(24),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            LevelNumber(level: divider.level, difficulty: 'EXPERT', height: 76),
-            // The fan and the tiers split the cover evenly,
-            // always, so paging from level to level nothing moves;
-            // tiers past their share scroll.
-            Expanded(
-                child: fan.isEmpty
-                    ? Center(
-                        child: Text('No cards here yet',
-                            style: TextStyle(color: pop.haze)))
-                    : _Fan(pockets: fan, onOpen: onOpen)),
-            // What the level list's rings count, laid out.
-            Expanded(
-                child: SingleChildScrollView(
-                    child: LayoutBuilder(
-                        builder: (context, box) => BestTiers(divider.bests,
-                            columns: (box.maxWidth / 100).floor().clamp(1, 4),
-                            labelColor: finished ? ink : null)))),
-            const SizedBox(height: 14),
-            Text(top == null ? '' : 'Top card · ${top.song.title}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: ink)),
-            const SizedBox(height: 10),
-            Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text('${divider.collected}/${divider.total}',
-                      style: FloorPop.readout(24,
-                          color: finished ? ink : scheme.onSurface)),
-                  const SizedBox(width: 8),
-                  Text('COLLECTED', style: caps),
-                ]),
-          ])),
+          padding: const EdgeInsets.all(20),
+          child: LayoutBuilder(builder: (context, box) {
+            final width = box.maxWidth, height = box.maxHeight;
+            // The level and how much of it is collected lead the cover, the
+            // count shrinking rather than overflowing under large text.
+            final hero = SizedBox(
+                height: _kCoverHero,
+                child:
+                    Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  LevelNumber(
+                      level: divider.level, difficulty: 'EXPERT', height: 60),
+                  const SizedBox(width: _kCoverGap),
+                  Expanded(
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.bottomRight,
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text.rich(
+                                    TextSpan(
+                                        text: '${divider.collected}',
+                                        children: [
+                                          TextSpan(
+                                              text: '/${divider.total}',
+                                              style: FloorPop.readout(20,
+                                                  color: ink)),
+                                        ]),
+                                    style: FloorPop.readout(40,
+                                        color: finished
+                                            ? ink
+                                            : scheme.onSurface)),
+                                Text('COLLECTED', style: caps),
+                              ]))),
+                ]));
+            final cards = fan.isEmpty
+                ? Center(
+                    child: Text('No cards here yet',
+                        style: TextStyle(color: pop.haze)))
+                : _Fan(pockets: fan, onOpen: onOpen);
+            Widget tiers(double width) => SizedBox(
+                width: width,
+                child: BestTiers(divider.bests,
+                    reserve: reserve, labelColor: finished ? ink : null));
+            double tiersHeight(double width) =>
+                BestTiers.heightFor(divider.bests, width, reserve: reserve);
+            // The tiers keep their size; the fan takes what they leave. Where
+            // even the smallest fan doesn't fit, the whole cover shrinks as
+            // one rather than scrolling.
+            Widget fit(double needed, Widget child) => needed <= height
+                ? child
+                : FittedBox(
+                    child: SizedBox(
+                        width: width, height: needed, child: child));
+            // Wider than tall: the level over the fan, the tiers the full
+            // height beside them.
+            if (width > height) {
+              final left = (width - _kCoverGap) * .42;
+              final right = width - _kCoverGap - left;
+              return fit(
+                  math.max(tiersHeight(right),
+                      _kCoverHero + _kCoverGap + _kCoverFan),
+                  Row(children: [
+                    SizedBox(
+                        width: left,
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              hero,
+                              const SizedBox(height: _kCoverGap),
+                              Expanded(child: cards),
+                            ])),
+                    const SizedBox(width: _kCoverGap),
+                    Center(child: tiers(right)),
+                  ]));
+            }
+            return fit(
+                _kCoverHero + 2 * _kCoverGap + _kCoverFan + tiersHeight(width),
+                Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      hero,
+                      const SizedBox(height: _kCoverGap),
+                      Expanded(child: cards),
+                      const SizedBox(height: _kCoverGap),
+                      tiers(width),
+                    ]));
+          })),
     ]);
   }
 }
@@ -626,8 +694,9 @@ class _Fan extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        // As big as the space allows, room left for the tilted cards' swing.
         final side =
-            math.max(0.0, math.min(box.maxHeight - 32, box.maxWidth * .52));
+            math.max(0.0, math.min(box.maxHeight * .92, box.maxWidth * .56));
         Widget card(BinderPocket pocket, double turn, double shift) =>
             Transform.translate(
                 offset: Offset(shift * side, 0),

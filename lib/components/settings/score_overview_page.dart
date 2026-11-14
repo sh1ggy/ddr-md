@@ -937,7 +937,7 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
 }
 
 /// Band labels with their counts as a three-column grid of badge tiles, the
-/// same as the song list's rings card, so changing counts never moves
+/// same as the binder's tier counts, so changing counts never moves
 /// anything. Empty bands are dimmed.
 class _BandCounts extends StatelessWidget {
   const _BandCounts(this.entries);
