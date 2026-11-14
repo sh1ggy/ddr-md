@@ -14,6 +14,7 @@ import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart'
     show LevelNumber, LevelPicker;
 import 'package:ddr_md/components/song/scores/art_badge.dart';
+import 'package:ddr_md/components/song/scores/tier_breakdown.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/flare_card.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
@@ -751,8 +752,6 @@ final _gradeBands = <_Band>[
 Grade _grade(ScoreRecord r) => gradeForScore(r.score ?? 0,
     failed: (r.clearLamp ?? ClearLamp.failed) == ClearLamp.failed);
 
-const _bandHeight = 18.0;
-
 enum _Tab { lamps, grades, flare }
 
 class _LevelsCard extends StatefulWidget {
@@ -814,29 +813,12 @@ class _LevelsCardState extends State<_LevelsCard> {
                       SizedBox(width: 30, child: Center(child: _Level(level))),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
-                          child: SizedBox(
-                            height: 14,
-                            child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  for (final b in bands)
-                                    if (_count(row, b) > 0)
-                                      Expanded(
-                                          flex: _count(row, b),
-                                          child: DecoratedBox(
-                                              decoration: BoxDecoration(
-                                                  color: b.color,
-                                                  gradient: b.fill))),
-                                  if (_unplayed(row) > 0)
-                                    Expanded(
-                                        flex: _unplayed(row),
-                                        child: ColoredBox(
-                                            color: scheme
-                                                .surfaceContainerHighest)),
-                                ]),
-                          ),
+                        child: CustomPaint(
+                          size: const Size.fromHeight(14),
+                          painter: TierBarPainter(
+                              _tierCounts(bands, (b) => _count(row, b)),
+                              row.played.length + _unplayed(row),
+                              scheme.surfaceContainerHighest),
                         ),
                       ),
                       SizedBox(
@@ -851,21 +833,34 @@ class _LevelsCardState extends State<_LevelsCard> {
                   ))),
         const SizedBox(height: 10),
         // Every band, even empty ones, so the grid holds still between picks.
-        _BandCounts([
-          for (final b in bands)
-            (
-              b,
-              _picked == null
-                  ? _total(widget.levels, b)
-                  : _count(widget.levels[_picked]!, b)
-            ),
-        ]),
+        TierGrid(
+            _tierCounts(
+                bands,
+                (b) => _picked == null
+                    ? _total(widget.levels, b)
+                    : _count(widget.levels[_picked]!, b)),
+            aspect: switch (_tab) {
+              _Tab.lamps => kLampAspect,
+              _Tab.grades => kGradeAspect,
+              _Tab.flare => kFlareAspect,
+            }),
       ],
     );
   }
 }
 
 int _count(LevelCharts row, _Band b) => row.played.where(b.holds).length;
+
+List<TierCount> _tierCounts(List<_Band> bands, int Function(_Band) count) => [
+      for (final b in bands)
+        (
+          count: count(b),
+          color: b.color,
+          rainbow: b.fill == null ? null : kFlareExColors,
+          art: b.icon,
+          label: b.text,
+        ),
+    ];
 
 int _total(Map<int, LevelCharts> levels, _Band b) =>
     levels.values.fold(0, (n, row) => n + _count(row, b));
@@ -932,50 +927,6 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
         ),
         _ScoreSpread(row.played),
       ],
-    );
-  }
-}
-
-/// Band labels with their counts as a three-column grid of badge tiles, the
-/// same as the binder's tier counts, so changing counts never moves
-/// anything. Empty bands are dimmed.
-class _BandCounts extends StatelessWidget {
-  const _BandCounts(this.entries);
-
-  final List<(_Band, int)> entries;
-
-  static const _gap = 6.0;
-
-  @override
-  Widget build(BuildContext context) {
-    const style = TextStyle(
-        fontSize: 13,
-        height: 1,
-        fontWeight: FontWeight.w700,
-        fontFeatures: [FontFeature.tabularFigures()]);
-    return LayoutBuilder(
-      builder: (context, box) => Wrap(
-        spacing: _gap,
-        runSpacing: _gap,
-        children: [
-          for (final (b, n) in entries)
-            Opacity(
-              opacity: n > 0 ? 1 : 0.3,
-              child: ArtTile(b.icon,
-                  aspect: b.icon == null || b.icon!.contains('/cl_')
-                      ? kLampAspect
-                      : b.icon!.contains('/rank_')
-                          ? kGradeAspect
-                          : kFlareAspect,
-                  ink: 11,
-                  width: (box.maxWidth - 2 * _gap) / 3,
-                  height: _bandHeight + 10,
-                  color: b.color,
-                  label: Text(b.text, style: style.copyWith(color: b.color)),
-                  trailing: Text('$n', style: style)),
-            ),
-        ],
-      ),
     );
   }
 }

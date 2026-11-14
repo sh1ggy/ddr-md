@@ -13,6 +13,7 @@ import 'dart:math' as math;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/scores/art_badge.dart';
+import 'package:ddr_md/components/song/scores/tier_breakdown.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart'
     show clearLampIcon;
 import 'package:ddr_md/grades.dart';
@@ -24,39 +25,47 @@ import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// [rainbow] sweeps along the band in place of its colour. [art] is the
-// tier's badge, null for the played charts without one.
-typedef _Tier = ({int count, Color color, List<Color>? rainbow, String? art});
-
 // What the charts without a tier are called, measure by measure.
 const _kNoneLabels = ['NO GRADE', 'NO LAMP', 'NO FLARE'];
 
 const _kNone = Color(0xFF757575);
 
-List<_Tier> _tiers<T>(List<ChartBest?> bests, List<T> tiers,
+// [all] keeps the tiers nobody holds, at a count of none.
+List<TierCount> _tiers<T>(List<ChartBest?> bests, List<T> tiers,
     T? Function(ChartBest) of, Color Function(T) color,
-    {required String? Function(T) art, List<Color>? Function(T)? rainbow}) {
+    {required String? Function(T) art,
+    required String none,
+    List<Color>? Function(T)? rainbow,
+    bool all = false}) {
   final counts = <T, int>{};
-  var none = 0;
+  var without = 0;
   for (final b in bests) {
     if (b == null) continue;
     if (of(b) case final tier?) {
       counts[tier] = (counts[tier] ?? 0) + 1;
     } else {
-      none++;
+      without++;
     }
   }
   return [
     for (final t in tiers)
-      if (counts[t] case final n?)
-        (count: n, color: color(t), rainbow: rainbow?.call(t), art: art(t)),
-    if (none > 0) (count: none, color: _kNone, rainbow: null, art: null),
+      if (counts[t] ?? (all ? 0 : null) case final n?)
+        (
+          count: n,
+          color: color(t),
+          rainbow: rainbow?.call(t),
+          art: art(t),
+          label: '',
+        ),
+    if (without > 0 || all)
+      (count: without, color: _kNone, rainbow: null, art: null, label: none),
   ];
 }
 
 // Grade, lamp and flare, in the cabinet's order.
-List<List<_Tier>> _rings(List<ChartBest?> bests) => [
-      _tiers(bests, Grade.values, (b) => b.grade, gradeColor, art: gradeIcon),
+List<List<TierCount>> _rings(List<ChartBest?> bests, {bool all = false}) => [
+      _tiers(bests, Grade.values, (b) => b.grade, gradeColor,
+          art: gradeIcon, none: _kNoneLabels[0], all: all),
       // A failed lamp has no art, so it counts with the charts without one.
       _tiers(
           bests,
@@ -65,10 +74,14 @@ List<List<_Tier>> _rings(List<ChartBest?> bests) => [
               .toList(),
           (b) => b.lamp == ClearLamp.failed ? null : b.lamp,
           (l) => kLampColors[l]!,
-          art: clearLampIcon),
+          art: clearLampIcon,
+          none: _kNoneLabels[1],
+          all: all),
       _tiers(bests, kFlareRanks.reversed.toList(), (b) => b.flare, flareColor,
           art: flareRankIcon,
-          rainbow: (r) => r == 'EX' ? kFlareExColors : null),
+          none: _kNoneLabels[2],
+          rainbow: (r) => r == 'EX' ? kFlareExColors : null,
+          all: all),
     ];
 
 enum BestMeasure {
@@ -204,7 +217,7 @@ class BestStrip extends StatelessWidget {
                     curve: FloorPop.settle,
                     builder: (context, t, _) => CustomPaint(
                       size: const Size.fromHeight(6),
-                      painter: _BandsPainter(tiers, bests.length, pop.stage,
+                      painter: TierBarPainter(tiers, bests.length, pop.stage,
                           fill: t),
                     ),
                   ),
@@ -272,7 +285,7 @@ class _Ladder extends StatelessWidget {
     return ValueListenableBuilder(
       valueListenable: bestMeasure,
       builder: (context, m, _) {
-        final tiers = _rings(bests)[m.ring];
+        final tiers = _rings(bests, all: true)[m.ring];
         return SafeArea(
           top: false,
           child: Padding(
@@ -322,32 +335,12 @@ class _Ladder extends StatelessWidget {
                   ]),
                 ),
                 const SizedBox(height: 16),
-                // One bar for the measure, as on the stats page: each tier a
-                // band, the unplayed left on the track.
                 CustomPaint(
                   size: const Size.fromHeight(14),
-                  painter: _BandsPainter(tiers, total, pop.riser),
+                  painter: TierBarPainter(tiers, total, pop.riser),
                 ),
                 const SizedBox(height: 12),
-                LayoutBuilder(builder: (context, box) {
-                  final columns = BestTiers._columns(box.maxWidth, m.ring);
-                  return Wrap(spacing: 6, runSpacing: 6, children: [
-                    for (final t in tiers)
-                      ArtTile(t.art,
-                          aspect: BestTiers._aspects[m.ring],
-                          ink: 12,
-                          width: (box.maxWidth - (columns - 1) * 6) / columns,
-                          height: 28,
-                          label: Text(_kNoneLabels[m.ring],
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.5,
-                                  color: pop.haze)),
-                          trailing:
-                              Text('${t.count}', style: FloorPop.readout(15))),
-                  ]);
-                }),
+                TierGrid(tiers, aspect: BestTiers._aspects[m.ring]),
                 if (onStats != null || onBinder != null || onTiers != null) ...[
                   const SizedBox(height: 20),
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -401,45 +394,6 @@ class _Ladder extends StatelessWidget {
   }
 }
 
-/// [tiers] as bands left to right, out of [total] charts on a [track], only
-/// [fill] of the way drawn, for an entrance.
-class _BandsPainter extends CustomPainter {
-  _BandsPainter(this.tiers, this.total, this.track, {this.fill = 1});
-
-  final List<_Tier> tiers;
-  final int total;
-  final Color track;
-  final double fill;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final whole = Offset.zero & size;
-    canvas.clipRRect(
-        RRect.fromRectAndRadius(whole, Radius.circular(size.height / 2)));
-    canvas.drawRect(whole, Paint()..color = track);
-    final unit = size.width / total * fill;
-    var x = 0.0;
-    for (final t in tiers) {
-      final band = Rect.fromLTWH(x, 0, t.count * unit, size.height);
-      canvas.drawRect(
-          band,
-          Paint()
-            ..color = t.color
-            ..shader = t.rainbow == null
-                ? null
-                : LinearGradient(colors: t.rainbow!).createShader(band));
-      x = band.right;
-    }
-  }
-
-  @override
-  bool shouldRepaint(_BandsPainter old) =>
-      old.tiers != tiers ||
-      old.total != total ||
-      old.track != track ||
-      old.fill != fill;
-}
-
 /// How many tiers [bests] reach in each section: grade, lamp, flare.
 List<int> bestTierCounts(List<ChartBest?> bests) =>
     [for (final r in _rings(bests)) r.length];
@@ -469,7 +423,7 @@ class BestTiers extends StatelessWidget {
   // Each shown section's index and how many tiers it makes room for, lamps
   // first, the most hard-won.
   static List<(int, int)> _sections(
-          List<List<_Tier>> rings, List<int>? reserve) =>
+          List<List<TierCount>> rings, List<int>? reserve) =>
       [
         for (final i in const [1, 0, 2])
           if (math.max(rings[i].length, reserve?[i] ?? 0) case final n
