@@ -12,7 +12,7 @@ import 'package:ddr_md/components/session/recent_plays.dart'
 import 'package:ddr_md/components/settings/flare_class_style.dart';
 import 'package:ddr_md/components/song/card_heading.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart'
-    show LevelNumber, LevelPicker;
+    show LevelNumber, LevelTabs;
 import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song/scores/tier_breakdown.dart';
 import 'package:ddr_md/components/song_json.dart';
@@ -920,10 +920,11 @@ class _LevelStatsCardState extends State<_LevelStatsCard> {
       title: 'Level Stats',
       icon: Icons.insights,
       children: [
-        LevelPicker(
+        LevelTabs(
           levels: widget.levels.keys.toList(),
-          isSelected: (l) => l == level,
-          onTap: (l) => setState(() => _picked = l),
+          selected: level,
+          onChanged: (l) => setState(() => _picked = l),
+          padding: EdgeInsets.zero,
         ),
         _ScoreSpread(row.played),
       ],

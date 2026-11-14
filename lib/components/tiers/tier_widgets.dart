@@ -5,7 +5,6 @@
 /// the level picker, and the switch for which tier rows show.
 library;
 
-import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart'
@@ -130,60 +129,6 @@ class TierJacket extends StatelessWidget {
             ),
           ),
       ]),
-    );
-  }
-}
-
-/// Levels 1–19 as the cabinet's numerals, the chosen one on Volt.
-class TierLevelPicker extends StatelessWidget {
-  const TierLevelPicker(
-      {super.key, required this.level, required this.onChanged});
-
-  final int level;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    return SizedBox(
-      height: 48,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: 19,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final l = i + 1;
-          final chosen = l == level;
-          return Semantics(
-            button: true,
-            selected: chosen,
-            label: 'Level $l',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => onChanged(l),
-              child: AnimatedContainer(
-                duration: FloorPop.eighth,
-                width: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: chosen ? FloorPop.volt : pop.riser,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: chosen
-                      ? const [
-                          BoxShadow(
-                              color: FloorPop.voltRiser, offset: Offset(0, 4))
-                        ]
-                      : null,
-                ),
-                child: ExcludeSemantics(
-                    child: LevelNumber(
-                        level: l, difficulty: 'EXPERT', height: 22)),
-              ),
-            ),
-          );
-        },
-      ),
     );
   }
 }

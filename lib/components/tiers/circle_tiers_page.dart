@@ -106,8 +106,10 @@ class _CircleTiersPageState extends State<CircleTiersPage> {
                 ]),
               ),
               const SizedBox(height: 12),
-              TierLevelPicker(
-                  level: _level, onChanged: (l) => setState(() => _level = l)),
+              LevelTabs(
+                  levels: [for (var l = 1; l <= 19; l++) l],
+                  selected: _level,
+                  onChanged: (l) => setState(() => _level = l)),
               const SizedBox(height: 12),
               SizedBox(
                 height: 44,

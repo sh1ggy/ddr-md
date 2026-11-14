@@ -122,7 +122,12 @@ void main() {
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(350, 540);
           await show();
-          expect(find.byType(SingleChildScrollView), findsNothing);
+          // The cover never scrolls; only the level tabs scroll, sideways.
+          expect(
+              find.byWidgetPredicate((w) =>
+                  w is SingleChildScrollView &&
+                  w.scrollDirection == Axis.vertical),
+              findsNothing);
           tester.view.physicalSize = originalSize;
           tester.view.devicePixelRatio = originalRatio;
 

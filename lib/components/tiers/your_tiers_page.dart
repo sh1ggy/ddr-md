@@ -10,6 +10,7 @@
 library;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart' show LevelTabs;
 import 'package:ddr_md/components/tiers/circle_tiers_page.dart';
 import 'package:ddr_md/components/tiers/place_tier_sheet.dart';
 import 'package:ddr_md/components/tiers/tier_lean_page.dart';
@@ -173,8 +174,10 @@ class _YourTiersPageState extends State<YourTiersPage> {
               ),
               const SizedBox(height: 12),
               if (level != null)
-                TierLevelPicker(
-                    level: level, onChanged: (l) => setState(() => _level = l)),
+                LevelTabs(
+                    levels: [for (var l = 1; l <= 19; l++) l],
+                    selected: level,
+                    onChanged: (l) => setState(() => _level = l)),
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
