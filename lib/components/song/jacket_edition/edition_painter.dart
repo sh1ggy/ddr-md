@@ -154,39 +154,6 @@ class EditionGeometry {
       canvas.drawLine(Offset(x, size.height - width * .32),
           Offset(x - length, size.height - width * .68), engraving);
     }
-    final tier = recipe.tier;
-    if (tier != null && !compact) {
-      // The tier as gems set in the frame's foot, lit up to it.
-      final gem = side * editionGemSize, gap = side * editionGemGap;
-      for (var i = 0; i < 10; i++) {
-        // Centred on the frame's foot, overlapping the art when it's thin.
-        final c =
-            Offset(size.width / 2 + (i - 4.5) * gap, size.height - width / 2);
-        final stone = Path()
-          ..moveTo(c.dx, c.dy - gem * .6)
-          ..lineTo(c.dx + gem / 2, c.dy)
-          ..lineTo(c.dx, c.dy + gem * .6)
-          ..lineTo(c.dx - gem / 2, c.dy)
-          ..close();
-        canvas.drawPath(
-            stone,
-            Paint()
-              ..shader = i <= tier
-                  ? const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: editionGem)
-                      .createShader(stone.getBounds())
-                  : null
-              ..color = Color.lerp(palette[0], Colors.black, .4)!);
-        canvas.drawPath(
-            stone,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = math.max(.5, gem * .08)
-              ..color = palette[1].withValues(alpha: i <= tier ? .9 : .4));
-      }
-    }
     final pearl = recipe.frame == EditionFrame.platinum;
     if (pearl || recipe.ex) {
       // Thin inlay preserves the metal substrate under EX.

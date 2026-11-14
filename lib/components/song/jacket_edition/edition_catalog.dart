@@ -124,12 +124,6 @@ const editionMaxMotifLines = 52;
 // deliberately no cross-chart cache or offscreen image allocation.
 const editionMaxSide = 640.0;
 
-/// The tier's gems along the frame's foot, one lit per step: each gem's
-/// width and their spacing, of the card's side.
-const editionGemSize = .036;
-const editionGemGap = .048;
-const editionGem = [Color(0xFFF4FDFF), Color(0xFF8FD8FF), Color(0xFF2E6FA8)];
-
 /// Ten deliberate cuts, one per tier: broad sheen through a dense faceted
 /// prism; neutral without one. The
 /// renderer shares primitives; adding a cut changes data here, not branches.
