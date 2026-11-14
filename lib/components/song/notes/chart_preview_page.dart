@@ -22,7 +22,6 @@ import 'package:ddr_md/models/steps_model.dart';
 import 'package:flutter/material.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/services.dart';
-import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/nav_bar.dart' show LivePulse;
 import 'package:ddr_md/components/session/listen_sheet.dart';
 import 'package:ddr_md/models/song_id_listener.dart';
@@ -172,40 +171,14 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
     if (heard != null && mounted) setState(() => _follow = heard);
   }
 
-  /// With the cab: where it is in the song, and Resync to listen again.
-  Widget _followBar(String song) => Positioned(
-        left: 16,
-        right: 16,
-        bottom: 0,
-        child: SafeArea(
-          top: false,
-          // Above the scroller's timeline strip.
-          minimum: const EdgeInsets.only(bottom: 92),
-          child: Row(children: [
-            Expanded(
-              child: Container(
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                    color: FloorPop.volt,
-                    borderRadius: BorderRadius.circular(14)),
-                child: Row(children: [
-                  const LivePulse(color: FloorPop.onVolt),
-                  const SizedBox(width: 8),
-                  Text('WITH THE CAB',
-                      style: FloorPop.readout(13, color: FloorPop.onVolt)),
-                ]),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GhostButton(
-              height: 48,
-              icon: const Icon(Icons.sync, size: 18),
-              onPressed: () => _resync(song),
-              child: const Text('Resync'),
-            ),
-          ]),
-        ),
+  /// With the cab: live in the header's spare slot; a tap listens again.
+  Widget _resyncButton(String song) => IconButton(
+        tooltip: 'Resync with the cab',
+        onPressed: () => _resync(song),
+        icon: const Stack(clipBehavior: Clip.none, children: [
+          Icon(Icons.sync, color: FloorPop.volt),
+          Positioned(right: -3, top: -3, child: LivePulse()),
+        ]),
       );
 
   bool _showFootGuide = false;
@@ -450,7 +423,8 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                     context,
                     diffColor,
                     patternsButton,
-                    () => _saveSnippet(snapshot.data!, steps)),
+                    () => _saveSnippet(snapshot.data!, steps),
+                    snapshot.data!.name),
                 footingRef: ChartRef(
                     snapshot.data!.name,
                     widget.mode == Modes.doubles ? 'dp' : 'sp',
@@ -462,9 +436,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                 onSaveSection: () => _saveSnippet(snapshot.data!, steps),
                 onSectionChanged: (s) => setState(() => _section = s),
               );
-              if (_follow == null) return scroller;
-              return Stack(
-                  children: [scroller, _followBar(snapshot.data!.name)]);
+              return scroller;
             },
           ),
         ),
@@ -479,7 +451,7 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
   // gradient alone keeps it legible against the scrolling arrows — it fades into
   // the field rather than being fenced off by a rule.
   Widget _buildHeader(BuildContext context, Color diffColor,
-      Widget patternsButton, VoidCallback onSaveSnippet) {
+      Widget patternsButton, VoidCallback onSaveSnippet, String song) {
     final difficultyLabel = widget.difficultyLevel != null
         ? "${_pretty(widget.difficultyKey)} ${widget.difficultyLevel}"
         : _pretty(widget.difficultyKey);
@@ -542,7 +514,10 @@ class _ChartPreviewPageState extends State<ChartPreviewPage> {
                   icon: Icon(Icons.arrow_back, color: FloorPop.night.haze),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
-                const SizedBox(width: 48),
+                if (_follow != null)
+                  _resyncButton(song)
+                else
+                  const SizedBox(width: 48),
                 Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
