@@ -47,7 +47,13 @@ class _HistoryPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final scores = [for (final p in plays) p.score!];
-    final hi = scores.reduce(math.max), lo = scores.reduce(math.min);
+    // Fails sit on the bottom edge rather than squashing the passes flat.
+    final passed = [
+      for (final p in plays)
+        if (!p.failed) p.score!
+    ];
+    final ranged = passed.isEmpty ? scores : passed;
+    final hi = ranged.reduce(math.max), lo = ranged.reduce(math.min);
     final top = math.min(1000000, math.max(hi, lo + _minRange));
     final bottom = top - math.max(_minRange, hi - lo);
     final step = plays.length < 2
@@ -55,8 +61,12 @@ class _HistoryPainter extends CustomPainter {
         : math.min(_maxStep, (size.width - 2 * _r - 2) / (plays.length - 1));
     final points = [
       for (final (i, s) in scores.indexed)
-        Offset(_r + 1 + i * step,
-            _r + 1 + (size.height - 2 * _r - 2) * (top - s) / (top - bottom))
+        Offset(
+            _r + 1 + i * step,
+            _r +
+                1 +
+                (size.height - 2 * _r - 2) *
+                    ((top - s) / (top - bottom)).clamp(0.0, 1.0))
     ];
 
     canvas.drawPath(
@@ -65,7 +75,7 @@ class _HistoryPainter extends CustomPainter {
           ..color = color.withValues(alpha: 0.6)
           ..strokeWidth = 1.5
           ..style = PaintingStyle.stroke);
-    final best = scores.indexOf(hi);
+    final best = scores.indexOf(scores.reduce(math.max));
     for (final (i, p) in points.indexed) {
       final failed = plays[i].failed;
       final r = i == best ? _r + 1 : _r;
