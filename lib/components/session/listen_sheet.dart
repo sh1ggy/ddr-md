@@ -20,6 +20,7 @@ import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/helpers.dart';
+import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/session_model.dart';
 import 'package:ddr_md/models/song_id_listener.dart';
@@ -54,7 +55,7 @@ Future<SongIdFollow?> relisten(BuildContext context, String song,
       builder: (_) => ListenSheet(resyncing: song, near: near),
     );
 
-enum _Phase { listening, heard, missed, noMic }
+enum _Phase { listening, heard, missed, noMic, noData }
 
 class ListenSheet extends StatefulWidget {
   const ListenSheet({super.key, this.host, this.resyncing, this.near});
@@ -99,6 +100,16 @@ class _ListenSheetState extends State<ListenSheet> {
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 250),
         (_) => mounted ? setState(() {}) : null);
+    // A store build fetches the fingerprints on first use.
+    if (!ContentStore.fingerprintsBundled &&
+        kContentUrl.isNotEmpty &&
+        (await SongIdListener.index()).songs.isEmpty) {
+      _ticker?.cancel();
+      if (mounted && listener == _listener) {
+        setState(() => _phase = _Phase.noData);
+      }
+      return;
+    }
     if (!await listener.hasPermission()) {
       _ticker?.cancel();
       if (mounted) setState(() => _phase = _Phase.noMic);
@@ -230,6 +241,7 @@ class _ListenSheetState extends State<ListenSheet> {
             _Phase.heard => _heard(pop),
             _Phase.missed => _missed(pop),
             _Phase.noMic => _noMic(pop),
+            _Phase.noData => _noData(pop),
           },
         ),
       ),
@@ -563,6 +575,58 @@ class _ListenSheetState extends State<ListenSheet> {
                   onPressed: _listen, child: const Text('Listen again')),
             ),
           ]),
+        ],
+      );
+
+  bool _downloading = false;
+
+  Future<void> _download() async {
+    setState(() => _downloading = true);
+    try {
+      await ContentUpdater.downloadSongId(
+          await getApplicationSupportDirectory());
+    } catch (e) {
+      debugPrint('Song ID download: $e');
+    }
+    if (!mounted) return;
+    setState(() => _downloading = false);
+    if ((await SongIdListener.index()).songs.isNotEmpty && mounted) _listen();
+  }
+
+  Widget _noData(FloorPop pop) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 12),
+          Icon(Icons.download_outlined, size: 40, color: pop.haze),
+          const SizedBox(height: 12),
+          Center(child: _title('Download Song ID')),
+          const SizedBox(height: 8),
+          Text('$kSongIdDownloadSize, once. Then it works offline.',
+              textAlign: TextAlign.center, style: TextStyle(color: pop.haze)),
+          const SizedBox(height: 20),
+          if (_downloading)
+            ValueListenableBuilder<double?>(
+              valueListenable: ContentUpdater.progress,
+              builder: (context, progress, _) => ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                    value: progress, minHeight: 8, color: FloorPop.volt),
+              ),
+            )
+          else
+            Row(children: [
+              Expanded(
+                child: GhostButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close')),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: VoltButton(
+                    onPressed: _download, child: const Text('Download')),
+              ),
+            ]),
         ],
       );
 

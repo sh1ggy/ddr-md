@@ -402,9 +402,9 @@ class _CloudTileState extends State<_CloudTile> {
   }
 }
 
-/// Song ID: how many songs it knows, all on the phone; tap to listen. Its
-/// sync pulls new fingerprints with the rest of the content, and the count
-/// follows any update applied, from here or Song Updates.
+/// Song ID: how many songs it knows, all on the phone; tap to listen. A
+/// store build downloads its fingerprints here or from the sheet, once; Song
+/// Updates keeps them current after that.
 class _SongIdTile extends StatefulWidget {
   const _SongIdTile();
 
@@ -413,24 +413,20 @@ class _SongIdTile extends StatefulWidget {
 }
 
 class _SongIdTileState extends State<_SongIdTile> {
-  bool _syncing = false;
+  bool _downloading = false;
 
-  Future<void> _sync() async {
-    setState(() => _syncing = true);
-    String message;
+  Future<void> _download() async {
+    setState(() => _downloading = true);
+    String? failed;
     try {
-      final before = (await SongIdListener.index()).songs.length;
-      await ContentUpdater.update(await getApplicationSupportDirectory());
-      final added = (await SongIdListener.index()).songs.length - before;
-      message = added > 0
-          ? "Song ID knows $added more ${added == 1 ? 'song' : 'songs'}"
-          : "Song ID is up to date";
+      await ContentUpdater.downloadSongId(
+          await getApplicationSupportDirectory());
     } catch (_) {
-      message = "Couldn't check for updates";
+      failed = "Couldn't download Song ID";
     }
     if (!mounted) return;
-    setState(() => _syncing = false);
-    showToast(context, message);
+    setState(() => _downloading = false);
+    if (failed != null) showToast(context, failed);
   }
 
   @override
@@ -440,25 +436,38 @@ class _SongIdTileState extends State<_SongIdTile> {
           future: SongIdListener.index(),
           builder: (context, snapshot) {
             final known = snapshot.data?.songs.length;
+            final canDownload = known == 0 &&
+                !ContentStore.fingerprintsBundled &&
+                kContentUrl.isNotEmpty;
             return ListTile(
               leading: const Icon(Icons.hearing),
               title: const Text("Song ID",
                   style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(known == null
                   ? "Name the song a cab is playing"
-                  : known == 0
-                      ? "No song fingerprints yet"
-                      : "Knows $known songs · matched on this phone, offline"),
-              trailing: _syncing
-                  ? const SizedBox.square(
-                      dimension: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : IconButton(
-                      tooltip: "Check for new songs",
-                      icon: const Icon(Icons.sync),
-                      onPressed: kContentUrl.isEmpty ? null : _sync,
-                    ),
-              onTap: known == 0 ? null : () => showListenSheet(context),
+                  : canDownload
+                      ? "$kSongIdDownloadSize to download, then offline"
+                      : known == 0
+                          ? "No song fingerprints yet"
+                          : "Knows $known songs · matched on this phone, offline"),
+              trailing: !canDownload
+                  ? null
+                  : _downloading
+                      ? ValueListenableBuilder<double?>(
+                          valueListenable: ContentUpdater.progress,
+                          builder: (context, progress, _) => SizedBox.square(
+                              dimension: 24,
+                              child: CircularProgressIndicator(
+                                  value: progress, strokeWidth: 2)),
+                        )
+                      : IconButton(
+                          tooltip: "Download Song ID",
+                          icon: const Icon(Icons.download),
+                          onPressed: _download,
+                        ),
+              onTap: known == null || known == 0
+                  ? null
+                  : () => showListenSheet(context),
             );
           },
         ),

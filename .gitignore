@@ -144,6 +144,7 @@ app.*.symbols
 /assets/jackets
 /assets/songs
 /assets/steps
+/assets/steps-gz
 /assets/patterns
 /assets/fingerprints
 /assets/pattern_levels.json
