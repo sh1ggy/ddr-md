@@ -599,7 +599,7 @@ class _Cover extends StatelessWidget {
             // The level and how much of it is collected lead the cover.
             Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
               LevelNumber(
-                  level: divider.level, difficulty: 'EXPERT', height: 96),
+                  level: divider.level, difficulty: 'EXPERT', height: 60),
               const Spacer(),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text.rich(
