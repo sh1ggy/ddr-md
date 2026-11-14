@@ -398,6 +398,15 @@ class _EditionBinderPageState extends State<EditionBinderPage>
                   final grid = _grid(width - 32 - 2 * _kPad,
                       box.maxHeight - tabs - footer - 2 * margin - 2 * _kPad);
                   final pages = _paginate(grid.rows * _kColumns);
+                  // Room for the most tiers any level reaches, so every
+                  // cover lays out the same.
+                  final reserve = [
+                    for (var i = 0; i < 3; i++)
+                      pages
+                          .whereType<BinderDivider>()
+                          .map((d) => bestTierCounts(d.bests)[i])
+                          .fold(0, math.max),
+                  ];
                   if (!_shown) return const SizedBox.shrink();
                   final level = pages.isEmpty ? null : pages[_page].level;
                   final sheets = pages
@@ -467,7 +476,9 @@ class _EditionBinderPageState extends State<EditionBinderPage>
                                                 vertical: margin),
                                             child: switch (pages[i]) {
                                               final BinderDivider d => _Cover(
-                                                  divider: d, onOpen: _open),
+                                                  divider: d,
+                                                  reserve: reserve,
+                                                  onOpen: _open),
                                               final BinderSheet s => _Sheet(
                                                   key: ValueKey(
                                                       (s.level, s.start)),
@@ -511,11 +522,13 @@ const _kPad = 10.0, _kGap = 8.0;
   );
 }
 
-// A level's cover: its number across the top, its best cards fanned in the
-// middle with the negative in front, and its tiers and count below.
+// A level's cover: its number and count across the top, its best cards
+// fanned in the middle with the negative in front, and its tiers below.
 class _Cover extends StatelessWidget {
-  const _Cover({required this.divider, required this.onOpen});
+  const _Cover(
+      {required this.divider, required this.reserve, required this.onOpen});
   final BinderDivider divider;
+  final List<int> reserve;
   final ValueChanged<BinderPocket> onOpen;
 
   @override
@@ -580,39 +593,54 @@ class _Cover extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            LevelNumber(level: divider.level, difficulty: 'EXPERT', height: 76),
-            // The fan and the tiers split the cover evenly,
-            // always, so paging from level to level nothing moves;
-            // tiers past their share scroll.
+            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              LevelNumber(
+                  level: divider.level, difficulty: 'EXPERT', height: 76),
+              const Spacer(),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text('${divider.collected}/${divider.total}',
+                    style: FloorPop.readout(24,
+                        color: finished ? ink : scheme.onSurface)),
+                Text('COLLECTED', style: caps),
+              ]),
+            ]),
+            // The fan takes what the tiers leave, and the tiers never more
+            // than two thirds, shrinking to fit on a short screen rather than
+            // scrolling.
             Expanded(
-                child: fan.isEmpty
-                    ? Center(
-                        child: Text('No cards here yet',
-                            style: TextStyle(color: pop.haze)))
-                    : _Fan(pockets: fan, onOpen: onOpen)),
-            // What the level list's strip counts, laid out.
-            Expanded(
-                child: SingleChildScrollView(
-                    child: LayoutBuilder(
-                        builder: (context, box) => BestTiers(divider.bests,
-                            columns: (box.maxWidth / 100).floor().clamp(1, 4),
-                            labelColor: finished ? ink : null)))),
-            const SizedBox(height: 14),
-            Text(top == null ? '' : 'Top card · ${top.song.title}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: ink)),
-            const SizedBox(height: 10),
-            Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text('${divider.collected}/${divider.total}',
-                      style: FloorPop.readout(24,
-                          color: finished ? ink : scheme.onSurface)),
-                  const SizedBox(width: 8),
-                  Text('COLLECTED', style: caps),
-                ]),
+                child: LayoutBuilder(
+                    builder: (context, box) => Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                  child: fan.isEmpty
+                                      ? Center(
+                                          child: Text('No cards here yet',
+                                              style:
+                                                  TextStyle(color: pop.haze)))
+                                      : _Fan(pockets: fan, onOpen: onOpen)),
+                              Text(
+                                  top == null
+                                      ? ''
+                                      : 'Top card · ${top.song.title}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12, color: ink)),
+                              const SizedBox(height: 12),
+                              // What the level list's strip counts, laid out.
+                              ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                      maxHeight: box.maxHeight * 2 / 3),
+                                  child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.bottomCenter,
+                                      child: SizedBox(
+                                          width: box.maxWidth,
+                                          child: BestTiers(divider.bests,
+                                              reserve: reserve,
+                                              labelColor:
+                                                  finished ? ink : null)))),
+                            ]))),
           ])),
     ]);
   }

@@ -8,6 +8,8 @@
 /// measure's tiers, with ways on to the full stats and the binder.
 library;
 
+import 'dart:math' as math;
+
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/scores/art_badge.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart'
@@ -89,8 +91,8 @@ enum BestMeasure {
 /// The measure the strip shows, kept between visits.
 final ValueNotifier<BestMeasure> bestMeasure = ValueNotifier(
     BestMeasure.values[Settings.getInt(Settings.bestMeasureKey) % 3])
-  ..addListener(() =>
-      Settings.setInt(Settings.bestMeasureKey, bestMeasure.value.index));
+  ..addListener(
+      () => Settings.setInt(Settings.bestMeasureKey, bestMeasure.value.index));
 
 // [m]'s art for the listed charts: the best tier held, else its top tier
 // dimmed.
@@ -276,7 +278,8 @@ class _Ladder extends StatelessWidget {
                           selected: tab == m,
                           label: tab.name,
                           child: Material(
-                            color: tab == m ? FloorPop.volt : Colors.transparent,
+                            color:
+                                tab == m ? FloorPop.volt : Colors.transparent,
                             borderRadius: BorderRadius.circular(10),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(10),
@@ -323,8 +326,7 @@ class _Ladder extends StatelessWidget {
                             Expanded(
                               child: CustomPaint(
                                 size: const Size.fromHeight(12),
-                                painter: _BandsPainter(
-                                    [t], total, pop.riser,
+                                painter: _BandsPainter([t], total, pop.riser,
                                     lead: (above += t.count) - t.count),
                               ),
                             ),
@@ -430,74 +432,69 @@ class _BandsPainter extends CustomPainter {
       old.fill != fill;
 }
 
-/// The tiers counted out: grade, clear lamp and flare, each a grid of
-/// [columns] tiles across, badge on the left and count on the right, so
-/// the columns line up from section to section. [rise] wraps the [i]th
-/// section, for an entrance.
+/// How many tiers [bests] reach in each section: grade, lamp, flare.
+List<int> bestTierCounts(List<ChartBest?> bests) =>
+    [for (final r in _rings(bests)) r.length];
+
+/// The tiers counted out: grade, clear lamp and flare, each a grid of tiles,
+/// badge on the left and count on the right, as many across as the art
+/// allows. Never scrolls; [reserve] keeps room for that many tiers in each
+/// section, so covers with fewer line up with the rest.
 class BestTiers extends StatelessWidget {
-  const BestTiers(this.bests,
-      {super.key, this.columns = 3, this.rise, this.labelColor});
+  const BestTiers(this.bests, {super.key, this.reserve, this.labelColor});
   final List<ChartBest?> bests;
-  final int columns;
-  final Widget Function(int i, Widget section)? rise;
+  final List<int>? reserve;
   final Color? labelColor;
+
+  static const _height = 24.0, _gap = 5.0;
 
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
     final rings = _rings(bests);
-    const gap = 6.0;
-    Widget section(
-            String title, String none, List<_Tier> tiers, double aspect) =>
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                    color: labelColor ?? pop.haze)),
-            const SizedBox(height: 6),
-            LayoutBuilder(
-              builder: (context, box) =>
-                  Wrap(spacing: gap, runSpacing: gap, children: [
-                for (final t in tiers)
-                  ArtTile(t.art,
-                      aspect: aspect,
-                      ink: 12,
-                      width: (box.maxWidth - (columns - 1) * gap) / columns,
-                      height: 30,
-                      label: Text(none,
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.5,
-                              color: labelColor ?? pop.haze)),
-                      trailing: Text('${t.count}',
-                          style: FloorPop.readout(14).copyWith(
-                              fontFeatures: const [
-                                FontFeature.tabularFigures()
-                              ]))),
-              ]),
-            ),
-          ],
+    return LayoutBuilder(builder: (context, box) {
+      Widget section(int i, int slots) {
+        final aspect = const [kGradeAspect, kLampAspect, kFlareAspect][i];
+        // A tile holds its art 12 tall, padding and a three-digit count.
+        final columns = ((box.maxWidth + _gap) / (12 * aspect + 46 + _gap))
+            .floor()
+            .clamp(1, 6);
+        final rows = (slots / columns).ceil();
+        return SizedBox(
+          height: rows * _height + (rows - 1) * _gap,
+          child: Wrap(spacing: _gap, runSpacing: _gap, children: [
+            for (final t in rings[i])
+              ArtTile(t.art,
+                  aspect: aspect,
+                  ink: 12,
+                  width: (box.maxWidth - (columns - 1) * _gap) / columns,
+                  height: _height,
+                  label: Text(_kNoneLabels[i],
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                          color: labelColor ?? pop.haze)),
+                  trailing: Text('${t.count}', style: FloorPop.readout(14))),
+          ]),
         );
-    return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final (i, (title, aspect)) in const [
-            ('GRADE', kGradeAspect),
-            ('CLEAR LAMP', kLampAspect),
-            ('FLARE', kFlareAspect),
-          ].indexed)
-            if (rings[i].isNotEmpty) ...[
-              if (rings.take(i).any((r) => r.isNotEmpty))
-                const SizedBox(height: 14),
-              (rise ?? (_, s) => s)(
-                  i, section(title, _kNoneLabels[i], rings[i], aspect)),
+      }
+
+      final sections = [
+        for (var i = 0; i < rings.length; i++)
+          if (math.max(rings[i].length, reserve?[i] ?? 0) case final n
+              when n > 0)
+            section(i, n),
+      ];
+      return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (i, s) in sections.indexed) ...[
+              if (i > 0) const SizedBox(height: 10),
+              s,
             ],
-        ]);
+          ]);
+    });
   }
 }

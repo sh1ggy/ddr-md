@@ -12,7 +12,6 @@ import 'package:ddr_md/components/song/jacket_edition/edition_model.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_rules.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_painter.dart';
 import 'package:ddr_md/models/chart_achievements.dart';
-import 'package:ddr_md/components/songlist/best_strip.dart';
 import 'package:flutter/gestures.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/models/chart_bests.dart';
@@ -123,7 +122,7 @@ void main() {
           tester.view.devicePixelRatio = 1;
           tester.view.physicalSize = const Size(350, 540);
           await show();
-          expect(tester.widget<BestTiers>(find.byType(BestTiers)).columns, 2);
+          expect(find.byType(SingleChildScrollView), findsNothing);
           tester.view.physicalSize = originalSize;
           tester.view.devicePixelRatio = originalRatio;
 
