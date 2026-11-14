@@ -1,8 +1,8 @@
 /// Name: EditionBinderPage
-/// Parent: DevelopmentPage, BestRings (from the level list)
+/// Parent: DevelopmentPage, BestStrip (from the level list)
 /// Description: The player's cards as a binder, in the profile's play style:
 /// a cover for each level, highest first, with its charts' bests as the
-/// level list's rings and its best cards fanned out, then sheets of every
+/// level list's strip and its best cards fanned out, then sheets of every
 /// chart at that level in title order, six across and as many rows as the
 /// screen holds. Jackets alone, like a binder's sleeves. A chart without a
 /// best is an empty pocket, its jacket a ghost, so the gaps show. Tapping a
@@ -15,7 +15,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart' show PageDots;
 import 'package:ddr_md/components/session/session_wrap.dart' show ShockPainter;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
-import 'package:ddr_md/components/songlist/best_rings.dart';
+import 'package:ddr_md/components/songlist/best_strip.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart' show kInGameDifficultyNames;
 import 'package:ddr_md/grades.dart' show Grade;
@@ -590,7 +590,7 @@ class _Cover extends StatelessWidget {
                         child: Text('No cards here yet',
                             style: TextStyle(color: pop.haze)))
                     : _Fan(pockets: fan, onOpen: onOpen)),
-            // What the level list's rings count, laid out.
+            // What the level list's strip counts, laid out.
             Expanded(
                 child: SingleChildScrollView(
                     child: LayoutBuilder(

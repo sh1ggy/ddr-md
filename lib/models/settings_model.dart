@@ -160,6 +160,8 @@ class Settings {
   // Migration key for the first tier test build; now uses the Level sort.
   static const String songlistCalculatedSortKey = "songlistCalculatedSort";
   static const String songlistSortDescKey = "songlistSortDesc";
+  // The level list strip's measure: lamp, grade or flare.
+  static const String bestMeasureKey = "songlistBestMeasure";
 
   static const String rivalCodeSpeedKey = "rivalCode";
   static const String detectionSideKey = "detectionSide";
@@ -257,6 +259,7 @@ class Settings {
     songlistViewModeKey,
     songlistSortKey,
     songlistSortDescKey,
+    bestMeasureKey,
     rivalCodeSpeedKey,
     detectionSideKey,
     playModeKey,
