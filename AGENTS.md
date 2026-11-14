@@ -11,6 +11,7 @@ DDR MD — a Flutter mobile app for DDR/ITG players: song/chart study (BPM behav
 ```bash
 flutter pub get                      # install deps
 flutter run                          # run the app
+bash scripts/run_macos.sh            # macOS run from this checkout, as its own app (see Local validation)
 flutter analyze                      # lint (flutter_lints)
 flutter test                         # all tests
 flutter test test/parity_test.dart   # one test file
@@ -88,4 +89,11 @@ Every design request (mockups, UI options, visual labs) goes in `designs/<slug>/
 
 ## Local validation preference
 
-For interactive validation, use `flutter run -d macos`. Run it from the feature worktree and reuse its running session for hot reload when possible. Outside the main checkout, add `--dart-define=DB_NAME=$(basename "$PWD").db`: every build shares one app container, and a branch on an older schema winds the shared database's version back.
+For interactive validation, run `bash scripts/run_macos.sh` (extra `flutter run` args pass through) from the feature worktree, and reuse its running session for hot reload when possible. Several agents and the user often run builds at once, so:
+
+- **Each worktree is its own app.** The script builds a worktree as `com.shiggy.ddrmd.<worktree>`: its own container (database, preferences, keychain), and on first run its database is a copy of the main app's seeded `timing-preview.db`. The main checkout stays `com.shiggy.ddrmd`. Settings don't carry over, so a worktree app starts signed out of e-amusement and Circles.
+- **Screen control targets that bundle id.** Request access to `com.shiggy.ddrmd.<worktree>`, never the bare `com.shiggy.ddrmd`, which is the main checkout's (often the user's own window).
+- **Stop only what you started**, by the pid your `flutter run` printed or `q`. Never `pkill` by name or path: the user may be running the same worktree.
+- **Reload, don't relaunch.** Hot reload through the running session (`r`, or the Dart MCP `hot_reload` after connecting to the worktree's DTD). If the user already runs this worktree's build, use theirs.
+- **Seed test data in your own container** (`~/Library/Containers/com.shiggy.ddrmd.<worktree>/Data/Documents/timing-preview.db`), never the main app's.
+- **Local Circles server per worktree:** `PORT=87xx node infra/circles/dev/server.mjs` and the matching `--dart-define=CIRCLES_URL=http://localhost:87xx`.

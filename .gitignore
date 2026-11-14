@@ -192,3 +192,6 @@ app.*.symbols
 
 # Optional local character surface.
 /assets/pad_dancer_body.json
+
+# A worktree's own macOS bundle id, from scripts/run_macos.sh.
+/macos/Runner/Configs/Worktree.xcconfig
