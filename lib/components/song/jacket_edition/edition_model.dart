@@ -7,6 +7,7 @@ import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/version_group.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 
 enum EditionFinish { print, satin, gloss, metallic, prism }
 
@@ -62,6 +63,7 @@ class EditionFacts {
       {required this.chart,
       this.level,
       this.tier,
+      this.shownTier,
       this.version,
       this.grade,
       this.flare,
@@ -72,8 +74,9 @@ class EditionFacts {
   final EditionChartKey chart;
   final int? level;
   // How hard the chart is within its level, easy 0 to hard 9, as 17.0–17.9.
-  // The tier the level numeral shows (see ShownTiers.cardTier).
   final int? tier;
+  // The tier the level numeral shows; gives [tier] when that's unset.
+  final ShownTier? shownTier;
   final FlareGroup? version;
   final Grade? grade;
   final String? flare;
@@ -108,6 +111,7 @@ typedef EditionRecipe = ({
   String? difficultyStamp,
   int? levelStamp,
   int? tierSuffix,
+  ShownTier? tierDecimal,
 });
 
 extension EditionRecipeDetails on EditionRecipe {
@@ -139,5 +143,6 @@ extension EditionRecipeDetails on EditionRecipe {
         'difficultyStamp': difficultyStamp,
         'levelStamp': levelStamp,
         'tierSuffix': tierSuffix,
+        'tierDecimal': tierDecimal?.hundredths,
       };
 }

@@ -276,7 +276,7 @@ class _CardArt extends StatelessWidget {
               difficulty: difficulty
             ),
             level: chart.level,
-            tier: chart.song?.cardTier(card.mode, difficulty),
+            shownTier: chart.song?.cardTier(card.mode, difficulty),
             score: card.best.score,
             grade: card.best.grade,
             lamp: card.best.lamp,

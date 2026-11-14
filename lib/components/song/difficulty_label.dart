@@ -32,6 +32,7 @@ class DifficultyLabel extends StatelessWidget {
     required this.difficulty,
     this.level,
     this.levelSuffix,
+    this.levelTier,
     this.height = kLevelHeight,
   });
 
@@ -41,6 +42,8 @@ class DifficultyLabel extends StatelessWidget {
   // The chart's tier within its level, 17.0–17.9, as a small raised digit
   // in the same native artwork.
   final int? levelSuffix;
+  // The shown tier, drawn as the level numeral draws it elsewhere.
+  final ShownTier? levelTier;
   final double height;
 
   @override
@@ -65,7 +68,9 @@ class DifficultyLabel extends StatelessWidget {
               level: level!,
               difficulty: difficulty,
               height: height,
-              suffix: levelSuffix),
+              suffix: levelSuffix,
+              decimalHundredths: levelTier?.hundredths,
+              decimalKind: levelTier?.kind ?? TierKind.calc),
         ],
       ],
     );

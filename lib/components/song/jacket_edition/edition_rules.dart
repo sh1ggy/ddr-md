@@ -35,7 +35,8 @@ EditionRecipe resolveEdition(EditionFacts facts,
           ? EditionFrame.platinum
           : EditionFrame.values[math.max(
               cardFrameTier(lamp), precision == PrecisionAward.pfc ? 3 : 0)];
-  final tier = facts.tier;
+  final shown = facts.shownTier;
+  final tier = facts.tier ?? (shown == null ? null : shown.hundredths ~/ 10);
   final difficulty = kInGameDifficultyNames[facts.chart.difficulty];
   final flare = kFlareRanks.indexOf(facts.flare ?? '');
   return (
@@ -73,6 +74,9 @@ EditionRecipe resolveEdition(EditionFacts facts,
     flareStamp: options.gradeStamp && flare >= 0 ? facts.flare : null,
     difficultyStamp: options.difficultyStamp ? difficulty : null,
     levelStamp: options.difficultyStamp ? facts.level : null,
-    tierSuffix: options.tierSuffix && options.difficultyStamp ? tier : null,
+    tierSuffix: options.tierSuffix && options.difficultyStamp && shown == null
+        ? tier
+        : null,
+    tierDecimal: options.tierSuffix && options.difficultyStamp ? shown : null,
   );
 }

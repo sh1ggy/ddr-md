@@ -209,7 +209,7 @@ class SongDetails extends StatelessWidget {
                                   difficulty: key ?? ''
                                 ),
                                 level: level,
-                                tier: key == null
+                                shownTier: key == null
                                     ? null
                                     : songInfo.cardTier(mode, key),
                                 version: flareGroup(songInfo.version),
