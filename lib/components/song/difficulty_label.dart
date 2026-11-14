@@ -163,7 +163,11 @@ class LevelNumber extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
               numeral(level),
-              Text('.$digits', style: style),
+              // Clear of the numeral's drop shadow, which runs to the art's
+              // right edge.
+              Padding(
+                  padding: EdgeInsets.only(left: height * .12),
+                  child: Text('.$digits', style: style)),
             ])),
       );
     }
