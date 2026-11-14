@@ -1,16 +1,19 @@
 /// Name: TierPairs
-/// Parent: SessionWrapPage
-/// Description: The session wrap's "harder to score?": up to three pairs of
-/// Singles charts played that night at the same level, closest in tier
-/// first. Picking one puts both on your tier list with the harder one above;
-/// "about the same" puts them on one rung.
+/// Parent: SessionSummaryBody
+/// Description: A session's optional "harder to score?": a tile under its
+/// summary opens up to three pairs of Singles charts played that night at
+/// the same level, closest in tier first. Picking one puts both on your tier
+/// list with the harder one above; "about the same" puts them on one rung.
+/// Once answered, it goes on to the tier list itself.
 library;
 
-import 'package:ddr_md/components/session/recent_plays.dart' show playChart;
+import 'package:ddr_md/components/session/recent_plays.dart'
+    show HomeSubpage, playChart;
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/components/tiers/tier_widgets.dart';
+import 'package:ddr_md/components/tiers/your_tiers_page.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/db_models.dart' show RecentPlay;
@@ -48,6 +51,85 @@ List<TierPair> tierPairs(List<RecentPlay> plays, {int count = 3}) {
       .abs()
       .compareTo((_rungOf(b.$1) - _rungOf(b.$2)).abs()));
   return pairs.take(count).toList();
+}
+
+/// [pairs] on a page of their own.
+void openTierPairs(BuildContext context, List<TierPair> pairs) {
+  HapticFeedback.lightImpact();
+  Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => HomeSubpage(
+          title: 'Harder to score?',
+          actions: [_TierListButton(level: pairs.first.$1.level)],
+          body: TierPairs(pairs))));
+}
+
+/// The session summary's way into [pairs]: the first pair's jackets, how
+/// many pairs there are.
+class TierPairsTile extends StatelessWidget {
+  const TierPairsTile(this.pairs, {super.key});
+
+  final List<TierPair> pairs;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (a, b) = pairs.first;
+    const side = 30.0;
+    return Material(
+      color: scheme.onSurface.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => openTierPairs(context, pairs),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+          child: Row(children: [
+            for (final (i, c) in [a, b].indexed)
+              Padding(
+                padding: EdgeInsets.only(left: i * 4.0),
+                child: Transform.rotate(
+                  angle: i == 0 ? -.08 : .08,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: SizedBox.square(
+                        dimension: side,
+                        child: SongArtwork(
+                            songName: c.song.name, title: c.song.title)),
+                  ),
+                ),
+              ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Harder to score?',
+                        style: TextStyle(
+                            fontSize: 11, color: scheme.onSurfaceVariant)),
+                    Text('${pairs.length}', style: FloorPop.readout(17)),
+                  ]),
+            ),
+            Icon(Icons.stairs_rounded, color: scheme.onSurfaceVariant),
+            Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens your tier list at [level].
+class _TierListButton extends StatelessWidget {
+  const _TierListButton({required this.level});
+
+  final int level;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+      tooltip: 'Your tiers',
+      icon: const Icon(Icons.stairs_rounded),
+      onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => YourTiersPage(level: level))));
 }
 
 class TierPairs extends StatefulWidget {
@@ -112,15 +194,9 @@ class _TierPairsState extends State<TierPairs> {
     final pop = FloorPop.of(context);
     final done = _at >= widget.pairs.length;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 96),
+      padding: clearOfBars(context, const EdgeInsets.fromLTRB(16, 16, 16, 24)),
       child: Column(children: [
-        Row(children: [
-          Expanded(
-            child: Transform(
-              transform: FloorPop.titleLean,
-              child: Text('Harder to score?', style: FloorPop.display(20)),
-            ),
-          ),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           for (var i = 0; i < widget.pairs.length; i++)
             Container(
               width: 18,
@@ -134,9 +210,26 @@ class _TierPairsState extends State<TierPairs> {
         const SizedBox(height: 18),
         Expanded(
           child: done
-              ? Center(
-                  child: Icon(Icons.check_circle_rounded,
-                      size: 56, color: pop.voltText, semanticLabel: 'Done'))
+              ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.check_circle_rounded,
+                      size: 56, color: pop.voltText, semanticLabel: 'Done'),
+                  const SizedBox(height: 24),
+                  VoltButton(
+                    height: 52,
+                    onPressed: () => Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                            builder: (_) => YourTiersPage(
+                                level: _levels.keys.firstOrNull ??
+                                    widget.pairs.first.$1.level))),
+                    child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: 8,
+                        children: [
+                          Icon(Icons.stairs_rounded),
+                          Text('Your tiers'),
+                        ]),
+                  ),
+                ])
               : Row(spacing: 12, children: [
                   for (final c in [widget.pairs[_at].$1, widget.pairs[_at].$2])
                     Expanded(child: _Pick(c, onTap: () => _answer(c))),

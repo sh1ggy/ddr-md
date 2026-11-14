@@ -1,5 +1,5 @@
 /// Name: YourTiersPage
-/// Parent: BestStrip (the song list's level stats), TierChips
+/// Parent: BestStrip (the song list's level stats), TierChips, TierPairs
 /// Description: Your tier list for one level: every rung from hardest to
 /// easiest with the charts you've played there. Until you place one, it
 /// starts faded on its calculated rung; placed ones show how far they sit
@@ -194,7 +194,8 @@ class _YourTiersPageState extends State<YourTiersPage> {
                                 level: level,
                                 hundredths: h,
                                 charts: [
-                                  for (final c in placed[h] ?? const [])
+                                  for (final c
+                                      in placed[h] ?? const <LevelChart>[])
                                     _Slide(
                                         key: _slides.putIfAbsent(
                                             c.key, GlobalKey.new),

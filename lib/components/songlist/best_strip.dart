@@ -5,7 +5,8 @@
 /// colours, best first, played charts without one in grey, then the
 /// unplayed. The grid's spare cell shows which measure in its art and
 /// switches it; the choice sticks. Tapped, the strip opens a ladder of that
-/// measure's tiers, with ways on to the full stats and the binder.
+/// measure's tiers, with ways on to the full stats and the binder; its Tiers
+/// pill opens your tier list straight away.
 library;
 
 import 'dart:math' as math;
@@ -216,6 +217,34 @@ class BestStrip extends StatelessWidget {
                           style: TextStyle(color: pop.haze)),
                     ]),
                     style: FloorPop.readout(13)),
+                if (onTiers case final open?) ...[
+                  const SizedBox(width: 10),
+                  Material(
+                    color: pop.riser,
+                    borderRadius: BorderRadius.circular(10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        open();
+                      },
+                      child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 5,
+                            children: [
+                              Icon(Icons.stairs_rounded, size: 16),
+                              Text('Tiers',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700)),
+                            ]),
+                      ),
+                    ),
+                  ),
+                ],
               ]),
             ),
           ),
