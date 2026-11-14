@@ -4,6 +4,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/theme.dart';
@@ -97,9 +98,6 @@ class _ViewerPageState extends State<_ViewerPage> {
         : JacketEdition(facts: widget.facts, options: _options, child: artwork);
     final from = widget.from;
     final animation = ModalRoute.of(context)!.animation!;
-    // The button bar's height with its margins: the card centres above it, so
-    // its aura's particles stay clear of the buttons.
-    final bar = 64.0 + math.max(16.0, MediaQuery.paddingOf(context).bottom);
     return Stack(children: [
       Positioned.fill(
         child: GestureDetector(
@@ -107,18 +105,18 @@ class _ViewerPageState extends State<_ViewerPage> {
             child: from == null
                 ? Center(
                     child: Padding(
-                        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bar),
+                        padding: const EdgeInsets.all(24),
                         child: ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 640),
                             child: AspectRatio(aspectRatio: 1, child: card))))
                 // One card throughout, flown from the jacket to the middle and
                 // back, with nothing crossfaded or swapped on the way.
                 : LayoutBuilder(builder: (context, box) {
-                    final above = box.maxHeight - bar;
-                    final side =
-                        math.min(640.0, math.min(box.maxWidth, above) - 48);
+                    // Dead centre of the screen, whatever sits over it.
+                    final side = math.min(
+                        640.0, math.min(box.maxWidth, box.maxHeight) - 48);
                     final to = Rect.fromCenter(
-                        center: Offset(box.maxWidth / 2, above / 2),
+                        center: box.biggest.center(Offset.zero),
                         width: side,
                         height: side);
                     final curve = animation
@@ -146,52 +144,62 @@ class _ViewerPageState extends State<_ViewerPage> {
                 alignment: Alignment.bottomCenter,
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Material(
-                    color: Theme.of(context).colorScheme.surfaceContainer,
-                    elevation: 8,
-                    shadowColor: Colors.black54,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        side: BorderSide(
-                            color:
-                                Theme.of(context).colorScheme.outlineVariant)),
+                  // Frosted like the tab bar, the card showing through.
+                  child: Container(
                     clipBehavior: Clip.antiAlias,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        if (widget.onBinder case final onBinder?)
-                          _ViewerAction(
-                              label: 'Binder',
-                              icon: Icons.collections_bookmark_outlined,
-                              onPressed: onBinder),
-                        _ViewerAction(
-                            label: 'Share',
-                            icon: Icons.ios_share,
-                            onPressed: () => showEditionShare(context,
-                                facts: widget.facts, artwork: artwork)),
-                        _ViewerAction(
-                            label: 'Effects',
-                            toggled: _options.effects,
-                            icon: _options.effects
-                                ? Icons.auto_awesome
-                                : Icons.auto_awesome_outlined,
-                            onPressed: _toggleEffects),
-                        _ViewerAction(
-                            label: 'Guide',
-                            icon: Icons.info_outline,
-                            // A sheet over the card, not a page: a page would take
-                            // the card and the song page beneath out of view, and a
-                            // hover region moving with them breaks the frame.
-                            onPressed: () => showModalBottomSheet<void>(
-                                context: context,
-                                isScrollControlled: true,
-                                useSafeArea: true,
-                                showDragHandle: true,
-                                builder: (context) => EditionGuidePage(
-                                    artwork: artwork,
-                                    facts: widget.facts,
-                                    sheet: true))),
-                      ]),
+                    decoration: BoxDecoration(
+                      color: FloorPop.of(context).stage.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: FloorPop.of(context).line),
+                      boxShadow: const [
+                        BoxShadow(
+                            color: Color(0x40000000),
+                            blurRadius: 30,
+                            offset: Offset(0, 10))
+                      ],
+                    ),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            if (widget.onBinder case final onBinder?)
+                              _ViewerAction(
+                                  label: 'Binder',
+                                  icon: Icons.collections_bookmark_outlined,
+                                  onPressed: onBinder),
+                            _ViewerAction(
+                                label: 'Share',
+                                icon: Icons.ios_share,
+                                onPressed: () => showEditionShare(context,
+                                    facts: widget.facts, artwork: artwork)),
+                            _ViewerAction(
+                                label: 'Effects',
+                                toggled: _options.effects,
+                                icon: _options.effects
+                                    ? Icons.auto_awesome
+                                    : Icons.auto_awesome_outlined,
+                                onPressed: _toggleEffects),
+                            _ViewerAction(
+                                label: 'Guide',
+                                icon: Icons.info_outline,
+                                // A sheet over the card, not a page: a page would take
+                                // the card and the song page beneath out of view, and a
+                                // hover region moving with them breaks the frame.
+                                onPressed: () => showModalBottomSheet<void>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    useSafeArea: true,
+                                    showDragHandle: true,
+                                    builder: (context) => EditionGuidePage(
+                                        artwork: artwork,
+                                        facts: widget.facts,
+                                        sheet: true))),
+                          ]),
+                        ),
+                      ),
                     ),
                   ),
                 ))),

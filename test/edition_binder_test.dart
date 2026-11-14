@@ -295,10 +295,8 @@ void main() {
           await tester.pump(const Duration(milliseconds: 500));
           expect(
               tester.getCenter(find.byType(JacketEdition)),
-              // Centred above the button bar.
               (tester.view.physicalSize / tester.view.devicePixelRatio)
-                      .center(Offset.zero) -
-                  const Offset(0, 40));
+                  .center(Offset.zero));
           await tester.tap(find.byTooltip('Binder'));
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 500));

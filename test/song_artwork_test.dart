@@ -98,9 +98,8 @@ void main() {
         expectDecodedSquare();
       }
       await tester.pumpAndSettle();
-      // Centred above the viewer's button bar.
       expect(tester.getCenter(find.byType(SongArtwork).last),
-          tester.getCenter(find.byType(Scaffold).last) - const Offset(0, 40));
+          tester.getCenter(find.byType(Scaffold).last));
       await tester.tap(find.byType(SongArtwork).last);
       await tester.pump();
       for (var frame = 0; frame < 4; frame++) {
