@@ -105,7 +105,7 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
             : EditionFacts(
                 chart: (song: song.name, mode: mode.name, difficulty: key),
                 level: level,
-                tier: song.cardTier(mode, key),
+                shownTier: song.cardTier(mode, key),
                 version: flareGroup(song.version),
                 grade: best.grade,
                 flare: best.flare,

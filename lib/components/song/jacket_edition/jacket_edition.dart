@@ -420,6 +420,7 @@ class EditionFooter extends StatelessWidget {
               difficulty: difficulty,
               level: recipe.levelStamp,
               levelSuffix: recipe.tierSuffix,
+              levelTier: recipe.tierDecimal,
               height: 15),
       ]);
 }

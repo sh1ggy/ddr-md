@@ -88,7 +88,7 @@ List<WrapCard> wrapCards(List<CardGain> gains) {
         EditionFacts facts(ChartBest b) => EditionFacts(
             chart: (song: chart.song, mode: chart.mode.name, difficulty: key),
             level: c.level,
-            tier: c.song?.cardTier(chart.mode, key),
+            shownTier: c.song?.cardTier(chart.mode, key),
             version: c.song == null ? null : flareGroup(c.song!.version),
             grade: b.grade,
             flare: b.flare,
