@@ -91,6 +91,14 @@ class ContentStore {
   /// (the song list) rebuild. Pages already open keep what they loaded.
   static final revision = ValueNotifier<int>(0);
 
+  /// Store builds (scripts/build_store.sh) bundle steps gzipped, in
+  /// assets/steps-gz/, so they take a ninth of the space on the phone.
+  static bool gzippedSteps = false;
+
+  /// Store builds leave Song ID's fingerprints out: the player downloads them
+  /// once ([ContentUpdater.downloadSongId]), and updates keep them current.
+  static bool fingerprintsBundled = true;
+
   /// Content path -> downloaded file, for the paths the overlay overrides.
   static Map<String, File> _overlay = {};
 
@@ -104,8 +112,21 @@ class ContentStore {
 
   /// Reads both manifests. [support] is the app support directory; [bundle]
   /// stands in for the bundled manifest in tests.
-  static Future<void> init(Directory support, {ContentManifest? bundle}) async {
-    bundled = bundle ?? await _bundledManifest();
+  static Future<void> init(Directory support,
+      {ContentManifest? bundle, Set<String>? assets}) async {
+    final listed = assets ?? await _bundledAssets();
+    gzippedSteps = listed.any((a) => a.startsWith('assets/steps-gz/'));
+    fingerprintsBundled =
+        listed.any((a) => a.startsWith('assets/fingerprints/'));
+    final manifest = bundle ?? await _bundledManifest();
+    // A store build leaves fingerprints out, so for the updater they're
+    // content the bundle doesn't have.
+    bundled = fingerprintsBundled
+        ? manifest
+        : ContentManifest(id: manifest.id, engine: manifest.engine, files: {
+            for (final e in manifest.files.entries)
+              if (!e.key.startsWith('fingerprints/')) e.key: e.value
+          });
     current = bundled.id;
     _overlay = {};
     final overlay = downloaded(support);
@@ -128,9 +149,22 @@ class ContentStore {
           File('${contentDir(support).path}/overlay.json').readAsStringSync());
       if (j['base'] != bundled.id) return null;
       final overlay = ContentManifest.fromJson(j);
-      return overlay.id == bundled.id ? null : overlay;
+      // Live content as bundled still overlays any fingerprints downloaded.
+      return overlay.id == bundled.id && j['fingerprints'] != true
+          ? null
+          : overlay;
     } catch (_) {
       return null;
+    }
+  }
+
+  static Future<Set<String>> _bundledAssets() async {
+    try {
+      return (await AssetManifest.loadFromAssetBundle(rootBundle))
+          .listAssets()
+          .toSet();
+    } catch (_) {
+      return const {};
     }
   }
 
@@ -149,9 +183,15 @@ class ContentStore {
 
   /// [assetPath] as text (e.g. "assets/steps/Foo.json"), downloaded copy
   /// first. Throws like [AssetBundle.loadString] when neither has it.
-  static Future<String> loadString(String assetPath) {
+  static Future<String> loadString(String assetPath) async {
     final file = _overlay[_relative(assetPath)];
     if (file != null) return file.readAsString();
+    if (gzippedSteps && assetPath.startsWith('assets/steps/')) {
+      final data = await rootBundle
+          .load('assets/steps-gz/${assetPath.substring(13)}.gz');
+      return utf8.decode(gzip.decode(
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes)));
+    }
     // `cache: false`: these are large and parsed once by their loader.
     return rootBundle.loadString(assetPath, cache: false);
   }

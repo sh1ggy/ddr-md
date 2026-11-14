@@ -220,6 +220,9 @@ class Settings {
   static const String circleLocationDefaultKey = "circleLocationDefault";
   static const String cloudSyncedAtKey = "cloudSyncedAt";
 
+  /// 1 once a store build's player has downloaded Song ID's fingerprints.
+  static const String songIdDownloadKey = "songIdDownload";
+
   // Settings that follow the player to their other devices. Left out: the
   // timing offsets (they depend on the device's own audio and display), the
   // running session, and e-amusement sync bookkeeping.

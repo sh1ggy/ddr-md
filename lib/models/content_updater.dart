@@ -11,12 +11,14 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
 import 'package:ddr_md/models/pattern_model.dart';
+import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:flutter/foundation.dart';
 
@@ -31,8 +33,29 @@ const kContentUrl = String.fromEnvironment('CONTENT_URL',
 
 typedef ContentFetch = Future<List<int>> Function(Uri url);
 
+/// Song ID's one-time download in a store build, for the prompt to show.
+const kSongIdDownloadSize = 'About 40 MB';
+
 class ContentUpdater {
   static Future<bool>? _running;
+
+  /// Share of a check's files downloaded so far, while one is downloading.
+  static final progress = ValueNotifier<double?>(null);
+
+  /// Whether updates fetch Song ID's fingerprints: always when the bundle
+  /// has them (then only changed ones come down), otherwise once the player
+  /// has asked for them with [downloadSongId].
+  static bool get wantsSongId =>
+      ContentStore.fingerprintsBundled ||
+      Settings.getInt(Settings.songIdDownloadKey) == 1;
+
+  /// A store build's one-time Song ID download, then kept current by every
+  /// update. Throws like [check].
+  static Future<bool> downloadSongId(Directory support,
+      {String base = kContentUrl, ContentFetch fetch = _get}) async {
+    await Settings.setInt(Settings.songIdDownloadKey, 1);
+    return update(support, base: base, fetch: fetch);
+  }
 
   /// True when the overlay changed (written, or dropped because live is the
   /// bundle again), for [update] to apply. Throws
@@ -50,10 +73,10 @@ class ContentUpdater {
   /// [check].
   static Future<bool> update(Directory support,
       {String base = kContentUrl, ContentFetch fetch = _get}) async {
-    await check(support, base: base, fetch: fetch);
+    final changed = await check(support, base: base, fetch: fetch);
     final onDisk =
         ContentStore.downloaded(support)?.id ?? ContentStore.bundled.id;
-    if (onDisk == ContentStore.current) return false;
+    if (!changed && onDisk == ContentStore.current) return false;
     await ContentStore.init(support);
     await Songs.load();
     PatternsLoader.reset();
@@ -71,16 +94,22 @@ class ContentUpdater {
     final id = (await read('latest.json'))['id'];
     final dir = ContentStore.contentDir(support);
     final overlay = File('${dir.path}/overlay.json');
+    // Fingerprints this bundle lacks, which the player wants.
+    final songId = wantsSongId;
+    final fingerprints = !ContentStore.fingerprintsBundled && songId;
     // Live is the bundle again (a rollback, or an app update caught up): the
     // download no longer applies.
-    if (id == bundled.id) {
+    if (id == bundled.id && !fingerprints) {
       if (!overlay.existsSync()) return false;
       overlay.deleteSync();
       return true;
     }
     // Already synced, against this same bundle (an app update changes what
     // needs downloading).
-    if (ContentStore.downloaded(support)?.id == id) return false;
+    if (ContentStore.downloaded(support)?.id == id &&
+        (!fingerprints || _hasFingerprints(overlay))) {
+      return false;
+    }
 
     final remote = ContentManifest.fromJson(await read('manifest.json'));
     // A publish landed between the two reads; the next check picks it up.
@@ -95,7 +124,8 @@ class ContentUpdater {
       for (final MapEntry(key: path, value: sha) in remote.files.entries)
         if (appReads(path) &&
             bundled.files[path] != sha &&
-            (patternsOk || !isPatternPath(path)))
+            (patternsOk || !isPatternPath(path)) &&
+            (songId || !path.startsWith('fingerprints/')))
           objectName(path, sha): sha
     };
     final missing = [
@@ -104,24 +134,34 @@ class ContentUpdater {
     ];
 
     // A few at a time: a publish of every pattern file is ~1,300 requests.
-    for (int i = 0; i < missing.length; i += 8) {
-      await Future.wait([
-        for (final name in missing.skip(i).take(8))
-          () async {
-            final bytes = await fetch(root.resolve('objects/$name'));
-            if (sha256.convert(bytes).toString() != wanted[name]) {
-              throw FormatException('content object $name failed its hash');
-            }
-            final part = File('${objects.path}/$name.part');
-            await part.writeAsBytes(bytes, flush: true);
-            await part.rename('${objects.path}/$name');
-          }()
-      ]);
+    progress.value = missing.isEmpty ? null : 0;
+    try {
+      for (int i = 0; i < missing.length; i += 8) {
+        await Future.wait([
+          for (final name in missing.skip(i).take(8))
+            () async {
+              final bytes = await fetch(root.resolve('objects/$name'));
+              if (sha256.convert(bytes).toString() != wanted[name]) {
+                throw FormatException('content object $name failed its hash');
+              }
+              final part = File('${objects.path}/$name.part');
+              await part.writeAsBytes(bytes, flush: true);
+              await part.rename('${objects.path}/$name');
+            }()
+        ]);
+        progress.value = min(i + 8, missing.length) / missing.length;
+      }
+    } finally {
+      progress.value = null;
     }
 
     final part = File('${overlay.path}.part');
     await part.writeAsString(
-        json.encode({...remote.toJson(), 'base': bundled.id}),
+        json.encode({
+          ...remote.toJson(),
+          'base': bundled.id,
+          'fingerprints': fingerprints
+        }),
         flush: true);
     await part.rename(overlay.path);
 
@@ -130,6 +170,14 @@ class ContentUpdater {
       if (!keep.contains(f.uri.pathSegments.last)) f.deleteSync();
     }
     return true;
+  }
+
+  static bool _hasFingerprints(File overlay) {
+    try {
+      return json.decode(overlay.readAsStringSync())['fingerprints'] == true;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<List<int>> _get(Uri url) async {
