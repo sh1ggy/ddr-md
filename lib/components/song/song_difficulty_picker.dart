@@ -1,12 +1,14 @@
 /// Name: SongDifficultyPicker
 /// Description: Picker for difficulty: a leaning tile per chart around the
-/// cabinet's level numeral.
+/// cabinet's level numeral. Tapping the chosen one again opens its tiers,
+/// when it has one, as a chevron on it shows.
 library;
 
 import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song/unlock_badge.dart';
+import 'package:ddr_md/components/tiers/tier_chips.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/components/floor_pop_widgets.dart';
@@ -42,6 +44,9 @@ class SongDifficultyPicker extends StatelessWidget {
     final chosen = songState.chosenDifficulty.clamp(0, charts.length - 1);
     final pop = FloorPop.of(context);
     final shown = song?.shownTierFor(songState.modes, chosen);
+    // Whether the chosen chart has tiers to open under the picker.
+    final tiered = songState.modes == Modes.singles &&
+        song?.tierChartAt(Modes.singles, chosen) != null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -56,7 +61,11 @@ class SongDifficultyPicker extends StatelessWidget {
               child: GestureDetector(
                 onTap: () {
                   HapticFeedback.selectionClick();
-                  songState.setChosenDifficulty(i);
+                  if (i == chosen && tiered) {
+                    tierChipsOpen.value = !tierChipsOpen.value;
+                  } else {
+                    songState.setChosenDifficulty(i);
+                  }
                 },
                 child: Lean(
                   // The unlock badge overhangs the tile's top right, clear of
@@ -101,6 +110,25 @@ class SongDifficultyPicker extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (i == chosen && tiered)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Upright(
+                              child: ValueListenableBuilder(
+                                valueListenable: tierChipsOpen,
+                                builder: (context, open, _) => AnimatedRotation(
+                                  turns: open ? .5 : 0,
+                                  duration: FloorPop.eighth,
+                                  child: Icon(Icons.expand_more_rounded,
+                                      size: 14,
+                                      color:
+                                          kInGameDifficultyColors[chart.name]),
+                                ),
+                              ),
+                            ),
+                          ),
                         if (i != chosen)
                           Positioned(
                             left: 0,

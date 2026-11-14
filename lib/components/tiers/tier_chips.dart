@@ -1,20 +1,25 @@
 /// Name: TierChips
 /// Parent: SongDetails
 /// Description: The chosen Singles chart's three tiers side by side: yours,
-/// your circle's median and the calculated one. They double as the switch
-/// for which tier rows show; yours also opens the sheet to place the chart,
-/// once you've played it.
+/// your circle's median and the calculated one, folded away until the chosen
+/// difficulty is tapped again. They double as the switch for which tier
+/// rows show; yours also opens the sheet to place the chart, once you've
+/// played it. Under them, the way on to your tier list for the level.
 library;
 
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/tiers/place_tier_sheet.dart';
 import 'package:ddr_md/components/tiers/tier_widgets.dart';
+import 'package:ddr_md/components/tiers/your_tiers_page.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+/// Whether the song page's tiers are open; the chosen difficulty toggles it.
+final tierChipsOpen = ValueNotifier(false);
 
 class TierChips extends StatefulWidget {
   const TierChips({super.key, required this.song});
@@ -29,6 +34,7 @@ class _TierChipsState extends State<TierChips> {
   @override
   void initState() {
     super.initState();
+    tierChipsOpen.value = false;
     // Without bests, nothing reads as played and the chips still show.
     ChartBests.ensure(Modes.singles).then((_) {
       if (mounted) setState(() {});
@@ -45,55 +51,80 @@ class _TierChipsState extends State<TierChips> {
     final chart = levelChart(widget.song.name, at.difficulty, at.level);
     if (chart == null) return const SizedBox.shrink();
     return ValueListenableBuilder(
-      valueListenable: YourTiers.revision,
-      builder: (context, _, __) {
-        final shown = YourTiers.shown;
-        final mine = chart.placement?.hundredths;
-        final forYou = mine != null || chart.played || chart.calc == null
-            ? null
-            : TierLean.forYou(chart.song, at.key, at.level, chart.calc!);
-        final median = YourTiers.circleMedian(
-            chart.song.name, chart.difficulty, chart.level);
-        if (chart.calc == null && mine == null && median == null) {
-          return const SizedBox.shrink();
-        }
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(6, 12, 6, 0),
-          child: Row(spacing: 10, children: [
-            _Chip(
-              label: 'Your tier',
-              selected: shown == TierShown.mine,
-              icon: Icons.person,
-              level: chart.level,
-              hundredths: mine ?? forYou ?? (chart.played ? chart.calc : null),
-              outlined: mine == null && forYou != null,
-              faded: mine == null && forYou == null,
-              onTap: () async {
-                await YourTiers.setShown(TierShown.mine);
-                if (chart.played && context.mounted) {
-                  await showPlaceTierSheet(context, chart);
-                }
-              },
-            ),
-            _Chip(
-              label: "Your circle's tier",
-              selected: shown == TierShown.circle,
-              icon: Icons.groups_rounded,
-              level: chart.level,
-              hundredths: median,
-              onTap: () => YourTiers.setShown(TierShown.circle),
-            ),
-            _Chip(
-              label: 'Calculated tier',
-              selected: shown == TierShown.calc,
-              icon: Icons.bar_chart_rounded,
-              level: chart.level,
-              hundredths: chart.calc,
-              onTap: () => YourTiers.setShown(TierShown.calc),
-            ),
-          ]),
-        );
-      },
+      valueListenable: tierChipsOpen,
+      builder: (context, open, child) => AnimatedSize(
+        duration: FloorPop.eighth,
+        curve: FloorPop.settle,
+        alignment: Alignment.topCenter,
+        child: open ? child : const SizedBox(width: double.infinity),
+      ),
+      child: ValueListenableBuilder(
+        valueListenable: YourTiers.revision,
+        builder: (context, _, __) {
+          final shown = YourTiers.shown;
+          final mine = chart.placement?.hundredths;
+          final forYou = mine != null || chart.played || chart.calc == null
+              ? null
+              : TierLean.forYou(chart.song, at.key, at.level, chart.calc!);
+          final median = YourTiers.circleMedian(
+              chart.song.name, chart.difficulty, chart.level);
+          if (chart.calc == null && mine == null && median == null) {
+            return const SizedBox.shrink();
+          }
+          final pop = FloorPop.of(context);
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(6, 12, 6, 0),
+            child: Column(spacing: 8, children: [
+              Row(spacing: 10, children: [
+                _Chip(
+                  label: 'Your tier',
+                  selected: shown == TierShown.mine,
+                  icon: Icons.person,
+                  level: chart.level,
+                  hundredths:
+                      mine ?? forYou ?? (chart.played ? chart.calc : null),
+                  outlined: mine == null && forYou != null,
+                  faded: mine == null && forYou == null,
+                  onTap: () async {
+                    await YourTiers.setShown(TierShown.mine);
+                    if (chart.played && context.mounted) {
+                      await showPlaceTierSheet(context, chart);
+                    }
+                  },
+                ),
+                _Chip(
+                  label: "Your circle's tier",
+                  selected: shown == TierShown.circle,
+                  icon: Icons.groups_rounded,
+                  level: chart.level,
+                  hundredths: median,
+                  onTap: () => YourTiers.setShown(TierShown.circle),
+                ),
+                _Chip(
+                  label: 'Calculated tier',
+                  selected: shown == TierShown.calc,
+                  icon: Icons.bar_chart_rounded,
+                  level: chart.level,
+                  hundredths: chart.calc,
+                  onTap: () => YourTiers.setShown(TierShown.calc),
+                ),
+              ]),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: pop.riser,
+                    foregroundColor: Theme.of(context).colorScheme.onSurface,
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14))),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => YourTiersPage(level: chart.level))),
+                icon: const Icon(Icons.stairs_rounded, size: 18),
+                label: const Text('Your tiers'),
+              ),
+            ]),
+          );
+        },
+      ),
     );
   }
 }

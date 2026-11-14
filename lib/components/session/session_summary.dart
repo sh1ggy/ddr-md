@@ -15,6 +15,7 @@ import 'package:ddr_md/components/session/recent_plays.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
+import 'package:ddr_md/components/tiers/tier_pairs.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/card_gains.dart';
@@ -287,6 +288,14 @@ class SessionSummaryBody extends StatefulWidget {
 
 class _SessionSummaryBodyState extends State<SessionSummaryBody> {
   bool _showTiming = false;
+  // Fixed per set of plays, so answering one doesn't reshuffle them.
+  late List<TierPair> _pairs = tierPairs(widget.plays);
+
+  @override
+  void didUpdateWidget(SessionSummaryBody old) {
+    super.didUpdateWidget(old);
+    if (old.plays != widget.plays) _pairs = tierPairs(widget.plays);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -429,6 +438,10 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
         if (widget.gains.isNotEmpty) ...[
           const SizedBox(height: 6),
           CollectedTile(widget.gains, onTap: widget.onCollected),
+        ],
+        if (_pairs.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          TierPairsTile(_pairs),
         ],
       ],
     );
