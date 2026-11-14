@@ -1,9 +1,10 @@
 /// Name: YourTiersPage
 /// Parent: BestRings (the song list's level stats), TierChips
 /// Description: Your tier list for one level: every rung from hardest to
-/// easiest with the charts you've put on it, each showing how far it sits
-/// from its calculated tier, and the charts you've played there but not
-/// placed in a tray below. Drag a chart onto a rung, or tap it to place it.
+/// easiest with the charts you've played there. Until you place one, it
+/// starts faded on its calculated rung; placed ones show how far they sit
+/// from it. Drag a chart onto a rung (its own rung keeps it there), or tap
+/// it to place it. Played charts with no calculated tier wait in a tray.
 /// Leaving shares what changed with your circle.
 library;
 
@@ -111,13 +112,12 @@ class _YourTiersPageState extends State<YourTiersPage> {
             final placed = <int, List<LevelChart>>{};
             final tray = <LevelChart>[];
             for (final c in charts) {
-              if (c.placement case final p?) {
-                placed.putIfAbsent(p.hundredths, () => []).add(c);
+              if (c.placement?.hundredths ?? c.calc case final h?) {
+                placed.putIfAbsent(h, () => []).add(c);
               } else {
                 tray.add(c);
               }
             }
-            tray.sort((a, b) => (b.calc ?? -1).compareTo(a.calc ?? -1));
             return Column(children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 8, 16, 0),
@@ -150,7 +150,7 @@ class _YourTiersPageState extends State<YourTiersPage> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(children: [
-                  Text('${placed.values.fold(0, (n, l) => n + l.length)}',
+                  Text('${charts.where((c) => c.placement != null).length}',
                       style: FloorPop.readout(14, color: pop.voltText)),
                   Text(' / ${charts.length}',
                       style: FloorPop.readout(14, color: pop.haze)),
@@ -179,7 +179,8 @@ class _YourTiersPageState extends State<YourTiersPage> {
                         ],
                       ),
               ),
-              _Tray(tray, onTap: _open, onDrop: (c) => _place(c, null)),
+              if (tray.isNotEmpty)
+                _Tray(tray, onTap: _open, onDrop: (c) => _place(c, null)),
             ]);
           },
         ),
@@ -262,7 +263,10 @@ class _DraggableJacket extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final jacket = TierJacket(chart, rung: rung);
+    // Still on its calculated rung, not placed yet.
+    final jacket = Opacity(
+        opacity: chart.placement == null ? .4 : 1,
+        child: TierJacket(chart, rung: rung));
     return Semantics(
       button: true,
       label: '${chart.song.title} ${chart.difficulty}',
@@ -284,8 +288,8 @@ class _DraggableJacket extends StatelessWidget {
   }
 }
 
-/// The level's played charts that aren't on a rung yet, hardest calculated
-/// first. Dropping a placed chart here takes it off.
+/// The level's played charts with no calculated tier to start on, until
+/// they're placed. Dropping a placed chart here takes it off.
 class _Tray extends StatelessWidget {
   const _Tray(this.charts, {required this.onTap, required this.onDrop});
 
@@ -302,9 +306,8 @@ class _Tray extends StatelessWidget {
       builder: (context, hovering, _) => Container(
         decoration: BoxDecoration(
           color: pop.stage,
-          border: Border(
-              top: BorderSide(
-                  color: hovering.isNotEmpty ? pop.voltText : pop.line)),
+          border:
+              Border.all(color: hovering.isNotEmpty ? pop.voltText : pop.line),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: EdgeInsets.fromLTRB(

@@ -65,8 +65,9 @@ class _TierChipsState extends State<TierChips> {
               selected: shown == TierShown.mine,
               icon: Icons.person,
               level: chart.level,
-              hundredths: mine ?? forYou,
-              outlined: mine == null,
+              hundredths: mine ?? forYou ?? (chart.played ? chart.calc : null),
+              outlined: mine == null && forYou != null,
+              faded: mine == null && forYou == null,
               onTap: () async {
                 await YourTiers.setShown(TierShown.mine);
                 if (chart.played && context.mounted) {
@@ -105,7 +106,8 @@ class _Chip extends StatelessWidget {
       required this.level,
       required this.hundredths,
       required this.onTap,
-      this.outlined = false});
+      this.outlined = false,
+      this.faded = false});
 
   final String label;
   final bool selected;
@@ -115,6 +117,8 @@ class _Chip extends StatelessWidget {
   final VoidCallback onTap;
   // A "for you" tier rather than one you placed.
   final bool outlined;
+  // Played but not placed: the calculated tier it starts on.
+  final bool faded;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +154,10 @@ class _Chip extends StatelessWidget {
                                     ..style = PaintingStyle.stroke
                                     ..strokeWidth = 1.2
                                     ..color = ink)
-                              : FloorPop.readout(19, color: ink)),
+                              : FloorPop.readout(19,
+                                  color: faded && hundredths != null
+                                      ? ink.withValues(alpha: .45)
+                                      : ink)),
                     ]),
               ),
             ),
