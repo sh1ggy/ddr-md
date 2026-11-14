@@ -5,8 +5,8 @@
 /// colours, best first, played charts without one in grey, then the
 /// unplayed. The grid's spare cell shows which measure in its art and
 /// switches it; the choice sticks. Tapped, the strip opens that measure's
-/// tiers as a bar and badges, with ways on to the full stats and the binder;
-/// its Tiers pill opens your tier list straight away.
+/// tiers as a bar and badges, with ways on to your tiers, the full stats and
+/// the binder.
 library;
 
 import 'dart:math' as math;
@@ -230,34 +230,6 @@ class BestStrip extends StatelessWidget {
                           style: TextStyle(color: pop.haze)),
                     ]),
                     style: FloorPop.readout(13)),
-                if (onTiers case final open?) ...[
-                  const SizedBox(width: 10),
-                  Material(
-                    color: pop.riser,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        open();
-                      },
-                      child: const Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            spacing: 5,
-                            children: [
-                              Icon(Icons.stairs_rounded, size: 16),
-                              Text('Tiers',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700)),
-                            ]),
-                      ),
-                    ),
-                  ),
-                ],
               ]),
             ),
           ),
@@ -302,37 +274,15 @@ class _Ladder extends StatelessWidget {
                     ]),
                     style: FloorPop.readout(40)),
                 const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                      color: pop.riser,
-                      borderRadius: BorderRadius.circular(14)),
-                  child: Row(children: [
-                    for (final tab in BestMeasure.values)
-                      Expanded(
-                        child: Semantics(
-                          selected: tab == m,
-                          label: tab.name,
-                          child: Material(
-                            color:
-                                tab == m ? FloorPop.volt : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () => bestMeasure.value = tab,
-                              child: SizedBox(
-                                height: 40,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 8, horizontal: 12),
-                                  child: _measureArt(bests, tab),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ]),
+                PillTabs<BestMeasure>(
+                  values: BestMeasure.values,
+                  tabs: const [
+                    Tab(text: 'Lamp'),
+                    Tab(text: 'Grade'),
+                    Tab(text: 'Flare'),
+                  ],
+                  selected: m,
+                  onChanged: (tab) => bestMeasure.value = tab,
                 ),
                 const SizedBox(height: 16),
                 CustomPaint(
@@ -361,8 +311,11 @@ class _Ladder extends StatelessWidget {
                             Navigator.of(context).pop();
                             onTap();
                           },
-                          child: FittedBox(
-                              fit: BoxFit.scaleDown, child: Text(label)),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: FittedBox(
+                                fit: BoxFit.scaleDown, child: Text(label)),
+                          ),
                         ),
                       ),
                     ],
@@ -378,9 +331,12 @@ class _Ladder extends StatelessWidget {
                             Navigator.of(context).pop();
                             onBinder!();
                           },
-                          child: const FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text('Open binder')),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Open binder')),
+                          ),
                         ),
                       ),
                   ]),
