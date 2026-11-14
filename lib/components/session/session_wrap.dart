@@ -28,7 +28,7 @@ import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_model.dart';
 import 'package:ddr_md/components/song/jacket_edition/jacket_edition.dart';
 import 'package:ddr_md/components/song/scores/art_badge.dart';
-import 'package:ddr_md/components/song_json.dart' show Modes;
+import 'package:ddr_md/components/song_json.dart' show Modes, SongInfo;
 import 'package:ddr_md/components/song/scores/score_card.dart'
     show clearLampIcon;
 import 'package:ddr_md/components/songlist/jacket_image.dart';
@@ -37,6 +37,7 @@ import 'package:ddr_md/helpers.dart' show formatScore, kInGameDifficultyNames;
 import 'package:ddr_md/models/card_gains.dart';
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/circle_model.dart';
+import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/eamuse_state.dart';
 import 'package:ddr_md/models/session_goal.dart';
@@ -237,12 +238,48 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   void initState() {
     super.initState();
     if (widget.sessionId != null) _collect();
+    _loadHeard();
     // The latest cheers on this session.
     WidgetsBinding.instance
         .addPostFrameCallback((_) => context.read<CircleState>().poll());
   }
 
   String? get _sessionId => widget.sessionId ?? _visit?.session?.id;
+
+  List<Heard> _heardHere = [];
+  Set<String> _timed = {};
+
+  Future<void> _loadHeard() async {
+    final id = _sessionId;
+    if (id == null) return;
+    final (heard, timed) = await (
+      DatabaseProvider.getSessionHeard(id),
+      DatabaseProvider.getSessionPlays(id),
+    ).wait;
+    if (mounted) {
+      setState(() {
+        _heardHere = heard;
+        _timed = {for (final p in timed) p.song};
+      });
+    }
+  }
+
+  /// Songs Song ID heard in the session that none of its plays were.
+  List<SongInfo> _unplayed() {
+    final played = {
+      ..._timed,
+      for (final p in _visit?.plays ?? const <RecentPlay>[])
+        if (p.song case final song?) song
+    };
+    final seen = <String>{};
+    return [
+      for (final h in _heardHere)
+        if (!played.contains(h.song) && seen.add(h.song))
+          if (Songs.list.where((s) => s.name == h.song).firstOrNull
+              case final song?)
+            song
+    ];
+  }
 
   /// Your shared credits of this session that were cheered, oldest first.
   List<CircleCredit> _cheered(CircleState circle) =>
@@ -258,6 +295,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
         _Beat.verdict,
         if (_visit?.session?.goal != null) _Beat.goal,
         if (_cheered(circle).isNotEmpty) _Beat.circle,
+        if (_unplayed().isNotEmpty) _Beat.heard,
         if (_cards.isNotEmpty) _Beat.pack,
       ];
 
@@ -393,6 +431,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
           _Beat.verdict => 'Summary',
           _Beat.goal => 'Goal',
           _Beat.circle => 'Cheers',
+          _Beat.heard => 'Heard',
           _Beat.pack => 'Cards',
         },
       if (n > 0) 'Binder',
@@ -503,6 +542,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
                         goal: _goalProgress()),
                     _Beat.goal => _GoalResult(_goalProgress()!),
                     _Beat.circle => _CheerWall(_cheered(circle)),
+                    _Beat.heard => _HeardWall(_unplayed()),
                     _Beat.pack => Padding(
                         padding: const EdgeInsets.only(bottom: 80),
                         child: _Pack(_cards, gains: _gains)),
@@ -530,7 +570,122 @@ class _SessionWrapPageState extends State<SessionWrapPage>
   }
 }
 
-enum _Beat { verdict, goal, circle, pack }
+/// Songs heard at the cab but not played, as jackets with a keep (favourite)
+/// toggle, to try next time.
+class _HeardWall extends StatefulWidget {
+  const _HeardWall(this.songs);
+  final List<SongInfo> songs;
+
+  @override
+  State<_HeardWall> createState() => _HeardWallState();
+}
+
+class _HeardWallState extends State<_HeardWall> {
+  final _kept = <String, Favorite>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _read();
+  }
+
+  Modes get _mode => context.read<SongState>().modes;
+
+  Future<void> _read() async {
+    for (final song in widget.songs) {
+      final fav =
+          await DatabaseProvider.getFavoriteBySong(song.titletranslit, _mode);
+      if (fav != null) _kept[song.name] = fav;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _toggle(SongInfo song) async {
+    HapticFeedback.lightImpact();
+    final kept = _kept.remove(song.name);
+    if (kept != null) {
+      await DatabaseProvider.deleteFavorite(kept);
+    } else {
+      final fav = Favorite(
+          id: 0, isFav: true, songTitle: song.titletranslit, mode: _mode);
+      await DatabaseProvider.addFavorite(fav);
+      _kept[song.name] = fav;
+    }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pop = FloorPop.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 96),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: [
+              for (final song in widget.songs.take(6))
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    width: 150,
+                    height: 190,
+                    child: Stack(fit: StackFit.expand, children: [
+                      SongArtwork(songName: song.name, title: song.title),
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(12, 28, 12, 10),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0),
+                                Colors.black.withValues(alpha: 0.85),
+                              ],
+                            ),
+                          ),
+                          child: Text(song.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: IconButton(
+                          tooltip: _kept.containsKey(song.name)
+                              ? 'Kept in favourites'
+                              : 'Keep in favourites',
+                          style: IconButton.styleFrom(
+                              backgroundColor: Colors.black54,
+                              foregroundColor: Colors.white),
+                          onPressed: () => _toggle(song),
+                          icon: Icon(_kept.containsKey(song.name)
+                              ? Icons.favorite
+                              : Icons.favorite_border),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+            ]),
+        const SizedBox(height: 14),
+        Text('Heard, not played · keep one to try next time',
+            style: TextStyle(fontSize: 12, color: pop.haze)),
+      ]),
+    );
+  }
+}
+
+enum _Beat { verdict, goal, circle, heard, pack }
 
 // Each cheer lands as another stamp. Positions stay fixed across rebuilds;
 // a busy session fills the page before stickers start to overlap.

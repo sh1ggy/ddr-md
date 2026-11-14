@@ -36,6 +36,8 @@ const _dirs = {
   // Made from the PNGs by scripts/encode_jackets.sh.
   'jackets-webp': '.webp',
   'jackets-160-webp': '.webp',
+  // Song ID, by tool/generate_fingerprints.dart.
+  'fingerprints': '.fp',
 };
 
 /// SHA-256 of every key that signs a store build (Play Console → App

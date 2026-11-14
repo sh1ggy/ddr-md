@@ -15,6 +15,9 @@ import 'package:ddr_md/components/session/goal_card.dart';
 import 'package:ddr_md/components/session/pad_check.dart';
 import 'package:ddr_md/components/session/session_wrap.dart';
 import 'package:ddr_md/components/session/visits.dart';
+import 'package:ddr_md/components/song/song_page.dart';
+import 'package:ddr_md/components/songlist/jacket_image.dart';
+import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/helpers.dart';
 import 'package:ddr_md/models/circle_model.dart';
@@ -494,13 +497,14 @@ class _ActiveSession extends StatefulWidget {
 
 class _ActiveSessionState extends State<_ActiveSession> {
   late int _revision = widget.session.revision;
-  late Future<(List<Credit>, List<TimingPlay>)> _load = _fetch();
+  late Future<(List<Credit>, List<TimingPlay>, List<Heard>)> _load = _fetch();
 
-  Future<(List<Credit>, List<TimingPlay>)> _fetch() {
+  Future<(List<Credit>, List<TimingPlay>, List<Heard>)> _fetch() {
     final id = widget.session.session!.id;
     return (
       DatabaseProvider.getCredits(id),
       DatabaseProvider.getSessionPlays(id),
+      DatabaseProvider.getSessionHeard(id),
     ).wait;
   }
 
@@ -520,10 +524,11 @@ class _ActiveSessionState extends State<_ActiveSession> {
     final session = widget.session;
     final header = widget.header;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return FutureBuilder<(List<Credit>, List<TimingPlay>)>(
+    return FutureBuilder<(List<Credit>, List<TimingPlay>, List<Heard>)>(
       future: _load,
       builder: (context, snapshot) {
-        final (credits, plays) = snapshot.data ?? (<Credit>[], <TimingPlay>[]);
+        final (credits, plays, heard) =
+            snapshot.data ?? (<Credit>[], <TimingPlay>[], <Heard>[]);
         return ListView(
           padding: clearOfBars(context, const EdgeInsets.only(bottom: 12)),
           children: [
@@ -564,7 +569,12 @@ class _ActiveSessionState extends State<_ActiveSession> {
                         ],
                       ),
                     ),
-                    if (!plays.any((p) => p.creditId == credit.id))
+                    HeardChips(heard: [
+                      for (final h in heard)
+                        if (h.creditId == credit.id) h
+                    ]),
+                    if (!plays.any((p) => p.creditId == credit.id) &&
+                        !heard.any((h) => h.creditId == credit.id))
                       const Padding(
                         padding: EdgeInsets.all(8),
                         child: Text('Nothing logged yet.',
@@ -878,6 +888,68 @@ class _SideSegment extends StatelessWidget {
                   color: selected ? FloorPop.onVolt : pop.haze)),
         ),
       ),
+    );
+  }
+}
+
+/// Songs Song ID heard in a credit, as jacket chips that open the song.
+class HeardChips extends StatelessWidget {
+  const HeardChips({super.key, required this.heard});
+
+  final List<Heard> heard;
+
+  @override
+  Widget build(BuildContext context) {
+    final songs = [
+      for (final h in heard)
+        if (Songs.list.where((s) => s.name == h.song).firstOrNull
+            case final song?)
+          song
+    ];
+    if (songs.isEmpty) return const SizedBox.shrink();
+    final pop = FloorPop.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+      child: Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final song in songs)
+          Material(
+            color: pop.riser,
+            borderRadius: BorderRadius.circular(14),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () {
+                context.read<SongState>()
+                  ..setSongInfo(song)
+                  ..setChosenDifficulty(0);
+                Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const SongPage()));
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(5, 5, 12, 5),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: SizedBox.square(
+                        dimension: 34,
+                        child: SongArtwork(
+                            songName: song.name, title: song.title)),
+                  ),
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 200),
+                    child: Text(song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(Icons.hearing, size: 14, color: pop.haze),
+                ]),
+              ),
+            ),
+          ),
+      ]),
     );
   }
 }

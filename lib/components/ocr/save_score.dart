@@ -31,6 +31,7 @@ import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:ddr_md/models/session_model.dart';
 import 'package:provider/provider.dart';
 
 // Below this similarity the match is shown as a warning and likely wrong;
@@ -244,8 +245,10 @@ class _SaveScorePanelState extends State<SaveScorePanel> {
     if (Songs.list.isEmpty) {
       return (song: null, match: null, isPicked: false, isWeak: true);
     }
-    final match =
-        _selectedSong == null ? Songs.matchTitle(widget.initialTitle) : null;
+    final match = _selectedSong == null
+        ? Songs.matchTitle(widget.initialTitle,
+            heard: context.read<SessionState>().heardSongs)
+        : null;
     final isPicked = _selectedSong != null;
     final song = _selectedSong ?? match?.song;
     final isWeak =

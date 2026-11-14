@@ -315,8 +315,23 @@ class Songs {
   // Finds the song whose title (or translit title) is closest to [ocrTitle]
   // by normalized Levenshtein distance. Returns null when the list is empty
   // or the query normalizes to nothing.
-  static SongMatch? matchTitle(String ocrTitle) =>
-      matchTitles(ocrTitle, limit: 1).firstOrNull;
+  /// [heard] songs (Song ID heard them this credit) win when they read
+  /// nearly as well as the closest.
+  static SongMatch? matchTitle(String ocrTitle,
+      {Set<String> heard = const {}}) {
+    final best = matchTitles(ocrTitle, limit: 1).firstOrNull;
+    if (heard.isEmpty) return best;
+    final candidates = [
+      for (final song in list)
+        if (heard.contains(song.name)) song
+    ];
+    final fromHeard =
+        matchTitles(ocrTitle, limit: 1, candidates: candidates).firstOrNull;
+    if (fromHeard == null || fromHeard.similarity < 0.5) return best;
+    return best == null || fromHeard.similarity >= best.similarity - 0.2
+        ? fromHeard
+        : best;
+  }
 
   // The [limit] closest songs to [ocrTitle] scoring at least [minSimilarity],
   // best first. Optional candidates restrict the search to eligible songs,

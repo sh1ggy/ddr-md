@@ -29,6 +29,46 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SongIdSession") {
+      SongIdSession.register(messenger: registrar.messenger())
+    }
+  }
+}
+
+/// Song ID's audio session. In its default mode iOS processes the built-in
+/// mic for voice, suppressing sustained tones as noise, which left only a
+/// song's drums to match. Measurement mode turns that off; the built-in mic
+/// is pinned so a headset's can't take over. Afterwards the Playback session
+/// above comes back, so the assist tick keeps the speaker and the mute
+/// switch's behaviour.
+enum SongIdSession {
+  static func register(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "ddr_md/song_id_session", binaryMessenger: messenger)
+    channel.setMethodCallHandler { call, result in
+      let session = AVAudioSession.sharedInstance()
+      do {
+        switch call.method {
+        case "listen":
+          try session.setCategory(
+            .playAndRecord, mode: .measurement,
+            options: [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers])
+          try session.setPreferredSampleRate(48000)
+          try session.setActive(true)
+          if let mic = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+            try session.setPreferredInput(mic)
+          }
+          result(nil)
+        case "done":
+          try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+          try session.setActive(true)
+          result(nil)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      } catch {
+        result(FlutterError(code: "session", message: error.localizedDescription, details: nil))
+      }
+    }
   }
 }
 
@@ -39,6 +79,7 @@ enum BackupExclusions {
       applicationSupport.appendingPathComponent("content", isDirectory: true),
       documents.appendingPathComponent("models", isDirectory: true),
       documents.appendingPathComponent("templates", isDirectory: true),
+      documents.appendingPathComponent("music", isDirectory: true),
     ]
     for var directory in directories {
       do {
