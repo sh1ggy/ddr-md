@@ -1,8 +1,8 @@
 /// Name: EditionBinderPage
 /// Parent: DevelopmentPage, BestStrip (from the level list)
 /// Description: The player's cards as a binder, in the profile's play style:
-/// a cover for each level, highest first, with its charts' bests as the
-/// level list's strip and its best cards fanned out, then sheets of every
+/// a cover for each level, highest first, with its best cards fanned out
+/// over its charts' tiers, then sheets of every
 /// chart at that level in title order, six across and as many rows as the
 /// screen holds. Jackets alone, like a binder's sleeves. A chart without a
 /// best is an empty pocket, its jacket a ghost, so the gaps show. Tapping a
@@ -524,9 +524,9 @@ const _kPad = 10.0, _kGap = 8.0;
   );
 }
 
-// A level's cover: its number and count across the top over a bar of its
-// lamps, its best cards fanned large in the middle with the negative in
-// front, and its tiers below.
+// A level's cover: its number and count across the top, its best cards
+// fanned large in the middle with the negative in front, and its tiers
+// below.
 class _Cover extends StatelessWidget {
   const _Cover(
       {required this.divider, required this.reserve, required this.onOpen});
@@ -613,10 +613,6 @@ class _Cover extends StatelessWidget {
                 Text('COLLECTED', style: caps),
               ]),
             ]),
-            // Clears the numeral's shadow, which hangs below its box.
-            const SizedBox(height: _kCoverGap + 8),
-            // Every chart at the level by its lamp, the unplayed as track.
-            LampBar(divider.bests, height: 10),
             const SizedBox(height: _kCoverGap),
             // The fan takes what the tiers leave, and the tiers never more
             // than half, shrinking to fit on a short screen rather than
