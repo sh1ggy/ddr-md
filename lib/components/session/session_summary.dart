@@ -510,7 +510,10 @@ class LevelGapBars extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    final most = max(5000.0, levels.map((l) => l.gap.abs()).reduce(max));
+    // Three times the typical level's gap, so one failed play can't squash
+    // every other bar; a gap past it runs to the edge.
+    final sizes = [for (final l in levels) l.gap.abs()];
+    final most = max(5000.0, min(sizes.reduce(max), 3 * _median(sizes)));
     return Column(children: [
       for (final l in levels)
         Padding(
@@ -530,7 +533,7 @@ class LevelGapBars extends StatelessWidget {
             Expanded(
               child: LayoutBuilder(builder: (context, box) {
                 final mid = box.maxWidth / 2;
-                final w = mid * (l.gap.abs() / most);
+                final w = mid * min(1.0, l.gap.abs() / most);
                 return SizedBox(
                   height: 16,
                   child: Stack(children: [
