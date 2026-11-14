@@ -2,11 +2,13 @@
 /// Parent: HistoryPage
 /// Description: Tab that displays the timeline of saved scores for the
 /// current song, most recent first, under the best on each chart synced from
-/// e-amusement. Scores are added from the OCR pages.
+/// e-amusement; tapping a best opens that chart's play history. Scores are
+/// added from the OCR pages.
 library;
 
 import 'package:ddr_md/components/song/scores/score_card.dart';
 import 'package:ddr_md/components/song/scores/score_details_page.dart';
+import 'package:ddr_md/components/song/scores/score_history.dart';
 import 'package:ddr_md/components/song_json.dart' show Modes;
 import 'package:ddr_md/helpers.dart'
     show difficultyOptions, kInGameDifficultyColors;
@@ -28,6 +30,7 @@ class ScoresTab extends StatefulWidget {
 class ScoresTabState extends State<ScoresTab> {
   Future<List<Score>>? _scoresPromise;
   List<ScoreRecord> _records = [];
+  Map<String, List<RecentPlay>> _plays = {};
 
   void _refreshScores() {
     var songState = Provider.of<SongState>(context, listen: false);
@@ -42,6 +45,15 @@ class ScoresTabState extends State<ScoresTab> {
       records.sort((a, b) =>
           order.indexOf(a.difficulty).compareTo(order.indexOf(b.difficulty)));
       if (mounted) setState(() => _records = records);
+    });
+    DatabaseProvider.getRecentPlaysBySong(
+            songState.songInfo!.name, songState.modes)
+        .then((plays) {
+      final byChart = <String, List<RecentPlay>>{};
+      for (final p in plays.where((p) => p.score != null)) {
+        (byChart[p.difficulty] ??= []).add(p);
+      }
+      if (mounted) setState(() => _plays = byChart);
     });
   }
 
@@ -79,7 +91,7 @@ class ScoresTabState extends State<ScoresTab> {
           return ListView.builder(
             itemCount: header + scores.length,
             itemBuilder: (context, i) {
-              if (i < header) return _RecordsCard(_records);
+              if (i < header) return _RecordsCard(_records, _plays);
               final score = scores[i - header];
               return ScoreCard(score: score, onTap: () => _openDetails(score));
             },
@@ -93,7 +105,8 @@ class ScoresTabState extends State<ScoresTab> {
 /// Best per chart from e-amusement (and any typed-in records).
 class _RecordsCard extends StatelessWidget {
   final List<ScoreRecord> records;
-  const _RecordsCard(this.records);
+  final Map<String, List<RecentPlay>> plays;
+  const _RecordsCard(this.records, this.plays);
 
   @override
   Widget build(BuildContext context) {
@@ -107,18 +120,38 @@ class _RecordsCard extends StatelessWidget {
     };
     return Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Best',
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary)),
-            const SizedBox(height: 4),
-            for (final r in records)
-              ScoreRecordRow(record: r, level: levels[r.difficulty]),
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text('Best',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary)),
+            ),
+            const SizedBox(height: 6),
+            for (final (i, r) in records.indexed)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: ScoreRecordRow(
+                  record: r,
+                  level: levels[r.difficulty],
+                  onTap: () => showScoreHistory(
+                      context,
+                      [
+                        for (final r in records)
+                          (
+                            record: r,
+                            level: levels[r.difficulty],
+                            plays: plays[r.difficulty] ?? const <RecentPlay>[]
+                          )
+                      ],
+                      i),
+                ),
+              ),
           ],
         ),
       ),

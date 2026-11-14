@@ -835,6 +835,17 @@ class DatabaseProvider {
     return [for (final r in rows) RecentPlay.fromMap(r)];
   }
 
+  // One song's plays in a mode, oldest first.
+  static Future<List<RecentPlay>> getRecentPlaysBySong(
+      String song, Modes mode) async {
+    final db = await _instance;
+    final rows = await db.query("recent_plays",
+        where: "song = ? AND mode = ?",
+        whereArgs: [song, mode.name],
+        orderBy: "playedAt ASC, syncOrder ASC");
+    return [for (final r in rows) RecentPlay.fromMap(r)];
+  }
+
   static Future<int> countRecentPlays() async {
     final db = await _instance;
     return Sqflite.firstIntValue(
