@@ -110,16 +110,26 @@ class _PlaceSheetState extends State<_PlaceSheet> {
                 tooltip: 'Easier',
                 onPressed: _rung > 0 ? () => _move(-1) : null,
                 icon: const Icon(Icons.remove_rounded)),
-            const SizedBox(width: 18),
-            LevelNumber(
-                level: c.level,
-                difficulty: c.difficulty,
-                decimalHundredths: _rung,
-                decimalKind: TierKind.mine,
-                // The art's full size: any bigger and it's lettered instead.
-                height: 40,
-                decimalGap: 12),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
+            // On a tile, as numerals are elsewhere: on the sheet's white the
+            // art's white outline vanishes and the digits look cut off.
+            Container(
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                  color: pop.riser, borderRadius: BorderRadius.circular(16)),
+              child: LevelNumber(
+                  level: c.level,
+                  difficulty: c.difficulty,
+                  decimalHundredths: _rung,
+                  decimalKind: TierKind.mine,
+                  // The art's full size: any bigger and it's lettered instead.
+                  height: 40,
+                  decimalGap: 12),
+            ),
+            // The button's own 8 px lead makes the two gaps match.
+            const SizedBox(width: 4),
             HeaderButton(
                 tooltip: 'Harder',
                 onPressed: _rung < 100 - _step ? () => _move(1) : null,
