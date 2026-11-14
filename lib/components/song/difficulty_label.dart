@@ -92,6 +92,7 @@ class LevelNumber extends StatelessWidget {
     this.suffix,
     this.decimalHundredths,
     this.decimalKind = TierKind.calc,
+    this.decimalGap = 0,
   });
 
   final int level;
@@ -105,6 +106,10 @@ class LevelNumber extends StatelessWidget {
   /// placed charts of your own (in Volt before that, and when the setting
   /// shows calculated tiers).
   final TierKind decimalKind;
+
+  /// Space before the decimal, where the numeral is big enough for its drop
+  /// shadow to reach the decimal's point.
+  final double decimalGap;
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final double height;
@@ -163,10 +168,8 @@ class LevelNumber extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
               numeral(level),
-              // Clear of the numeral's drop shadow, which runs to the art's
-              // right edge.
               Padding(
-                  padding: EdgeInsets.only(left: height * .12),
+                  padding: EdgeInsets.only(left: decimalGap),
                   child: Text('.$digits', style: style)),
             ])),
       );
