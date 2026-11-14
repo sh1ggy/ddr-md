@@ -306,19 +306,16 @@ class _Ladder extends StatelessWidget {
                           style: FilledButton.styleFrom(
                               backgroundColor: pop.riser,
                               foregroundColor: text,
-                              minimumSize: const Size.fromHeight(48),
+                              minimumSize: const Size.fromHeight(56),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 6),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14))),
                           onPressed: () {
                             Navigator.of(context).pop();
                             onTap();
                           },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: _Labelled(icon, label)),
-                          ),
+                          child: _Labelled(icon, label),
                         ),
                       ),
                     ],
@@ -328,19 +325,17 @@ class _Ladder extends StatelessWidget {
                     if (onBinder != null)
                       Expanded(
                         child: VoltButton(
-                          height: 48,
+                          height: 56,
                           radius: 14,
                           onPressed: () {
                             Navigator.of(context).pop();
                             onBinder!();
                           },
                           child: const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: _Labelled(
-                                    Icons.collections_bookmark_outlined,
-                                    'Open binder')),
+                            padding: EdgeInsets.symmetric(horizontal: 6),
+                            child: _Labelled(
+                                Icons.collections_bookmark_outlined,
+                                'Open binder'),
                           ),
                         ),
                       ),
@@ -355,7 +350,7 @@ class _Ladder extends StatelessWidget {
   }
 }
 
-/// A button's icon and label on one line.
+/// A button's icon over its label, at one size on every button.
 class _Labelled extends StatelessWidget {
   const _Labelled(this.icon, this.label);
 
@@ -363,11 +358,19 @@ class _Labelled extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) =>
-      Row(mainAxisSize: MainAxisSize.min, spacing: 6, children: [
-        Icon(icon, size: 18),
-        Text(label),
-      ]);
+  Widget build(BuildContext context) => FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(mainAxisSize: MainAxisSize.min, spacing: 4, children: [
+          Icon(icon, size: 20),
+          // The theme's button face, not the Volt button's display one.
+          Text(label,
+              maxLines: 1,
+              style: const TextStyle(
+                  fontFamily: kTextFont,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+        ]),
+      );
 }
 
 /// How many tiers [bests] reach in each section: grade, lamp, flare.
