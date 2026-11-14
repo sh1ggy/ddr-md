@@ -410,6 +410,7 @@ class ScoreRecordRow extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(width: 8),
         Icon(
             record.source == ScoreRecordSource.eamuse
                 ? Icons.cloud_done_outlined
