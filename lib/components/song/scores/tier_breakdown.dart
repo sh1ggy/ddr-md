@@ -1,8 +1,8 @@
 /// Name: TierBreakdown
 /// Parent: BestStrip, ScoreOverviewPage
 /// Description: A measure's tiers (lamps, grades or flare) as one bar, each
-/// tier a band in its colour, and every tier's badge with its count in a
-/// grid always three rows tall, so switching measure never moves anything.
+/// tier a band in its colour, and every tier's badge with its count, three
+/// to a row so every measure's badges are the same width.
 library;
 
 import 'package:ddr_md/components/song/scores/art_badge.dart';
@@ -59,49 +59,45 @@ class TierBarPainter extends CustomPainter {
       old.fill != fill;
 }
 
-/// Every tier's badge and count, empty ones dimmed, in [rows] rows: as many
-/// columns as that takes, so the grid's height never depends on the measure.
+/// Every tier's badge and count, empty ones dimmed, [columns] to a row.
 class TierGrid extends StatelessWidget {
-  const TierGrid(this.tiers, {super.key, required this.aspect, this.rows = 3});
+  const TierGrid(this.tiers,
+      {super.key, required this.aspect, this.columns = 3});
 
   final List<TierCount> tiers;
 
   /// The widest drawn part of the tiers' art: [kLampAspect] and so on.
   final double aspect;
-  final int rows;
+  final int columns;
 
   static const _height = 28.0, _gap = 6.0;
 
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    final columns = (tiers.length / rows).ceil().clamp(1, 99);
-    return SizedBox(
-      height: rows * _height + (rows - 1) * _gap,
-      child: LayoutBuilder(
-        builder: (context, box) => Wrap(
-          spacing: _gap,
-          runSpacing: _gap,
-          children: [
-            for (final t in tiers)
-              Opacity(
-                opacity: t.count > 0 ? 1 : 0.3,
-                child: ArtTile(t.art,
-                    aspect: aspect,
-                    ink: 12,
-                    width: (box.maxWidth - (columns - 1) * _gap) / columns,
-                    height: _height,
-                    color: t.color,
-                    label: Text(t.label,
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.5,
-                            color: pop.haze)),
-                    trailing: Text('${t.count}', style: FloorPop.readout(15))),
-              ),
-          ],
-        ),
+    return LayoutBuilder(
+      builder: (context, box) => Wrap(
+        spacing: _gap,
+        runSpacing: _gap,
+        children: [
+          for (final t in tiers)
+            Opacity(
+              opacity: t.count > 0 ? 1 : 0.3,
+              child: ArtTile(t.art,
+                  aspect: aspect,
+                  ink: 12,
+                  width: (box.maxWidth - (columns - 1) * _gap) / columns,
+                  height: _height,
+                  color: t.color,
+                  label: Text(t.label,
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                          color: pop.haze)),
+                  trailing: Text('${t.count}', style: FloorPop.readout(15))),
+            ),
+        ],
       ),
     );
   }
