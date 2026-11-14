@@ -4,9 +4,9 @@
 /// by clear lamp, grade or flare: each tier a band in the stats page's
 /// colours, best first, played charts without one in grey, then the
 /// unplayed. The grid's spare cell shows which measure in its art and
-/// switches it; the choice sticks. Tapped, the strip opens a ladder of that
-/// measure's tiers, with ways on to the full stats and the binder; its Tiers
-/// pill opens your tier list straight away.
+/// switches it; the choice sticks. Tapped, the strip opens that measure's
+/// tiers as a bar and badges, with ways on to the full stats and the binder;
+/// its Tiers pill opens your tier list straight away.
 library;
 
 import 'dart:math' as math;
@@ -254,9 +254,9 @@ class BestStrip extends StatelessWidget {
   }
 }
 
-/// One measure's tiers, best first, each a bar that carries on from the
-/// tiers above it, so a row reads as "this tier or better". The tabs switch
-/// the measure for the strip too.
+/// One measure's tiers as the stats page shows them: a combined bar, then
+/// each tier's badge and count. The tabs switch the measure for the strip
+/// too.
 class _Ladder extends StatelessWidget {
   const _Ladder(this.bests, this.onStats, this.onBinder, this.onTiers);
 
@@ -273,7 +273,6 @@ class _Ladder extends StatelessWidget {
       valueListenable: bestMeasure,
       builder: (context, m, _) {
         final tiers = _rings(bests)[m.ring];
-        var above = 0;
         return SafeArea(
           top: false,
           child: Padding(
@@ -289,15 +288,6 @@ class _Ladder extends StatelessWidget {
                           style: FloorPop.readout(20, color: pop.haze)),
                     ]),
                     style: FloorPop.readout(40)),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(
-                      value: played / total,
-                      minHeight: 6,
-                      color: FloorPop.volt,
-                      backgroundColor: pop.riser),
-                ),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(4),
@@ -332,48 +322,32 @@ class _Ladder extends StatelessWidget {
                   ]),
                 ),
                 const SizedBox(height: 16),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(children: [
-                      for (final t in tiers)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Row(children: [
-                            SizedBox(
-                              width: 72,
-                              height: 24,
-                              child: t.art != null
-                                  ? Image.asset(t.art!,
-                                      fit: BoxFit.contain,
-                                      alignment: Alignment.centerLeft)
-                                  : Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(_kNoneLabels[m.ring],
-                                          style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 0.5,
-                                              color: pop.haze))),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: CustomPaint(
-                                size: const Size.fromHeight(12),
-                                painter: _BandsPainter([t], total, pop.riser,
-                                    lead: (above += t.count) - t.count),
-                              ),
-                            ),
-                            SizedBox(
-                              width: 36,
-                              child: Text('${t.count}',
-                                  textAlign: TextAlign.right,
-                                  style: FloorPop.readout(15)),
-                            ),
-                          ]),
-                        ),
-                    ]),
-                  ),
+                // One bar for the measure, as on the stats page: each tier a
+                // band, the unplayed left on the track.
+                CustomPaint(
+                  size: const Size.fromHeight(14),
+                  painter: _BandsPainter(tiers, total, pop.riser),
                 ),
+                const SizedBox(height: 12),
+                LayoutBuilder(builder: (context, box) {
+                  final columns = BestTiers._columns(box.maxWidth, m.ring);
+                  return Wrap(spacing: 6, runSpacing: 6, children: [
+                    for (final t in tiers)
+                      ArtTile(t.art,
+                          aspect: BestTiers._aspects[m.ring],
+                          ink: 12,
+                          width: (box.maxWidth - (columns - 1) * 6) / columns,
+                          height: 28,
+                          label: Text(_kNoneLabels[m.ring],
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
+                                  color: pop.haze)),
+                          trailing:
+                              Text('${t.count}', style: FloorPop.readout(15))),
+                  ]);
+                }),
                 if (onStats != null || onBinder != null || onTiers != null) ...[
                   const SizedBox(height: 20),
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -394,7 +368,8 @@ class _Ladder extends StatelessWidget {
                             Navigator.of(context).pop();
                             onTap();
                           },
-                          child: Text(label),
+                          child: FittedBox(
+                              fit: BoxFit.scaleDown, child: Text(label)),
                         ),
                       ),
                     ],
@@ -410,7 +385,9 @@ class _Ladder extends StatelessWidget {
                             Navigator.of(context).pop();
                             onBinder!();
                           },
-                          child: const Text('Open binder'),
+                          child: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Open binder')),
                         ),
                       ),
                   ]),
@@ -424,15 +401,13 @@ class _Ladder extends StatelessWidget {
   }
 }
 
-/// [tiers] as bands left to right, out of [total] charts on a [track]:
-/// [lead] charts' worth of the first band's colour, faint, before them, and
-/// only [fill] of the way drawn, for an entrance.
+/// [tiers] as bands left to right, out of [total] charts on a [track], only
+/// [fill] of the way drawn, for an entrance.
 class _BandsPainter extends CustomPainter {
-  _BandsPainter(this.tiers, this.total, this.track,
-      {this.lead = 0, this.fill = 1});
+  _BandsPainter(this.tiers, this.total, this.track, {this.fill = 1});
 
   final List<_Tier> tiers;
-  final int total, lead;
+  final int total;
   final Color track;
   final double fill;
 
@@ -444,11 +419,6 @@ class _BandsPainter extends CustomPainter {
     canvas.drawRect(whole, Paint()..color = track);
     final unit = size.width / total * fill;
     var x = 0.0;
-    if (lead > 0 && tiers.isNotEmpty) {
-      x = lead * unit;
-      canvas.drawRect(Rect.fromLTWH(0, 0, x, size.height),
-          Paint()..color = tiers.first.color.withValues(alpha: 0.3));
-    }
     for (final t in tiers) {
       final band = Rect.fromLTWH(x, 0, t.count * unit, size.height);
       canvas.drawRect(
@@ -466,7 +436,6 @@ class _BandsPainter extends CustomPainter {
   bool shouldRepaint(_BandsPainter old) =>
       old.tiers != tiers ||
       old.total != total ||
-      old.lead != lead ||
       old.track != track ||
       old.fill != fill;
 }
