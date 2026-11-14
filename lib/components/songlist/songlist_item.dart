@@ -8,6 +8,7 @@ import 'package:ddr_md/components/song/song_difficulties.dart';
 import 'package:ddr_md/components/song/song_patterns.dart';
 import 'package:ddr_md/models/pattern_model.dart';
 import 'package:ddr_md/components/song/song_sync_status.dart';
+import 'package:ddr_md/components/song/unlock_badge.dart';
 import 'package:ddr_md/constants.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/flare_card.dart';
@@ -97,6 +98,9 @@ class _SongListItemState extends State<SongListItem> {
     final best = scoped
         ? ChartBests.at(widget.songInfo, mode, widget.difficultyIndex!)
         : null;
+    final unlock = scoped
+        ? widget.songInfo.unlockAt(mode, widget.difficultyIndex!)
+        : widget.songInfo.anyUnlock(mode);
     final stats = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -191,6 +195,8 @@ class _SongListItemState extends State<SongListItem> {
           ),
           if (scoped)
             Positioned(right: -6, bottom: -6, child: _category(context, mode)),
+          if (unlock != null)
+            Positioned(right: -6, top: -6, child: UnlockBadge(unlock)),
         ]),
       ),
       title: titleBlock,

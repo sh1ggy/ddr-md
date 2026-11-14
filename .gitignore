@@ -144,7 +144,9 @@ app.*.symbols
 /assets/jackets
 /assets/songs
 /assets/steps
+/assets/steps-gz
 /assets/patterns
+/assets/fingerprints
 /assets/pattern_levels.json
 # Copied from the live publish by CI and scripts/fetch_content.sh
 /assets/content_manifest.json
@@ -172,6 +174,9 @@ app.*.symbols
 # Design canvases and the index that ties them together. Kept locally only.
 /designs
 
+# Personal builds' music (scripts/with_music.sh). Must never be committed.
+/assets/music
+
 # The simfile-scraping pipeline is its own nested git repo with its own history.
 # Checked out here for convenience; must never be committed into this one.
 /DDR-BPM-prep
@@ -187,3 +192,6 @@ app.*.symbols
 
 # Optional local character surface.
 /assets/pad_dancer_body.json
+
+# A worktree's own macOS bundle id, from scripts/run_macos.sh.
+/macos/Runner/Configs/Worktree.xcconfig

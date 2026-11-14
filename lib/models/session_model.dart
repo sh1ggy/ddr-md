@@ -101,6 +101,9 @@ class Credit {
       );
 }
 
+/// A song Song ID heard during a credit.
+typedef Heard = ({String id, String creditId, String song, DateTime heardAt});
+
 /// One play's result-screen timing. [averageMs] is press − note, so FAST is
 /// negative; [syncUsedMs] is the sync the player had set for that play.
 class TimingPlay {
@@ -346,6 +349,35 @@ class SessionState extends ChangeNotifier {
 
   bool get active => _credit != null;
 
+  /// Songs Song ID heard in the running credit, which a scan offers first.
+  Set<String> get heardSongs => _heardSongs;
+  Set<String> _heardSongs = {};
+
+  Future<void> _loadHeard() async {
+    final credit = _credit;
+    _heardSongs = credit == null
+        ? {}
+        : {
+            for (final h
+                in await DatabaseProvider.getSessionHeard(credit.sessionId))
+              if (h.creditId == credit.id) h.song
+          };
+  }
+
+  /// Notes [song] as heard in the running credit; returns its row's id.
+  Future<String> noteHeard(String song) async {
+    final id = await DatabaseProvider.addHeard(_credit!.id, song);
+    _heardSongs = {..._heardSongs, song};
+    changed();
+    return id;
+  }
+
+  Future<void> forgetHeard(String id) async {
+    await DatabaseProvider.deleteHeard(id);
+    await _loadHeard();
+    changed();
+  }
+
   // Bumped whenever a play, credit or override changes, so views re-query.
   int _revision = 0;
   int get revision => _revision;
@@ -360,6 +392,7 @@ class SessionState extends ChangeNotifier {
       _session = null;
       _credit = null;
     }
+    await _loadHeard();
     notifyListeners();
   }
 
@@ -388,6 +421,7 @@ class SessionState extends ChangeNotifier {
     );
     await DatabaseProvider.saveCredit(credit);
     _credit = credit;
+    _heardSongs = {};
     changed();
     if (ended) onCreditEnded?.call();
   }
@@ -410,6 +444,7 @@ class SessionState extends ChangeNotifier {
     if (credit.id == _credit?.id) {
       _credit = (await DatabaseProvider.getCredits(_session!.id)).firstOrNull;
       if (_credit == null) return discard();
+      await _loadHeard();
     }
     changed();
   }

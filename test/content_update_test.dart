@@ -2,8 +2,8 @@
 /// Description: A published update reaches the app: changed and new files are
 /// downloaded and read ahead of the bundle, a corrupt download changes
 /// nothing, patterns from another engine and files in a shape this app doesn't
-/// read are left alone, and live going back to the bundle's content drops the
-/// download.
+/// read are left alone, live going back to the bundle's content drops the
+/// download, and a store build fetches Song ID's fingerprints only once asked.
 library;
 
 import 'dart:convert';
@@ -13,6 +13,8 @@ import 'package:crypto/crypto.dart';
 import 'package:ddr_md/models/content_store.dart';
 import 'package:ddr_md/models/content_updater.dart';
 import 'package:ddr_md/models/pattern_analysis.dart';
+import 'package:ddr_md/models/settings_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 String _sha(String s) => sha256.convert(utf8.encode(s)).toString();
@@ -82,5 +84,52 @@ void main() {
     await ContentStore.init(support, bundle: bundle);
     expect(ContentStore.current, 'bundle');
     expect(ContentStore.inUse, isEmpty);
+  });
+
+  test('a store build fetches fingerprints only once the player asks',
+      () async {
+    final support = Directory.systemTemp.createTempSync('content_test');
+    addTearDown(() => support.deleteSync(recursive: true));
+    SharedPreferences.setMockInitialValues({});
+    await Settings.init();
+
+    final live = ContentManifest(
+      id: 'live',
+      engine: kPatternEngineVersion,
+      files: {'steps/A.json': _sha('A'), 'fingerprints/A.fp': _sha('fpA')},
+    );
+    final served = {
+      'latest.json': jsonEncode({'id': 'live'}),
+      'manifest.json': jsonEncode(live),
+      'objects/${_sha('fpA')}.fp': 'fpA',
+    };
+    final fetched = <String>[];
+    Future<List<int>> fetch(Uri url) async {
+      fetched.add(url.path.substring(1));
+      return utf8.encode(served[url.path.substring(1)]!);
+    }
+
+    // The bundle is live's content, minus the fingerprints.
+    await ContentStore.init(support,
+        bundle: live, assets: {'assets/steps-gz/A.json.gz'});
+    expect(ContentStore.bundled.files.keys, ['steps/A.json']);
+    expect(
+        await ContentUpdater.check(support, base: 'https://x/', fetch: fetch),
+        isFalse);
+    expect(fetched, ['latest.json']);
+
+    await Settings.setInt(Settings.songIdDownloadKey, 1);
+    expect(
+        await ContentUpdater.check(support, base: 'https://x/', fetch: fetch),
+        isTrue);
+    expect(fetched.last, 'objects/${_sha('fpA')}.fp');
+    await ContentStore.init(support,
+        bundle: live, assets: {'assets/steps-gz/A.json.gz'});
+    expect(ContentStore.current, 'live');
+    expect(await ContentStore.loadBytes('assets/fingerprints/A.fp'),
+        utf8.encode('fpA'));
+    expect(
+        await ContentUpdater.check(support, base: 'https://x/', fetch: fetch),
+        isFalse);
   });
 }

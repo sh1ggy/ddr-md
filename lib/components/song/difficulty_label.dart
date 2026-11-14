@@ -74,6 +74,9 @@ class DifficultyLabel extends StatelessWidget {
 
 /// A chart level in the cabinet's numerals: black, outlined in white, with a
 /// shadow in its difficulty's colour.
+// The level art's height, past which it would only blur.
+const _kArtHeight = 40.0;
+
 class LevelNumber extends StatelessWidget {
   const LevelNumber({
     super.key,
@@ -109,17 +112,21 @@ class LevelNumber extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget numeral(int value, {double? atHeight}) {
       final numberHeight = atHeight ?? height;
+      final lettering = Opacity(
+          opacity: dimmed ? .35 : 1,
+          child: _CabinetText('$value',
+              difficulty: difficulty,
+              height: numberHeight,
+              fill: Colors.black,
+              outline: Colors.white));
+      // The art is drawn small; a numeral bigger than it is lettered
+      // instead, sharp at any size.
+      if (numberHeight > _kArtHeight) return lettering;
       return Image.asset(
           'assets/difficulty/level_${difficulty.toLowerCase()}_$value.png',
           height: numberHeight,
           opacity: dimmed ? const AlwaysStoppedAnimation(0.35) : null,
-          errorBuilder: (_, __, ___) => Opacity(
-              opacity: dimmed ? .35 : 1,
-              child: _CabinetText('$value',
-                  difficulty: difficulty,
-                  height: numberHeight,
-                  fill: Colors.black,
-                  outline: Colors.white)));
+          errorBuilder: (_, __, ___) => lettering);
     }
 
     // The scoring tier rides on the numeral as a raised Volt decimal.

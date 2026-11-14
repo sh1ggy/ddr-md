@@ -26,7 +26,7 @@ class RunnerTests: XCTestCase {
     BackupExclusions.apply(documents: documents, applicationSupport: support)
     BackupExclusions.apply(documents: documents, applicationSupport: support)
 
-    for path in ["Documents/models", "Documents/templates", "Library/Application Support/content"] {
+    for path in ["Documents/models", "Documents/templates", "Documents/music", "Library/Application Support/content"] {
       let values = try root.appendingPathComponent(path).resourceValues(forKeys: [.isExcludedFromBackupKey])
       XCTAssertEqual(values.isExcludedFromBackup, true, path)
     }

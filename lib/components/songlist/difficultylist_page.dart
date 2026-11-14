@@ -18,7 +18,7 @@ import 'package:ddr_md/components/songlist/arcade/arcade_grid_view.dart';
 import 'package:ddr_md/components/songlist/arcade/song_sections.dart';
 import 'package:ddr_md/components/settings/score_overview_page.dart';
 import 'package:ddr_md/components/song/jacket_edition/edition_binder_page.dart';
-import 'package:ddr_md/components/songlist/best_rings.dart';
+import 'package:ddr_md/components/songlist/best_strip.dart';
 import 'package:ddr_md/components/songlist/favlist_page.dart';
 import 'package:ddr_md/components/songlist/filter_tray.dart';
 import 'package:ddr_md/components/songlist/song_item.dart';
@@ -642,27 +642,25 @@ class _DifficultyListPageState extends State<DifficultyListPage> {
             child: _LevelGrid(
               isSelected: _filter.levels.contains,
               onTap: (level) => _toggleLevel(level, songState),
-              spare: bests == null
+              spare: bests == null ? null : BestMeasureSwitch(bests),
+              // The stats and the binder open on the hardest level picked.
+              footer: bests == null
                   ? null
-                  // The stats and the binder open on the hardest level
-                  // picked.
-                  : BestRings(bests,
+                  : BestStrip(bests,
                       onStats: () => Navigator.of(context).push(MaterialPageRoute(
                           builder: (_) => ScoreOverviewPage(
                               mode: songState.modes,
                               level: _filter.levels.isEmpty
                                   ? null
                                   : _filter.levels.reduce(max)))),
-                      onTiers: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => YourTiersPage(
-                              level: _filter.levels.isEmpty
-                                  ? null
-                                  : _filter.levels.reduce(max)))),
-                      onBinder: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => EditionBinderPage(
-                              level: _filter.levels.isEmpty
-                                  ? null
-                                  : _filter.levels.reduce(max))))),
+                      onTiers: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                              builder: (_) => YourTiersPage(
+                                  level: _filter.levels.isEmpty
+                                      ? null
+                                      : _filter.levels.reduce(max)))),
+                      onBinder: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => EditionBinderPage(level: _filter.levels.isEmpty ? null : _filter.levels.reduce(max))))),
             ),
           ),
           const SizedBox(height: 12),
@@ -836,11 +834,13 @@ class _FilterPill extends StatelessWidget {
 /// scrolled out of reach. Picked levels light up on a tile; the rest grey out.
 /// [spare] takes the slot after the last level.
 class _LevelGrid extends StatelessWidget {
-  const _LevelGrid({required this.isSelected, required this.onTap, this.spare});
+  const _LevelGrid(
+      {required this.isSelected, required this.onTap, this.spare, this.footer});
 
   final bool Function(int level) isSelected;
   final ValueChanged<int> onTap;
-  final Widget? spare;
+  // The cell after the last level, and what runs along under the levels.
+  final Widget? spare, footer;
 
   @override
   Widget build(BuildContext context) {
@@ -852,7 +852,8 @@ class _LevelGrid extends StatelessWidget {
     Widget cell(int level) {
       if (level > constants.maxDifficulty) {
         return Expanded(
-            child: Center(
+            child: Padding(
+                padding: const EdgeInsets.all(2),
                 child: level == constants.maxDifficulty + 1 ? spare : null));
       }
       final bool on = isSelected(level);
@@ -897,6 +898,7 @@ class _LevelGrid extends StatelessWidget {
       child: Column(children: [
         for (final start in const [1, 11])
           Row(children: [for (int l = start; l < start + 10; l++) cell(l)]),
+        if (footer case final footer?) footer,
       ]),
     );
   }

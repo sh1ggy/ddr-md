@@ -78,6 +78,7 @@ const syncTables = [
   SyncTable('snippets', ['{r}.id']),
   SyncTable('card_gains', ['{r}.id']),
   SyncTable('pad_ratings', ['{r}.id'], refs: {'cabinetId': 'cabinets'}),
+  SyncTable('heard', ['{r}.id']),
   SyncTable('tier_placements', ['{r}.song', '{r}.mode', '{r}.difficulty']),
 ];
 

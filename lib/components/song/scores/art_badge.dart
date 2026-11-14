@@ -1,5 +1,5 @@
 /// Name: ArtBadge
-/// Parent: ChartBestBadges, ScoreBadges, RecentPlays, BestRings,
+/// Parent: ChartBestBadges, ScoreBadges, RecentPlays, BestStrip,
 /// ScoreOverviewPage
 /// Description: Grade, lamp and flare art as badges: a tag tinted and
 /// underlined in its tier's colour, pressed in where there's nothing to show.

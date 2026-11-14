@@ -33,7 +33,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>DDR MD uses the camera to read your score from a cabinet's result screen and to scan a friend's circle QR code. Frames are processed on your device and never uploaded.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>DDR MD never records audio. iOS lists this because of the audio engine behind the assist tick.</string>
+	<string>Song ID listens to the cab for a few seconds to name the song it is playing. The audio is matched on your device and never recorded or uploaded.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

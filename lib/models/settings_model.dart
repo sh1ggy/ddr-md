@@ -160,6 +160,8 @@ class Settings {
   // Migration key for the first tier test build; now uses the Level sort.
   static const String songlistCalculatedSortKey = "songlistCalculatedSort";
   static const String songlistSortDescKey = "songlistSortDesc";
+  // The level list strip's measure: lamp, grade or flare.
+  static const String bestMeasureKey = "songlistBestMeasure";
 
   static const String rivalCodeSpeedKey = "rivalCode";
   static const String detectionSideKey = "detectionSide";
@@ -225,6 +227,9 @@ class Settings {
   static const String tierShownKey = "tierShown";
   static const String circleTiersHiddenKey = "circleTiersHidden";
 
+  /// 1 once a store build's player has downloaded Song ID's fingerprints.
+  static const String songIdDownloadKey = "songIdDownload";
+
   // Settings that follow the player to their other devices. Left out: the
   // timing offsets (they depend on the device's own audio and display), the
   // running session, and e-amusement sync bookkeeping.
@@ -262,6 +267,7 @@ class Settings {
     songlistViewModeKey,
     songlistSortKey,
     songlistSortDescKey,
+    bestMeasureKey,
     rivalCodeSpeedKey,
     detectionSideKey,
     playModeKey,

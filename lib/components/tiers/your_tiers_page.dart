@@ -1,5 +1,5 @@
 /// Name: YourTiersPage
-/// Parent: BestRings (the song list's level stats), TierChips
+/// Parent: BestStrip (the song list's level stats), TierChips
 /// Description: Your tier list for one level: every rung from hardest to
 /// easiest with the charts you've played there. Until you place one, it
 /// starts faded on its calculated rung; placed ones show how far they sit

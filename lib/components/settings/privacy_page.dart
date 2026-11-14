@@ -11,7 +11,7 @@ import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const privacyUpdated = '1 November 2026';
+const privacyUpdated = '7 November 2026';
 
 /// Heading, then paragraphs; a paragraph starting "- " is a bullet. Also
 /// published as the stores' privacy policy page by tool/content_manifest.dart.
@@ -40,6 +40,9 @@ const privacySections = <(String, List<String>)>[
           'and photos are never uploaded. On iPhone, saved score photos sit in '
           "DDR MD's folder in the Files app. Like any app's data, all of this "
           "is included in your device's own backups (iCloud or Google).",
+      'Music you add under Your Music stays on your device. It is never '
+          "uploaded, and isn't included in your device's backups or Cloud "
+          'Backup.',
     ]
   ),
   (
@@ -131,8 +134,9 @@ const privacySections = <(String, List<String>)>[
           "scan a friend's circle QR code, only while that screen is open.",
       '- Photos: to read a result-screen screenshot you choose. DDR MD only '
           'sees the photo you pick.',
-      '- Microphone: iOS lists this because of the audio engine behind the '
-          'assist tick. DDR MD never records audio.',
+      '- Microphone: only while Song ID is listening, to name the song a '
+          'cab is playing. The audio is matched on your device, then '
+          'dropped: it is never saved or uploaded.',
     ]
   ),
   (
