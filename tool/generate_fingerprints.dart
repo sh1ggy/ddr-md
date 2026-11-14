@@ -1,11 +1,12 @@
 /// Name: Fingerprint generator
 /// Parent: tool (dev only)
-/// Description: Writes assets/fingerprints/<name>.fp, each listed song's Song
-/// ID landmarks, from its audio in DDR-BPM-prep/data (decoded with ffmpeg).
-/// Then listens to noisy clips of a sample of songs and prints how many it
-/// placed, so a change to song_id.dart shows what it costs. Rerun after
-/// adding songs or changing song_id.dart (bump kFingerprintSchema if the
-/// landmarks change).
+/// Description: Writes assets/fingerprints/<name>.fp, the Song ID landmarks
+/// of each listed song and each song DDR-BPM-prep has built, from its audio
+/// in DDR-BPM-prep/data (decoded with ffmpeg). Then listens to noisy clips of
+/// a sample of songs and prints how many it placed, so a change to
+/// song_id.dart shows what it costs. Rerun after adding songs or changing
+/// song_id.dart (bump kFingerprintSchema if the landmarks change). The
+/// release console ships these: its fingerprints job runs this.
 ///
 ///   flutter test tool/generate_fingerprints.dart
 library;
@@ -41,9 +42,16 @@ Future<Float32List> _decode(String path) async {
 void main() {
   test('write assets/fingerprints', () async {
     final listed = jsonDecode(File('assets/songlist.json').readAsStringSync());
+    // The app's songs, and any prep has built that aren't live yet, so a
+    // release adding a song can carry its fingerprint.
+    final built = Directory('DDR-BPM-prep/build/songs');
     final songs = {
       for (final s in (listed is List ? listed : listed['songs']) as List)
-        s['name'] as String
+        s['name'] as String,
+      if (built.existsSync())
+        for (final f in built.listSync())
+          if (f.path.endsWith('.json'))
+            f.uri.pathSegments.last.replaceAll(RegExp(r'\.json$'), ''),
     };
     final audio = <String, String>{};
     final files = Directory('DDR-BPM-prep/data')
