@@ -98,8 +98,9 @@ void main() {
         expectDecodedSquare();
       }
       await tester.pumpAndSettle();
+      // Centred above the viewer's button bar.
       expect(tester.getCenter(find.byType(SongArtwork).last),
-          tester.getCenter(find.byType(Scaffold).last));
+          tester.getCenter(find.byType(Scaffold).last) - const Offset(0, 40));
       await tester.tap(find.byType(SongArtwork).last);
       await tester.pump();
       for (var frame = 0; frame < 4; frame++) {
@@ -170,9 +171,8 @@ void main() {
         expect(tester.takeException(), isNull);
         final art = find.byType(SongArtwork).last;
         // The jacket, frame and all; the art sits inside its frame.
-        final rect = tester.getRect(find
-            .ancestor(of: art, matching: find.byType(SizedBox))
-            .first);
+        final rect = tester.getRect(
+            find.ancestor(of: art, matching: find.byType(SizedBox)).first);
         expect(rect.width, 96);
         expect(rect.size.aspectRatio, 1);
         expect(find.byType(GeneratedJacket), findsNWidgets(2));

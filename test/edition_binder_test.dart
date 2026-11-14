@@ -290,9 +290,11 @@ void main() {
           await tester.pump(const Duration(milliseconds: 500));
           expect(
               tester.getCenter(find.byType(JacketEdition)),
+              // Centred above the button bar.
               (tester.view.physicalSize / tester.view.devicePixelRatio)
-                  .center(Offset.zero));
-          await tester.tap(find.widgetWithText(TextButton, 'Binder'));
+                      .center(Offset.zero) -
+                  const Offset(0, 40));
+          await tester.tap(find.byTooltip('Binder'));
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 500));
           for (var frame = 0; frame < 12; frame++) {
@@ -312,7 +314,7 @@ void main() {
               .tap(find.byType(CompactJacketEdition).hitTestable().last);
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 500));
-          expect(find.widgetWithText(TextButton, 'Guide'), findsOneWidget);
+          expect(find.byTooltip('Guide'), findsOneWidget);
           await mouse.moveTo(const Offset(400, 300));
           await tester.pump();
           expect(tester.takeException(), isNull);
