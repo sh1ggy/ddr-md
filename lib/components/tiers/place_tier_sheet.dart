@@ -116,7 +116,8 @@ class _PlaceSheetState extends State<_PlaceSheet> {
                 difficulty: c.difficulty,
                 decimalHundredths: _rung,
                 decimalKind: TierKind.mine,
-                height: 56),
+                // The art's full size: any bigger and it's lettered instead.
+                height: 40),
             const SizedBox(width: 10),
             HeaderButton(
                 tooltip: 'Harder',
