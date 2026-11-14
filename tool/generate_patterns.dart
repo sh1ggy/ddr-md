@@ -156,7 +156,14 @@ void main() {
     final entries = <_Entry>[];
     final clock = Stopwatch()..start();
 
-    for (final file in Directory('assets/steps').listSync().whereType<File>()) {
+    // Listing order differs between checkouts; sorted, ties in the examples
+    // pick the same chart on every run, so a build matches the one signed off.
+    final files = Directory('assets/steps')
+        .listSync()
+        .whereType<File>()
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+    for (final file in files) {
       if (!file.path.endsWith('.json')) continue;
       final steps = SongSteps.fromJson(jsonDecode(file.readAsStringSync()));
       final songFile = File('assets/songs/${steps.name}.json');
