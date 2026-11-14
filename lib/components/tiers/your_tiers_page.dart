@@ -39,6 +39,10 @@ class _YourTiersPageState extends State<YourTiersPage> {
   // Charts placed or moved here, by level, for the circle's feed.
   final _changed = <int, Set<TierChart>>{};
   late final CircleState _circle = context.read<CircleState>();
+  // The ladder, which jackets measure their slides against, and a key per
+  // chart so a jacket keeps its place in the slide when it changes rung.
+  final _ladder = GlobalKey();
+  final _slides = <TierChart, GlobalKey>{};
 
   @override
   void initState() {
@@ -182,22 +186,29 @@ class _YourTiersPageState extends State<YourTiersPage> {
               Expanded(
                 child: level == null
                     ? const Center(child: CircularProgressIndicator())
-                    : ListView(
+                    : SingleChildScrollView(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                        children: [
+                        child: Column(key: _ladder, children: [
                           for (final h in rungsOf(level))
                             _Rung(
                                 level: level,
                                 hundredths: h,
-                                charts: placed[h] ?? const [],
-                                onDrop: (c) => _place(c, h),
-                                onTap: _open),
+                                charts: [
+                                  for (final c in placed[h] ?? const [])
+                                    _Slide(
+                                        key: _slides.putIfAbsent(
+                                            c.key, GlobalKey.new),
+                                        ladder: _ladder,
+                                        child: _DraggableJacket(c,
+                                            rung: h, onTap: _open)),
+                                ],
+                                onDrop: (c) => _place(c, h)),
                           if (CircleState.available && _circle.id != null)
                             Padding(
                               padding: const EdgeInsets.only(top: 16),
                               child: _ShareRow(_circle),
                             ),
-                        ],
+                        ]),
                       ),
               ),
               if (tray.isNotEmpty)
@@ -217,13 +228,11 @@ class _Rung extends StatelessWidget {
       {required this.level,
       required this.hundredths,
       required this.charts,
-      required this.onDrop,
-      required this.onTap});
+      required this.onDrop});
 
   final int level, hundredths;
-  final List<LevelChart> charts;
+  final List<Widget> charts;
   final ValueChanged<LevelChart> onDrop;
-  final ValueChanged<LevelChart> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -235,8 +244,9 @@ class _Rung extends StatelessWidget {
       builder: (context, hovering, _) {
         final over = hovering.isNotEmpty;
         final full = charts.isNotEmpty || over;
-        return AnimatedContainer(
-          duration: FloorPop.sixteenth,
+        // Not animated: jackets measure where they land as soon as it's laid
+        // out.
+        return Container(
           constraints: BoxConstraints(minHeight: full ? 60 : 16),
           padding: EdgeInsets.symmetric(vertical: full ? 6 : 0),
           decoration: BoxDecoration(
@@ -262,10 +272,7 @@ class _Rung extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Wrap(spacing: 12, runSpacing: 10, children: [
-                  for (final c in charts)
-                    _DraggableJacket(c, rung: hundredths, onTap: onTap),
-                ]),
+                child: Wrap(spacing: 12, runSpacing: 10, children: charts),
               ),
             ],
           ),
@@ -304,8 +311,72 @@ class _DraggableJacket extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 child: TierJacket(chart, size: 56))),
         childWhenDragging: Opacity(opacity: .3, child: jacket),
+        onDragEnd: (d) {
+          if (d.wasAccepted) {
+            context.findAncestorStateOfType<_SlideState>()?.landFrom(d.offset);
+          }
+        },
         child: GestureDetector(onTap: () => onTap(chart), child: jacket),
       ),
+    );
+  }
+}
+
+/// Slides a jacket from where it was on the ladder to where it's laid out
+/// now, whenever that changes: a new rung, a reset, an undo, or a neighbour
+/// moving away. A dropped jacket slides from where it was let go.
+class _Slide extends StatefulWidget {
+  const _Slide({super.key, required this.ladder, required this.child});
+
+  final GlobalKey ladder;
+  final Widget child;
+
+  @override
+  State<_Slide> createState() => _SlideState();
+}
+
+class _SlideState extends State<_Slide> with SingleTickerProviderStateMixin {
+  late final _move =
+      AnimationController(vsync: this, duration: FloorPop.eighth);
+  final _curve = CurveTween(curve: Curves.easeOutCubic);
+  // Where it was last laid out, and the gap still being closed.
+  Offset? _at;
+  Offset _gap = Offset.zero;
+  Offset? _droppedAt;
+
+  RenderBox? get _ladderBox =>
+      widget.ladder.currentContext?.findRenderObject() as RenderBox?;
+
+  void landFrom(Offset global) =>
+      _droppedAt = _ladderBox?.globalToLocal(global);
+
+  Offset get _showing => _gap * (1 - _curve.transform(_move.value));
+
+  @override
+  void dispose() {
+    _move.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final box = context.findRenderObject() as RenderBox?;
+      final ladder = _ladderBox;
+      if (!mounted || box == null || ladder == null || !box.attached) return;
+      final now = box.localToGlobal(Offset.zero, ancestor: ladder);
+      final from = _droppedAt ?? (_at == null ? null : _at! + _showing);
+      _droppedAt = null;
+      _at = now;
+      if (from == null || (from - now).distance < 1) return;
+      _gap = from - now;
+      _move.forward(from: 0);
+    });
+    return AnimatedBuilder(
+      animation: _move,
+      builder: (_, child) =>
+          Transform.translate(offset: _showing, child: child),
+      child: widget.child,
     );
   }
 }
