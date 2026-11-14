@@ -507,8 +507,9 @@ class _EditionBinderPageState extends State<EditionBinderPage>
 }
 
 const _kPageMaxWidth = 520.0, _kColumns = 6;
-// The space between a cover's parts.
-const _kCoverGap = 16.0;
+// The space between a cover's parts, the height of its level and count, and
+// the least its fan may be.
+const _kCoverGap = 16.0, _kCoverHero = 64.0, _kCoverFan = 120.0;
 // A sheet's padding and the gap between pockets.
 const _kPad = 10.0, _kGap = 8.0;
 
@@ -594,66 +595,93 @@ class _Cover extends StatelessWidget {
       // Materials inset only the background; every cover keeps its layout.
       Padding(
           padding: const EdgeInsets.all(20),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            // The level and how much of it is collected lead the cover.
-            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              LevelNumber(
-                  level: divider.level, difficulty: 'EXPERT', height: 60),
-              const SizedBox(width: _kCoverGap),
-              // Shrinks rather than overflowing under large text.
-              Expanded(
-                  child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.bottomRight,
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text.rich(
-                                TextSpan(
-                                    text: '${divider.collected}',
-                                    children: [
-                                      TextSpan(
-                                          text: '/${divider.total}',
-                                          style:
-                                              FloorPop.readout(20, color: ink)),
-                                    ]),
-                                style: FloorPop.readout(40,
-                                    color: finished ? ink : scheme.onSurface)),
-                            Text('COLLECTED', style: caps),
-                          ]))),
-            ]),
-            const SizedBox(height: _kCoverGap),
-            // The fan takes what the tiers leave, and the tiers never more
-            // than half, shrinking to fit on a short screen rather than
-            // scrolling.
-            Expanded(
-                child: LayoutBuilder(
-                    builder: (context, box) => Column(
+          child: LayoutBuilder(builder: (context, box) {
+            final width = box.maxWidth, height = box.maxHeight;
+            // The level and how much of it is collected lead the cover, the
+            // count shrinking rather than overflowing under large text.
+            final hero = SizedBox(
+                height: _kCoverHero,
+                child:
+                    Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  LevelNumber(
+                      level: divider.level, difficulty: 'EXPERT', height: 60),
+                  const SizedBox(width: _kCoverGap),
+                  Expanded(
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.bottomRight,
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text.rich(
+                                    TextSpan(
+                                        text: '${divider.collected}',
+                                        children: [
+                                          TextSpan(
+                                              text: '/${divider.total}',
+                                              style: FloorPop.readout(20,
+                                                  color: ink)),
+                                        ]),
+                                    style: FloorPop.readout(40,
+                                        color: finished
+                                            ? ink
+                                            : scheme.onSurface)),
+                                Text('COLLECTED', style: caps),
+                              ]))),
+                ]));
+            final cards = fan.isEmpty
+                ? Center(
+                    child: Text('No cards here yet',
+                        style: TextStyle(color: pop.haze)))
+                : _Fan(pockets: fan, onOpen: onOpen);
+            Widget tiers(double width) => SizedBox(
+                width: width,
+                child: BestTiers(divider.bests,
+                    reserve: reserve, labelColor: finished ? ink : null));
+            double tiersHeight(double width) =>
+                BestTiers.heightFor(divider.bests, width, reserve: reserve);
+            // The tiers keep their size; the fan takes what they leave. Where
+            // even the smallest fan doesn't fit, the whole cover shrinks as
+            // one rather than scrolling.
+            Widget fit(double needed, Widget child) => needed <= height
+                ? child
+                : FittedBox(
+                    child: SizedBox(
+                        width: width, height: needed, child: child));
+            // Wider than tall: the level over the fan, the tiers the full
+            // height beside them.
+            if (width > height) {
+              final left = (width - _kCoverGap) * .42;
+              final right = width - _kCoverGap - left;
+              return fit(
+                  math.max(tiersHeight(right),
+                      _kCoverHero + _kCoverGap + _kCoverFan),
+                  Row(children: [
+                    SizedBox(
+                        width: left,
+                        child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Expanded(
-                                  child: fan.isEmpty
-                                      ? Center(
-                                          child: Text('No cards here yet',
-                                              style:
-                                                  TextStyle(color: pop.haze)))
-                                      : _Fan(pockets: fan, onOpen: onOpen)),
+                              hero,
                               const SizedBox(height: _kCoverGap),
-                              ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                      maxHeight: box.maxHeight / 2),
-                                  child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      alignment: Alignment.bottomCenter,
-                                      child: SizedBox(
-                                          width: box.maxWidth,
-                                          child: BestTiers(divider.bests,
-                                              reserve: reserve,
-                                              labelColor:
-                                                  finished ? ink : null)))),
-                            ]))),
-          ])),
+                              Expanded(child: cards),
+                            ])),
+                    const SizedBox(width: _kCoverGap),
+                    Center(child: tiers(right)),
+                  ]));
+            }
+            return fit(
+                _kCoverHero + 2 * _kCoverGap + _kCoverFan + tiersHeight(width),
+                Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      hero,
+                      const SizedBox(height: _kCoverGap),
+                      Expanded(child: cards),
+                      const SizedBox(height: _kCoverGap),
+                      tiers(width),
+                    ]));
+          })),
     ]);
   }
 }

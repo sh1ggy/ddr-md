@@ -446,7 +446,38 @@ class BestTiers extends StatelessWidget {
   final List<int>? reserve;
   final Color? labelColor;
 
-  static const _height = 24.0, _gap = 5.0;
+  static const _height = 24.0, _gap = 5.0, _sectionGap = 10.0;
+  static const _aspects = [kGradeAspect, kLampAspect, kFlareAspect];
+
+  // A tile holds its art 12 tall, padding and a three-digit count.
+  static int _columns(double width, int i) =>
+      ((width + _gap) / (12 * _aspects[i] + 46 + _gap)).floor().clamp(1, 6);
+
+  static double _sectionHeight(double width, int i, int slots) {
+    final rows = (slots / _columns(width, i)).ceil();
+    return rows * _height + (rows - 1) * _gap;
+  }
+
+  // Each shown section's index and how many tiers it makes room for, lamps
+  // first, the most hard-won.
+  static List<(int, int)> _sections(
+          List<List<_Tier>> rings, List<int>? reserve) =>
+      [
+        for (final i in const [1, 0, 2])
+          if (math.max(rings[i].length, reserve?[i] ?? 0) case final n
+              when n > 0)
+            (i, n),
+      ];
+
+  /// How tall these tiers lay out at [width].
+  static double heightFor(List<ChartBest?> bests, double width,
+      {List<int>? reserve}) {
+    var height = 0.0;
+    for (final (k, (i, n)) in _sections(_rings(bests), reserve).indexed) {
+      height += (k > 0 ? _sectionGap : 0) + _sectionHeight(width, i, n);
+    }
+    return height;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -454,14 +485,10 @@ class BestTiers extends StatelessWidget {
     final rings = _rings(bests);
     return LayoutBuilder(builder: (context, box) {
       Widget section(int i, int slots) {
-        final aspect = const [kGradeAspect, kLampAspect, kFlareAspect][i];
-        // A tile holds its art 12 tall, padding and a three-digit count.
-        final columns = ((box.maxWidth + _gap) / (12 * aspect + 46 + _gap))
-            .floor()
-            .clamp(1, 6);
-        final rows = (slots / columns).ceil();
+        final aspect = _aspects[i];
+        final columns = _columns(box.maxWidth, i);
         return SizedBox(
-          height: rows * _height + (rows - 1) * _gap,
+          height: _sectionHeight(box.maxWidth, i, slots),
           child: Wrap(spacing: _gap, runSpacing: _gap, children: [
             for (final t in rings[i])
               ArtTile(t.art,
@@ -480,20 +507,13 @@ class BestTiers extends StatelessWidget {
         );
       }
 
-      final sections = [
-        // Lamps first, the most hard-won.
-        for (final i in const [1, 0, 2])
-          if (math.max(rings[i].length, reserve?[i] ?? 0) case final n
-              when n > 0)
-            section(i, n),
-      ];
       return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final (i, s) in sections.indexed) ...[
-              if (i > 0) const SizedBox(height: 10),
-              s,
+            for (final (k, (i, n)) in _sections(rings, reserve).indexed) ...[
+              if (k > 0) const SizedBox(height: _sectionGap),
+              section(i, n),
             ],
           ]);
     });
