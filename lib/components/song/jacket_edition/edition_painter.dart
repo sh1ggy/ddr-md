@@ -433,6 +433,26 @@ class EditionLightPainter extends CustomPainter {
       old.geometry != geometry || old.motion != motion;
 }
 
+/// EX's polychrome, drawn with [BlendMode.color]: the art's own light and
+/// shade, recoloured by bands of rainbow that drift with time and the light.
+ui.Gradient editionPolychromeShader(EditionMotion? motion, double side) {
+  final light = motion?.light ?? EditionMotion.rest;
+  final shift =
+      (light.dx + light.dy) * side * .35 + (motion?.time ?? 0) * side * .08;
+  return ui.Gradient.linear(
+      Offset(shift, 0),
+      Offset(shift + side * .9, side * .55),
+      [
+        for (final c in editionPolychrome)
+          c.withValues(alpha: editionPolychromeAlpha)
+      ],
+      [
+        for (var i = 0; i < editionPolychrome.length; i++)
+          i / (editionPolychrome.length - 1)
+      ],
+      TileMode.mirror);
+}
+
 typedef EditionSpark = ({
   double along,
   double phase,
@@ -498,24 +518,12 @@ class EditionFlarePainter extends CustomPainter {
     final bright = Color.lerp(color, Colors.white, .6)!;
 
     if (recipe.ex && layers.contains(EditionLayer.art)) {
-      // Polychrome: the art's own light and shade, recoloured by bands of
-      // rainbow that drift with time and the light.
-      final light = motion?.light ?? const Offset(.35, .3);
-      final shift = (light.dx + light.dy) * side * .35 + t * side * .08;
       canvas.save();
       canvas.clipPath(geometry.inner);
       _paint
         ..blendMode = BlendMode.color
-        ..color = Colors.white.withValues(alpha: editionPolychromeAlpha)
-        ..shader = ui.Gradient.linear(
-            Offset(shift, 0),
-            Offset(shift + side * .9, side * .55),
-            editionPolychrome,
-            [
-              for (var i = 0; i < editionPolychrome.length; i++)
-                i / (editionPolychrome.length - 1)
-            ],
-            TileMode.mirror);
+        ..color = Colors.white
+        ..shader = editionPolychromeShader(motion, side);
       canvas.drawRect(geometry.innerRect, _paint);
       _paint
         ..blendMode = BlendMode.srcOver

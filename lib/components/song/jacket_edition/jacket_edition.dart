@@ -147,14 +147,8 @@ class _JacketEditionState extends State<JacketEdition>
             EditionGeometry(_recipe, size, maxFrameWidth: widget.maxFrameWidth);
       }
       final staticGeometry = geometry;
-      final card = RepaintBoundary(
-          child:
-              Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
-        if (widget.layers.contains(EditionLayer.frame))
-          RepaintBoundary(
-              child: CustomPaint(
-                  painter: EditionStaticPainter(staticGeometry,
-                      ring: !widget.layers.contains(EditionLayer.art)))),
+      final polychrome = _recipe.ex && widget.layers.contains(EditionLayer.art);
+      final surface = Stack(fit: StackFit.expand, children: [
         if (widget.layers.contains(EditionLayer.art))
           Padding(
               padding: EdgeInsets.all(geometry.width),
@@ -173,6 +167,32 @@ class _JacketEditionState extends State<JacketEdition>
                   child: CustomPaint(
                       painter: EditionStaticPainter(staticGeometry,
                           foreground: true)))),
+      ]);
+      final card = RepaintBoundary(
+          child:
+              Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
+        if (widget.layers.contains(EditionLayer.frame))
+          RepaintBoundary(
+              child: CustomPaint(
+                  painter: EditionStaticPainter(staticGeometry,
+                      ring: !widget.layers.contains(EditionLayer.art)))),
+        if (polychrome)
+          // EX's polychrome masks the art and finish it recolours: drawn from
+          // a layer of its own, it would sometimes blend over nothing and
+          // wash the art out.
+          ClipPath(
+              clipper: EditionClipper(geometry.inner),
+              child: RepaintBoundary(
+                  child: ListenableBuilder(
+                      listenable: _motion,
+                      builder: (context, surface) => ShaderMask(
+                          blendMode: BlendMode.color,
+                          shaderCallback: (bounds) => editionPolychromeShader(
+                              _motion, bounds.size.shortestSide),
+                          child: surface),
+                      child: surface)))
+        else
+          surface,
         // Only this sibling listens to light. The decoded image and both
         // display lists retain separate layers throughout a sweep.
         IgnorePointer(
@@ -181,7 +201,11 @@ class _JacketEditionState extends State<JacketEdition>
                     painter: EditionLightPainter(staticGeometry, _motion,
                         layers: widget.layers),
                     foregroundPainter: EditionFlarePainter(
-                        staticGeometry, _motion, widget.layers)))),
+                        staticGeometry,
+                        _motion,
+                        polychrome
+                            ? widget.layers.difference({EditionLayer.art})
+                            : widget.layers)))),
         // Flare without its sticker: the chip in the art's corner.
         if (_recipe.flareStamp == null && _recipe.flareIndex >= 0)
           EditionFlareChip(
