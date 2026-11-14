@@ -68,8 +68,7 @@ void main() {
       final pcms =
           await Future.wait([for (final n in batch) _decode(audio[n]!)]);
       for (var j = 0; j < batch.length; j++) {
-        final file = encodeFingerprint(
-            landmarks(pcms[j], perSecond: kSongPeaksPerSecond));
+        final file = encodeFingerprint(landmarks(pcms[j], kSongDensity));
         File('${out.path}/${batch[j]}.fp').writeAsBytesSync(file);
         written[batch[j]] = file;
       }
@@ -98,8 +97,7 @@ void main() {
         for (var i = from; i < from + 12 * kSongIdRate; i++)
           pcm[i] + rms * sqrt(3) * (2 * rng.nextDouble() - 1),
       ]);
-      final match =
-          index.match(landmarks(clip, perSecond: kClipPeaksPerSecond));
+      final match = index.match(landmarks(clip, kClipDensity));
       if (match == null) continue;
       if ((match.song == name || match.sameMusic.contains(name)) &&
           (match.second - from / kSongIdRate).abs() < 0.2) {

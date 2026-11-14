@@ -26,8 +26,7 @@ void main() {
     final songs = [for (var i = 0; i < 6; i++) _song(rng)];
     final index = SongIdIndex.build({
       for (var i = 0; i < songs.length; i++)
-        'song $i': encodeFingerprint(
-            landmarks(songs[i], perSecond: kSongPeaksPerSecond)),
+        'song $i': encodeFingerprint(landmarks(songs[i], kSongDensity)),
     });
 
     final from = (17.3 * kSongIdRate).round();
@@ -35,14 +34,14 @@ void main() {
       for (var i = from; i < from + 8 * kSongIdRate; i++)
         songs[3][i] + (rng.nextDouble() - 0.5) * 0.9,
     ]);
-    final match = index.match(landmarks(clip, perSecond: kClipPeaksPerSecond))!;
+    final match = index.match(landmarks(clip, kClipDensity))!;
     expect(match.song, 'song 3');
     expect(match.second, closeTo(17.3, 0.1));
     expect(
         index.match(landmarks(
             Float32List.fromList(
                 List.generate(8 * kSongIdRate, (_) => rng.nextDouble() - 0.5)),
-            perSecond: kClipPeaksPerSecond)),
+            kClipDensity)),
         isNull);
   });
 }

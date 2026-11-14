@@ -223,7 +223,7 @@ class SongIdListener {
         if (_stopped) break;
         final heardAt = _elapsed.elapsedMicroseconds;
         final clip = _heard(debugMic != null ? debugMicRate : _rate);
-        final marks = landmarks(clip, perSecond: kClipPeaksPerSecond);
+        final marks = landmarks(clip, kClipDensity);
         final match = only == null
             ? index.match(marks)
             : index.matchSong(marks, only, near: near);

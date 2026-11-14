@@ -16,7 +16,7 @@ import 'package:fftea/fftea.dart';
 
 /// Bump when a change here alters the landmarks, and regenerate every file:
 /// the loader skips files of any other schema.
-const kFingerprintSchema = 2;
+const kFingerprintSchema = 3;
 
 /// Sample rate everything is fingerprinted at.
 const kSongIdRate = 8000;
@@ -29,7 +29,6 @@ const _bins = _highBin - _lowBin;
 const _timeRadius = 7;
 const _binRadius = 10;
 const _block = 31; // ~1 s of frames
-const _fan = 3;
 const _maxGap = 63;
 const _maxPitchStep = 127;
 const _magic = [0x44, 0x44, 0x46, 0x50]; // DDFP
@@ -37,12 +36,15 @@ const _magic = [0x44, 0x44, 0x46, 0x50]; // DDFP
 /// Seconds a frame lasts.
 const kSongIdFrameSeconds = _hop / kSongIdRate;
 
-/// Peaks kept per second. Denser songs answer sooner and from further away
-/// (median ~3 s through a room, ~4.5 s far from the speaker, against ~7 and
-/// ~8 s at 4 a second) for ~11 KB a song; a clip needs fewer, as its extra
-/// peaks are mostly noise.
-const kSongPeaksPerSecond = 12;
-const kClipPeaksPerSecond = 8;
+/// Peaks kept per second, and how many of the next each pairs with.
+typedef Density = ({int perSecond, int fan});
+
+/// Through a phone mic only about a fifth of a clip's peaks land on the
+/// song's exact bin, and a landmark needs both of its own to. So songs keep
+/// enough peaks and pairs (~26 KB a song) that some survive, and a clip,
+/// costing nothing to store, keeps many more.
+const Density kSongDensity = (perSecond: 18, fan: 5);
+const Density kClipDensity = (perSecond: 32, fan: 10);
 
 /// A pair of peaks: [hash] names the pitches and gap, [frame] the first's.
 typedef Landmark = ({int hash, int frame});
@@ -51,9 +53,10 @@ final _hann = Float64List.fromList([
   for (var i = 0; i < _window; i++) 0.5 - 0.5 * cos(2 * pi * i / (_window - 1))
 ]);
 
-/// The landmarks of mono [pcm] at [kSongIdRate], keeping [perSecond] of the
-/// loudest peaks in each second.
-List<Landmark> landmarks(Float32List pcm, {required int perSecond}) {
+/// The landmarks of mono [pcm] at [kSongIdRate], at [density]: its
+/// `perSecond` loudest peaks in each second, each paired with its next `fan`.
+List<Landmark> landmarks(Float32List pcm, Density density) {
+  final (:perSecond, :fan) = density;
   final frames = pcm.length < _window ? 0 : (pcm.length - _window) ~/ _hop + 1;
   if (frames == 0) return const [];
   final fft = FFT(_window);
@@ -115,7 +118,7 @@ List<Landmark> landmarks(Float32List pcm, {required int perSecond}) {
   for (var i = 0; i < peaks.length; i++) {
     final a = peaks[i];
     var paired = 0;
-    for (var j = i + 1; j < peaks.length && paired < _fan; j++) {
+    for (var j = i + 1; j < peaks.length && paired < fan; j++) {
       final b = peaks[j];
       final gap = b.frame - a.frame;
       if (gap > _maxGap) break;
@@ -442,8 +445,9 @@ class SongIdIndex {
   }
 }
 
-/// Fewest agreeing landmarks that count as a match.
-const kMinVotes = 6;
+/// Fewest agreeing landmarks that count as a match: a song not in the index
+/// can reach 6 against fingerprints this dense.
+const kMinVotes = 8;
 
 extension SongIdResync on SongIdIndex {
   /// [clip] against [song] alone, for a resync: with no other song to tell
