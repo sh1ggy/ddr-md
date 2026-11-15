@@ -46,28 +46,37 @@ class EditionCutShader {
   }
 }
 
-/// A still card's cut, at the light's resting place, over the art painted
-/// before it in the same layer.
+/// The cut over the art painted before it in the same layer, at the
+/// light's resting place without [motion]. [alone] draws the facets
+/// themselves instead, for a layer with no art beneath it.
 class EditionCutPainter extends CustomPainter {
-  EditionCutPainter(this.geometry, this.shader, this.power);
+  EditionCutPainter(this.geometry, this.shader, this.power,
+      {this.motion, this.alone = false})
+      : super(repaint: motion);
   final EditionGeometry geometry;
   final ui.FragmentShader shader;
   final double power;
+  final EditionMotion? motion;
+  final bool alone;
   @override
   void paint(Canvas canvas, Size size) {
-    EditionCutShader.update(
-        shader, geometry.recipe, size, EditionMotion.rest, power);
+    EditionCutShader.update(shader, geometry.recipe, size,
+        motion?.light ?? EditionMotion.rest, power);
     canvas.save();
     canvas.clipPath(geometry.inner);
     canvas.drawRect(
         Offset.zero & size,
         Paint()
-          ..blendMode = BlendMode.overlay
+          ..blendMode = alone ? BlendMode.srcOver : BlendMode.overlay
           ..shader = shader);
     canvas.restore();
   }
 
   @override
   bool shouldRepaint(EditionCutPainter old) =>
-      old.geometry != geometry || old.shader != shader || old.power != power;
+      old.geometry != geometry ||
+      old.shader != shader ||
+      old.power != power ||
+      old.motion != motion ||
+      old.alone != alone;
 }

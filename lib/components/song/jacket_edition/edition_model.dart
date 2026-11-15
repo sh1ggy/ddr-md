@@ -34,8 +34,9 @@ enum EditionBorder { gilded, engraved, bevel }
 
 /// A card's layers, back to front, each earned separately: the art (and
 /// what's done to it: negative, EX's polychrome), the grade's finish over
-/// it, the lamp's frame round it and the flare's aura beyond.
-enum EditionLayer { art, finish, frame, aura }
+/// it, the tier's foil cut over that, the lamp's frame round it and the
+/// flare's aura beyond.
+enum EditionLayer { art, finish, cut, frame, aura }
 
 const editionAllLayers = {...EditionLayer.values};
 

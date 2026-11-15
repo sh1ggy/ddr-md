@@ -157,11 +157,15 @@ class _JacketEditionState extends State<JacketEdition>
       }
       final staticGeometry = geometry;
       final polychrome = _recipe.ex && widget.layers.contains(EditionLayer.art);
-      final cutPower = widget.layers
-              .containsAll(const {EditionLayer.art, EditionLayer.finish})
+      final cutPower = widget.layers.contains(EditionLayer.cut)
           ? EditionCutShader.power(_recipe)
           : 0.0;
-      final cut = cutPower > 0 ? _cut ??= EditionCutShader.create() : null;
+      final cutShader =
+          cutPower > 0 ? _cut ??= EditionCutShader.create() : null;
+      // Without the art beneath it the cut has nothing to light: the guide
+      // shows its facets on a plane of their own.
+      final cutAlone = !widget.layers.contains(EditionLayer.art);
+      final cut = cutAlone ? null : cutShader;
       final surface = Stack(fit: StackFit.expand, children: [
         if (widget.layers.contains(EditionLayer.art))
           Padding(
@@ -222,6 +226,13 @@ class _JacketEditionState extends State<JacketEdition>
                       child: surface)))
         else
           surface,
+        if (cutAlone && cutShader != null)
+          IgnorePointer(
+              child: RepaintBoundary(
+                  child: CustomPaint(
+                      painter: EditionCutPainter(
+                          staticGeometry, cutShader, cutPower,
+                          motion: _motion, alone: true)))),
         // Only this sibling listens to light. The decoded image and both
         // display lists retain separate layers throughout a sweep.
         IgnorePointer(
