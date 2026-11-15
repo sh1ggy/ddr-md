@@ -1,7 +1,7 @@
 /// Name: Content updater
 /// Parent: main
 /// Description: Fetches newer chart content in the background. Polls the small
-/// latest.json at [kContentUrl]; when it names other content, reads the published
+/// latest.json at [ContentUpdater.contentUrl]; when it names other content, reads the published
 /// manifest there, downloads each file that differs from
 /// the bundle into <app support>/content/objects/, checks its hash,
 /// then swaps in overlay.json with one rename. [ContentUpdater.update] applies
@@ -31,6 +31,10 @@ import 'package:flutter/foundation.dart';
 const kContentUrl = String.fromEnvironment('CONTENT_URL',
     defaultValue: kReleaseMode ? 'https://ddr-md-content.pages.dev' : '');
 
+/// The release console's staging publish, which a tester's phone follows
+/// instead of [kContentUrl] while [Settings.contentStagingKey] is on.
+const kStagingContentUrl = 'https://staging.ddr-md-content.pages.dev';
+
 typedef ContentFetch = Future<List<int>> Function(Uri url);
 
 /// Song ID's one-time download in a store build, for the prompt to show.
@@ -42,6 +46,14 @@ class ContentUpdater {
   /// Share of a check's files downloaded so far, while one is downloading.
   static final progress = ValueNotifier<double?>(null);
 
+  /// Where updates come from: staging while the tester switch is on, else
+  /// [kContentUrl]. Empty (updates off) in a build without a content host.
+  static String get contentUrl => kContentUrl.isEmpty
+      ? ''
+      : Settings.getInt(Settings.contentStagingKey) == 1
+          ? kStagingContentUrl
+          : kContentUrl;
+
   /// Whether updates fetch Song ID's fingerprints: always when the bundle
   /// has them (then only changed ones come down), otherwise once the player
   /// has asked for them with [downloadSongId].
@@ -52,7 +64,7 @@ class ContentUpdater {
   /// A store build's one-time Song ID download, then kept current by every
   /// update. Throws like [check].
   static Future<bool> downloadSongId(Directory support,
-      {String base = kContentUrl, ContentFetch fetch = _get}) async {
+      {String? base, ContentFetch fetch = _get}) async {
     await Settings.setInt(Settings.songIdDownloadKey, 1);
     return update(support, base: base, fetch: fetch);
   }
@@ -63,16 +75,16 @@ class ContentUpdater {
   /// current overlay as it was. A check already running (launch, or the
   /// settings page) is joined rather than raced, since both write objects/.
   static Future<bool> check(Directory support,
-          {String base = kContentUrl, ContentFetch fetch = _get}) =>
-      _running ??=
-          _check(support, base, fetch).whenComplete(() => _running = null);
+          {String? base, ContentFetch fetch = _get}) =>
+      _running ??= _check(support, base ?? contentUrl, fetch)
+          .whenComplete(() => _running = null);
 
   /// Checks, then applies what's on disk if this run isn't reading it yet:
   /// re-reads the content, reloads the song list and bumps
   /// [ContentStore.revision]. True when other content was applied. Throws like
   /// [check].
   static Future<bool> update(Directory support,
-      {String base = kContentUrl, ContentFetch fetch = _get}) async {
+      {String? base, ContentFetch fetch = _get}) async {
     final changed = await check(support, base: base, fetch: fetch);
     final onDisk =
         ContentStore.downloaded(support)?.id ?? ContentStore.bundled.id;
