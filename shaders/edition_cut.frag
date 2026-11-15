@@ -1,5 +1,6 @@
-// The tier's foil cut: ten facet patterns, shifted with the light and faded
-// away from it. Drawn with BlendMode.overlay over the art.
+// The tier's foil cut: ten facet patterns pressed into the card, lit where
+// the light falls and fading away from it. Drawn with BlendMode.overlay over
+// the art.
 #version 460 core
 #include <flutter/runtime_effect.glsl>
 
@@ -15,11 +16,14 @@ const float PI = 3.14159265;
 vec4 W(float a) { return vec4(a, a, a, a); }
 vec4 B(float a) { return vec4(0, 0, 0, a); }
 
-// This pixel inside its tile, the tiles sized [size] of the card and shifted
-// with the light as a background positioned at it.
+// Where the facets are laid out from, as a fraction of the card: the light's
+// resting place. The facets stay put; only the light moves over them.
+const vec2 ANCHOR = vec2(.35, .3);
+
+// This pixel inside its tile, the tiles sized [size] of the card.
 vec2 tile(vec2 p, vec2 size, out vec2 box) {
   box = size * uSize;
-  vec2 offset = (uSize - box) * uLight;
+  vec2 offset = (uSize - box) * ANCHOR;
   return mod(p - offset, box);
 }
 

@@ -62,6 +62,8 @@ const editionPearl = [
 // Broad satin, focused gloss, silver metal and gold foil. Kept visible in
 // static binder pockets as well as the full-size moving card.
 const editionFinishAlpha = [0.0, .10, .24, .28, .32];
+// The tier cut's opacity on each finish, before the grade's +/- strength.
+const editionCutPower = [0.0, .20, .29, .36, .42];
 const editionSilverFoil = [
   Color(0xFF536477),
   Color(0xFFE7F3FF),

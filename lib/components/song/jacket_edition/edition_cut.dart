@@ -22,15 +22,13 @@ class EditionCutShader {
 
   static bool get ready => _program != null;
 
-  /// How strongly [recipe] shows its cut, 0 for none.
+  /// How strongly [recipe] shows its cut, 0 for none: stronger up the
+  /// grades, nothing on print.
   static double power(EditionRecipe recipe, {bool compact = false}) {
-    final premium = recipe.frame == EditionFrame.platinum ||
-        recipe.frame == EditionFrame.rainbow;
-    if (recipe.cut == EditionCut.neutral ||
-        (recipe.finish == EditionFinish.print && !premium)) {
-      return 0;
-    }
-    return recipe.strength * .85 * (compact ? editionCompactFinishStrength : 1);
+    if (recipe.cut == EditionCut.neutral) return 0;
+    return editionCutPower[recipe.finish.index] *
+        recipe.strength *
+        (compact ? editionCompactFinishStrength : 1);
   }
 
   /// A shader for one card, its uniforms set by [update].
