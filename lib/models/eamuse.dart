@@ -500,7 +500,10 @@ class EamuseSync {
         s++) {
       final mode = styles[s];
       for (var page = mode == start.mode ? start.page : 0; !cancelled; page++) {
-        onProgress(total(styles.take(s)) + page, total(styles));
+        // A resumed walk starts past pages whose count isn't known yet, so
+        // the estimate can fall short of where it already is.
+        final done = total(styles.take(s)) + page;
+        onProgress(done, max(total(styles), done + 1));
         final parsed = parseEamusePage(
             await _get(eamusePageUrl(mode, page, host)), mode, syncedAt);
         pages[mode] = min(parsed.pages, maxPages);
