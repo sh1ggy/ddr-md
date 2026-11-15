@@ -161,18 +161,15 @@ typedef TrendSources = ({
   Map<String, GoalProgress> goals,
 });
 
-/// A scored play against its usual, weighted as the session summary does.
-typedef TrendPoint = ({TrendPlay play, double usual, double weight});
+/// A scored play against its usual.
+typedef TrendPoint = ({TrendPlay play, double usual});
 
-/// The weighted average of [points]' score less their usual.
-double? gapOf(Iterable<TrendPoint> points) {
-  var sum = 0.0, weight = 0.0;
-  for (final p in points) {
-    sum += (p.play.play.score! - p.usual) * p.weight;
-    weight += p.weight;
-  }
-  return weight == 0 ? null : sum / weight;
-}
+/// How far the typical cleared play of [points] landed from its usual, as
+/// the session summary reads it.
+double? gapOf(Iterable<TrendPoint> points) => median([
+      for (final p in points)
+        if (!p.play.play.failed) p.play.play.score! - p.usual
+    ]);
 
 double? _mean(Iterable<double> values) =>
     values.isEmpty ? null : values.reduce((a, b) => a + b) / values.length;
@@ -219,7 +216,8 @@ class TrendPeriod {
     }.toList()
       ..sort();
     return {
-      for (final l in levels) l: gapOf(points.where((p) => p.play.level == l))!
+      for (final l in levels)
+        if (gapOf(points.where((p) => p.play.level == l)) case final g?) l: g
     };
   }
 
@@ -252,7 +250,7 @@ class TrendHistory {
       for (final p in sources.model.summarize([
         for (final p in scored) p.play,
       ]).points) {
-        _points.add((play: of[p.play]!, usual: p.usual, weight: p.weight));
+        _points.add((play: of[p.play]!, usual: p.usual));
       }
     }
     // Each chart's plays in order, to tell an upscore by what came before.

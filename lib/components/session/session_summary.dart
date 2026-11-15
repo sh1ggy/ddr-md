@@ -5,7 +5,7 @@
 /// mix of charts, broken down by level, over each play in order by credit,
 /// with the average level, level range, upscores and, when timing was
 /// logged, its offset.
-/// Failed plays (an E) and far-off ones count for less.
+/// Figures are medians over cleared plays: failed ones (an E) stay out.
 library;
 
 import 'dart:math';
@@ -29,23 +29,12 @@ import 'package:flutter/material.dart';
 /// How many plays the level's model counts as when blended into a chart's
 /// own earlier plays, so one lucky or bad play doesn't set the bar.
 const _levelWeight = 2;
-// Bests a level needs before its average stands in for a chart.
+// Bests a level needs before its typical best stands in for a chart, and
+// plays it needs before its own shortfall is used over the overall one.
 const _minLevelCharts = 3;
-
-/// What a failed play (an E) counts for against a cleared one: its score
-/// stops where the lifebar ran out, so it says little about your scoring.
-const _failWeight = 0.25;
 
 /// How far FAST or SLOW a timing is when it takes the full colour.
 const _fullTimingMs = 10.0;
-
-double _weight(RecentPlay p) => p.failed ? _failWeight : 1;
-
-/// How far a play's gap can sit from the set's median gap before it counts
-/// for less: three of the set's usual spread, and never under this. Past
-/// it a play's weight falls off so it can pull the average no further, and
-/// one fumbled chart doesn't sink the set.
-const _minOutlierGap = 50000.0;
 
 class SetSummary {
   SetSummary(
@@ -57,10 +46,10 @@ class SetSummary {
       this.levels = const {}});
 
   /// Each play with a score and a usual, newest first, with its level when
-  /// known and what it counts for in the averages: less when failed or far
-  /// off the rest.
-  final List<({RecentPlay play, int? level, double usual, double weight})>
-      points;
+  /// known. Failed plays (an E) are here to be shown, but stay out of every
+  /// figure: their score stops where the lifebar ran out, so it says little
+  /// about your scoring.
+  final List<({RecentPlay play, int? level, double usual})> points;
 
   /// The charts' average level.
   final double? level;
@@ -74,73 +63,67 @@ class SetSummary {
   /// Each play's level, where known.
   final Map<RecentPlay, int> levels;
 
-  /// The average score, over [points].
-  double? get average => points.isEmpty
-      ? null
-      : _weightedMean([for (final p in points) (p.play.score!, p.weight)]);
+  /// How many of [points] were cleared, so count.
+  int get cleared => points.where((p) => !p.play.failed).length;
 
-  /// What history says you'd average on the same charts.
-  double? get usual => points.isEmpty
-      ? null
-      : _weightedMean([for (final p in points) (p.usual, p.weight)]);
+  /// How far the typical cleared play landed from its usual: the median, so
+  /// one abandoned chart can't move it.
+  double? get gap => median([
+        for (final p in points)
+          if (!p.play.failed) p.play.score! - p.usual
+      ]);
 
-  double? get gap =>
-      average == null || usual == null ? null : average! - usual!;
-
-  /// [points] with a level, grouped by it, easiest first: the level's
-  /// average and usual, its plays and what they count for together.
+  /// [points] with a level, grouped by it, easiest first: its plays, how
+  /// many were cleared and their typical gap, null when none were.
   List<LevelSummary> get byLevel {
-    final groups = <int, List<(int score, double usual, double weight)>>{};
+    final groups = <int, List<({RecentPlay play, int? level, double usual})>>{};
     for (final p in points) {
-      if (p.level case final l?) {
-        groups.putIfAbsent(l, () => []).add((p.play.score!, p.usual, p.weight));
-      }
+      if (p.level case final l?) groups.putIfAbsent(l, () => []).add(p);
     }
     return [
       for (final l in groups.keys.toList()..sort())
         (
           level: l,
-          average: _weightedMean([for (final (s, _, w) in groups[l]!) (s, w)]),
-          usual: _weightedMean([for (final (_, u, w) in groups[l]!) (u, w)]),
+          gap: median([
+            for (final p in groups[l]!)
+              if (!p.play.failed) p.play.score! - p.usual
+          ]),
           plays: groups[l]!.length,
-          weight: groups[l]!.fold(0, (a, p) => a + p.$3),
+          cleared: groups[l]!.where((p) => !p.play.failed).length,
         ),
     ];
   }
 }
 
-typedef LevelSummary = ({
-  int level,
-  double average,
-  double usual,
-  int plays,
-  double weight
-});
+typedef LevelSummary = ({int level, double? gap, int plays, int cleared});
 
 double _mean(Iterable<num> s) => s.fold<double>(0, (a, b) => a + b) / s.length;
 
-double _median(Iterable<double> s) {
-  final o = s.toList()..sort();
+/// The middle of [s], null when empty.
+double? median(Iterable<num> s) {
+  if (s.isEmpty) return null;
+  final o = [for (final v in s) v.toDouble()]..sort();
   final m = o.length ~/ 2;
   return o.length.isOdd ? o[m] : (o[m - 1] + o[m]) / 2;
 }
 
-double _weightedMean(Iterable<(num, double)> s) =>
-    s.fold<double>(0, (a, e) => a + e.$1 * e.$2) /
-    s.fold<double>(0, (a, e) => a + e.$2);
-
 /// What you usually score, from your synced plays and bests.
 ///
-/// A chart's usual is its earlier plays' average, blended with a model of
-/// it: its best from before the set, or failing that your average best at
-/// that mode and level, less how far plays usually land below their chart's
-/// best. The model covers charts you've never had a play of synced, which
-/// is most of them. Failed plays count for [_failWeight] of a play
-/// throughout.
+/// A chart's usual is its earlier plays' median, blended with a model of
+/// it: its best from before the set, or failing that your typical best at
+/// that mode and level, less how far plays at that level usually land below
+/// their chart's best. The model covers charts you've never had a play of
+/// synced, which is most of them. Everything is a median over cleared
+/// plays, so neither a fail nor one abandoned chart shifts what later sets
+/// are measured against.
 class ScoreModel {
   ScoreModel(this.history, List<ScoreRecord> records, this.levelOf)
       : _bests = {for (final r in records) r.id: r.score} {
     for (final r in records) {
+      if (r.clearLamp == ClearLamp.failed) {
+        _failedBests.add(r.id);
+        continue;
+      }
       final l = levelOf(r.song, r.mode, r.difficulty);
       if (r.score != null && l != null) {
         _levelBests.putIfAbsent('${r.mode.name}:$l', () => []).add(r.score!);
@@ -153,6 +136,7 @@ class ScoreModel {
   final int? Function(String? song, Modes mode, String difficulty) levelOf;
 
   final Map<String, int?> _bests;
+  final _failedBests = <String>{};
   final _levelBests = <String, List<int>>{};
   final _levels = <String, int?>{};
 
@@ -164,19 +148,33 @@ class ScoreModel {
   int? level(RecentPlay p) => _levels.putIfAbsent(
       p.recordId, () => levelOf(p.song, p.mode, p.difficulty));
 
-  /// [plays] (newest first) against every play before the first of them.
+  /// [plays] (newest first) against every cleared play before the first of
+  /// them.
   SetSummary summarize(List<RecentPlay> plays) {
     final first = plays.last.playedAt;
-    final before =
-        history.where((p) => p.score != null && p.playedAt.isBefore(first));
-    final belowBest = [
-      for (final p in before)
-        if (best(p) != null) (p.score! - best(p)!, _weight(p)),
-    ];
-    final offset = belowBest.isEmpty ? 0.0 : _weightedMean(belowBest);
-    final byChart = <String, List<(int, double)>>{};
+    final before = history.where(
+        (p) => p.score != null && !p.failed && p.playedAt.isBefore(first));
+    // How far under its chart's best each earlier play landed, by level and
+    // overall. A play at its best set it, so says nothing about the best it
+    // was played against.
+    final under = <String, List<int>>{};
+    final allUnder = <int>[];
+    final byChart = <String, List<int>>{};
     for (final p in before) {
-      byChart.putIfAbsent(p.recordId, () => []).add((p.score!, _weight(p)));
+      byChart.putIfAbsent(p.recordId, () => []).add(p.score!);
+      if (best(p) case final b? when p.score! < b) {
+        allUnder.add(p.score! - b);
+        under
+            .putIfAbsent('${p.mode.name}:${level(p)}', () => [])
+            .add(p.score! - b);
+      }
+    }
+    double offsetOf(String key) {
+      final own = under[key];
+      return median(own != null && own.length >= _minLevelCharts
+              ? own
+              : allUnder) ??
+          0;
     }
 
     // Charts whose best may have been set in or after the set, so isn't the
@@ -192,50 +190,31 @@ class ScoreModel {
 
     double? usualOf(RecentPlay p) {
       final chart = byChart[p.recordId];
-      final peers = _levelBests['${p.mode.name}:${level(p)}'];
-      final model = best(p) != null && !reached.contains(p.recordId)
-          ? best(p)! + offset
+      final key = '${p.mode.name}:${level(p)}';
+      final peers = _levelBests[key];
+      final model = best(p) != null &&
+              !reached.contains(p.recordId) &&
+              !_failedBests.contains(p.recordId)
+          ? best(p)! + offsetOf(key)
           : peers != null && peers.length >= _minLevelCharts
-              ? _mean(peers) + offset
+              ? median(peers)! + offsetOf(key)
               : null;
       if (chart == null) return model;
-      if (model == null) return _weightedMean(chart);
-      final plays = chart.fold<double>(0, (a, e) => a + e.$2);
-      return (plays * _weightedMean(chart) + _levelWeight * model) /
-          (plays + _levelWeight);
+      if (model == null) return median(chart);
+      return (chart.length * median(chart)! + _levelWeight * model) /
+          (chart.length + _levelWeight);
     }
 
     final known = [
       for (final p in plays)
         if (level(p) case final l?) l,
     ];
-    final scored = [
-      for (final p in plays)
-        if (p.score case final s?)
-          if (usualOf(p) case final u?)
-            (play: p, level: level(p), usual: u, gap: s - u),
-    ];
-    // The spread is the cleared plays' median distance from their median
-    // gap, scaled to a standard deviation.
-    final cleared = [
-      for (final p in scored)
-        if (!p.play.failed) p.gap
-    ];
-    final gaps = cleared.isEmpty ? [for (final p in scored) p.gap] : cleared;
-    final mid = gaps.isEmpty ? 0.0 : _median(gaps);
-    final limit = gaps.isEmpty
-        ? 0.0
-        : max<double>(_minOutlierGap,
-            3 * 1.4826 * _median([for (final g in gaps) (g - mid).abs()]));
     return SetSummary(
       points: [
-        for (final p in scored)
-          (
-            play: p.play,
-            level: p.level,
-            usual: p.usual,
-            weight: _weight(p.play) * min(1.0, limit / (p.gap - mid).abs()),
-          ),
+        for (final p in plays)
+          if (p.score != null)
+            if (usualOf(p) case final u?)
+              (play: p, level: level(p), usual: u),
       ],
       level: known.isEmpty ? null : _mean(known),
       lowest: known.isEmpty ? null : known.reduce(min),
@@ -367,11 +346,17 @@ class _SessionSummaryBodyState extends State<SessionSummaryBody> {
             widget.detailed
                 ? LevelGapBars([
                     for (final l in levels)
-                      (
-                        level: l.level,
-                        gap: l.average - l.usual,
-                        trailing: Text('×${l.plays}', style: muted),
-                      ),
+                      if (l.gap case final gap?)
+                        (
+                          level: l.level,
+                          gap: gap,
+                          // Cleared of played, once a fail sets them apart.
+                          trailing: Text(
+                              l.cleared == l.plays
+                                  ? '×${l.plays}'
+                                  : '${l.cleared}/${l.plays}',
+                              style: muted),
+                        ),
                   ])
                 : _LevelChips(_scoreChips(levels, up: up, down: down)),
             const SizedBox(height: 12),
@@ -523,10 +508,10 @@ class LevelGapBars extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pop = FloorPop.of(context);
-    // Three times the typical level's gap, so one failed play can't squash
+    // Three times the typical level's gap, so one far-off level can't squash
     // every other bar; a gap past it runs to the edge.
     final sizes = [for (final l in levels) l.gap.abs()];
-    final most = max(5000.0, min(sizes.reduce(max), 3 * _median(sizes)));
+    final most = max(5000.0, min(sizes.reduce(max), 3 * median(sizes)!));
     return Column(children: [
       for (final l in levels)
         Padding(
@@ -642,15 +627,16 @@ class _LevelChips extends StatelessWidget {
   }
 }
 
-/// [levels] as chips of their gap from usual, fainter the less a level's
-/// plays count for.
+/// [levels] as chips of their gap from usual, fainter the fewer cleared
+/// plays a level has.
 List<_Chip> _scoreChips(List<LevelSummary> levels,
     {required Color up, required Color down}) {
-  // What a level's plays need to count for to get the full tint.
-  const fullWeight = 3.0;
+  // Cleared plays a level needs to get the full tint.
+  const fullPlays = 3;
   final chips = <_Chip>[];
   for (final l in levels) {
-    final gap = l.average - l.usual;
+    final gap = l.gap;
+    if (gap == null) continue;
     final k = gap.abs() / 1000;
     final colour = gap >= 0 ? up : down;
     chips.add((
@@ -660,7 +646,7 @@ List<_Chip> _scoreChips(List<LevelSummary> levels,
           '${k < 10 ? k.toStringAsFixed(1) : k.round()}k',
       colour: colour,
       tint:
-          colour.withValues(alpha: 0.06 + 0.12 * min(1, l.weight / fullWeight)),
+          colour.withValues(alpha: 0.06 + 0.12 * min(1, l.cleared / fullPlays)),
     ));
   }
   return chips;

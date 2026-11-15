@@ -405,14 +405,7 @@ Map<(int, PadSide), ({String text, bool warn})> sideHints(
   return {
     for (final MapEntry(:key, :value) in bySide.entries)
       key: () {
-        final points =
-            value.isEmpty ? const [] : data.model.summarize(value).points;
-        final gap = points.isEmpty
-            ? null
-            : points
-                    .map((p) => p.play.score! - p.usual)
-                    .reduce((a, b) => a + b) /
-                points.length;
+        final gap = value.isEmpty ? null : data.model.summarize(value).gap;
         final n = count[key]!;
         if (gap != null && gap <= -15000) {
           return (text: 'Scored well below your usual', warn: true);

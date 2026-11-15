@@ -43,7 +43,7 @@ void main() {
     expect(gainsIn(visit, [gain(2), gain(600)]).length, 1);
   });
 
-  test('a set is averaged against its charts, blended with their models', () {
+  test('a set reads against its charts, blended with their models', () {
     ScoreRecord best(String id, int score) => ScoreRecord(
         id: 'eamuse:$id:singles:EXPERT',
         source: ScoreRecordSource.eamuse,
@@ -72,46 +72,42 @@ void main() {
 
     // Plays land 20,000 under their best. 'c' is modelled from its own best,
     // 920,000. 'a' set its best today, so like 'new' it falls back to the
-    // level: bests averaging 950,000, a model of 930,000, which 'a' blends
+    // level: a middle best of 950,000, a model of 930,000, which 'a' blends
     // with its one play of 940,000 counted against the model's two, 933,333.
-    expect(s.points.length, 3);
-    expect(s.average, 930000);
-    expect(s.usual, closeTo((933333 + 930000 + 920000) / 3, 1));
+    expect([for (final p in s.points) p.usual.round()],
+        [933333, 930000, 920000]);
+    // +26,667, −30,000 and +10,000: the middle one.
+    expect(s.gap, closeTo(10000, 1));
     expect(s.upscores, 1);
   });
 
-  test('a failed play counts for a quarter of a cleared one', () {
+  test('neither a fail nor an abandoned chart moves the gap', () {
+    RecentPlay fail(int hoursAgo, int score) => RecentPlay(
+        konamiId: 'b',
+        title: 'b',
+        song: 'b',
+        mode: Modes.singles,
+        difficulty: 'EXPERT',
+        playedAt: t.subtract(Duration(hours: hoursAgo)),
+        score: score,
+        failed: true);
     final history = [
       play('a', 0, 900000),
-      RecentPlay(
-          konamiId: 'b',
-          title: 'b',
-          song: 'b',
-          mode: Modes.singles,
-          difficulty: 'EXPERT',
-          playedAt: t,
-          score: 860000,
-          failed: true),
-      play('a', 48, 900000),
-      play('b', 48, 900000),
+      fail(0, 860000),
+      // Walked off, but not ranked E.
+      play('c', 0, 300000),
+      play('d', 0, 910000),
+      play('e', 0, 905000),
+      for (final id in ['a', 'b', 'c', 'd', 'e']) play(id, 48, 900000),
+      // An old fail doesn't lower the chart's usual either.
+      fail(96, 500000),
     ];
     final s = ScoreModel(history, [], (_, __, ___) => 15)
-        .summarize(history.take(2).toList());
-    expect(s.average, (900000 + 0.25 * 860000) / 1.25);
-    expect(s.usual, 900000);
-  });
-
-  test('a far-off play pulls the average no further than the outlier limit',
-      () {
-    final history = [
-      for (final id in ['a', 'b', 'c']) play(id, 0, 900000),
-      play('d', 0, 300000),
-      for (final id in ['a', 'b', 'c', 'd']) play(id, 48, 900000),
-    ];
-    final s = ScoreModel(history, [], (_, __, ___) => 15)
-        .summarize(history.take(4).toList());
-    // 600,000 under counts for 50,000 / 600,000 of a play.
-    expect(s.gap, closeTo(-50000 / (3 + 1 / 12), 1));
+        .summarize(history.take(5).toList());
+    expect((s.points.length, s.cleared), (5, 4));
+    expect(s.points[1].usual, 900000);
+    // 0, −600,000, +10,000 and +5,000.
+    expect(s.gap, 2500);
   });
 
   test('a set splits by level, easiest first', () {
@@ -125,9 +121,7 @@ void main() {
         .summarize(history.take(3).toList());
     final levels = s.byLevel;
     expect(levels.map((l) => (l.level, l.plays)), [(14, 2), (17, 1)]);
-    expect(levels.first.average, 980000);
-    expect(levels.first.usual, 900000);
-    expect(levels.last.average - levels.last.usual, -20000);
+    expect(levels.map((l) => l.gap), [80000, -20000]);
   });
 
   test('plays join the session running when they were played', () {
