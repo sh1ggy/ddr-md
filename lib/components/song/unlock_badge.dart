@@ -1,7 +1,9 @@
 /// Name: UnlockBadge
 /// Parent: SongListItem, SongDifficultyPicker
 /// Description: A round mark for a chart that isn't playable by default:
-/// GALAXY BRAVE or a GRAND PRIX pack, named in its tooltip.
+/// GALAXY BRAVE and GRAND PRIX get their own marks, the in-game unlocks
+/// (EXTRA SAVIOR, FLARE SKILL, events, DAN RANK) a plain lock; the source is
+/// named in its tooltip.
 library;
 
 import 'package:ddr_md/components/song_json.dart';
@@ -23,6 +25,19 @@ class UnlockBadge extends StatelessWidget {
           Icons.shopping_bag_rounded,
           FloorPop.sun,
           unlock.pack.isEmpty ? 'GRAND PRIX' : 'GRAND PRIX · ${unlock.pack}'
+        ),
+      _ => (
+          Icons.lock_rounded,
+          FloorPop.padBlue,
+          [
+            switch (unlock.source) {
+              UnlockSource.extraSavior => 'EXTRA SAVIOR',
+              UnlockSource.flareSkill => 'FLARE SKILL',
+              UnlockSource.danRank => 'DAN RANK',
+              _ => 'Event',
+            },
+            if (unlock.pack.isNotEmpty) unlock.pack,
+          ].join(' · ')
         ),
     };
     return Tooltip(

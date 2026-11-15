@@ -240,6 +240,14 @@ extension ShownTiers on SongInfo {
     final level = tierChartAt(mode, index)?.level;
     return t == null || level == null ? null : level + t.hundredths / 100;
   }
+
+  /// [shownTierFor] by [mode]'s chart key, for jacket cards.
+  ShownTier? cardTier(Modes mode, String key) {
+    final i = (mode == Modes.singles ? singles : doubles)
+        .availableTypes
+        .indexOf(key);
+    return i < 0 ? null : shownTierFor(mode, i);
+  }
 }
 
 /// How the player's placements lean from the calculated tiers, per kind of

@@ -230,6 +230,10 @@ class Settings {
   /// 1 once a store build's player has downloaded Song ID's fingerprints.
   static const String songIdDownloadKey = "songIdDownload";
 
+  /// 1 while song updates follow staging (long-press Song Updates), to test a
+  /// release before it's signed off. Kept to this device.
+  static const String contentStagingKey = "contentStaging";
+
   // Settings that follow the player to their other devices. Left out: the
   // timing offsets (they depend on the device's own audio and display), the
   // running session, and e-amusement sync bookkeeping.

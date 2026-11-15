@@ -263,6 +263,10 @@ class HeaderButton extends StatelessWidget {
           style: IconButton.styleFrom(
             backgroundColor: FloorPop.of(context).riser,
             foregroundColor: color ?? Theme.of(context).colorScheme.onSurface,
+            // Disabled, it keeps its tile and dims its icon.
+            disabledBackgroundColor: FloorPop.of(context).riser,
+            disabledForegroundColor:
+                Theme.of(context).colorScheme.onSurface.withValues(alpha: .3),
             fixedSize: const Size(44, 44),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

@@ -10,6 +10,7 @@ import 'package:ddr_md/components/song/jacket_edition/compact_jacket_edition.dar
 import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/models/version_group.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -108,7 +109,14 @@ void main() {
                 level: 17,
                 tier: 9))
             .cut,
-        EditionCut.fine);
+        EditionCut.microprism);
+    const shown = (hundredths: 85, kind: TierKind.mine);
+    final fromShown = resolveEdition(const EditionFacts(
+        chart: (song: '?', mode: 'singles', difficulty: 'hard'),
+        level: 14,
+        shownTier: shown));
+    expect((fromShown.cut, fromShown.tierDecimal, fromShown.tierSuffix),
+        (EditionCut.starPrism, shown, null));
     const noData =
         EditionFacts(chart: (song: '?', mode: 'doubles', difficulty: '?'));
     final recipe = resolveEdition(noData);

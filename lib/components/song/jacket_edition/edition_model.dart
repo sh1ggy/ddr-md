@@ -7,6 +7,7 @@ import 'package:ddr_md/grades.dart';
 import 'package:ddr_md/models/chart_achievements.dart';
 import 'package:ddr_md/models/db_models.dart';
 import 'package:ddr_md/models/version_group.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 
 enum EditionFinish { print, satin, gloss, metallic, prism }
 
@@ -14,26 +15,28 @@ enum EditionFrame { stock, bronze, silver, gold, platinum, rainbow }
 
 enum EditionMotif { neutral, classic, white, gold }
 
+/// The tier's foil cut, tenths .0 to .9 in order; neutral without a tier.
 enum EditionCut {
   neutral,
-  broad,
-  split,
-  cross,
+  broadSheen,
+  splitSheen,
+  wideFacets,
   diamond,
-  fan,
-  lattice,
+  crystal,
+  layeredFacets,
   shard,
-  star,
-  brilliant,
-  fine
+  mosaicPrism,
+  starPrism,
+  microprism
 }
 
 enum EditionBorder { gilded, engraved, bevel }
 
 /// A card's layers, back to front, each earned separately: the art (and
 /// what's done to it: negative, EX's polychrome), the grade's finish over
-/// it, the lamp's frame round it and the flare's aura beyond.
-enum EditionLayer { art, finish, frame, aura }
+/// it, the tier's foil cut over that, the lamp's frame round it and the
+/// flare's aura beyond.
+enum EditionLayer { art, finish, cut, frame, aura }
 
 const editionAllLayers = {...EditionLayer.values};
 
@@ -62,6 +65,7 @@ class EditionFacts {
       {required this.chart,
       this.level,
       this.tier,
+      this.shownTier,
       this.version,
       this.grade,
       this.flare,
@@ -72,8 +76,9 @@ class EditionFacts {
   final EditionChartKey chart;
   final int? level;
   // How hard the chart is within its level, easy 0 to hard 9, as 17.0–17.9.
-  // From community ratings, which aren't loaded yet.
   final int? tier;
+  // The tier the level numeral shows; gives [tier] when that's unset.
+  final ShownTier? shownTier;
   final FlareGroup? version;
   final Grade? grade;
   final String? flare;
@@ -108,6 +113,7 @@ typedef EditionRecipe = ({
   String? difficultyStamp,
   int? levelStamp,
   int? tierSuffix,
+  ShownTier? tierDecimal,
 });
 
 extension EditionRecipeDetails on EditionRecipe {
@@ -139,5 +145,6 @@ extension EditionRecipeDetails on EditionRecipe {
         'difficultyStamp': difficultyStamp,
         'levelStamp': levelStamp,
         'tierSuffix': tierSuffix,
+        'tierDecimal': tierDecimal?.hundredths,
       };
 }

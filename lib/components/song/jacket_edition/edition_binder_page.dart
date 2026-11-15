@@ -22,6 +22,7 @@ import 'package:ddr_md/grades.dart' show Grade;
 import 'package:ddr_md/models/chart_bests.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:ddr_md/components/play_style_icon.dart';
 import 'package:flutter/material.dart';
@@ -104,6 +105,7 @@ List<BinderPage> binderPages(Modes mode, {int perSheet = binderPockets}) {
             : EditionFacts(
                 chart: (song: song.name, mode: mode.name, difficulty: key),
                 level: level,
+                shownTier: song.cardTier(mode, key),
                 version: flareGroup(song.version),
                 grade: best.grade,
                 flare: best.flare,
@@ -421,32 +423,23 @@ class _EditionBinderPageState extends State<EditionBinderPage>
                     // A tab for each level, to jump to its cover.
                     SizedBox(
                         height: tabs,
-                        child: ListView(
-                            scrollDirection: Axis.horizontal,
+                        child: LevelTabs(
+                            levels: [
+                              for (final p in pages)
+                                if (p is BinderDivider) p.level
+                            ],
+                            selected: level,
+                            size: tabs - 4,
                             padding: const EdgeInsets.symmetric(horizontal: 12),
-                            children: [
-                              for (final (i, p) in pages.indexed)
-                                if (p is BinderDivider)
-                                  Padding(
-                                      padding: const EdgeInsets.only(right: 6),
-                                      child: ChoiceChip(
-                                          showCheckmark: false,
-                                          selected: p.level == level,
-                                          label: LevelNumber(
-                                              level: p.level,
-                                              difficulty: 'EXPERT',
-                                              height: 16),
-                                          // To the sheet a card is coming
-                                          // into, else the cover.
-                                          onSelected: (_) =>
-                                              _controller.jumpToPage(math.max(
-                                                  i,
-                                                  pages.indexWhere((s) =>
-                                                      s is BinderSheet &&
-                                                      s.level == p.level &&
-                                                      s.pockets
-                                                          .any(_arriving)))))),
-                            ])),
+                            // To the sheet a card is coming into, else the
+                            // cover.
+                            onChanged: (l) => _controller.jumpToPage(math.max(
+                                pages.indexWhere(
+                                    (p) => p is BinderDivider && p.level == l),
+                                pages.indexWhere((s) =>
+                                    s is BinderSheet &&
+                                    s.level == l &&
+                                    s.pockets.any(_arriving)))))),
                     Expanded(
                         child: AnimatedBuilder(
                             animation: _zoom,
@@ -623,9 +616,8 @@ class _Cover extends StatelessWidget {
                                                   color: ink)),
                                         ]),
                                     style: FloorPop.readout(40,
-                                        color: finished
-                                            ? ink
-                                            : scheme.onSurface)),
+                                        color:
+                                            finished ? ink : scheme.onSurface)),
                                 Text('COLLECTED', style: caps),
                               ]))),
                 ]));
@@ -646,8 +638,8 @@ class _Cover extends StatelessWidget {
             Widget fit(double needed, Widget child) => needed <= height
                 ? child
                 : FittedBox(
-                    child: SizedBox(
-                        width: width, height: needed, child: child));
+                    child:
+                        SizedBox(width: width, height: needed, child: child));
             // Wider than tall: the level over the fan, the tiers the full
             // height beside them.
             if (width > height) {

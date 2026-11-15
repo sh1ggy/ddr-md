@@ -20,6 +20,7 @@ import 'package:ddr_md/models/circle_model.dart';
 import 'package:ddr_md/models/database.dart';
 import 'package:ddr_md/models/showcase.dart';
 import 'package:ddr_md/models/song_model.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -275,6 +276,7 @@ class _CardArt extends StatelessWidget {
               difficulty: difficulty
             ),
             level: chart.level,
+            shownTier: chart.song?.cardTier(card.mode, difficulty),
             score: card.best.score,
             grade: card.best.grade,
             lamp: card.best.lamp,

@@ -50,6 +50,8 @@ dev_dependencies:
   sqflite_common_ffi: ^2.4.5
 
 flutter:
+  shaders:
+    - shaders/edition_cut.frag
   assets:
     - assets/
     - assets/audio/

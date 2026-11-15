@@ -1,6 +1,6 @@
 /// Name: EditionGuidePage
 /// Parent: EditionViewer, DevelopmentPage
-/// Description: How a card is built, as one diagram: its four layers pulled
+/// Description: How a card is built, as one diagram: its layers pulled
 /// apart in depth, each beside what earns it, on the real renderer, in one
 /// screen. Tap a card to stack the layers back
 /// into the card.
@@ -20,6 +20,19 @@ import 'package:flutter/material.dart';
 import 'edition_model.dart';
 import 'edition_rules.dart';
 import 'jacket_edition.dart';
+
+const _cutNames = [
+  'Broad sheen',
+  'Split sheen',
+  'Wide facets',
+  'Diamond cut',
+  'Crystal cut',
+  'Layered facets',
+  'Shard cut',
+  'Mosaic prism',
+  'Star prism',
+  'Microprism'
+];
 
 const _plain = (
   borderId: 'gilded',
@@ -61,7 +74,12 @@ class _EditionGuidePageState extends State<EditionGuidePage>
       widget.facts?.precision?.award ?? PrecisionAward.unknown;
   late String _difficulty = widget.facts?.chart.difficulty ?? 'hard';
   late String _mode = widget.facts?.chart.mode ?? 'singles';
-  late int? _tier = widget.facts?.tier;
+  // Real cards carry the tier their level numeral shows.
+  late int? _tier = widget.facts?.tier ??
+      switch (widget.facts?.shownTier) {
+        final shown? => shown.hundredths ~/ 10,
+        null => null
+      };
   late FlareGroup? _version = widget.facts?.version;
   final _layers = {...EditionLayer.values};
   late final _spread = AnimationController(
@@ -122,6 +140,15 @@ class _EditionGuidePageState extends State<EditionGuidePage>
           EditionFrame.gold => 'PFC · gold, catching the light',
           EditionFrame.platinum => 'SDP · pearly platinum',
           EditionFrame.rainbow => 'MFC · rainbow, with a glint',
+        }
+      ),
+      (
+        EditionLayer.cut,
+        'CUT',
+        'Tier',
+        switch (resolveEdition(_facts).cut) {
+          EditionCut.neutral => 'None without a tier',
+          final cut => '.${cut.index - 1} · ${_cutNames[cut.index - 1]}',
         }
       ),
       (
@@ -247,11 +274,11 @@ class _EditionGuidePageState extends State<EditionGuidePage>
           ],
           (v) => _version = v),
       _select<int?>(
-          'Tier / engraving',
+          'Tier / foil cut',
           _tier,
           [
             (null, const Text('Unknown')),
-            for (var i = 0; i < 10; i++) (i, Text('$i'))
+            for (var i = 0; i < 10; i++) (i, Text('.$i · ${_cutNames[i]}'))
           ],
           (v) => _tier = v),
       const Padding(

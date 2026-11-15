@@ -5,7 +5,6 @@
 /// the level picker, and the switch for which tier rows show.
 library;
 
-import 'package:ddr_md/components/song/difficulty_label.dart';
 import 'package:ddr_md/components/song_json.dart';
 import 'package:ddr_md/components/songlist/jacket_image.dart';
 import 'package:ddr_md/helpers.dart'
@@ -70,11 +69,14 @@ Color tierDeltaColor(int delta) =>
 /// A chart's jacket, with a chip for how far [rung] sits from its
 /// calculated tier when they differ.
 class TierJacket extends StatelessWidget {
-  const TierJacket(this.chart, {super.key, this.rung, this.size = 48});
+  const TierJacket(this.chart,
+      {super.key, this.rung, this.size = 48, this.placed = false});
 
   final LevelChart chart;
   final int? rung;
   final double size;
+  // Outlined in Volt: the player has put it on its rung.
+  final bool placed;
 
   @override
   Widget build(BuildContext context) {
@@ -85,15 +87,33 @@ class TierJacket extends StatelessWidget {
       child: Stack(clipBehavior: Clip.none, children: [
         Positioned.fill(
           child: ClipRRect(
-              borderRadius: BorderRadius.circular(size / 5),
-              child: SongArtwork(
-                  songName: chart.song.name, title: chart.song.title)),
+            borderRadius: BorderRadius.circular(size / 5),
+            child: Stack(fit: StackFit.expand, children: [
+              SongArtwork(songName: chart.song.name, title: chart.song.title),
+              // The difficulty along the foot, as on the song list's rows.
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                    height: 3,
+                    width: double.infinity,
+                    child: ColoredBox(
+                        color: kInGameDifficultyColors[chart.difficulty] ??
+                            Colors.grey)),
+              ),
+            ]),
+          ),
         ),
-        Positioned(
-          left: 2,
-          bottom: 2,
-          child: DifficultyDot(chart.difficulty, size: size / 6),
-        ),
+        if (placed)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(size / 5),
+                    border: Border.all(
+                        color: FloorPop.of(context).voltText, width: 2)),
+              ),
+            ),
+          ),
         if (delta != 0)
           Positioned(
             top: -6,
@@ -109,79 +129,6 @@ class TierJacket extends StatelessWidget {
             ),
           ),
       ]),
-    );
-  }
-}
-
-/// The chart's difficulty as a dot of its colour, for jackets too small for
-/// the lettering.
-class DifficultyDot extends StatelessWidget {
-  const DifficultyDot(this.difficulty, {super.key, this.size = 8});
-
-  final String difficulty;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-            color: kInGameDifficultyColors[difficulty] ?? Colors.grey,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.black, width: 1)),
-      );
-}
-
-/// Levels 1–19 as the cabinet's numerals, the chosen one on Volt.
-class TierLevelPicker extends StatelessWidget {
-  const TierLevelPicker(
-      {super.key, required this.level, required this.onChanged});
-
-  final int level;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final pop = FloorPop.of(context);
-    return SizedBox(
-      height: 48,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: 19,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final l = i + 1;
-          final chosen = l == level;
-          return Semantics(
-            button: true,
-            selected: chosen,
-            label: 'Level $l',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => onChanged(l),
-              child: AnimatedContainer(
-                duration: FloorPop.eighth,
-                width: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: chosen ? FloorPop.volt : pop.riser,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: chosen
-                      ? const [
-                          BoxShadow(
-                              color: FloorPop.voltRiser, offset: Offset(0, 4))
-                        ]
-                      : null,
-                ),
-                child: ExcludeSemantics(
-                    child: LevelNumber(
-                        level: l, difficulty: 'EXPERT', height: 22)),
-              ),
-            ),
-          );
-        },
-      ),
     );
   }
 }

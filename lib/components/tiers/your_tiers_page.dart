@@ -10,6 +10,7 @@
 library;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
+import 'package:ddr_md/components/song/difficulty_label.dart' show LevelTabs;
 import 'package:ddr_md/components/tiers/circle_tiers_page.dart';
 import 'package:ddr_md/components/tiers/place_tier_sheet.dart';
 import 'package:ddr_md/components/tiers/tier_lean_page.dart';
@@ -142,7 +143,11 @@ class _YourTiersPageState extends State<YourTiersPage> {
                 padding: const EdgeInsets.fromLTRB(4, 8, 16, 0),
                 child: Row(children: [
                   const BackButton(),
-                  const Expanded(child: PageTitle('Your tiers')),
+                  const Expanded(
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: PageTitle('Your tiers'))),
                   HeaderButton(
                       tooltip: 'Reset to calculated',
                       onPressed: charts.any((c) => c.placement != null)
@@ -169,8 +174,10 @@ class _YourTiersPageState extends State<YourTiersPage> {
               ),
               const SizedBox(height: 12),
               if (level != null)
-                TierLevelPicker(
-                    level: level, onChanged: (l) => setState(() => _level = l)),
+                LevelTabs(
+                    levels: [for (var l = 1; l <= 19; l++) l],
+                    selected: level,
+                    onChanged: (l) => setState(() => _level = l)),
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -187,7 +194,16 @@ class _YourTiersPageState extends State<YourTiersPage> {
                 child: level == null
                     ? const Center(child: CircularProgressIndicator())
                     : SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                        // Clear of the floating tab bar when no tray sits
+                        // between.
+                        padding: EdgeInsets.fromLTRB(
+                            16,
+                            8,
+                            16,
+                            24 +
+                                (tray.isEmpty
+                                    ? MediaQuery.paddingOf(context).bottom
+                                    : 0)),
                         child: Column(key: _ladder, children: [
                           for (final h in rungsOf(level))
                             _Rung(
@@ -292,11 +308,8 @@ class _DraggableJacket extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Still on its calculated rung, not placed yet.
-    final jacket = AnimatedOpacity(
-        duration: FloorPop.eighth,
-        opacity: chart.placement == null ? .4 : 1,
-        child: TierJacket(chart, rung: rung));
+    final jacket =
+        TierJacket(chart, rung: rung, placed: chart.placement != null);
     return Semantics(
       button: true,
       label: '${chart.song.title} ${chart.difficulty}',

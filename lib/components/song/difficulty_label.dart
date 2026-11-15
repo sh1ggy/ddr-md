@@ -32,6 +32,7 @@ class DifficultyLabel extends StatelessWidget {
     required this.difficulty,
     this.level,
     this.levelSuffix,
+    this.levelTier,
     this.height = kLevelHeight,
   });
 
@@ -41,6 +42,8 @@ class DifficultyLabel extends StatelessWidget {
   // The chart's tier within its level, 17.0–17.9, as a small raised digit
   // in the same native artwork.
   final int? levelSuffix;
+  // The shown tier, drawn as the level numeral draws it elsewhere.
+  final ShownTier? levelTier;
   final double height;
 
   @override
@@ -65,7 +68,9 @@ class DifficultyLabel extends StatelessWidget {
               level: level!,
               difficulty: difficulty,
               height: height,
-              suffix: levelSuffix),
+              suffix: levelSuffix,
+              decimalHundredths: levelTier?.hundredths,
+              decimalKind: levelTier?.kind ?? TierKind.calc),
         ],
       ],
     );
@@ -87,6 +92,7 @@ class LevelNumber extends StatelessWidget {
     this.suffix,
     this.decimalHundredths,
     this.decimalKind = TierKind.calc,
+    this.decimalGap = 0,
   });
 
   final int level;
@@ -100,6 +106,10 @@ class LevelNumber extends StatelessWidget {
   /// placed charts of your own (in Volt before that, and when the setting
   /// shows calculated tiers).
   final TierKind decimalKind;
+
+  /// Space before the decimal, where the numeral is big enough for its drop
+  /// shadow to reach the decimal's point.
+  final double decimalGap;
   // Upper-case in-game name, e.g. EXPERT.
   final String difficulty;
   final double height;
@@ -158,7 +168,9 @@ class LevelNumber extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
               numeral(level),
-              Text('.$digits', style: style),
+              Padding(
+                  padding: EdgeInsets.only(left: decimalGap),
+                  child: Text('.$digits', style: style)),
             ])),
       );
     }
@@ -333,24 +345,27 @@ class _CabinetText extends StatelessWidget {
   }
 }
 
-/// Levels as tappable numerals, grey unless selected, with 1–9 folded behind
-/// a toggle since they're rarely picked. Opens unfolded when one is selected.
-class LevelPicker extends StatefulWidget {
-  const LevelPicker({
+/// Levels as Floor Pop tiles, the chosen one on Volt: the one level picker,
+/// shared by the binder, the tier pages and the stats. Keeps the chosen level
+/// in view as it changes.
+class LevelTabs extends StatefulWidget {
+  const LevelTabs({
     super.key,
     required this.levels,
-    required this.isSelected,
-    required this.onTap,
-    this.height = 22,
+    required this.selected,
+    required this.onChanged,
+    this.size = 44,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16),
   });
 
   final List<int> levels;
-  final bool Function(int level) isSelected;
-  final ValueChanged<int> onTap;
-  final double height;
+  final int? selected;
+  final ValueChanged<int> onChanged;
+  final double size;
+  final EdgeInsets padding;
 
   @override
-  State<LevelPicker> createState() => _LevelPickerState();
+  State<LevelTabs> createState() => _LevelTabsState();
 }
 
 /// Greys a level's numerals, for a level that isn't one chart's.
@@ -361,108 +376,72 @@ const kGreyLevel = ColorFilter.matrix([
   0, 0, 0, 1, 0,
 ]);
 
-class _LevelPickerState extends State<LevelPicker> {
-  bool? _low;
+class _LevelTabsState extends State<LevelTabs> {
+  final _chosen = GlobalKey();
 
-  static const _anim = Duration(milliseconds: 250);
+  @override
+  void initState() {
+    super.initState();
+    _reveal(Duration.zero);
+  }
+
+  @override
+  void didUpdateWidget(LevelTabs old) {
+    super.didUpdateWidget(old);
+    if (old.selected != widget.selected) _reveal(FloorPop.eighth);
+  }
+
+  void _reveal(Duration duration) =>
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_chosen.currentContext case final c? when mounted) {
+          Scrollable.ensureVisible(c, alignment: .5, duration: duration);
+        }
+      });
 
   @override
   Widget build(BuildContext context) {
-    final low = widget.levels.where((l) => l < 10).toList();
-    final showLow = _low ??
-        low.any(widget.isSelected) || low.length == widget.levels.length;
-    Widget level(int l) {
-      final number =
-          LevelNumber(level: l, difficulty: 'EXPERT', height: widget.height);
-      return InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: () => widget.onTap(l),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: widget.isSelected(l)
-              ? number
-              : ColorFiltered(colorFilter: kGreyLevel, child: number),
-        ),
-      );
-    }
-
-    // One row at full size; scrolls sideways when it runs off screen.
+    final pop = FloorPop.of(context);
     return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (low.isNotEmpty && low.length < widget.levels.length)
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: () => setState(() => _low = !showLow),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      AnimatedRotation(
-                        turns: showLow ? 0.5 : 0,
-                        duration: _anim,
-                        child: Icon(Icons.chevron_right,
-                            size: widget.height * 0.8),
-                      ),
-                      AnimatedSize(
-                        duration: _anim,
-                        curve: Curves.easeOut,
-                        child: showLow
-                            ? const SizedBox.shrink()
-                            : Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: ShapeDecoration(
-                                    shape: const StadiumBorder(),
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .surfaceContainerHighest),
-                                child: ColorFiltered(
-                                  colorFilter: kGreyLevel,
-                                  child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        LevelNumber(
-                                            level: low.first,
-                                            difficulty: 'EXPERT',
-                                            height: widget.height * 0.8),
-                                        _CabinetText('-',
-                                            difficulty: 'EXPERT',
-                                            height: widget.height * 0.8,
-                                            fill: Colors.black,
-                                            outline: Colors.white),
-                                        LevelNumber(
-                                            level: low.last,
-                                            difficulty: 'EXPERT',
-                                            height: widget.height * 0.8),
-                                      ]),
-                                ),
-                              ),
-                      ),
-                    ]),
+      scrollDirection: Axis.horizontal,
+      padding: widget.padding,
+      // Room for the chosen tile's riser under it.
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(spacing: 8, children: [
+          for (final l in widget.levels)
+            Semantics(
+              key: l == widget.selected ? _chosen : null,
+              button: true,
+              selected: l == widget.selected,
+              label: 'Level $l',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => widget.onChanged(l),
+                child: AnimatedContainer(
+                  duration: FloorPop.eighth,
+                  width: widget.size,
+                  height: widget.size,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: l == widget.selected ? FloorPop.volt : pop.riser,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: l == widget.selected
+                        ? const [
+                            BoxShadow(
+                                color: FloorPop.voltRiser, offset: Offset(0, 4))
+                          ]
+                        : null,
                   ),
+                  child: ExcludeSemantics(
+                      child: LevelNumber(
+                          level: l,
+                          difficulty: 'EXPERT',
+                          height: widget.size / 2)),
                 ),
-                // The low levels slide out from behind the toggle.
-                ClipRect(
-                  child: AnimatedSize(
-                    duration: _anim,
-                    curve: Curves.easeOut,
-                    alignment: Alignment.centerLeft,
-                    child: showLow
-                        ? Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: low.map(level).toList())
-                        : const SizedBox.shrink(),
-                  ),
-                ),
-              ])
-            else if (showLow)
-              ...low.map(level),
-            ...widget.levels.where((l) => l >= 10).map(level),
-          ],
-        ));
+              ),
+            ),
+        ]),
+      ),
+    );
   }
 }

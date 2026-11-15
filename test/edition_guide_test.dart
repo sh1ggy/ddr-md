@@ -17,7 +17,7 @@ void main() {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
           const MaterialApp(home: EditionGuidePage(editable: true)));
-      expect(find.byType(JacketEdition), findsNWidgets(4));
+      expect(find.byType(JacketEdition), findsNWidgets(5));
       final grade = find.ancestor(
           of: find.text('Grade / surface'),
           matching:
@@ -45,7 +45,7 @@ void main() {
       await tester.ensureVisible(chip);
       await tester.tap(chip);
       await tester.pumpAndSettle();
-      expect(find.byType(JacketEdition), findsNWidgets(3));
+      expect(find.byType(JacketEdition), findsNWidgets(4));
       final jacket = find.byType(EditionArtworkPicker);
       await tester.ensureVisible(jacket);
       await tester.tap(jacket);

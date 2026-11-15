@@ -238,7 +238,7 @@ class SongInfo {
 }
 
 /// Where a chart is unlocked when it isn't playable by default.
-enum UnlockSource { galaxyBrave, grandPrix }
+enum UnlockSource { galaxyBrave, grandPrix, extraSavior, flareSkill, event, danRank }
 
 /// How a chart is unlocked, and the day it becomes playable by default when
 /// that's announced. GRAND PRIX charts are released this way about a year on,
@@ -248,7 +248,8 @@ class ChartUnlock {
 
   final UnlockSource source;
 
-  /// The GRAND PRIX pack that carries the chart; empty for GALAXY BRAVE.
+  /// The GRAND PRIX pack, event or EXTRA SAVIOR group that carries the
+  /// chart; empty when the source says it all.
   final String pack;
   final DateTime? until;
 
@@ -257,6 +258,10 @@ class ChartUnlock {
   static const _sources = {
     'galaxy_brave': UnlockSource.galaxyBrave,
     'grand_prix': UnlockSource.grandPrix,
+    'extra_savior': UnlockSource.extraSavior,
+    'flare_skill': UnlockSource.flareSkill,
+    'event': UnlockSource.event,
+    'dan_rank': UnlockSource.danRank,
   };
 
   /// One style's map; an entry with a source this app doesn't know is

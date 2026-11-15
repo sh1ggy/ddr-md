@@ -62,6 +62,8 @@ const editionPearl = [
 // Broad satin, focused gloss, silver metal and gold foil. Kept visible in
 // static binder pockets as well as the full-size moving card.
 const editionFinishAlpha = [0.0, .10, .24, .28, .32];
+// The tier cut's opacity on each finish, before the grade's +/- strength.
+const editionCutPower = [0.0, .20, .29, .36, .42];
 const editionSilverFoil = [
   Color(0xFF536477),
   Color(0xFFE7F3FF),
@@ -117,35 +119,13 @@ const editionNegative = ColorFilter.matrix([
   0, 0, -1, 0, 255,
   0, 0, 0, 1, 0,
 ]);
-const editionMaxMotifLines = 52;
+// The era motif's lines, whatever the tier: the cut is its own layer.
+const editionMotifLines = 24;
 // CPU display lists only: no application-owned effect textures. The active viewer
 // owns two small pictures and releases them on recipe/size change/disposal.
 // Engine raster caches still need device allocation measurements. There is
 // deliberately no cross-chart cache or offscreen image allocation.
 const editionMaxSide = 640.0;
-
-/// The tier's gems along the frame's foot, one lit per step: each gem's
-/// width and their spacing, of the card's side.
-const editionGemSize = .036;
-const editionGemGap = .048;
-const editionGem = [Color(0xFFF4FDFF), Color(0xFF8FD8FF), Color(0xFF2E6FA8)];
-
-/// Ten deliberate cuts, one per tier: broad sheen through a dense faceted
-/// prism; neutral without one. The
-/// renderer shares primitives; adding a cut changes data here, not branches.
-const editionCuts = {
-  EditionCut.neutral: (lines: 8, angle: 0.0, cross: false),
-  EditionCut.broad: (lines: 8, angle: .10, cross: false),
-  EditionCut.split: (lines: 12, angle: .25, cross: false),
-  EditionCut.cross: (lines: 14, angle: .45, cross: true),
-  EditionCut.diamond: (lines: 18, angle: .78, cross: true),
-  EditionCut.fan: (lines: 22, angle: .18, cross: false),
-  EditionCut.lattice: (lines: 26, angle: .0, cross: true),
-  EditionCut.shard: (lines: 32, angle: .65, cross: false),
-  EditionCut.star: (lines: 36, angle: 1.05, cross: true),
-  EditionCut.brilliant: (lines: 42, angle: .40, cross: true),
-  EditionCut.fine: (lines: 48, angle: .78, cross: true),
-};
 
 /// Each difficulty's corners, of the card's side: rounded by [size], or cut
 /// off at 45° [size] along each edge. Unknown, then beginner to challenge.

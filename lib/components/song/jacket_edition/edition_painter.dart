@@ -154,39 +154,6 @@ class EditionGeometry {
       canvas.drawLine(Offset(x, size.height - width * .32),
           Offset(x - length, size.height - width * .68), engraving);
     }
-    final tier = recipe.tier;
-    if (tier != null && !compact) {
-      // The tier as gems set in the frame's foot, lit up to it.
-      final gem = side * editionGemSize, gap = side * editionGemGap;
-      for (var i = 0; i < 10; i++) {
-        // Centred on the frame's foot, overlapping the art when it's thin.
-        final c =
-            Offset(size.width / 2 + (i - 4.5) * gap, size.height - width / 2);
-        final stone = Path()
-          ..moveTo(c.dx, c.dy - gem * .6)
-          ..lineTo(c.dx + gem / 2, c.dy)
-          ..lineTo(c.dx, c.dy + gem * .6)
-          ..lineTo(c.dx - gem / 2, c.dy)
-          ..close();
-        canvas.drawPath(
-            stone,
-            Paint()
-              ..shader = i <= tier
-                  ? const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: editionGem)
-                      .createShader(stone.getBounds())
-                  : null
-              ..color = Color.lerp(palette[0], Colors.black, .4)!);
-        canvas.drawPath(
-            stone,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = math.max(.5, gem * .08)
-              ..color = palette[1].withValues(alpha: i <= tier ? .9 : .4));
-      }
-    }
     final pearl = recipe.frame == EditionFrame.platinum;
     if (pearl || recipe.ex) {
       // Thin inlay preserves the metal substrate under EX.
@@ -221,9 +188,7 @@ class EditionGeometry {
       canvas.drawRect(innerRect, Paint()..color = const Color(0x22000000));
     }
     if (finish != EditionFinish.print || premium) {
-      final cut = editionCuts[recipe.cut]!;
-      final count = math.min(
-          compact ? editionCompactMotifLines : editionMaxMotifLines, cut.lines);
+      final count = compact ? editionCompactMotifLines : editionMotifLines;
       paint.color = (pearl ? const Color(0xFFFFF4E2) : Colors.white).withValues(
           alpha: premium
               ? .13
@@ -231,12 +196,11 @@ class EditionGeometry {
                   ? .075
                   : .025);
       final shape = recipe.motif;
-      final angle = cut.angle +
-          (shape == EditionMotif.classic
-              ? .4
-              : shape == EditionMotif.gold
-                  ? -.4
-                  : 0);
+      final angle = (shape == EditionMotif.classic
+          ? .4
+          : shape == EditionMotif.gold
+              ? -.4
+              : 0.0);
       canvas.save();
       canvas.translate(size.width / 2, size.height / 2);
       canvas.rotate(angle);
@@ -246,7 +210,7 @@ class EditionGeometry {
           canvas.drawCircle(Offset.zero, x.abs() + side * .08, paint);
         } else {
           canvas.drawLine(Offset(x, -side), Offset(x, side), paint);
-          if (cut.cross && (textured || shape == EditionMotif.gold)) {
+          if (textured || shape == EditionMotif.gold) {
             canvas.drawLine(Offset(-side, x), Offset(side, x), paint);
           }
         }
@@ -433,6 +397,26 @@ class EditionLightPainter extends CustomPainter {
       old.geometry != geometry || old.motion != motion;
 }
 
+/// EX's polychrome, drawn with [BlendMode.color]: the art's own light and
+/// shade, recoloured by bands of rainbow that drift with time and the light.
+ui.Gradient editionPolychromeShader(EditionMotion? motion, double side) {
+  final light = motion?.light ?? EditionMotion.rest;
+  final shift =
+      (light.dx + light.dy) * side * .35 + (motion?.time ?? 0) * side * .08;
+  return ui.Gradient.linear(
+      Offset(shift, 0),
+      Offset(shift + side * .9, side * .55),
+      [
+        for (final c in editionPolychrome)
+          c.withValues(alpha: editionPolychromeAlpha)
+      ],
+      [
+        for (var i = 0; i < editionPolychrome.length; i++)
+          i / (editionPolychrome.length - 1)
+      ],
+      TileMode.mirror);
+}
+
 typedef EditionSpark = ({
   double along,
   double phase,
@@ -498,24 +482,12 @@ class EditionFlarePainter extends CustomPainter {
     final bright = Color.lerp(color, Colors.white, .6)!;
 
     if (recipe.ex && layers.contains(EditionLayer.art)) {
-      // Polychrome: the art's own light and shade, recoloured by bands of
-      // rainbow that drift with time and the light.
-      final light = motion?.light ?? const Offset(.35, .3);
-      final shift = (light.dx + light.dy) * side * .35 + t * side * .08;
       canvas.save();
       canvas.clipPath(geometry.inner);
       _paint
         ..blendMode = BlendMode.color
-        ..color = Colors.white.withValues(alpha: editionPolychromeAlpha)
-        ..shader = ui.Gradient.linear(
-            Offset(shift, 0),
-            Offset(shift + side * .9, side * .55),
-            editionPolychrome,
-            [
-              for (var i = 0; i < editionPolychrome.length; i++)
-                i / (editionPolychrome.length - 1)
-            ],
-            TileMode.mirror);
+        ..color = Colors.white
+        ..shader = editionPolychromeShader(motion, side);
       canvas.drawRect(geometry.innerRect, _paint);
       _paint
         ..blendMode = BlendMode.srcOver

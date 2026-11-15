@@ -170,9 +170,8 @@ void main() {
         expect(tester.takeException(), isNull);
         final art = find.byType(SongArtwork).last;
         // The jacket, frame and all; the art sits inside its frame.
-        final rect = tester.getRect(find
-            .ancestor(of: art, matching: find.byType(SizedBox))
-            .first);
+        final rect = tester.getRect(
+            find.ancestor(of: art, matching: find.byType(SizedBox)).first);
         expect(rect.width, 96);
         expect(rect.size.aspectRatio, 1);
         expect(find.byType(GeneratedJacket), findsNWidgets(2));

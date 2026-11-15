@@ -243,7 +243,8 @@ class _EamuseTilesState extends State<_EamuseTiles> {
 }
 
 /// Manual check for new songs and chart fixes, applied straight away like the
-/// one at startup.
+/// one at startup. A long press switches between live and staging, so a
+/// release can be tried on a phone before it's signed off.
 class _ContentTile extends StatefulWidget {
   const _ContentTile();
 
@@ -273,11 +274,21 @@ class _ContentTileState extends State<_ContentTile> {
     showToast(context, message);
   }
 
+  bool get _staging => Settings.getInt(Settings.contentStagingKey) == 1;
+
+  Future<void> _toggleStaging() async {
+    await Settings.setInt(Settings.contentStagingKey, _staging ? 0 : 1);
+    _checked = false;
+    await _sync();
+  }
+
   @override
   Widget build(BuildContext context) {
     final String subtitle;
     if (kContentUrl.isEmpty) {
       subtitle = "Updates are off in this build";
+    } else if (_staging) {
+      subtitle = "Following staging";
     } else if (_checked) {
       subtitle = "Up to date";
     } else {
@@ -288,6 +299,7 @@ class _ContentTileState extends State<_ContentTile> {
       title: const Text("Song Updates",
           style: TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle),
+      onLongPress: kContentUrl.isEmpty || _syncing ? null : _toggleStaging,
       trailing: _syncing
           ? const SizedBox.square(
               dimension: 24, child: CircularProgressIndicator(strokeWidth: 2))

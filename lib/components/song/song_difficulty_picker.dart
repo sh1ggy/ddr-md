@@ -68,6 +68,8 @@ class SongDifficultyPicker extends StatelessWidget {
                   }
                 },
                 child: Lean(
+                  // The unlock badge overhangs the tile's top right, clear of
+                  // the tier on its numeral.
                   child: Stack(clipBehavior: Clip.none, children: [
                     AnimatedContainer(
                       duration: FloorPop.eighth,
@@ -142,7 +144,7 @@ class SongDifficultyPicker extends StatelessWidget {
                       Positioned(
                           top: -6,
                           right: -6,
-                          child: Upright(child: UnlockBadge(unlock, size: 20))),
+                          child: Upright(child: UnlockBadge(unlock, size: 18))),
                   ]),
                 ),
               ),

@@ -4,6 +4,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/theme.dart';
@@ -111,6 +112,7 @@ class _ViewerPageState extends State<_ViewerPage> {
                 // One card throughout, flown from the jacket to the middle and
                 // back, with nothing crossfaded or swapped on the way.
                 : LayoutBuilder(builder: (context, box) {
+                    // Dead centre of the screen, whatever sits over it.
                     final side = math.min(
                         640.0, math.min(box.maxWidth, box.maxHeight) - 48);
                     final to = Rect.fromCenter(
@@ -141,23 +143,28 @@ class _ViewerPageState extends State<_ViewerPage> {
             child: Align(
                 alignment: Alignment.bottomCenter,
                 child: Padding(
-                    padding: const EdgeInsets.only(bottom: 48),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 360),
+                  padding: const EdgeInsets.only(bottom: 12),
+                  // Frosted like the tab bar, the card showing through.
+                  child: Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: FloorPop.of(context).stage.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: FloorPop.of(context).line),
+                      boxShadow: const [
+                        BoxShadow(
+                            color: Color(0x40000000),
+                            blurRadius: 30,
+                            offset: Offset(0, 10))
+                      ],
+                    ),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
                       child: Material(
-                        color: Theme.of(context).colorScheme.surfaceContainer,
-                        elevation: 8,
-                        shadowColor: Colors.black54,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            side: BorderSide(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .outlineVariant)),
-                        clipBehavior: Clip.antiAlias,
+                        type: MaterialType.transparency,
                         child: Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: Row(children: [
+                          padding: const EdgeInsets.all(4),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
                             if (widget.onBinder case final onBinder?)
                               _ViewerAction(
                                   label: 'Binder',
@@ -193,7 +200,9 @@ class _ViewerPageState extends State<_ViewerPage> {
                           ]),
                         ),
                       ),
-                    )))),
+                    ),
+                  ),
+                ))),
       )
     ]);
   }
@@ -216,26 +225,21 @@ class _ViewerAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final active = toggled == true;
-    return Expanded(
+    return Tooltip(
+        message: label,
         child: Semantics(
+            label: label,
             toggled: toggled,
             child: TextButton(
                 style: TextButton.styleFrom(
                     foregroundColor: active ? scheme.primary : scheme.onSurface,
                     backgroundColor:
                         active ? scheme.primary.withValues(alpha: .12) : null,
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18))),
+                    minimumSize: const Size.square(44),
+                    padding: EdgeInsets.zero,
+                    shape: const CircleBorder()),
                 onPressed: onPressed,
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(icon, size: 24),
-                  const SizedBox(height: 6),
-                  Text(label,
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600)),
-                ]))));
+                child: Icon(icon, size: 24, semanticLabel: label))));
   }
 }
 

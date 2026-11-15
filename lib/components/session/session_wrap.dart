@@ -46,6 +46,7 @@ import 'package:ddr_md/models/settings_model.dart';
 import 'package:ddr_md/models/song_model.dart';
 import 'package:ddr_md/models/version_group.dart';
 import 'package:ddr_md/models/visit_model.dart';
+import 'package:ddr_md/models/your_tiers.dart';
 import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -88,6 +89,7 @@ List<WrapCard> wrapCards(List<CardGain> gains) {
         EditionFacts facts(ChartBest b) => EditionFacts(
             chart: (song: chart.song, mode: chart.mode.name, difficulty: key),
             level: c.level,
+            shownTier: c.song?.cardTier(chart.mode, key),
             version: c.song == null ? null : flareGroup(c.song!.version),
             grade: b.grade,
             flare: b.flare,

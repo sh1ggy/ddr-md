@@ -4,15 +4,16 @@
 /// by clear lamp, grade or flare: each tier a band in the stats page's
 /// colours, best first, played charts without one in grey, then the
 /// unplayed. The grid's spare cell shows which measure in its art and
-/// switches it; the choice sticks. Tapped, the strip opens a ladder of that
-/// measure's tiers, with ways on to the full stats and the binder; its Tiers
-/// pill opens your tier list straight away.
+/// switches it; the choice sticks. Tapped, the strip opens that measure's
+/// tiers as a bar and badges, with ways on to your tiers, the full stats and
+/// the binder.
 library;
 
 import 'dart:math' as math;
 
 import 'package:ddr_md/components/floor_pop_widgets.dart';
 import 'package:ddr_md/components/song/scores/art_badge.dart';
+import 'package:ddr_md/components/song/scores/tier_breakdown.dart';
 import 'package:ddr_md/components/song/scores/score_card.dart'
     show clearLampIcon;
 import 'package:ddr_md/grades.dart';
@@ -24,39 +25,47 @@ import 'package:ddr_md/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// [rainbow] sweeps along the band in place of its colour. [art] is the
-// tier's badge, null for the played charts without one.
-typedef _Tier = ({int count, Color color, List<Color>? rainbow, String? art});
-
 // What the charts without a tier are called, measure by measure.
 const _kNoneLabels = ['NO GRADE', 'NO LAMP', 'NO FLARE'];
 
 const _kNone = Color(0xFF757575);
 
-List<_Tier> _tiers<T>(List<ChartBest?> bests, List<T> tiers,
+// [all] keeps the tiers nobody holds, at a count of none.
+List<TierCount> _tiers<T>(List<ChartBest?> bests, List<T> tiers,
     T? Function(ChartBest) of, Color Function(T) color,
-    {required String? Function(T) art, List<Color>? Function(T)? rainbow}) {
+    {required String? Function(T) art,
+    required String none,
+    List<Color>? Function(T)? rainbow,
+    bool all = false}) {
   final counts = <T, int>{};
-  var none = 0;
+  var without = 0;
   for (final b in bests) {
     if (b == null) continue;
     if (of(b) case final tier?) {
       counts[tier] = (counts[tier] ?? 0) + 1;
     } else {
-      none++;
+      without++;
     }
   }
   return [
     for (final t in tiers)
-      if (counts[t] case final n?)
-        (count: n, color: color(t), rainbow: rainbow?.call(t), art: art(t)),
-    if (none > 0) (count: none, color: _kNone, rainbow: null, art: null),
+      if (counts[t] ?? (all ? 0 : null) case final n?)
+        (
+          count: n,
+          color: color(t),
+          rainbow: rainbow?.call(t),
+          art: art(t),
+          label: '',
+        ),
+    if (without > 0 || all)
+      (count: without, color: _kNone, rainbow: null, art: null, label: none),
   ];
 }
 
 // Grade, lamp and flare, in the cabinet's order.
-List<List<_Tier>> _rings(List<ChartBest?> bests) => [
-      _tiers(bests, Grade.values, (b) => b.grade, gradeColor, art: gradeIcon),
+List<List<TierCount>> _rings(List<ChartBest?> bests, {bool all = false}) => [
+      _tiers(bests, Grade.values, (b) => b.grade, gradeColor,
+          art: gradeIcon, none: _kNoneLabels[0], all: all),
       // A failed lamp has no art, so it counts with the charts without one.
       _tiers(
           bests,
@@ -65,10 +74,14 @@ List<List<_Tier>> _rings(List<ChartBest?> bests) => [
               .toList(),
           (b) => b.lamp == ClearLamp.failed ? null : b.lamp,
           (l) => kLampColors[l]!,
-          art: clearLampIcon),
+          art: clearLampIcon,
+          none: _kNoneLabels[1],
+          all: all),
       _tiers(bests, kFlareRanks.reversed.toList(), (b) => b.flare, flareColor,
           art: flareRankIcon,
-          rainbow: (r) => r == 'EX' ? kFlareExColors : null),
+          none: _kNoneLabels[2],
+          rainbow: (r) => r == 'EX' ? kFlareExColors : null,
+          all: all),
     ];
 
 enum BestMeasure {
@@ -193,18 +206,13 @@ class BestStrip extends StatelessWidget {
               child: Row(children: [
                 Expanded(
                   child: TweenAnimationBuilder<double>(
-                    // Sweeps in afresh whenever the filter or measure lands on
-                    // a different mix.
-                    key: ValueKey(Object.hashAll([
-                      m,
-                      for (final t in tiers) Object.hash(t.count, t.color),
-                    ])),
+                    // Sweeps in once; filtering redraws the bands in place.
                     tween: Tween(begin: 0, end: 1),
                     duration: FloorPop.beat * 2,
                     curve: FloorPop.settle,
                     builder: (context, t, _) => CustomPaint(
                       size: const Size.fromHeight(6),
-                      painter: _BandsPainter(tiers, bests.length, pop.stage,
+                      painter: TierBarPainter(tiers, bests.length, pop.stage,
                           fill: t),
                     ),
                   ),
@@ -217,34 +225,6 @@ class BestStrip extends StatelessWidget {
                           style: TextStyle(color: pop.haze)),
                     ]),
                     style: FloorPop.readout(13)),
-                if (onTiers case final open?) ...[
-                  const SizedBox(width: 10),
-                  Material(
-                    color: pop.riser,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        open();
-                      },
-                      child: const Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            spacing: 5,
-                            children: [
-                              Icon(Icons.stairs_rounded, size: 16),
-                              Text('Tiers',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700)),
-                            ]),
-                      ),
-                    ),
-                  ),
-                ],
               ]),
             ),
           ),
@@ -254,9 +234,9 @@ class BestStrip extends StatelessWidget {
   }
 }
 
-/// One measure's tiers, best first, each a bar that carries on from the
-/// tiers above it, so a row reads as "this tier or better". The tabs switch
-/// the measure for the strip too.
+/// One measure's tiers as the stats page shows them: a combined bar, then
+/// each tier's badge and count. The tabs switch the measure for the strip
+/// too.
 class _Ladder extends StatelessWidget {
   const _Ladder(this.bests, this.onStats, this.onBinder, this.onTiers);
 
@@ -272,8 +252,7 @@ class _Ladder extends StatelessWidget {
     return ValueListenableBuilder(
       valueListenable: bestMeasure,
       builder: (context, m, _) {
-        final tiers = _rings(bests)[m.ring];
-        var above = 0;
+        final tiers = _rings(bests, all: true)[m.ring];
         return SafeArea(
           top: false,
           child: Padding(
@@ -289,97 +268,32 @@ class _Ladder extends StatelessWidget {
                           style: FloorPop.readout(20, color: pop.haze)),
                     ]),
                     style: FloorPop.readout(40)),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(
-                      value: played / total,
-                      minHeight: 6,
-                      color: FloorPop.volt,
-                      backgroundColor: pop.riser),
+                const SizedBox(height: 16),
+                PillTabs<BestMeasure>(
+                  values: BestMeasure.values,
+                  tabs: const [
+                    Tab(text: 'Lamp'),
+                    Tab(text: 'Grade'),
+                    Tab(text: 'Flare'),
+                  ],
+                  selected: m,
+                  onChanged: (tab) => bestMeasure.value = tab,
                 ),
                 const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                      color: pop.riser,
-                      borderRadius: BorderRadius.circular(14)),
-                  child: Row(children: [
-                    for (final tab in BestMeasure.values)
-                      Expanded(
-                        child: Semantics(
-                          selected: tab == m,
-                          label: tab.name,
-                          child: Material(
-                            color:
-                                tab == m ? FloorPop.volt : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () => bestMeasure.value = tab,
-                              child: SizedBox(
-                                height: 40,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 8, horizontal: 12),
-                                  child: _measureArt(bests, tab),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ]),
+                CustomPaint(
+                  size: const Size.fromHeight(14),
+                  painter: TierBarPainter(tiers, total, pop.riser),
                 ),
-                const SizedBox(height: 16),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(children: [
-                      for (final t in tiers)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Row(children: [
-                            SizedBox(
-                              width: 72,
-                              height: 24,
-                              child: t.art != null
-                                  ? Image.asset(t.art!,
-                                      fit: BoxFit.contain,
-                                      alignment: Alignment.centerLeft)
-                                  : Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(_kNoneLabels[m.ring],
-                                          style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                              letterSpacing: 0.5,
-                                              color: pop.haze))),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: CustomPaint(
-                                size: const Size.fromHeight(12),
-                                painter: _BandsPainter([t], total, pop.riser,
-                                    lead: (above += t.count) - t.count),
-                              ),
-                            ),
-                            SizedBox(
-                              width: 36,
-                              child: Text('${t.count}',
-                                  textAlign: TextAlign.right,
-                                  style: FloorPop.readout(15)),
-                            ),
-                          ]),
-                        ),
-                    ]),
-                  ),
-                ),
+                const SizedBox(height: 12),
+                TierGrid(tiers, aspect: BestTiers._aspects[m.ring]),
                 if (onStats != null || onBinder != null || onTiers != null) ...[
                   const SizedBox(height: 20),
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    for (final (i, (label, onTap)) in [
-                      if (onTiers != null) ('Your tiers', onTiers!),
-                      if (onStats != null) ('All stats', onStats!),
+                    for (final (i, (icon, label, onTap)) in [
+                      if (onTiers != null)
+                        (Icons.stairs_rounded, 'Your tiers', onTiers!),
+                      if (onStats != null)
+                        (Icons.insights_rounded, 'All stats', onStats!),
                     ].indexed) ...[
                       if (i > 0) const SizedBox(width: 10),
                       Expanded(
@@ -387,14 +301,16 @@ class _Ladder extends StatelessWidget {
                           style: FilledButton.styleFrom(
                               backgroundColor: pop.riser,
                               foregroundColor: text,
-                              minimumSize: const Size.fromHeight(48),
+                              minimumSize: const Size.fromHeight(56),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 6),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14))),
                           onPressed: () {
                             Navigator.of(context).pop();
                             onTap();
                           },
-                          child: Text(label),
+                          child: _Labelled(icon, label),
                         ),
                       ),
                     ],
@@ -404,13 +320,18 @@ class _Ladder extends StatelessWidget {
                     if (onBinder != null)
                       Expanded(
                         child: VoltButton(
-                          height: 48,
+                          height: 56,
                           radius: 14,
                           onPressed: () {
                             Navigator.of(context).pop();
                             onBinder!();
                           },
-                          child: const Text('Open binder'),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 6),
+                            child: _Labelled(
+                                Icons.collections_bookmark_outlined,
+                                'Open binder'),
+                          ),
                         ),
                       ),
                   ]),
@@ -424,51 +345,27 @@ class _Ladder extends StatelessWidget {
   }
 }
 
-/// [tiers] as bands left to right, out of [total] charts on a [track]:
-/// [lead] charts' worth of the first band's colour, faint, before them, and
-/// only [fill] of the way drawn, for an entrance.
-class _BandsPainter extends CustomPainter {
-  _BandsPainter(this.tiers, this.total, this.track,
-      {this.lead = 0, this.fill = 1});
+/// A button's icon over its label, at one size on every button.
+class _Labelled extends StatelessWidget {
+  const _Labelled(this.icon, this.label);
 
-  final List<_Tier> tiers;
-  final int total, lead;
-  final Color track;
-  final double fill;
+  final IconData icon;
+  final String label;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final whole = Offset.zero & size;
-    canvas.clipRRect(
-        RRect.fromRectAndRadius(whole, Radius.circular(size.height / 2)));
-    canvas.drawRect(whole, Paint()..color = track);
-    final unit = size.width / total * fill;
-    var x = 0.0;
-    if (lead > 0 && tiers.isNotEmpty) {
-      x = lead * unit;
-      canvas.drawRect(Rect.fromLTWH(0, 0, x, size.height),
-          Paint()..color = tiers.first.color.withValues(alpha: 0.3));
-    }
-    for (final t in tiers) {
-      final band = Rect.fromLTWH(x, 0, t.count * unit, size.height);
-      canvas.drawRect(
-          band,
-          Paint()
-            ..color = t.color
-            ..shader = t.rainbow == null
-                ? null
-                : LinearGradient(colors: t.rainbow!).createShader(band));
-      x = band.right;
-    }
-  }
-
-  @override
-  bool shouldRepaint(_BandsPainter old) =>
-      old.tiers != tiers ||
-      old.total != total ||
-      old.lead != lead ||
-      old.track != track ||
-      old.fill != fill;
+  Widget build(BuildContext context) => FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(mainAxisSize: MainAxisSize.min, spacing: 4, children: [
+          Icon(icon, size: 20),
+          // The theme's button face, not the Volt button's display one.
+          Text(label,
+              maxLines: 1,
+              style: const TextStyle(
+                  fontFamily: kTextFont,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+        ]),
+      );
 }
 
 /// How many tiers [bests] reach in each section: grade, lamp, flare.
@@ -500,7 +397,7 @@ class BestTiers extends StatelessWidget {
   // Each shown section's index and how many tiers it makes room for, lamps
   // first, the most hard-won.
   static List<(int, int)> _sections(
-          List<List<_Tier>> rings, List<int>? reserve) =>
+          List<List<TierCount>> rings, List<int>? reserve) =>
       [
         for (final i in const [1, 0, 2])
           if (math.max(rings[i].length, reserve?[i] ?? 0) case final n
