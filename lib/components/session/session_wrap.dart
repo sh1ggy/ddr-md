@@ -51,8 +51,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-/// How far off your usual a set reads as great, or rough.
+/// How far off your usual a set reads as great, or rough, and the cleared
+/// plays it takes to say either.
 const _verdictGap = 5000.0;
+const _verdictPlays = 5;
 
 /// One chart's card and the gains that made it what it is now.
 typedef WrapCard = ({
@@ -324,6 +326,7 @@ class _SessionWrapPageState extends State<SessionWrapPage>
     }
     // Seen here, so Home doesn't offer it again.
     await Settings.setString(Settings.sessionWrapSinceKey, '');
+    wrapSeen.value++;
     if (mounted) setState(() => _collecting = false);
   }
 
@@ -959,16 +962,18 @@ class _Verdict extends StatelessWidget {
       );
     }
     final gap = summary.gap;
+    final sure = summary.cleared >= _verdictPlays;
     final (headline, color) = switch (gap) {
       null => ('SESSION DONE', pop.voltText),
+      _ when !sure => ('SESSION DONE', pop.voltText),
       >= _verdictGap => ('GREAT SET', pop.up),
       <= -_verdictGap => ('ROUGH ONE', pop.down),
       _ => ('RIGHT ON YOUR USUAL', pop.voltText),
     };
-    final best = summary.byLevel.where((l) => l.plays >= 2).fold<LevelSummary?>(
-        null,
-        (b, l) =>
-            b == null || l.average - l.usual > b.average - b.usual ? l : b);
+    final best = summary.byLevel
+        .where((l) => l.cleared >= 2)
+        .fold<LevelSummary?>(
+            null, (b, l) => b == null || l.gap! > b.gap! ? l : b);
     const ring = 270.0;
     return Center(
         child: SingleChildScrollView(
@@ -990,9 +995,9 @@ class _Verdict extends StatelessWidget {
             Column(mainAxisSize: MainAxisSize.min, children: [
               if (gap != null)
                 Icon(
-                    gap >= _verdictGap
+                    sure && gap >= _verdictGap
                         ? Icons.trending_up_rounded
-                        : gap <= -_verdictGap
+                        : sure && gap <= -_verdictGap
                             ? Icons.trending_down_rounded
                             : Icons.trending_flat_rounded,
                     size: 30,
@@ -1032,7 +1037,7 @@ class _Verdict extends StatelessWidget {
         // What went well, each in its own colour.
         LayoutBuilder(builder: (context, constraints) {
           final tiles = <Widget>[
-            if (best != null && best.average > best.usual)
+            if (best != null && best.gap! > 0)
               _VerdictTile(
                   label: 'BEST LEVEL',
                   color: pop.up,
@@ -1044,7 +1049,7 @@ class _Verdict extends StatelessWidget {
                     Flexible(
                         child: FittedBox(
                             child: Text(
-                                '+${formatScore((best.average - best.usual).round())}',
+                                '+${formatScore(best.gap!.round())}',
                                 style: FloorPop.readout(20, color: pop.up)))),
                   ]))
             else
@@ -1958,6 +1963,9 @@ class CollectedTile extends StatelessWidget {
   }
 }
 
+/// Bumped when the wrap is seen elsewhere, so Home drops its banner.
+final wrapSeen = ValueNotifier<int>(0);
+
 /// Home's way in after a sync brings [visit] new plays: tapped, it opens the
 /// wrap; either way it's gone until the next such sync.
 class SessionWrapBanner extends StatefulWidget {
@@ -1975,14 +1983,18 @@ class SessionWrapBanner extends StatefulWidget {
   /// Held up from Development: it stays, however often it's opened.
   final bool preview;
 
-  /// Whether a sync left [visit] new plays to wrap.
-  static bool waiting(Visit visit) {
+  /// Whether a sync left [visit] new plays to wrap: its session over (not
+  /// [activeId]), and played within [fresh], so an old key can't resurface.
+  static bool waiting(Visit visit, {String? activeId}) {
     final since =
         DateTime.tryParse(Settings.getString(Settings.sessionWrapSinceKey));
     return since != null &&
-        visit.session != null &&
+        (visit.session == null || visit.session!.id != activeId) &&
+        DateTime.now().difference(visit.end) < fresh &&
         visit.plays.any((p) => p.playedAt.isAfter(since));
   }
+
+  static const fresh = Duration(hours: 12);
 
   @override
   State<SessionWrapBanner> createState() => _SessionWrapBannerState();
@@ -1999,6 +2011,7 @@ class _SessionWrapBannerState extends State<SessionWrapBanner> {
     }
     setState(() => _gone = true);
     await Settings.setString(Settings.sessionWrapSinceKey, '');
+    wrapSeen.value++;
   }
 
   @override

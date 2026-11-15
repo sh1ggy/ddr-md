@@ -226,22 +226,26 @@ class LastSessionCard extends StatelessWidget {
             _SessionsSection(others, data: data),
           ],
         );
-        return ValueListenableBuilder(
-            valueListenable: wrapBannerPreview,
-            builder: (context, preview, _) =>
-                !preview && !SessionWrapBanner.waiting(visit)
-                    ? card
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                            SessionWrapBanner(
-                                key: ValueKey((visit.key, preview)),
-                                visit: visit,
-                                summary: summary,
-                                gains: gains,
-                                preview: preview),
-                            card,
-                          ]));
+        final activeId = context.read<SessionState>().session?.id;
+        return ListenableBuilder(
+            listenable: Listenable.merge([wrapBannerPreview, wrapSeen]),
+            builder: (context, _) {
+              final preview = wrapBannerPreview.value;
+              return !preview &&
+                      !SessionWrapBanner.waiting(visit, activeId: activeId)
+                  ? card
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                          SessionWrapBanner(
+                              key: ValueKey((visit.key, preview)),
+                              visit: visit,
+                              summary: summary,
+                              gains: gains,
+                              preview: preview),
+                          card,
+                        ]);
+            });
       },
     );
   }

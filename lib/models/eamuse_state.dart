@@ -317,11 +317,17 @@ class EamuseSyncState extends ChangeNotifier {
       // read; if too many to list, it starts over.
       // New plays since the last sync: Home offers the wrap of the session
       // they were played in.
-      if (since != null &&
-          plays.any((p) => p.playedAt.compareTo(since) > 0) &&
+      // The first sync has no "since": its newest set is offered if recent.
+      if ((since == null
+              ? plays.isNotEmpty
+              : plays.any((p) => p.playedAt.compareTo(since) > 0)) &&
           Settings.getString(Settings.sessionWrapSinceKey).isEmpty) {
         await Settings.setString(
-            Settings.sessionWrapSinceKey, eamuseTime(since).toIso8601String());
+            Settings.sessionWrapSinceKey,
+            since == null
+                ? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true)
+                    .toIso8601String()
+                : eamuseTime(since).toIso8601String());
       }
       final walk = _walk;
       final missed = walk == null
