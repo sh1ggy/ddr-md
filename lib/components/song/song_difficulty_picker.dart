@@ -68,80 +68,82 @@ class SongDifficultyPicker extends StatelessWidget {
                   }
                 },
                 child: Lean(
-                  child: AnimatedContainer(
-                    duration: FloorPop.eighth,
-                    curve: FloorPop.settle,
-                    height: 56,
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: i == chosen
-                          ? kInGameDifficultyColors[chart.name]!
-                              .withValues(alpha: 0.28)
-                          : pop.riser,
-                      borderRadius: BorderRadius.circular(12),
-                      border: i == chosen
-                          ? Border.all(
-                              color: kInGameDifficultyColors[chart.name]!,
-                              width: 2.5)
-                          : null,
-                      boxShadow: [
-                        if (i == chosen)
-                          BoxShadow(
-                              color: kInGameDifficultyColors[chart.name]!
-                                  .withValues(alpha: 0.5),
-                              blurRadius: 22),
-                      ],
-                    ),
-                    child: Stack(children: [
-                      Center(
-                        child: Upright(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: LevelNumber(
-                                level: chart.level,
-                                difficulty: chart.name,
-                                decimalHundredths:
-                                    i == chosen ? shown?.hundredths : null,
-                                decimalKind: shown?.kind ?? TierKind.calc,
-                                height: 24),
-                          ),
-                        ),
+                  child: Stack(clipBehavior: Clip.none, children: [
+                    AnimatedContainer(
+                      duration: FloorPop.eighth,
+                      curve: FloorPop.settle,
+                      height: 56,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: i == chosen
+                            ? kInGameDifficultyColors[chart.name]!
+                                .withValues(alpha: 0.28)
+                            : pop.riser,
+                        borderRadius: BorderRadius.circular(12),
+                        border: i == chosen
+                            ? Border.all(
+                                color: kInGameDifficultyColors[chart.name]!,
+                                width: 2.5)
+                            : null,
+                        boxShadow: [
+                          if (i == chosen)
+                            BoxShadow(
+                                color: kInGameDifficultyColors[chart.name]!
+                                    .withValues(alpha: 0.5),
+                                blurRadius: 22),
+                        ],
                       ),
-                      if (song?.unlockAt(songState.modes, i) case final unlock?)
-                        Positioned(
-                            top: 4,
-                            right: 4,
-                            child:
-                                Upright(child: UnlockBadge(unlock, size: 16))),
-                      if (i == chosen && tiered)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
+                      child: Stack(children: [
+                        Center(
                           child: Upright(
-                            child: ValueListenableBuilder(
-                              valueListenable: tierChipsOpen,
-                              builder: (context, open, _) => AnimatedRotation(
-                                turns: open ? .5 : 0,
-                                duration: FloorPop.eighth,
-                                child: Icon(Icons.expand_more_rounded,
-                                    size: 14,
-                                    color: kInGameDifficultyColors[chart.name]),
-                              ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: LevelNumber(
+                                  level: chart.level,
+                                  difficulty: chart.name,
+                                  decimalHundredths:
+                                      i == chosen ? shown?.hundredths : null,
+                                  decimalKind: shown?.kind ?? TierKind.calc,
+                                  height: 24),
                             ),
                           ),
                         ),
-                      if (i != chosen)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          height: 4,
-                          child: ColoredBox(
-                              color: kInGameDifficultyColors[chart.name]!),
-                        ),
-                    ]),
-                  ),
+                        if (i == chosen && tiered)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Upright(
+                              child: ValueListenableBuilder(
+                                valueListenable: tierChipsOpen,
+                                builder: (context, open, _) => AnimatedRotation(
+                                  turns: open ? .5 : 0,
+                                  duration: FloorPop.eighth,
+                                  child: Icon(Icons.expand_more_rounded,
+                                      size: 14,
+                                      color:
+                                          kInGameDifficultyColors[chart.name]),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (i != chosen)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            height: 4,
+                            child: ColoredBox(
+                                color: kInGameDifficultyColors[chart.name]!),
+                          ),
+                      ]),
+                    ),
+                    if (song?.unlockAt(songState.modes, i) case final unlock?)
+                      Positioned(
+                          top: -6,
+                          right: -6,
+                          child: Upright(child: UnlockBadge(unlock, size: 20))),
+                  ]),
                 ),
               ),
             ),
