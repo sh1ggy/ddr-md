@@ -9,9 +9,11 @@ import 'package:ddr_md/grades.dart'
 import 'package:ddr_md/helpers.dart' show formatScore;
 import 'package:ddr_md/theme.dart' show FloorPop;
 import 'package:ddr_md/models/settings_model.dart';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'edition_model.dart';
 import 'edition_catalog.dart';
+import 'edition_cut.dart';
 import 'edition_rules.dart';
 import 'edition_motion.dart';
 import 'edition_painter.dart';
@@ -61,6 +63,7 @@ class _JacketEditionState extends State<JacketEdition>
   late final EditionMotion _motion = EditionMotion(this);
   late EditionRecipe _recipe = resolveEdition(widget.facts, widget.options);
   EditionGeometry? _geometry;
+  ui.FragmentShader? _cut;
   ModalRoute<dynamic>? _route;
   bool _foreground = true;
 
@@ -68,6 +71,11 @@ class _JacketEditionState extends State<JacketEdition>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (!EditionCutShader.ready) {
+      EditionCutShader.load().then((_) {
+        if (mounted) setState(() {});
+      });
+    }
     _foreground = WidgetsBinding.instance.lifecycleState == null ||
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
   }
@@ -128,6 +136,7 @@ class _JacketEditionState extends State<JacketEdition>
     _route?.secondaryAnimation?.removeStatusListener(_routeStatus);
     _motion.dispose();
     _geometry?.dispose();
+    _cut?.dispose();
     super.dispose();
   }
 
@@ -148,6 +157,11 @@ class _JacketEditionState extends State<JacketEdition>
       }
       final staticGeometry = geometry;
       final polychrome = _recipe.ex && widget.layers.contains(EditionLayer.art);
+      final cutPower = widget.layers
+              .containsAll(const {EditionLayer.art, EditionLayer.finish})
+          ? EditionCutShader.power(_recipe)
+          : 0.0;
+      final cut = cutPower > 0 ? _cut ??= EditionCutShader.create() : null;
       final surface = Stack(fit: StackFit.expand, children: [
         if (widget.layers.contains(EditionLayer.art))
           Padding(
@@ -176,20 +190,35 @@ class _JacketEditionState extends State<JacketEdition>
               child: CustomPaint(
                   painter: EditionStaticPainter(staticGeometry,
                       ring: !widget.layers.contains(EditionLayer.art)))),
-        if (polychrome)
-          // EX's polychrome masks the art and finish it recolours: drawn from
-          // a layer of its own, it would sometimes blend over nothing and
-          // wash the art out.
+        if (polychrome || cut != null)
+          // The tier's cut and EX's polychrome mask the art and finish they
+          // light: drawn from a layer of their own, they would sometimes
+          // blend over nothing and wash the art out.
           ClipPath(
               clipper: EditionClipper(geometry.inner),
               child: RepaintBoundary(
                   child: ListenableBuilder(
                       listenable: _motion,
-                      builder: (context, surface) => ShaderMask(
-                          blendMode: BlendMode.color,
-                          shaderCallback: (bounds) => editionPolychromeShader(
-                              _motion, bounds.size.shortestSide),
-                          child: surface),
+                      builder: (context, surface) {
+                        var lit = surface!;
+                        if (cut != null) {
+                          lit = ShaderMask(
+                              blendMode: BlendMode.overlay,
+                              shaderCallback: (bounds) =>
+                                  EditionCutShader.update(cut, _recipe,
+                                      bounds.size, _motion.light, cutPower),
+                              child: lit);
+                        }
+                        if (polychrome) {
+                          lit = ShaderMask(
+                              blendMode: BlendMode.color,
+                              shaderCallback: (bounds) =>
+                                  editionPolychromeShader(
+                                      _motion, bounds.size.shortestSide),
+                              child: lit);
+                        }
+                        return lit;
+                      },
                       child: surface)))
         else
           surface,

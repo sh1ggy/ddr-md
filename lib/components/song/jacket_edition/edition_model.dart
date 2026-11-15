@@ -15,18 +15,19 @@ enum EditionFrame { stock, bronze, silver, gold, platinum, rainbow }
 
 enum EditionMotif { neutral, classic, white, gold }
 
+/// The tier's foil cut, tenths .0 to .9 in order; neutral without a tier.
 enum EditionCut {
   neutral,
-  broad,
-  split,
-  cross,
+  broadSheen,
+  splitSheen,
+  wideFacets,
   diamond,
-  fan,
-  lattice,
+  crystal,
+  layeredFacets,
   shard,
-  star,
-  brilliant,
-  fine
+  mosaicPrism,
+  starPrism,
+  microprism
 }
 
 enum EditionBorder { gilded, engraved, bevel }

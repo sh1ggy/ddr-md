@@ -188,9 +188,7 @@ class EditionGeometry {
       canvas.drawRect(innerRect, Paint()..color = const Color(0x22000000));
     }
     if (finish != EditionFinish.print || premium) {
-      final cut = editionCuts[recipe.cut]!;
-      final count = math.min(
-          compact ? editionCompactMotifLines : editionMaxMotifLines, cut.lines);
+      final count = compact ? editionCompactMotifLines : editionMotifLines;
       paint.color = (pearl ? const Color(0xFFFFF4E2) : Colors.white).withValues(
           alpha: premium
               ? .13
@@ -198,12 +196,11 @@ class EditionGeometry {
                   ? .075
                   : .025);
       final shape = recipe.motif;
-      final angle = cut.angle +
-          (shape == EditionMotif.classic
-              ? .4
-              : shape == EditionMotif.gold
-                  ? -.4
-                  : 0);
+      final angle = (shape == EditionMotif.classic
+          ? .4
+          : shape == EditionMotif.gold
+              ? -.4
+              : 0.0);
       canvas.save();
       canvas.translate(size.width / 2, size.height / 2);
       canvas.rotate(angle);
@@ -213,7 +210,7 @@ class EditionGeometry {
           canvas.drawCircle(Offset.zero, x.abs() + side * .08, paint);
         } else {
           canvas.drawLine(Offset(x, -side), Offset(x, side), paint);
-          if (cut.cross && (textured || shape == EditionMotif.gold)) {
+          if (textured || shape == EditionMotif.gold) {
             canvas.drawLine(Offset(-side, x), Offset(side, x), paint);
           }
         }

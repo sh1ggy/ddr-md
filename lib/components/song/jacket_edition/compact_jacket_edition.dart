@@ -4,8 +4,10 @@
 /// input controller.
 library;
 
+import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 import 'edition_catalog.dart';
+import 'edition_cut.dart';
 import 'edition_model.dart';
 import 'edition_rules.dart';
 import 'edition_painter.dart';
@@ -35,9 +37,22 @@ class CompactJacketEdition extends StatefulWidget {
 
 class _CompactJacketEditionState extends State<CompactJacketEdition> {
   EditionGeometry? _geometry;
+  ui.FragmentShader? _cut;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!EditionCutShader.ready) {
+      EditionCutShader.load().then((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
   @override
   void dispose() {
     _geometry?.dispose();
+    _cut?.dispose();
     super.dispose();
   }
 
@@ -59,6 +74,7 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
         geometry?.dispose();
         geometry = _geometry = EditionGeometry(recipe, size, compact: true);
       }
+      final cutPower = EditionCutShader.power(recipe, compact: true);
       return RepaintBoundary(
           child:
               Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
@@ -88,6 +104,10 @@ class _CompactJacketEditionState extends State<CompactJacketEdition> {
                             EditionLayer.finish,
                             EditionLayer.frame
                           }))),
+        if (cutPower > 0 && (_cut ??= EditionCutShader.create()) != null)
+          IgnorePointer(
+              child: CustomPaint(
+                  painter: EditionCutPainter(geometry, _cut!, cutPower))),
         // Flare without its sticker: the chip in the art's corner.
         if (flareStamp == null && recipe.flareIndex >= 0)
           EditionFlareChip(

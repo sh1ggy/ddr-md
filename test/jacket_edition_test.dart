@@ -109,14 +109,14 @@ void main() {
                 level: 17,
                 tier: 9))
             .cut,
-        EditionCut.fine);
+        EditionCut.microprism);
     const shown = (hundredths: 85, kind: TierKind.mine);
     final fromShown = resolveEdition(const EditionFacts(
         chart: (song: '?', mode: 'singles', difficulty: 'hard'),
         level: 14,
         shownTier: shown));
     expect((fromShown.cut, fromShown.tierDecimal, fromShown.tierSuffix),
-        (EditionCut.brilliant, shown, null));
+        (EditionCut.starPrism, shown, null));
     const noData =
         EditionFacts(chart: (song: '?', mode: 'doubles', difficulty: '?'));
     final recipe = resolveEdition(noData);
